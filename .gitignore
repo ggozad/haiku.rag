@@ -17,3 +17,7 @@ tests/data/
 
 # environment variables
 .env
+
+# dirs we might mount in docker-compose.yml
+documents/
+database/

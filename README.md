@@ -192,3 +192,36 @@ async with HaikuRAG("database.db") as client:
         print(f"Content: {chunk.content}")
         print(f"From document: {chunk.document_id}")
 ```
+
+## Docker
+
+``` bash
+docker pull topiaruss/haiku-rag:latest
+docker compose up
+```
+
+### docker-compose.yml file
+
+ * When this runs, a documents directory will be created in this directory. You can drag files here to be indexed.
+
+ * A database directory will be created to hold your haiku-rag.db.
+
+ * The compose file mounts your local `~/.ollama/models` directory into which you should pull in the normal way the models you want to use. These will then be accessible inside the running container.
+
+For production, expect to edit the docker-compose.yml file 
+to set a permanent location for your models, database, and document directory. 
+
+Consult Docker resources to understand the many possibilities.
+
+
+### build-multiplatform.sh
+
+This is a simple builder to provide a multi-platform image.
+Replace "topiaruss" with your own dockerhub username, create the haiku-rag 
+image folder, and issue a `docker login` command
+
+### check (tail) the logs
+
+```bash
+docker compose logs -f
+```
