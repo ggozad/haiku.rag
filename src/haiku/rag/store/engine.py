@@ -9,9 +9,18 @@ from haiku.rag.embeddings import get_embedder
 
 
 class Store:
-    def __init__(self, db_path: Path | Literal[":memory:"]):
+    def __init__(
+        self, db_path: Path | Literal[":memory:"], skip_validation: bool = False
+    ):
         self.db_path: Path | Literal[":memory:"] = db_path
         self._connection = self.create_db()
+
+        # Validate config compatibility after connection is established
+        if not skip_validation:
+            from haiku.rag.store.repositories.settings import SettingsRepository
+
+            settings_repo = SettingsRepository(self)
+            settings_repo.validate_config_compatibility()
 
     def create_db(self) -> sqlite3.Connection:
         """Create the database and tables with sqlite-vec support for embeddings."""
@@ -60,13 +69,49 @@ class Store:
             )
         """)
 
+        # Create settings table for storing current configuration
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                settings TEXT NOT NULL DEFAULT '{}'
+            )
+        """)
+
         # Create indexes for better performance
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)"
         )
 
+        # Save current settings to the new database
+        from haiku.rag.config import Config
+
+        settings_json = Config.model_dump_json()
+        db.execute(
+            "INSERT OR IGNORE INTO settings (id, settings) VALUES (1, ?)",
+            (settings_json,),
+        )
+
         db.commit()
         return db
+
+    def recreate_embeddings_table(self) -> None:
+        """Recreate the embeddings table with current vector dimensions."""
+        if self._connection is None:
+            raise ValueError("Store connection is not available")
+
+        # Drop existing embeddings table
+        self._connection.execute("DROP TABLE IF EXISTS chunk_embeddings")
+
+        # Recreate with current dimensions
+        embedder = get_embedder()
+        self._connection.execute(f"""
+            CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
+                chunk_id INTEGER PRIMARY KEY,
+                embedding FLOAT[{embedder._vector_dim}]
+            )
+        """)
+
+        self._connection.commit()
 
     @staticmethod
     def serialize_embedding(embedding: list[float]) -> bytes:

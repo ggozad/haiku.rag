@@ -24,12 +24,13 @@ class HaikuRAG:
         self,
         db_path: Path | Literal[":memory:"] = Config.DEFAULT_DATA_DIR
         / "haiku.rag.sqlite",
+        skip_validation: bool = False,
     ):
         """Initialize the RAG client with a database path."""
         if isinstance(db_path, Path):
             if not db_path.parent.exists():
                 Path.mkdir(db_path.parent, parents=True)
-        self.store = Store(db_path)
+        self.store = Store(db_path, skip_validation=skip_validation)
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
 
@@ -165,29 +166,26 @@ class HaikuRAG:
 
             # Create a temporary file with the appropriate extension
             with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=file_extension, delete=False
+                mode="wb", suffix=file_extension
             ) as temp_file:
                 temp_file.write(response.content)
+                temp_file.flush()  # Ensure content is written to disk
                 temp_path = Path(temp_file.name)
 
-            try:
                 # Parse the content using FileReader
                 content = FileReader.parse_file(temp_path)
 
-                # Merge metadata with contentType and md5
-                metadata.update({"contentType": content_type, "md5": md5_hash})
+            # Merge metadata with contentType and md5
+            metadata.update({"contentType": content_type, "md5": md5_hash})
 
-                if existing_doc:
-                    existing_doc.content = content
-                    existing_doc.metadata = metadata
-                    return await self.update_document(existing_doc)
-                else:
-                    return await self.create_document(
-                        content=content, uri=url, metadata=metadata
-                    )
-            finally:
-                # Clean up temporary file
-                temp_path.unlink(missing_ok=True)
+            if existing_doc:
+                existing_doc.content = content
+                existing_doc.metadata = metadata
+                return await self.update_document(existing_doc)
+            else:
+                return await self.create_document(
+                    content=content, uri=url, metadata=metadata
+                )
 
     def _get_extension_from_content_type_or_url(
         self, url: str, content_type: str
@@ -277,12 +275,16 @@ class HaikuRAG:
         Yields:
             int: The ID of the document currently being processed
         """
-        documents = await self.list_documents()
-
-        if not documents:
-            return
-
         await self.chunk_repository.delete_all()
+        self.store.recreate_embeddings_table()
+
+        # Update settings to current config
+        from haiku.rag.store.repositories.settings import SettingsRepository
+
+        settings_repo = SettingsRepository(self.store)
+        settings_repo.save()
+
+        documents = await self.list_documents()
 
         for doc in documents:
             if doc.id is not None:

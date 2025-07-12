@@ -74,7 +74,7 @@ class HaikuRAGApp:
                 self.console.print(f"[red]Error: {e}[/red]")
 
     async def rebuild(self):
-        async with HaikuRAG(db_path=self.db_path) as client:
+        async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:
             try:
                 documents = await client.list_documents()
                 total_docs = len(documents)

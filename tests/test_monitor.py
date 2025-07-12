@@ -13,11 +13,10 @@ from haiku.rag.store.models.document import Document
 async def test_file_watcher_upsert_document():
     """Test FileWatcher._upsert_document method."""
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        f.write("Test content for file watcher")
-        temp_path = Path(f.name)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "test.txt"
+        temp_path.write_text("Test content for file watcher")
 
-    try:
         mock_client = AsyncMock(spec=HaikuRAG)
         mock_doc = Document(id=1, content="Test content", uri=temp_path.as_uri())
         mock_client.create_document_from_source.return_value = mock_doc
@@ -32,19 +31,15 @@ async def test_file_watcher_upsert_document():
         mock_client.get_document_by_uri.assert_called_once_with(temp_path.as_uri())
         mock_client.create_document_from_source.assert_called_once_with(str(temp_path))
 
-    finally:
-        temp_path.unlink(missing_ok=True)
-
 
 @pytest.mark.asyncio
 async def test_file_watcher_upsert_existing_document():
     """Test FileWatcher._upsert_document with existing document."""
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        f.write("Test content for file watcher")
-        temp_path = Path(f.name)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "test.txt"
+        temp_path.write_text("Test content for file watcher")
 
-    try:
         mock_client = AsyncMock(spec=HaikuRAG)
         existing_doc = Document(id=1, content="Old content", uri=temp_path.as_uri())
         updated_doc = Document(id=1, content="Updated content", uri=temp_path.as_uri())
@@ -60,9 +55,6 @@ async def test_file_watcher_upsert_existing_document():
         assert result.content == "Updated content"
         mock_client.get_document_by_uri.assert_called_once_with(temp_path.as_uri())
         mock_client.create_document_from_source.assert_called_once_with(str(temp_path))
-
-    finally:
-        temp_path.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
