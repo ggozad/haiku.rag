@@ -16,7 +16,7 @@ class CohereReranker(RerankerBase):
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
-    ) -> list[Chunk]:
+    ) -> list[tuple[Chunk, float]]:
         if not chunks:
             return []
 
@@ -29,6 +29,6 @@ class CohereReranker(RerankerBase):
         reranked_chunks = []
         for result in response.results:
             original_chunk = chunks[result.index]
-            reranked_chunks.append(original_chunk)
+            reranked_chunks.append((original_chunk, result.relevance_score))
 
         return reranked_chunks

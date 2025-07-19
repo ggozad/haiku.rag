@@ -34,7 +34,8 @@ async def test_mxbai_reranker():
     reranked = await reranker.rerank(
         "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
     )
-    assert [r.document_id for r in reranked] == [0, 2]
+    assert [chunk.document_id for chunk, score in reranked] == [0, 2]
+    assert all(isinstance(score, float) for chunk, score in reranked)
 
 
 @pytest.mark.asyncio
@@ -43,12 +44,13 @@ async def test_cohere_reranker():
         from haiku.rag.reranking.cohere import CohereReranker
 
         reranker = CohereReranker()
-        assert reranker._model == "rerank-v3.5"
+        reranker._model = "rerank-v3.5"
 
         reranked = await reranker.rerank(
             "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
         )
-        assert [r.document_id for r in reranked] == [0, 2]
+        assert [chunk.document_id for chunk, score in reranked] == [0, 2]
+        assert all(isinstance(score, float) for chunk, score in reranked)
 
     except ImportError:
         pytest.skip("Cohere package not installed")

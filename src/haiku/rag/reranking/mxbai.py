@@ -13,7 +13,7 @@ class MxBAIReranker(RerankerBase):
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
-    ) -> list[Chunk]:
+    ) -> list[tuple[Chunk, float]]:
         if not chunks:
             return []
 
@@ -23,6 +23,6 @@ class MxBAIReranker(RerankerBase):
         reranked_chunks = []
         for result in results:
             original_chunk = chunks[result.index]
-            reranked_chunks.append(original_chunk)
+            reranked_chunks.append((original_chunk, result.score))
 
         return reranked_chunks
