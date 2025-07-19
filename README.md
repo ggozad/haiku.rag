@@ -10,7 +10,7 @@ Retrieval-Augmented Generation (RAG) library on SQLite.
 - **Multiple embedding providers**: Ollama, VoyageAI, OpenAI
 - **Multiple QA providers**: Ollama, OpenAI, Anthropic
 - **Hybrid search**: Vector + full-text search with Reciprocal Rank Fusion
-- **Reranking**: Optional result reranking with MixedBread AI or Cohere
+- **Reranking**: Default search result reranking with MixedBread AI or Cohere
 - **Question answering**: Built-in QA agents on your documents
 - **File monitoring**: Auto-index files when run as server
 - **40+ file formats**: PDF, DOCX, HTML, Markdown, audio, URLs
@@ -50,8 +50,8 @@ async with HaikuRAG("database.db") as client:
     # Add document
     doc = await client.create_document("Your content")
 
-    # Search (with optional reranking)
-    results = await client.search("query", rerank=True)
+    # Search (reranking enabled by default)
+    results = await client.search("query")
     for chunk, score in results:
         print(f"{score:.3f}: {chunk.content}")
 

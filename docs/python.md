@@ -76,7 +76,9 @@ async for doc_id in client.rebuild_database():
 
 ## Searching Documents
 
-Basic search:
+The search method performs hybrid search (vector + full-text) with **reranking enabled by default** for improved relevance:
+
+Basic search (with reranking):
 ```python
 results = await client.search("machine learning algorithms", limit=5)
 for chunk, score in results:
@@ -90,7 +92,8 @@ With options:
 results = await client.search(
     query="machine learning",
     limit=5,  # Maximum results to return
-    k=60      # RRF parameter for reciprocal rank fusion
+    k=60,     # RRF parameter for reciprocal rank fusion
+    rerank=False  # Disable reranking for faster search
 )
 
 # Process results

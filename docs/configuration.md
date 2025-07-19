@@ -105,12 +105,17 @@ ANTHROPIC_API_KEY="your-api-key"
 
 ## Reranking
 
-Reranking improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
+Reranking is **enabled by default** and improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
+
+If you use the default reranked (running locally), it can slow down searching significantly. To disable reranking for faster searches:
+
+```bash
+RERANK=false
+```
 
 ### MixedBread AI (Default)
 
 ```bash
-RERANK=true
 RERANK_PROVIDER="mxbai"
 RERANK_MODEL="mixedbread-ai/mxbai-rerank-base-v2"
 ```
@@ -126,7 +131,6 @@ uv pip install haiku.rag --extra cohere
 Then configure:
 
 ```bash
-RERANK=true
 RERANK_PROVIDER="cohere"
 RERANK_MODEL="rerank-v3.5"
 COHERE_API_KEY="your-api-key"
