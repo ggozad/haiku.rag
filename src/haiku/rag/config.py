@@ -19,6 +19,7 @@ class AppConfig(BaseModel):
     EMBEDDINGS_MODEL: str = "mxbai-embed-large"
     EMBEDDINGS_VECTOR_DIM: int = 1024
 
+    RERANK: bool = False
     RERANK_PROVIDER: str = "mxbai"
     RERANK_MODEL: str = "mixedbread-ai/mxbai-rerank-base-v2"
 
