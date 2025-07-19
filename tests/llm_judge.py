@@ -35,23 +35,35 @@ class LLMJudge:
             - score: str rating from 1-5
         """
 
-        prompt = f"""
-        You are an expert judge evaluating the equivalence of two answers to the same question.
+        prompt = f"""You are an expert evaluator determining whether two answers to the same question are semantically equivalent.
 
-        Question: {question}
+QUESTION: {question}
 
-        Generated Answer: {answer}
+GENERATED ANSWER: {answer}
 
-        Expected Answer: {expected_answer}
+EXPECTED ANSWER: {expected_answer}
 
-        Your task is to determine if these two answers are equivalent in meaning and both correctly answer the question. Consider:
+EVALUATION CRITERIA:
+Rate as EQUIVALENT (true) if:
+✓ Both answers contain the same core factual information
+✓ Both directly address the question asked
+✓ The key claims and conclusions are consistent
+✓ Any additional detail in one answer doesn't contradict the other
 
-        1. Do both answers provide the same answer?
-        2. Do both answers directly address the question asked?
-        3. Minor differences in wording or style are acceptable if the meaning of the answer is the same.
-        4. If one answer is more detailed but the other is correct, they can still be considered equivalent.
+Rate as NOT EQUIVALENT (false) if:
+✗ Factual contradictions exist between the answers
+✗ One answer fails to address the core question
+✗ Key information is missing from one answer that changes the meaning
+✗ The answers lead to different conclusions or implications
 
-        Be strict but fair in your evaluation. Focus on factual correctness and whether both answers would satisfy someone asking the question."""
+GUIDELINES:
+- Ignore minor differences in phrasing, style, or formatting
+- Focus on semantic meaning rather than exact wording
+- Consider both answers correct if they convey the same essential information
+- Be tolerant of different levels of detail if the core answer is preserved
+- Evaluate based on what a person asking this question would need to know
+
+Respond with JSON containing only: {{"equivalent": true}} or {{"equivalent": false}}"""
 
         response = await self.client.chat(
             model=self.model,
