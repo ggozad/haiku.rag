@@ -1,13 +1,13 @@
 # haiku.rag
 
-`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work on SQLite alone without the need for external vector databases. It uses [sqlite-vec](https://github.com/asg017/sqlite-vec) for storing the embeddings and performs semantic (vector) search as well as full-text search combined through Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
-
+`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work on SQLite alone without the need for external vector databases. It uses [sqlite-vec](https://github.com/asg017/sqlite-vec) for storing the embeddings and performs semantic (vector) search as well as full-text search combined through Reciprocal Rank Fusion. Both open-source (Ollama, MixedBread AI) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
 
 ## Features
 
 - **Local SQLite**: No need to run additional servers
 - **Support for various embedding providers**: Ollama, VoyageAI, OpenAI or add your own
 - **Hybrid Search**: Vector search using `sqlite-vec` combined with full-text search `FTS5`, using Reciprocal Rank Fusion
+- **Reranking**: Optional result reranking with MixedBread AI or Cohere
 - **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic.
 - **File monitoring**: Automatically index files when run as a server
 - **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, audio and more. Or add a URL!
@@ -34,7 +34,7 @@ async with HaikuRAG("database.db") as client:
     results = await client.search("query")
 
     # Ask questions
-    answer = await client.ask("Who is the author of haiku.rag?")
+    answer = await client.ask("Who is the author of haiku.rag?", rerank=False)
 ```
 
 Or use the CLI:
