@@ -1,6 +1,6 @@
 [project]
 name = "haiku.rag"
-version = "0.3.4"
+version = "0.4.0"
 description = "Retrieval Augmented Generation (RAG) with SQLite"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
