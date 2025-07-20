@@ -18,7 +18,7 @@ def get_embedder() -> EmbedderBase:
             raise ImportError(
                 "VoyageAI embedder requires the 'voyageai' package. "
                 "Please install haiku.rag with the 'voyageai' extra:"
-                "uv pip install haiku.rag --extra voyageai"
+                "uv pip install haiku.rag[voyageai]"
             )
         return VoyageAIEmbedder(Config.EMBEDDINGS_MODEL, Config.EMBEDDINGS_VECTOR_DIM)
 
@@ -29,7 +29,7 @@ def get_embedder() -> EmbedderBase:
             raise ImportError(
                 "OpenAI embedder requires the 'openai' package. "
                 "Please install haiku.rag with the 'openai' extra:"
-                "uv pip install haiku.rag --extra openai"
+                "uv pip install haiku.rag[openai]"
             )
         return OpenAIEmbedder(Config.EMBEDDINGS_MODEL, Config.EMBEDDINGS_VECTOR_DIM)
 

@@ -15,19 +15,19 @@ For other embedding providers, install with extras:
 ### VoyageAI
 
 ```bash
-uv pip install haiku.rag --extra voyageai
+uv pip install haiku.rag[voyageai]
 ```
 
 ### OpenAI
 
 ```bash
-uv pip install haiku.rag --extra openai
+uv pip install haiku.rag[openai]
 ```
 
 ### Anthropic
 
 ```bash
-uv pip install haiku.rag --extra anthropic
+uv pip install haiku.rag[anthropic]
 ```
 
 ## Requirements

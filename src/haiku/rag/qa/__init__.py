@@ -18,7 +18,7 @@ def get_qa_agent(client: HaikuRAG, model: str = "") -> QuestionAnswerAgentBase:
             raise ImportError(
                 "OpenAI QA agent requires the 'openai' package. "
                 "Please install haiku.rag with the 'openai' extra:"
-                "uv pip install haiku.rag --extra openai"
+                "uv pip install haiku.rag[openai]"
             )
         return QuestionAnswerOpenAIAgent(client, model or Config.QA_MODEL)
 
@@ -29,7 +29,7 @@ def get_qa_agent(client: HaikuRAG, model: str = "") -> QuestionAnswerAgentBase:
             raise ImportError(
                 "Anthropic QA agent requires the 'anthropic' package. "
                 "Please install haiku.rag with the 'anthropic' extra:"
-                "uv pip install haiku.rag --extra anthropic"
+                "uv pip install haiku.rag[anthropic]"
             )
         return QuestionAnswerAnthropicAgent(client, model or Config.QA_MODEL)
 

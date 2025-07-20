@@ -29,7 +29,7 @@ def get_reranker() -> RerankerBase:
             raise ImportError(
                 "Cohere reranker requires the 'cohere' package. "
                 "Please install haiku.rag with the 'cohere' extra:"
-                "uv pip install haiku.rag --extra cohere"
+                "uv pip install haiku.rag[cohere]"
             )
         _reranker = CohereReranker()
         return _reranker
