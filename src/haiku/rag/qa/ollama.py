@@ -4,7 +4,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.qa.base import QuestionAnswerAgentBase
 
-OLLAMA_OPTIONS = {"temperature": 0.0, "seed": 42, "num_ctx": 64000}
+OLLAMA_OPTIONS = {"temperature": 0.0, "seed": 42, "num_ctx": 16384}
 
 
 class QuestionAnswerOllamaAgent(QuestionAnswerAgentBase):

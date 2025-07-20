@@ -278,7 +278,7 @@ class HaikuRAG:
         return await self.document_repository.list_all(limit=limit, offset=offset)
 
     async def search(
-        self, query: str, limit: int = 3, k: int = 60, rerank=Config.RERANK
+        self, query: str, limit: int = 5, k: int = 60, rerank=Config.RERANK
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using hybrid search (vector similarity + full-text search) with reranking.
 
@@ -298,7 +298,6 @@ class HaikuRAG:
         search_results = await self.chunk_repository.search_chunks_hybrid(
             query, limit * 3, k
         )
-
         # Apply reranking
         reranker = get_reranker()
         chunks = [chunk for chunk, _ in search_results]

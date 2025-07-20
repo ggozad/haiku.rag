@@ -13,7 +13,7 @@ class LLMJudgeResponseSchema(BaseModel):
 class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Ollama."""
 
-    def __init__(self, model: str = "qwen3"):
+    def __init__(self, model: str = Config.QA_MODEL):
         self.model = model
         self.client = AsyncClient(host=Config.OLLAMA_BASE_URL)
 
