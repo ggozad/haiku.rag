@@ -19,6 +19,10 @@ class AppConfig(BaseModel):
     EMBEDDINGS_MODEL: str = "mxbai-embed-large"
     EMBEDDINGS_VECTOR_DIM: int = 1024
 
+    RERANK: bool = True
+    RERANK_PROVIDER: str = "mxbai"
+    RERANK_MODEL: str = "mixedbread-ai/mxbai-rerank-base-v2"
+
     QA_PROVIDER: str = "ollama"
     QA_MODEL: str = "qwen3"
 
@@ -31,6 +35,7 @@ class AppConfig(BaseModel):
     VOYAGE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
+    COHERE_API_KEY: str = ""
 
     @field_validator("MONITOR_DIRECTORIES", mode="before")
     @classmethod
@@ -52,3 +57,5 @@ if Config.VOYAGE_API_KEY:
     os.environ["VOYAGE_API_KEY"] = Config.VOYAGE_API_KEY
 if Config.ANTHROPIC_API_KEY:
     os.environ["ANTHROPIC_API_KEY"] = Config.ANTHROPIC_API_KEY
+if Config.COHERE_API_KEY:
+    os.environ["CO_API_KEY"] = Config.COHERE_API_KEY
