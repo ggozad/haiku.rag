@@ -5,7 +5,8 @@ import typer
 from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
-from haiku.rag.utils import get_default_data_dir, is_up_to_date
+from haiku.rag.config import Config
+from haiku.rag.utils import is_up_to_date
 
 cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
@@ -35,7 +36,7 @@ def main():
 @cli.command("list", help="List all stored documents")
 def list_documents(
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -50,7 +51,7 @@ def add_document_text(
         help="The text content of the document to add",
     ),
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -65,7 +66,7 @@ def add_document_src(
         help="The file path or URL of the document to add",
     ),
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -80,7 +81,7 @@ def get_document(
         help="The ID of the document to get",
     ),
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -95,7 +96,7 @@ def delete_document(
         help="The ID of the document to delete",
     ),
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -121,7 +122,7 @@ def search(
         help="Reciprocal Rank Fusion k parameter",
     ),
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -136,7 +137,7 @@ def ask(
         help="The question to ask",
     ),
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -157,7 +158,7 @@ def settings():
 )
 def rebuild(
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
@@ -171,7 +172,7 @@ def rebuild(
 )
 def serve(
     db: Path = typer.Option(
-        get_default_data_dir() / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
         "--db",
         help="Path to the SQLite database file",
     ),
