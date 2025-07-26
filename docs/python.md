@@ -27,6 +27,31 @@ doc = await client.create_document(
 )
 ```
 
+With custom externally generated chunks:
+```python
+from haiku.rag.store.models.chunk import Chunk
+
+# Create custom chunks with optional embeddings
+chunks = [
+    Chunk(
+        content="This is the first chunk",
+        metadata={"section": "intro"}
+    ),
+    Chunk(
+        content="This is the second chunk",
+        metadata={"section": "body"},
+        embedding=[0.1] * 1024  # Optional pre-computed embedding
+    ),
+]
+
+doc = await client.create_document(
+    content="Full document content",
+    uri="doc://custom",
+    metadata={"source": "manual"},
+    chunks=chunks  # Use provided chunks instead of auto-generating
+)
+```
+
 From file:
 ```python
 doc = await client.create_document_from_source("path/to/document.pdf")

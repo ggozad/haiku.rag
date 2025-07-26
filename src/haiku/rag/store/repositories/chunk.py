@@ -18,6 +18,8 @@ class ChunkRepository(BaseRepository[Chunk]):
         """Create a chunk in the database."""
         if self.store._connection is None:
             raise ValueError("Store connection is not available")
+        if entity.document_id is None:
+            raise ValueError("Chunk must have a document_id to be created")
 
         cursor = self.store._connection.cursor()
         cursor.execute(
@@ -34,9 +36,15 @@ class ChunkRepository(BaseRepository[Chunk]):
 
         entity.id = cursor.lastrowid
 
-        # Generate and store embedding
-        embedding = await self.embedder.embed(entity.content)
-        serialized_embedding = self.store.serialize_embedding(embedding)
+        # Generate and store embedding - use existing one if provided
+        if entity.embedding is not None:
+            # Use the provided embedding
+            serialized_embedding = self.store.serialize_embedding(entity.embedding)
+        else:
+            # Generate embedding from content
+            embedding = await self.embedder.embed(entity.content)
+            serialized_embedding = self.store.serialize_embedding(embedding)
+
         cursor.execute(
             """
             INSERT INTO chunk_embeddings (chunk_id, embedding)

@@ -7,8 +7,9 @@ class Chunk(BaseModel):
     """
 
     id: int | None = None
-    document_id: int
+    document_id: int | None = None
     content: str
     metadata: dict = {}
     document_uri: str | None = None
     document_meta: dict = {}
+    embedding: list[float] | None = None

@@ -50,7 +50,11 @@ class HaikuRAG:
         return False
 
     async def create_document(
-        self, content: str, uri: str | None = None, metadata: dict | None = None
+        self,
+        content: str,
+        uri: str | None = None,
+        metadata: dict | None = None,
+        chunks: list[Chunk] | None = None,
     ) -> Document:
         """Create a new document with optional URI and metadata.
 
@@ -58,6 +62,7 @@ class HaikuRAG:
             content: The text content of the document.
             uri: Optional URI identifier for the document.
             metadata: Optional metadata dictionary.
+            chunks: Optional list of pre-created chunks to use instead of generating new ones.
 
         Returns:
             The created Document instance.
@@ -67,7 +72,7 @@ class HaikuRAG:
             uri=uri,
             metadata=metadata or {},
         )
-        return await self.document_repository.create(document)
+        return await self.document_repository.create(document, chunks)
 
     async def create_document_from_source(
         self, source: str | Path, metadata: dict = {}
