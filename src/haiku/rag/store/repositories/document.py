@@ -1,7 +1,11 @@
 import json
+from typing import TYPE_CHECKING
 
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models.chunk import Chunk
 
 
 class DocumentRepository(BaseRepository[Document]):
@@ -16,7 +20,9 @@ class DocumentRepository(BaseRepository[Document]):
             chunk_repository = ChunkRepository(store)
         self.chunk_repository = chunk_repository
 
-    async def create(self, entity: Document) -> Document:
+    async def create(
+        self, entity: Document, chunks: list["Chunk"] | None = None
+    ) -> Document:
         """Create a document with its chunks and embeddings."""
         if self.store._connection is None:
             raise ValueError("Store connection is not available")
@@ -46,10 +52,20 @@ class DocumentRepository(BaseRepository[Document]):
             assert document_id is not None, "Failed to create document in database"
             entity.id = document_id
 
-            # Create chunks and embeddings using ChunkRepository
-            await self.chunk_repository.create_chunks_for_document(
-                document_id, entity.content, commit=False
-            )
+            # Create chunks - either use provided chunks or generate from content
+            if chunks is not None:
+                # Use provided chunks, but update their document_id and set order from list position
+                for order, chunk in enumerate(chunks):
+                    chunk.document_id = document_id
+                    # Ensure order is set from list position
+                    chunk.metadata = chunk.metadata.copy() if chunk.metadata else {}
+                    chunk.metadata["order"] = order
+                    await self.chunk_repository.create(chunk, commit=False)
+            else:
+                # Create chunks and embeddings using ChunkRepository
+                await self.chunk_repository.create_chunks_for_document(
+                    document_id, entity.content, commit=False
+                )
 
             cursor.execute("COMMIT")
             return entity

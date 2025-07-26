@@ -7,6 +7,7 @@ import pytest
 from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.store.models.chunk import Chunk
 
 
 @pytest.mark.asyncio
@@ -449,3 +450,42 @@ async def test_client_async_context_manager():
     # Context manager should have automatically closed the connection
     # We can't easily test that the connection is closed without accessing internals,
     # but the test passing means the context manager methods work correctly
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_with_custom_chunks():
+    """Test creating a document with pre-created chunks."""
+    async with HaikuRAG(":memory:") as client:
+        # Create some custom chunks with and without embeddings
+        chunks = [
+            Chunk(content="This is the first chunk", metadata={"custom": "metadata1"}),
+            Chunk(
+                content="This is the second chunk",
+                metadata={"custom": "metadata2"},
+                embedding=[0.1] * 1024,
+            ),  # With embedding
+            Chunk(content="This is the third chunk", metadata={"custom": "metadata3"}),
+        ]
+
+        # Create document with custom chunks
+        document = await client.create_document(
+            content="Full document content", chunks=chunks
+        )
+
+        assert document.id is not None
+        assert document.content == "Full document content"
+
+        # Verify the chunks were created correctly
+        doc_chunks = await client.chunk_repository.get_by_document_id(document.id)
+        assert len(doc_chunks) == 3
+
+        # Check chunks have correct content, document_id, and order from list position
+        for i, chunk in enumerate(doc_chunks):
+            assert chunk.document_id == document.id
+            assert chunk.content == chunks[i].content
+            assert (
+                chunk.metadata["order"] == i
+            )  # Order should be set from list position
+            assert (
+                chunk.metadata["custom"] == f"metadata{i + 1}"
+            )  # Original metadata preserved
