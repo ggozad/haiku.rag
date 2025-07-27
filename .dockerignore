@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+.git
+.gitignore
+tests/
+database/
+documents/
+uv.lock 
