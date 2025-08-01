@@ -1,4 +1,5 @@
 import asyncio
+from importlib.metadata import version
 from pathlib import Path
 
 import typer
@@ -26,8 +27,23 @@ async def check_version():
         console.print("[yellow]Please update.[/yellow]")
 
 
+def version_callback(value: bool):
+    if value:
+        v = version("haiku.rag")
+        console.print(f"haiku.rag version {v}")
+        raise typer.Exit()
+
+
 @cli.callback()
-def main():
+def main(
+    _version: bool = typer.Option(
+        False,
+        "-v",
+        "--version",
+        callback=version_callback,
+        help="Show version and exit",
+    ),
+):
     """haiku.rag CLI - SQLite-based RAG system"""
     # Run version check before any command
     event_loop.run_until_complete(check_version())
