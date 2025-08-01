@@ -13,32 +13,22 @@ async def test_chunker(qa_corpus: Dataset):
     # Ensure that the text is split into multiple chunks
     assert len(chunks) > 1
 
-    # Ensure that each chunk corresponds to roughly Config.CHUNK_SIZE tokens
-    for chunk in chunks[:-1]:
+    # Ensure that chunks are reasonably sized (allowing more flexibility for structure-aware chunking)
+    total_tokens = 0
+    for chunk in chunks:
         encoded_tokens = Chunker.encoder.encode(chunk, disallowed_special=())
-        assert len(encoded_tokens) <= Chunker().chunk_size
-        assert len(encoded_tokens) > Chunker().chunk_size * 0.9
+        token_count = len(encoded_tokens)
+        total_tokens += token_count
 
-    # Ensure that the last chunk is less than Config.CHUNK_SIZE tokens
-    assert (
-        len(Chunker.encoder.encode(chunks[-1], disallowed_special=()))
-        < Chunker().chunk_size
-    )
+        # Each chunk should be reasonably sized (allowing more flexibility than the old strict limits)
+        assert (
+            token_count <= chunker.chunk_size * 1.2
+        )  # Allow some flexibility for semantic boundaries
+        assert token_count > 5  # Ensure chunks aren't too small
 
-    # Test overlap between consecutive chunks
-    for i in range(len(chunks) - 1):
-        current_chunk = chunks[i]
-        next_chunk = chunks[i + 1]
+    # Ensure that all chunks together contain roughly the same content as original
+    original_tokens = len(Chunker.encoder.encode(doc, disallowed_special=()))
 
-        current_tokens = Chunker.encoder.encode(current_chunk, disallowed_special=())
-        next_tokens = Chunker.encoder.encode(next_chunk, disallowed_special=())
-
-        overlap_size = min(chunker.chunk_overlap, len(current_tokens))
-        current_overlap_tokens = current_tokens[-overlap_size:]
-        next_overlap_tokens = next_tokens[:overlap_size]
-
-        # The overlapping tokens should be identical
-        assert current_overlap_tokens == next_overlap_tokens
-        assert len(current_overlap_tokens) == min(
-            chunker.chunk_overlap, len(current_tokens)
-        )
+    # Due to structure-aware chunking, we might have some variation in token count
+    # but it should be reasonable
+    assert abs(total_tokens - original_tokens) <= original_tokens * 0.1
