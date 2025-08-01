@@ -31,7 +31,7 @@ class Chunker:
             tokenizer=tiktoken.encoding_for_model("gpt-4o"), max_tokens=chunk_size
         )
 
-        self.docling_chunker = HybridChunker(tokenizer=tokenizer)  # type: ignore
+        self.chunker = HybridChunker(tokenizer=tokenizer)  # type: ignore
 
     async def chunk(self, text: str) -> list[str]:
         """Split the text into chunks using docling's structure-aware chunking.
@@ -53,8 +53,8 @@ class Chunker:
         doc = result.document
 
         # Chunk using docling's hybrid chunker
-        docling_chunks = list(self.docling_chunker.chunk(doc))
-        return [chunk.text for chunk in docling_chunks]
+        chunks = list(self.chunker.chunk(doc))
+        return [self.chunker.contextualize(chunk) for chunk in chunks]
 
 
 chunker = Chunker()
