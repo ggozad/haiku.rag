@@ -53,6 +53,33 @@ class FileReader:
         ".yml",
     ]
 
+    # Code file extensions with their markdown language identifiers for syntax highlighting
+    code_markdown_identifier: ClassVar[dict[str, str]] = {
+        ".astro": "astro",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".css": "css",
+        ".go": "go",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".java": "java",
+        ".js": "javascript",
+        ".json": "json",
+        ".kt": "kotlin",
+        ".mjs": "javascript",
+        ".php": "php",
+        ".py": "python",
+        ".rb": "ruby",
+        ".rs": "rust",
+        ".svelte": "svelte",
+        ".swift": "swift",
+        ".ts": "typescript",
+        ".tsx": "tsx",
+        ".vue": "vue",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+    }
+
     extensions: ClassVar[list[str]] = docling_extensions + text_extensions
 
     @staticmethod
@@ -67,7 +94,14 @@ class FileReader:
                 return result.document.export_to_markdown()
             elif file_extension in FileReader.text_extensions:
                 # Read plain text files directly
-                return path.read_text(encoding="utf-8")
+                content = path.read_text(encoding="utf-8")
+
+                # Wrap code files (but not plain txt) in markdown code blocks for better presentation
+                if file_extension in FileReader.code_markdown_identifier:
+                    language = FileReader.code_markdown_identifier[file_extension]
+                    return f"```{language}\n{content}\n```"
+
+                return content
             else:
                 # Fallback: try to read as text
                 return path.read_text(encoding="utf-8")
