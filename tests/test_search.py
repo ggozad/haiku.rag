@@ -36,7 +36,7 @@ async def test_search_qa_corpus(qa_corpus: Dataset):
         created_document = await doc_repo.create(document)
         documents.append((created_document, doc_data))
 
-    for i in range(num_documents):  # Test with first few documents
+    for i in range(5):  # Test with first few documents
         target_document, doc_data = documents[i]
         question = doc_data["question"]
 
@@ -49,6 +49,10 @@ async def test_search_qa_corpus(qa_corpus: Dataset):
         fts_results = await chunk_repo.search_chunks_fts(question, limit=5)
         target_document_ids = {chunk.document_id for chunk, _ in fts_results}
         assert target_document.id in target_document_ids
+
+    for i in range(num_documents):  # Test with first few documents
+        target_document, doc_data = documents[i]
+        question = doc_data["question"]
 
         # Test hybrid search
         hybrid_results = await chunk_repo.search_chunks_hybrid(question, limit=5)

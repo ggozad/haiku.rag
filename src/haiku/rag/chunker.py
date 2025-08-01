@@ -1,6 +1,11 @@
+from io import BytesIO
 from typing import ClassVar
 
 import tiktoken
+from docling.chunking import HybridChunker  # type: ignore
+from docling.document_converter import DocumentConverter
+from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
+from docling_core.types.io import DocumentStream
 
 from haiku.rag.config import Config
 
@@ -8,9 +13,11 @@ from haiku.rag.config import Config
 class Chunker:
     """A class that chunks text into smaller pieces for embedding and retrieval.
 
+    Uses docling's structure-aware chunking to create semantically meaningful chunks
+    that respect document boundaries.
+
     Args:
         chunk_size: The maximum size of a chunk in tokens.
-        chunk_overlap: The number of tokens of overlap between chunks.
     """
 
     encoder: ClassVar[tiktoken.Encoding] = tiktoken.encoding_for_model("gpt-4o")
@@ -18,50 +25,36 @@ class Chunker:
     def __init__(
         self,
         chunk_size: int = Config.CHUNK_SIZE,
-        chunk_overlap: int = Config.CHUNK_OVERLAP,
     ):
         self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
+        tokenizer = OpenAITokenizer(
+            tokenizer=tiktoken.encoding_for_model("gpt-4o"), max_tokens=chunk_size
+        )
+
+        self.chunker = HybridChunker(tokenizer=tokenizer)  # type: ignore
 
     async def chunk(self, text: str) -> list[str]:
-        """Split the text into chunks based on token boundaries.
+        """Split the text into chunks using docling's structure-aware chunking.
 
         Args:
             text: The text to be split into chunks.
 
         Returns:
-            A list of text chunks with token-based boundaries and overlap.
+            A list of text chunks with semantic boundaries.
         """
         if not text:
             return []
 
-        encoded_tokens = self.encoder.encode(text, disallowed_special=())
+        # Convert to docling document
+        bytes_io = BytesIO(text.encode("utf-8"))
+        doc_stream = DocumentStream(name="text.md", stream=bytes_io)
+        converter = DocumentConverter()
+        result = converter.convert(doc_stream)
+        doc = result.document
 
-        if self.chunk_size > len(encoded_tokens):
-            return [text]
-
-        chunks = []
-        i = 0
-        split_id_counter = 0
-        while i < len(encoded_tokens):
-            # Overlap
-            start_i = i
-            end_i = min(i + self.chunk_size, len(encoded_tokens))
-
-            chunk_tokens = encoded_tokens[start_i:end_i]
-            chunk_text = self.encoder.decode(chunk_tokens)
-
-            chunks.append(chunk_text)
-            split_id_counter += 1
-
-            # Exit loop if this was the last possible chunk
-            if end_i == len(encoded_tokens):
-                break
-
-            i += (
-                self.chunk_size - self.chunk_overlap
-            )  # Step forward, considering overlap
-        return chunks
+        # Chunk using docling's hybrid chunker
+        chunks = list(self.chunker.chunk(doc))
+        return [self.chunker.contextualize(chunk) for chunk in chunks]
 
 
 chunker = Chunker()

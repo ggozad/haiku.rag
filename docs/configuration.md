@@ -150,7 +150,4 @@ DEFAULT_DATA_DIR="/path/to/data"
 ```bash
 # Chunk size for document processing
 CHUNK_SIZE=256
-
-# Chunk overlap for better context
-CHUNK_OVERLAP=32
 ```

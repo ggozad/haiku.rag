@@ -63,7 +63,6 @@ class SettingsRepository:
             "EMBEDDINGS_MODEL",
             "EMBEDDINGS_VECTOR_DIM",
             "CHUNK_SIZE",
-            "CHUNK_OVERLAP",
         ]
 
         errors = []
