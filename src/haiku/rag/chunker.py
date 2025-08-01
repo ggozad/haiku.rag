@@ -4,6 +4,7 @@ from typing import ClassVar
 import tiktoken
 from docling.chunking import HybridChunker  # type: ignore
 from docling.document_converter import DocumentConverter
+from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
 from docling_core.types.io import DocumentStream
 
 from haiku.rag.config import Config
@@ -26,7 +27,11 @@ class Chunker:
         chunk_size: int = Config.CHUNK_SIZE,
     ):
         self.chunk_size = chunk_size
-        self.docling_chunker = HybridChunker(max_tokens=chunk_size)  # type: ignore
+        tokenizer = OpenAITokenizer(
+            tokenizer=tiktoken.encoding_for_model("gpt-4o"), max_tokens=chunk_size
+        )
+
+        self.docling_chunker = HybridChunker(tokenizer=tokenizer)  # type: ignore
 
     async def chunk(self, text: str) -> list[str]:
         """Split the text into chunks using docling's structure-aware chunking.
