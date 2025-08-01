@@ -37,6 +37,11 @@ class Store:
         db = sqlite3.connect(self.db_path)
         db.enable_load_extension(True)
         sqlite_vec.load(db)
+
+        # Enable WAL mode for better concurrency (skip for in-memory databases)
+        if self.db_path != ":memory:":
+            db.execute("PRAGMA journal_mode=WAL")
+
         self._connection = db
         existing_tables = [
             row[0]
