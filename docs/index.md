@@ -10,7 +10,7 @@
 - **Reranking**: Optional result reranking with MixedBread AI or Cohere
 - **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic.
 - **File monitoring**: Automatically index files when run as a server
-- **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, audio and more. Or add a URL!
+- **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, code files and more. Or add a URL!
 - **MCP server**: Exposes functionality as MCP tools
 - **CLI commands**: Access all functionality from your terminal
 - **Python client**: Call `haiku.rag` from your own python applications
