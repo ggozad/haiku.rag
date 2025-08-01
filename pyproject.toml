@@ -22,9 +22,9 @@ classifiers = [
 ]
 
 dependencies = [
+    "docling>=2.15.0",
     "fastmcp>=2.8.1",
     "httpx>=0.28.1",
-    "markitdown[audio-transcription,docx,pdf,pptx,xlsx]>=0.1.2",
     "mxbai-rerank>=0.1.6",
     "ollama>=0.5.1",
     "pydantic>=2.11.7",

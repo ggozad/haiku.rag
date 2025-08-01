@@ -13,7 +13,7 @@ Retrieval-Augmented Generation (RAG) library on SQLite.
 - **Reranking**: Default search result reranking with MixedBread AI or Cohere
 - **Question answering**: Built-in QA agents on your documents
 - **File monitoring**: Auto-index files when run as server
-- **40+ file formats**: PDF, DOCX, HTML, Markdown, audio, URLs
+- **40+ file formats**: PDF, DOCX, HTML, Markdown, code files, URLs
 - **MCP server**: Expose as tools for AI assistants
 - **CLI & Python API**: Use from command line or Python
 

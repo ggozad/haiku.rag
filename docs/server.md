@@ -35,7 +35,8 @@ The server can parse 40+ file formats including:
 - Microsoft Office (DOCX, XLSX, PPTX)
 - HTML and Markdown
 - Plain text files
-- Audio files
+- Code files (Python, JavaScript, etc.)
+- Images (processed via OCR)
 - And more...
 
 URLs are also supported for web content.
