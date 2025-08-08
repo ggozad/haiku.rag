@@ -1,11 +1,9 @@
-from io import BytesIO
 from typing import ClassVar
 
 import tiktoken
 from docling.chunking import HybridChunker  # type: ignore
-from docling.document_converter import DocumentConverter
 from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
-from docling_core.types.io import DocumentStream
+from docling_core.types.doc.document import DoclingDocument
 
 from haiku.rag.config import Config
 
@@ -33,27 +31,20 @@ class Chunker:
 
         self.chunker = HybridChunker(tokenizer=tokenizer)  # type: ignore
 
-    async def chunk(self, text: str) -> list[str]:
-        """Split the text into chunks using docling's structure-aware chunking.
+    async def chunk(self, document: DoclingDocument) -> list[str]:
+        """Split the document into chunks using docling's structure-aware chunking.
 
         Args:
-            text: The text to be split into chunks.
+            document: The DoclingDocument to be split into chunks.
 
         Returns:
             A list of text chunks with semantic boundaries.
         """
-        if not text:
+        if document is None:
             return []
 
-        # Convert to docling document
-        bytes_io = BytesIO(text.encode("utf-8"))
-        doc_stream = DocumentStream(name="text.md", stream=bytes_io)
-        converter = DocumentConverter()
-        result = converter.convert(doc_stream)
-        doc = result.document
-
         # Chunk using docling's hybrid chunker
-        chunks = list(self.chunker.chunk(doc))
+        chunks = list(self.chunker.chunk(document))
         return [self.chunker.contextualize(chunk) for chunk in chunks]
 
 

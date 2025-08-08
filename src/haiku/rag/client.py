@@ -16,6 +16,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.utils import text_to_docling_document
 
 
 class HaikuRAG:
@@ -49,6 +50,24 @@ class HaikuRAG:
         self.close()
         return False
 
+    async def _create_document_with_docling(
+        self,
+        docling_document,
+        uri: str | None = None,
+        metadata: dict | None = None,
+        chunks: list[Chunk] | None = None,
+    ) -> Document:
+        """Create a new document from DoclingDocument."""
+        content = docling_document.export_to_markdown()
+        document = Document(
+            content=content,
+            uri=uri,
+            metadata=metadata or {},
+        )
+        return await self.document_repository._create_with_docling(
+            document, docling_document, chunks
+        )
+
     async def create_document(
         self,
         content: str,
@@ -67,12 +86,17 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
+        # Convert content to DoclingDocument for processing
+        docling_document = text_to_docling_document(content)
+
         document = Document(
             content=content,
             uri=uri,
             metadata=metadata or {},
         )
-        return await self.document_repository.create(document, chunks)
+        return await self.document_repository._create_with_docling(
+            document, docling_document, chunks
+        )
 
     async def create_document_from_source(
         self, source: str | Path, metadata: dict = {}
@@ -119,8 +143,7 @@ class HaikuRAG:
             # MD5 unchanged, return existing document
             return existing_doc
 
-        document = FileReader.parse_file(source_path)
-        content = document.export_to_markdown()
+        docling_document = FileReader.parse_file(source_path)
 
         # Get content type from file extension
         content_type, _ = mimetypes.guess_type(str(source_path))
@@ -132,13 +155,15 @@ class HaikuRAG:
 
         if existing_doc:
             # Update existing document
-            existing_doc.content = content
+            existing_doc.content = docling_document.export_to_markdown()
             existing_doc.metadata = metadata
-            return await self.update_document(existing_doc)
+            return await self.document_repository._update_with_docling(
+                existing_doc, docling_document
+            )
         else:
-            # Create new document
-            return await self.create_document(
-                content=content, uri=uri, metadata=metadata
+            # Create new document using DoclingDocument
+            return await self._create_document_with_docling(
+                docling_document=docling_document, uri=uri, metadata=metadata
             )
 
     async def _create_or_update_document_from_url(
@@ -194,19 +219,20 @@ class HaikuRAG:
                 temp_path = Path(temp_file.name)
 
                 # Parse the content using FileReader
-                document = FileReader.parse_file(temp_path)
-                content = document.export_to_markdown()
+                docling_document = FileReader.parse_file(temp_path)
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
 
             if existing_doc:
-                existing_doc.content = content
+                existing_doc.content = docling_document.export_to_markdown()
                 existing_doc.metadata = metadata
-                return await self.update_document(existing_doc)
+                return await self.document_repository._update_with_docling(
+                    existing_doc, docling_document
+                )
             else:
-                return await self.create_document(
-                    content=content, uri=url, metadata=metadata
+                return await self._create_document_with_docling(
+                    docling_document=docling_document, uri=url, metadata=metadata
                 )
 
     def _get_extension_from_content_type_or_url(
@@ -264,7 +290,12 @@ class HaikuRAG:
 
     async def update_document(self, document: Document) -> Document:
         """Update an existing document."""
-        return await self.document_repository.update(document)
+        # Convert content to DoclingDocument
+        docling_document = text_to_docling_document(document.content)
+
+        return await self.document_repository._update_with_docling(
+            document, docling_document
+        )
 
     async def delete_document(self, document_id: int) -> bool:
         """Delete a document by its ID."""
@@ -346,8 +377,11 @@ class HaikuRAG:
 
         for doc in documents:
             if doc.id is not None:
+                # Convert content to DoclingDocument for rebuild
+                docling_document = text_to_docling_document(doc.content)
+
                 await self.chunk_repository.create_chunks_for_document(
-                    doc.id, doc.content, commit=False
+                    doc.id, docling_document, commit=False
                 )
                 yield doc.id
 

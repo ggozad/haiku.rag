@@ -1,10 +1,10 @@
-from io import BytesIO
 from pathlib import Path
 from typing import ClassVar
 
 from docling.document_converter import DocumentConverter
 from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.io import DocumentStream
+
+from haiku.rag.utils import text_to_docling_document
 
 
 class FileReader:
@@ -106,18 +106,10 @@ class FileReader:
                     content = f"```{language}\n{content}\n```"
 
                 # Convert text to DoclingDocument by wrapping as markdown
-                bytes_io = BytesIO(content.encode("utf-8"))
-                doc_stream = DocumentStream(name=f"{path.stem}.md", stream=bytes_io)
-                converter = DocumentConverter()
-                result = converter.convert(doc_stream)
-                return result.document
+                return text_to_docling_document(content, name=f"{path.stem}.md")
             else:
                 # Fallback: try to read as text and convert to DoclingDocument
                 content = path.read_text(encoding="utf-8")
-                bytes_io = BytesIO(content.encode("utf-8"))
-                doc_stream = DocumentStream(name=f"{path.stem}.md", stream=bytes_io)
-                converter = DocumentConverter()
-                result = converter.convert(doc_stream)
-                return result.document
+                return text_to_docling_document(content, name=f"{path.stem}.md")
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")

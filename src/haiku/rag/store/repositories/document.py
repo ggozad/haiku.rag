@@ -1,8 +1,11 @@
 import json
 from typing import TYPE_CHECKING
 
+from docling_core.types.doc.document import DoclingDocument
+
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.base import BaseRepository
+from haiku.rag.utils import text_to_docling_document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models.chunk import Chunk
@@ -20,8 +23,11 @@ class DocumentRepository(BaseRepository[Document]):
             chunk_repository = ChunkRepository(store)
         self.chunk_repository = chunk_repository
 
-    async def create(
-        self, entity: Document, chunks: list["Chunk"] | None = None
+    async def _create_with_docling(
+        self,
+        entity: Document,
+        docling_document: DoclingDocument,
+        chunks: list["Chunk"] | None = None,
     ) -> Document:
         """Create a document with its chunks and embeddings."""
         if self.store._connection is None:
@@ -62,9 +68,9 @@ class DocumentRepository(BaseRepository[Document]):
                     chunk.metadata["order"] = order
                     await self.chunk_repository.create(chunk, commit=False)
             else:
-                # Create chunks and embeddings using ChunkRepository
+                # Create chunks and embeddings using DoclingDocument
                 await self.chunk_repository.create_chunks_for_document(
-                    document_id, entity.content, commit=False
+                    document_id, docling_document, commit=False
                 )
 
             cursor.execute("COMMIT")
@@ -73,6 +79,13 @@ class DocumentRepository(BaseRepository[Document]):
         except Exception:
             cursor.execute("ROLLBACK")
             raise
+
+    async def create(self, entity: Document) -> Document:
+        """Create a document with its chunks and embeddings."""
+        # Convert content to DoclingDocument
+        docling_document = text_to_docling_document(entity.content)
+
+        return await self._create_with_docling(entity, docling_document)
 
     async def get_by_id(self, entity_id: int) -> Document | None:
         """Get a document by its ID."""
@@ -134,7 +147,9 @@ class DocumentRepository(BaseRepository[Document]):
             updated_at=updated_at,
         )
 
-    async def update(self, entity: Document) -> Document:
+    async def _update_with_docling(
+        self, entity: Document, docling_document: DoclingDocument
+    ) -> Document:
         """Update an existing document and regenerate its chunks and embeddings."""
         if self.store._connection is None:
             raise ValueError("Store connection is not available")
@@ -163,10 +178,10 @@ class DocumentRepository(BaseRepository[Document]):
                 },
             )
 
-            # Delete existing chunks and regenerate using ChunkRepository
+            # Delete existing chunks and regenerate using DoclingDocument
             await self.chunk_repository.delete_by_document_id(entity.id, commit=False)
             await self.chunk_repository.create_chunks_for_document(
-                entity.id, entity.content, commit=False
+                entity.id, docling_document, commit=False
             )
 
             cursor.execute("COMMIT")
@@ -175,6 +190,13 @@ class DocumentRepository(BaseRepository[Document]):
         except Exception:
             cursor.execute("ROLLBACK")
             raise
+
+    async def update(self, entity: Document) -> Document:
+        """Update an existing document and regenerate its chunks and embeddings."""
+        # Convert content to DoclingDocument
+        docling_document = text_to_docling_document(entity.content)
+
+        return await self._update_with_docling(entity, docling_document)
 
     async def delete(self, entity_id: int) -> bool:
         """Delete a document and all its associated chunks and embeddings."""
