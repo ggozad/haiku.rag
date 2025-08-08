@@ -5,7 +5,7 @@ description = "Retrieval Augmented Generation (RAG) with SQLite"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["RAG", "sqlite", "sqlite-vec", "ml", "mcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
