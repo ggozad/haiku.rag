@@ -14,7 +14,6 @@ cli = typer.Typer(
 )
 
 console = Console()
-event_loop = asyncio.get_event_loop()
 
 
 async def check_version():
@@ -46,7 +45,7 @@ def main(
 ):
     """haiku.rag CLI - SQLite-based RAG system"""
     # Run version check before any command
-    event_loop.run_until_complete(check_version())
+    asyncio.run(check_version())
 
 
 @cli.command("list", help="List all stored documents")
@@ -58,7 +57,7 @@ def list_documents(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.list_documents())
+    asyncio.run(app.list_documents())
 
 
 @cli.command("add", help="Add a document from text input")
@@ -73,7 +72,7 @@ def add_document_text(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.add_document_from_text(text=text))
+    asyncio.run(app.add_document_from_text(text=text))
 
 
 @cli.command("add-src", help="Add a document from a file path or URL")
@@ -88,7 +87,7 @@ def add_document_src(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.add_document_from_source(file_path=file_path))
+    asyncio.run(app.add_document_from_source(file_path=file_path))
 
 
 @cli.command("get", help="Get and display a document by its ID")
@@ -103,7 +102,7 @@ def get_document(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.get_document(doc_id=doc_id))
+    asyncio.run(app.get_document(doc_id=doc_id))
 
 
 @cli.command("delete", help="Delete a document by its ID")
@@ -118,7 +117,7 @@ def delete_document(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.delete_document(doc_id=doc_id))
+    asyncio.run(app.delete_document(doc_id=doc_id))
 
 
 @cli.command("search", help="Search for documents by a query")
@@ -144,7 +143,7 @@ def search(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.search(query=query, limit=limit, k=k))
+    asyncio.run(app.search(query=query, limit=limit, k=k))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")
@@ -159,7 +158,7 @@ def ask(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.ask(question=question))
+    asyncio.run(app.ask(question=question))
 
 
 @cli.command("settings", help="Display current configuration settings")
@@ -180,7 +179,7 @@ def rebuild(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    event_loop.run_until_complete(app.rebuild())
+    asyncio.run(app.rebuild())
 
 
 @cli.command(
@@ -216,7 +215,7 @@ def serve(
     elif sse:
         transport = "sse"
 
-    event_loop.run_until_complete(app.serve(transport=transport))
+    asyncio.run(app.serve(transport=transport))
 
 
 if __name__ == "__main__":
