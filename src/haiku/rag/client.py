@@ -125,9 +125,12 @@ class HaikuRAG:
         parsed_url = urlparse(source_str)
         if parsed_url.scheme in ("http", "https"):
             return await self._create_or_update_document_from_url(source_str, metadata)
-
-        # Handle as file path
-        source_path = Path(source) if isinstance(source, str) else source
+        elif parsed_url.scheme == "file":
+            # Handle file:// URI by converting to path
+            source_path = Path(parsed_url.path)
+        else:
+            # Handle as regular file path
+            source_path = Path(source) if isinstance(source, str) else source
         if source_path.suffix.lower() not in FileReader.extensions:
             raise ValueError(f"Unsupported file extension: {source_path.suffix}")
 
@@ -361,6 +364,13 @@ class HaikuRAG:
     async def rebuild_database(self) -> AsyncGenerator[int, None]:
         """Rebuild the database by deleting all chunks and re-indexing all documents.
 
+        For documents with URIs:
+        - Deletes the document and re-adds it from source if source exists
+        - Skips documents where source no longer exists
+
+        For documents without URIs:
+        - Re-creates chunks from existing content
+
         Yields:
             int: The ID of the document currently being processed
         """
@@ -376,10 +386,34 @@ class HaikuRAG:
         documents = await self.list_documents()
 
         for doc in documents:
-            if doc.id is not None:
-                # Convert content to DoclingDocument for rebuild
-                docling_document = text_to_docling_document(doc.content)
+            assert doc.id is not None, "Document ID should not be None"
+            if doc.uri:
+                # Document has a URI - delete and try to re-add from source
+                try:
+                    # Delete the old document first
+                    await self.delete_document(doc.id)
 
+                    # Try to re-create from source (this creates the document with chunks)
+                    new_doc = await self.create_document_from_source(
+                        doc.uri, doc.metadata or {}
+                    )
+
+                    assert new_doc.id is not None, "New document ID should not be None"
+                    yield new_doc.id
+
+                except (FileNotFoundError, ValueError, OSError) as e:
+                    # Source doesn't exist or can't be accessed - document already deleted, skip
+                    print(f"Skipping document with URI {doc.uri}: {e}")
+                    continue
+                except Exception as e:
+                    # Unexpected error - log it and skip
+                    print(
+                        f"Unexpected error processing document with URI {doc.uri}: {e}"
+                    )
+                    continue
+            else:
+                # Document without URI - re-create chunks from existing content
+                docling_document = text_to_docling_document(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
                     doc.id, docling_document, commit=False
                 )
