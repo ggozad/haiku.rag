@@ -1,8 +1,12 @@
 import sys
 from importlib import metadata
+from io import BytesIO
 from pathlib import Path
 
 import httpx
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.io import DocumentStream
 from packaging.version import Version, parse
 
 
@@ -77,3 +81,20 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
             # If no network connection, do not raise alarms.
             pypi_version = running_version
     return running_version >= pypi_version, running_version, pypi_version
+
+
+def text_to_docling_document(text: str, name: str = "content.md") -> DoclingDocument:
+    """Convert text content to a DoclingDocument.
+
+    Args:
+        text: The text content to convert.
+        name: The name to use for the document stream (defaults to "content.md").
+
+    Returns:
+        A DoclingDocument created from the text content.
+    """
+    bytes_io = BytesIO(text.encode("utf-8"))
+    doc_stream = DocumentStream(name=name, stream=bytes_io)
+    converter = DocumentConverter()
+    result = converter.convert(doc_stream)
+    return result.document
