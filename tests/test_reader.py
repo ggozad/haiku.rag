@@ -15,8 +15,9 @@ def test_code_file_wrapped_in_code_block():
         f.flush()
         temp_path = Path(f.name)
 
-        result = FileReader.parse_file(temp_path)
+        document = FileReader.parse_file(temp_path)
+        result = document.export_to_markdown()
 
-        assert result.startswith("```python\n")
+        assert result.startswith("```\n")
         assert result.endswith("\n```")
         assert "def hello_world():" in result

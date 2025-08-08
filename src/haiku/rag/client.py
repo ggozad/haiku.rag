@@ -119,7 +119,8 @@ class HaikuRAG:
             # MD5 unchanged, return existing document
             return existing_doc
 
-        content = FileReader.parse_file(source_path)
+        document = FileReader.parse_file(source_path)
+        content = document.export_to_markdown()
 
         # Get content type from file extension
         content_type, _ = mimetypes.guess_type(str(source_path))
@@ -193,7 +194,8 @@ class HaikuRAG:
                 temp_path = Path(temp_file.name)
 
                 # Parse the content using FileReader
-                content = FileReader.parse_file(temp_path)
+                document = FileReader.parse_file(temp_path)
+                content = document.export_to_markdown()
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
