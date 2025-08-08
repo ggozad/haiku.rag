@@ -16,6 +16,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.utils import text_to_docling_document
 
 
 class HaikuRAG:
@@ -49,6 +50,24 @@ class HaikuRAG:
         self.close()
         return False
 
+    async def _create_document_with_docling(
+        self,
+        docling_document,
+        uri: str | None = None,
+        metadata: dict | None = None,
+        chunks: list[Chunk] | None = None,
+    ) -> Document:
+        """Create a new document from DoclingDocument."""
+        content = docling_document.export_to_markdown()
+        document = Document(
+            content=content,
+            uri=uri,
+            metadata=metadata or {},
+        )
+        return await self.document_repository._create_with_docling(
+            document, docling_document, chunks
+        )
+
     async def create_document(
         self,
         content: str,
@@ -67,12 +86,17 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
+        # Convert content to DoclingDocument for processing
+        docling_document = text_to_docling_document(content)
+
         document = Document(
             content=content,
             uri=uri,
             metadata=metadata or {},
         )
-        return await self.document_repository.create(document, chunks)
+        return await self.document_repository._create_with_docling(
+            document, docling_document, chunks
+        )
 
     async def create_document_from_source(
         self, source: str | Path, metadata: dict = {}
@@ -101,9 +125,12 @@ class HaikuRAG:
         parsed_url = urlparse(source_str)
         if parsed_url.scheme in ("http", "https"):
             return await self._create_or_update_document_from_url(source_str, metadata)
-
-        # Handle as file path
-        source_path = Path(source) if isinstance(source, str) else source
+        elif parsed_url.scheme == "file":
+            # Handle file:// URI by converting to path
+            source_path = Path(parsed_url.path)
+        else:
+            # Handle as regular file path
+            source_path = Path(source) if isinstance(source, str) else source
         if source_path.suffix.lower() not in FileReader.extensions:
             raise ValueError(f"Unsupported file extension: {source_path.suffix}")
 
@@ -119,7 +146,7 @@ class HaikuRAG:
             # MD5 unchanged, return existing document
             return existing_doc
 
-        content = FileReader.parse_file(source_path)
+        docling_document = FileReader.parse_file(source_path)
 
         # Get content type from file extension
         content_type, _ = mimetypes.guess_type(str(source_path))
@@ -131,13 +158,15 @@ class HaikuRAG:
 
         if existing_doc:
             # Update existing document
-            existing_doc.content = content
+            existing_doc.content = docling_document.export_to_markdown()
             existing_doc.metadata = metadata
-            return await self.update_document(existing_doc)
+            return await self.document_repository._update_with_docling(
+                existing_doc, docling_document
+            )
         else:
-            # Create new document
-            return await self.create_document(
-                content=content, uri=uri, metadata=metadata
+            # Create new document using DoclingDocument
+            return await self._create_document_with_docling(
+                docling_document=docling_document, uri=uri, metadata=metadata
             )
 
     async def _create_or_update_document_from_url(
@@ -193,18 +222,20 @@ class HaikuRAG:
                 temp_path = Path(temp_file.name)
 
                 # Parse the content using FileReader
-                content = FileReader.parse_file(temp_path)
+                docling_document = FileReader.parse_file(temp_path)
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
 
             if existing_doc:
-                existing_doc.content = content
+                existing_doc.content = docling_document.export_to_markdown()
                 existing_doc.metadata = metadata
-                return await self.update_document(existing_doc)
+                return await self.document_repository._update_with_docling(
+                    existing_doc, docling_document
+                )
             else:
-                return await self.create_document(
-                    content=content, uri=url, metadata=metadata
+                return await self._create_document_with_docling(
+                    docling_document=docling_document, uri=url, metadata=metadata
                 )
 
     def _get_extension_from_content_type_or_url(
@@ -262,7 +293,12 @@ class HaikuRAG:
 
     async def update_document(self, document: Document) -> Document:
         """Update an existing document."""
-        return await self.document_repository.update(document)
+        # Convert content to DoclingDocument
+        docling_document = text_to_docling_document(document.content)
+
+        return await self.document_repository._update_with_docling(
+            document, docling_document
+        )
 
     async def delete_document(self, document_id: int) -> bool:
         """Delete a document by its ID."""
@@ -328,6 +364,13 @@ class HaikuRAG:
     async def rebuild_database(self) -> AsyncGenerator[int, None]:
         """Rebuild the database by deleting all chunks and re-indexing all documents.
 
+        For documents with URIs:
+        - Deletes the document and re-adds it from source if source exists
+        - Skips documents where source no longer exists
+
+        For documents without URIs:
+        - Re-creates chunks from existing content
+
         Yields:
             int: The ID of the document currently being processed
         """
@@ -343,9 +386,36 @@ class HaikuRAG:
         documents = await self.list_documents()
 
         for doc in documents:
-            if doc.id is not None:
+            assert doc.id is not None, "Document ID should not be None"
+            if doc.uri:
+                # Document has a URI - delete and try to re-add from source
+                try:
+                    # Delete the old document first
+                    await self.delete_document(doc.id)
+
+                    # Try to re-create from source (this creates the document with chunks)
+                    new_doc = await self.create_document_from_source(
+                        doc.uri, doc.metadata or {}
+                    )
+
+                    assert new_doc.id is not None, "New document ID should not be None"
+                    yield new_doc.id
+
+                except (FileNotFoundError, ValueError, OSError) as e:
+                    # Source doesn't exist or can't be accessed - document already deleted, skip
+                    print(f"Skipping document with URI {doc.uri}: {e}")
+                    continue
+                except Exception as e:
+                    # Unexpected error - log it and skip
+                    print(
+                        f"Unexpected error processing document with URI {doc.uri}: {e}"
+                    )
+                    continue
+            else:
+                # Document without URI - re-create chunks from existing content
+                docling_document = text_to_docling_document(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
-                    doc.id, doc.content, commit=False
+                    doc.id, docling_document, commit=False
                 )
                 yield doc.id
 

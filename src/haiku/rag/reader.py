@@ -2,6 +2,9 @@ from pathlib import Path
 from typing import ClassVar
 
 from docling.document_converter import DocumentConverter
+from docling_core.types.doc.document import DoclingDocument
+
+from haiku.rag.utils import text_to_docling_document
 
 
 class FileReader:
@@ -84,7 +87,7 @@ class FileReader:
     extensions: ClassVar[list[str]] = docling_extensions + text_extensions
 
     @staticmethod
-    def parse_file(path: Path) -> str:
+    def parse_file(path: Path) -> DoclingDocument:
         try:
             file_extension = path.suffix.lower()
 
@@ -92,7 +95,7 @@ class FileReader:
                 # Use docling for complex document formats
                 converter = DocumentConverter()
                 result = converter.convert(path)
-                return result.document.export_to_markdown()
+                return result.document
             elif file_extension in FileReader.text_extensions:
                 # Read plain text files directly
                 content = path.read_text(encoding="utf-8")
@@ -100,11 +103,13 @@ class FileReader:
                 # Wrap code files (but not plain txt) in markdown code blocks for better presentation
                 if file_extension in FileReader.code_markdown_identifier:
                     language = FileReader.code_markdown_identifier[file_extension]
-                    return f"```{language}\n{content}\n```"
+                    content = f"```{language}\n{content}\n```"
 
-                return content
+                # Convert text to DoclingDocument by wrapping as markdown
+                return text_to_docling_document(content, name=f"{path.stem}.md")
             else:
-                # Fallback: try to read as text
-                return path.read_text(encoding="utf-8")
+                # Fallback: try to read as text and convert to DoclingDocument
+                content = path.read_text(encoding="utf-8")
+                return text_to_docling_document(content, name=f"{path.stem}.md")
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")

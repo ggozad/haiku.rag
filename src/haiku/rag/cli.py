@@ -1,4 +1,5 @@
 import asyncio
+import warnings
 from importlib.metadata import version
 from pathlib import Path
 
@@ -8,6 +9,9 @@ from rich.console import Console
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import Config
 from haiku.rag.utils import is_up_to_date
+
+if not Config.ENV == "development":
+    warnings.filterwarnings("ignore")
 
 cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True

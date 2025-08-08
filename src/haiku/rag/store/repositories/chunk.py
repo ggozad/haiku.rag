@@ -1,6 +1,8 @@
 import json
 import re
 
+from docling_core.types.doc.document import DoclingDocument
+
 from haiku.rag.chunker import chunker
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.models.chunk import Chunk
@@ -197,11 +199,11 @@ class ChunkRepository(BaseRepository[Chunk]):
         ]
 
     async def create_chunks_for_document(
-        self, document_id: int, content: str, commit: bool = True
+        self, document_id: int, document: DoclingDocument, commit: bool = True
     ) -> list[Chunk]:
-        """Create chunks and embeddings for a document."""
+        """Create chunks and embeddings for a document from DoclingDocument."""
         # Chunk the document content
-        chunk_texts = await chunker.chunk(content)
+        chunk_texts = await chunker.chunk(document)
         created_chunks = []
 
         # Create chunks with embeddings using the create method

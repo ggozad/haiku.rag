@@ -10,7 +10,7 @@ load_dotenv()
 
 
 class AppConfig(BaseModel):
-    ENV: str = "development"
+    ENV: str = "production"
 
     DEFAULT_DATA_DIR: Path = get_default_data_dir()
     MONITOR_DIRECTORIES: list[Path] = []
