@@ -105,15 +105,19 @@ ANTHROPIC_API_KEY="your-api-key"
 
 ## Reranking
 
-Reranking is **enabled by default** and improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
+Reranking improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
 
-If you use the default reranked (running locally), it can slow down searching significantly. To disable reranking for faster searches:
-
-```bash
-RERANK=false
-```
+Reranking is **automatically enabled** if you install the appropriate reranking provider package.
 
 ### MixedBread AI (Default)
+
+For MxBAI reranking, install with mxbai extras:
+
+```bash
+uv pip install haiku.rag[mxbai]
+```
+
+Then configure:
 
 ```bash
 RERANK_PROVIDER="mxbai"
