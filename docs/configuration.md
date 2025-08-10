@@ -109,6 +109,14 @@ Reranking improves search quality by re-ordering the initial search results usin
 
 Reranking is **automatically enabled** by default using Ollama, or if you install the appropriate reranking provider package.
 
+### Disabling Reranking
+
+To disable reranking completely for faster searches:
+
+```bash
+RERANK_PROVIDER=""
+```
+
 ### Ollama (Default)
 
 Ollama reranking uses LLMs with structured output to rank documents by relevance:

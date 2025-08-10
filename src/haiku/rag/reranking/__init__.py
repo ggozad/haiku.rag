@@ -1,22 +1,18 @@
 from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 
-try:
-    from haiku.rag.reranking.cohere import CohereReranker
-except ImportError:
-    pass
-
 _reranker: RerankerBase | None = None
 
 
 def get_reranker() -> RerankerBase | None:
     """
     Factory function to get the appropriate reranker based on the configuration.
-    Returns None if the required package is not available.
+    Returns None if if reranking is disabled.
     """
     global _reranker
     if _reranker is not None:
         return _reranker
+
     if Config.RERANK_PROVIDER == "mxbai":
         try:
             from haiku.rag.reranking.mxbai import MxBAIReranker
