@@ -81,7 +81,7 @@ def add_document_text(
 
 @cli.command("add-src", help="Add a document from a file path or URL")
 def add_document_src(
-    file_path: Path = typer.Argument(
+    source: str = typer.Argument(
         help="The file path or URL of the document to add",
     ),
     db: Path = typer.Option(
@@ -91,7 +91,7 @@ def add_document_src(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.add_document_from_source(file_path=file_path))
+    asyncio.run(app.add_document_from_source(source=source))
 
 
 @cli.command("get", help="Get and display a document by its ID")
