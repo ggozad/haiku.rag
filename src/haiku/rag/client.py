@@ -319,7 +319,7 @@ class HaikuRAG:
         return await self.document_repository.list_all(limit=limit, offset=offset)
 
     async def search(
-        self, query: str, limit: int = 5, k: int = 60, rerank=Config.RERANK
+        self, query: str, limit: int = 5, k: int = 60
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using hybrid search (vector similarity + full-text search) with reranking.
 
@@ -331,8 +331,10 @@ class HaikuRAG:
         Returns:
             List of (chunk, score) tuples ordered by relevance.
         """
+        # Get reranker if available
+        reranker = get_reranker()
 
-        if not rerank:
+        if reranker is None:
             return await self.chunk_repository.search_chunks_hybrid(query, limit, k)
 
         # Get more initial results (3X) for reranking
@@ -340,7 +342,6 @@ class HaikuRAG:
             query, limit * 3, k
         )
         # Apply reranking
-        reranker = get_reranker()
         chunks = [chunk for chunk, _ in search_results]
         reranked_results = await reranker.rerank(query, chunks, top_n=limit)
 

@@ -886,7 +886,6 @@ dependencies = [
     { name = "docling" },
     { name = "fastmcp" },
     { name = "httpx" },
-    { name = "mxbai-rerank" },
     { name = "ollama" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -903,6 +902,9 @@ anthropic = [
 ]
 cohere = [
     { name = "cohere" },
+]
+mxbai = [
+    { name = "mxbai-rerank" },
 ]
 openai = [
     { name = "openai" },
@@ -931,7 +933,7 @@ requires-dist = [
     { name = "docling", specifier = ">=2.15.0" },
     { name = "fastmcp", specifier = ">=2.8.1" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mxbai-rerank", specifier = ">=0.1.6" },
+    { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
     { name = "ollama", specifier = ">=0.5.1" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
@@ -943,7 +945,7 @@ requires-dist = [
     { name = "voyageai", marker = "extra == 'voyageai'", specifier = ">=0.3.2" },
     { name = "watchfiles", specifier = ">=1.1.0" },
 ]
-provides-extras = ["voyageai", "openai", "anthropic", "cohere"]
+provides-extras = ["voyageai", "openai", "anthropic", "cohere", "mxbai"]
 
 [package.metadata.requires-dev]
 dev = [

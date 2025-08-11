@@ -1,7 +1,6 @@
 import pytest
 
 from haiku.rag.reranking.base import RerankerBase
-from haiku.rag.reranking.mxbai import MxBAIReranker
 from haiku.rag.store.models.chunk import Chunk
 
 chunks = [
@@ -30,12 +29,17 @@ async def test_reranker_base():
 
 @pytest.mark.asyncio
 async def test_mxbai_reranker():
-    reranker = MxBAIReranker()
-    reranked = await reranker.rerank(
-        "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
-    )
-    assert [chunk.document_id for chunk, score in reranked] == [0, 2]
-    assert all(isinstance(score, float) for chunk, score in reranked)
+    try:
+        from haiku.rag.reranking.mxbai import MxBAIReranker
+
+        reranker = MxBAIReranker()
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert [chunk.document_id for chunk, score in reranked] == [0, 2]
+        assert all(isinstance(score, float) for chunk, score in reranked)
+    except ImportError:
+        pytest.skip("MxBAI package not installed")
 
 
 @pytest.mark.asyncio
