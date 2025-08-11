@@ -32,9 +32,9 @@ class HaikuRAGApp:
                 f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
             )
 
-    async def add_document_from_source(self, file_path: Path):
+    async def add_document_from_source(self, source: str):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            doc = await self.client.create_document_from_source(file_path)
+            doc = await self.client.create_document_from_source(source)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
                 f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
