@@ -107,9 +107,27 @@ ANTHROPIC_API_KEY="your-api-key"
 
 Reranking improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
 
-Reranking is **automatically enabled** if you install the appropriate reranking provider package.
+Reranking is **automatically enabled** by default using Ollama, or if you install the appropriate reranking provider package.
 
-### MixedBread AI (Default)
+### Disabling Reranking
+
+To disable reranking completely for faster searches:
+
+```bash
+RERANK_PROVIDER=""
+```
+
+### Ollama (Default)
+
+Ollama reranking uses LLMs with structured output to rank documents by relevance:
+
+```bash
+RERANK_PROVIDER="ollama"
+RERANK_MODEL="qwen3:1.7b"  # or any model that supports structured output
+OLLAMA_BASE_URL="http://localhost:11434"
+```
+
+### MixedBread AI
 
 For MxBAI reranking, install with mxbai extras:
 
