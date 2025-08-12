@@ -468,3 +468,49 @@ class ChunkRepository(BaseRepository[Chunk]):
             )
             for chunk_id, document_id, content, metadata_json, document_uri, document_metadata_json in rows
         ]
+
+    async def get_adjacent_chunks(self, chunk: Chunk, num_adjacent: int) -> list[Chunk]:
+        """Get adjacent chunks before and after the given chunk within the same document."""
+        if self.store._connection is None:
+            raise ValueError("Store connection is not available")
+        if chunk.document_id is None:
+            return []
+
+        cursor = self.store._connection.cursor()
+        chunk_order = chunk.metadata.get("order")
+        if chunk_order is None:
+            return []
+
+        # Get adjacent chunks within the same document
+        cursor.execute(
+            """
+            SELECT c.id, c.document_id, c.content, c.metadata, d.uri, d.metadata as document_metadata
+            FROM chunks c
+            JOIN documents d ON c.document_id = d.id
+            WHERE c.document_id = :document_id
+            AND JSON_EXTRACT(c.metadata, '$.order') BETWEEN :start_order AND :end_order
+            AND c.id != :chunk_id
+            ORDER BY JSON_EXTRACT(c.metadata, '$.order')
+            """,
+            {
+                "document_id": chunk.document_id,
+                "start_order": max(0, chunk_order - num_adjacent),
+                "end_order": chunk_order + num_adjacent,
+                "chunk_id": chunk.id,
+            },
+        )
+
+        rows = cursor.fetchall()
+        return [
+            Chunk(
+                id=chunk_id,
+                document_id=document_id,
+                content=content,
+                metadata=json.loads(metadata_json) if metadata_json else {},
+                document_uri=document_uri,
+                document_meta=json.loads(document_metadata_json)
+                if document_metadata_json
+                else {},
+            )
+            for chunk_id, document_id, content, metadata_json, document_uri, document_metadata_json in rows
+        ]

@@ -82,7 +82,7 @@ async def test_chunks_include_document_info():
     results = await chunk_repo.search_chunks_hybrid("test document", limit=1)
 
     assert len(results) > 0
-    chunk, score = results[0]
+    chunk, _ = results[0]
 
     # Verify the chunk includes document information
     assert chunk.document_uri == "https://example.com/test.html"
