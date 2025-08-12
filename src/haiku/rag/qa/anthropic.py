@@ -79,11 +79,9 @@ try:
                                     else 3
                                 )
 
-                                search_results = await self._client.search(
+                                context = await self._search_and_expand(
                                     query, limit=limit
                                 )
-
-                                context = self._format_search_results(search_results)
 
                                 tool_results.append(
                                     {

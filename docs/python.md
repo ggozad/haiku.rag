@@ -130,6 +130,26 @@ for chunk, relevance_score in results:
     print(f"Document metadata: {chunk.document_meta}")
 ```
 
+### Expanding Search Context
+
+Expand search results with adjacent chunks for more complete context:
+
+```python
+# Get initial search results
+search_results = await client.search("machine learning", limit=3)
+
+# Expand with adjacent chunks based on CONTEXT_CHUNK_RADIUS setting
+expanded_results = await client.expand_context(search_results)
+
+# The expanded results contain chunks with combined content from adjacent chunks
+for chunk, score in expanded_results:
+    print(f"Expanded content: {chunk.content}")  # Now includes before/after chunks
+```
+
+**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
+
+This is automatically used by the QA system when `CONTEXT_CHUNK_RADIUS > 0` to provide better answers with more complete context.
+
 ## Question Answering
 
 Ask questions about your documents:

@@ -20,6 +20,12 @@ class QuestionAnswerAgentBase:
             "QABase is an abstract class. Please implement the answer method in a subclass."
         )
 
+    async def _search_and_expand(self, query: str, limit: int = 3) -> str:
+        """Search for documents and expand context, then format as JSON"""
+        search_results = await self._client.search(query, limit=limit)
+        expanded_results = await self._client.expand_context(search_results)
+        return self._format_search_results(expanded_results)
+
     def _format_search_results(self, search_results) -> str:
         """Format search results as JSON list of {content, score, document_uri}"""
         formatted_results = []

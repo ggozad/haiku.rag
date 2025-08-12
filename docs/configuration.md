@@ -172,4 +172,10 @@ DEFAULT_DATA_DIR="/path/to/data"
 ```bash
 # Chunk size for document processing
 CHUNK_SIZE=256
+
+# Number of adjacent chunks to include before/after retrieved chunks for context
+# 0 = no expansion (default), 1 = include 1 chunk before and after, etc.
+# When expanded chunks overlap or are adjacent, they are automatically merged
+# into single chunks with continuous content to eliminate duplication
+CONTEXT_CHUNK_RADIUS=0
 ```

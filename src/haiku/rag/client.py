@@ -348,6 +348,132 @@ class HaikuRAG:
         # Return reranked results with scores from reranker
         return reranked_results
 
+    async def expand_context(
+        self, search_results: list[tuple[Chunk, float]]
+    ) -> list[tuple[Chunk, float]]:
+        """Expand search results with adjacent chunks, merging overlapping chunks.
+
+        Args:
+            search_results: List of (chunk, score) tuples from search.
+
+        Returns:
+            List of (chunk, score) tuples with expanded and merged context chunks.
+        """
+        if Config.CONTEXT_CHUNK_RADIUS == 0:
+            return search_results
+
+        # Group chunks by document_id to handle merging within documents
+        document_groups = {}
+        for chunk, score in search_results:
+            doc_id = chunk.document_id
+            if doc_id not in document_groups:
+                document_groups[doc_id] = []
+            document_groups[doc_id].append((chunk, score))
+
+        results = []
+
+        for doc_id, doc_chunks in document_groups.items():
+            # Get all expanded ranges for this document
+            expanded_ranges = []
+            for chunk, score in doc_chunks:
+                adjacent_chunks = await self.chunk_repository.get_adjacent_chunks(
+                    chunk, Config.CONTEXT_CHUNK_RADIUS
+                )
+
+                all_chunks = adjacent_chunks + [chunk]
+
+                # Get the range of orders for this expanded chunk
+                orders = [c.metadata.get("order", 0) for c in all_chunks]
+                min_order = min(orders)
+                max_order = max(orders)
+
+                expanded_ranges.append(
+                    {
+                        "original_chunk": chunk,
+                        "score": score,
+                        "min_order": min_order,
+                        "max_order": max_order,
+                        "all_chunks": sorted(
+                            all_chunks, key=lambda c: c.metadata.get("order", 0)
+                        ),
+                    }
+                )
+
+            # Merge overlapping/adjacent ranges
+            merged_ranges = self._merge_overlapping_ranges(expanded_ranges)
+
+            # Create merged chunks
+            for merged_range in merged_ranges:
+                combined_content_parts = [c.content for c in merged_range["all_chunks"]]
+
+                # Use the first original chunk for metadata
+                original_chunk = merged_range["original_chunks"][0]
+
+                merged_chunk = Chunk(
+                    id=original_chunk.id,
+                    document_id=original_chunk.document_id,
+                    content="".join(combined_content_parts),
+                    metadata=original_chunk.metadata,
+                    document_uri=original_chunk.document_uri,
+                    document_meta=original_chunk.document_meta,
+                )
+
+                # Use the highest score from merged chunks
+                best_score = max(merged_range["scores"])
+                results.append((merged_chunk, best_score))
+
+        return results
+
+    def _merge_overlapping_ranges(self, expanded_ranges):
+        """Merge overlapping or adjacent expanded ranges."""
+        if not expanded_ranges:
+            return []
+
+        # Sort by min_order
+        sorted_ranges = sorted(expanded_ranges, key=lambda x: x["min_order"])
+        merged = []
+
+        current = {
+            "min_order": sorted_ranges[0]["min_order"],
+            "max_order": sorted_ranges[0]["max_order"],
+            "original_chunks": [sorted_ranges[0]["original_chunk"]],
+            "scores": [sorted_ranges[0]["score"]],
+            "all_chunks": sorted_ranges[0]["all_chunks"],
+        }
+
+        for range_info in sorted_ranges[1:]:
+            # Check if ranges overlap or are adjacent (max_order + 1 >= min_order)
+            if current["max_order"] >= range_info["min_order"] - 1:
+                # Merge ranges
+                current["max_order"] = max(
+                    current["max_order"], range_info["max_order"]
+                )
+                current["original_chunks"].append(range_info["original_chunk"])
+                current["scores"].append(range_info["score"])
+
+                # Merge all_chunks and deduplicate by order
+                all_chunks_dict = {}
+                for chunk in current["all_chunks"] + range_info["all_chunks"]:
+                    order = chunk.metadata.get("order", 0)
+                    all_chunks_dict[order] = chunk
+                current["all_chunks"] = [
+                    all_chunks_dict[order] for order in sorted(all_chunks_dict.keys())
+                ]
+            else:
+                # No overlap, add current to merged and start new
+                merged.append(current)
+                current = {
+                    "min_order": range_info["min_order"],
+                    "max_order": range_info["max_order"],
+                    "original_chunks": [range_info["original_chunk"]],
+                    "scores": [range_info["score"]],
+                    "all_chunks": range_info["all_chunks"],
+                }
+
+        # Add the last range
+        merged.append(current)
+        return merged
+
     async def ask(self, question: str, cite: bool = False) -> str:
         """Ask a question using the configured QA agent.
 
