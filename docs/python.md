@@ -138,8 +138,11 @@ Expand search results with adjacent chunks for more complete context:
 # Get initial search results
 search_results = await client.search("machine learning", limit=3)
 
-# Expand with adjacent chunks based on CONTEXT_CHUNK_RADIUS setting
+# Expand with adjacent chunks using config setting
 expanded_results = await client.expand_context(search_results)
+
+# Or specify a custom radius
+expanded_results = await client.expand_context(search_results, radius=2)
 
 # The expanded results contain chunks with combined content from adjacent chunks
 for chunk, score in expanded_results:

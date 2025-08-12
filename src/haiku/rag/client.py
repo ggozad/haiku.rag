@@ -349,17 +349,21 @@ class HaikuRAG:
         return reranked_results
 
     async def expand_context(
-        self, search_results: list[tuple[Chunk, float]]
+        self,
+        search_results: list[tuple[Chunk, float]],
+        radius: int = Config.CONTEXT_CHUNK_RADIUS,
     ) -> list[tuple[Chunk, float]]:
         """Expand search results with adjacent chunks, merging overlapping chunks.
 
         Args:
             search_results: List of (chunk, score) tuples from search.
+            radius: Number of adjacent chunks to include before/after each chunk.
+                   Defaults to CONTEXT_CHUNK_RADIUS config setting.
 
         Returns:
             List of (chunk, score) tuples with expanded and merged context chunks.
         """
-        if Config.CONTEXT_CHUNK_RADIUS == 0:
+        if radius == 0:
             return search_results
 
         # Group chunks by document_id to handle merging within documents
@@ -377,7 +381,7 @@ class HaikuRAG:
             expanded_ranges = []
             for chunk, score in doc_chunks:
                 adjacent_chunks = await self.chunk_repository.get_adjacent_chunks(
-                    chunk, Config.CONTEXT_CHUNK_RADIUS
+                    chunk, radius
                 )
 
                 all_chunks = adjacent_chunks + [chunk]

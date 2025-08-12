@@ -644,109 +644,107 @@ async def test_client_expand_context_multiple_chunks():
 @pytest.mark.asyncio
 async def test_client_expand_context_merges_overlapping_chunks():
     """Test that overlapping expanded chunks are merged into one."""
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 1):
-        async with HaikuRAG(":memory:") as client:
-            # Create document with 5 chunks
-            manual_chunks = [
-                Chunk(content="Chunk 0", metadata={"order": 0}),
-                Chunk(content="Chunk 1", metadata={"order": 1}),
-                Chunk(content="Chunk 2", metadata={"order": 2}),
-                Chunk(content="Chunk 3", metadata={"order": 3}),
-                Chunk(content="Chunk 4", metadata={"order": 4}),
-            ]
+    async with HaikuRAG(":memory:") as client:
+        # Create document with 5 chunks
+        manual_chunks = [
+            Chunk(content="Chunk 0", metadata={"order": 0}),
+            Chunk(content="Chunk 1", metadata={"order": 1}),
+            Chunk(content="Chunk 2", metadata={"order": 2}),
+            Chunk(content="Chunk 3", metadata={"order": 3}),
+            Chunk(content="Chunk 4", metadata={"order": 4}),
+        ]
 
-            doc = await client.create_document(
-                content="Full document content", chunks=manual_chunks
-            )
+        doc = await client.create_document(
+            content="Full document content", chunks=manual_chunks
+        )
 
-            assert doc.id is not None
-            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
 
-            # Get adjacent chunks (orders 1 and 2) - these will overlap when expanded
-            chunk1 = next(c for c in chunks if c.metadata.get("order") == 1)
-            chunk2 = next(c for c in chunks if c.metadata.get("order") == 2)
+        # Get adjacent chunks (orders 1 and 2) - these will overlap when expanded
+        chunk1 = next(c for c in chunks if c.metadata.get("order") == 1)
+        chunk2 = next(c for c in chunks if c.metadata.get("order") == 2)
 
-            # With radius=1:
-            # chunk1 expanded would be [0,1,2]
-            # chunk2 expanded would be [1,2,3]
-            # These should merge into one chunk containing [0,1,2,3]
-            search_results = [(chunk1, 0.8), (chunk2, 0.7)]
-            expanded_results = await client.expand_context(search_results)
+        # With radius=1:
+        # chunk1 expanded would be [0,1,2]
+        # chunk2 expanded would be [1,2,3]
+        # These should merge into one chunk containing [0,1,2,3]
+        search_results = [(chunk1, 0.8), (chunk2, 0.7)]
+        expanded_results = await client.expand_context(search_results, radius=1)
 
-            # Should have only 1 merged result instead of 2 overlapping ones
-            assert len(expanded_results) == 1
+        # Should have only 1 merged result instead of 2 overlapping ones
+        assert len(expanded_results) == 1
 
-            merged_chunk, score = expanded_results[0]
+        merged_chunk, score = expanded_results[0]
 
-            # Should contain all chunks from 0 to 3
-            assert "Chunk 0" in merged_chunk.content
-            assert "Chunk 1" in merged_chunk.content
-            assert "Chunk 2" in merged_chunk.content
-            assert "Chunk 3" in merged_chunk.content
-            assert "Chunk 4" not in merged_chunk.content  # Should not include chunk 4
+        # Should contain all chunks from 0 to 3
+        assert "Chunk 0" in merged_chunk.content
+        assert "Chunk 1" in merged_chunk.content
+        assert "Chunk 2" in merged_chunk.content
+        assert "Chunk 3" in merged_chunk.content
+        assert "Chunk 4" not in merged_chunk.content  # Should not include chunk 4
 
-            # Should use the higher score (0.8)
-            assert score == 0.8
+        # Should use the higher score (0.8)
+        assert score == 0.8
 
 
 @pytest.mark.asyncio
 async def test_client_expand_context_keeps_separate_non_overlapping():
     """Test that non-overlapping expanded chunks remain separate."""
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 1):
-        async with HaikuRAG(":memory:") as client:
-            # Create document with chunks far apart
-            manual_chunks = [
-                Chunk(content="Chunk 0", metadata={"order": 0}),
-                Chunk(content="Chunk 1", metadata={"order": 1}),
-                Chunk(content="Chunk 2", metadata={"order": 2}),
-                Chunk(content="Chunk 5", metadata={"order": 5}),  # Gap here
-                Chunk(content="Chunk 6", metadata={"order": 6}),
-                Chunk(content="Chunk 7", metadata={"order": 7}),
-            ]
+    async with HaikuRAG(":memory:") as client:
+        # Create document with chunks far apart
+        manual_chunks = [
+            Chunk(content="Chunk 0", metadata={"order": 0}),
+            Chunk(content="Chunk 1", metadata={"order": 1}),
+            Chunk(content="Chunk 2", metadata={"order": 2}),
+            Chunk(content="Chunk 5", metadata={"order": 5}),  # Gap here
+            Chunk(content="Chunk 6", metadata={"order": 6}),
+            Chunk(content="Chunk 7", metadata={"order": 7}),
+        ]
 
-            doc = await client.create_document(
-                content="Full document content", chunks=manual_chunks
-            )
+        doc = await client.create_document(
+            content="Full document content", chunks=manual_chunks
+        )
 
-            assert doc.id is not None
-            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
 
-            # Get chunks by index - they will have sequential orders 0,1,2,3,4,5
-            # So get chunk with order=0 and chunk with order=5 (far enough apart)
-            chunk0 = next(
-                c for c in chunks if c.metadata.get("order") == 0
-            )  # Content: "Chunk 0"
-            chunk5 = next(
-                c for c in chunks if c.metadata.get("order") == 5
-            )  # Content: "Chunk 7"
+        # Get chunks by index - they will have sequential orders 0,1,2,3,4,5
+        # So get chunk with order=0 and chunk with order=5 (far enough apart)
+        chunk0 = next(
+            c for c in chunks if c.metadata.get("order") == 0
+        )  # Content: "Chunk 0"
+        chunk5 = next(
+            c for c in chunks if c.metadata.get("order") == 5
+        )  # Content: "Chunk 7"
 
-            # chunk0 expanded: [0,1] with radius=1 (orders 0,1)
-            # chunk5 expanded: [4,5] with radius=1 (orders 4,5)
-            # These should remain separate (max_order 1 < min_order 4 - 1)
-            search_results = [(chunk0, 0.8), (chunk5, 0.7)]
-            expanded_results = await client.expand_context(search_results)
+        # chunk0 expanded: [0,1] with radius=1 (orders 0,1)
+        # chunk5 expanded: [4,5] with radius=1 (orders 4,5)
+        # These should remain separate (max_order 1 < min_order 4 - 1)
+        search_results = [(chunk0, 0.8), (chunk5, 0.7)]
+        expanded_results = await client.expand_context(search_results, radius=1)
 
-            # Should have 2 separate results
-            assert len(expanded_results) == 2
+        # Should have 2 separate results
+        assert len(expanded_results) == 2
 
-            # Sort by score to ensure predictable order
-            expanded_results.sort(key=lambda x: x[1], reverse=True)
+        # Sort by score to ensure predictable order
+        expanded_results.sort(key=lambda x: x[1], reverse=True)
 
-            chunk0_expanded, score1 = expanded_results[0]
-            chunk5_expanded, score2 = expanded_results[1]
+        chunk0_expanded, score1 = expanded_results[0]
+        chunk5_expanded, score2 = expanded_results[1]
 
-            # First chunk (order=0) expanded should contain orders [0,1]
-            # Content should be "Chunk 0" + "Chunk 1"
-            assert "Chunk 0" in chunk0_expanded.content
-            assert "Chunk 1" in chunk0_expanded.content
-            assert (
-                "Chunk 7" not in chunk0_expanded.content
-            )  # Should not have chunk 7 content
-            assert score1 == 0.8
+        # First chunk (order=0) expanded should contain orders [0,1]
+        # Content should be "Chunk 0" + "Chunk 1"
+        assert "Chunk 0" in chunk0_expanded.content
+        assert "Chunk 1" in chunk0_expanded.content
+        assert (
+            "Chunk 7" not in chunk0_expanded.content
+        )  # Should not have chunk 7 content
+        assert score1 == 0.8
 
-            # Second chunk (order=5) expanded should contain orders [4,5]
-            # Content should be "Chunk 6" + "Chunk 7" (orders 4 and 5)
-            assert "Chunk 6" in chunk5_expanded.content  # Order 4 content
-            assert "Chunk 7" in chunk5_expanded.content  # Order 5 content
-            assert "Chunk 0" not in chunk5_expanded.content
-            assert score2 == 0.7
+        # Second chunk (order=5) expanded should contain orders [4,5]
+        # Content should be "Chunk 6" + "Chunk 7" (orders 4 and 5)
+        assert "Chunk 6" in chunk5_expanded.content  # Order 4 content
+        assert "Chunk 7" in chunk5_expanded.content  # Order 5 content
+        assert "Chunk 0" not in chunk5_expanded.content
+        assert score2 == 0.7
