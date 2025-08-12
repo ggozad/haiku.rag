@@ -18,7 +18,7 @@ try:
             self.tools: Sequence[ToolParam] = [
                 ToolParam(
                     name="search_documents",
-                    description="Search the knowledge base for relevant documents",
+                    description="Search the knowledge base for relevant documents. Returns a JSON array with content, score, and document_uri for each result.",
                     input_schema={
                         "type": "object",
                         "properties": {

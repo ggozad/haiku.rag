@@ -35,7 +35,7 @@ class QuestionAnswerAgentBase:
             "type": "function",
             "function": {
                 "name": "search_documents",
-                "description": "Search the knowledge base for relevant documents",
+                "description": "Search the knowledge base for relevant documents. Returns a JSON array of search results.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -50,6 +50,30 @@ class QuestionAnswerAgentBase:
                         },
                     },
                     "required": ["query"],
+                },
+                "returns": {
+                    "type": "string",
+                    "description": "JSON array of search results",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "description": "The document text content",
+                                },
+                                "score": {
+                                    "type": "number",
+                                    "description": "Relevance score (higher is more relevant)",
+                                },
+                                "document_uri": {
+                                    "type": "string",
+                                    "description": "Source URI/path of the document",
+                                },
+                            },
+                        },
+                    },
                 },
             },
         }
