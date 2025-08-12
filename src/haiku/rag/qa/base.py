@@ -1,16 +1,19 @@
 import json
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.prompts import SYSTEM_PROMPT
+from haiku.rag.qa.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_CITATIONS
 
 
 class QuestionAnswerAgentBase:
     _model: str = ""
     _system_prompt: str = SYSTEM_PROMPT
 
-    def __init__(self, client: HaikuRAG, model: str = ""):
+    def __init__(self, client: HaikuRAG, model: str = "", use_citations: bool = False):
         self._model = model
         self._client = client
+        self._system_prompt = (
+            SYSTEM_PROMPT_WITH_CITATIONS if use_citations else SYSTEM_PROMPT
+        )
 
     async def answer(self, question: str) -> str:
         raise NotImplementedError(

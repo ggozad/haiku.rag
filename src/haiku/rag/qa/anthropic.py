@@ -13,8 +13,13 @@ try:
     from haiku.rag.qa.base import QuestionAnswerAgentBase
 
     class QuestionAnswerAnthropicAgent(QuestionAnswerAgentBase):
-        def __init__(self, client: HaikuRAG, model: str = "claude-3-5-haiku-20241022"):
-            super().__init__(client, model or self._model)
+        def __init__(
+            self,
+            client: HaikuRAG,
+            model: str = "claude-3-5-haiku-20241022",
+            use_citations: bool = False,
+        ):
+            super().__init__(client, model or self._model, use_citations)
             self.tools: Sequence[ToolParam] = [
                 ToolParam(
                     name="search_documents",

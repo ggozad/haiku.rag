@@ -62,10 +62,10 @@ class HaikuRAGApp:
             for chunk, score in results:
                 self._rich_print_search_result(chunk, score)
 
-    async def ask(self, question: str):
+    async def ask(self, question: str, cite: bool = False):
         async with HaikuRAG(db_path=self.db_path) as self.client:
             try:
-                answer = await self.client.ask(question)
+                answer = await self.client.ask(question, cite=cite)
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
                 self.console.print("[bold green]Answer:[/bold green]")

@@ -17,8 +17,13 @@ try:
     from haiku.rag.qa.base import QuestionAnswerAgentBase
 
     class QuestionAnswerOpenAIAgent(QuestionAnswerAgentBase):
-        def __init__(self, client: HaikuRAG, model: str = "gpt-4o-mini"):
-            super().__init__(client, model or self._model)
+        def __init__(
+            self,
+            client: HaikuRAG,
+            model: str = "gpt-4o-mini",
+            use_citations: bool = False,
+        ):
+            super().__init__(client, model or self._model, use_citations)
             self.tools: Sequence[ChatCompletionToolParam] = [
                 ChatCompletionToolParam(tool) for tool in self.tools
             ]

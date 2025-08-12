@@ -127,3 +127,31 @@ def test_serve_stdio_and_sse():
 
         assert result.exit_code == 1
         assert "Error: Cannot use both --stdio and --http options" in result.stdout
+
+
+def test_ask():
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.ask = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["ask", "What is Python?"])
+
+        assert result.exit_code == 0
+        mock_app_instance.ask.assert_called_once_with(
+            question="What is Python?", cite=False
+        )
+
+
+def test_ask_with_cite():
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.ask = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["ask", "What is Python?", "--cite"])
+
+        assert result.exit_code == 0
+        mock_app_instance.ask.assert_called_once_with(
+            question="What is Python?", cite=True
+        )

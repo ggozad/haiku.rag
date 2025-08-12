@@ -489,3 +489,33 @@ async def test_client_create_document_with_custom_chunks():
             assert (
                 chunk.metadata["custom"] == f"metadata{i + 1}"
             )  # Original metadata preserved
+
+
+@pytest.mark.asyncio
+async def test_client_ask_without_cite():
+    """Test asking questions without citations."""
+    async with HaikuRAG(":memory:") as client:
+        # Mock the QA agent
+        mock_qa_agent = AsyncMock()
+        mock_qa_agent.answer.return_value = "Test answer"
+
+        with patch("haiku.rag.qa.get_qa_agent", return_value=mock_qa_agent):
+            answer = await client.ask("What is Python?")
+
+        assert answer == "Test answer"
+        mock_qa_agent.answer.assert_called_once_with("What is Python?")
+
+
+@pytest.mark.asyncio
+async def test_client_ask_with_cite():
+    """Test asking questions with citations."""
+    async with HaikuRAG(":memory:") as client:
+        # Mock the QA agent
+        mock_qa_agent = AsyncMock()
+        mock_qa_agent.answer.return_value = "Test answer with citations [1]"
+
+        with patch("haiku.rag.qa.get_qa_agent", return_value=mock_qa_agent):
+            answer = await client.ask("What is Python?", cite=True)
+
+        assert answer == "Test answer with citations [1]"
+        mock_qa_agent.answer.assert_called_once_with("What is Python?")
