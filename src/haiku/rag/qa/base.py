@@ -1,3 +1,5 @@
+import json
+
 from haiku.rag.client import HaikuRAG
 from haiku.rag.qa.prompts import SYSTEM_PROMPT
 
@@ -14,6 +16,19 @@ class QuestionAnswerAgentBase:
         raise NotImplementedError(
             "QABase is an abstract class. Please implement the answer method in a subclass."
         )
+
+    def _format_search_results(self, search_results) -> str:
+        """Format search results as JSON list of {content, score, document_uri}"""
+        formatted_results = []
+        for chunk, score in search_results:
+            formatted_results.append(
+                {
+                    "content": chunk.content,
+                    "score": score,
+                    "document_uri": chunk.document_uri,
+                }
+            )
+        return json.dumps(formatted_results, indent=2)
 
     tools = [
         {

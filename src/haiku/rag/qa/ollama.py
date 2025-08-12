@@ -41,14 +41,7 @@ class QuestionAnswerOllamaAgent(QuestionAnswerAgentBase):
 
                         search_results = await self._client.search(query, limit=limit)
 
-                        context_chunks = []
-                        for chunk, score in search_results:
-                            context_chunks.append(
-                                f"Content: {chunk.content}\nScore: {score:.4f}"
-                            )
-
-                        context = "\n\n".join(context_chunks)
-
+                        context = self._format_search_results(search_results)
                         messages.append(
                             {
                                 "role": "tool",

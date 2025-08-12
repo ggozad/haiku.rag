@@ -1,8 +1,13 @@
 from collections.abc import Sequence
 
 try:
-    from anthropic import AsyncAnthropic
-    from anthropic.types import MessageParam, TextBlock, ToolParam, ToolUseBlock
+    from anthropic import AsyncAnthropic  # type: ignore
+    from anthropic.types import (  # type: ignore
+        MessageParam,
+        TextBlock,
+        ToolParam,
+        ToolUseBlock,
+    )
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.qa.base import QuestionAnswerAgentBase
@@ -73,13 +78,7 @@ try:
                                     query, limit=limit
                                 )
 
-                                context_chunks = []
-                                for chunk, score in search_results:
-                                    context_chunks.append(
-                                        f"Content: {chunk.content}\nScore: {score:.4f}"
-                                    )
-
-                                context = "\n\n".join(context_chunks)
+                                context = self._format_search_results(search_results)
 
                                 tool_results.append(
                                     {
