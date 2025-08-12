@@ -146,6 +146,8 @@ for chunk, score in expanded_results:
     print(f"Expanded content: {chunk.content}")  # Now includes before/after chunks
 ```
 
+**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
+
 This is automatically used by the QA system when `CONTEXT_CHUNK_RADIUS > 0` to provide better answers with more complete context.
 
 ## Question Answering
