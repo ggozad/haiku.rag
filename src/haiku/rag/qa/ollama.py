@@ -44,9 +44,7 @@ class QuestionAnswerOllamaAgent(QuestionAnswerAgentBase):
                         query = args.get("query", question)
                         limit = int(args.get("limit", 3))
 
-                        search_results = await self._client.search(query, limit=limit)
-
-                        context = self._format_search_results(search_results)
+                        context = await self._search_and_expand(query, limit=limit)
                         messages.append(
                             {
                                 "role": "tool",
