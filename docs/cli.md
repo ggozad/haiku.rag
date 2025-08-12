@@ -64,7 +64,12 @@ Ask questions about your documents:
 haiku-rag ask "Who is the author of haiku.rag?"
 ```
 
-The QA agent will search your documents for relevant information and provide a comprehensive answer.
+Ask questions with citations showing source documents:
+```bash
+haiku-rag ask "Who is the author of haiku.rag?" --cite
+```
+
+The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used.
 
 ## Configuration
 

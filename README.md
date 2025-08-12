@@ -33,6 +33,9 @@ haiku-rag search "query"
 # Ask questions
 haiku-rag ask "Who is the author of haiku.rag?"
 
+# Ask questions with citations
+haiku-rag ask "Who is the author of haiku.rag?" --cite
+
 # Rebuild database (re-chunk and re-embed all documents)
 haiku-rag rebuild
 
@@ -57,6 +60,10 @@ async with HaikuRAG("database.db") as client:
 
     # Ask questions
     answer = await client.ask("Who is the author of haiku.rag?")
+    print(answer)
+
+    # Ask questions with citations
+    answer = await client.ask("Who is the author of haiku.rag?", cite=True)
     print(answer)
 ```
 

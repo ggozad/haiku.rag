@@ -1,22 +1,29 @@
 from collections.abc import Sequence
 
 try:
-    from openai import AsyncOpenAI
-    from openai.types.chat import (
+    from openai import AsyncOpenAI  # type: ignore
+    from openai.types.chat import (  # type: ignore
         ChatCompletionAssistantMessageParam,
         ChatCompletionMessageParam,
         ChatCompletionSystemMessageParam,
         ChatCompletionToolMessageParam,
         ChatCompletionUserMessageParam,
     )
-    from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
+    from openai.types.chat.chat_completion_tool_param import (  # type: ignore
+        ChatCompletionToolParam,
+    )
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.qa.base import QuestionAnswerAgentBase
 
     class QuestionAnswerOpenAIAgent(QuestionAnswerAgentBase):
-        def __init__(self, client: HaikuRAG, model: str = "gpt-4o-mini"):
-            super().__init__(client, model or self._model)
+        def __init__(
+            self,
+            client: HaikuRAG,
+            model: str = "gpt-4o-mini",
+            use_citations: bool = False,
+        ):
+            super().__init__(client, model or self._model, use_citations)
             self.tools: Sequence[ChatCompletionToolParam] = [
                 ChatCompletionToolParam(tool) for tool in self.tools
             ]
@@ -74,13 +81,7 @@ try:
                                 query, limit=limit
                             )
 
-                            context_chunks = []
-                            for chunk, score in search_results:
-                                context_chunks.append(
-                                    f"Content: {chunk.content}\nScore: {score:.4f}"
-                                )
-
-                            context = "\n\n".join(context_chunks)
+                            context = self._format_search_results(search_results)
 
                             messages.append(
                                 ChatCompletionToolMessageParam(

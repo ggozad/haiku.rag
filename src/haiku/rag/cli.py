@@ -160,9 +160,14 @@ def ask(
         "--db",
         help="Path to the SQLite database file",
     ),
+    cite: bool = typer.Option(
+        False,
+        "--cite",
+        help="Include citations in the response",
+    ),
 ):
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.ask(question=question))
+    asyncio.run(app.ask(question=question, cite=cite))
 
 
 @cli.command("settings", help="Display current configuration settings")

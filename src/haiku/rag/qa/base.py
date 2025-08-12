@@ -1,26 +1,44 @@
+import json
+
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.prompts import SYSTEM_PROMPT
+from haiku.rag.qa.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_CITATIONS
 
 
 class QuestionAnswerAgentBase:
     _model: str = ""
     _system_prompt: str = SYSTEM_PROMPT
 
-    def __init__(self, client: HaikuRAG, model: str = ""):
+    def __init__(self, client: HaikuRAG, model: str = "", use_citations: bool = False):
         self._model = model
         self._client = client
+        self._system_prompt = (
+            SYSTEM_PROMPT_WITH_CITATIONS if use_citations else SYSTEM_PROMPT
+        )
 
     async def answer(self, question: str) -> str:
         raise NotImplementedError(
             "QABase is an abstract class. Please implement the answer method in a subclass."
         )
 
+    def _format_search_results(self, search_results) -> str:
+        """Format search results as JSON list of {content, score, document_uri}"""
+        formatted_results = []
+        for chunk, score in search_results:
+            formatted_results.append(
+                {
+                    "content": chunk.content,
+                    "score": score,
+                    "document_uri": chunk.document_uri,
+                }
+            )
+        return json.dumps(formatted_results, indent=2)
+
     tools = [
         {
             "type": "function",
             "function": {
                 "name": "search_documents",
-                "description": "Search the knowledge base for relevant documents",
+                "description": "Search the knowledge base for relevant documents. Returns a JSON array of search results.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -35,6 +53,30 @@ class QuestionAnswerAgentBase:
                         },
                     },
                     "required": ["query"],
+                },
+                "returns": {
+                    "type": "string",
+                    "description": "JSON array of search results",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "description": "The document text content",
+                                },
+                                "score": {
+                                    "type": "number",
+                                    "description": "Relevance score (higher is more relevant)",
+                                },
+                                "document_uri": {
+                                    "type": "string",
+                                    "description": "Source URI/path of the document",
+                                },
+                            },
+                        },
+                    },
                 },
             },
         }

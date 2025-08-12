@@ -75,7 +75,7 @@ async def test_add_document_from_source(app: HaikuRAGApp, monkeypatch):
     monkeypatch.setattr(app, "_rich_print_document", mock_rich_print)
     monkeypatch.setattr(app.console, "print", mock_print)
 
-    file_path = Path("test.txt")
+    file_path = "test.txt"
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.add_document_from_source(file_path)
 
@@ -206,3 +206,37 @@ async def test_serve(app: HaikuRAGApp, monkeypatch, transport):
         mock_server.run_http_async.assert_called_once_with("streamable-http")
 
     mock_task.cancel.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ask_without_cite(app: HaikuRAGApp, monkeypatch):
+    """Test asking a question without citations."""
+    mock_answer = "Test answer"
+    mock_client = AsyncMock()
+    mock_client.ask.return_value = mock_answer
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        await app.ask("test question")
+
+    mock_client.ask.assert_called_once_with("test question", cite=False)
+
+
+@pytest.mark.asyncio
+async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
+    """Test asking a question with citations."""
+    mock_answer = "Test answer with citations"
+    mock_client = AsyncMock()
+    mock_client.ask.return_value = mock_answer
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        await app.ask("test question", cite=True)
+
+    mock_client.ask.assert_called_once_with("test question", cite=True)

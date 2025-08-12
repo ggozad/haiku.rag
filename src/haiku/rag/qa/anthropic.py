@@ -1,19 +1,29 @@
 from collections.abc import Sequence
 
 try:
-    from anthropic import AsyncAnthropic
-    from anthropic.types import MessageParam, TextBlock, ToolParam, ToolUseBlock
+    from anthropic import AsyncAnthropic  # type: ignore
+    from anthropic.types import (  # type: ignore
+        MessageParam,
+        TextBlock,
+        ToolParam,
+        ToolUseBlock,
+    )
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.qa.base import QuestionAnswerAgentBase
 
     class QuestionAnswerAnthropicAgent(QuestionAnswerAgentBase):
-        def __init__(self, client: HaikuRAG, model: str = "claude-3-5-haiku-20241022"):
-            super().__init__(client, model or self._model)
+        def __init__(
+            self,
+            client: HaikuRAG,
+            model: str = "claude-3-5-haiku-20241022",
+            use_citations: bool = False,
+        ):
+            super().__init__(client, model or self._model, use_citations)
             self.tools: Sequence[ToolParam] = [
                 ToolParam(
                     name="search_documents",
-                    description="Search the knowledge base for relevant documents",
+                    description="Search the knowledge base for relevant documents. Returns a JSON array with content, score, and document_uri for each result.",
                     input_schema={
                         "type": "object",
                         "properties": {
@@ -73,13 +83,7 @@ try:
                                     query, limit=limit
                                 )
 
-                                context_chunks = []
-                                for chunk, score in search_results:
-                                    context_chunks.append(
-                                        f"Content: {chunk.content}\nScore: {score:.4f}"
-                                    )
-
-                                context = "\n\n".join(context_chunks)
+                                context = self._format_search_results(search_results)
 
                                 tool_results.append(
                                     {
