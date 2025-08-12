@@ -348,6 +348,55 @@ class HaikuRAG:
         # Return reranked results with scores from reranker
         return reranked_results
 
+    async def expand_context(
+        self, search_results: list[tuple[Chunk, float]]
+    ) -> list[tuple[Chunk, float]]:
+        """Expand search results with adjacent chunks based on CONTEXT_CHUNK_RADIUS.
+
+        Args:
+            search_results: List of (chunk, score) tuples from search.
+
+        Returns:
+            List of (chunk, score) tuples with expanded context chunks.
+        """
+        if Config.CONTEXT_CHUNK_RADIUS == 0:
+            return search_results
+
+        results = []
+
+        for chunk, score in search_results:
+            adjacent_chunks = await self.chunk_repository.get_adjacent_chunks(
+                chunk, Config.CONTEXT_CHUNK_RADIUS
+            )
+
+            chunk_order = chunk.metadata.get("order", 0)
+            before_chunks = [
+                c for c in adjacent_chunks if c.metadata.get("order", 0) < chunk_order
+            ]
+            after_chunks = [
+                c for c in adjacent_chunks if c.metadata.get("order", 0) > chunk_order
+            ]
+
+            combined_content_parts = (
+                [c.content for c in before_chunks]
+                + [chunk.content]
+                + [c.content for c in after_chunks]
+            )
+
+            # Create expanded chunk with combined content
+            expanded_chunk = Chunk(
+                id=chunk.id,
+                document_id=chunk.document_id,
+                content="".join(combined_content_parts),
+                metadata=chunk.metadata,
+                document_uri=chunk.document_uri,
+                document_meta=chunk.document_meta,
+            )
+
+            results.append((expanded_chunk, score))
+
+        return results
+
     async def ask(self, question: str, cite: bool = False) -> str:
         """Ask a question using the configured QA agent.
 
