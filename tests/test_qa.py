@@ -2,32 +2,20 @@ import pytest
 from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.ollama import QuestionAnswerOllamaAgent
-
-try:
-    from haiku.rag.qa.openai import QuestionAnswerOpenAIAgent
-
-    OPENAI_AVAILABLE = True
-except ImportError:
-    QuestionAnswerOpenAIAgent = None
-    OPENAI_AVAILABLE = False
-
-try:
-    from haiku.rag.qa.anthropic import QuestionAnswerAnthropicAgent
-
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    QuestionAnswerAnthropicAgent = None
-    ANTHROPIC_AVAILABLE = False
+from haiku.rag.config import Config
+from haiku.rag.qa.agent import QuestionAnswerAgent
 
 from .llm_judge import LLMJudge
+
+OPENAI_AVAILABLE = bool(Config.OPENAI_API_KEY)
+ANTHROPIC_AVAILABLE = bool(Config.ANTHROPIC_API_KEY)
 
 
 @pytest.mark.asyncio
 async def test_qa_ollama(qa_corpus: Dataset):
-    """Test QA with actual question from the dataset using LLM judge."""
+    """Test Ollama QA with LLM judge."""
     client = HaikuRAG(":memory:")
-    qa = QuestionAnswerOllamaAgent(client)
+    qa = QuestionAnswerAgent(client, "ollama", "qwen3")
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -49,9 +37,9 @@ async def test_qa_ollama(qa_corpus: Dataset):
 @pytest.mark.asyncio
 @pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not available")
 async def test_qa_openai(qa_corpus: Dataset):
-    """Test OpenAI QA basic functionality."""
+    """Test OpenAI QA with LLM judge."""
     client = HaikuRAG(":memory:")
-    qa = QuestionAnswerOpenAIAgent(client)  # type: ignore
+    qa = QuestionAnswerAgent(client, "openai", "gpt-4o-mini")
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -73,9 +61,9 @@ async def test_qa_openai(qa_corpus: Dataset):
 @pytest.mark.asyncio
 @pytest.mark.skipif(not ANTHROPIC_AVAILABLE, reason="Anthropic not available")
 async def test_qa_anthropic(qa_corpus: Dataset):
-    """Test Anthropic QA basic functionality."""
+    """Test Anthropic QA with LLM judge."""
     client = HaikuRAG(":memory:")
-    qa = QuestionAnswerAnthropicAgent(client)  # type: ignore
+    qa = QuestionAnswerAgent(client, "anthropic", "claude-3-5-haiku-20241022")
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
