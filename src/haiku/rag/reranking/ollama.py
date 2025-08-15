@@ -32,7 +32,9 @@ Return your response as a JSON object with a "results" array. Each result should
 - "index": the original index of the document (integer)
 - "relevance_score": a score between 0.0 and 1.0 indicating relevance (float, where 1.0 is most relevant)
 
-Only return the top documents up to the requested limit, ordered by decreasing relevance score."""
+Only return the top documents up to the requested limit, ordered by decreasing relevance score.
+/no_think
+"""
 
         model_obj = OpenAIModel(
             model_name=model,
