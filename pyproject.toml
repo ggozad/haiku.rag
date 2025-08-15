@@ -38,9 +38,6 @@ dependencies = [
 
 [project.optional-dependencies]
 voyageai = ["voyageai>=0.3.2"]
-openai = ["openai>=1.0.0"]
-anthropic = ["anthropic>=0.56.0"]
-cohere = ["cohere>=5.16.1"]
 mxbai = ["mxbai-rerank>=0.1.6"]
 
 [project.scripts]

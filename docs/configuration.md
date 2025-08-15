@@ -44,13 +44,7 @@ VOYAGE_API_KEY="your-api-key"
 ```
 
 ### OpenAI
-If you want to use OpenAI embeddings you will need to install `haiku.rag` with the VoyageAI extras,
-
-```bash
-uv pip install haiku.rag[openai]
-```
-
-and set environment variables.
+OpenAI embeddings are included in the default installation. Simply set environment variables:
 
 ```bash
 EMBEDDINGS_PROVIDER="openai"
@@ -73,13 +67,7 @@ OLLAMA_BASE_URL="http://localhost:11434"
 
 ### OpenAI
 
-For OpenAI QA, you need to install haiku.rag with OpenAI extras:
-
-```bash
-uv pip install haiku.rag[openai]
-```
-
-Then configure:
+OpenAI QA is included in the default installation. Simply configure:
 
 ```bash
 QA_PROVIDER="openai"
@@ -89,13 +77,7 @@ OPENAI_API_KEY="your-api-key"
 
 ### Anthropic
 
-For Anthropic QA, you need to install haiku.rag with Anthropic extras:
-
-```bash
-uv pip install haiku.rag[anthropic]
-```
-
-Then configure:
+Anthropic QA is included in the default installation. Simply configure:
 
 ```bash
 QA_PROVIDER="anthropic"
@@ -144,13 +126,7 @@ RERANK_MODEL="mixedbread-ai/mxbai-rerank-base-v2"
 
 ### Cohere
 
-For Cohere reranking, install with Cohere extras:
-
-```bash
-uv pip install haiku.rag[cohere]
-```
-
-Then configure:
+Cohere reranking is included in the default installation. Simply configure:
 
 ```bash
 RERANK_PROVIDER="cohere"

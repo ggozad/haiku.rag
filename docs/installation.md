@@ -6,11 +6,15 @@
 uv pip install haiku.rag
 ```
 
-By default, Ollama (with the `mxbai-embed-large` model) is used for embeddings.
+This includes support for:
+- **Ollama** (default embedding provider using `mxbai-embed-large`)
+- **OpenAI** (GPT models for QA and embeddings)
+- **Anthropic** (Claude models for QA)
+- **Cohere** (reranking models)
 
 ## Provider-Specific Installation
 
-For other embedding providers, install with extras:
+For additional embedding providers, install with extras:
 
 ### VoyageAI
 
@@ -18,16 +22,10 @@ For other embedding providers, install with extras:
 uv pip install haiku.rag[voyageai]
 ```
 
-### OpenAI
+### MixedBread AI Reranking
 
 ```bash
-uv pip install haiku.rag[openai]
-```
-
-### Anthropic
-
-```bash
-uv pip install haiku.rag[anthropic]
+uv pip install haiku.rag[mxbai]
 ```
 
 ## Requirements
