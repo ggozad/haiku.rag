@@ -1,0 +1,20 @@
+services:
+  haiku-rag:
+    build: .
+    image: topiaruss/haiku-rag:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount external directory to /inbound for document monitoring
+      - ./documents:/inbound
+      # Mount database directory for persistence
+      - ./database:/database
+      # Mount ollama models directory (adjust path as needed)
+      - ~/.ollama/models:/ollama/models
+    environment:
+      - MONITOR_DIRECTORIES=/inbound
+      - EMBEDDINGS_PROVIDER=ollama
+      - EMBEDDINGS_MODEL=mxbai-embed-large
+      - EMBEDDINGS_VECTOR_DIM=1024
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    restart: unless-stopped
