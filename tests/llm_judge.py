@@ -1,9 +1,33 @@
-import json
-
-from ollama import AsyncClient
 from pydantic import BaseModel
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 from haiku.rag.config import Config
+
+# Shared rubric/prompt for answer equivalence evaluation
+ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether two answers to the same question are semantically equivalent.
+
+EVALUATION CRITERIA:
+Rate as EQUIVALENT if:
+✓ Both answers contain the same core factual information
+✓ Both directly address the question asked
+✓ The key claims and conclusions are consistent
+✓ Any additional detail in one answer doesn't contradict the other
+
+Rate as NOT EQUIVALENT if:
+✗ Factual contradictions exist between the answers
+✗ One answer fails to address the core question
+✗ Key information is missing that changes the meaning
+✗ The answers lead to different conclusions or implications
+
+GUIDELINES:
+- Ignore minor differences in phrasing, style, or formatting
+- Focus on semantic meaning rather than exact wording
+- Consider both answers correct if they convey the same essential information
+- Be tolerant of different levels of detail if the core answer is preserved
+- Evaluate based on what a person asking this question would need to know
+/no_think"""
 
 
 class LLMJudgeResponseSchema(BaseModel):
@@ -11,11 +35,33 @@ class LLMJudgeResponseSchema(BaseModel):
 
 
 class LLMJudge:
-    """LLM-as-judge for evaluating answer equivalence using Ollama."""
+    """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
-    def __init__(self, model: str = Config.QA_MODEL):
-        self.model = model
-        self.client = AsyncClient(host=Config.OLLAMA_BASE_URL)
+    def __init__(self, provider_model: str = Config.QA_PROVIDER):
+        self.provider_model = provider_model
+
+        # Parse provider:model format
+        if ":" not in provider_model:
+            raise ValueError(f"Invalid provider:model format: {provider_model}")
+
+        provider, model = provider_model.split(":", 1)
+
+        if provider == "ollama":
+            # Create Ollama model
+            ollama_model = OpenAIModel(
+                model_name=model,
+                provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
+            )
+        else:
+            # For other providers, use the provider:model string directly
+            ollama_model = provider_model
+
+        # Create Pydantic AI agent
+        self._agent = Agent(
+            model=ollama_model,
+            output_type=LLMJudgeResponseSchema,
+            system_prompt=ANSWER_EQUIVALENCE_RUBRIC,
+        )
 
     async def judge_answers(
         self, question: str, answer: str, expected_answer: str
@@ -29,53 +75,14 @@ class LLMJudge:
             expected_answer: The reference/expected answer
 
         Returns:
-            Dictionary with judgment result:
-            - equivalent: bool indicating if answers are equivalent
-            - explanation: str explaining the reasoning
-            - score: str rating from 1-5
+            bool indicating if answers are equivalent
         """
 
-        prompt = f"""You are an expert evaluator determining whether two answers to the same question are semantically equivalent.
-
-QUESTION: {question}
+        prompt = f"""QUESTION: {question}
 
 GENERATED ANSWER: {answer}
 
-EXPECTED ANSWER: {expected_answer}
+EXPECTED ANSWER: {expected_answer}"""
 
-EVALUATION CRITERIA:
-Rate as EQUIVALENT (true) if:
-✓ Both answers contain the same core factual information
-✓ Both directly address the question asked
-✓ The key claims and conclusions are consistent
-✓ Any additional detail in one answer doesn't contradict the other
-
-Rate as NOT EQUIVALENT (false) if:
-✗ Factual contradictions exist between the answers
-✗ One answer fails to address the core question
-✗ Key information is missing from one answer that changes the meaning
-✗ The answers lead to different conclusions or implications
-
-GUIDELINES:
-- Ignore minor differences in phrasing, style, or formatting
-- Focus on semantic meaning rather than exact wording
-- Consider both answers correct if they convey the same essential information
-- Be tolerant of different levels of detail if the core answer is preserved
-- Evaluate based on what a person asking this question would need to know
-
-Respond with JSON containing only: {{"equivalent": true}} or {{"equivalent": false}}"""
-
-        response = await self.client.chat(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            format=LLMJudgeResponseSchema.model_json_schema(),
-            think=False,
-        )
-
-        answer = response["message"]["content"].strip()
-        try:
-            res = json.loads(answer)
-            assert "equivalent" in res, "Response must contain 'equivalent' key"
-            return res["equivalent"]
-        except json.JSONDecodeError:
-            assert False, "Response is not valid JSON"
+        result = await self._agent.run(prompt)
+        return result.output.equivalent

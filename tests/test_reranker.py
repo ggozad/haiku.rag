@@ -1,7 +1,10 @@
 import pytest
 
+from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+
+COHERE_AVAILABLE = bool(Config.COHERE_API_KEY)
 
 chunks = [
     Chunk(content=content, document_id=i)
@@ -43,6 +46,7 @@ async def test_mxbai_reranker():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not COHERE_AVAILABLE, reason="Cohere API key not available")
 async def test_cohere_reranker():
     try:
         from haiku.rag.reranking.cohere import CohereReranker

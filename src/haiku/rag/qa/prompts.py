@@ -18,6 +18,7 @@ Guidelines:
 - Stick to the answer, do not ellaborate or provide context unless explicitly asked for it.
 
 Be concise, and always maintain accuracy over completeness. Prefer short, direct answers that are well-supported by the documents.
+/no_think
 """
 
 SYSTEM_PROMPT_WITH_CITATIONS = """
@@ -55,4 +56,5 @@ Citations:
 - /path/to/document2.pdf: "The manual provides guidance on military procedures and..."
 
 Be concise, and always maintain accuracy over completeness. Prefer short, direct answers that are well-supported by the documents.
+/no_think
 """

@@ -27,6 +27,7 @@ dependencies = [
     "httpx>=0.28.1",
     "ollama>=0.5.3",
     "pydantic>=2.11.7",
+    "pydantic-ai>=0.7.2",
     "python-dotenv>=1.1.0",
     "rich>=14.0.0",
     "sqlite-vec>=0.1.6",
@@ -37,9 +38,6 @@ dependencies = [
 
 [project.optional-dependencies]
 voyageai = ["voyageai>=0.3.2"]
-openai = ["openai>=1.0.0"]
-anthropic = ["anthropic>=0.56.0"]
-cohere = ["cohere>=5.16.1"]
 mxbai = ["mxbai-rerank>=0.1.6"]
 
 [project.scripts]
