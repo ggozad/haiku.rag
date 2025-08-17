@@ -4,15 +4,10 @@ from haiku.rag.qa.agent import QuestionAnswerAgent
 
 
 def get_qa_agent(client: HaikuRAG, use_citations: bool = False) -> QuestionAnswerAgent:
-    provider = Config.QA_PROVIDER
-    model_name = Config.QA_MODEL
+    provider_model = Config.QA_PROVIDER
 
-    if provider in ("openai", "anthropic", "ollama"):
-        return QuestionAnswerAgent(
-            client=client,
-            provider=provider,
-            model=model_name,
-            use_citations=use_citations,
-        )
-
-    raise ValueError(f"Unsupported QA provider: {provider}")
+    return QuestionAnswerAgent(
+        client=client,
+        provider_model=provider_model,
+        use_citations=use_citations,
+    )

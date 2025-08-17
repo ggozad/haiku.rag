@@ -22,8 +22,7 @@ class AppConfig(BaseModel):
     RERANK_PROVIDER: str = "ollama"
     RERANK_MODEL: str = "qwen3"
 
-    QA_PROVIDER: str = "ollama"
-    QA_MODEL: str = "qwen3"
+    QA_PROVIDER: str = "ollama:qwen3"
 
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0

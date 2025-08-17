@@ -23,15 +23,14 @@ class QuestionAnswerAgent:
     def __init__(
         self,
         client: HaikuRAG,
-        provider: str,
-        model: str,
+        provider_model: str,
         use_citations: bool = False,
         q: float = 0.0,
     ):
         self._client = client
 
         system_prompt = SYSTEM_PROMPT_WITH_CITATIONS if use_citations else SYSTEM_PROMPT
-        model_obj = self._get_model(provider, model)
+        model_obj = self._get_model(provider_model)
 
         self._agent = Agent(
             model=model_obj,
@@ -58,19 +57,21 @@ class QuestionAnswerAgent:
                 for chunk, score in expanded_results
             ]
 
-    def _get_model(self, provider: str, model: str):
-        """Get the appropriate model object for the provider."""
-        if provider == "openai":
-            return f"openai:{model}"
-        elif provider == "anthropic":
-            return f"anthropic:{model}"
-        elif provider == "ollama":
+    def _get_model(self, provider_model: str):
+        """Get the appropriate model object for the provider:model format."""
+        if ":" not in provider_model:
+            raise ValueError(f"Invalid provider:model format: {provider_model}")
+
+        provider, model = provider_model.split(":", 1)
+
+        if provider == "ollama":
             return OpenAIModel(
                 model_name=model,
                 provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
             )
         else:
-            raise ValueError(f"Unsupported provider: {provider}")
+            # For other providers, use the provider:model string directly
+            return provider_model
 
     async def answer(self, question: str) -> str:
         """Answer a question using the RAG system."""

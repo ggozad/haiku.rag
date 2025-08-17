@@ -15,7 +15,7 @@ ANTHROPIC_AVAILABLE = bool(Config.ANTHROPIC_API_KEY)
 async def test_qa_ollama(qa_corpus: Dataset):
     """Test Ollama QA with LLM judge."""
     client = HaikuRAG(":memory:")
-    qa = QuestionAnswerAgent(client, "ollama", "qwen3")
+    qa = QuestionAnswerAgent(client, provider_model="ollama:qwen3")
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -39,7 +39,7 @@ async def test_qa_ollama(qa_corpus: Dataset):
 async def test_qa_openai(qa_corpus: Dataset):
     """Test OpenAI QA with LLM judge."""
     client = HaikuRAG(":memory:")
-    qa = QuestionAnswerAgent(client, "openai", "gpt-4o-mini")
+    qa = QuestionAnswerAgent(client, provider_model="openai:gpt-4o-mini")
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -63,7 +63,9 @@ async def test_qa_openai(qa_corpus: Dataset):
 async def test_qa_anthropic(qa_corpus: Dataset):
     """Test Anthropic QA with LLM judge."""
     client = HaikuRAG(":memory:")
-    qa = QuestionAnswerAgent(client, "anthropic", "claude-3-5-haiku-20241022")
+    qa = QuestionAnswerAgent(
+        client, provider_model="anthropic:claude-3-5-haiku-20241022"
+    )
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]

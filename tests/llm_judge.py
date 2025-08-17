@@ -37,14 +37,24 @@ class LLMJudgeResponseSchema(BaseModel):
 class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
-    def __init__(self, model: str = Config.QA_MODEL):
-        self.model = model
+    def __init__(self, provider_model: str = Config.QA_PROVIDER):
+        self.provider_model = provider_model
 
-        # Create Ollama model
-        ollama_model = OpenAIModel(
-            model_name=model,
-            provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
-        )
+        # Parse provider:model format
+        if ":" not in provider_model:
+            raise ValueError(f"Invalid provider:model format: {provider_model}")
+
+        provider, model = provider_model.split(":", 1)
+
+        if provider == "ollama":
+            # Create Ollama model
+            ollama_model = OpenAIModel(
+                model_name=model,
+                provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
+            )
+        else:
+            # For other providers, use the provider:model string directly
+            ollama_model = provider_model
 
         # Create Pydantic AI agent
         self._agent = Agent(

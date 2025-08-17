@@ -55,13 +55,12 @@ OPENAI_API_KEY="your-api-key"
 
 ## Question Answering Providers
 
-Configure which LLM provider to use for question answering.
+Configure which LLM provider to use for question answering using the `provider:model` format. Any provider and model supported by [Pydantic AI](https://ai.pydantic.dev/models/) can be used.
 
 ### Ollama (Default)
 
 ```bash
-QA_PROVIDER="ollama"
-QA_MODEL="qwen3"
+QA_PROVIDER="ollama:qwen3"
 OLLAMA_BASE_URL="http://localhost:11434"
 ```
 
@@ -70,8 +69,7 @@ OLLAMA_BASE_URL="http://localhost:11434"
 OpenAI QA is included in the default installation. Simply configure:
 
 ```bash
-QA_PROVIDER="openai"
-QA_MODEL="gpt-4o-mini"  # or gpt-4, gpt-3.5-turbo, etc.
+QA_PROVIDER="openai:gpt-4o-mini"  # or openai:gpt-4, openai:gpt-3.5-turbo, etc.
 OPENAI_API_KEY="your-api-key"
 ```
 
@@ -80,10 +78,26 @@ OPENAI_API_KEY="your-api-key"
 Anthropic QA is included in the default installation. Simply configure:
 
 ```bash
-QA_PROVIDER="anthropic"
-QA_MODEL="claude-3-5-haiku-20241022"  # or claude-3-5-sonnet-20241022, etc.
+QA_PROVIDER="anthropic:claude-3-5-haiku-20241022"  # or anthropic:claude-3-5-sonnet-20241022, etc.
 ANTHROPIC_API_KEY="your-api-key"
 ```
+
+### Other Providers
+
+Any provider supported by Pydantic AI can be used. Examples include:
+
+```bash
+# Google Gemini
+QA_PROVIDER="gemini:gemini-1.5-flash"
+
+# Groq
+QA_PROVIDER="groq:llama-3.3-70b-versatile"
+
+# Mistral
+QA_PROVIDER="mistral:mistral-small-latest"
+```
+
+See the [Pydantic AI documentation](https://ai.pydantic.dev/models/) for the complete list of supported providers and models.
 
 ## Reranking
 
