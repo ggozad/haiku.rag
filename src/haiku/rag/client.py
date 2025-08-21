@@ -3,7 +3,6 @@ import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -12,10 +11,9 @@ from haiku.rag.config import Config
 from haiku.rag.reader import FileReader
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
+from haiku.rag.store.factory import create_repositories
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from haiku.rag.store.repositories.chunk import ChunkRepository
-from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.utils import text_to_docling_document
 
 
@@ -24,22 +22,21 @@ class HaikuRAG:
 
     def __init__(
         self,
-        db_path: Path | Literal[":memory:"] = Config.DEFAULT_DATA_DIR
-        / "haiku.rag.sqlite",
+        db_path: Path = Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         skip_validation: bool = False,
     ):
         """Initialize the RAG client with a database path.
 
         Args:
-            db_path: Path to the SQLite database file or ":memory:" for in-memory database.
+            db_path: Path to the database file.
             skip_validation: Whether to skip configuration validation on database load.
         """
-        if isinstance(db_path, Path):
-            if not db_path.parent.exists():
-                Path.mkdir(db_path.parent, parents=True)
+        if not db_path.parent.exists():
+            Path.mkdir(db_path.parent, parents=True)
         self.store = Store(db_path, skip_validation=skip_validation)
-        self.document_repository = DocumentRepository(self.store)
-        self.chunk_repository = ChunkRepository(self.store)
+        repos = create_repositories(self.store)
+        self.document_repository = repos["document"]
+        self.chunk_repository = repos["chunk"]
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -269,7 +266,7 @@ class HaikuRAG:
         # Default to .html for web content
         return ".html"
 
-    async def get_document_by_id(self, document_id: int) -> Document | None:
+    async def get_document_by_id(self, document_id: str) -> Document | None:
         """Get a document by its ID.
 
         Args:
@@ -300,7 +297,7 @@ class HaikuRAG:
             document, docling_document
         )
 
-    async def delete_document(self, document_id: int) -> bool:
+    async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""
         return await self.document_repository.delete(document_id)
 
@@ -493,7 +490,7 @@ class HaikuRAG:
         qa_agent = get_qa_agent(self, use_citations=cite)
         return await qa_agent.answer(question)
 
-    async def rebuild_database(self) -> AsyncGenerator[int, None]:
+    async def rebuild_database(self) -> AsyncGenerator[str, None]:
         """Rebuild the database by deleting all chunks and re-indexing all documents.
 
         For documents with URIs:
@@ -510,10 +507,9 @@ class HaikuRAG:
         self.store.recreate_embeddings_table()
 
         # Update settings to current config
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
-        settings_repo = SettingsRepository(self.store)
-        settings_repo.save()
+        repos = create_repositories(self.store)
+        settings_repo = repos["settings"]
+        settings_repo.save_current_settings()
 
         documents = await self.list_documents()
 
@@ -547,12 +543,11 @@ class HaikuRAG:
                 # Document without URI - re-create chunks from existing content
                 docling_document = text_to_docling_document(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
-                    doc.id, docling_document, commit=False
+                    doc.id, docling_document
                 )
                 yield doc.id
 
-        if self.store._connection:
-            self.store._connection.commit()
+        # LanceDB doesn't need explicit commits
 
     def close(self):
         """Close the underlying store connection."""

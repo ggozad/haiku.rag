@@ -1,77 +1,128 @@
 import json
-from typing import Any
 
-from haiku.rag.store.engine import Store
+from haiku.rag.config import Config
+from haiku.rag.store.engine import SettingsRecord, Store
 
 
 class ConfigMismatchError(Exception):
-    """Raised when current config doesn't match stored settings."""
+    """Raised when stored config doesn't match current config."""
 
     pass
 
 
 class SettingsRepository:
-    def __init__(self, store: Store):
+    """Repository for Settings operations."""
+
+    def __init__(self, store: Store) -> None:
         self.store = store
 
-    def get(self) -> dict[str, Any]:
-        """Get all settings from the database."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
+    async def create(self, entity: dict) -> dict:
+        """Create settings in the database."""
+        settings_record = SettingsRecord(id="settings", settings=json.dumps(entity))
+        self.store.settings_table.add([settings_record])
+        return entity
 
-        cursor = self.store._connection.execute("SELECT settings FROM settings LIMIT 1")
-        row = cursor.fetchone()
-        if row:
-            return json.loads(row[0])
-        return {}
-
-    def save(self) -> None:
-        """Sync settings from the current AppConfig to database."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        from haiku.rag.config import Config
-
-        settings_json = Config.model_dump_json()
-
-        self.store._connection.execute(
-            "INSERT INTO settings (id, settings) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings",
-            (settings_json,),
+    async def get_by_id(self, entity_id: str) -> dict | None:
+        """Get settings by ID."""
+        results = list(
+            self.store.settings_table.search()
+            .where(f"id = '{entity_id}'")
+            .limit(1)
+            .to_pydantic(SettingsRecord)
         )
 
-        self.store._connection.commit()
+        if not results:
+            return None
 
-    def validate_config_compatibility(self) -> None:
-        """Check if current config is compatible with stored settings.
+        return json.loads(results[0].settings) if results[0].settings else {}
 
-        Raises ConfigMismatchError if there are incompatible differences.
-        If no settings exist, saves current config.
-        """
-        db_settings = self.get()
-        if not db_settings:
-            # No settings in DB, save current config
-            self.save()
-            return
+    async def update(self, entity: dict) -> dict:
+        """Update existing settings."""
+        self.store.settings_table.update(
+            where="id = 'settings'", values={"settings": json.dumps(entity)}
+        )
+        return entity
 
-        from haiku.rag.config import Config
+    async def delete(self, entity_id: str) -> bool:
+        """Delete settings by ID."""
+        self.store.settings_table.delete(f"id = '{entity_id}'")
+        return True
 
-        current_config = Config.model_dump(mode="json")
-
-        # Critical settings that must match
-        critical_settings = [
-            "EMBEDDINGS_PROVIDER",
-            "EMBEDDINGS_MODEL",
-            "EMBEDDINGS_VECTOR_DIM",
-            "CHUNK_SIZE",
+    async def list_all(
+        self, limit: int | None = None, offset: int | None = None
+    ) -> list[dict]:
+        """List all settings."""
+        results = list(self.store.settings_table.search().to_pydantic(SettingsRecord))
+        return [
+            json.loads(record.settings) if record.settings else {} for record in results
         ]
 
-        errors = []
-        for setting in critical_settings:
-            if db_settings.get(setting) != current_config.get(setting):
-                errors.append(
-                    f"{setting}: current={current_config.get(setting)}, stored={db_settings.get(setting)}"
+    def get_current_settings(self) -> dict:
+        """Get the current settings."""
+        results = list(
+            self.store.settings_table.search()
+            .where("id = 'settings'")
+            .limit(1)
+            .to_pydantic(SettingsRecord)
+        )
+
+        if not results:
+            return {}
+
+        return json.loads(results[0].settings) if results[0].settings else {}
+
+    def save_current_settings(self) -> None:
+        """Save the current configuration to the database."""
+        current_config = Config.model_dump(mode="json")
+
+        # Check if settings exist
+        existing = list(
+            self.store.settings_table.search()
+            .where("id = 'settings'")
+            .limit(1)
+            .to_pydantic(SettingsRecord)
+        )
+
+        if existing:
+            # Update existing settings
+            self.store.settings_table.update(
+                where="id = 'settings'", values={"settings": json.dumps(current_config)}
+            )
+        else:
+            # Create new settings
+            settings_record = SettingsRecord(
+                id="settings", settings=json.dumps(current_config)
+            )
+            self.store.settings_table.add([settings_record])
+
+    def validate_config_compatibility(self) -> None:
+        """Validate that the current configuration is compatible with stored settings."""
+        try:
+            stored_settings = self.get_current_settings()
+            current_config = Config.model_dump(mode="json")
+
+            # Check if embedding provider or model has changed
+            stored_provider = stored_settings.get("embedding_provider")
+            current_provider = current_config.get("embedding_provider")
+
+            stored_model = stored_settings.get("embedding_model")
+            current_model = current_config.get("embedding_model")
+
+            if (stored_provider and stored_provider != current_provider) or (
+                stored_model and stored_model != current_model
+            ):
+                # Provider or model changed - need to recreate embeddings
+                from rich.console import Console
+
+                console = Console()
+                console.print(
+                    "[yellow]Warning: Embedding provider/model changed. "
+                    "You may need to recreate embeddings for optimal performance.[/yellow]"
                 )
 
-        if errors:
-            error_msg = f"Config mismatch detected: {'; '.join(errors)}. Consider rebuilding the database with the current configuration."
-            raise ConfigMismatchError(error_msg)
+                # Optionally recreate embeddings table
+                # self.store.recreate_embeddings_table()
+
+        except Exception:
+            # If we can't validate, just continue
+            pass

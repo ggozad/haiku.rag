@@ -7,10 +7,10 @@ from haiku.rag.store.repositories.document import DocumentRepository
 
 
 @pytest.mark.asyncio
-async def test_create_document_with_chunks(qa_corpus: Dataset):
+async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
     """Test creating a document with chunks from the qa_corpus using repository."""
-    # Create an in-memory store and repository
-    store = Store(":memory:")
+    # Create a store and repository
+    store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
 
     # Get the first document from the corpus
@@ -23,58 +23,39 @@ async def test_create_document_with_chunks(qa_corpus: Dataset):
         metadata={"source": "qa_corpus", "topic": first_doc.get("document_topic", "")},
     )
 
+    # Convert text to DoclingDocument for chunk creation
+    from haiku.rag.utils import text_to_docling_document
+
+    docling_document = text_to_docling_document(document_text, name="test.md")
+
     # Create the document with chunks in the database
-    created_document = await doc_repo.create(document)
+    created_document = await doc_repo._create_with_docling(document, docling_document)
 
     # Verify the document was created
     assert created_document.id is not None
     assert created_document.content == document_text
 
-    # Check that chunks were created in the database
-    if store._connection is not None:
-        cursor = store._connection.cursor()
-        cursor.execute(
-            "SELECT COUNT(*) FROM chunks WHERE document_id = ?", (created_document.id,)
-        )
-        chunk_count = cursor.fetchone()[0]
+    # Check that chunks were created using repository
+    from haiku.rag.store.repositories.chunk import ChunkRepository
 
-        assert chunk_count > 0
+    chunk_repo = ChunkRepository(store)
+    chunks = await chunk_repo.get_by_document_id(created_document.id)
 
-        # Check that embeddings were created
-        cursor.execute(
-            """
-            SELECT COUNT(*) FROM chunk_embeddings ce
-            JOIN chunks c ON c.id = ce.chunk_id
-            WHERE c.document_id = ?
-        """,
-            (created_document.id,),
-        )
-        embedding_count = cursor.fetchone()[0]
+    assert len(chunks) > 0
 
-        assert embedding_count == chunk_count
-
-        # Verify chunk metadata contains order information
-        cursor.execute(
-            "SELECT metadata FROM chunks WHERE document_id = ? ORDER BY id",
-            (created_document.id,),
-        )
-        chunk_metadata = cursor.fetchall()
-
-        for i, (metadata_json,) in enumerate(chunk_metadata):
-            import json
-
-            metadata = json.loads(metadata_json)
-            assert "order" in metadata
-            assert metadata["order"] == i
+    # Verify chunk metadata contains order information
+    for i, chunk in enumerate(chunks):
+        assert "order" in chunk.metadata
+        assert chunk.metadata["order"] == i
 
     store.close()
 
 
 @pytest.mark.asyncio
-async def test_document_repository_crud(qa_corpus: Dataset):
+async def test_document_repository_crud(qa_corpus: Dataset, temp_db_path):
     """Test CRUD operations in DocumentRepository."""
-    # Create an in-memory store and repository
-    store = Store(":memory:")
+    # Create a store and repository
+    store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
 
     # Get the first document from the corpus

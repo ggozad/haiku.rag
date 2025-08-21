@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,16 +8,16 @@ from haiku.rag.store.models.document import Document
 
 
 @pytest.fixture
-def app():
-    return HaikuRAGApp(db_path=Path(":memory:"))
+def app(tmp_path):
+    return HaikuRAGApp(db_path=tmp_path / "test.lancedb")
 
 
 @pytest.mark.asyncio
 async def test_list_documents(app: HaikuRAGApp, monkeypatch):
     """Test listing documents."""
     mock_docs = [
-        Document(id=1, content="doc 1"),
-        Document(id=2, content="doc 2"),
+        Document(id="1", content="doc 1"),
+        Document(id="2", content="doc 2"),
     ]
     mock_client = AsyncMock()
     mock_client.list_documents.return_value = mock_docs
@@ -42,7 +41,7 @@ async def test_list_documents(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_add_document_from_text(app: HaikuRAGApp, monkeypatch):
     """Test adding a document from text."""
-    mock_doc = Document(id=1, content="test document")
+    mock_doc = Document(id="1", content="test document")
     mock_client = AsyncMock()
     mock_client.create_document.return_value = mock_doc
     mock_client.__aenter__.return_value = mock_client
@@ -65,7 +64,7 @@ async def test_add_document_from_text(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_add_document_from_source(app: HaikuRAGApp, monkeypatch):
     """Test adding a document from a source path."""
-    mock_doc = Document(id=1, content="test document")
+    mock_doc = Document(id="1", content="test document")
     mock_client = AsyncMock()
     mock_client.create_document_from_source.return_value = mock_doc
     mock_client.__aenter__.return_value = mock_client
@@ -89,7 +88,7 @@ async def test_add_document_from_source(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_get_document(app: HaikuRAGApp, monkeypatch):
     """Test getting a document."""
-    mock_doc = Document(id=1, content="test document")
+    mock_doc = Document(id="1", content="test document")
     mock_client = AsyncMock()
     mock_client.get_document_by_id.return_value = mock_doc
     mock_client.__aenter__.return_value = mock_client
@@ -98,9 +97,9 @@ async def test_get_document(app: HaikuRAGApp, monkeypatch):
     monkeypatch.setattr(app, "_rich_print_document", mock_rich_print)
 
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        await app.get_document(1)
+        await app.get_document("1")
 
-    mock_client.get_document_by_id.assert_called_once_with(1)
+    mock_client.get_document_by_id.assert_called_once_with("1")
     mock_rich_print.assert_called_once_with(mock_doc, truncate=False)
 
 
@@ -115,9 +114,9 @@ async def test_get_document_not_found(app: HaikuRAGApp, monkeypatch):
     monkeypatch.setattr(app.console, "print", mock_print)
 
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        await app.get_document(1)
+        await app.get_document("1")
 
-    mock_client.get_document_by_id.assert_called_once_with(1)
+    mock_client.get_document_by_id.assert_called_once_with("1")
     mock_print.assert_called_once_with("[red]Document with id 1 not found.[/red]")
 
 
@@ -131,9 +130,9 @@ async def test_delete_document(app: HaikuRAGApp, monkeypatch):
     monkeypatch.setattr(app.console, "print", mock_print)
 
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        await app.delete_document(1)
+        await app.delete_document("1")
 
-    mock_client.delete_document.assert_called_once_with(1)
+    mock_client.delete_document.assert_called_once_with("1")
     mock_print.assert_called_once_with("[b]Document 1 deleted successfully.[/b]")
 
 

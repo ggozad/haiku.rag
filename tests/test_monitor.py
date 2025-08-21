@@ -18,7 +18,7 @@ async def test_file_watcher_upsert_document():
         temp_path.write_text("Test content for file watcher")
 
         mock_client = AsyncMock(spec=HaikuRAG)
-        mock_doc = Document(id=1, content="Test content", uri=temp_path.as_uri())
+        mock_doc = Document(id="1", content="Test content", uri=temp_path.as_uri())
         mock_client.create_document_from_source.return_value = mock_doc
         mock_client.get_document_by_uri.return_value = None  # No existing document
 
@@ -27,7 +27,7 @@ async def test_file_watcher_upsert_document():
         result = await watcher._upsert_document(temp_path)
 
         assert result is not None
-        assert result.id == 1
+        assert result.id == "1"
         mock_client.get_document_by_uri.assert_called_once_with(temp_path.as_uri())
         mock_client.create_document_from_source.assert_called_once_with(str(temp_path))
 
@@ -41,8 +41,10 @@ async def test_file_watcher_upsert_existing_document():
         temp_path.write_text("Test content for file watcher")
 
         mock_client = AsyncMock(spec=HaikuRAG)
-        existing_doc = Document(id=1, content="Old content", uri=temp_path.as_uri())
-        updated_doc = Document(id=1, content="Updated content", uri=temp_path.as_uri())
+        existing_doc = Document(id="1", content="Old content", uri=temp_path.as_uri())
+        updated_doc = Document(
+            id="1", content="Updated content", uri=temp_path.as_uri()
+        )
 
         mock_client.get_document_by_uri.return_value = existing_doc
         mock_client.create_document_from_source.return_value = updated_doc
@@ -63,7 +65,7 @@ async def test_file_watcher_delete_document():
     temp_path = Path("/tmp/test_file.txt")
 
     mock_client = AsyncMock(spec=HaikuRAG)
-    existing_doc = Document(id=1, content="Content to delete", uri=temp_path.as_uri())
+    existing_doc = Document(id="1", content="Content to delete", uri=temp_path.as_uri())
     mock_client.get_document_by_uri.return_value = existing_doc
     mock_client.delete_document.return_value = True
 
@@ -72,7 +74,7 @@ async def test_file_watcher_delete_document():
     await watcher._delete_document(temp_path)
 
     mock_client.get_document_by_uri.assert_called_once_with(temp_path.as_uri())
-    mock_client.delete_document.assert_called_once_with(1)
+    mock_client.delete_document.assert_called_once_with("1")
 
 
 @pytest.mark.asyncio

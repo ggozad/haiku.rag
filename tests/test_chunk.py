@@ -10,10 +10,10 @@ from haiku.rag.utils import text_to_docling_document
 
 
 @pytest.mark.asyncio
-async def test_chunk_repository_operations(qa_corpus: Dataset):
+async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
     """Test ChunkRepository operations."""
-    # Create an in-memory store and repositories
-    store = Store(":memory:")
+    # Create a store and repositories
+    store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
     chunk_repo = ChunkRepository(store)
 
@@ -21,9 +21,12 @@ async def test_chunk_repository_operations(qa_corpus: Dataset):
     first_doc = qa_corpus[0]
     document_text = first_doc["document_extracted"]
 
-    # Create a document first
+    # Create a document first with chunks
     document = Document(content=document_text, metadata={"source": "test"})
-    created_document = await doc_repo.create(document)
+    from haiku.rag.utils import text_to_docling_document
+
+    docling_document = text_to_docling_document(document_text, name="test.md")
+    created_document = await doc_repo._create_with_docling(document, docling_document)
     assert created_document.id is not None
 
     # Test getting chunks by document ID
@@ -48,11 +51,12 @@ async def test_chunk_repository_operations(qa_corpus: Dataset):
 
 
 @pytest.mark.asyncio
-async def test_create_chunks_for_document(qa_corpus: Dataset):
+async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
     """Test creating chunks for a document."""
-    # Create an in-memory store and repositories
-    store = Store(":memory:")
+    # Create a store and repositories
+    store = Store(temp_db_path)
     chunk_repo = ChunkRepository(store)
+    doc_repo = DocumentRepository(store)
 
     # Get the first document from the corpus
     first_doc = qa_corpus[0]
@@ -60,21 +64,8 @@ async def test_create_chunks_for_document(qa_corpus: Dataset):
 
     # Create a document first (without chunks)
     document = Document(content=document_text, metadata={"source": "test"})
-
-    # Insert document manually to test chunk creation independently
-    document_id = None
-    if store._connection is not None:
-        cursor = store._connection.cursor()
-        cursor.execute(
-            """
-            INSERT INTO documents (content, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (document.content, "{}", document.created_at, document.updated_at),
-        )
-        document_id = cursor.lastrowid
-        document.id = document_id
-        store._connection.commit()
+    created_document = await doc_repo.create(document)
+    document_id = created_document.id
 
     assert document_id is not None, "Document ID should not be None"
 
@@ -101,25 +92,17 @@ async def test_create_chunks_for_document(qa_corpus: Dataset):
 
 
 @pytest.mark.asyncio
-async def test_chunk_repository_crud():
+async def test_chunk_repository_crud(temp_db_path):
     """Test basic CRUD operations in ChunkRepository."""
-    # Create an in-memory store
-    store = Store(":memory:")
+    # Create a store
+    store = Store(temp_db_path)
     chunk_repo = ChunkRepository(store)
+    doc_repo = DocumentRepository(store)
 
     # First create a document to reference
-    document_id = None
-    if store._connection is not None:
-        cursor = store._connection.cursor()
-        cursor.execute(
-            """
-            INSERT INTO documents (content, metadata, created_at, updated_at)
-            VALUES (?, ?, datetime('now'), datetime('now'))
-            """,
-            ("Test document content", "{}"),
-        )
-        document_id = cursor.lastrowid
-        store._connection.commit()
+    document = Document(content="Test document content", metadata={})
+    created_document = await doc_repo.create(document)
+    document_id = created_document.id
 
     assert document_id is not None, "Document ID should not be None"
 
@@ -162,9 +145,9 @@ async def test_chunk_repository_crud():
 
 
 @pytest.mark.asyncio
-async def test_adjacent_chunks():
+async def test_adjacent_chunks(temp_db_path):
     """Test the get_adjacent_chunks repository method."""
-    store = Store(":memory:")
+    store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
     chunk_repo = ChunkRepository(store)
 

@@ -62,6 +62,9 @@ async def run_match_benchmark():
 
                 # Check position of correct document in results
                 for position, (chunk, _) in enumerate(matches):
+                    assert chunk.document_id is not None, (
+                        "Chunk document_id should not be None"
+                    )
                     retrieved = await rag.get_document_by_id(chunk.document_id)
                     if retrieved and retrieved.uri == doc_id:
                         if position == 0:  # First position

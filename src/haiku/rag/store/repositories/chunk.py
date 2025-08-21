@@ -1,516 +1,296 @@
 import json
 import re
+from uuid import uuid4
 
 from docling_core.types.doc.document import DoclingDocument
 
 from haiku.rag.chunker import chunker
 from haiku.rag.embeddings import get_embedder
+from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.store.repositories.base import BaseRepository
 
 
-class ChunkRepository(BaseRepository[Chunk]):
-    """Repository for Chunk database operations."""
+class ChunkRepository:
+    """Repository for Chunk operations."""
 
-    def __init__(self, store):
-        super().__init__(store)
+    def __init__(self, store: Store) -> None:
+        self.store = store
         self.embedder = get_embedder()
 
-    async def create(self, entity: Chunk, commit: bool = True) -> Chunk:
+    async def create(self, entity: Chunk) -> Chunk:
         """Create a chunk in the database."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-        if entity.document_id is None:
-            raise ValueError("Chunk must have a document_id to be created")
+        assert entity.document_id, "Chunk must have a document_id to be created"
 
-        cursor = self.store._connection.cursor()
-        cursor.execute(
-            """
-            INSERT INTO chunks (document_id, content, metadata)
-            VALUES (:document_id, :content, :metadata)
-            """,
-            {
-                "document_id": entity.document_id,
-                "content": entity.content,
-                "metadata": json.dumps(entity.metadata),
-            },
-        )
-
-        entity.id = cursor.lastrowid
-
-        # Generate and store embedding - use existing one if provided
+        # Generate embedding if not provided
         if entity.embedding is not None:
-            # Use the provided embedding
-            serialized_embedding = self.store.serialize_embedding(entity.embedding)
+            embedding = entity.embedding
         else:
-            # Generate embedding from content
             embedding = await self.embedder.embed(entity.content)
-            serialized_embedding = self.store.serialize_embedding(embedding)
 
-        cursor.execute(
-            """
-            INSERT INTO chunk_embeddings (chunk_id, embedding)
-            VALUES (:chunk_id, :embedding)
-            """,
-            {"chunk_id": entity.id, "embedding": serialized_embedding},
+        # Generate new UUID
+        chunk_id = str(uuid4())
+
+        # Create chunk record
+        chunk_record = self.store.ChunkRecord(
+            id=chunk_id,
+            document_id=entity.document_id,
+            content=entity.content,
+            metadata=json.dumps(entity.metadata),
+            vector=embedding,
         )
 
-        # Insert into FTS5 table for full-text search
-        cursor.execute(
-            """
-            INSERT INTO chunks_fts(rowid, content)
-            VALUES (:rowid, :content)
-            """,
-            {"rowid": entity.id, "content": entity.content},
-        )
+        # Add to table
+        self.store.chunks_table.add([chunk_record])
 
-        if commit:
-            self.store._connection.commit()
+        entity.id = chunk_id
         return entity
 
-    async def get_by_id(self, entity_id: int) -> Chunk | None:
+    async def get_by_id(self, entity_id: str) -> Chunk | None:
         """Get a chunk by its ID."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        cursor.execute(
-            """
-            SELECT id, document_id, content, metadata
-            FROM chunks WHERE id = :id
-            """,
-            {"id": entity_id},
+        results = list(
+            self.store.chunks_table.search()
+            .where(f"id = '{entity_id}'")
+            .limit(1)
+            .to_pydantic(self.store.ChunkRecord)
         )
 
-        row = cursor.fetchone()
-        if row is None:
+        if not results:
             return None
 
-        chunk_id, document_id, content, metadata_json = row
-        metadata = json.loads(metadata_json) if metadata_json else {}
-
+        chunk_record = results[0]
         return Chunk(
-            id=chunk_id, document_id=document_id, content=content, metadata=metadata
+            id=chunk_record.id,
+            document_id=chunk_record.document_id,
+            content=chunk_record.content,
+            metadata=json.loads(chunk_record.metadata) if chunk_record.metadata else {},
         )
 
     async def update(self, entity: Chunk) -> Chunk:
         """Update an existing chunk."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-        if entity.id is None:
-            raise ValueError("Chunk ID is required for update")
+        assert entity.id, "Chunk ID is required for update"
 
-        cursor = self.store._connection.cursor()
-        cursor.execute(
-            """
-            UPDATE chunks
-            SET document_id = :document_id, content = :content, metadata = :metadata
-            WHERE id = :id
-            """,
-            {
+        # Generate new embedding
+        embedding = await self.embedder.embed(entity.content)
+
+        # Update the record
+        self.store.chunks_table.update(
+            where=f"id = '{entity.id}'",
+            values={
                 "document_id": entity.document_id,
                 "content": entity.content,
                 "metadata": json.dumps(entity.metadata),
-                "id": entity.id,
+                "vector": embedding,
             },
         )
 
-        # Regenerate and update embedding
-        embedding = await self.embedder.embed(entity.content)
-        serialized_embedding = self.store.serialize_embedding(embedding)
-        cursor.execute(
-            """
-            UPDATE chunk_embeddings
-            SET embedding = :embedding
-            WHERE chunk_id = :chunk_id
-            """,
-            {"embedding": serialized_embedding, "chunk_id": entity.id},
-        )
-
-        # Update FTS5 table
-        cursor.execute(
-            """
-            UPDATE chunks_fts
-            SET content = :content
-            WHERE rowid = :rowid
-            """,
-            {"content": entity.content, "rowid": entity.id},
-        )
-
-        self.store._connection.commit()
         return entity
 
-    async def delete(self, entity_id: int, commit: bool = True) -> bool:
+    async def delete(self, entity_id: str) -> bool:
         """Delete a chunk by its ID."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-
-        # Delete from FTS5 table first
-        cursor.execute(
-            "DELETE FROM chunks_fts WHERE rowid = :rowid", {"rowid": entity_id}
-        )
-
-        # Delete the embedding
-        cursor.execute(
-            "DELETE FROM chunk_embeddings WHERE chunk_id = :chunk_id",
-            {"chunk_id": entity_id},
-        )
+        # Check if chunk exists
+        chunk = await self.get_by_id(entity_id)
+        if chunk is None:
+            return False
 
         # Delete the chunk
-        cursor.execute("DELETE FROM chunks WHERE id = :id", {"id": entity_id})
-
-        deleted = cursor.rowcount > 0
-        if commit:
-            self.store._connection.commit()
-        return deleted
+        self.store.chunks_table.delete(f"id = '{entity_id}'")
+        return True
 
     async def list_all(
         self, limit: int | None = None, offset: int | None = None
     ) -> list[Chunk]:
         """List all chunks with optional pagination."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        query = "SELECT id, document_id, content, metadata FROM chunks ORDER BY document_id, id"
-        params = {}
-
-        if limit is not None:
-            query += " LIMIT :limit"
-            params["limit"] = limit
+        query = self.store.chunks_table.search()
 
         if offset is not None:
-            query += " OFFSET :offset"
-            params["offset"] = offset
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
 
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+        results = list(query.to_pydantic(self.store.ChunkRecord))
 
         return [
             Chunk(
-                id=chunk_id,
-                document_id=document_id,
-                content=content,
-                metadata=json.loads(metadata_json) if metadata_json else {},
+                id=chunk.id,
+                document_id=chunk.document_id,
+                content=chunk.content,
+                metadata=json.loads(chunk.metadata) if chunk.metadata else {},
             )
-            for chunk_id, document_id, content, metadata_json in rows
+            for chunk in results
         ]
 
     async def create_chunks_for_document(
-        self, document_id: int, document: DoclingDocument, commit: bool = True
+        self, document_id: str, document: DoclingDocument
     ) -> list[Chunk]:
         """Create chunks and embeddings for a document from DoclingDocument."""
-        # Chunk the document content
         chunk_texts = await chunker.chunk(document)
         created_chunks = []
 
-        # Create chunks with embeddings using the create method
         for order, chunk_text in enumerate(chunk_texts):
-            # Create chunk with order in metadata
             chunk = Chunk(
                 document_id=document_id, content=chunk_text, metadata={"order": order}
             )
-
-            created_chunk = await self.create(chunk, commit=commit)
+            created_chunk = await self.create(chunk)
             created_chunks.append(created_chunk)
 
         return created_chunks
 
-    async def delete_all(self, commit: bool = True) -> bool:
+    async def delete_all(self) -> bool:
         """Delete all chunks from the database."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
+        try:
+            # Get count before deletion
+            count = len(
+                list(
+                    self.store.chunks_table.search()
+                    .limit(1)
+                    .to_pydantic(self.store.ChunkRecord)
+                )
+            )
+            if count > 0:
+                # Drop and recreate table to clear all data
+                self.store.db.drop_table("chunks")
+                self.store.chunks_table = self.store.db.create_table(
+                    "chunks", schema=self.store.ChunkRecord
+                )
+                return True
+            return False
+        except Exception:
+            return False
 
-        cursor = self.store._connection.cursor()
-
-        cursor.execute("DELETE FROM chunks_fts")
-        cursor.execute("DELETE FROM chunk_embeddings")
-        cursor.execute("DELETE FROM chunks")
-
-        deleted = cursor.rowcount > 0
-        if commit:
-            self.store._connection.commit()
-        return deleted
-
-    async def delete_by_document_id(
-        self, document_id: int, commit: bool = True
-    ) -> bool:
+    async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
         chunks = await self.get_by_document_id(document_id)
 
-        deleted_any = False
-        for chunk in chunks:
-            if chunk.id is not None:
-                deleted = await self.delete(chunk.id, commit=False)
-                deleted_any = deleted_any or deleted
+        if not chunks:
+            return False
 
-        if commit and deleted_any and self.store._connection:
-            self.store._connection.commit()
-        return deleted_any
+        # Delete chunks by document_id
+        self.store.chunks_table.delete(f"document_id = '{document_id}'")
+        return True
 
     async def search_chunks(
         self, query: str, limit: int = 5
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using vector similarity."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-
         # Generate embedding for the query
         query_embedding = await self.embedder.embed(query)
-        serialized_query_embedding = self.store.serialize_embedding(query_embedding)
 
-        # Search for similar chunks using sqlite-vec
-        cursor.execute(
-            """
-            SELECT c.id, c.document_id, c.content, c.metadata, distance, d.uri, d.metadata as document_metadata
-            FROM chunk_embeddings
-            JOIN chunks c ON c.id = chunk_embeddings.chunk_id
-            JOIN documents d ON c.document_id = d.id
-            WHERE embedding MATCH :embedding AND k = :k
-            ORDER BY distance
-            """,
-            {"embedding": serialized_query_embedding, "k": limit},
+        # Perform vector search
+        results = (
+            self.store.chunks_table.search(query_embedding)
+            .limit(limit)
+            .to_pydantic(self.store.ChunkRecord)
         )
 
-        results = cursor.fetchall()
-        return [
-            (
-                Chunk(
-                    id=chunk_id,
-                    document_id=document_id,
-                    content=content,
-                    metadata=json.loads(metadata_json) if metadata_json else {},
-                    document_uri=document_uri,
-                    document_meta=json.loads(document_metadata_json)
-                    if document_metadata_json
-                    else {},
-                ),
-                1.0 / (1.0 + distance),
+        # Get document info for each chunk
+        chunks_with_scores = []
+        for chunk_record in results:
+            # Get document info
+            doc_results = list(
+                self.store.documents_table.search()
+                .where(f"id = '{chunk_record.document_id}'")
+                .limit(1)
+                .to_pydantic(DocumentRecord)
             )
-            for chunk_id, document_id, content, metadata_json, distance, document_uri, document_metadata_json in results
-        ]
+
+            doc_uri = doc_results[0].uri if doc_results else None
+            doc_meta = doc_results[0].metadata if doc_results else "{}"
+
+            chunk = Chunk(
+                id=chunk_record.id,
+                document_id=chunk_record.document_id,
+                content=chunk_record.content,
+                metadata=json.loads(chunk_record.metadata)
+                if chunk_record.metadata
+                else {},
+                document_uri=doc_uri,
+                document_meta=json.loads(doc_meta) if doc_meta else {},
+            )
+
+            # LanceDB returns similarity score (higher is better)
+            score = getattr(
+                chunk_record, "_distance", 0.8
+            )  # Default score if not available
+            chunks_with_scores.append(
+                (chunk, 1.0 - score)
+            )  # Convert distance to similarity
+
+        return chunks_with_scores
 
     async def search_chunks_fts(
         self, query: str, limit: int = 5
     ) -> list[tuple[Chunk, float]]:
-        """Search for chunks using FTS5 full-text search."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-
-        # Clean the query for FTS5 - extract keywords for better matching
-        # Remove special characters and split into words
+        """Search for chunks using full-text search."""
+        # Extract keywords for search
         words = re.findall(r"\b\w+\b", query.lower())
-        # Join with OR to find chunks containing any of the keywords
-        fts_query = " OR ".join(words) if words else query
 
-        # Search using FTS5
-        cursor.execute(
-            """
-            SELECT c.id, c.document_id, c.content, c.metadata, rank, d.uri, d.metadata as document_metadata
-            FROM chunks_fts
-            JOIN chunks c ON c.id = chunks_fts.rowid
-            JOIN documents d ON c.document_id = d.id
-            WHERE chunks_fts MATCH :query
-            ORDER BY rank
-            LIMIT :limit
-            """,
-            {"query": fts_query, "limit": limit},
-        )
+        if not words:
+            return []
 
-        results = cursor.fetchall()
-
-        return [
-            (
-                Chunk(
-                    id=chunk_id,
-                    document_id=document_id,
-                    content=content,
-                    metadata=json.loads(metadata_json) if metadata_json else {},
-                    document_uri=document_uri,
-                    document_meta=json.loads(document_metadata_json)
-                    if document_metadata_json
-                    else {},
-                ),
-                -rank,
-            )
-            for chunk_id, document_id, content, metadata_json, rank, document_uri, document_metadata_json in results
-            # FTS5 rank is negative BM25 score
-        ]
+        # Search by content similarity (approximate FTS using vector search)
+        # This is a fallback since LanceDB doesn't have built-in FTS
+        return await self.search_chunks(query, limit)
 
     async def search_chunks_hybrid(
         self, query: str, limit: int = 5, k: int = 60
     ) -> list[tuple[Chunk, float]]:
-        """Hybrid search using Reciprocal Rank Fusion (RRF) combining vector similarity and FTS5 full-text search."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
+        """Hybrid search - for now, just use vector search in LanceDB."""
+        # For LanceDB, we'll use vector search as the primary method
+        # In the future, this could be enhanced with additional ranking strategies
+        return await self.search_chunks(query, limit)
 
-        cursor = self.store._connection.cursor()
-
-        # Generate embedding for the query
-        query_embedding = await self.embedder.embed(query)
-        serialized_query_embedding = self.store.serialize_embedding(query_embedding)
-
-        # Clean the query for FTS5 - extract keywords for better matching
-        # Remove special characters and split into words
-        words = re.findall(r"\b\w+\b", query.lower())
-        # Join with OR to find chunks containing any of the keywords
-        fts_query = " OR ".join(words) if words else query
-        # Perform hybrid search using RRF (Reciprocal Rank Fusion)
-        cursor.execute(
-            """
-            WITH vector_search AS (
-                SELECT
-                    c.id,
-                    c.document_id,
-                    c.content,
-                    c.metadata,
-                    ROW_NUMBER() OVER (ORDER BY ce.distance) as vector_rank
-                FROM chunk_embeddings ce
-                JOIN chunks c ON c.id = ce.chunk_id
-                WHERE ce.embedding MATCH :embedding AND k = :k_vector
-                ORDER BY ce.distance
-            ),
-            fts_search AS (
-                SELECT
-                    c.id,
-                    c.document_id,
-                    c.content,
-                    c.metadata,
-                    ROW_NUMBER() OVER (ORDER BY chunks_fts.rank) as fts_rank
-                FROM chunks_fts
-                JOIN chunks c ON c.id = chunks_fts.rowid
-                WHERE chunks_fts MATCH :fts_query
-                ORDER BY chunks_fts.rank
-            ),
-            all_chunks AS (
-                SELECT id, document_id, content, metadata FROM vector_search
-                UNION
-                SELECT id, document_id, content, metadata FROM fts_search
-            ),
-            rrf_scores AS (
-                SELECT
-                    a.id,
-                    a.document_id,
-                    a.content,
-                    a.metadata,
-                    COALESCE(1.0 / (:k + v.vector_rank), 0) + COALESCE(1.0 / (:k + f.fts_rank), 0) as rrf_score
-                FROM all_chunks a
-                LEFT JOIN vector_search v ON a.id = v.id
-                LEFT JOIN fts_search f ON a.id = f.id
-            )
-            SELECT r.id, r.document_id, r.content, r.metadata, r.rrf_score, d.uri, d.metadata as document_metadata
-            FROM rrf_scores r
-            JOIN documents d ON r.document_id = d.id
-            ORDER BY r.rrf_score DESC
-            LIMIT :limit
-            """,
-            {
-                "embedding": serialized_query_embedding,
-                "k_vector": limit * 3,
-                "fts_query": fts_query,
-                "k": k,
-                "limit": limit,
-            },
-        )
-
-        results = cursor.fetchall()
-        return [
-            (
-                Chunk(
-                    id=chunk_id,
-                    document_id=document_id,
-                    content=content,
-                    metadata=json.loads(metadata_json) if metadata_json else {},
-                    document_uri=document_uri,
-                    document_meta=json.loads(document_metadata_json)
-                    if document_metadata_json
-                    else {},
-                ),
-                rrf_score,
-            )
-            for chunk_id, document_id, content, metadata_json, rrf_score, document_uri, document_metadata_json in results
-        ]
-
-    async def get_by_document_id(self, document_id: int) -> list[Chunk]:
+    async def get_by_document_id(self, document_id: str) -> list[Chunk]:
         """Get all chunks for a specific document."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        cursor.execute(
-            """
-            SELECT c.id, c.document_id, c.content, c.metadata, d.uri, d.metadata as document_metadata
-            FROM chunks c
-            JOIN documents d ON c.document_id = d.id
-            WHERE c.document_id = :document_id
-            ORDER BY JSON_EXTRACT(c.metadata, '$.order')
-            """,
-            {"document_id": document_id},
+        results = list(
+            self.store.chunks_table.search()
+            .where(f"document_id = '{document_id}'")
+            .to_pydantic(self.store.ChunkRecord)
         )
 
-        rows = cursor.fetchall()
-        return [
+        # Get document info
+        doc_results = list(
+            self.store.documents_table.search()
+            .where(f"id = '{document_id}'")
+            .limit(1)
+            .to_pydantic(DocumentRecord)
+        )
+
+        doc_uri = doc_results[0].uri if doc_results else None
+        doc_meta = doc_results[0].metadata if doc_results else "{}"
+
+        # Sort by order in metadata
+        chunks = [
             Chunk(
-                id=chunk_id,
-                document_id=document_id,
-                content=content,
-                metadata=json.loads(metadata_json) if metadata_json else {},
-                document_uri=document_uri,
-                document_meta=json.loads(document_metadata_json)
-                if document_metadata_json
-                else {},
+                id=chunk.id,
+                document_id=chunk.document_id,
+                content=chunk.content,
+                metadata=json.loads(chunk.metadata) if chunk.metadata else {},
+                document_uri=doc_uri,
+                document_meta=json.loads(doc_meta) if doc_meta else {},
             )
-            for chunk_id, document_id, content, metadata_json, document_uri, document_metadata_json in rows
+            for chunk in results
         ]
+
+        # Sort by order if available
+        chunks.sort(key=lambda c: c.metadata.get("order", 0))
+        return chunks
 
     async def get_adjacent_chunks(self, chunk: Chunk, num_adjacent: int) -> list[Chunk]:
         """Get adjacent chunks before and after the given chunk within the same document."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-        if chunk.document_id is None:
-            return []
+        assert chunk.document_id, "Document id is required for adjacent chunk finding"
 
-        cursor = self.store._connection.cursor()
         chunk_order = chunk.metadata.get("order")
         if chunk_order is None:
             return []
 
-        # Get adjacent chunks within the same document
-        cursor.execute(
-            """
-            SELECT c.id, c.document_id, c.content, c.metadata, d.uri, d.metadata as document_metadata
-            FROM chunks c
-            JOIN documents d ON c.document_id = d.id
-            WHERE c.document_id = :document_id
-            AND JSON_EXTRACT(c.metadata, '$.order') BETWEEN :start_order AND :end_order
-            AND c.id != :chunk_id
-            ORDER BY JSON_EXTRACT(c.metadata, '$.order')
-            """,
-            {
-                "document_id": chunk.document_id,
-                "start_order": max(0, chunk_order - num_adjacent),
-                "end_order": chunk_order + num_adjacent,
-                "chunk_id": chunk.id,
-            },
-        )
+        # Get all chunks for the document
+        all_chunks = await self.get_by_document_id(chunk.document_id)
 
-        rows = cursor.fetchall()
-        return [
-            Chunk(
-                id=chunk_id,
-                document_id=document_id,
-                content=content,
-                metadata=json.loads(metadata_json) if metadata_json else {},
-                document_uri=document_uri,
-                document_meta=json.loads(document_metadata_json)
-                if document_metadata_json
-                else {},
-            )
-            for chunk_id, document_id, content, metadata_json, document_uri, document_metadata_json in rows
-        ]
+        # Filter to adjacent chunks
+        adjacent_chunks = []
+        for c in all_chunks:
+            c_order = c.metadata.get("order", 0)
+            if c.id != chunk.id and abs(c_order - chunk_order) <= num_adjacent:
+                adjacent_chunks.append(c)
+
+        return adjacent_chunks

@@ -8,10 +8,10 @@ from haiku.rag.store.repositories.document import DocumentRepository
 
 
 @pytest.mark.asyncio
-async def test_search_qa_corpus(qa_corpus: Dataset):
+async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
-    # Create an in-memory store and repositories
-    store = Store(":memory:")
+    # Create a store and repositories
+    store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
     chunk_repo = ChunkRepository(store)
     num_documents = 20
@@ -33,7 +33,12 @@ async def test_search_qa_corpus(qa_corpus: Dataset):
         )
 
         # Create the document with chunks and embeddings
-        created_document = await doc_repo.create(document)
+        from haiku.rag.utils import text_to_docling_document
+
+        docling_document = text_to_docling_document(document_text, name="test.md")
+        created_document = await doc_repo._create_with_docling(
+            document, docling_document
+        )
         documents.append((created_document, doc_data))
 
     for i in range(5):  # Test with first few documents
@@ -63,9 +68,9 @@ async def test_search_qa_corpus(qa_corpus: Dataset):
 
 
 @pytest.mark.asyncio
-async def test_chunks_include_document_info():
+async def test_chunks_include_document_info(temp_db_path):
     """Test that search results include document URI and metadata."""
-    store = Store(":memory:")
+    store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
     chunk_repo = ChunkRepository(store)
 
@@ -76,7 +81,11 @@ async def test_chunks_include_document_info():
         metadata={"title": "Test Document", "author": "Test Author"},
     )
 
-    created_document = await doc_repo.create(document)
+    # Create the document with chunks
+    from haiku.rag.utils import text_to_docling_document
+
+    docling_document = text_to_docling_document(document.content, name="test.md")
+    created_document = await doc_repo._create_with_docling(document, docling_document)
 
     # Search for chunks
     results = await chunk_repo.search_chunks_hybrid("test document", limit=1)

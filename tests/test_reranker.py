@@ -7,7 +7,7 @@ from haiku.rag.store.models.chunk import Chunk
 COHERE_AVAILABLE = bool(Config.COHERE_API_KEY)
 
 chunks = [
-    Chunk(content=content, document_id=i)
+    Chunk(content=content, document_id=str(i))
     for i, content in enumerate(
         [
             "To Kill a Mockingbird is a novel by Harper Lee published in 1960. It was immediately successful, winning the Pulitzer Prize, and has become a classic of modern American literature.",
@@ -39,7 +39,7 @@ async def test_mxbai_reranker():
         reranked = await reranker.rerank(
             "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
         )
-        assert [chunk.document_id for chunk, score in reranked] == [0, 2]
+        assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
         assert all(isinstance(score, float) for chunk, score in reranked)
     except ImportError:
         pytest.skip("MxBAI package not installed")
@@ -57,7 +57,7 @@ async def test_cohere_reranker():
         reranked = await reranker.rerank(
             "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
         )
-        assert [chunk.document_id for chunk, score in reranked] == [0, 2]
+        assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
         assert all(isinstance(score, float) for chunk, score in reranked)
 
     except ImportError:
@@ -73,5 +73,5 @@ async def test_ollama_reranker():
         "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
     )
 
-    assert [chunk.document_id for chunk, score in reranked] == [0, 2]
+    assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
     assert all(isinstance(score, float) for chunk, score in reranked)

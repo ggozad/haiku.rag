@@ -11,9 +11,9 @@ from haiku.rag.store.models.chunk import Chunk
 
 
 @pytest.mark.asyncio
-async def test_client_document_crud(qa_corpus: Dataset):
+async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
     """Test HaikuRAG CRUD operations for documents."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Get test data
         first_doc = qa_corpus[0]
         document_text = first_doc["document_extracted"]
@@ -77,9 +77,9 @@ async def test_client_document_crud(qa_corpus: Dataset):
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_source():
+async def test_client_create_document_from_source(temp_db_path):
     """Test creating a document from a file source."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         with tempfile.TemporaryDirectory() as temp_dir:
             test_content = "This is test content from a file."
             temp_path = Path(temp_dir) / "test.txt"
@@ -106,9 +106,9 @@ async def test_client_create_document_from_source():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_source_unsupported():
+async def test_client_create_document_from_source_unsupported(temp_db_path):
     """Test creating a document from an unsupported file type."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create a temporary file with unsupported extension
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".unsupported", delete=False
@@ -122,9 +122,9 @@ async def test_client_create_document_from_source_unsupported():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_source_nonexistent():
+async def test_client_create_document_from_source_nonexistent(temp_db_path):
     """Test creating a document from a non-existent file."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         non_existent_path = Path("/non/existent/file.txt")
 
         # Should raise ValueError when file doesn't exist
@@ -133,9 +133,9 @@ async def test_client_create_document_from_source_nonexistent():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_url():
+async def test_client_create_document_from_url(temp_db_path):
     """Test creating a document from a URL."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Mock the HTTP response
         mock_response = AsyncMock()
         mock_response.content = b"<html><body><h1>Test Page</h1><p>This is test content from a webpage.</p></body></html>"
@@ -158,9 +158,11 @@ async def test_client_create_document_from_url():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_url_with_different_content_types():
+async def test_client_create_document_from_url_with_different_content_types(
+    temp_db_path,
+):
     """Test creating documents from URLs with different content types."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Test JSON content
         mock_json_response = AsyncMock()
         mock_json_response.content = (
@@ -201,9 +203,9 @@ async def test_client_create_document_from_url_with_different_content_types():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_url_unsupported_content():
+async def test_client_create_document_from_url_unsupported_content(temp_db_path):
     """Test creating a document from URL with unsupported content type."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Mock response with unsupported content type
         mock_response = AsyncMock()
         mock_response.content = b"binary content"
@@ -218,9 +220,9 @@ async def test_client_create_document_from_url_unsupported_content():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_from_url_http_error():
+async def test_client_create_document_from_url_http_error(temp_db_path):
     """Test handling HTTP errors when creating document from URL."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         with patch("httpx.AsyncClient.get") as mock_get:
             mock_get.side_effect = httpx.HTTPStatusError(
                 "404 Not Found",
@@ -235,9 +237,9 @@ async def test_client_create_document_from_url_http_error():
 
 
 @pytest.mark.asyncio
-async def test_get_extension_from_content_type_or_url():
+async def test_get_extension_from_content_type_or_url(temp_db_path):
     """Test the helper method for determining file extensions."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Test content type mappings
         assert (
             client._get_extension_from_content_type_or_url("", "text/html") == ".html"
@@ -280,11 +282,11 @@ async def test_get_extension_from_content_type_or_url():
 
 
 @pytest.mark.asyncio
-async def test_client_metadata_content_type_and_md5():
+async def test_client_metadata_content_type_and_md5(temp_db_path):
     """Test that contentType and md5 metadata are correctly set."""
     import hashlib
 
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create a temporary file with known content
         test_content = "Test content for MD5 calculation."
         expected_md5 = hashlib.md5(test_content.encode()).hexdigest()
@@ -313,9 +315,9 @@ async def test_client_metadata_content_type_and_md5():
 
 
 @pytest.mark.asyncio
-async def test_client_create_update_no_op_behavior():
+async def test_client_create_update_no_op_behavior(temp_db_path):
     """Test create/update/no-op behavior based on MD5 changes."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create a temporary file
         test_content = "Original content for testing."
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -349,9 +351,9 @@ async def test_client_create_update_no_op_behavior():
 
 
 @pytest.mark.asyncio
-async def test_client_url_create_update_no_op_behavior():
+async def test_client_url_create_update_no_op_behavior(temp_db_path):
     """Test create/update/no-op behavior for URLs based on MD5 changes."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         url = "https://example.com/test.txt"
         original_content = b"Original URL content"
         updated_content = b"Updated URL content"
@@ -385,9 +387,9 @@ async def test_client_url_create_update_no_op_behavior():
 
 
 @pytest.mark.asyncio
-async def test_client_search():
+async def test_client_search(temp_db_path):
     """Test HaikuRAG search functionality."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Add multiple documents to search from
         doc1_text = "Python is a high-level programming language known for its simplicity and readability."
         doc2_text = "Machine learning algorithms help computers learn patterns from data without explicit programming."
@@ -428,11 +430,11 @@ async def test_client_search():
 
 
 @pytest.mark.asyncio
-async def test_client_async_context_manager():
+async def test_client_async_context_manager(temp_db_path):
     """Test HaikuRAG as async context manager."""
 
     # Test that context manager works and auto-closes
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create a document to ensure the client works
         doc = await client.create_document(
             content="Test content for context manager",
@@ -453,9 +455,9 @@ async def test_client_async_context_manager():
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_with_custom_chunks():
+async def test_client_create_document_with_custom_chunks(temp_db_path):
     """Test creating a document with pre-created chunks."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create some custom chunks with and without embeddings
         chunks = [
             Chunk(content="This is the first chunk", metadata={"custom": "metadata1"}),
@@ -492,9 +494,9 @@ async def test_client_create_document_with_custom_chunks():
 
 
 @pytest.mark.asyncio
-async def test_client_ask_without_cite():
+async def test_client_ask_without_cite(temp_db_path):
     """Test asking questions without citations."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Mock the QA agent
         mock_qa_agent = AsyncMock()
         mock_qa_agent.answer.return_value = "Test answer"
@@ -507,9 +509,9 @@ async def test_client_ask_without_cite():
 
 
 @pytest.mark.asyncio
-async def test_client_ask_with_cite():
+async def test_client_ask_with_cite(temp_db_path):
     """Test asking questions with citations."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Mock the QA agent
         mock_qa_agent = AsyncMock()
         mock_qa_agent.answer.return_value = "Test answer with citations [1]"
@@ -522,11 +524,11 @@ async def test_client_ask_with_cite():
 
 
 @pytest.mark.asyncio
-async def test_client_expand_context():
+async def test_client_expand_context(temp_db_path):
     """Test expanding search results with adjacent chunks."""
     # Mock Config to have CONTEXT_CHUNK_RADIUS = 2
     with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 2):
-        async with HaikuRAG(":memory:") as client:
+        async with HaikuRAG(temp_db_path) as client:
             # Create chunks manually
             manual_chunks = [
                 Chunk(content="Chunk 0 content", metadata={"order": 0}),
@@ -571,10 +573,10 @@ async def test_client_expand_context():
 
 
 @pytest.mark.asyncio
-async def test_client_expand_context_radius_zero():
+async def test_client_expand_context_radius_zero(temp_db_path):
     """Test expand_context with radius 0 returns original results."""
     with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 0):
-        async with HaikuRAG(":memory:") as client:
+        async with HaikuRAG(temp_db_path) as client:
             # Create a simple document
             doc = await client.create_document(content="Simple test content")
             assert doc.id is not None
@@ -588,10 +590,10 @@ async def test_client_expand_context_radius_zero():
 
 
 @pytest.mark.asyncio
-async def test_client_expand_context_multiple_chunks():
+async def test_client_expand_context_multiple_chunks(temp_db_path):
     """Test expand_context with multiple search results."""
     with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 1):
-        async with HaikuRAG(":memory:") as client:
+        async with HaikuRAG(temp_db_path) as client:
             # Create first document with manual chunks
             doc1_chunks = [
                 Chunk(content="Doc1 Part A", metadata={"order": 0}),
@@ -642,9 +644,9 @@ async def test_client_expand_context_multiple_chunks():
 
 
 @pytest.mark.asyncio
-async def test_client_expand_context_merges_overlapping_chunks():
+async def test_client_expand_context_merges_overlapping_chunks(temp_db_path):
     """Test that overlapping expanded chunks are merged into one."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create document with 5 chunks
         manual_chunks = [
             Chunk(content="Chunk 0", metadata={"order": 0}),
@@ -689,9 +691,9 @@ async def test_client_expand_context_merges_overlapping_chunks():
 
 
 @pytest.mark.asyncio
-async def test_client_expand_context_keeps_separate_non_overlapping():
+async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path):
     """Test that non-overlapping expanded chunks remain separate."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         # Create document with chunks far apart
         manual_chunks = [
             Chunk(content="Chunk 0", metadata={"order": 0}),
@@ -716,7 +718,7 @@ async def test_client_expand_context_keeps_separate_non_overlapping():
         )  # Content: "Chunk 0"
         chunk5 = next(
             c for c in chunks if c.metadata.get("order") == 5
-        )  # Content: "Chunk 7"
+        )  # Content: "Chunk 7" but now at order 5
 
         # chunk0 expanded: [0,1] with radius=1 (orders 0,1)
         # chunk5 expanded: [4,5] with radius=1 (orders 4,5)
@@ -743,7 +745,7 @@ async def test_client_expand_context_keeps_separate_non_overlapping():
         assert score1 == 0.8
 
         # Second chunk (order=5) expanded should contain orders [4,5]
-        # Content should be "Chunk 6" + "Chunk 7" (orders 4 and 5)
+        # Content should be "Chunk 6" + "Chunk 7" (but they are now at orders 4 and 5)
         assert "Chunk 6" in chunk5_expanded.content  # Order 4 content
         assert "Chunk 7" in chunk5_expanded.content  # Order 5 content
         assert "Chunk 0" not in chunk5_expanded.content

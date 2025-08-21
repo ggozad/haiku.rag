@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,3 +17,10 @@ def qa_corpus() -> Dataset:
         corpus = ds.filter(lambda doc: doc["document_topic"] == "News Stories")
         corpus.save_to_disk(ds_path)
         return corpus
+
+
+@pytest.fixture
+def temp_db_path():
+    """Create a temporary database path for testing."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield Path(temp_dir) / "test.lancedb"

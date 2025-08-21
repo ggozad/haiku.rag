@@ -54,7 +54,7 @@ def test_get_document():
         result = runner.invoke(cli, ["get", "1"])
 
         assert result.exit_code == 0
-        mock_app_instance.get_document.assert_called_once_with(doc_id=1)
+        mock_app_instance.get_document.assert_called_once_with(doc_id="1")
 
 
 def test_delete_document():
@@ -66,7 +66,7 @@ def test_delete_document():
         result = runner.invoke(cli, ["delete", "1"])
 
         assert result.exit_code == 0
-        mock_app_instance.delete_document.assert_called_once_with(doc_id=1)
+        mock_app_instance.delete_document.assert_called_once_with(doc_id="1")
 
 
 def test_search():

@@ -6,8 +6,8 @@ class Chunk(BaseModel):
     Represents a chunk with content, metadata, and optional document information.
     """
 
-    id: int | None = None
-    document_id: int | None = None
+    id: str | None = None
+    document_id: str | None = None
     content: str
     metadata: dict = {}
     document_uri: str | None = None

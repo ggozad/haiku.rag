@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastmcp import FastMCP
 from pydantic import BaseModel
@@ -8,13 +8,13 @@ from haiku.rag.client import HaikuRAG
 
 
 class SearchResult(BaseModel):
-    document_id: int
+    document_id: str
     content: str
     score: float
 
 
 class DocumentResult(BaseModel):
-    id: int | None
+    id: str | None
     content: str
     uri: str | None = None
     metadata: dict[str, Any] = {}
@@ -22,14 +22,14 @@ class DocumentResult(BaseModel):
     updated_at: str
 
 
-def create_mcp_server(db_path: Path | Literal[":memory:"]) -> FastMCP:
+def create_mcp_server(db_path: Path) -> FastMCP:
     """Create an MCP server with the specified database path."""
     mcp = FastMCP("haiku-rag")
 
     @mcp.tool()
     async def add_document_from_file(
         file_path: str, metadata: dict[str, Any] | None = None
-    ) -> int | None:
+    ) -> str | None:
         """Add a document to the RAG system from a file path."""
         try:
             async with HaikuRAG(db_path) as rag:
@@ -43,7 +43,7 @@ def create_mcp_server(db_path: Path | Literal[":memory:"]) -> FastMCP:
     @mcp.tool()
     async def add_document_from_url(
         url: str, metadata: dict[str, Any] | None = None
-    ) -> int | None:
+    ) -> str | None:
         """Add a document to the RAG system from a URL."""
         try:
             async with HaikuRAG(db_path) as rag:
@@ -55,7 +55,7 @@ def create_mcp_server(db_path: Path | Literal[":memory:"]) -> FastMCP:
     @mcp.tool()
     async def add_document_from_text(
         content: str, uri: str | None = None, metadata: dict[str, Any] | None = None
-    ) -> int | None:
+    ) -> str | None:
         """Add a document to the RAG system from text content."""
         try:
             async with HaikuRAG(db_path) as rag:
@@ -73,6 +73,9 @@ def create_mcp_server(db_path: Path | Literal[":memory:"]) -> FastMCP:
 
                 search_results = []
                 for chunk, score in results:
+                    assert chunk.document_id is not None, (
+                        "Chunk document_id should not be None in search results"
+                    )
                     search_results.append(
                         SearchResult(
                             document_id=chunk.document_id,
@@ -86,7 +89,7 @@ def create_mcp_server(db_path: Path | Literal[":memory:"]) -> FastMCP:
             return []
 
     @mcp.tool()
-    async def get_document(document_id: int) -> DocumentResult | None:
+    async def get_document(document_id: str) -> DocumentResult | None:
         """Get a document by its ID."""
         try:
             async with HaikuRAG(db_path) as rag:
@@ -130,7 +133,7 @@ def create_mcp_server(db_path: Path | Literal[":memory:"]) -> FastMCP:
             return []
 
     @mcp.tool()
-    async def delete_document(document_id: int) -> bool:
+    async def delete_document(document_id: str) -> bool:
         """Delete a document by its ID."""
         try:
             async with HaikuRAG(db_path) as rag:

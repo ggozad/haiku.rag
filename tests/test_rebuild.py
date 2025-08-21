@@ -6,9 +6,9 @@ from haiku.rag.store.models.document import Document
 
 
 @pytest.mark.asyncio
-async def test_rebuild_database(qa_corpus: Dataset):
+async def test_rebuild_database(qa_corpus: Dataset, temp_db_path):
     """Test rebuild functionality with existing documents."""
-    async with HaikuRAG(":memory:") as client:
+    async with HaikuRAG(temp_db_path) as client:
         created_docs: list[Document] = []
         for content in qa_corpus["document_extracted"][:3]:
             doc = await client.create_document(

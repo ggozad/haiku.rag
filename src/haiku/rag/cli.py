@@ -47,7 +47,7 @@ def main(
         help="Show version and exit",
     ),
 ):
-    """haiku.rag CLI - SQLite-based RAG system"""
+    """haiku.rag CLI - Vector database RAG system"""
     # Run version check before any command
     asyncio.run(check_version())
 
@@ -55,9 +55,9 @@ def main(
 @cli.command("list", help="List all stored documents")
 def list_documents(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -70,9 +70,9 @@ def add_document_text(
         help="The text content of the document to add",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -85,9 +85,9 @@ def add_document_src(
         help="The file path or URL of the document to add",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -96,13 +96,13 @@ def add_document_src(
 
 @cli.command("get", help="Get and display a document by its ID")
 def get_document(
-    doc_id: int = typer.Argument(
+    doc_id: str = typer.Argument(
         help="The ID of the document to get",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -111,13 +111,13 @@ def get_document(
 
 @cli.command("delete", help="Delete a document by its ID")
 def delete_document(
-    doc_id: int = typer.Argument(
+    doc_id: str = typer.Argument(
         help="The ID of the document to delete",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -141,9 +141,9 @@ def search(
         help="Reciprocal Rank Fusion k parameter",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -156,9 +156,9 @@ def ask(
         help="The question to ask",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
     cite: bool = typer.Option(
         False,
@@ -182,9 +182,9 @@ def settings():
 )
 def rebuild(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -196,9 +196,9 @@ def rebuild(
 )
 def serve(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
     stdio: bool = typer.Option(
         False,

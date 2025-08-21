@@ -40,7 +40,7 @@ class HaikuRAGApp:
                 f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
             )
 
-    async def get_document(self, doc_id: int):
+    async def get_document(self, doc_id: str):
         async with HaikuRAG(db_path=self.db_path) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -48,7 +48,7 @@ class HaikuRAGApp:
                 return
             self._rich_print_document(doc, truncate=False)
 
-    async def delete_document(self, doc_id: int):
+    async def delete_document(self, doc_id: str):
         async with HaikuRAG(db_path=self.db_path) as self.client:
             await self.client.delete_document(doc_id)
             self.console.print(f"[b]Document {doc_id} deleted successfully.[/b]")

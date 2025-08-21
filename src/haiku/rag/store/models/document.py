@@ -8,7 +8,7 @@ class Document(BaseModel):
     Represents a document with an ID, content, and metadata.
     """
 
-    id: int | None = None
+    id: str | None = None
     content: str
     uri: str | None = None
     metadata: dict = {}
