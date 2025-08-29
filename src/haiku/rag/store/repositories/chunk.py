@@ -1,8 +1,8 @@
 import json
-import re
 from uuid import uuid4
 
 from docling_core.types.doc.document import DoclingDocument
+from lancedb.rerankers import RRFReranker
 
 from haiku.rag.chunker import chunker
 from haiku.rag.embeddings import get_embedder
@@ -16,6 +16,13 @@ class ChunkRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self.embedder = get_embedder()
+
+    def _ensure_fts_index(self) -> None:
+        """Ensure FTS index exists on the content column."""
+        try:
+            self.store.chunks_table.create_fts_index("content", replace=True)
+        except Exception:
+            pass
 
     async def create(self, entity: Chunk) -> Chunk:
         """Create a chunk in the database."""
@@ -175,69 +182,63 @@ class ChunkRepository:
         # Generate embedding for the query
         query_embedding = await self.embedder.embed(query)
 
-        # Perform vector search
+        # Perform vector search with proper query type
         results = (
-            self.store.chunks_table.search(query_embedding)
+            self.store.chunks_table.search(query_embedding, query_type="vector")
             .limit(limit)
             .to_pydantic(self.store.ChunkRecord)
         )
 
-        # Get document info for each chunk
-        chunks_with_scores = []
-        for chunk_record in results:
-            # Get document info
-            doc_results = list(
-                self.store.documents_table.search()
-                .where(f"id = '{chunk_record.document_id}'")
-                .limit(1)
-                .to_pydantic(DocumentRecord)
-            )
-
-            doc_uri = doc_results[0].uri if doc_results else None
-            doc_meta = doc_results[0].metadata if doc_results else "{}"
-
-            chunk = Chunk(
-                id=chunk_record.id,
-                document_id=chunk_record.document_id,
-                content=chunk_record.content,
-                metadata=json.loads(chunk_record.metadata)
-                if chunk_record.metadata
-                else {},
-                document_uri=doc_uri,
-                document_meta=json.loads(doc_meta) if doc_meta else {},
-            )
-
-            # LanceDB returns similarity score (higher is better)
-            score = getattr(
-                chunk_record, "_distance", 0.8
-            )  # Default score if not available
-            chunks_with_scores.append(
-                (chunk, 1.0 - score)
-            )  # Convert distance to similarity
-
-        return chunks_with_scores
+        return await self._process_search_results(results)
 
     async def search_chunks_fts(
         self, query: str, limit: int = 5
     ) -> list[tuple[Chunk, float]]:
         """Search for chunks using full-text search."""
-        # Extract keywords for search
-        words = re.findall(r"\b\w+\b", query.lower())
-
-        if not words:
+        if not query.strip():
             return []
 
-        # Search by content similarity (approximate FTS using vector search)
-        # This is a fallback since LanceDB doesn't have built-in FTS
-        return await self.search_chunks(query, limit)
+        # Ensure FTS index exists
+        self._ensure_fts_index()
+
+        # Use LanceDB's native full-text search
+        try:
+            results = (
+                self.store.chunks_table.search(query, query_type="fts")
+                .limit(limit)
+                .to_pydantic(self.store.ChunkRecord)
+            )
+            return await self._process_search_results(results)
+        except Exception:
+            # Fallback to vector search if FTS is not available or fails
+            return await self.search_chunks(query, limit)
 
     async def search_chunks_hybrid(
-        self, query: str, limit: int = 5, k: int = 60
+        self, query: str, limit: int = 5
     ) -> list[tuple[Chunk, float]]:
-        """Hybrid search - for now, just use vector search in LanceDB."""
-        # For LanceDB, we'll use vector search as the primary method
-        # In the future, this could be enhanced with additional ranking strategies
-        return await self.search_chunks(query, limit)
+        """Hybrid search combining vector and full-text search with native LanceDB RRFReranker."""
+        if not query.strip():
+            return []
+
+        # Ensure FTS index exists for hybrid search
+        self._ensure_fts_index()
+
+        # Generate embedding for the query since LanceDB doesn't have embedding function configured
+        query_embedding = await self.embedder.embed(query)
+
+        # Create RRF reranker (k parameter is handled internally)
+        reranker = RRFReranker()
+
+        # Perform native hybrid search with RRF reranking
+        results = (
+            self.store.chunks_table.search(query_type="hybrid")
+            .vector(query_embedding)
+            .text(query)
+            .rerank(reranker)
+            .limit(limit)
+            .to_pydantic(self.store.ChunkRecord)
+        )
+        return await self._process_search_results(results)
 
     async def get_by_document_id(self, document_id: str) -> list[Chunk]:
         """Get all chunks for a specific document."""
@@ -294,3 +295,41 @@ class ChunkRepository:
                 adjacent_chunks.append(c)
 
         return adjacent_chunks
+
+    async def _process_search_results(self, results) -> list[tuple[Chunk, float]]:
+        """Process search results into chunks with document info and scores."""
+        chunks_with_scores = []
+
+        for chunk_record in results:
+            # Get document info
+            doc_results = list(
+                self.store.documents_table.search()
+                .where(f"id = '{chunk_record.document_id}'")
+                .limit(1)
+                .to_pydantic(DocumentRecord)
+            )
+
+            doc_uri = doc_results[0].uri if doc_results else None
+            doc_meta = doc_results[0].metadata if doc_results else "{}"
+
+            chunk = Chunk(
+                id=chunk_record.id,
+                document_id=chunk_record.document_id,
+                content=chunk_record.content,
+                metadata=json.loads(chunk_record.metadata)
+                if chunk_record.metadata
+                else {},
+                document_uri=doc_uri,
+                document_meta=json.loads(doc_meta) if doc_meta else {},
+            )
+
+            # Get distance score - LanceDB returns _distance (lower is better)
+            distance = getattr(chunk_record, "_distance", 1.0)
+
+            # Convert distance to similarity score (higher is better)
+            # Using exponential decay to convert distance to similarity
+            score = max(0.0, 1.0 / (1.0 + distance))
+
+            chunks_with_scores.append((chunk, score))
+
+        return chunks_with_scores

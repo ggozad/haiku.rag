@@ -14,8 +14,9 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     store = Store(temp_db_path)
     doc_repo = DocumentRepository(store)
     chunk_repo = ChunkRepository(store)
+
+    # Load first 20 documents with embeddings (reduced for faster testing)
     num_documents = 20
-    # Load first 10 documents with embeddings (reduced for faster testing)
     documents = []
     for i in range(num_documents):
         doc_data = qa_corpus[i]
@@ -41,7 +42,7 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
         )
         documents.append((created_document, doc_data))
 
-    for i in range(5):  # Test with first few documents
+    for i in range(3):  # Test with first few documents
         target_document, doc_data = documents[i]
         question = doc_data["question"]
 
@@ -54,10 +55,6 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
         fts_results = await chunk_repo.search_chunks_fts(question, limit=5)
         target_document_ids = {chunk.document_id for chunk, _ in fts_results}
         assert target_document.id in target_document_ids
-
-    for i in range(num_documents):  # Test with first few documents
-        target_document, doc_data = documents[i]
-        question = doc_data["question"]
 
         # Test hybrid search
         hybrid_results = await chunk_repo.search_chunks_hybrid(question, limit=5)

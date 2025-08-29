@@ -11,9 +11,11 @@ from haiku.rag.config import Config
 from haiku.rag.reader import FileReader
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
-from haiku.rag.store.factory import create_repositories
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.repositories.chunk import ChunkRepository
+from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.utils import text_to_docling_document
 
 
@@ -34,9 +36,8 @@ class HaikuRAG:
         if not db_path.parent.exists():
             Path.mkdir(db_path.parent, parents=True)
         self.store = Store(db_path, skip_validation=skip_validation)
-        repos = create_repositories(self.store)
-        self.document_repository = repos["document"]
-        self.chunk_repository = repos["chunk"]
+        self.document_repository = DocumentRepository(self.store)
+        self.chunk_repository = ChunkRepository(self.store)
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -316,14 +317,14 @@ class HaikuRAG:
         return await self.document_repository.list_all(limit=limit, offset=offset)
 
     async def search(
-        self, query: str, limit: int = 5, k: int = 60
+        self, query: str, limit: int = 5, search_type: str = "hybrid"
     ) -> list[tuple[Chunk, float]]:
-        """Search for relevant chunks using hybrid search (vector similarity + full-text search) with reranking.
+        """Search for relevant chunks using the specified search method with optional reranking.
 
         Args:
             query: The search query string.
             limit: Maximum number of results to return.
-            k: Parameter for Reciprocal Rank Fusion (default: 60).
+            search_type: Type of search - "vector", "fts", or "hybrid" (default).
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
@@ -332,12 +333,29 @@ class HaikuRAG:
         reranker = get_reranker()
 
         if reranker is None:
-            return await self.chunk_repository.search_chunks_hybrid(query, limit, k)
+            # No reranking - return direct search results
+            if search_type == "vector":
+                return await self.chunk_repository.search_chunks(query, limit)
+            elif search_type == "fts":
+                return await self.chunk_repository.search_chunks_fts(query, limit)
+            else:  # hybrid (default)
+                return await self.chunk_repository.search_chunks_hybrid(query, limit)
 
         # Get more initial results (3X) for reranking
-        search_results = await self.chunk_repository.search_chunks_hybrid(
-            query, limit * 3, k
-        )
+        search_limit = limit * 3
+        if search_type == "vector":
+            search_results = await self.chunk_repository.search_chunks(
+                query, search_limit
+            )
+        elif search_type == "fts":
+            search_results = await self.chunk_repository.search_chunks_fts(
+                query, search_limit
+            )
+        else:  # hybrid (default)
+            search_results = await self.chunk_repository.search_chunks_hybrid(
+                query, search_limit
+            )
+
         # Apply reranking
         chunks = [chunk for chunk, _ in search_results]
         reranked_results = await reranker.rerank(query, chunks, top_n=limit)
@@ -507,8 +525,7 @@ class HaikuRAG:
         self.store.recreate_embeddings_table()
 
         # Update settings to current config
-        repos = create_repositories(self.store)
-        settings_repo = repos["settings"]
+        settings_repo = SettingsRepository(self.store)
         settings_repo.save_current_settings()
 
         documents = await self.list_documents()

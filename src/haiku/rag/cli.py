@@ -135,11 +135,6 @@ def search(
         "-l",
         help="Maximum number of results to return",
     ),
-    k: int = typer.Option(
-        60,
-        "--k",
-        help="Reciprocal Rank Fusion k parameter",
-    ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
@@ -147,7 +142,7 @@ def search(
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.search(query=query, limit=limit, k=k))
+    asyncio.run(app.search(query=query, limit=limit))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")

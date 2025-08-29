@@ -150,7 +150,7 @@ async def test_search(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.search("query")
 
-    mock_client.search.assert_called_once_with("query", limit=5, k=60)
+    mock_client.search.assert_called_once_with("query", limit=5)
     assert mock_rich_print_search.call_count == len(mock_results)
 
 
@@ -167,7 +167,7 @@ async def test_search_no_results(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.search("query")
 
-    mock_client.search.assert_called_once_with("query", limit=5, k=60)
+    mock_client.search.assert_called_once_with("query", limit=5)
     mock_print.assert_called_once_with("[red]No results found.[/red]")
 
 
