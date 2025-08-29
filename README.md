@@ -1,15 +1,15 @@
-# Haiku SQLite RAG
+# Haiku LanceDB RAG
 
-Retrieval-Augmented Generation (RAG) library on SQLite.
+Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
-`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work on SQLite alone without the need for external vector databases. It uses [sqlite-vec](https://github.com/asg017/sqlite-vec) for storing the embeddings and performs semantic (vector) search as well as full-text search combined through Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
+`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
 
 ## Features
 
-- **Local SQLite**: No external servers required
+- **Local LanceDB**: No external servers required
 - **Multiple embedding providers**: Ollama, VoyageAI, OpenAI
 - **Multiple QA providers**: Any provider/model supported by Pydantic AI
-- **Hybrid search**: Vector + full-text search with Reciprocal Rank Fusion
+- **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
 - **Reranking**: Default search result reranking with MixedBread AI or Cohere
 - **Question answering**: Built-in QA agents on your documents
 - **File monitoring**: Auto-index files when run as server
@@ -49,7 +49,7 @@ haiku-rag serve
 ```python
 from haiku.rag.client import HaikuRAG
 
-async with HaikuRAG("database.db") as client:
+async with HaikuRAG("database.lancedb") as client:
     # Add document
     doc = await client.create_document("Your content")
 

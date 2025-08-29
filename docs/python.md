@@ -9,7 +9,7 @@ from pathlib import Path
 from haiku.rag.client import HaikuRAG
 
 # Use as async context manager (recommended)
-async with HaikuRAG("path/to/database.db") as client:
+async with HaikuRAG("path/to/database.lancedb") as client:
     # Your code here
     pass
 ```
@@ -101,9 +101,9 @@ async for doc_id in client.rebuild_database():
 
 ## Searching Documents
 
-The search method performs hybrid search (vector + full-text) with **reranking enabled by default** for improved relevance:
+The search method performs native hybrid search (vector + full-text) using LanceDB with **reranking enabled by default** for improved relevance:
 
-Basic search (with reranking):
+Basic hybrid search (default, with reranking):
 ```python
 results = await client.search("machine learning algorithms", limit=5)
 for chunk, score in results:
@@ -112,13 +112,27 @@ for chunk, score in results:
     print(f"Document ID: {chunk.document_id}")
 ```
 
-With options:
+Search with different search types:
 ```python
+# Vector search only
 results = await client.search(
     query="machine learning",
-    limit=5,  # Maximum results to return
-    k=60,     # RRF parameter for reciprocal rank fusion
-    rerank=False  # Disable reranking for faster search
+    limit=5,
+    search_type="vector"
+)
+
+# Full-text search only
+results = await client.search(
+    query="machine learning",
+    limit=5,
+    search_type="fts"
+)
+
+# Hybrid search (default - combines vector + fts with native LanceDB RRF)
+results = await client.search(
+    query="machine learning",
+    limit=5,
+    search_type="hybrid"
 )
 
 # Process results

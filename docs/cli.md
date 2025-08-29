@@ -54,7 +54,7 @@ haiku-rag search "machine learning"
 
 With options:
 ```bash
-haiku-rag search "python programming" --limit 10 --k 100
+haiku-rag search "python programming" --limit 10
 ```
 
 ## Question Answering
