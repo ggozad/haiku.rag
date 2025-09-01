@@ -47,6 +47,9 @@ class ChunkRepository:
         self.store.chunks_table.add([chunk_record])
 
         entity.id = chunk_id
+
+        # Optimize table after insert to update indexes
+        self.store.chunks_table.optimize()
         return entity
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
@@ -84,6 +87,8 @@ class ChunkRepository:
                 "vector": embedding,
             },
         )
+        # Optimize table after update to refresh indexes
+        self.store.chunks_table.optimize()
 
         return entity
 
@@ -151,6 +156,9 @@ class ChunkRepository:
                 self.store.chunks_table = self.store.db.create_table(
                     "chunks", schema=self.store.ChunkRecord
                 )
+                # Create FTS index on the new table
+                self.store.chunks_table.create_fts_index("content", replace=True)
+
                 return True
             return False
         except Exception:
@@ -192,18 +200,12 @@ class ChunkRepository:
             return await self._process_search_results(results)
 
         elif search_type == "fts":
-            # Ensure FTS index exists
-            self._ensure_fts_index()
-
             results = self.store.chunks_table.search(query, query_type="fts").limit(
                 limit
             )
             return await self._process_search_results(results)
 
         else:  # hybrid (default)
-            # Ensure FTS index exists for hybrid search
-            self._ensure_fts_index()
-
             query_embedding = await self.embedder.embed(query)
 
             # Create RRF reranker
