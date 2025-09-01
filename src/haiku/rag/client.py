@@ -334,27 +334,13 @@ class HaikuRAG:
 
         if reranker is None:
             # No reranking - return direct search results
-            if search_type == "vector":
-                return await self.chunk_repository.search_chunks(query, limit)
-            elif search_type == "fts":
-                return await self.chunk_repository.search_chunks_fts(query, limit)
-            else:  # hybrid (default)
-                return await self.chunk_repository.search_chunks_hybrid(query, limit)
+            return await self.chunk_repository.search(query, limit, search_type)
 
         # Get more initial results (3X) for reranking
         search_limit = limit * 3
-        if search_type == "vector":
-            search_results = await self.chunk_repository.search_chunks(
-                query, search_limit
-            )
-        elif search_type == "fts":
-            search_results = await self.chunk_repository.search_chunks_fts(
-                query, search_limit
-            )
-        else:  # hybrid (default)
-            search_results = await self.chunk_repository.search_chunks_hybrid(
-                query, search_limit
-            )
+        search_results = await self.chunk_repository.search(
+            query, search_limit, search_type
+        )
 
         # Apply reranking
         chunks = [chunk for chunk, _ in search_results]
@@ -563,8 +549,6 @@ class HaikuRAG:
                     doc.id, docling_document
                 )
                 yield doc.id
-
-        # LanceDB doesn't need explicit commits
 
     def close(self):
         """Close the underlying store connection."""

@@ -1,5 +1,5 @@
 site_name: haiku.rag
-site_description: Retrieval-Augmented Generation (RAG) library on SQLite.
+site_description: Retrieval-Augmented Generation (RAG) library on LanceDB.
 site_url: https://ggozad.github.io/haiku.rag/
 theme:
   name: material

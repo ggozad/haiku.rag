@@ -11,7 +11,7 @@ from haiku.rag.qa import get_qa_agent
 
 console = Console()
 
-db_path = Path(__file__).parent / "data" / "benchmark.sqlite"
+db_path = Path(__file__).parent / "data" / "benchmark.lancedb"
 
 
 async def populate_db():

@@ -47,9 +47,7 @@ class Store:
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
-        # For file paths, create a LanceDB directory structure
-        lance_path = str(db_path).replace(".sqlite", ".lancedb")
-        self.db = lancedb.connect(lance_path)
+        self.db = lancedb.connect(db_path)
 
         self.create_or_update_db()
 

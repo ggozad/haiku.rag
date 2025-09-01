@@ -35,7 +35,7 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
     assert all(chunk.document_id == created_document.id for chunk in chunks)
 
     # Test chunk search
-    results = await chunk_repo.search_chunks("election", limit=2)
+    results = await chunk_repo.search("election", limit=2, search_type="vector")
     assert len(results) <= 2
     assert all(hasattr(chunk, "content") for chunk, _ in results)
 

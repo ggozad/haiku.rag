@@ -28,16 +28,14 @@ class ChunkRepository:
         """Create a chunk in the database."""
         assert entity.document_id, "Chunk must have a document_id to be created"
 
+        chunk_id = str(uuid4())
+
         # Generate embedding if not provided
         if entity.embedding is not None:
             embedding = entity.embedding
         else:
             embedding = await self.embedder.embed(entity.content)
 
-        # Generate new UUID
-        chunk_id = str(uuid4())
-
-        # Create chunk record
         chunk_record = self.store.ChunkRecord(
             id=chunk_id,
             document_id=entity.document_id,
@@ -46,7 +44,6 @@ class ChunkRepository:
             vector=embedding,
         )
 
-        # Add to table
         self.store.chunks_table.add([chunk_record])
 
         entity.id = chunk_id
@@ -76,10 +73,8 @@ class ChunkRepository:
         """Update an existing chunk."""
         assert entity.id, "Chunk ID is required for update"
 
-        # Generate new embedding
         embedding = await self.embedder.embed(entity.content)
 
-        # Update the record
         self.store.chunks_table.update(
             where=f"id = '{entity.id}'",
             values={
@@ -94,12 +89,10 @@ class ChunkRepository:
 
     async def delete(self, entity_id: str) -> bool:
         """Delete a chunk by its ID."""
-        # Check if chunk exists
         chunk = await self.get_by_id(entity_id)
         if chunk is None:
             return False
 
-        # Delete the chunk
         self.store.chunks_table.delete(f"id = '{entity_id}'")
         return True
 
@@ -145,7 +138,6 @@ class ChunkRepository:
     async def delete_all(self) -> bool:
         """Delete all chunks from the database."""
         try:
-            # Get count before deletion
             count = len(
                 list(
                     self.store.chunks_table.search()
@@ -171,74 +163,66 @@ class ChunkRepository:
         if not chunks:
             return False
 
-        # Delete chunks by document_id
         self.store.chunks_table.delete(f"document_id = '{document_id}'")
         return True
 
-    async def search_chunks(
-        self, query: str, limit: int = 5
+    async def search(
+        self, query: str, limit: int = 5, search_type: str = "hybrid"
     ) -> list[tuple[Chunk, float]]:
-        """Search for relevant chunks using vector similarity."""
-        # Generate embedding for the query
-        query_embedding = await self.embedder.embed(query)
+        """Search for relevant chunks using the specified search method.
 
-        # Perform vector search with proper query type
-        results = (
-            self.store.chunks_table.search(query_embedding, query_type="vector")
-            .limit(limit)
-            .to_pydantic(self.store.ChunkRecord)
-        )
+        Args:
+            query: The search query string.
+            limit: Maximum number of results to return.
+            search_type: Type of search - "vector", "fts", or "hybrid" (default).
 
-        return await self._process_search_results(results)
-
-    async def search_chunks_fts(
-        self, query: str, limit: int = 5
-    ) -> list[tuple[Chunk, float]]:
-        """Search for chunks using full-text search."""
+        Returns:
+            List of (chunk, score) tuples ordered by relevance.
+        """
         if not query.strip():
             return []
 
-        # Ensure FTS index exists
-        self._ensure_fts_index()
+        if search_type == "vector":
+            query_embedding = await self.embedder.embed(query)
 
-        # Use LanceDB's native full-text search
-        try:
+            results = (
+                self.store.chunks_table.search(query_embedding, query_type="vector")
+                .limit(limit)
+                .to_pydantic(self.store.ChunkRecord)
+            )
+
+            return await self._process_search_results(results)
+
+        elif search_type == "fts":
+            # Ensure FTS index exists
+            self._ensure_fts_index()
+
             results = (
                 self.store.chunks_table.search(query, query_type="fts")
                 .limit(limit)
                 .to_pydantic(self.store.ChunkRecord)
             )
             return await self._process_search_results(results)
-        except Exception:
-            # Fallback to vector search if FTS is not available or fails
-            return await self.search_chunks(query, limit)
 
-    async def search_chunks_hybrid(
-        self, query: str, limit: int = 5
-    ) -> list[tuple[Chunk, float]]:
-        """Hybrid search combining vector and full-text search with native LanceDB RRFReranker."""
-        if not query.strip():
-            return []
+        else:  # hybrid (default)
+            # Ensure FTS index exists for hybrid search
+            self._ensure_fts_index()
 
-        # Ensure FTS index exists for hybrid search
-        self._ensure_fts_index()
+            query_embedding = await self.embedder.embed(query)
 
-        # Generate embedding for the query since LanceDB doesn't have embedding function configured
-        query_embedding = await self.embedder.embed(query)
+            # Create RRF reranker
+            reranker = RRFReranker()
 
-        # Create RRF reranker (k parameter is handled internally)
-        reranker = RRFReranker()
-
-        # Perform native hybrid search with RRF reranking
-        results = (
-            self.store.chunks_table.search(query_type="hybrid")
-            .vector(query_embedding)
-            .text(query)
-            .rerank(reranker)
-            .limit(limit)
-            .to_pydantic(self.store.ChunkRecord)
-        )
-        return await self._process_search_results(results)
+            # Perform native hybrid search with RRF reranking
+            results = (
+                self.store.chunks_table.search(query_type="hybrid")
+                .vector(query_embedding)
+                .text(query)
+                .rerank(reranker)
+                .limit(limit)
+                .to_pydantic(self.store.ChunkRecord)
+            )
+            return await self._process_search_results(results)
 
     async def get_by_document_id(self, document_id: str) -> list[Chunk]:
         """Get all chunks for a specific document."""
@@ -272,7 +256,6 @@ class ChunkRepository:
             for chunk in results
         ]
 
-        # Sort by order if available
         chunks.sort(key=lambda c: c.metadata.get("order", 0))
         return chunks
 

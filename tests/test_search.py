@@ -47,17 +47,21 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
         question = doc_data["question"]
 
         # Test vector search
-        vector_results = await chunk_repo.search_chunks(question, limit=5)
+        vector_results = await chunk_repo.search(
+            question, limit=5, search_type="vector"
+        )
         target_document_ids = {chunk.document_id for chunk, _ in vector_results}
         assert target_document.id in target_document_ids
 
         # Test FTS search
-        fts_results = await chunk_repo.search_chunks_fts(question, limit=5)
+        fts_results = await chunk_repo.search(question, limit=5, search_type="fts")
         target_document_ids = {chunk.document_id for chunk, _ in fts_results}
         assert target_document.id in target_document_ids
 
         # Test hybrid search
-        hybrid_results = await chunk_repo.search_chunks_hybrid(question, limit=5)
+        hybrid_results = await chunk_repo.search(
+            question, limit=5, search_type="hybrid"
+        )
         target_document_ids = {chunk.document_id for chunk, _ in hybrid_results}
         assert target_document.id in target_document_ids
 
@@ -85,7 +89,7 @@ async def test_chunks_include_document_info(temp_db_path):
     created_document = await doc_repo._create_with_docling(document, docling_document)
 
     # Search for chunks
-    results = await chunk_repo.search_chunks_hybrid("test document", limit=1)
+    results = await chunk_repo.search("test document", limit=1, search_type="hybrid")
 
     assert len(results) > 0
     chunk, _ = results[0]
