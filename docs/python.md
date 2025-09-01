@@ -101,9 +101,9 @@ async for doc_id in client.rebuild_database():
 
 ## Searching Documents
 
-The search method performs native hybrid search (vector + full-text) using LanceDB with **reranking enabled by default** for improved relevance:
+The search method performs native hybrid search (vector + full-text) using LanceDB with optional reranking for improved relevance:
 
-Basic hybrid search (default, with reranking):
+Basic hybrid search (default):
 ```python
 results = await client.search("machine learning algorithms", limit=5)
 for chunk, score in results:

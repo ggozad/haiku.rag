@@ -109,7 +109,7 @@ See the [Pydantic AI documentation](https://ai.pydantic.dev/models/) for the com
 
 Reranking improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
 
-Reranking is **automatically enabled** by default using Ollama, or if you install the appropriate reranking provider package.
+Reranking is **disabled by default** for faster searches. You can enable it by configuring a reranking provider.
 
 ### Disabling Reranking
 

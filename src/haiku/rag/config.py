@@ -19,7 +19,7 @@ class AppConfig(BaseModel):
     EMBEDDINGS_MODEL: str = "mxbai-embed-large"
     EMBEDDINGS_VECTOR_DIM: int = 1024
 
-    RERANK_PROVIDER: str = "ollama"
+    RERANK_PROVIDER: str = ""
     RERANK_MODEL: str = "qwen3"
 
     QA_PROVIDER: str = "ollama"
