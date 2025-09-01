@@ -53,6 +53,10 @@ async def run_match_benchmark():
         async with HaikuRAG(db_path) as rag:
             for doc in corpus:
                 doc_id = doc["document_id"]  # type: ignore
+                expected_answer = doc["answer"]  # type: ignore
+                if expected_answer == "The answer is not found in the document.":
+                    progress.advance(task)
+                    continue
                 matches = await rag.search(
                     query=doc["question"],  # type: ignore
                     limit=3,
@@ -144,7 +148,7 @@ async def main():
     await populate_db()
 
     console.print("Running retrieval benchmarks...", style="bold blue")
-    # await run_match_benchmark()
+    await run_match_benchmark()
 
     console.print("\nRunning QA benchmarks...", style="bold yellow")
     await run_qa_benchmark()
