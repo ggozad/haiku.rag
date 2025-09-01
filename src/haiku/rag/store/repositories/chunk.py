@@ -185,11 +185,9 @@ class ChunkRepository:
         if search_type == "vector":
             query_embedding = await self.embedder.embed(query)
 
-            results = (
-                self.store.chunks_table.search(query_embedding, query_type="vector")
-                .limit(limit)
-                .to_pydantic(self.store.ChunkRecord)
-            )
+            results = self.store.chunks_table.search(
+                query_embedding, query_type="vector"
+            ).limit(limit)
 
             return await self._process_search_results(results)
 
@@ -197,10 +195,8 @@ class ChunkRepository:
             # Ensure FTS index exists
             self._ensure_fts_index()
 
-            results = (
-                self.store.chunks_table.search(query, query_type="fts")
-                .limit(limit)
-                .to_pydantic(self.store.ChunkRecord)
+            results = self.store.chunks_table.search(query, query_type="fts").limit(
+                limit
             )
             return await self._process_search_results(results)
 
@@ -220,7 +216,6 @@ class ChunkRepository:
                 .text(query)
                 .rerank(reranker)
                 .limit(limit)
-                .to_pydantic(self.store.ChunkRecord)
             )
             return await self._process_search_results(results)
 
@@ -279,11 +274,31 @@ class ChunkRepository:
 
         return adjacent_chunks
 
-    async def _process_search_results(self, results) -> list[tuple[Chunk, float]]:
+    async def _process_search_results(self, query_result) -> list[tuple[Chunk, float]]:
         """Process search results into chunks with document info and scores."""
         chunks_with_scores = []
 
-        for chunk_record in results:
+        # Get both arrow and pydantic results to access scores
+        arrow_result = query_result.to_arrow()
+        pydantic_results = list(query_result.to_pydantic(self.store.ChunkRecord))
+        # Extract scores from arrow result based on search type
+        scores = []
+        column_names = arrow_result.column_names
+
+        if "_distance" in column_names:
+            # Vector search - distance (lower is better, convert to similarity)
+            distances = arrow_result.column("_distance").to_pylist()
+            scores = [max(0.0, 1.0 / (1.0 + dist)) for dist in distances]
+        elif "_relevance_score" in column_names:
+            # Hybrid search - relevance score (higher is better)
+            scores = arrow_result.column("_relevance_score").to_pylist()
+        elif "_score" in column_names:
+            # FTS search - score (higher is better)
+            scores = arrow_result.column("_score").to_pylist()
+        else:
+            raise ValueError("Unknown search result format, cannot extract scores")
+
+        for i, chunk_record in enumerate(pydantic_results):
             # Get document info
             doc_results = list(
                 self.store.documents_table.search()
@@ -306,12 +321,8 @@ class ChunkRepository:
                 document_meta=json.loads(doc_meta) if doc_meta else {},
             )
 
-            # Get distance score - LanceDB returns _distance (lower is better)
-            distance = getattr(chunk_record, "_distance", 1.0)
-
-            # Convert distance to similarity score (higher is better)
-            # Using exponential decay to convert distance to similarity
-            score = max(0.0, 1.0 / (1.0 + distance))
+            # Get score from arrow result
+            score = scores[i] if i < len(scores) else 1.0
 
             chunks_with_scores.append((chunk, score))
 
