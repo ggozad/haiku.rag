@@ -7,7 +7,7 @@ You can perform your own evaluations using as example the script found at
 
 ## Recall
 
-In order to calculate recall, we load the `News Stories` from `repliqa_3` which is 1035 documents and index them in a sqlite db. Subsequently, we run a search over the `question` field for each row of the dataset and check whether we match the document that answers the question.
+In order to calculate recall, we load the `News Stories` from `repliqa_3` which is 1035 documents and index them. Subsequently, we run a search over the `question` field for each row of the dataset and check whether we match the document that answers the question.
 
 
 The recall obtained is ~0.73 for matching in the top result, raising to ~0.75 for the top 3 results.

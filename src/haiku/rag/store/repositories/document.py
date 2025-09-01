@@ -15,13 +15,12 @@ if TYPE_CHECKING:
 class DocumentRepository:
     """Repository for Document operations."""
 
-    def __init__(self, store: Store, chunk_repository=None) -> None:
+    def __init__(self, store: Store) -> None:
         self.store = store
-        # Avoid circular import by using late import if not provided
-        if chunk_repository is None:
-            from haiku.rag.store.repositories.chunk import ChunkRepository
 
-            chunk_repository = ChunkRepository(store)
+        from haiku.rag.store.repositories.chunk import ChunkRepository
+
+        chunk_repository = ChunkRepository(store)
         self.chunk_repository = chunk_repository
 
     async def create(self, entity: Document) -> Document:
@@ -169,33 +168,26 @@ class DocumentRepository:
             else datetime.now(),
         )
 
-    async def delete_all(self) -> bool:
+    async def delete_all(self) -> None:
         """Delete all documents from the database."""
-        try:
-            # Delete all chunks first
-            from haiku.rag.store.repositories.chunk import ChunkRepository
+        # Delete all chunks first
+        from haiku.rag.store.repositories.chunk import ChunkRepository
 
-            chunk_repo = ChunkRepository(self.store)
-            await chunk_repo.delete_all()
+        chunk_repo = ChunkRepository(self.store)
+        await chunk_repo.delete_all()
 
-            # Get count before deletion
-            count = len(
-                list(
-                    self.store.documents_table.search()
-                    .limit(1)
-                    .to_pydantic(DocumentRecord)
-                )
+        # Get count before deletion
+        count = len(
+            list(
+                self.store.documents_table.search().limit(1).to_pydantic(DocumentRecord)
             )
-            if count > 0:
-                # Drop and recreate table to clear all data
-                self.store.db.drop_table("documents")
-                self.store.documents_table = self.store.db.create_table(
-                    "documents", schema=DocumentRecord
-                )
-                return True
-            return False
-        except Exception:
-            return False
+        )
+        if count > 0:
+            # Drop and recreate table to clear all data
+            self.store.db.drop_table("documents")
+            self.store.documents_table = self.store.db.create_table(
+                "documents", schema=DocumentRecord
+            )
 
     async def _create_with_docling(
         self,

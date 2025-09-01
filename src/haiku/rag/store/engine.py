@@ -60,9 +60,6 @@ class Store:
             settings_repo = SettingsRepository(self)
             settings_repo.validate_config_compatibility()
 
-        current_version = metadata.version("haiku.rag")
-        self.set_user_version(current_version)
-
     def create_or_update_db(self):
         """Create the database tables."""
 
@@ -98,6 +95,10 @@ class Store:
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )
 
+        # Set current version in settings
+        current_version = metadata.version("haiku.rag")
+        self.set_haiku_version(current_version)
+
         # Check if we need to perform upgrades
         try:
             existing_settings = list(
@@ -105,7 +106,7 @@ class Store:
             )
             if existing_settings:
                 console = Console()
-                db_version = self.get_user_version()
+                db_version = self.get_haiku_version()
                 # Future: Add upgrade logic here similar to SQLite version
                 console.print(
                     f"[green]LanceDB store initialized (version: {db_version})[/green]"
@@ -113,7 +114,7 @@ class Store:
         except Exception:
             pass
 
-    def get_user_version(self) -> str:
+    def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""
         try:
             settings_records = list(
@@ -130,7 +131,7 @@ class Store:
             pass
         return "0.0.0"
 
-    def set_user_version(self, version: str) -> None:
+    def set_haiku_version(self, version: str) -> None:
         """Updates the user version in settings."""
         try:
             settings_records = list(
@@ -145,7 +146,7 @@ class Store:
                 settings["version"] = version
                 # Update the record
                 self.settings_table.update(
-                    where="id = 1", values={"settings": json.dumps(settings)}
+                    where="id = 'settings'", values={"settings": json.dumps(settings)}
                 )
             else:
                 # Create new settings record

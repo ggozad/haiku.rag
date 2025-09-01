@@ -144,7 +144,7 @@ async def main():
     await populate_db()
 
     console.print("Running retrieval benchmarks...", style="bold blue")
-    await run_match_benchmark()
+    # await run_match_benchmark()
 
     console.print("\nRunning QA benchmarks...", style="bold yellow")
     await run_qa_benchmark()
