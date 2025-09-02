@@ -6,6 +6,7 @@ from docling_core.types.doc.document import DoclingDocument
 from lancedb.rerankers import RRFReranker
 
 from haiku.rag.chunker import chunker
+from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
@@ -28,6 +29,10 @@ class ChunkRepository:
 
     async def _optimize(self) -> None:
         """Optimize the chunks table to refresh indexes."""
+        # Skip optimization for LanceDB Cloud as it handles this automatically
+        if Config.LANCEDB_URI and Config.LANCEDB_URI.startswith("db://"):
+            return
+
         async with self._optimize_lock:
             try:
                 self.store.chunks_table.optimize()

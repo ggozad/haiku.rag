@@ -46,7 +46,16 @@ class Store:
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
-        self.db = lancedb.connect(db_path)
+        # Connect to LanceDB (local, cloud, or object storage)
+        if Config.LANCEDB_URI and Config.LANCEDB_API_KEY and Config.LANCEDB_REGION:
+            self.db = lancedb.connect(
+                uri=Config.LANCEDB_URI,
+                api_key=Config.LANCEDB_API_KEY,
+                region=Config.LANCEDB_REGION,
+            )
+        else:
+            # Local file system connection
+            self.db = lancedb.connect(db_path)
 
         self.create_or_update_db()
 

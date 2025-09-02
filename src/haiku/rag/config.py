@@ -12,6 +12,10 @@ load_dotenv()
 class AppConfig(BaseModel):
     ENV: str = "production"
 
+    LANCEDB_API_KEY: str = ""
+    LANCEDB_URI: str = ""
+    LANCEDB_REGION: str = ""
+
     DEFAULT_DATA_DIR: Path = get_default_data_dir()
     MONITOR_DIRECTORIES: list[Path] = []
 

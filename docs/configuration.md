@@ -140,10 +140,40 @@ COHERE_API_KEY="your-api-key"
 
 ### Database and Storage
 
+By default, `haiku.rag` uses a local LanceDB database:
+
 ```bash
-# Default data directory (where SQLite database is stored)
+# Default data directory (where local LanceDB is stored)
 DEFAULT_DATA_DIR="/path/to/data"
 ```
+
+For remote storage, use the `LANCEDB_URI` setting with various backends:
+
+```bash
+# LanceDB Cloud
+LANCEDB_URI="db://your-database-name"
+LANCEDB_API_KEY="your-api-key"
+LANCEDB_REGION="us-west-2"  # optional
+
+# Amazon S3
+LANCEDB_URI="s3://my-bucket/my-table"
+# Use AWS credentials or IAM roles
+
+# Azure Blob Storage
+LANCEDB_URI="az://my-container/my-table"
+# Use Azure credentials
+
+# Google Cloud Storage
+LANCEDB_URI="gs://my-bucket/my-table"
+# Use GCP credentials
+
+# HDFS
+LANCEDB_URI="hdfs://namenode:port/path/to/table"
+```
+
+Authentication is handled through standard cloud provider credentials (AWS CLI, Azure CLI, gcloud, etc.) or by setting `LANCEDB_API_KEY` for LanceDB Cloud.
+
+**Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization is still performed locally.
 
 ### Document Processing
 
