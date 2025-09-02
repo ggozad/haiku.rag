@@ -120,21 +120,28 @@ async def run_qa_benchmark(k: int | None = None):
                 question = doc["question"]  # type: ignore
                 expected_answer = doc["answer"]  # type: ignore
 
-                generated_answer = await qa.answer(question)
-                is_equivalent = await judge.judge_answers(
-                    question, generated_answer, expected_answer
-                )
-                console.print(f"Question: {question}")
-                console.print(f"Expected: {expected_answer}")
-                console.print(f"Generated: {generated_answer}")
-                console.print(f"Equivalent: {is_equivalent}\n")
+                # Really small models might fail, let's account for that in try/except
+                try:
+                    generated_answer = await qa.answer(question)
+                    is_equivalent = await judge.judge_answers(
+                        question, generated_answer, expected_answer
+                    )
+                    console.print(f"Question: {question}")
+                    console.print(f"Expected: {expected_answer}")
+                    console.print(f"Generated: {generated_answer}")
+                    console.print(f"Equivalent: {is_equivalent}\n")
 
-                if is_equivalent:
-                    correct_answers += 1
-                total_questions += 1
-                console.print("Current score:", correct_answers, "/", total_questions)
-
-                progress.advance(task)
+                    if is_equivalent:
+                        correct_answers += 1
+                except Exception as e:
+                    console.print(f"[red]Error processing question: {question}[/red]")
+                    console.print(f"[red]{e}[/red]")
+                finally:
+                    total_questions += 1
+                    console.print(
+                        "Current score:", correct_answers, "/", total_questions
+                    )
+                    progress.advance(task)
 
     accuracy = correct_answers / total_questions if total_questions > 0 else 0
 

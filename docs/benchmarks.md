@@ -28,6 +28,9 @@ Again using the same dataset, we use a QA agent to answer the question. In addit
 | Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
 |------------------------------------|-----------------------------------|-----------|------------------------|
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.85      | None                   |
-| Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.72      | `mxbai-rerank-base-v2` |
+| Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.87      | `mxbai-rerank-base-v2` |
+| Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
+
+Note the significant degradation when very small models are used such as `qwen3:0.6b`.
 <!-- | Ollama / `mxbai-embed-large`       | Anthropic / `Claude Sonnet 3.7`   | 0.79      | None                   |
 | OpenAI / `text-embeddings-3-small` | OpenAI / `gpt-4-turbo`            | 0.62      | None                   | -->
