@@ -1,3 +1,4 @@
+import asyncio
 import json
 from uuid import uuid4
 
@@ -8,7 +9,6 @@ from haiku.rag.chunker import chunker
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import debounce
 
 
 class ChunkRepository:
@@ -17,6 +17,7 @@ class ChunkRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self.embedder = get_embedder()
+        self._optimize_lock = asyncio.Lock()
 
     def _ensure_fts_index(self) -> None:
         """Ensure FTS index exists on the content column."""
@@ -25,13 +26,14 @@ class ChunkRepository:
         except Exception:
             pass
 
-    @debounce(1.0)
     async def _optimize(self) -> None:
         """Optimize the chunks table to refresh indexes."""
-        try:
-            self.store.chunks_table.optimize()
-        except RuntimeError:
-            pass
+        async with self._optimize_lock:
+            try:
+                self.store.chunks_table.optimize()
+            except (RuntimeError, OSError):
+                # Handle "too many open files" and other resource errors gracefully
+                pass
 
     async def create(self, entity: Chunk) -> Chunk:
         """Create a chunk in the database."""
@@ -57,8 +59,10 @@ class ChunkRepository:
 
         entity.id = chunk_id
 
-        # Optimize table after insert to update indexes
-        await self._optimize()
+        # Try to optimize if not currently locked (non-blocking)
+        if not self._optimize_lock.locked():
+            asyncio.create_task(self._optimize())
+
         return entity
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
@@ -96,8 +100,9 @@ class ChunkRepository:
                 "vector": embedding,
             },
         )
-        # Optimize table after update to refresh indexes
-        await self._optimize()
+        # Try to optimize if not currently locked (non-blocking)
+        if not self._optimize_lock.locked():
+            asyncio.create_task(self._optimize())
 
         return entity
 
@@ -144,9 +149,27 @@ class ChunkRepository:
             chunk = Chunk(
                 document_id=document_id, content=chunk_text, metadata={"order": order}
             )
-            created_chunk = await self.create(chunk)
-            created_chunks.append(created_chunk)
+            # Use create but don't trigger individual optimizations
+            chunk_id = str(uuid4())
+            if chunk.embedding is not None:
+                embedding = chunk.embedding
+            else:
+                embedding = await self.embedder.embed(chunk.content)
 
+            chunk_record = self.store.ChunkRecord(
+                id=chunk_id,
+                document_id=document_id,
+                content=chunk_text,
+                metadata=json.dumps({"order": order}),
+                vector=embedding,
+            )
+            self.store.chunks_table.add([chunk_record])
+
+            chunk.id = chunk_id
+            created_chunks.append(chunk)
+
+        # Force optimization once at the end for bulk operations
+        await self._optimize()
         return created_chunks
 
     async def delete_all(self) -> None:
