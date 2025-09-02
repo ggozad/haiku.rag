@@ -8,6 +8,7 @@ from haiku.rag.chunker import chunker
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils import debounce
 
 
 class ChunkRepository:
@@ -22,6 +23,14 @@ class ChunkRepository:
         try:
             self.store.chunks_table.create_fts_index("content", replace=True)
         except Exception:
+            pass
+
+    @debounce(1.0)
+    async def _optimize(self) -> None:
+        """Optimize the chunks table to refresh indexes."""
+        try:
+            self.store.chunks_table.optimize()
+        except RuntimeError:
             pass
 
     async def create(self, entity: Chunk) -> Chunk:
@@ -49,7 +58,7 @@ class ChunkRepository:
         entity.id = chunk_id
 
         # Optimize table after insert to update indexes
-        self.store.chunks_table.optimize()
+        await self._optimize()
         return entity
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
@@ -88,7 +97,7 @@ class ChunkRepository:
             },
         )
         # Optimize table after update to refresh indexes
-        self.store.chunks_table.optimize()
+        await self._optimize()
 
         return entity
 

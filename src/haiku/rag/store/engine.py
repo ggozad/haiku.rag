@@ -6,7 +6,6 @@ from uuid import uuid4
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
-from rich.console import Console
 
 from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
@@ -105,12 +104,9 @@ class Store:
                 self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
             )
             if existing_settings:
-                console = Console()
-                db_version = self.get_haiku_version()
-                # Future: Add upgrade logic here similar to SQLite version
-                console.print(
-                    f"[green]LanceDB store initialized (version: {db_version})[/green]"
-                )
+                db_version = self.get_haiku_version()  # noqa: F841
+                # XXX Add upgrade logic here similar to SQLite version
+
         except Exception:
             pass
 
