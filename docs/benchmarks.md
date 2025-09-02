@@ -15,11 +15,11 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 | Embedding Model                       | Document in top 1 | Document in top 3 | Reranker               |
 |---------------------------------------|-------------------|-------------------|------------------------|
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
-| Ollama / `mxbai-embed-large`          | 0.81              | 0.91              | `mxbai-rerank-base-v2` |
-| Ollama / `nomic-embed-text`           | 0.74              | 0.88              | None                   |
+| Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
+<!-- | Ollama / `nomic-embed-text`           | 0.74              | 0.88              | None                   |
 | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
 | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
-| OpenAI / `text-embeddings-3-small`    | 0.83              | 0.90              | Cohere / `rerank-v3.5` |
+| OpenAI / `text-embeddings-3-small`    | 0.83              | 0.90              | Cohere / `rerank-v3.5` | -->
 
 ## Question/Answer evaluation
 
@@ -29,5 +29,5 @@ Again using the same dataset, we use a QA agent to answer the question. In addit
 |------------------------------------|-----------------------------------|-----------|------------------------|
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.85      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.72      | `mxbai-rerank-base-v2` |
-| Ollama / `mxbai-embed-large`       | Anthropic / `Claude Sonnet 3.7`   | 0.79      | None                   |
-| OpenAI / `text-embeddings-3-small` | OpenAI / `gpt-4-turbo`            | 0.62      | None                   |
+<!-- | Ollama / `mxbai-embed-large`       | Anthropic / `Claude Sonnet 3.7`   | 0.79      | None                   |
+| OpenAI / `text-embeddings-3-small` | OpenAI / `gpt-4-turbo`            | 0.62      | None                   | -->

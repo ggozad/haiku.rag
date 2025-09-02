@@ -20,7 +20,7 @@ class AppConfig(BaseModel):
     EMBEDDINGS_VECTOR_DIM: int = 1024
 
     RERANK_PROVIDER: str = ""
-    RERANK_MODEL: str = "qwen3"
+    RERANK_MODEL: str = ""
 
     QA_PROVIDER: str = "ollama"
     QA_MODEL: str = "qwen3"

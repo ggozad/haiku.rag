@@ -24,7 +24,7 @@ chunks = [
 @pytest.mark.asyncio
 async def test_reranker_base():
     reranker = RerankerBase()
-    assert reranker._model == "qwen3"
+    assert reranker._model == ""
 
     with pytest.raises(NotImplementedError):
         await reranker.rerank("query", [])
@@ -35,12 +35,16 @@ async def test_mxbai_reranker():
     try:
         from haiku.rag.reranking.mxbai import MxBAIReranker
 
+        Config.RERANK_MODEL = "mixedbread-ai/mxbai-rerank-base-v2"
         reranker = MxBAIReranker()
+        # reranker._model = "mixedbread-ai/mxbai-rerank-base-v2"
         reranked = await reranker.rerank(
             "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
         )
         assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
         assert all(isinstance(score, float) for chunk, score in reranked)
+        Config.RERANK_MODEL = ""
+
     except ImportError:
         pytest.skip("MxBAI package not installed")
 
@@ -62,16 +66,3 @@ async def test_cohere_reranker():
 
     except ImportError:
         pytest.skip("Cohere package not installed")
-
-
-@pytest.mark.asyncio
-async def test_ollama_reranker():
-    from haiku.rag.reranking.ollama import OllamaReranker
-
-    reranker = OllamaReranker()
-    reranked = await reranker.rerank(
-        "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
-    )
-
-    assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
-    assert all(isinstance(score, float) for chunk, score in reranked)

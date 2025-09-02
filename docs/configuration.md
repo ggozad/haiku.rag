@@ -109,25 +109,7 @@ See the [Pydantic AI documentation](https://ai.pydantic.dev/models/) for the com
 
 Reranking improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
 
-Reranking is **disabled by default** for faster searches. You can enable it by configuring a reranking provider.
-
-### Disabling Reranking
-
-To disable reranking completely for faster searches:
-
-```bash
-RERANK_PROVIDER=""
-```
-
-### Ollama (Default)
-
-Ollama reranking uses LLMs with structured output to rank documents by relevance:
-
-```bash
-RERANK_PROVIDER="ollama"
-RERANK_MODEL="qwen3:1.7b"  # or any model that supports structured output
-OLLAMA_BASE_URL="http://localhost:11434"
-```
+Reranking is **disabled by default** (`RERANK_PROVIDER=""`) for faster searches. You can enable it by configuring one of the providers below.
 
 ### MixedBread AI
 
