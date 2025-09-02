@@ -97,32 +97,47 @@ class SettingsRepository:
 
     def validate_config_compatibility(self) -> None:
         """Validate that the current configuration is compatible with stored settings."""
-        try:
-            stored_settings = self.get_current_settings()
-            current_config = Config.model_dump(mode="json")
+        stored_settings = self.get_current_settings()
 
-            # Check if embedding provider or model has changed
-            stored_provider = stored_settings.get("embedding_provider")
-            current_provider = current_config.get("embedding_provider")
+        # If no stored settings, this is a new database - save current config and return
+        if not stored_settings:
+            self.save_current_settings()
+            return
 
-            stored_model = stored_settings.get("embedding_model")
-            current_model = current_config.get("embedding_model")
+        current_config = Config.model_dump(mode="json")
 
-            if (stored_provider and stored_provider != current_provider) or (
-                stored_model and stored_model != current_model
-            ):
-                # Provider or model changed - need to recreate embeddings
-                from rich.console import Console
+        # Check if embedding provider or model has changed
+        stored_provider = stored_settings.get("EMBEDDINGS_PROVIDER")
+        current_provider = current_config.get("EMBEDDINGS_PROVIDER")
 
-                console = Console()
-                console.print(
-                    "[yellow]Warning: Embedding provider/model changed. "
-                    "You may need to recreate embeddings for optimal performance.[/yellow]"
-                )
+        stored_model = stored_settings.get("EMBEDDINGS_MODEL")
+        current_model = current_config.get("EMBEDDINGS_MODEL")
 
-                # Optionally recreate embeddings table
-                # self.store.recreate_embeddings_table()
+        stored_vector_dim = stored_settings.get("EMBEDDINGS_VECTOR_DIM")
+        current_vector_dim = current_config.get("EMBEDDINGS_VECTOR_DIM")
 
-        except Exception:
-            # If we can't validate, just continue
-            pass
+        # Check for incompatible changes
+        incompatible_changes = []
+
+        if stored_provider and stored_provider != current_provider:
+            incompatible_changes.append(
+                f"Embedding provider changed from '{stored_provider}' to '{current_provider}'"
+            )
+
+        if stored_model and stored_model != current_model:
+            incompatible_changes.append(
+                f"Embedding model changed from '{stored_model}' to '{current_model}'"
+            )
+
+        if stored_vector_dim and stored_vector_dim != current_vector_dim:
+            incompatible_changes.append(
+                f"Vector dimension changed from {stored_vector_dim} to {current_vector_dim}"
+            )
+
+        if incompatible_changes:
+            error_msg = (
+                "Database configuration is incompatible with current settings:\n"
+                + "\n".join(f"  - {change}" for change in incompatible_changes)
+            )
+            error_msg += "\n\nPlease rebuild the database using: haiku-rag rebuild"
+            raise ConfigMismatchError(error_msg)
