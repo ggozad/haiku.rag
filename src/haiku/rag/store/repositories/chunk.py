@@ -51,7 +51,6 @@ class ChunkRepository:
             embedding = entity.embedding
         else:
             embedding = await self.embedder.embed(entity.content)
-
         chunk_record = self.store.ChunkRecord(
             id=chunk_id,
             document_id=entity.document_id,
@@ -179,21 +178,13 @@ class ChunkRepository:
 
     async def delete_all(self) -> None:
         """Delete all chunks from the database."""
-        count = len(
-            list(
-                self.store.chunks_table.search()
-                .limit(1)
-                .to_pydantic(self.store.ChunkRecord)
-            )
+        # Drop and recreate table to clear all data
+        self.store.db.drop_table("chunks")
+        self.store.chunks_table = self.store.db.create_table(
+            "chunks", schema=self.store.ChunkRecord
         )
-        if count > 0:
-            # Drop and recreate table to clear all data
-            self.store.db.drop_table("chunks")
-            self.store.chunks_table = self.store.db.create_table(
-                "chunks", schema=self.store.ChunkRecord
-            )
-            # Create FTS index on the new table
-            self.store.chunks_table.create_fts_index("content", replace=True)
+        # Create FTS index on the new table
+        self.store.chunks_table.create_fts_index("content", replace=True)
 
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
