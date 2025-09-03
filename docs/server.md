@@ -9,7 +9,7 @@ haiku-rag serve
 ```
 
 Transport options:
-- `--http` (default) - Streamable HTTP transport
+- Default - Streamable HTTP transport
 - `--stdio` - Standard input/output transport
 - `--sse` - Server-sent events transport
 

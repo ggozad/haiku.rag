@@ -8,6 +8,7 @@ from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import Config
+from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
 
 if not Config.ENV == "development":
@@ -220,6 +221,21 @@ def serve(
         transport = "sse"
 
     asyncio.run(app.serve(transport=transport))
+
+
+@cli.command("migrate", help="Migrate an SQLite database to LanceDB")
+def migrate(
+    sqlite_path: Path = typer.Argument(
+        help="Path to the SQLite database file to migrate",
+    ),
+):
+    # Generate LanceDB path in same parent directory
+    lancedb_path = sqlite_path.parent / (sqlite_path.stem + ".lancedb")
+
+    success = asyncio.run(migrate_sqlite_to_lancedb(sqlite_path, lancedb_path))
+
+    if not success:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

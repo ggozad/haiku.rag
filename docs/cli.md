@@ -45,6 +45,23 @@ haiku-rag rebuild
 
 Use this when you want to change things like the embedding model or chunk size for example.
 
+## Migration
+
+### Migrate from SQLite to LanceDB
+
+Migrate an existing SQLite database to LanceDB:
+
+```bash
+haiku-rag migrate /path/to/old_database.sqlite
+```
+
+This will:
+- Read all documents, chunks, embeddings, and settings from the SQLite database
+- Create a new LanceDB database with the same data in the same directory
+- Optimize the new database for best performance
+
+The original SQLite database remains unchanged, so you can safely migrate without risk of data loss.
+
 ## Search
 
 Basic search:

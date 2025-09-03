@@ -8,11 +8,11 @@ This script will:
 3. Preserve all documents, chunks, embeddings, and settings
 """
 
-import asyncio
 import json
 import sqlite3
 import struct
 from pathlib import Path
+from uuid import uuid4
 
 from rich.console import Console
 from rich.progress import Progress, TaskID
@@ -63,7 +63,7 @@ class SQLiteToLanceDBMigrator:
                 doc_task = progress.add_task(
                     "[green]Migrating documents...", total=None
                 )
-                documents = self._migrate_documents(
+                document_id_mapping = self._migrate_documents(
                     sqlite_conn, lance_store, progress, doc_task
                 )
 
@@ -71,7 +71,9 @@ class SQLiteToLanceDBMigrator:
                 chunk_task = progress.add_task(
                     "[yellow]Migrating chunks and embeddings...", total=None
                 )
-                self._migrate_chunks(sqlite_conn, lance_store, progress, chunk_task)
+                self._migrate_chunks(
+                    sqlite_conn, lance_store, progress, chunk_task, document_id_mapping
+                )
 
                 # Migrate settings
                 settings_task = progress.add_task(
@@ -82,10 +84,23 @@ class SQLiteToLanceDBMigrator:
                 )
 
             sqlite_conn.close()
+
+            # Optimize the chunks table after migration
+            self.console.print("[blue]Optimizing LanceDB...[/blue]")
+            try:
+                lance_store.chunks_table.optimize()
+                self.console.print("[green]✅ Optimization completed[/green]")
+            except Exception as e:
+                self.console.print(
+                    f"[yellow]Warning: Optimization failed: {e}[/yellow]"
+                )
+
             lance_store.close()
 
             self.console.print("[green]✅ Migration completed successfully![/green]")
-            self.console.print(f"[green]✅ Migrated {len(documents)} documents[/green]")
+            self.console.print(
+                f"[green]✅ Migrated {len(document_id_mapping)} documents[/green]"
+            )
             return True
 
         except Exception as e:
@@ -101,17 +116,22 @@ class SQLiteToLanceDBMigrator:
         lance_store: Store,
         progress: Progress,
         task: TaskID,
-    ) -> list[dict]:
-        """Migrate documents from SQLite to LanceDB."""
+    ) -> dict[int, str]:
+        """Migrate documents from SQLite to LanceDB and return ID mapping."""
         cursor = sqlite_conn.cursor()
         cursor.execute(
             "SELECT id, content, uri, metadata, created_at, updated_at FROM documents ORDER BY id"
         )
 
         documents = []
+        id_mapping = {}  # Maps old integer ID to new UUID
+
         for row in cursor.fetchall():
+            new_uuid = str(uuid4())
+            id_mapping[row["id"]] = new_uuid
+
             doc_data = {
-                "id": row["id"],
+                "id": new_uuid,
                 "content": row["content"],
                 "uri": row["uri"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
@@ -138,7 +158,7 @@ class SQLiteToLanceDBMigrator:
             lance_store.documents_table.add(doc_records)
 
         progress.update(task, completed=len(documents), total=len(documents))
-        return documents
+        return id_mapping
 
     def _migrate_chunks(
         self,
@@ -146,37 +166,78 @@ class SQLiteToLanceDBMigrator:
         lance_store: Store,
         progress: Progress,
         task: TaskID,
+        document_id_mapping: dict[int, str],
     ):
         """Migrate chunks and embeddings from SQLite to LanceDB."""
         cursor = sqlite_conn.cursor()
 
-        # Get chunks with their embeddings
+        # Get chunks first
         cursor.execute("""
-            SELECT
-                c.id, c.document_id, c.content, c.metadata,
-                ce.embedding
-            FROM chunks c
-            LEFT JOIN chunk_embeddings ce ON c.id = ce.chunk_id
-            ORDER BY c.id
+            SELECT id, document_id, content, metadata
+            FROM chunks
+            ORDER BY id
         """)
 
+        chunks_data = cursor.fetchall()
+
+        # Get embeddings separately to avoid vec0 virtual table issues
+        embeddings_map = {}
+        try:
+            # Try to get embeddings from the vec0 tables directly
+            cursor.execute("""
+                SELECT
+                    r.chunk_id,
+                    v.vectors
+                FROM chunk_embeddings_rowids r
+                JOIN chunk_embeddings_vector_chunks00 v ON r.rowid = v.rowid
+            """)
+
+            for row in cursor.fetchall():
+                chunk_id = row[0]
+                vectors_blob = row[1]
+                if vectors_blob and chunk_id not in embeddings_map:
+                    embeddings_map[chunk_id] = vectors_blob
+
+        except sqlite3.OperationalError as e:
+            self.console.print(
+                f"[yellow]Warning: Could not extract embeddings: {e}[/yellow]"
+            )
+            self.console.print(
+                "[yellow]Continuing migration without embeddings...[/yellow]"
+            )
+
         chunks = []
-        for row in cursor.fetchall():
-            # Deserialize the embedding
+        for row in chunks_data:
+            # Generate new UUID for chunk
+            chunk_uuid = str(uuid4())
+
+            # Map the old document_id to new UUID
+            document_uuid = document_id_mapping.get(row["document_id"])
+            if not document_uuid:
+                self.console.print(
+                    f"[yellow]Warning: Document ID {row['document_id']} not found in mapping for chunk {row['id']}[/yellow]"
+                )
+                continue
+
+            # Get embedding for this chunk
             embedding = []
-            if row["embedding"]:
+            embedding_blob = embeddings_map.get(row["id"])
+            if embedding_blob:
                 try:
-                    embedding = deserialize_sqlite_embedding(row["embedding"])
+                    embedding = deserialize_sqlite_embedding(embedding_blob)
                 except Exception as e:
                     self.console.print(
                         f"[yellow]Warning: Failed to deserialize embedding for chunk {row['id']}: {e}[/yellow]"
                     )
                     # Generate a zero vector of the expected dimension
                     embedding = [0.0] * lance_store.embedder._vector_dim
+            else:
+                # No embedding found, generate zero vector
+                embedding = [0.0] * lance_store.embedder._vector_dim
 
             chunk_data = {
-                "id": row["id"],
-                "document_id": row["document_id"],
+                "id": chunk_uuid,
+                "document_id": document_uuid,
                 "content": row["content"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
                 "vector": embedding,
@@ -216,9 +277,10 @@ class SQLiteToLanceDBMigrator:
             if row:
                 settings_data = json.loads(row["settings"]) if row["settings"] else {}
 
-                # Update the existing settings in LanceDB
+                # Update the existing settings in LanceDB (use string ID)
                 lance_store.settings_table.update(
-                    where="id = 1", values={"settings": json.dumps(settings_data)}
+                    where="id = 'settings'",
+                    values={"settings": json.dumps(settings_data)},
                 )
 
                 progress.update(task, completed=1, total=1)
@@ -252,51 +314,3 @@ async def migrate_sqlite_to_lancedb(
 
     migrator = SQLiteToLanceDBMigrator(sqlite_path, lancedb_path)
     return migrator.migrate()
-
-
-def main():
-    """CLI entry point for the migration script."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Migrate SQLite database to LanceDB")
-    parser.add_argument("sqlite_path", type=Path, help="Path to SQLite database file")
-    parser.add_argument(
-        "--lancedb-path", type=Path, help="Path for LanceDB database (optional)"
-    )
-    parser.add_argument(
-        "--backup",
-        action="store_true",
-        help="Create backup of SQLite database before migration",
-    )
-
-    args = parser.parse_args()
-
-    console = Console()
-
-    # Create backup if requested
-    if args.backup:
-        backup_path = args.sqlite_path.with_suffix(args.sqlite_path.suffix + ".backup")
-        console.print(f"[blue]Creating backup: {backup_path}[/blue]")
-        import shutil
-
-        shutil.copy2(args.sqlite_path, backup_path)
-        console.print("[green]✅ Backup created[/green]")
-
-    # Run migration
-    success = asyncio.run(
-        migrate_sqlite_to_lancedb(args.sqlite_path, args.lancedb_path)
-    )
-
-    if success:
-        console.print("[green]🎉 Migration completed successfully![/green]")
-        console.print(f"[green]SQLite database: {args.sqlite_path}[/green]")
-        console.print(
-            f"[green]LanceDB database: {args.lancedb_path or args.sqlite_path.with_suffix('.lancedb')}[/green]"
-        )
-    else:
-        console.print("[red]❌ Migration failed![/red]")
-        exit(1)
-
-
-if __name__ == "__main__":
-    main()

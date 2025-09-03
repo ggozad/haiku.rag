@@ -1,12 +1,14 @@
-# Haiku LanceDB RAG
+# Haiku RAG
 
 Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
 `haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
 
+> **Note**: Starting with version 0.7.0, haiku.rag uses LanceDB instead of SQLite. If you have an existing SQLite database, use `haiku-rag migrate old_database.sqlite` to migrate your data safely.
+
 ## Features
 
-- **Local LanceDB**: No external servers required
+- **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
 - **Multiple embedding providers**: Ollama, VoyageAI, OpenAI
 - **Multiple QA providers**: Any provider/model supported by Pydantic AI
 - **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
@@ -38,6 +40,9 @@ haiku-rag ask "Who is the author of haiku.rag?" --cite
 
 # Rebuild database (re-chunk and re-embed all documents)
 haiku-rag rebuild
+
+# Migrate from SQLite to LanceDB
+haiku-rag migrate old_database.sqlite
 
 # Start server with file monitoring
 export MONITOR_DIRECTORIES="/path/to/docs"
