@@ -6,6 +6,7 @@ from rich.logging import RichHandler
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("docling").setLevel(logging.WARNING)
 
 
 def get_logger() -> logging.Logger:

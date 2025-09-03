@@ -6,6 +6,7 @@ from llm_judge import LLMJudge
 from rich.console import Console
 from rich.progress import Progress
 
+from haiku.rag import logging  # noqa
 from haiku.rag.client import HaikuRAG
 from haiku.rag.qa import get_qa_agent
 
