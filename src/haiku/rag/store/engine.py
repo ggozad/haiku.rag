@@ -1,4 +1,5 @@
 import json
+import logging
 from importlib import metadata
 from pathlib import Path
 from uuid import uuid4
@@ -9,6 +10,8 @@ from pydantic import Field
 
 from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentRecord(LanceModel):
@@ -21,14 +24,17 @@ class DocumentRecord(LanceModel):
 
 
 def create_chunk_model(vector_dim: int):
-    """Create a ChunkRecord model with the specified vector dimension."""
+    """Create a ChunkRecord model with the specified vector dimension.
+
+    This creates a model with proper vector typing for LanceDB.
+    """
 
     class ChunkRecord(LanceModel):
         id: str = Field(default_factory=lambda: str(uuid4()))
         document_id: str
         content: str
         metadata: str = Field(default="{}")
-        vector: Vector(vector_dim) = Field(default_factory=list)  # type: ignore
+        vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
 
     return ChunkRecord
 
@@ -46,27 +52,41 @@ class Store:
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
-        # Connect to LanceDB (local, cloud, or object storage)
-        if Config.LANCEDB_URI and Config.LANCEDB_API_KEY and Config.LANCEDB_REGION:
-            self.db = lancedb.connect(
+        # Connect to LanceDB
+        self.db = self._connect_to_lancedb(db_path)
+
+        # Initialize tables
+        self.create_or_update_db()
+
+        # Validate config compatibility after connection is established
+        if not skip_validation:
+            self._validate_configuration()
+
+    def _connect_to_lancedb(self, db_path: Path):
+        """Establish connection to LanceDB (local, cloud, or object storage)."""
+        # Check if we have cloud configuration
+        if self._has_cloud_config():
+            return lancedb.connect(
                 uri=Config.LANCEDB_URI,
                 api_key=Config.LANCEDB_API_KEY,
                 region=Config.LANCEDB_REGION,
             )
         else:
             # Local file system connection
-            self.db = lancedb.connect(db_path)
+            return lancedb.connect(db_path)
 
-        self.create_or_update_db()
+    def _has_cloud_config(self) -> bool:
+        """Check if cloud configuration is complete."""
+        return bool(
+            Config.LANCEDB_URI and Config.LANCEDB_API_KEY and Config.LANCEDB_REGION
+        )
 
-        # Validate config compatibility after connection is established
-        if not skip_validation:
-            from haiku.rag.store.repositories.settings import (
-                SettingsRepository,
-            )
+    def _validate_configuration(self) -> None:
+        """Validate that the configuration is compatible with the database."""
+        from haiku.rag.store.repositories.settings import SettingsRepository
 
-            settings_repo = SettingsRepository(self)
-            settings_repo.validate_config_compatibility()
+        settings_repo = SettingsRepository(self)
+        settings_repo.validate_config_compatibility()
 
     def create_or_update_db(self):
         """Create the database tables."""
@@ -114,54 +134,48 @@ class Store:
             )
             if existing_settings:
                 db_version = self.get_haiku_version()  # noqa: F841
-                # XXX Add upgrade logic here similar to SQLite version
-
+                # TODO: Add upgrade logic here similar to SQLite version when needed
         except Exception:
+            # Settings table might not exist yet in fresh databases
             pass
 
     def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""
-        try:
-            settings_records = list(
-                self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
+        settings_records = list(
+            self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
+        )
+        if settings_records:
+            settings = (
+                json.loads(settings_records[0].settings)
+                if settings_records[0].settings
+                else {}
             )
-            if settings_records:
-                settings = (
-                    json.loads(settings_records[0].settings)
-                    if settings_records[0].settings
-                    else {}
-                )
-                return settings.get("version", "0.0.0")
-        except Exception:
-            pass
+            return settings.get("version", "0.0.0")
         return "0.0.0"
 
     def set_haiku_version(self, version: str) -> None:
         """Updates the user version in settings."""
-        try:
-            settings_records = list(
-                self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
+        settings_records = list(
+            self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
+        )
+        if settings_records:
+            settings = (
+                json.loads(settings_records[0].settings)
+                if settings_records[0].settings
+                else {}
             )
-            if settings_records:
-                settings = (
-                    json.loads(settings_records[0].settings)
-                    if settings_records[0].settings
-                    else {}
-                )
-                settings["version"] = version
-                # Update the record
-                self.settings_table.update(
-                    where="id = 'settings'", values={"settings": json.dumps(settings)}
-                )
-            else:
-                # Create new settings record
-                settings_data = Config.model_dump(mode="json")
-                settings_data["version"] = version
-                self.settings_table.add(
-                    [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
-                )
-        except Exception:
-            pass
+            settings["version"] = version
+            # Update the record
+            self.settings_table.update(
+                where="id = 'settings'", values={"settings": json.dumps(settings)}
+            )
+        else:
+            # Create new settings record
+            settings_data = Config.model_dump(mode="json")
+            settings_data["version"] = version
+            self.settings_table.add(
+                [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
+            )
 
     def recreate_embeddings_table(self) -> None:
         """Recreate the chunks table with current vector dimensions."""

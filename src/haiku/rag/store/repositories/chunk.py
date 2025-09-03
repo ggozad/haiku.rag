@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from uuid import uuid4
 
 from docling_core.types.doc.document import DoclingDocument
@@ -10,6 +11,8 @@ from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkRepository:
@@ -24,8 +27,9 @@ class ChunkRepository:
         """Ensure FTS index exists on the content column."""
         try:
             self.store.chunks_table.create_fts_index("content", replace=True)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the error but don't fail - FTS might already exist
+            logger.debug(f"FTS index creation skipped: {e}")
 
     async def _optimize(self) -> None:
         """Optimize the chunks table to refresh indexes."""
@@ -36,9 +40,11 @@ class ChunkRepository:
         async with self._optimize_lock:
             try:
                 self.store.chunks_table.optimize()
-            except (RuntimeError, OSError):
+            except (RuntimeError, OSError) as e:
                 # Handle "too many open files" and other resource errors gracefully
-                pass
+                logger.debug(
+                    f"Table optimization skipped due to resource constraints: {e}"
+                )
 
     async def create(self, entity: Chunk) -> Chunk:
         """Create a chunk in the database."""
@@ -147,18 +153,21 @@ class ChunkRepository:
     ) -> list[Chunk]:
         """Create chunks and embeddings for a document from DoclingDocument."""
         chunk_texts = await chunker.chunk(document)
+
+        # Generate embeddings in parallel for all chunks
+        embeddings_tasks = []
+        for chunk_text in chunk_texts:
+            embeddings_tasks.append(self.embedder.embed(chunk_text))
+
+        # Wait for all embeddings to complete
+        embeddings = await asyncio.gather(*embeddings_tasks)
+
+        # Prepare all chunk records for batch insertion
+        chunk_records = []
         created_chunks = []
 
-        for order, chunk_text in enumerate(chunk_texts):
-            chunk = Chunk(
-                document_id=document_id, content=chunk_text, metadata={"order": order}
-            )
-            # Use create but don't trigger individual optimizations
+        for order, (chunk_text, embedding) in enumerate(zip(chunk_texts, embeddings)):
             chunk_id = str(uuid4())
-            if chunk.embedding is not None:
-                embedding = chunk.embedding
-            else:
-                embedding = await self.embedder.embed(chunk.content)
 
             chunk_record = self.store.ChunkRecord(
                 id=chunk_id,
@@ -167,10 +176,19 @@ class ChunkRepository:
                 metadata=json.dumps({"order": order}),
                 vector=embedding,
             )
-            self.store.chunks_table.add([chunk_record])
+            chunk_records.append(chunk_record)
 
-            chunk.id = chunk_id
+            chunk = Chunk(
+                id=chunk_id,
+                document_id=document_id,
+                content=chunk_text,
+                metadata={"order": order},
+            )
             created_chunks.append(chunk)
+
+        # Batch insert all chunks at once
+        if chunk_records:
+            self.store.chunks_table.add(chunk_records)
 
         # Force optimization once at the end for bulk operations
         await self._optimize()
@@ -216,7 +234,7 @@ class ChunkRepository:
             query_embedding = await self.embedder.embed(query)
 
             results = self.store.chunks_table.search(
-                query_embedding, query_type="vector"
+                query_embedding, query_type="vector", vector_column_name="vector"
             ).limit(limit)
 
             return await self._process_search_results(results)
@@ -305,6 +323,7 @@ class ChunkRepository:
         # Get both arrow and pydantic results to access scores
         arrow_result = query_result.to_arrow()
         pydantic_results = list(query_result.to_pydantic(self.store.ChunkRecord))
+
         # Extract scores from arrow result based on search type
         scores = []
         column_names = arrow_result.column_names
@@ -322,17 +341,26 @@ class ChunkRepository:
         else:
             raise ValueError("Unknown search result format, cannot extract scores")
 
-        for i, chunk_record in enumerate(pydantic_results):
-            # Get document info
+        # Collect all unique document IDs for batch lookup
+        document_ids = list(set(chunk.document_id for chunk in pydantic_results))
+
+        # Batch fetch all documents at once
+        documents_map = {}
+        if document_ids:
+            # Create a WHERE clause for all document IDs
+            where_clause = " OR ".join(f"id = '{doc_id}'" for doc_id in document_ids)
             doc_results = list(
                 self.store.documents_table.search()
-                .where(f"id = '{chunk_record.document_id}'")
-                .limit(1)
+                .where(where_clause)
                 .to_pydantic(DocumentRecord)
             )
+            documents_map = {doc.id: doc for doc in doc_results}
 
-            doc_uri = doc_results[0].uri if doc_results else None
-            doc_meta = doc_results[0].metadata if doc_results else "{}"
+        for i, chunk_record in enumerate(pydantic_results):
+            # Get document info from pre-fetched map
+            doc = documents_map.get(chunk_record.document_id)
+            doc_uri = doc.uri if doc else None
+            doc_meta = doc.metadata if doc else "{}"
 
             chunk = Chunk(
                 id=chunk_record.id,

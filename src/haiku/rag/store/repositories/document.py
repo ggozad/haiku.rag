@@ -17,11 +17,31 @@ class DocumentRepository:
 
     def __init__(self, store: Store) -> None:
         self.store = store
+        self._chunk_repository = None
 
-        from haiku.rag.store.repositories.chunk import ChunkRepository
+    @property
+    def chunk_repository(self):
+        """Lazy-load ChunkRepository when needed."""
+        if self._chunk_repository is None:
+            from haiku.rag.store.repositories.chunk import ChunkRepository
 
-        chunk_repository = ChunkRepository(store)
-        self.chunk_repository = chunk_repository
+            self._chunk_repository = ChunkRepository(self.store)
+        return self._chunk_repository
+
+    def _record_to_document(self, record: DocumentRecord) -> Document:
+        """Convert a DocumentRecord to a Document model."""
+        return Document(
+            id=record.id,
+            content=record.content,
+            uri=record.uri,
+            metadata=json.loads(record.metadata) if record.metadata else {},
+            created_at=datetime.fromisoformat(record.created_at)
+            if record.created_at
+            else datetime.now(),
+            updated_at=datetime.fromisoformat(record.updated_at)
+            if record.updated_at
+            else datetime.now(),
+        )
 
     async def create(self, entity: Document) -> Document:
         """Create a document in the database."""
@@ -61,19 +81,7 @@ class DocumentRepository:
         if not results:
             return None
 
-        doc_record = results[0]
-        return Document(
-            id=doc_record.id,
-            content=doc_record.content,
-            uri=doc_record.uri,
-            metadata=json.loads(doc_record.metadata) if doc_record.metadata else {},
-            created_at=datetime.fromisoformat(doc_record.created_at)
-            if doc_record.created_at
-            else datetime.now(),
-            updated_at=datetime.fromisoformat(doc_record.updated_at)
-            if doc_record.updated_at
-            else datetime.now(),
-        )
+        return self._record_to_document(results[0])
 
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
@@ -104,10 +112,7 @@ class DocumentRepository:
             return False
 
         # Delete associated chunks first
-        from haiku.rag.store.repositories.chunk import ChunkRepository
-
-        chunk_repo = ChunkRepository(self.store)
-        await chunk_repo.delete_by_document_id(entity_id)
+        await self.chunk_repository.delete_by_document_id(entity_id)
 
         # Delete the document
         self.store.documents_table.delete(f"id = '{entity_id}'")
@@ -125,22 +130,7 @@ class DocumentRepository:
             query = query.limit(limit)
 
         results = list(query.to_pydantic(DocumentRecord))
-
-        return [
-            Document(
-                id=doc.id,
-                content=doc.content,
-                uri=doc.uri,
-                metadata=json.loads(doc.metadata) if doc.metadata else {},
-                created_at=datetime.fromisoformat(doc.created_at)
-                if doc.created_at
-                else datetime.now(),
-                updated_at=datetime.fromisoformat(doc.updated_at)
-                if doc.updated_at
-                else datetime.now(),
-            )
-            for doc in results
-        ]
+        return [self._record_to_document(doc) for doc in results]
 
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
@@ -154,27 +144,12 @@ class DocumentRepository:
         if not results:
             return None
 
-        doc_record = results[0]
-        return Document(
-            id=doc_record.id,
-            content=doc_record.content,
-            uri=doc_record.uri,
-            metadata=json.loads(doc_record.metadata) if doc_record.metadata else {},
-            created_at=datetime.fromisoformat(doc_record.created_at)
-            if doc_record.created_at
-            else datetime.now(),
-            updated_at=datetime.fromisoformat(doc_record.updated_at)
-            if doc_record.updated_at
-            else datetime.now(),
-        )
+        return self._record_to_document(results[0])
 
     async def delete_all(self) -> None:
         """Delete all documents from the database."""
         # Delete all chunks first
-        from haiku.rag.store.repositories.chunk import ChunkRepository
-
-        chunk_repo = ChunkRepository(self.store)
-        await chunk_repo.delete_all()
+        await self.chunk_repository.delete_all()
 
         # Get count before deletion
         count = len(
