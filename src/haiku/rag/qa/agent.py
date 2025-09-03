@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
 from haiku.rag.client import HaikuRAG
@@ -61,7 +61,7 @@ class QuestionAnswerAgent:
     def _get_model(self, provider: str, model: str):
         """Get the appropriate model object for the provider."""
         if provider == "ollama":
-            return OpenAIModel(
+            return OpenAIChatModel(
                 model_name=model,
                 provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
             )
