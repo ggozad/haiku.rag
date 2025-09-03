@@ -31,5 +31,4 @@ uv pip install haiku.rag[mxbai]
 ## Requirements
 
 - Python 3.10+
-- SQLite 3.38+
 - Ollama (for default embeddings)

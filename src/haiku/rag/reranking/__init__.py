@@ -31,10 +31,4 @@ def get_reranker() -> RerankerBase | None:
         except ImportError:
             return None
 
-    if Config.RERANK_PROVIDER == "ollama":
-        from haiku.rag.reranking.ollama import OllamaReranker
-
-        _reranker = OllamaReranker()
-        return _reranker
-
     return None

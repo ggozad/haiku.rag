@@ -1,171 +1,203 @@
-import sqlite3
-import struct
+import json
+import logging
 from importlib import metadata
 from pathlib import Path
-from typing import Literal
+from uuid import uuid4
 
-import sqlite_vec
-from packaging.version import parse
-from rich.console import Console
+import lancedb
+from lancedb.pydantic import LanceModel, Vector
+from pydantic import Field
 
 from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.store.upgrades import upgrades
-from haiku.rag.utils import int_to_semantic_version, semantic_version_to_int
+
+logger = logging.getLogger(__name__)
+
+
+class DocumentRecord(LanceModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    content: str
+    uri: str | None = None
+    metadata: str = Field(default="{}")
+    created_at: str = Field(default_factory=lambda: "")
+    updated_at: str = Field(default_factory=lambda: "")
+
+
+def create_chunk_model(vector_dim: int):
+    """Create a ChunkRecord model with the specified vector dimension.
+
+    This creates a model with proper vector typing for LanceDB.
+    """
+
+    class ChunkRecord(LanceModel):
+        id: str = Field(default_factory=lambda: str(uuid4()))
+        document_id: str
+        content: str
+        metadata: str = Field(default="{}")
+        vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
+
+    return ChunkRecord
+
+
+class SettingsRecord(LanceModel):
+    id: str = Field(default="settings")
+    settings: str = Field(default="{}")
 
 
 class Store:
-    def __init__(
-        self, db_path: Path | Literal[":memory:"], skip_validation: bool = False
-    ):
-        self.db_path: Path | Literal[":memory:"] = db_path
+    def __init__(self, db_path: Path, skip_validation: bool = False):
+        self.db_path: Path = db_path
+        self.embedder = get_embedder()
+
+        # Create the ChunkRecord model with the correct vector dimension
+        self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
+
+        # Connect to LanceDB
+        self.db = self._connect_to_lancedb(db_path)
+
+        # Initialize tables
         self.create_or_update_db()
 
         # Validate config compatibility after connection is established
         if not skip_validation:
-            from haiku.rag.store.repositories.settings import SettingsRepository
+            self._validate_configuration()
 
-            settings_repo = SettingsRepository(self)
-            settings_repo.validate_config_compatibility()
-        current_version = metadata.version("haiku.rag")
-        self.set_user_version(current_version)
+    def _connect_to_lancedb(self, db_path: Path):
+        """Establish connection to LanceDB (local, cloud, or object storage)."""
+        # Check if we have cloud configuration
+        if self._has_cloud_config():
+            return lancedb.connect(
+                uri=Config.LANCEDB_URI,
+                api_key=Config.LANCEDB_API_KEY,
+                region=Config.LANCEDB_REGION,
+            )
+        else:
+            # Local file system connection
+            return lancedb.connect(db_path)
+
+    def _has_cloud_config(self) -> bool:
+        """Check if cloud configuration is complete."""
+        return bool(
+            Config.LANCEDB_URI and Config.LANCEDB_API_KEY and Config.LANCEDB_REGION
+        )
+
+    def _validate_configuration(self) -> None:
+        """Validate that the configuration is compatible with the database."""
+        from haiku.rag.store.repositories.settings import SettingsRepository
+
+        settings_repo = SettingsRepository(self)
+        settings_repo.validate_config_compatibility()
 
     def create_or_update_db(self):
-        """Create the database and tables with sqlite-vec support for embeddings."""
+        """Create the database tables."""
+
+        # Get list of existing tables
+        existing_tables = self.db.table_names()
+
+        # Create or get documents table
+        if "documents" in existing_tables:
+            self.documents_table = self.db.open_table("documents")
+        else:
+            self.documents_table = self.db.create_table(
+                "documents", schema=DocumentRecord
+            )
+
+        # Create or get chunks table
+        if "chunks" in existing_tables:
+            self.chunks_table = self.db.open_table("chunks")
+        else:
+            self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
+            # Create FTS index on the new table
+            self.chunks_table.create_fts_index("content", replace=True)
+
+        # Create or get settings table
+        if "settings" in existing_tables:
+            self.settings_table = self.db.open_table("settings")
+        else:
+            self.settings_table = self.db.create_table(
+                "settings", schema=SettingsRecord
+            )
+            # Save current settings to the new database
+            settings_data = Config.model_dump(mode="json")
+            self.settings_table.add(
+                [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
+            )
+
+        # Set current version in settings
         current_version = metadata.version("haiku.rag")
+        self.set_haiku_version(current_version)
 
-        db = sqlite3.connect(self.db_path)
-        db.enable_load_extension(True)
-        sqlite_vec.load(db)
+        # Check if we need to perform upgrades
+        try:
+            existing_settings = list(
+                self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
+            )
+            if existing_settings:
+                db_version = self.get_haiku_version()  # noqa: F841
+                # TODO: Add upgrade logic here similar to SQLite version when needed
+        except Exception:
+            # Settings table might not exist yet in fresh databases
+            pass
 
-        # Enable WAL mode for better concurrency (skip for in-memory databases)
-        if self.db_path != ":memory:":
-            db.execute("PRAGMA journal_mode=WAL")
-
-        self._connection = db
-        existing_tables = [
-            row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table';"
-            ).fetchall()
-        ]
-
-        # If we have a db already, perform upgrades and return
-        if self.db_path != ":memory:" and "documents" in existing_tables:
-            # Upgrade database
-            console = Console()
-            db_version = self.get_user_version()
-            for version, steps in upgrades:
-                if parse(current_version) >= parse(version) and parse(version) > parse(
-                    db_version
-                ):
-                    for step in steps:
-                        step(db)
-                        console.print(
-                            f"[green][b]DB Upgrade: [/b]{step.__doc__}[/green]"
-                        )
-            return
-
-        # Create documents table
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS documents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT NOT NULL,
-                uri TEXT,
-                metadata TEXT DEFAULT '{}',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # Create chunks table
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS chunks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                document_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                metadata TEXT DEFAULT '{}',
-                FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
-            )
-        """)
-        # Create vector table for chunk embeddings
-        embedder = get_embedder()
-        db.execute(f"""
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
-                chunk_id INTEGER PRIMARY KEY,
-                embedding FLOAT[{embedder._vector_dim}]
-            )
-        """)
-        # Create FTS5 table for full-text search
-        db.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-                content,
-                content='chunks',
-                content_rowid='id'
-            )
-        """)
-        # Create settings table for storing current configuration
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                settings TEXT NOT NULL DEFAULT '{}'
-            )
-        """)
-        # Save current settings to the new database
-        settings_json = Config.model_dump_json()
-        db.execute(
-            "INSERT OR IGNORE INTO settings (id, settings) VALUES (1, ?)",
-            (settings_json,),
+    def get_haiku_version(self) -> str:
+        """Returns the user version stored in settings."""
+        settings_records = list(
+            self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
         )
-        # Create indexes for better performance
-        db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)"
+        if settings_records:
+            settings = (
+                json.loads(settings_records[0].settings)
+                if settings_records[0].settings
+                else {}
+            )
+            return settings.get("version", "0.0.0")
+        return "0.0.0"
+
+    def set_haiku_version(self, version: str) -> None:
+        """Updates the user version in settings."""
+        settings_records = list(
+            self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
         )
-        db.commit()
-
-    def get_user_version(self) -> str:
-        """Returns the SQLite user version"""
-        if self._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self._connection.execute("PRAGMA user_version;")
-        version = cursor.fetchone()
-        return int_to_semantic_version(version[0])
-
-    def set_user_version(self, version: str) -> None:
-        """Updates the SQLite user version"""
-        if self._connection is None:
-            raise ValueError("Store connection is not available")
-
-        self._connection.execute(
-            f"PRAGMA user_version = {semantic_version_to_int(version)};"
-        )
+        if settings_records:
+            settings = (
+                json.loads(settings_records[0].settings)
+                if settings_records[0].settings
+                else {}
+            )
+            settings["version"] = version
+            # Update the record
+            self.settings_table.update(
+                where="id = 'settings'", values={"settings": json.dumps(settings)}
+            )
+        else:
+            # Create new settings record
+            settings_data = Config.model_dump(mode="json")
+            settings_data["version"] = version
+            self.settings_table.add(
+                [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
+            )
 
     def recreate_embeddings_table(self) -> None:
-        """Recreate the embeddings table with current vector dimensions."""
-        if self._connection is None:
-            raise ValueError("Store connection is not available")
+        """Recreate the chunks table with current vector dimensions."""
+        # Drop and recreate chunks table
+        try:
+            self.db.drop_table("chunks")
+        except Exception:
+            pass
 
-        # Drop existing embeddings table
-        self._connection.execute("DROP TABLE IF EXISTS chunk_embeddings")
+        # Update the ChunkRecord model with new vector dimension
+        self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
+        self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
 
-        # Recreate with current dimensions
-        embedder = get_embedder()
-        self._connection.execute(f"""
-            CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
-                chunk_id INTEGER PRIMARY KEY,
-                embedding FLOAT[{embedder._vector_dim}]
-            )
-        """)
-
-        self._connection.commit()
-
-    @staticmethod
-    def serialize_embedding(embedding: list[float]) -> bytes:
-        """Serialize a list of floats to bytes for sqlite-vec storage."""
-        return struct.pack(f"{len(embedding)}f", *embedding)
+        # Create FTS index on the new table
+        self.chunks_table.create_fts_index("content", replace=True)
 
     def close(self):
-        """Close the database connection if it's an in-memory database."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        """Close the database connection."""
+        # LanceDB connections are automatically managed
+        pass
+
+    @property
+    def _connection(self):
+        """Compatibility property for repositories expecting _connection."""
+        return self

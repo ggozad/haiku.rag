@@ -1,27 +1,168 @@
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from docling_core.types.doc.document import DoclingDocument
 
+from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.document import Document
-from haiku.rag.store.repositories.base import BaseRepository
-from haiku.rag.utils import text_to_docling_document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models.chunk import Chunk
 
 
-class DocumentRepository(BaseRepository[Document]):
-    """Repository for Document database operations."""
+class DocumentRepository:
+    """Repository for Document operations."""
 
-    def __init__(self, store, chunk_repository=None):
-        super().__init__(store)
-        # Avoid circular import by using late import if not provided
-        if chunk_repository is None:
+    def __init__(self, store: Store) -> None:
+        self.store = store
+        self._chunk_repository = None
+
+    @property
+    def chunk_repository(self):
+        """Lazy-load ChunkRepository when needed."""
+        if self._chunk_repository is None:
             from haiku.rag.store.repositories.chunk import ChunkRepository
 
-            chunk_repository = ChunkRepository(store)
-        self.chunk_repository = chunk_repository
+            self._chunk_repository = ChunkRepository(self.store)
+        return self._chunk_repository
+
+    def _record_to_document(self, record: DocumentRecord) -> Document:
+        """Convert a DocumentRecord to a Document model."""
+        return Document(
+            id=record.id,
+            content=record.content,
+            uri=record.uri,
+            metadata=json.loads(record.metadata) if record.metadata else {},
+            created_at=datetime.fromisoformat(record.created_at)
+            if record.created_at
+            else datetime.now(),
+            updated_at=datetime.fromisoformat(record.updated_at)
+            if record.updated_at
+            else datetime.now(),
+        )
+
+    async def create(self, entity: Document) -> Document:
+        """Create a document in the database."""
+        # Generate new UUID
+        doc_id = str(uuid4())
+
+        # Create timestamp
+        now = datetime.now().isoformat()
+
+        # Create document record
+        doc_record = DocumentRecord(
+            id=doc_id,
+            content=entity.content,
+            uri=entity.uri,
+            metadata=json.dumps(entity.metadata),
+            created_at=now,
+            updated_at=now,
+        )
+
+        # Add to table
+        self.store.documents_table.add([doc_record])
+
+        entity.id = doc_id
+        entity.created_at = datetime.fromisoformat(now)
+        entity.updated_at = datetime.fromisoformat(now)
+        return entity
+
+    async def get_by_id(self, entity_id: str) -> Document | None:
+        """Get a document by its ID."""
+        results = list(
+            self.store.documents_table.search()
+            .where(f"id = '{entity_id}'")
+            .limit(1)
+            .to_pydantic(DocumentRecord)
+        )
+
+        if not results:
+            return None
+
+        return self._record_to_document(results[0])
+
+    async def update(self, entity: Document) -> Document:
+        """Update an existing document."""
+        assert entity.id, "Document ID is required for update"
+
+        # Update timestamp
+        now = datetime.now().isoformat()
+        entity.updated_at = datetime.fromisoformat(now)
+
+        # Update the record
+        self.store.documents_table.update(
+            where=f"id = '{entity.id}'",
+            values={
+                "content": entity.content,
+                "uri": entity.uri,
+                "metadata": json.dumps(entity.metadata),
+                "updated_at": now,
+            },
+        )
+
+        return entity
+
+    async def delete(self, entity_id: str) -> bool:
+        """Delete a document by its ID."""
+        # Check if document exists
+        doc = await self.get_by_id(entity_id)
+        if doc is None:
+            return False
+
+        # Delete associated chunks first
+        await self.chunk_repository.delete_by_document_id(entity_id)
+
+        # Delete the document
+        self.store.documents_table.delete(f"id = '{entity_id}'")
+        return True
+
+    async def list_all(
+        self, limit: int | None = None, offset: int | None = None
+    ) -> list[Document]:
+        """List all documents with optional pagination."""
+        query = self.store.documents_table.search()
+
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+
+        results = list(query.to_pydantic(DocumentRecord))
+        return [self._record_to_document(doc) for doc in results]
+
+    async def get_by_uri(self, uri: str) -> Document | None:
+        """Get a document by its URI."""
+        results = list(
+            self.store.documents_table.search()
+            .where(f"uri = '{uri}'")
+            .limit(1)
+            .to_pydantic(DocumentRecord)
+        )
+
+        if not results:
+            return None
+
+        return self._record_to_document(results[0])
+
+    async def delete_all(self) -> None:
+        """Delete all documents from the database."""
+        # Delete all chunks first
+        await self.chunk_repository.delete_all()
+
+        # Get count before deletion
+        count = len(
+            list(
+                self.store.documents_table.search().limit(1).to_pydantic(DocumentRecord)
+            )
+        )
+        if count > 0:
+            # Drop and recreate table to clear all data
+            self.store.db.drop_table("documents")
+            self.store.documents_table = self.store.db.create_table(
+                "documents", schema=DocumentRecord
+            )
 
     async def _create_with_docling(
         self,
@@ -30,219 +171,44 @@ class DocumentRepository(BaseRepository[Document]):
         chunks: list["Chunk"] | None = None,
     ) -> Document:
         """Create a document with its chunks and embeddings."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
+        # Create the document
+        created_doc = await self.create(entity)
 
-        cursor = self.store._connection.cursor()
-
-        # Start transaction
-        cursor.execute("BEGIN TRANSACTION")
-
-        try:
-            # Insert the document
-            cursor.execute(
-                """
-                INSERT INTO documents (content, uri, metadata, created_at, updated_at)
-                VALUES (:content, :uri, :metadata, :created_at, :updated_at)
-                """,
-                {
-                    "content": entity.content,
-                    "uri": entity.uri,
-                    "metadata": json.dumps(entity.metadata),
-                    "created_at": entity.created_at,
-                    "updated_at": entity.updated_at,
-                },
+        # Create chunks if not provided
+        if chunks is None:
+            assert created_doc.id is not None, (
+                "Document ID should not be None after creation"
             )
+            await self.chunk_repository.create_chunks_for_document(
+                created_doc.id, docling_document
+            )
+        else:
+            # Use provided chunks, set order from list position
+            assert created_doc.id is not None, (
+                "Document ID should not be None after creation"
+            )
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = created_doc.id
+                chunk.metadata["order"] = order
+                await self.chunk_repository.create(chunk)
 
-            document_id = cursor.lastrowid
-            assert document_id is not None, "Failed to create document in database"
-            entity.id = document_id
-
-            # Create chunks - either use provided chunks or generate from content
-            if chunks is not None:
-                # Use provided chunks, but update their document_id and set order from list position
-                for order, chunk in enumerate(chunks):
-                    chunk.document_id = document_id
-                    # Ensure order is set from list position
-                    chunk.metadata = chunk.metadata.copy() if chunk.metadata else {}
-                    chunk.metadata["order"] = order
-                    await self.chunk_repository.create(chunk, commit=False)
-            else:
-                # Create chunks and embeddings using DoclingDocument
-                await self.chunk_repository.create_chunks_for_document(
-                    document_id, docling_document, commit=False
-                )
-
-            cursor.execute("COMMIT")
-            return entity
-
-        except Exception:
-            cursor.execute("ROLLBACK")
-            raise
-
-    async def create(self, entity: Document) -> Document:
-        """Create a document with its chunks and embeddings."""
-        # Convert content to DoclingDocument
-        docling_document = text_to_docling_document(entity.content)
-
-        return await self._create_with_docling(entity, docling_document)
-
-    async def get_by_id(self, entity_id: int) -> Document | None:
-        """Get a document by its ID."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        cursor.execute(
-            """
-            SELECT id, content, uri, metadata, created_at, updated_at
-            FROM documents WHERE id = :id
-            """,
-            {"id": entity_id},
-        )
-
-        row = cursor.fetchone()
-        if row is None:
-            return None
-
-        document_id, content, uri, metadata_json, created_at, updated_at = row
-        metadata = json.loads(metadata_json) if metadata_json else {}
-
-        return Document(
-            id=document_id,
-            content=content,
-            uri=uri,
-            metadata=metadata,
-            created_at=created_at,
-            updated_at=updated_at,
-        )
-
-    async def get_by_uri(self, uri: str) -> Document | None:
-        """Get a document by its URI."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        cursor.execute(
-            """
-            SELECT id, content, uri, metadata, created_at, updated_at
-            FROM documents WHERE uri = :uri
-            """,
-            {"uri": uri},
-        )
-
-        row = cursor.fetchone()
-        if row is None:
-            return None
-
-        document_id, content, uri, metadata_json, created_at, updated_at = row
-        metadata = json.loads(metadata_json) if metadata_json else {}
-
-        return Document(
-            id=document_id,
-            content=content,
-            uri=uri,
-            metadata=metadata,
-            created_at=created_at,
-            updated_at=updated_at,
-        )
+        return created_doc
 
     async def _update_with_docling(
         self, entity: Document, docling_document: DoclingDocument
     ) -> Document:
-        """Update an existing document and regenerate its chunks and embeddings."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-        if entity.id is None:
-            raise ValueError("Document ID is required for update")
+        """Update a document and regenerate its chunks."""
+        # Delete existing chunks
+        assert entity.id is not None, "Document ID is required for update"
+        await self.chunk_repository.delete_by_document_id(entity.id)
 
-        cursor = self.store._connection.cursor()
+        # Update the document
+        updated_doc = await self.update(entity)
 
-        # Start transaction
-        cursor.execute("BEGIN TRANSACTION")
+        # Create new chunks
+        assert updated_doc.id is not None, "Document ID should not be None after update"
+        await self.chunk_repository.create_chunks_for_document(
+            updated_doc.id, docling_document
+        )
 
-        try:
-            # Update the document
-            cursor.execute(
-                """
-                UPDATE documents
-                SET content = :content, uri = :uri, metadata = :metadata, updated_at = :updated_at
-                WHERE id = :id
-                """,
-                {
-                    "content": entity.content,
-                    "uri": entity.uri,
-                    "metadata": json.dumps(entity.metadata),
-                    "updated_at": entity.updated_at,
-                    "id": entity.id,
-                },
-            )
-
-            # Delete existing chunks and regenerate using DoclingDocument
-            await self.chunk_repository.delete_by_document_id(entity.id, commit=False)
-            await self.chunk_repository.create_chunks_for_document(
-                entity.id, docling_document, commit=False
-            )
-
-            cursor.execute("COMMIT")
-            return entity
-
-        except Exception:
-            cursor.execute("ROLLBACK")
-            raise
-
-    async def update(self, entity: Document) -> Document:
-        """Update an existing document and regenerate its chunks and embeddings."""
-        # Convert content to DoclingDocument
-        docling_document = text_to_docling_document(entity.content)
-
-        return await self._update_with_docling(entity, docling_document)
-
-    async def delete(self, entity_id: int) -> bool:
-        """Delete a document and all its associated chunks and embeddings."""
-        # Delete chunks and embeddings first
-        await self.chunk_repository.delete_by_document_id(entity_id)
-
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        cursor.execute("DELETE FROM documents WHERE id = :id", {"id": entity_id})
-
-        deleted = cursor.rowcount > 0
-        self.store._connection.commit()
-        return deleted
-
-    async def list_all(
-        self, limit: int | None = None, offset: int | None = None
-    ) -> list[Document]:
-        """List all documents with optional pagination."""
-        if self.store._connection is None:
-            raise ValueError("Store connection is not available")
-
-        cursor = self.store._connection.cursor()
-        query = "SELECT id, content, uri, metadata, created_at, updated_at FROM documents ORDER BY created_at DESC"
-        params = {}
-
-        if limit is not None:
-            query += " LIMIT :limit"
-            params["limit"] = limit
-
-        if offset is not None:
-            query += " OFFSET :offset"
-            params["offset"] = offset
-
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-
-        return [
-            Document(
-                id=document_id,
-                content=content,
-                uri=uri,
-                metadata=json.loads(metadata_json) if metadata_json else {},
-                created_at=created_at,
-                updated_at=updated_at,
-            )
-            for document_id, content, uri, metadata_json, created_at, updated_at in rows
-        ]
+        return updated_doc

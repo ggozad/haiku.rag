@@ -1,4 +1,7 @@
+import asyncio
 import sys
+from collections.abc import Callable
+from functools import wraps
 from importlib import metadata
 from io import BytesIO
 from pathlib import Path
@@ -8,6 +11,42 @@ from docling.document_converter import DocumentConverter
 from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.io import DocumentStream
 from packaging.version import Version, parse
+
+
+def debounce(wait: float) -> Callable:
+    """
+    A decorator to debounce a function, ensuring it is called only after a specified delay
+    and always executes after the last call.
+
+    Args:
+        wait (float): The debounce delay in seconds.
+
+    Returns:
+        Callable: The decorated function.
+    """
+
+    def decorator(func: Callable) -> Callable:
+        last_call = None
+        task = None
+
+        @wraps(func)
+        async def debounced(*args, **kwargs):
+            nonlocal last_call, task
+            last_call = asyncio.get_event_loop().time()
+
+            if task:
+                task.cancel()
+
+            async def call_func():
+                await asyncio.sleep(wait)
+                if asyncio.get_event_loop().time() - last_call >= wait:  # type: ignore
+                    await func(*args, **kwargs)
+
+            task = asyncio.create_task(call_func())
+
+        return debounced
+
+    return decorator
 
 
 def get_default_data_dir() -> Path:
@@ -30,37 +69,6 @@ def get_default_data_dir() -> Path:
 
     data_path = system_paths[sys.platform]
     return data_path
-
-
-def semantic_version_to_int(version: str) -> int:
-    """Convert a semantic version string to an integer.
-
-    Args:
-        version: Semantic version string.
-
-    Returns:
-        Integer representation of semantic version.
-    """
-    major, minor, patch = version.split(".")
-    major = int(major) << 16
-    minor = int(minor) << 8
-    patch = int(patch)
-    return major + minor + patch
-
-
-def int_to_semantic_version(version: int) -> str:
-    """Convert an integer to a semantic version string.
-
-    Args:
-        version: Integer representation of semantic version.
-
-    Returns:
-        Semantic version string.
-    """
-    major = version >> 16
-    minor = (version >> 8) & 255
-    patch = version & 255
-    return f"{major}.{minor}.{patch}"
 
 
 async def is_up_to_date() -> tuple[bool, Version, Version]:

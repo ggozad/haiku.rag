@@ -1,12 +1,14 @@
 # haiku.rag
 
-`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work on SQLite alone without the need for external vector databases. It uses [sqlite-vec](https://github.com/asg017/sqlite-vec) for storing the embeddings and performs semantic (vector) search as well as full-text search combined through Reciprocal Rank Fusion. Both open-source (Ollama, MixedBread AI) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
+`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama, MixedBread AI) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
+
+> **Note**: Starting with version 0.7.0, haiku.rag uses LanceDB instead of SQLite. If you have an existing SQLite database, use `haiku-rag migrate old_database.sqlite` to migrate your data safely.
 
 ## Features
 
-- **Local SQLite**: No need to run additional servers
+- **Local LanceDB**: No need to run additional servers
 - **Support for various embedding providers**: Ollama, VoyageAI, OpenAI or add your own
-- **Hybrid Search**: Vector search using `sqlite-vec` combined with full-text search `FTS5`, using Reciprocal Rank Fusion
+- **Native Hybrid Search**: Vector search combined with full-text search using native LanceDB RRF reranking
 - **Reranking**: Optional result reranking with MixedBread AI or Cohere
 - **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic.
 - **File monitoring**: Automatically index files when run as a server
@@ -26,7 +28,7 @@ Use from Python:
 ```python
 from haiku.rag.client import HaikuRAG
 
-async with HaikuRAG("database.db") as client:
+async with HaikuRAG("database.lancedb") as client:
     # Add a document
     doc = await client.create_document("Your content here")
 
@@ -34,7 +36,7 @@ async with HaikuRAG("database.db") as client:
     results = await client.search("query")
 
     # Ask questions
-    answer = await client.ask("Who is the author of haiku.rag?", rerank=False)
+    answer = await client.ask("Who is the author of haiku.rag?")
 ```
 
 Or use the CLI:
@@ -42,6 +44,7 @@ Or use the CLI:
 haiku-rag add "Your document content"
 haiku-rag search "query"
 haiku-rag ask "Who is the author of haiku.rag?"
+haiku-rag migrate old_database.sqlite  # Migrate from SQLite
 ```
 
 ## Documentation

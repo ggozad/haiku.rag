@@ -12,6 +12,10 @@ load_dotenv()
 class AppConfig(BaseModel):
     ENV: str = "production"
 
+    LANCEDB_API_KEY: str = ""
+    LANCEDB_URI: str = ""
+    LANCEDB_REGION: str = ""
+
     DEFAULT_DATA_DIR: Path = get_default_data_dir()
     MONITOR_DIRECTORIES: list[Path] = []
 
@@ -19,8 +23,8 @@ class AppConfig(BaseModel):
     EMBEDDINGS_MODEL: str = "mxbai-embed-large"
     EMBEDDINGS_VECTOR_DIM: int = 1024
 
-    RERANK_PROVIDER: str = "ollama"
-    RERANK_MODEL: str = "qwen3"
+    RERANK_PROVIDER: str = ""
+    RERANK_MODEL: str = ""
 
     QA_PROVIDER: str = "ollama"
     QA_MODEL: str = "qwen3"

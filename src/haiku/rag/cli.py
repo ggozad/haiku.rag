@@ -8,6 +8,7 @@ from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import Config
+from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
 
 if not Config.ENV == "development":
@@ -47,7 +48,7 @@ def main(
         help="Show version and exit",
     ),
 ):
-    """haiku.rag CLI - SQLite-based RAG system"""
+    """haiku.rag CLI - Vector database RAG system"""
     # Run version check before any command
     asyncio.run(check_version())
 
@@ -55,9 +56,9 @@ def main(
 @cli.command("list", help="List all stored documents")
 def list_documents(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -70,9 +71,9 @@ def add_document_text(
         help="The text content of the document to add",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -85,9 +86,9 @@ def add_document_src(
         help="The file path or URL of the document to add",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -96,13 +97,13 @@ def add_document_src(
 
 @cli.command("get", help="Get and display a document by its ID")
 def get_document(
-    doc_id: int = typer.Argument(
+    doc_id: str = typer.Argument(
         help="The ID of the document to get",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -111,13 +112,13 @@ def get_document(
 
 @cli.command("delete", help="Delete a document by its ID")
 def delete_document(
-    doc_id: int = typer.Argument(
+    doc_id: str = typer.Argument(
         help="The ID of the document to delete",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -135,19 +136,14 @@ def search(
         "-l",
         help="Maximum number of results to return",
     ),
-    k: int = typer.Option(
-        60,
-        "--k",
-        help="Reciprocal Rank Fusion k parameter",
-    ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.search(query=query, limit=limit, k=k))
+    asyncio.run(app.search(query=query, limit=limit))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")
@@ -156,9 +152,9 @@ def ask(
         help="The question to ask",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
     cite: bool = typer.Option(
         False,
@@ -182,9 +178,9 @@ def settings():
 )
 def rebuild(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
 ):
     app = HaikuRAGApp(db_path=db)
@@ -196,9 +192,9 @@ def rebuild(
 )
 def serve(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.sqlite",
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
-        help="Path to the SQLite database file",
+        help="Path to the LanceDB database file",
     ),
     stdio: bool = typer.Option(
         False,
@@ -225,6 +221,21 @@ def serve(
         transport = "sse"
 
     asyncio.run(app.serve(transport=transport))
+
+
+@cli.command("migrate", help="Migrate an SQLite database to LanceDB")
+def migrate(
+    sqlite_path: Path = typer.Argument(
+        help="Path to the SQLite database file to migrate",
+    ),
+):
+    # Generate LanceDB path in same parent directory
+    lancedb_path = sqlite_path.parent / (sqlite_path.stem + ".lancedb")
+
+    success = asyncio.run(migrate_sqlite_to_lancedb(sqlite_path, lancedb_path))
+
+    if not success:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

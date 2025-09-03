@@ -12,9 +12,9 @@ ANTHROPIC_AVAILABLE = bool(Config.ANTHROPIC_API_KEY)
 
 
 @pytest.mark.asyncio
-async def test_qa_ollama(qa_corpus: Dataset):
+async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     """Test Ollama QA with LLM judge."""
-    client = HaikuRAG(":memory:")
+    client = HaikuRAG(temp_db_path)
     qa = QuestionAnswerAgent(client, "ollama", "qwen3")
     llm_judge = LLMJudge()
 
@@ -36,9 +36,9 @@ async def test_qa_ollama(qa_corpus: Dataset):
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not available")
-async def test_qa_openai(qa_corpus: Dataset):
+async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
     """Test OpenAI QA with LLM judge."""
-    client = HaikuRAG(":memory:")
+    client = HaikuRAG(temp_db_path)
     qa = QuestionAnswerAgent(client, "openai", "gpt-4o-mini")
     llm_judge = LLMJudge()
 
@@ -60,9 +60,9 @@ async def test_qa_openai(qa_corpus: Dataset):
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(not ANTHROPIC_AVAILABLE, reason="Anthropic not available")
-async def test_qa_anthropic(qa_corpus: Dataset):
+async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
     """Test Anthropic QA with LLM judge."""
-    client = HaikuRAG(":memory:")
+    client = HaikuRAG(temp_db_path)
     qa = QuestionAnswerAgent(client, "anthropic", "claude-3-5-haiku-20241022")
     llm_judge = LLMJudge()
 

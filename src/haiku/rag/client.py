@@ -3,7 +3,6 @@ import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -16,6 +15,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.utils import text_to_docling_document
 
 
@@ -24,19 +24,17 @@ class HaikuRAG:
 
     def __init__(
         self,
-        db_path: Path | Literal[":memory:"] = Config.DEFAULT_DATA_DIR
-        / "haiku.rag.sqlite",
+        db_path: Path = Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         skip_validation: bool = False,
     ):
         """Initialize the RAG client with a database path.
 
         Args:
-            db_path: Path to the SQLite database file or ":memory:" for in-memory database.
+            db_path: Path to the database file.
             skip_validation: Whether to skip configuration validation on database load.
         """
-        if isinstance(db_path, Path):
-            if not db_path.parent.exists():
-                Path.mkdir(db_path.parent, parents=True)
+        if not db_path.parent.exists():
+            Path.mkdir(db_path.parent, parents=True)
         self.store = Store(db_path, skip_validation=skip_validation)
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
@@ -269,7 +267,7 @@ class HaikuRAG:
         # Default to .html for web content
         return ".html"
 
-    async def get_document_by_id(self, document_id: int) -> Document | None:
+    async def get_document_by_id(self, document_id: str) -> Document | None:
         """Get a document by its ID.
 
         Args:
@@ -300,7 +298,7 @@ class HaikuRAG:
             document, docling_document
         )
 
-    async def delete_document(self, document_id: int) -> bool:
+    async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""
         return await self.document_repository.delete(document_id)
 
@@ -319,14 +317,14 @@ class HaikuRAG:
         return await self.document_repository.list_all(limit=limit, offset=offset)
 
     async def search(
-        self, query: str, limit: int = 5, k: int = 60
+        self, query: str, limit: int = 5, search_type: str = "hybrid"
     ) -> list[tuple[Chunk, float]]:
-        """Search for relevant chunks using hybrid search (vector similarity + full-text search) with reranking.
+        """Search for relevant chunks using the specified search method with optional reranking.
 
         Args:
             query: The search query string.
             limit: Maximum number of results to return.
-            k: Parameter for Reciprocal Rank Fusion (default: 60).
+            search_type: Type of search - "vector", "fts", or "hybrid" (default).
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
@@ -335,12 +333,15 @@ class HaikuRAG:
         reranker = get_reranker()
 
         if reranker is None:
-            return await self.chunk_repository.search_chunks_hybrid(query, limit, k)
+            # No reranking - return direct search results
+            return await self.chunk_repository.search(query, limit, search_type)
 
         # Get more initial results (3X) for reranking
-        search_results = await self.chunk_repository.search_chunks_hybrid(
-            query, limit * 3, k
+        search_limit = limit * 3
+        search_results = await self.chunk_repository.search(
+            query, search_limit, search_type
         )
+
         # Apply reranking
         chunks = [chunk for chunk, _ in search_results]
         reranked_results = await reranker.rerank(query, chunks, top_n=limit)
@@ -493,7 +494,7 @@ class HaikuRAG:
         qa_agent = get_qa_agent(self, use_citations=cite)
         return await qa_agent.answer(question)
 
-    async def rebuild_database(self) -> AsyncGenerator[int, None]:
+    async def rebuild_database(self) -> AsyncGenerator[str, None]:
         """Rebuild the database by deleting all chunks and re-indexing all documents.
 
         For documents with URIs:
@@ -510,10 +511,8 @@ class HaikuRAG:
         self.store.recreate_embeddings_table()
 
         # Update settings to current config
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
         settings_repo = SettingsRepository(self.store)
-        settings_repo.save()
+        settings_repo.save_current_settings()
 
         documents = await self.list_documents()
 
@@ -547,12 +546,9 @@ class HaikuRAG:
                 # Document without URI - re-create chunks from existing content
                 docling_document = text_to_docling_document(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
-                    doc.id, docling_document, commit=False
+                    doc.id, docling_document
                 )
                 yield doc.id
-
-        if self.store._connection:
-            self.store._connection.commit()
 
     def close(self):
         """Close the underlying store connection."""
