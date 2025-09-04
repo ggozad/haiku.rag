@@ -4,9 +4,11 @@ import pytest
 from haiku.rag.config import Config
 from haiku.rag.embeddings.ollama import Embedder as OllamaEmbedder
 from haiku.rag.embeddings.openai import Embedder as OpenAIEmbedder
+from haiku.rag.embeddings.vllm import Embedder as VLLMEmbedder
 
 OPENAI_AVAILABLE = bool(Config.OPENAI_API_KEY)
 VOYAGEAI_AVAILABLE = bool(Config.VOYAGE_API_KEY)
+VLLM_EMBEDDINGS_AVAILABLE = bool(Config.VLLM_EMBEDDINGS_BASE_URL)
 
 
 # Calculate cosine similarity
@@ -111,3 +113,35 @@ async def test_voyageai_embedder():
 
     except ImportError:
         pytest.skip("VoyageAI package not installed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not VLLM_EMBEDDINGS_AVAILABLE, reason="vLLM embeddings server not configured"
+)
+async def test_vllm_embedder():
+    embedder = VLLMEmbedder("mixedbread-ai/mxbai-embed-large-v1", 512)
+    phrases = [
+        "I enjoy eating great food.",
+        "Python is my favorite programming language.",
+        "I love to travel and see new places.",
+    ]
+    embeddings = [np.array(await embedder.embed(phrase)) for phrase in phrases]
+
+    test_phrase = "I am going for a camping trip."
+    test_embedding = await embedder.embed(test_phrase)
+
+    sims = similarities(embeddings, test_embedding)
+    assert max(sims) == sims[2]
+
+    test_phrase = "When is dinner ready?"
+    test_embedding = await embedder.embed(test_phrase)
+
+    sims = similarities(embeddings, test_embedding)
+    assert max(sims) == sims[0]
+
+    test_phrase = "I work as a software developer."
+    test_embedding = await embedder.embed(test_phrase)
+
+    sims = similarities(embeddings, test_embedding)
+    assert max(sims) == sims[1]

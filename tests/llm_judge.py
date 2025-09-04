@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
 from haiku.rag.config import Config
@@ -37,9 +37,9 @@ class LLMJudgeResponseSchema(BaseModel):
 class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
-    def __init__(self, model: str = Config.QA_MODEL):
+    def __init__(self, model: str = "qwen3"):
         # Create Ollama model
-        ollama_model = OpenAIModel(
+        ollama_model = OpenAIChatModel(
             model_name=model,
             provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
         )
