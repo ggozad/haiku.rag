@@ -33,6 +33,9 @@ class AppConfig(BaseModel):
     CONTEXT_CHUNK_RADIUS: int = 0
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+    VLLM_EMBEDDINGS_BASE_URL: str = ""
+    VLLM_RERANK_BASE_URL: str = ""
+    VLLM_QA_BASE_URL: str = ""
 
     # Provider keys
     VOYAGE_API_KEY: str = ""
