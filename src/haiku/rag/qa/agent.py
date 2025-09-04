@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -64,6 +65,13 @@ class QuestionAnswerAgent:
             return OpenAIChatModel(
                 model_name=model,
                 provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
+            )
+        elif provider == "vllm":
+            return OpenAIChatModel(
+                model_name=model,
+                provider=OpenAIProvider(
+                    base_url=f"{Config.VLLM_QA_BASE_URL}/v1", api_key="none"
+                ),
             )
         else:
             # For all other providers, use the provider:model format

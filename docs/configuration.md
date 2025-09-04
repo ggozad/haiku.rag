@@ -97,6 +97,18 @@ QA_MODEL="claude-3-5-haiku-20241022"  # or claude-3-5-sonnet-20241022, etc.
 ANTHROPIC_API_KEY="your-api-key"
 ```
 
+### vLLM
+
+For high-performance local inference, you can use vLLM to serve models with OpenAI-compatible APIs:
+
+```bash
+QA_PROVIDER="vllm"
+QA_MODEL="Qwen/Qwen3-4B"  # Any model with tool support in vLLM
+VLLM_QA_BASE_URL="http://localhost:8002"  # vLLM server URL
+```
+
+**Note:** You need to run a vLLM server separately with a model that supports tool calling loaded. Consult the specific model's documentation for proper vLLM serving configuration.
+
 ### Other Providers
 
 Any provider supported by Pydantic AI can be used. Examples include:
