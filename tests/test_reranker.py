@@ -2,9 +2,11 @@ import pytest
 
 from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
 
 COHERE_AVAILABLE = bool(Config.COHERE_API_KEY)
+VLLM_RERANK_AVAILABLE = bool(Config.VLLM_RERANK_BASE_URL)
 
 chunks = [
     Chunk(content=content, document_id=str(i))
@@ -66,3 +68,22 @@ async def test_cohere_reranker():
 
     except ImportError:
         pytest.skip("Cohere package not installed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not VLLM_RERANK_AVAILABLE, reason="vLLM rerank server not configured"
+)
+async def test_vllm_reranker():
+    try:
+        reranker = VLLMReranker("mixedbread-ai/mxbai-rerank-base-v2")
+
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
+        assert all(isinstance(score, float) for chunk, score in reranked)
+
+    except Exception:
+        # Skip test if vLLM rerank server is not available
+        pytest.skip("vLLM rerank server not available")

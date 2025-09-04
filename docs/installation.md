@@ -11,6 +11,7 @@ This includes support for:
 - **OpenAI** (GPT models for QA and embeddings)
 - **Anthropic** (Claude models for QA)
 - **Cohere** (reranking models)
+- **vLLM** (high-performance local inference for embeddings, QA, and reranking)
 
 ## Provider-Specific Installation
 
@@ -28,7 +29,38 @@ uv pip install haiku.rag[voyageai]
 uv pip install haiku.rag[mxbai]
 ```
 
+### vLLM Setup
+
+vLLM requires no additional installation - it works with the base haiku.rag package. However, you need to run vLLM servers separately:
+
+```bash
+# Install vLLM
+pip install vllm
+
+# Serve an embedding model
+vllm serve mixedbread-ai/mxbai-embed-large-v1 --port 8000
+
+# Serve a model for reranking
+vllm serve mixedbread-ai/mxbai-rerank-base-v2 --hf_overrides '{"architectures": ["Qwen2ForSequenceClassification"],"classifier_from_token": ["0", "1"], "method": "from_2_way_softmax"}' --port 8001
+```
+
+Then configure haiku.rag to use the vLLM servers:
+
+```bash
+# Embeddings
+EMBEDDINGS_PROVIDER="vllm"
+EMBEDDINGS_MODEL="mixedbread-ai/mxbai-embed-large-v1"
+EMBEDDINGS_VECTOR_DIM=512
+VLLM_EMBEDDINGS_BASE_URL="http://localhost:8000"
+
+# Reranking (optional)
+RERANK_PROVIDER="vllm"
+RERANK_MODEL="microsoft/DialoGPT-medium"
+VLLM_RERANK_BASE_URL="http://localhost:8001"
+```
+
 ## Requirements
 
 - Python 3.10+
 - Ollama (for default embeddings)
+- vLLM server (for vLLM provider)

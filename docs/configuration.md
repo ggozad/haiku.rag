@@ -53,6 +53,18 @@ EMBEDDINGS_VECTOR_DIM=1536
 OPENAI_API_KEY="your-api-key"
 ```
 
+### vLLM
+For high-performance local inference, you can use vLLM to serve embedding models with OpenAI-compatible APIs:
+
+```bash
+EMBEDDINGS_PROVIDER="vllm"
+EMBEDDINGS_MODEL="mixedbread-ai/mxbai-embed-large-v1"  # Any embedding model supported by vLLM
+EMBEDDINGS_VECTOR_DIM=512  # Dimension depends on the model
+VLLM_EMBEDDINGS_BASE_URL="http://localhost:8000"  # vLLM server URL
+```
+
+**Note:** You need to run a vLLM server separately with an embedding model loaded.
+
 ## Question Answering Providers
 
 Configure which LLM provider to use for question answering. Any provider and model supported by [Pydantic AI](https://ai.pydantic.dev/models/) can be used.
@@ -135,6 +147,18 @@ RERANK_PROVIDER="cohere"
 RERANK_MODEL="rerank-v3.5"
 COHERE_API_KEY="your-api-key"
 ```
+
+### vLLM
+
+For high-performance local reranking using dedicated reranking models:
+
+```bash
+RERANK_PROVIDER="vllm"
+RERANK_MODEL="mixedbread-ai/mxbai-rerank-base-v2"  # Any reranking model supported by vLLM
+VLLM_RERANK_BASE_URL="http://localhost:8001"  # vLLM server URL
+```
+
+**Note:** vLLM reranking uses the `/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded. Consult the specific model's documentation for proper vLLM serving configuration.
 
 ## Other Settings
 
