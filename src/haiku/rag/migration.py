@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""
-Migration script to migrate from SQLite to LanceDB.
-
-This script will:
-1. Read data from an existing SQLite database
-2. Create a new LanceDB database with the same data
-3. Preserve all documents, chunks, embeddings, and settings
-"""
-
 import json
 import sqlite3
 import struct
@@ -54,6 +44,22 @@ class SQLiteToLanceDBMigrator:
             # Connect to SQLite database
             sqlite_conn = sqlite3.connect(self.sqlite_path)
             sqlite_conn.row_factory = sqlite3.Row
+
+            # Load the sqlite-vec extension
+            try:
+                import sqlite_vec
+
+                sqlite_conn.enable_load_extension(True)
+                sqlite_vec.load(sqlite_conn)
+                self.console.print("[blue]Loaded sqlite-vec extension[/blue]")
+            except Exception as e:
+                self.console.print(
+                    f"[yellow]Warning: Could not load sqlite-vec extension: {e}[/yellow]"
+                )
+                self.console.print(
+                    "[yellow]Install sqlite-vec with[/yellow]\n[green]uv pip install sqlite-vec [/green]"
+                )
+                exit(1)
 
             # Create LanceDB store
             lance_store = Store(self.lancedb_path, skip_validation=True)
@@ -180,30 +186,24 @@ class SQLiteToLanceDBMigrator:
 
         chunks_data = cursor.fetchall()
 
-        # Get embeddings separately to avoid vec0 virtual table issues
+        # Get embeddings using the sqlite-vec virtual table
         embeddings_map = {}
         try:
-            # Try to get embeddings from the vec0 tables directly
+            # Use the virtual table to get embeddings properly
             cursor.execute("""
-                SELECT
-                    r.chunk_id,
-                    v.vectors
-                FROM chunk_embeddings_rowids r
-                JOIN chunk_embeddings_vector_chunks00 v ON r.rowid = v.rowid
+                SELECT chunk_id, embedding
+                FROM chunk_embeddings
             """)
 
             for row in cursor.fetchall():
                 chunk_id = row[0]
-                vectors_blob = row[1]
-                if vectors_blob and chunk_id not in embeddings_map:
-                    embeddings_map[chunk_id] = vectors_blob
+                embedding_blob = row[1]
+                if embedding_blob and chunk_id not in embeddings_map:
+                    embeddings_map[chunk_id] = embedding_blob
 
         except sqlite3.OperationalError as e:
             self.console.print(
-                f"[yellow]Warning: Could not extract embeddings: {e}[/yellow]"
-            )
-            self.console.print(
-                "[yellow]Continuing migration without embeddings...[/yellow]"
+                f"[yellow]Warning: Could not extract embeddings from virtual table: {e}[/yellow]"
             )
 
         chunks = []
