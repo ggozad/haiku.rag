@@ -2,6 +2,23 @@
 
 The `haiku-rag` CLI provides complete document management functionality.
 
+## Shell Autocompletion
+
+Enable shell autocompletion for faster, error‑free usage.
+
+- Temporary (current shell only):
+  ```bash
+  eval "$(haiku-rag --show-completion)"
+  ```
+- Permanent installation:
+  ```bash
+  haiku-rag --install-completion
+  ```
+
+What’s completed:
+- `get` and `delete`/`rm`: Document IDs from the selected database (respects `--db`).
+- `add-src`: Local filesystem paths (URLs can still be typed manually).
+
 ## Document Management
 
 ### List Documents
@@ -26,13 +43,16 @@ haiku-rag add-src https://example.com/article.html
 ### Get Document
 
 ```bash
-haiku-rag get 1
+haiku-rag get <TAB>
+# or
+haiku-rag get 3f4a...   # document ID (autocomplete supported)
 ```
 
 ### Delete Document
 
 ```bash
-haiku-rag delete 1
+haiku-rag delete <TAB>
+haiku-rag rm <TAB>       # alias
 ```
 
 ### Rebuild Database

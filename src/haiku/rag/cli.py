@@ -22,6 +22,65 @@ cli = typer.Typer(
 console = Console()
 
 
+def complete_document_ids(ctx: typer.Context, incomplete: str):
+    """Autocomplete document IDs from the selected DB."""
+    db_path = ctx.params.get("db") or (Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb")
+
+    try:
+        from haiku.rag.client import HaikuRAG
+
+        async def _list_ids():
+            async with HaikuRAG(db_path) as client:
+                docs = await client.list_documents()
+                return [d.id for d in docs if d.id]
+
+        ids = asyncio.run(_list_ids())
+    except Exception:
+        return []
+
+    return [i for i in ids if i and i.startswith(incomplete)]
+
+
+def complete_local_paths(ctx: typer.Context, incomplete: str) -> list[str]:
+    """Autocomplete local filesystem paths.
+
+    Provides directory/file suggestions based on the current incomplete input.
+    Does not validate or restrict to specific extensions to keep it flexible
+    (URLs are still allowed to be typed manually).
+    """
+    try:
+        text = incomplete or ""
+
+        # Expand user home
+        from os.path import expanduser
+
+        expanded = expanduser(text)
+        p = Path(expanded)
+
+        # Choose directory to list and prefix to filter
+        if text == "" or text.endswith(("/", "\\")):
+            directory = p
+            prefix = ""
+        else:
+            directory = p.parent
+            prefix = p.name
+
+        if not directory.exists():
+            return []
+
+        suggestions: list[str] = []
+        for entry in directory.iterdir():
+            name = entry.name
+            if not prefix or name.startswith(prefix):
+                suggestion = str(directory / name)
+                if entry.is_dir():
+                    suggestion += "/"
+                suggestions.append(suggestion)
+        return suggestions
+    except Exception:
+        return []
+
+
 async def check_version():
     """Check if haiku.rag is up to date and show warning if not."""
     up_to_date, current_version, latest_version = await is_up_to_date()
@@ -87,6 +146,7 @@ def add_document_text(
 def add_document_src(
     source: str = typer.Argument(
         help="The file path or URL of the document to add",
+        autocompletion=complete_local_paths,
     ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
@@ -102,6 +162,7 @@ def add_document_src(
 def get_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to get",
+        autocompletion=complete_document_ids,
     ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
@@ -117,6 +178,7 @@ def get_document(
 def delete_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to delete",
+        autocompletion=complete_document_ids,
     ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
@@ -126,6 +188,10 @@ def delete_document(
 ):
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.delete_document(doc_id=doc_id))
+
+
+# Add alias `rm` for delete
+cli.command("rm", help="Alias for delete: remove a document by its ID")(delete_document)
 
 
 @cli.command("search", help="Search for documents by a query")
