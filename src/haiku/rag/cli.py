@@ -190,6 +190,10 @@ def delete_document(
     asyncio.run(app.delete_document(doc_id=doc_id))
 
 
+# Add alias `rm` for delete
+cli.command("rm", help="Alias for delete: remove a document by its ID")(delete_document)
+
+
 @cli.command("search", help="Search for documents by a query")
 def search(
     query: str = typer.Argument(
