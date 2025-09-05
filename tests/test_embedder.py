@@ -28,7 +28,13 @@ async def test_ollama_embedder():
         "Python is my favorite programming language.",
         "I love to travel and see new places.",
     ]
-    embeddings = [np.array(await embedder.embed(phrase)) for phrase in phrases]
+
+    # Test batch embedding
+    embeddings = await embedder.embed(phrases)
+    assert isinstance(embeddings, list)
+    assert len(embeddings) == 3
+    assert all(isinstance(emb, list) for emb in embeddings)
+    embeddings = [np.array(emb) for emb in embeddings]
 
     test_phrase = "I am going for a camping trip."
     test_embedding = await embedder.embed(test_phrase)
@@ -58,7 +64,13 @@ async def test_openai_embedder():
         "Python is my favorite programming language.",
         "I love to travel and see new places.",
     ]
-    embeddings = [np.array(await embedder.embed(phrase)) for phrase in phrases]
+
+    # Test batch embedding
+    embeddings = await embedder.embed(phrases)
+    assert isinstance(embeddings, list)
+    assert len(embeddings) == 3
+    assert all(isinstance(emb, list) for emb in embeddings)
+    embeddings = [np.array(emb) for emb in embeddings]
 
     test_phrase = "I am going for a camping trip."
     test_embedding = await embedder.embed(test_phrase)
@@ -91,7 +103,13 @@ async def test_voyageai_embedder():
             "Python is my favorite programming language.",
             "I love to travel and see new places.",
         ]
-        embeddings = [np.array(await embedder.embed(phrase)) for phrase in phrases]
+
+        # Test batch embedding
+        embeddings = await embedder.embed(phrases)
+        assert isinstance(embeddings, list)
+        assert len(embeddings) == 3
+        assert all(isinstance(emb, list) for emb in embeddings)
+        embeddings = [np.array(emb) for emb in embeddings]
 
         test_phrase = "I am going for a camping trip."
         test_embedding = await embedder.embed(test_phrase)
@@ -126,7 +144,13 @@ async def test_vllm_embedder():
         "Python is my favorite programming language.",
         "I love to travel and see new places.",
     ]
-    embeddings = [np.array(await embedder.embed(phrase)) for phrase in phrases]
+
+    # Test batch embedding
+    embeddings = await embedder.embed(phrases)
+    assert isinstance(embeddings, list)
+    assert len(embeddings) == 3
+    assert all(isinstance(emb, list) for emb in embeddings)
+    embeddings = [np.array(emb) for emb in embeddings]
 
     test_phrase = "I am going for a camping trip."
     test_embedding = await embedder.embed(test_phrase)

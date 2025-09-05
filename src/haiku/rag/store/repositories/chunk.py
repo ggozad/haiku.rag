@@ -154,13 +154,7 @@ class ChunkRepository:
         """Create chunks and embeddings for a document from DoclingDocument."""
         chunk_texts = await chunker.chunk(document)
 
-        # Generate embeddings in parallel for all chunks
-        embeddings_tasks = []
-        for chunk_text in chunk_texts:
-            embeddings_tasks.append(self.embedder.embed(chunk_text))
-
-        # Wait for all embeddings to complete
-        embeddings = await asyncio.gather(*embeddings_tasks)
+        embeddings = await self.embedder.embed(chunk_texts)
 
         # Prepare all chunk records for batch insertion
         chunk_records = []
