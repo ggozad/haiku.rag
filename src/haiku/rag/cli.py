@@ -8,6 +8,7 @@ from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import Config
+from haiku.rag.logging import configure_cli_logging
 from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
 
@@ -49,6 +50,8 @@ def main(
     ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
+    # Ensure only haiku.rag logs are emitted in CLI context
+    configure_cli_logging()
     # Run version check before any command
     asyncio.run(check_version())
 
