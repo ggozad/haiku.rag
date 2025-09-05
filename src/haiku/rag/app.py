@@ -50,8 +50,13 @@ class HaikuRAGApp:
 
     async def delete_document(self, doc_id: str):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            await self.client.delete_document(doc_id)
-            self.console.print(f"[b]Document {doc_id} deleted successfully.[/b]")
+            deleted = await self.client.delete_document(doc_id)
+            if deleted:
+                self.console.print(f"[b]Document {doc_id} deleted successfully.[/b]")
+            else:
+                self.console.print(
+                    f"[yellow]Document with id {doc_id} not found.[/yellow]"
+                )
 
     async def search(self, query: str, limit: int = 5):
         async with HaikuRAG(db_path=self.db_path) as self.client:
