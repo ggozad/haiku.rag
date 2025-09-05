@@ -9,7 +9,7 @@ class EmbedderBase:
         self._model = model
         self._vector_dim = vector_dim
 
-    async def embed(self, text: str) -> list[float]:
+    async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
         raise NotImplementedError(
             "Embedder is an abstract class. Please implement the embed method in a subclass."
         )

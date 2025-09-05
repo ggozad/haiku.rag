@@ -5,7 +5,7 @@ from haiku.rag.embeddings.base import EmbedderBase
 
 
 class Embedder(EmbedderBase):
-    async def embed(self, text: str) -> list[float]:
+    async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
         client = AsyncOpenAI(
             base_url=f"{Config.VLLM_EMBEDDINGS_BASE_URL}/v1", api_key="dummy"
         )
@@ -13,4 +13,7 @@ class Embedder(EmbedderBase):
             model=self._model,
             input=text,
         )
-        return response.data[0].embedding
+        if isinstance(text, str):
+            return response.data[0].embedding
+        else:
+            return [item.embedding for item in response.data]

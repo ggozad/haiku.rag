@@ -4,10 +4,14 @@ try:
     from haiku.rag.embeddings.base import EmbedderBase
 
     class Embedder(EmbedderBase):
-        async def embed(self, text: str) -> list[float]:
+        async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
             client = Client()
-            res = client.embed([text], model=self._model, output_dtype="float")
-            return res.embeddings[0]  # type: ignore[return-value]
+            if isinstance(text, str):
+                res = client.embed([text], model=self._model, output_dtype="float")
+                return res.embeddings[0]  # type: ignore[return-value]
+            else:
+                res = client.embed(text, model=self._model, output_dtype="float")
+                return res.embeddings  # type: ignore[return-value]
 
 except ImportError:
     pass
