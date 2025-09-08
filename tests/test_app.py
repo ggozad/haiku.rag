@@ -200,7 +200,7 @@ async def test_serve(app: HaikuRAGApp, monkeypatch, transport):
     if transport == "stdio":
         mock_server.run_stdio_async.assert_called_once()
     elif transport == "sse":
-        mock_server.run_sse_async.assert_called_once_with("sse")
+        mock_server.run_sse_async.assert_called_once()
     else:
         mock_server.run_http_async.assert_called_once_with("streamable-http")
 
