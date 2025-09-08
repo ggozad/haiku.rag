@@ -170,7 +170,7 @@ class HaikuRAGApp:
                 if transport == "stdio":
                     await server.run_stdio_async()
                 elif transport == "sse":
-                    await server.run_sse_async("sse")
+                    await server.run_sse_async()
                 else:
                     await server.run_http_async("streamable-http")
             except KeyboardInterrupt:
