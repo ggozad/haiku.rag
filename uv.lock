@@ -951,7 +951,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.7.5"
+version = "0.7.6"
 source = { editable = "." }
 dependencies = [
     { name = "docling" },
