@@ -34,7 +34,7 @@ class DocumentRepository:
             id=record.id,
             content=record.content,
             uri=record.uri,
-            metadata=json.loads(record.metadata) if record.metadata else {},
+            metadata=json.loads(record.metadata),
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
             else datetime.now(),
@@ -194,7 +194,7 @@ class DocumentRepository:
                 )
                 for order, chunk in enumerate(chunks):
                     chunk.document_id = created_doc.id
-                    chunk.metadata["order"] = order
+                    chunk.order = order
                     await self.chunk_repository.create(chunk)
 
             return created_doc

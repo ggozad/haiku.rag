@@ -80,9 +80,9 @@ async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
     assert all(chunk.document_id == document_id for chunk in chunks)
     assert all(chunk.id is not None for chunk in chunks)
 
-    # Verify chunk order metadata
+    # Verify chunk order
     for i, chunk in enumerate(chunks):
-        assert chunk.metadata.get("order") == i
+        assert chunk.order == i
 
     # Verify chunks exist in database
     db_chunks = await chunk_repo.get_by_document_id(document_id)
@@ -167,9 +167,7 @@ async def test_adjacent_chunks(temp_db_path):
 
     created_chunks = []
     for content, order in chunks_data:
-        chunk = Chunk(
-            document_id=created_document.id, content=content, metadata={"order": order}
-        )
+        chunk = Chunk(document_id=created_document.id, content=content, order=order)
         created_chunk = await chunk_repo.create(chunk)
         created_chunks.append(created_chunk)
 
@@ -186,7 +184,7 @@ async def test_adjacent_chunks(temp_db_path):
     assert middle_chunk.id not in [chunk.id for chunk in adjacent_chunks]
 
     # Should include chunks with order 1 and 3
-    orders = [chunk.metadata.get("order") for chunk in adjacent_chunks]
+    orders = [chunk.order for chunk in adjacent_chunks]
     assert 1 in orders
     assert 3 in orders
 

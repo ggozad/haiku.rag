@@ -59,11 +59,16 @@ class ChunkRepository:
             embedding = entity.embedding
         else:
             embedding = await self.embedder.embed(entity.content)
+        order_val = int(entity.order)
+
         chunk_record = self.store.ChunkRecord(
             id=chunk_id,
             document_id=entity.document_id,
             content=entity.content,
-            metadata=json.dumps(entity.metadata),
+            metadata=json.dumps(
+                {k: v for k, v in entity.metadata.items() if k != "order"}
+            ),
+            order=order_val,
             vector=embedding,
         )
 
@@ -90,11 +95,13 @@ class ChunkRepository:
             return None
 
         chunk_record = results[0]
+        md = json.loads(chunk_record.metadata)
         return Chunk(
             id=chunk_record.id,
             document_id=chunk_record.document_id,
             content=chunk_record.content,
-            metadata=json.loads(chunk_record.metadata) if chunk_record.metadata else {},
+            metadata=md,
+            order=chunk_record.order,
         )
 
     async def update(self, entity: Chunk) -> Chunk:
@@ -102,13 +109,17 @@ class ChunkRepository:
         assert entity.id, "Chunk ID is required for update"
 
         embedding = await self.embedder.embed(entity.content)
+        order_val = int(entity.order)
 
         self.store.chunks_table.update(
             where=f"id = '{entity.id}'",
             values={
                 "document_id": entity.document_id,
                 "content": entity.content,
-                "metadata": json.dumps(entity.metadata),
+                "metadata": json.dumps(
+                    {k: v for k, v in entity.metadata.items() if k != "order"}
+                ),
+                "order": order_val,
                 "vector": embedding,
             },
         )
@@ -140,15 +151,19 @@ class ChunkRepository:
 
         results = list(query.to_pydantic(self.store.ChunkRecord))
 
-        return [
-            Chunk(
-                id=chunk.id,
-                document_id=chunk.document_id,
-                content=chunk.content,
-                metadata=json.loads(chunk.metadata) if chunk.metadata else {},
+        chunks: list[Chunk] = []
+        for rec in results:
+            md = json.loads(rec.metadata)
+            chunks.append(
+                Chunk(
+                    id=rec.id,
+                    document_id=rec.document_id,
+                    content=rec.content,
+                    metadata=md,
+                    order=rec.order,
+                )
             )
-            for chunk in results
-        ]
+        return chunks
 
     async def create_chunks_for_document(
         self, document_id: str, document: DoclingDocument
@@ -191,7 +206,8 @@ class ChunkRepository:
                 id=chunk_id,
                 document_id=document_id,
                 content=chunk_text,
-                metadata=json.dumps({"order": order}),
+                metadata=json.dumps({}),
+                order=order,
                 vector=embedding,
             )
             chunk_records.append(chunk_record)
@@ -200,7 +216,8 @@ class ChunkRepository:
                 id=chunk_id,
                 document_id=document_id,
                 content=chunk_text,
-                metadata={"order": order},
+                metadata={},
+                order=order,
             )
             created_chunks.append(chunk)
 
@@ -298,37 +315,36 @@ class ChunkRepository:
         doc_uri = doc_results[0].uri if doc_results else None
         doc_meta = doc_results[0].metadata if doc_results else "{}"
 
-        # Sort by order in metadata
-        chunks = [
-            Chunk(
-                id=chunk.id,
-                document_id=chunk.document_id,
-                content=chunk.content,
-                metadata=json.loads(chunk.metadata) if chunk.metadata else {},
-                document_uri=doc_uri,
-                document_meta=json.loads(doc_meta) if doc_meta else {},
+        chunks: list[Chunk] = []
+        for rec in results:
+            md = json.loads(rec.metadata)
+            chunks.append(
+                Chunk(
+                    id=rec.id,
+                    document_id=rec.document_id,
+                    content=rec.content,
+                    metadata=md,
+                    order=rec.order,
+                    document_uri=doc_uri,
+                    document_meta=json.loads(doc_meta),
+                )
             )
-            for chunk in results
-        ]
 
-        chunks.sort(key=lambda c: c.metadata.get("order", 0))
+        chunks.sort(key=lambda c: c.order)
         return chunks
 
     async def get_adjacent_chunks(self, chunk: Chunk, num_adjacent: int) -> list[Chunk]:
         """Get adjacent chunks before and after the given chunk within the same document."""
         assert chunk.document_id, "Document id is required for adjacent chunk finding"
 
-        chunk_order = chunk.metadata.get("order")
-        if chunk_order is None:
-            return []
+        chunk_order = chunk.order
 
-        # Get all chunks for the document
+        # Fetch chunks for the same document and filter by order proximity
         all_chunks = await self.get_by_document_id(chunk.document_id)
 
-        # Filter to adjacent chunks
-        adjacent_chunks = []
+        adjacent_chunks: list[Chunk] = []
         for c in all_chunks:
-            c_order = c.metadata.get("order", 0)
+            c_order = c.order
             if c.id != chunk.id and abs(c_order - chunk_order) <= num_adjacent:
                 adjacent_chunks.append(c)
 
@@ -380,15 +396,16 @@ class ChunkRepository:
             doc_uri = doc.uri if doc else None
             doc_meta = doc.metadata if doc else "{}"
 
+            md = json.loads(chunk_record.metadata)
+
             chunk = Chunk(
                 id=chunk_record.id,
                 document_id=chunk_record.document_id,
                 content=chunk_record.content,
-                metadata=json.loads(chunk_record.metadata)
-                if chunk_record.metadata
-                else {},
+                metadata=md,
+                order=chunk_record.order,
                 document_uri=doc_uri,
-                document_meta=json.loads(doc_meta) if doc_meta else {},
+                document_meta=json.loads(doc_meta),
             )
 
             # Get score from arrow result

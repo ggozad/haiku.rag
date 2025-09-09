@@ -388,7 +388,7 @@ class HaikuRAG:
                 all_chunks = adjacent_chunks + [chunk]
 
                 # Get the range of orders for this expanded chunk
-                orders = [c.metadata.get("order", 0) for c in all_chunks]
+                orders = [c.order for c in all_chunks]
                 min_order = min(orders)
                 max_order = max(orders)
 
@@ -398,9 +398,7 @@ class HaikuRAG:
                         "score": score,
                         "min_order": min_order,
                         "max_order": max_order,
-                        "all_chunks": sorted(
-                            all_chunks, key=lambda c: c.metadata.get("order", 0)
-                        ),
+                        "all_chunks": sorted(all_chunks, key=lambda c: c.order),
                     }
                 )
 
@@ -459,7 +457,7 @@ class HaikuRAG:
                 # Merge all_chunks and deduplicate by order
                 all_chunks_dict = {}
                 for chunk in current["all_chunks"] + range_info["all_chunks"]:
-                    order = chunk.metadata.get("order", 0)
+                    order = chunk.order
                     all_chunks_dict[order] = chunk
                 current["all_chunks"] = [
                     all_chunks_dict[order] for order in sorted(all_chunks_dict.keys())

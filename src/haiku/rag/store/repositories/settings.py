@@ -84,11 +84,18 @@ class SettingsRepository:
         )
 
         if existing:
-            # Only update when configuration actually changed to avoid needless new versions
-            existing_payload = (
-                json.loads(existing[0].settings) if existing[0].settings else {}
-            )
-            if existing_payload != current_config:
+            # Preserve existing version if present to avoid interfering with upgrade flow
+            try:
+                existing_settings = (
+                    json.loads(existing[0].settings) if existing[0].settings else {}
+                )
+            except Exception:
+                existing_settings = {}
+            if "version" in existing_settings:
+                current_config["version"] = existing_settings["version"]
+
+            # Update existing settings
+            if existing_settings != current_config:
                 self.store.settings_table.update(
                     where="id = 'settings'",
                     values={"settings": json.dumps(current_config)},
