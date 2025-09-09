@@ -27,4 +27,9 @@ def get_embedder() -> EmbedderBase:
 
         return OpenAIEmbedder(Config.EMBEDDINGS_MODEL, Config.EMBEDDINGS_VECTOR_DIM)
 
+    if Config.EMBEDDINGS_PROVIDER == "vllm":
+        from haiku.rag.embeddings.vllm import Embedder as VllmEmbedder
+
+        return VllmEmbedder(Config.EMBEDDINGS_MODEL, Config.EMBEDDINGS_VECTOR_DIM)
+
     raise ValueError(f"Unsupported embedding provider: {Config.EMBEDDINGS_PROVIDER}")
