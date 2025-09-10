@@ -47,7 +47,7 @@ class SQLiteToLanceDBMigrator:
 
             # Load the sqlite-vec extension
             try:
-                import sqlite_vec
+                import sqlite_vec  # type: ignore
 
                 sqlite_conn.enable_load_extension(True)
                 sqlite_vec.load(sqlite_conn)
@@ -91,10 +91,10 @@ class SQLiteToLanceDBMigrator:
 
             sqlite_conn.close()
 
-            # Optimize the chunks table after migration
+            # Optimize and cleanup using centralized vacuum
             self.console.print("[blue]Optimizing LanceDB...[/blue]")
             try:
-                lance_store.chunks_table.optimize()
+                lance_store.vacuum()
                 self.console.print("[green]✅ Optimization completed[/green]")
             except Exception as e:
                 self.console.print(

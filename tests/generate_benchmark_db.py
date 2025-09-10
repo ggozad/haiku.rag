@@ -8,8 +8,10 @@ from rich.progress import Progress
 
 from haiku.rag import logging  # noqa
 from haiku.rag.client import HaikuRAG
+from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
 
+configure_cli_logging()
 console = Console()
 
 db_path = Path(__file__).parent / "data" / "benchmark.lancedb"
@@ -35,6 +37,7 @@ async def populate_db():
                     uri=uri,
                 )
                 progress.advance(task)
+            rag.store.vacuum()
 
 
 async def run_match_benchmark():

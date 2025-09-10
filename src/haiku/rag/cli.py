@@ -256,6 +256,18 @@ def rebuild(
     asyncio.run(app.rebuild())
 
 
+@cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
+def vacuum(
+    db: Path = typer.Option(
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = HaikuRAGApp(db_path=db)
+    asyncio.run(app.vacuum())
+
+
 @cli.command(
     "serve", help="Start the haiku.rag MCP server (by default in streamable HTTP mode)"
 )
