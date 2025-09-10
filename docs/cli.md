@@ -2,22 +2,17 @@
 
 The `haiku-rag` CLI provides complete document management functionality.
 
-## Shell Autocompletion
+!!! note
+    All commands support:
 
-Enable shell autocompletion for faster, error‑free usage.
+    - `--db` - Specify custom database path
+    - `-h` - Show help for specific command
 
-- Temporary (current shell only):
-  ```bash
-  eval "$(haiku-rag --show-completion)"
-  ```
-- Permanent installation:
-  ```bash
-  haiku-rag --install-completion
-  ```
-
-What’s completed:
-- `get` and `delete`/`rm`: Document IDs from the selected database (respects `--db`).
-- `add-src`: Local filesystem paths (URLs can still be typed manually).
+    Example:
+    ```bash
+    haiku-rag list --db /path/to/custom.db
+    haiku-rag add -h
+    ```
 
 ## Document Management
 
@@ -40,6 +35,10 @@ haiku-rag add-src /path/to/document.pdf
 haiku-rag add-src https://example.com/article.html
 ```
 
+!!! note
+    As you add documents to `haiku.rag` the database keeps growing. By default, `lanceDB` supports versioning
+    of your data. You can optimize and compact the database by running the [vaccum](#vacuum-optimize-and-cleanup) command.
+
 ### Get Document
 
 ```bash
@@ -55,32 +54,7 @@ haiku-rag delete <TAB>
 haiku-rag rm <TAB>       # alias
 ```
 
-### Rebuild Database
-
-Rebuild the database by deleting all chunks & embeddings and re-indexing all documents:
-
-```bash
-haiku-rag rebuild
-```
-
 Use this when you want to change things like the embedding model or chunk size for example.
-
-## Migration
-
-### Migrate from SQLite to LanceDB
-
-Migrate an existing SQLite database to LanceDB:
-
-```bash
-haiku-rag migrate /path/to/old_database.sqlite
-```
-
-This will:
-- Read all documents, chunks, embeddings, and settings from the SQLite database
-- Create a new LanceDB database with the same data in the same directory
-- Optimize the new database for best performance
-
-The original SQLite database remains unchanged, so you can safely migrate without risk of data loss.
 
 ## Search
 
@@ -108,13 +82,6 @@ haiku-rag ask "Who is the author of haiku.rag?" --cite
 
 The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used.
 
-## Configuration
-
-View current configuration settings:
-```bash
-haiku-rag settings
-```
-
 ## Server
 
 Start the MCP server:
@@ -129,14 +96,62 @@ haiku-rag serve --stdio
 haiku-rag serve --sse
 ```
 
-## Options
+## Settings
 
-All commands support:
-- `--db` - Specify custom database path
-- `-h` - Show help for specific command
-
-Example:
+View current configuration settings:
 ```bash
-haiku-rag list --db /path/to/custom.db
-haiku-rag add -h
+haiku-rag settings
 ```
+
+## Maintenance
+
+### Vacuum (Optimize and Cleanup)
+
+Reduce disk usage by optimizing and pruning old table versions across all tables:
+
+```bash
+haiku-rag vacuum
+```
+
+### Rebuild Database
+
+Rebuild the database by deleting all chunks & embeddings and re-indexing all documents. This is useful
+when want to switch embeddings provider or model:
+
+```bash
+haiku-rag rebuild
+```
+
+## Migration
+
+### Migrate from SQLite to LanceDB
+
+Migrate an existing SQLite database to LanceDB:
+
+```bash
+haiku-rag migrate /path/to/old_database.sqlite
+```
+
+This will:
+- Read all documents, chunks, embeddings, and settings from the SQLite database
+- Create a new LanceDB database with the same data in the same directory
+- Optimize the new database for best performance
+
+The original SQLite database remains unchanged, so you can safely migrate without risk of data loss.
+
+## Shell Autocompletion
+
+Enable shell autocompletion for faster, error‑free usage.
+
+- Temporary (current shell only):
+  ```bash
+  eval "$(haiku-rag --show-completion)"
+  ```
+- Permanent installation:
+  ```bash
+  haiku-rag --install-completion
+  ```
+
+What’s completed:
+- `get` and `delete`/`rm`: Document IDs from the selected database (respects `--db`).
+- `add-src`: Local filesystem paths (URLs can still be typed manually).

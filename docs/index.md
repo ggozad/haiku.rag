@@ -52,7 +52,6 @@ haiku-rag migrate old_database.sqlite  # Migrate from SQLite
 - [Installation](installation.md) - Install haiku.rag with different providers
 - [Configuration](configuration.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
-- [Question Answering](qa.md) - QA agents and natural language queries
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
 - [Python](python.md) - Python API reference
