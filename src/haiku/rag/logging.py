@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -50,4 +51,6 @@ def configure_cli_logging(level: int = logging.INFO) -> logging.Logger:
     logger = get_logger()
     logger.setLevel(level)
     logger.propagate = False
+
+    warnings.filterwarnings("ignore")
     return logger

@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import timedelta
 from importlib import metadata
 from pathlib import Path
 from uuid import uuid4
@@ -61,6 +62,15 @@ class Store:
         # Validate config compatibility after connection is established
         if not skip_validation:
             self._validate_configuration()
+
+    def vacuum(self) -> None:
+        """Optimize and clean up old versions across all tables to reduce disk usage."""
+        if self._has_cloud_config() and str(Config.LANCEDB_URI).startswith("db://"):
+            return
+
+        # Perform maintenance per table using optimize() with cleanup_older_than 0
+        for table in [self.documents_table, self.chunks_table, self.settings_table]:
+            table.optimize(cleanup_older_than=timedelta(0))
 
     def _connect_to_lancedb(self, db_path: Path):
         """Establish connection to LanceDB (local, cloud, or object storage)."""
@@ -159,16 +169,18 @@ class Store:
             self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
         )
         if settings_records:
-            settings = (
+            # Only write if version actually changes to avoid creating new table versions
+            current = (
                 json.loads(settings_records[0].settings)
                 if settings_records[0].settings
                 else {}
             )
-            settings["version"] = version
-            # Update the record
-            self.settings_table.update(
-                where="id = 'settings'", values={"settings": json.dumps(settings)}
-            )
+            if current.get("version") != version:
+                current["version"] = version
+                self.settings_table.update(
+                    where="id = 'settings'",
+                    values={"settings": json.dumps(current)},
+                )
         else:
             # Create new settings record
             settings_data = Config.model_dump(mode="json")

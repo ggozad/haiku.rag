@@ -102,6 +102,15 @@ class HaikuRAGApp:
             except Exception as e:
                 self.console.print(f"[red]Error rebuilding database: {e}[/red]")
 
+    async def vacuum(self):
+        """Run database maintenance: optimize and cleanup table history."""
+        try:
+            async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:
+                await client.vacuum()
+            self.console.print("[b]Vacuum completed successfully.[/b]")
+        except Exception as e:
+            self.console.print(f"[red]Error during vacuum: {e}[/red]")
+
     def show_settings(self):
         """Display current configuration settings."""
         self.console.print("[bold]haiku.rag configuration[/bold]")

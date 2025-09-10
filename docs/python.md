@@ -99,6 +99,16 @@ async for doc_id in client.rebuild_database():
     print(f"Processed document {doc_id}")
 ```
 
+## Maintenance
+
+Run maintenance to optimize storage and prune old table versions:
+
+```python
+await client.vacuum()
+```
+
+This compacts tables and removes historical versions to keep disk usage in check. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
+
 ## Searching Documents
 
 The search method performs native hybrid search (vector + full-text) using LanceDB with optional reranking for improved relevance:
