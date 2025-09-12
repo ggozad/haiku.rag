@@ -526,121 +526,117 @@ async def test_client_ask_with_cite(temp_db_path):
 @pytest.mark.asyncio
 async def test_client_expand_context(temp_db_path):
     """Test expanding search results with adjacent chunks."""
-    # Mock Config to have CONTEXT_CHUNK_RADIUS = 2
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 2):
-        async with HaikuRAG(temp_db_path) as client:
-            # Create chunks manually
-            manual_chunks = [
-                Chunk(content="Chunk 0 content", metadata={"order": 0}),
-                Chunk(content="Chunk 1 content", metadata={"order": 1}),
-                Chunk(content="Chunk 2 content", metadata={"order": 2}),
-                Chunk(content="Chunk 3 content", metadata={"order": 3}),
-                Chunk(content="Chunk 4 content", metadata={"order": 4}),
-            ]
+    async with HaikuRAG(temp_db_path) as client:
+        # Create chunks manually
+        manual_chunks = [
+            Chunk(content="Chunk 0 content", metadata={"order": 0}),
+            Chunk(content="Chunk 1 content", metadata={"order": 1}),
+            Chunk(content="Chunk 2 content", metadata={"order": 2}),
+            Chunk(content="Chunk 3 content", metadata={"order": 3}),
+            Chunk(content="Chunk 4 content", metadata={"order": 4}),
+        ]
 
-            doc = await client.create_document(
-                content="Full document content",
-                uri="test_doc.txt",
-                chunks=manual_chunks,
-            )
+        doc = await client.create_document(
+            content="Full document content",
+            uri="test_doc.txt",
+            chunks=manual_chunks,
+        )
 
-            # Get all chunks for the document
-            assert doc.id is not None
-            chunks = await client.chunk_repository.get_by_document_id(doc.id)
-            assert len(chunks) == 5
+        # Get all chunks for the document
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) == 5
 
-            # Find the middle chunk (order=2)
-            middle_chunk = next(c for c in chunks if c.metadata.get("order") == 2)
-            search_results = [(middle_chunk, 0.8)]
+        # Find the middle chunk (order=2)
+        middle_chunk = next(c for c in chunks if c.metadata.get("order") == 2)
+        search_results = [(middle_chunk, 0.8)]
 
-            # Test expand_context
-            expanded_results = await client.expand_context(search_results)
+        # Test expand_context with radius=2
+        expanded_results = await client.expand_context(search_results, radius=2)
 
-            assert len(expanded_results) == 1
-            expanded_chunk, score = expanded_results[0]
+        assert len(expanded_results) == 1
+        expanded_chunk, score = expanded_results[0]
 
-            # Check that the expanded chunk has combined content
-            assert expanded_chunk.id == middle_chunk.id
-            assert score == 0.8
-            assert "Chunk 2 content" in expanded_chunk.content
+        # Check that the expanded chunk has combined content
+        assert expanded_chunk.id == middle_chunk.id
+        assert score == 0.8
+        assert "Chunk 2 content" in expanded_chunk.content
 
-            # Should include all chunks (radius=2 from chunk 2 = chunks 0,1,2,3,4)
-            assert "Chunk 0 content" in expanded_chunk.content
-            assert "Chunk 1 content" in expanded_chunk.content
-            assert "Chunk 2 content" in expanded_chunk.content
-            assert "Chunk 3 content" in expanded_chunk.content
-            assert "Chunk 4 content" in expanded_chunk.content
+        # Should include all chunks (radius=2 from chunk 2 = chunks 0,1,2,3,4)
+        assert "Chunk 0 content" in expanded_chunk.content
+        assert "Chunk 1 content" in expanded_chunk.content
+        assert "Chunk 2 content" in expanded_chunk.content
+        assert "Chunk 3 content" in expanded_chunk.content
+        assert "Chunk 4 content" in expanded_chunk.content
 
 
 @pytest.mark.asyncio
 async def test_client_expand_context_radius_zero(temp_db_path):
     """Test expand_context with radius 0 returns original results."""
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 0):
-        async with HaikuRAG(temp_db_path) as client:
-            # Create a simple document
-            doc = await client.create_document(content="Simple test content")
-            assert doc.id is not None
-            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+    async with HaikuRAG(temp_db_path) as client:
+        # Create a simple document
+        doc = await client.create_document(content="Simple test content")
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
 
-            search_results = [(chunks[0], 0.9)]
-            expanded_results = await client.expand_context(search_results)
+        search_results = [(chunks[0], 0.9)]
+        expanded_results = await client.expand_context(search_results, radius=0)
 
-            # Should return exactly the same results
-            assert expanded_results == search_results
+        # Should return exactly the same results
+        assert expanded_results == search_results
 
 
 @pytest.mark.asyncio
 async def test_client_expand_context_multiple_chunks(temp_db_path):
     """Test expand_context with multiple search results."""
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 1):
-        async with HaikuRAG(temp_db_path) as client:
-            # Create first document with manual chunks
-            doc1_chunks = [
-                Chunk(content="Doc1 Part A", metadata={"order": 0}),
-                Chunk(content="Doc1 Part B", metadata={"order": 1}),
-                Chunk(content="Doc1 Part C", metadata={"order": 2}),
-            ]
-            doc1 = await client.create_document(
-                content="Doc1 content", uri="doc1.txt", chunks=doc1_chunks
-            )
+    async with HaikuRAG(temp_db_path) as client:
+        # Create first document with manual chunks
+        doc1_chunks = [
+            Chunk(content="Doc1 Part A", metadata={"order": 0}),
+            Chunk(content="Doc1 Part B", metadata={"order": 1}),
+            Chunk(content="Doc1 Part C", metadata={"order": 2}),
+        ]
+        doc1 = await client.create_document(
+            content="Doc1 content", uri="doc1.txt", chunks=doc1_chunks
+        )
 
-            # Create second document with manual chunks
-            doc2_chunks = [
-                Chunk(content="Doc2 Section X", metadata={"order": 0}),
-                Chunk(content="Doc2 Section Y", metadata={"order": 1}),
-            ]
-            doc2 = await client.create_document(
-                content="Doc2 content", uri="doc2.txt", chunks=doc2_chunks
-            )
+        # Create second document with manual chunks
+        doc2_chunks = [
+            Chunk(content="Doc2 Section X", metadata={"order": 0}),
+            Chunk(content="Doc2 Section Y", metadata={"order": 1}),
+        ]
+        doc2 = await client.create_document(
+            content="Doc2 content", uri="doc2.txt", chunks=doc2_chunks
+        )
 
-            assert doc1.id is not None
-            assert doc2.id is not None
-            chunks1 = await client.chunk_repository.get_by_document_id(doc1.id)
-            chunks2 = await client.chunk_repository.get_by_document_id(doc2.id)
+        assert doc1.id is not None
+        assert doc2.id is not None
+        chunks1 = await client.chunk_repository.get_by_document_id(doc1.id)
+        chunks2 = await client.chunk_repository.get_by_document_id(doc2.id)
 
-            # Get middle chunk from doc1 (order=1) and first chunk from doc2 (order=0)
-            chunk1 = next(c for c in chunks1 if c.metadata.get("order") == 1)
-            chunk2 = next(c for c in chunks2 if c.metadata.get("order") == 0)
+        # Get middle chunk from doc1 (order=1) and first chunk from doc2 (order=0)
+        chunk1 = next(c for c in chunks1 if c.metadata.get("order") == 1)
+        chunk2 = next(c for c in chunks2 if c.metadata.get("order") == 0)
 
-            search_results = [(chunk1, 0.8), (chunk2, 0.7)]
-            expanded_results = await client.expand_context(search_results)
+        search_results = [(chunk1, 0.8), (chunk2, 0.7)]
+        expanded_results = await client.expand_context(search_results, radius=1)
 
-            assert len(expanded_results) == 2
+        assert len(expanded_results) == 2
 
-            # Check first expanded result (should include chunks 0,1,2 from doc1)
-            expanded1, score1 = expanded_results[0]
-            assert expanded1.id == chunk1.id
-            assert score1 == 0.8
-            assert "Doc1 Part A" in expanded1.content
-            assert "Doc1 Part B" in expanded1.content
-            assert "Doc1 Part C" in expanded1.content
+        # Check first expanded result (should include chunks 0,1,2 from doc1)
+        expanded1, score1 = expanded_results[0]
+        assert expanded1.id == chunk1.id
+        assert score1 == 0.8
+        assert "Doc1 Part A" in expanded1.content
+        assert "Doc1 Part B" in expanded1.content
+        assert "Doc1 Part C" in expanded1.content
 
-            # Check second expanded result (should include chunks 0,1 from doc2)
-            expanded2, score2 = expanded_results[1]
-            assert expanded2.id == chunk2.id
-            assert score2 == 0.7
-            assert "Doc2 Section X" in expanded2.content
-            assert "Doc2 Section Y" in expanded2.content
+        # Check second expanded result (should include chunks 0,1 from doc2)
+        expanded2, score2 = expanded_results[1]
+        assert expanded2.id == chunk2.id
+        assert score2 == 0.7
+        assert "Doc2 Section X" in expanded2.content
+        assert "Doc2 Section Y" in expanded2.content
 
 
 @pytest.mark.asyncio
