@@ -16,8 +16,8 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 |---------------------------------------|-------------------|-------------------|------------------------|
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
 | Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
-<!-- | Ollama / `nomic-embed-text`           | 0.74              | 0.88              | None                   |
-| OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
+| Ollama / `nomic-embed-text-v1.5`      | 0.74              | 0.90              | None                   |
+<!-- | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
 | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
 | OpenAI / `text-embeddings-3-small`    | 0.83              | 0.90              | Cohere / `rerank-v3.5` | -->
 

@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+import logfire
 from datasets import Dataset, load_dataset
 from llm_judge import LLMJudge
 from rich.console import Console
@@ -11,6 +12,8 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
 
+logfire.configure()
+logfire.instrument_pydantic_ai()
 configure_cli_logging()
 console = Console()
 
@@ -119,7 +122,6 @@ async def run_qa_benchmark(k: int | None = None):
 
         async with HaikuRAG(db_path) as rag:
             qa = get_qa_agent(rag)
-
             for doc in corpus:
                 question = doc["question"]  # type: ignore
                 expected_answer = doc["answer"]  # type: ignore

@@ -53,6 +53,7 @@ packages = ["src/haiku"]
 [dependency-groups]
 dev = [
     "datasets>=3.6.0",
+    "logfire>=4.6.0",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.14",
     "pre-commit>=4.2.0",
