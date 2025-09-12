@@ -23,6 +23,17 @@ class ClarificationResult(BaseModel):
     priority_areas: list[str] = Field(
         description="Most important areas to investigate next"
     )
+    is_sufficient: bool = Field(
+        description="Whether the research has gathered sufficient information to answer the question"
+    )
+    confidence_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence level (0-1) that the research is complete",
+    )
+    reasoning: str = Field(
+        description="Detailed reasoning for the completeness assessment"
+    )
 
 
 class ClarificationAgent(BaseResearchAgent):
@@ -49,7 +60,17 @@ class ClarificationAgent(BaseResearchAgent):
         - What perspectives are missing?
         - What details would strengthen the understanding?
 
-        Your goal is to ensure comprehensive, accurate, and complete research."""
+        IMPORTANT: When setting 'is_sufficient':
+        - True means: The research has enough information to provide a meaningful, accurate answer
+        - False means: Critical information is missing that prevents a complete answer
+        - Consider the nature of the question - simple questions need less, complex ones need more
+        - Be honest about uncertainty - if you're not confident, set is_sufficient to False
+
+        Your 'confidence_score' should reflect:
+        - 0.9-1.0: Very confident, all major aspects covered
+        - 0.7-0.9: Good coverage, minor gaps acceptable
+        - 0.5-0.7: Moderate coverage, some important gaps
+        - Below 0.5: Significant gaps, much more research needed"""
 
     def register_tools(self) -> None:
         """Register clarification-specific tools."""
