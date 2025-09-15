@@ -209,6 +209,21 @@ class Store:
         # LanceDB connections are automatically managed
         pass
 
+    def current_table_versions(self) -> dict[str, int]:
+        """Capture current versions of key tables for rollback using LanceDB's API."""
+        return {
+            "documents": int(self.documents_table.version),
+            "chunks": int(self.chunks_table.version),
+            "settings": int(self.settings_table.version),
+        }
+
+    def restore_table_versions(self, versions: dict[str, int]) -> bool:
+        """Restore tables to the provided versions using LanceDB's API."""
+        self.documents_table.restore(int(versions["documents"]))
+        self.chunks_table.restore(int(versions["chunks"]))
+        self.settings_table.restore(int(versions["settings"]))
+        return True
+
     @property
     def _connection(self):
         """Compatibility property for repositories expecting _connection."""

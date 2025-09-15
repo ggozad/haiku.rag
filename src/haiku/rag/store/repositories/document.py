@@ -171,44 +171,64 @@ class DocumentRepository:
         chunks: list["Chunk"] | None = None,
     ) -> Document:
         """Create a document with its chunks and embeddings."""
+        # Snapshot table versions for versioned rollback (if supported)
+        versions = self.store.current_table_versions()
+
         # Create the document
         created_doc = await self.create(entity)
 
-        # Create chunks if not provided
-        if chunks is None:
-            assert created_doc.id is not None, (
-                "Document ID should not be None after creation"
-            )
-            await self.chunk_repository.create_chunks_for_document(
-                created_doc.id, docling_document
-            )
-        else:
-            # Use provided chunks, set order from list position
-            assert created_doc.id is not None, (
-                "Document ID should not be None after creation"
-            )
-            for order, chunk in enumerate(chunks):
-                chunk.document_id = created_doc.id
-                chunk.metadata["order"] = order
-                await self.chunk_repository.create(chunk)
+        # Attempt to create chunks; on failure, prefer version rollback
+        try:
+            # Create chunks if not provided
+            if chunks is None:
+                assert created_doc.id is not None, (
+                    "Document ID should not be None after creation"
+                )
+                await self.chunk_repository.create_chunks_for_document(
+                    created_doc.id, docling_document
+                )
+            else:
+                # Use provided chunks, set order from list position
+                assert created_doc.id is not None, (
+                    "Document ID should not be None after creation"
+                )
+                for order, chunk in enumerate(chunks):
+                    chunk.document_id = created_doc.id
+                    chunk.metadata["order"] = order
+                    await self.chunk_repository.create(chunk)
 
-        return created_doc
+            return created_doc
+        except Exception:
+            # Roll back to the captured versions and re-raise
+            self.store.restore_table_versions(versions)
+            raise
 
     async def _update_with_docling(
         self, entity: Document, docling_document: DoclingDocument
     ) -> Document:
         """Update a document and regenerate its chunks."""
-        # Delete existing chunks
         assert entity.id is not None, "Document ID is required for update"
+
+        # Snapshot table versions for versioned rollback
+        versions = self.store.current_table_versions()
+
+        # Delete existing chunks before writing new ones
         await self.chunk_repository.delete_by_document_id(entity.id)
 
-        # Update the document
-        updated_doc = await self.update(entity)
+        try:
+            # Update the document
+            updated_doc = await self.update(entity)
 
-        # Create new chunks
-        assert updated_doc.id is not None, "Document ID should not be None after update"
-        await self.chunk_repository.create_chunks_for_document(
-            updated_doc.id, docling_document
-        )
+            # Create new chunks
+            assert updated_doc.id is not None, (
+                "Document ID should not be None after update"
+            )
+            await self.chunk_repository.create_chunks_for_document(
+                updated_doc.id, docling_document
+            )
 
-        return updated_doc
+            return updated_doc
+        except Exception:
+            # Roll back to the captured versions and re-raise
+            self.store.restore_table_versions(versions)
+            raise

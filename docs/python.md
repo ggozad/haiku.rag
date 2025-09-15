@@ -109,6 +109,14 @@ await client.vacuum()
 
 This compacts tables and removes historical versions to keep disk usage in check. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
 
+### Atomic Writes and Rollback
+
+Document create and update operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores both the `documents` and `chunks` tables to their pre‑operation state using LanceDB’s table versioning.
+
+- Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, and internal rebuild/update flows.
+- Scope: Both document rows and all associated chunks are rolled back together.
+- Vacuum: Running `vacuum()` later prunes old versions for disk efficiency; rollbacks occur immediately during the failing operation and are not impacted.
+
 ## Searching Documents
 
 The search method performs native hybrid search (vector + full-text) using LanceDB with optional reranking for improved relevance:
