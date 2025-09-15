@@ -22,18 +22,18 @@ class ResearchPlan(BaseModel):
     sub_questions: list[str] = Field(
         description="Decomposed sub-questions to investigate"
     )
-    search_strategies: list[str] = Field(
-        description="Different search approaches to use"
-    )
-    success_criteria: list[str] = Field(description="Criteria for successful research")
 
 
 class ResearchOrchestrator(BaseResearchAgent):
     """Orchestrator agent that coordinates the research workflow."""
 
     def __init__(
-        self, provider: str = Config.RERANK_PROVIDER, model: str = Config.RERANK_MODEL
+        self, provider: str | None = Config.RESEARCH_PROVIDER, model: str | None = None
     ):
+        # Use provided values or fall back to config defaults
+        provider = provider or Config.RESEARCH_PROVIDER or Config.QA_PROVIDER
+        model = model or Config.RESEARCH_MODEL or Config.QA_MODEL
+
         super().__init__(provider, model, output_type=ResearchPlan)
 
         self.search_agent = SearchSpecialistAgent(provider, model)
@@ -55,7 +55,8 @@ class ResearchOrchestrator(BaseResearchAgent):
         - Breaks down complex questions into manageable parts
         - Identifies multiple search strategies
         - Defines clear success criteria
-        - Ensures thorough investigation"""
+        - Ensures thorough investigation
+        /no_think"""
 
     def register_tools(self) -> None:
         """Register orchestration tools."""
@@ -63,13 +64,21 @@ class ResearchOrchestrator(BaseResearchAgent):
         @self.agent.tool
         async def delegate_search(
             ctx: RunContext[ResearchDependencies], queries: list[str], limit: int = 5
-        ) -> Any:
-            """Delegate search to the search specialist agent."""
-            # Pass the context to maintain usage tracking
-            result = await self.search_agent.run(
-                f"Search for: {', '.join(queries)}", deps=ctx.deps, usage=ctx.usage
-            )
-            return result
+        ) -> list[Any]:
+            """Delegate search to the search specialist agent for multiple queries."""
+            all_results = []
+
+            # Search for each query
+            # The search agent will automatically store results in context
+            for query in queries:
+                result = await self.search_agent.run(
+                    f"Search for: {query} with limit {limit}",
+                    deps=ctx.deps,
+                    usage=ctx.usage,
+                )
+                all_results.append(result)
+
+            return all_results
 
         @self.agent.tool
         async def delegate_analysis(
@@ -158,10 +167,8 @@ class ResearchOrchestrator(BaseResearchAgent):
             f"Create a research plan for: {question}", deps=deps
         )
 
-        if hasattr(plan_result, "output") and isinstance(
-            plan_result.output, ResearchPlan
-        ):
-            context.sub_questions = plan_result.output.sub_questions
+        assert plan_result.output and isinstance(plan_result.output, ResearchPlan)
+        context.sub_questions = plan_result.output.sub_questions
 
         # Execute research iterations
         for iteration in range(max_iterations):
@@ -176,16 +183,18 @@ class ResearchOrchestrator(BaseResearchAgent):
             else:
                 # Fall back to original question with variation
                 search_prompt = f"Additional search for: {question}"
+            # Search phase - directly call the search agent
 
-            # Search phase
-            await self.run(search_prompt, deps=deps)
+            await self.search_agent.run(search_prompt, deps=deps)
 
             # Analysis phase (only if we have results)
             if context.search_results:
-                await self.run("Analyze the gathered information", deps=deps)
+                await self.analysis_agent.run(
+                    "Analyze the gathered information", deps=deps
+                )
 
             # Clarification phase - evaluate completeness
-            clarification_result = await self.run(
+            clarification_result = await self.clarification_agent.run(
                 f"Evaluate the completeness of research for: {question}. "
                 f"Consider all information gathered so far and determine if we have sufficient "
                 f"information to provide a comprehensive answer.",
@@ -202,7 +211,9 @@ class ResearchOrchestrator(BaseResearchAgent):
                 break
 
         # Generate final report
-        report_result = await self.run("Generate the final research report", deps=deps)
+        report_result = await self.synthesis_agent.run(
+            "Generate the final research report", deps=deps
+        )
         return (
             report_result.output if hasattr(report_result, "output") else report_result
         )

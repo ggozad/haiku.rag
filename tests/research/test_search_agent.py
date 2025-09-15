@@ -101,12 +101,14 @@ async def test_search_single_query(mock_client, research_deps):
 
     # Test the tool
     ctx = RunContext(deps=research_deps, model=TestModel(), usage=RunUsage())
-    results = await search_tool(ctx, queries="climate change")
+    results = await search_tool(ctx, query="climate change")
 
-    # Verify results
+    # Verify results - should be list of (Chunk, float) tuples
+    assert isinstance(results, list)
     assert len(results) == 2
-    assert results[0].content == "Climate change is a global phenomenon"
-    assert results[0].metadata["chunk_id"] == "chunk1"
+    assert results[0][0].content == "Climate change is a global phenomenon"
+    assert results[0][0].id == "chunk1"
+    assert results[0][1] == 0.8  # score
 
     # Verify mock was called
     mock_client.search.assert_called_once_with("climate change", limit=5)
@@ -114,20 +116,19 @@ async def test_search_single_query(mock_client, research_deps):
 
 
 @pytest.mark.asyncio
-async def test_search_multiple_queries_deduplication(mock_client, research_deps):
-    """Test deduplication when searching with multiple queries."""
-    # Create chunks with duplicate IDs across queries
-    chunks_q1 = [
+async def test_search_with_limit(mock_client, research_deps):
+    """Test that search respects the limit parameter."""
+    # Create more chunks than the limit
+    mock_chunks = [
         create_mock_chunk("chunk1", "Content 1", 0.9),
-        create_mock_chunk("chunk2", "Content 2", 0.7),
-    ]
-    chunks_q2 = [
-        create_mock_chunk("chunk1", "Content 1", 0.9),  # Duplicate
-        create_mock_chunk("chunk3", "Content 3", 0.8),
+        create_mock_chunk("chunk2", "Content 2", 0.8),
+        create_mock_chunk("chunk3", "Content 3", 0.7),
+        create_mock_chunk("chunk4", "Content 4", 0.6),
+        create_mock_chunk("chunk5", "Content 5", 0.5),
     ]
 
-    mock_client.search.side_effect = [[chunks_q1[0]], [chunks_q2[0]]]
-    mock_client.expand_context.side_effect = [chunks_q1, chunks_q2]
+    mock_client.search.return_value = mock_chunks[:3]
+    mock_client.expand_context.return_value = mock_chunks[:3]
 
     agent = SearchSpecialistAgent(provider="openai", model="gpt-4")
 
@@ -135,20 +136,18 @@ async def test_search_multiple_queries_deduplication(mock_client, research_deps)
     search_tool = get_agent_tool(agent, "search")
     assert search_tool is not None
 
-    # Test the tool
+    # Test the tool with limit
     ctx = RunContext(deps=research_deps, model=TestModel(), usage=RunUsage())
-    results = await search_tool(ctx, queries=["query1", "query2"])
+    results = await search_tool(ctx, query="test query", limit=3)
 
-    # Check deduplication - chunk1 should appear only once
-    chunk_ids = [r.metadata["chunk_id"] for r in results]
-    assert chunk_ids.count("chunk1") == 1
-    assert "chunk2" in chunk_ids
-    assert "chunk3" in chunk_ids
+    # Verify results respect limit
+    assert isinstance(results, list)
+    assert len(results) == 3
+    assert all(isinstance(r, tuple) and len(r) == 2 for r in results)
+    assert all(isinstance(r[0], Chunk) and isinstance(r[1], float) for r in results)
 
-    # Verify sorting by score
-    assert all(
-        results[i].score >= results[i + 1].score for i in range(len(results) - 1)
-    )
+    # Verify mock was called with correct limit
+    mock_client.search.assert_called_once_with("test query", limit=3)
 
 
 @pytest.mark.asyncio
@@ -167,7 +166,7 @@ async def test_search_updates_context(mock_client, research_deps):
 
     # Test the tool
     ctx = RunContext(deps=research_deps, model=TestModel(), usage=RunUsage())
-    await search_tool(ctx, queries="test query")
+    await search_tool(ctx, query="test query")
 
     # Verify context was updated
     assert len(research_deps.context.search_results) == 1

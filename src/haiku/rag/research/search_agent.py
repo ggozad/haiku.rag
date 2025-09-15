@@ -1,26 +1,26 @@
-"""Search specialist agent for advanced document retrieval."""
+"""Search specialist agent for document retrieval."""
 
 from pydantic_ai import RunContext
 
-from haiku.rag.research.base import BaseResearchAgent, SearchResult
+from haiku.rag.research.base import BaseResearchAgent
 from haiku.rag.research.dependencies import ResearchDependencies
+from haiku.rag.store.models.chunk import Chunk
 
 
 class SearchSpecialistAgent(BaseResearchAgent):
-    """Agent specialized in advanced document search and retrieval."""
+    """Agent specialized in document search and retrieval."""
 
     def __init__(self, provider: str, model: str):
-        super().__init__(provider, model, output_type=list[SearchResult])
+        # No specific output type needed - the tool handles everything
+        super().__init__(provider, model)
 
     def get_system_prompt(self) -> str:
-        return """You are a search specialist agent focused on document retrieval.
+        return """You are a search specialist agent focused on document retrieval from a knowledge base that uses hybrid (semantic and full-text search) search.
         Your role is to:
-        1. Generate multiple search queries from different perspectives
-        2. Identify key terms and synonyms for comprehensive search
-        3. Execute searches and rank results by relevance
-        4. Return the most relevant documents for the research question
+        1. Understand the search query and context
+        2. Execute targeted searches to find relevant documents
 
-        Use the search tools to explore the knowledge base thoroughly."""
+        Use the search tool to perform the searches on the knowledge base."""
 
     def register_tools(self) -> None:
         """Register search-specific tools."""
@@ -28,46 +28,30 @@ class SearchSpecialistAgent(BaseResearchAgent):
         @self.agent.tool
         async def search(
             ctx: RunContext[ResearchDependencies],
-            queries: str | list[str],
+            query: str,
             limit: int = 5,
-        ) -> list[SearchResult]:
-            """Execute search with single or multiple query variants."""
-            # Normalize to list
-            query_list = [queries] if isinstance(queries, str) else queries
+        ) -> list[tuple[Chunk, float]]:
+            """Execute search and return raw results from client."""
+            # Use the default hybrid search
+            search_results = await ctx.deps.client.search(query, limit=limit)
 
-            all_results = []
-            seen_chunk_ids = set()
+            # Expand context for better relevance
+            expanded = await ctx.deps.client.expand_context(search_results)
 
-            for query in query_list:
-                # Use the default hybrid search
-                search_results = await ctx.deps.client.search(query, limit=limit)
+            # Store in context (convert to SearchResult for context storage)
+            from haiku.rag.research.base import SearchResult
 
-                # Expand context for better relevance
-                expanded = await ctx.deps.client.expand_context(search_results)
+            results_for_context = []
+            for chunk, score in expanded:
+                results_for_context.append(
+                    SearchResult(
+                        content=chunk.content,
+                        score=score,
+                        document_uri=chunk.document_uri or "",
+                        metadata={"chunk_id": chunk.id} if chunk.id else {},
+                    )
+                )
+            ctx.deps.context.add_search_result(query, results_for_context)
 
-                for chunk, score in expanded:
-                    # Avoid duplicates based on chunk ID
-                    if chunk.id and chunk.id not in seen_chunk_ids:
-                        seen_chunk_ids.add(chunk.id)
-                        all_results.append(
-                            SearchResult(
-                                content=chunk.content,
-                                score=score,
-                                document_uri=chunk.document_uri or "",
-                                metadata={"query": query, "chunk_id": chunk.id},
-                            )
-                        )
-
-            # Sort by score and limit results
-            all_results.sort(key=lambda x: x.score, reverse=True)
-            final_results = all_results[: limit * len(query_list)]
-
-            # Store in context
-            query_summary = (
-                query_list[0]
-                if len(query_list) == 1
-                else f"Multi-query: {len(query_list)} variants"
-            )
-            ctx.deps.context.add_search_result(query_summary, final_results)
-
-            return final_results
+            # Return raw chunk, score tuples
+            return expanded
