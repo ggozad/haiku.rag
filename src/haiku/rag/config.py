@@ -29,6 +29,10 @@ class AppConfig(BaseModel):
     QA_PROVIDER: str = "ollama"
     QA_MODEL: str = "qwen3"
 
+    # Research defaults (fallback to QA if not provided via env)
+    RESEARCH_PROVIDER: str = ""
+    RESEARCH_MODEL: str = ""
+
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0
 

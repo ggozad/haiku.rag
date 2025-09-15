@@ -51,6 +51,20 @@ def create_mock_chunk(chunk_id: str, content: str, score: float = 0.8):
 class TestResearchOrchestrator:
     """Test suite for ResearchOrchestrator."""
 
+    def test_orchestrator_uses_config_defaults(self):
+        """Test that orchestrator uses config defaults when no args provided."""
+        orchestrator = ResearchOrchestrator()
+
+        # Should use RESEARCH_PROVIDER/MODEL if set, else QA_PROVIDER/MODEL
+        assert orchestrator.provider is not None
+        assert orchestrator.model is not None
+
+        # All agents should use the same provider/model
+        assert orchestrator.search_agent.provider == orchestrator.provider
+        assert orchestrator.search_agent.model == orchestrator.model
+        assert orchestrator.analysis_agent.provider == orchestrator.provider
+        assert orchestrator.analysis_agent.model == orchestrator.model
+
     def test_orchestrator_initialization(self):
         """Test that orchestrator initializes all agents correctly."""
         orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")

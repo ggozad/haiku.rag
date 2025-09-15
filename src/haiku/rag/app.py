@@ -9,6 +9,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
+from haiku.rag.research.orchestrator import ResearchOrchestrator
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -77,6 +78,83 @@ class HaikuRAGApp:
                 self.console.print(Markdown(answer))
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
+
+    async def research(
+        self, question: str, max_iterations: int = 3, verbose: bool = False
+    ):
+        """Run multi-agent research on a question."""
+        async with HaikuRAG(db_path=self.db_path) as client:
+            try:
+                # Create orchestrator with default config or fallback to QA
+                orchestrator = ResearchOrchestrator()
+
+                if verbose:
+                    self.console.print(
+                        f"[bold cyan]Starting research with {orchestrator.provider}:{orchestrator.model}[/bold cyan]"
+                    )
+                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                    self.console.print()
+
+                # Conduct research
+                report = await orchestrator.conduct_research(
+                    question=question,
+                    client=client,
+                    max_iterations=max_iterations,
+                )
+
+                # Display the report
+                self.console.print("[bold green]Research Report[/bold green]")
+                self.console.rule()
+
+                # Title and Executive Summary
+                self.console.print(f"[bold]{report.title}[/bold]")
+                self.console.print()
+                self.console.print("[bold cyan]Executive Summary:[/bold cyan]")
+                self.console.print(report.executive_summary)
+                self.console.print()
+
+                # Main Findings
+                if report.main_findings:
+                    self.console.print("[bold cyan]Main Findings:[/bold cyan]")
+                    for finding in report.main_findings:
+                        self.console.print(f"• {finding}")
+                    self.console.print()
+
+                # Themes
+                if report.themes:
+                    self.console.print("[bold cyan]Key Themes:[/bold cyan]")
+                    for theme, explanation in report.themes.items():
+                        self.console.print(f"• [bold]{theme}[/bold]: {explanation}")
+                    self.console.print()
+
+                # Conclusions
+                if report.conclusions:
+                    self.console.print("[bold cyan]Conclusions:[/bold cyan]")
+                    for conclusion in report.conclusions:
+                        self.console.print(f"• {conclusion}")
+                    self.console.print()
+
+                # Recommendations
+                if report.recommendations:
+                    self.console.print("[bold cyan]Recommendations:[/bold cyan]")
+                    for rec in report.recommendations:
+                        self.console.print(f"• {rec}")
+                    self.console.print()
+
+                # Limitations
+                if report.limitations:
+                    self.console.print("[bold yellow]Limitations:[/bold yellow]")
+                    for limitation in report.limitations:
+                        self.console.print(f"• {limitation}")
+                    self.console.print()
+
+                # Sources Summary
+                if report.sources_summary:
+                    self.console.print("[bold cyan]Sources:[/bold cyan]")
+                    self.console.print(report.sources_summary)
+
+            except Exception as e:
+                self.console.print(f"[red]Error during research: {e}[/red]")
 
     async def rebuild(self):
         async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:

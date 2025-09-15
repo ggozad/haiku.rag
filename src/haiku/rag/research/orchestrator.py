@@ -1,10 +1,9 @@
-"""Research orchestrator agent that coordinates specialized agents."""
-
 from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
+from haiku.rag.config import Config
 from haiku.rag.research.analysis_agent import AnalysisAgent, AnalysisResult
 from haiku.rag.research.base import BaseResearchAgent
 from haiku.rag.research.clarification_agent import (
@@ -32,10 +31,11 @@ class ResearchPlan(BaseModel):
 class ResearchOrchestrator(BaseResearchAgent):
     """Orchestrator agent that coordinates the research workflow."""
 
-    def __init__(self, provider: str, model: str):
+    def __init__(
+        self, provider: str = Config.RERANK_PROVIDER, model: str = Config.RERANK_MODEL
+    ):
         super().__init__(provider, model, output_type=ResearchPlan)
 
-        # Initialize specialized agents
         self.search_agent = SearchSpecialistAgent(provider, model)
         self.analysis_agent = AnalysisAgent(provider, model)
         self.clarification_agent = ClarificationAgent(provider, model)
