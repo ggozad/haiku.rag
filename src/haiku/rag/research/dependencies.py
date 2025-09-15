@@ -20,6 +20,9 @@ class ResearchContext(BaseModel):
     search_results: list[dict[str, Any]] = Field(
         default_factory=list, description="Accumulated search results"
     )
+    qa_responses: list[dict[str, Any]] = Field(
+        default_factory=list, description="Question-answer pairs with sources"
+    )
     insights: list[str] = Field(
         default_factory=list, description="Key insights discovered"
     )
@@ -36,6 +39,18 @@ class ResearchContext(BaseModel):
             {
                 "query": query,
                 "results": results,
+            }
+        )
+
+    def add_qa_response(
+        self, question: str, answer: str, sources: list["SearchResult"]
+    ) -> None:
+        """Add a QA response with its source documents."""
+        self.qa_responses.append(
+            {
+                "question": question,
+                "answer": answer,
+                "sources": sources,
             }
         )
 

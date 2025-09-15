@@ -77,7 +77,7 @@ async def test_search_agent_has_search_tool():
     tools = test_model.last_model_request_parameters.function_tools
     assert tools is not None
     assert len(tools) == 1
-    assert tools[0].name == "search"
+    assert tools[0].name == "search_and_answer"
 
 
 @pytest.mark.asyncio
@@ -96,21 +96,19 @@ async def test_search_single_query(mock_client, research_deps):
     agent = SearchSpecialistAgent(provider="openai", model="gpt-4")
 
     # Get the search tool
-    search_tool = get_agent_tool(agent, "search")
+    search_tool = get_agent_tool(agent, "search_and_answer")
     assert search_tool is not None
 
     # Test the tool
     ctx = RunContext(deps=research_deps, model=TestModel(), usage=RunUsage())
-    results = await search_tool(ctx, query="climate change")
+    result = await search_tool(ctx, query="climate change")
 
-    # Verify results - should be list of (Chunk, float) tuples
-    assert isinstance(results, list)
-    assert len(results) == 2
-    assert results[0][0].content == "Climate change is a global phenomenon"
-    assert results[0][0].id == "chunk1"
-    assert results[0][1] == 0.8  # score
+    # Verify result - should be a formatted string with context
+    assert isinstance(result, str)
+    assert "Climate change is a global phenomenon" in result
+    assert "Rising temperatures affect ecosystems" in result
 
-    # Verify mock was called
+    # Verify mock was called with default limit
     mock_client.search.assert_called_once_with("climate change", limit=5)
     mock_client.expand_context.assert_called_once()
 
@@ -133,18 +131,18 @@ async def test_search_with_limit(mock_client, research_deps):
     agent = SearchSpecialistAgent(provider="openai", model="gpt-4")
 
     # Get the search tool
-    search_tool = get_agent_tool(agent, "search")
+    search_tool = get_agent_tool(agent, "search_and_answer")
     assert search_tool is not None
 
     # Test the tool with limit
     ctx = RunContext(deps=research_deps, model=TestModel(), usage=RunUsage())
-    results = await search_tool(ctx, query="test query", limit=3)
+    result = await search_tool(ctx, query="test query", limit=3)
 
-    # Verify results respect limit
-    assert isinstance(results, list)
-    assert len(results) == 3
-    assert all(isinstance(r, tuple) and len(r) == 2 for r in results)
-    assert all(isinstance(r[0], Chunk) and isinstance(r[1], float) for r in results)
+    # Verify result is a formatted string
+    assert isinstance(result, str)
+    assert "Content 1" in result
+    assert "Content 2" in result
+    assert "Content 3" in result
 
     # Verify mock was called with correct limit
     mock_client.search.assert_called_once_with("test query", limit=3)
@@ -161,7 +159,7 @@ async def test_search_updates_context(mock_client, research_deps):
     agent = SearchSpecialistAgent(provider="openai", model="gpt-4")
 
     # Get the search tool
-    search_tool = get_agent_tool(agent, "search")
+    search_tool = get_agent_tool(agent, "search_and_answer")
     assert search_tool is not None
 
     # Test the tool

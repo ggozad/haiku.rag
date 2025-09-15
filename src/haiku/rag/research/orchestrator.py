@@ -202,29 +202,39 @@ class ResearchOrchestrator(BaseResearchAgent):
             if context.follow_up_questions:
                 # Use follow-up questions from previous clarification
                 search_target = context.follow_up_questions[:3]  # Take top 3 follow-ups
-                search_prompt = f"Search for: {', '.join(search_target)}"
+                search_prompt = ", ".join(search_target)
             elif iteration < len(context.sub_questions):
                 # Use pre-planned sub-questions
-                search_prompt = f"Search for: {context.sub_questions[iteration]}"
+                search_prompt = context.sub_questions[iteration]
             else:
-                # Fall back to original question with variation
-                search_prompt = f"Additional search for: {question}"
+                # Fall back to original question
+                search_prompt = question
 
             # Search phase - directly call the search agent
             if console:
-                console.print(f"\n[bold cyan]🔍 Searching:[/bold cyan] {search_prompt}")
+                console.print(
+                    f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {search_prompt}"
+                )
 
             await self.search_agent.run(search_prompt, deps=deps)
 
-            if console and context.search_results:
-                latest_results = context.search_results[-1]
-                console.print(
-                    f"   Found [green]{len(latest_results.get('results', []))} documents[/green]"
-                )
-                for i, result in enumerate(latest_results.get("results", [])[:3], 1):
+            if console:
+                # Show documents found
+                if context.search_results:
+                    latest_results = context.search_results[-1]
                     console.print(
-                        f"   {i}. Score: [yellow]{result.score:.3f}[/yellow] - {result.document_uri}"
+                        f"   Found [green]{len(latest_results.get('results', []))} documents[/green]"
                     )
+
+                # Show the answer generated
+                if context.qa_responses:
+                    latest_qa = context.qa_responses[-1]
+                    answer_preview = (
+                        latest_qa["answer"][:200] + "..."
+                        if len(latest_qa["answer"]) > 200
+                        else latest_qa["answer"]
+                    )
+                    console.print(f"   [bold]Answer:[/bold] {answer_preview}")
 
             # Analysis phase (only if we have results)
             if context.search_results:
