@@ -223,3 +223,35 @@ CHUNK_SIZE=256
 # into single chunks with continuous content to eliminate duplication
 CONTEXT_CHUNK_RADIUS=0
 ```
+
+#### Markdown Preprocessor
+
+Optionally preprocess Markdown before chunking by pointing to a callable that receives and returns Markdown text. This is useful for normalizing content, stripping boilerplate, or applying custom transformations before chunk boundaries are computed.
+
+```bash
+# A callable path in one of these formats:
+# - package.module:func
+# - package.module.func
+# - /abs/or/relative/path/to/file.py:func
+MARKDOWN_PREPROCESSOR="my_pkg.preprocess:clean_md"
+```
+
+!!! note
+    - The function signature should be `def clean_md(text: str) -> str` or `async def clean_md(text: str) -> str`.
+    - If the function raises or returns a non-string, haiku.rag logs a warning and proceeds without preprocessing.
+    - The preprocessor affects only the chunking pipeline. The stored document content remains unchanged.
+
+Example implementation:
+
+```python
+# my_pkg/preprocess.py
+def clean_md(text: str) -> str:
+    # strip HTML comments and collapse multiple blank lines
+    lines = [line for line in text.splitlines() if not line.strip().startswith("<!--")]
+    out = []
+    for line in lines:
+        if line.strip() == "" and (out and out[-1] == ""):
+            continue
+        out.append(line)
+    return "\n".join(out)
+```
