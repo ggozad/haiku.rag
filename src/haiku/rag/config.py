@@ -32,6 +32,10 @@ class AppConfig(BaseModel):
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0
 
+    # Optional dotted path or file path to a callable that preprocesses
+    # markdown content before chunking. Examples:
+    MARKDOWN_PREPROCESSOR: str = ""
+
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     VLLM_EMBEDDINGS_BASE_URL: str = ""
     VLLM_RERANK_BASE_URL: str = ""

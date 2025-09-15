@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 from uuid import uuid4
@@ -11,6 +12,7 @@ from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils import load_callable, text_to_docling_document
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +154,28 @@ class ChunkRepository:
         self, document_id: str, document: DoclingDocument
     ) -> list[Chunk]:
         """Create chunks and embeddings for a document from DoclingDocument."""
-        chunk_texts = await chunker.chunk(document)
+        # Optionally preprocess markdown before chunking
+        processed_document = document
+        preprocessor_path = Config.MARKDOWN_PREPROCESSOR
+        if preprocessor_path:
+            try:
+                pre_fn = load_callable(preprocessor_path)
+                markdown = document.export_to_markdown()
+                result = pre_fn(markdown)
+                if inspect.isawaitable(result):
+                    result = await result  # type: ignore[assignment]
+                processed_markdown = result
+                if not isinstance(processed_markdown, str):
+                    raise ValueError("Preprocessor must return a markdown string")
+                processed_document = text_to_docling_document(
+                    processed_markdown, name="content.md"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to apply MARKDOWN_PREPROCESSOR '{preprocessor_path}': {e}. Proceeding without preprocessing."
+                )
+
+        chunk_texts = await chunker.chunk(processed_document)
 
         embeddings = await self.embedder.embed(chunk_texts)
 
