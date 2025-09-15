@@ -36,8 +36,10 @@ haiku-rag add-src https://example.com/article.html
 ```
 
 !!! note
-    As you add documents to `haiku.rag` the database keeps growing. By default, `lanceDB` supports versioning
-    of your data. You can optimize and compact the database by running the [vaccum](#vacuum-optimize-and-cleanup) command.
+    As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
+    of your data. Create/update operations are atomic‑feeling: if anything fails during chunking or embedding,
+    the database rolls back to the pre‑operation snapshot using LanceDB table versioning. You can optimize and
+    compact the database by running the [vacuum](#vacuum-optimize-and-cleanup) command.
 
 ### Get Document
 
