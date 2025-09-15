@@ -3,6 +3,7 @@ import warnings
 from importlib.metadata import version
 from pathlib import Path
 
+import logfire
 import typer
 from rich.console import Console
 
@@ -11,6 +12,9 @@ from haiku.rag.config import Config
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
+
+logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_pydantic_ai()
 
 if not Config.ENV == "development":
     warnings.filterwarnings("ignore")

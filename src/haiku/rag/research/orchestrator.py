@@ -2,6 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
+from rich.console import Console
 
 from haiku.rag.config import Config
 from haiku.rag.research.analysis_agent import AnalysisAgent, AnalysisResult
@@ -145,6 +146,8 @@ class ResearchOrchestrator(BaseResearchAgent):
         client: Any,
         max_iterations: int = 3,
         confidence_threshold: float = 0.8,
+        verbose: bool = False,
+        console: Console | None = None,
     ) -> ResearchReport:
         """Conduct comprehensive research on a question.
 
@@ -153,6 +156,8 @@ class ResearchOrchestrator(BaseResearchAgent):
             client: HaikuRAG client for document operations
             max_iterations: Maximum number of search-analyze-clarify cycles
             confidence_threshold: Minimum confidence level to stop research (0-1)
+            verbose: If True, print progress and intermediate results
+            console: Optional Rich console for output
 
         Returns:
             ResearchReport with comprehensive findings
@@ -162,7 +167,13 @@ class ResearchOrchestrator(BaseResearchAgent):
         context = ResearchContext(original_question=question)
         deps = ResearchDependencies(client=client, context=context)
 
+        # Use provided console or create a new one
+        console = console or Console() if verbose else None
+
         # Create initial research plan
+        if console:
+            console.print("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
+
         plan_result = await self.run(
             f"Create a research plan for: {question}", deps=deps
         )
@@ -170,8 +181,23 @@ class ResearchOrchestrator(BaseResearchAgent):
         assert plan_result.output and isinstance(plan_result.output, ResearchPlan)
         context.sub_questions = plan_result.output.sub_questions
 
+        if console:
+            console.print("\n[bold green]✅ Research Plan Created:[/bold green]")
+            console.print(
+                f"   [bold]Main Question:[/bold] {plan_result.output.main_question}"
+            )
+            console.print("   [bold]Sub-questions:[/bold]")
+            for i, sq in enumerate(plan_result.output.sub_questions, 1):
+                console.print(f"      {i}. {sq}")
+            console.print()
+
         # Execute research iterations
         for iteration in range(max_iterations):
+            if console:
+                console.rule(
+                    f"[bold yellow]🔄 Iteration {iteration + 1}/{max_iterations}[/bold yellow]"
+                )
+
             # Determine what to search for in this iteration
             if context.follow_up_questions:
                 # Use follow-up questions from previous clarification
@@ -183,17 +209,47 @@ class ResearchOrchestrator(BaseResearchAgent):
             else:
                 # Fall back to original question with variation
                 search_prompt = f"Additional search for: {question}"
+
             # Search phase - directly call the search agent
+            if console:
+                console.print(f"\n[bold cyan]🔍 Searching:[/bold cyan] {search_prompt}")
 
             await self.search_agent.run(search_prompt, deps=deps)
 
+            if console and context.search_results:
+                latest_results = context.search_results[-1]
+                console.print(
+                    f"   Found [green]{len(latest_results.get('results', []))} documents[/green]"
+                )
+                for i, result in enumerate(latest_results.get("results", [])[:3], 1):
+                    console.print(
+                        f"   {i}. Score: [yellow]{result.score:.3f}[/yellow] - {result.document_uri}"
+                    )
+
             # Analysis phase (only if we have results)
             if context.search_results:
-                await self.analysis_agent.run(
+                if console:
+                    console.print(
+                        "\n[bold cyan]📊 Analyzing gathered information...[/bold cyan]"
+                    )
+
+                analysis_result = await self.analysis_agent.run(
                     "Analyze the gathered information", deps=deps
                 )
 
+                if console and hasattr(analysis_result, "output"):
+                    output = analysis_result.output
+                    if hasattr(output, "key_insights") and output.key_insights:
+                        console.print("   [bold]Key insights:[/bold]")
+                        for insight in output.key_insights[:3]:
+                            console.print(f"   • {insight}")
+
             # Clarification phase - evaluate completeness
+            if console:
+                console.print(
+                    "\n[bold cyan]🔎 Evaluating research completeness...[/bold cyan]"
+                )
+
             clarification_result = await self.clarification_agent.run(
                 f"Evaluate the completeness of research for: {question}. "
                 f"Consider all information gathered so far and determine if we have sufficient "
@@ -201,19 +257,46 @@ class ResearchOrchestrator(BaseResearchAgent):
                 deps=deps,
             )
 
+            if console and hasattr(clarification_result, "output"):
+                output = clarification_result.output
+                if hasattr(output, "confidence_score"):
+                    console.print(
+                        f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]"
+                    )
+                if hasattr(output, "is_sufficient"):
+                    status = (
+                        "[green]Yes[/green]"
+                        if output.is_sufficient
+                        else "[red]No[/red]"
+                    )
+                    console.print(f"   Sufficient: {status}")
+
             # Check if research is sufficient based on semantic evaluation
             if self._should_stop_research(clarification_result, confidence_threshold):
                 # Log the reasoning for stopping
-                if hasattr(clarification_result, "output") and isinstance(
-                    clarification_result.output, ClarificationResult
+                if (
+                    console
+                    and hasattr(clarification_result, "output")
+                    and isinstance(clarification_result.output, ClarificationResult)
                 ):
-                    print(f"Stopping research: {clarification_result.output.reasoning}")
+                    console.print(
+                        f"\n[bold green]✅ Stopping research:[/bold green] {clarification_result.output.reasoning}"
+                    )
                 break
 
         # Generate final report
+        if console:
+            console.print(
+                "\n[bold cyan]📝 Generating final research report...[/bold cyan]"
+            )
+
         report_result = await self.synthesis_agent.run(
             "Generate the final research report", deps=deps
         )
+
+        if console:
+            console.print("[bold green]✅ Research complete![/bold green]")
+
         return (
             report_result.output if hasattr(report_result, "output") else report_result
         )
