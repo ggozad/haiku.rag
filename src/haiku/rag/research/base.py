@@ -51,7 +51,8 @@ class BaseResearchAgent(ABC):
             return OpenAIChatModel(
                 model_name=model,
                 provider=OpenAIProvider(
-                    base_url=f"{Config.VLLM_QA_BASE_URL}/v1", api_key="none"
+                    base_url=f"{Config.VLLM_RESEARCH_BASE_URL or Config.VLLM_QA_BASE_URL}/v1",
+                    api_key="none",
                 ),
             )
         else:
