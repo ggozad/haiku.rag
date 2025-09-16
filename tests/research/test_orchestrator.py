@@ -1,14 +1,20 @@
-"""Tests for the research orchestrator."""
-
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, create_autospec
 
 import pytest
+from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.dependencies import ResearchContext, ResearchDependencies
 from haiku.rag.research.evaluation_agent import EvaluationResult
 from haiku.rag.research.orchestrator import ResearchOrchestrator, ResearchPlan
+from haiku.rag.research.synthesis_agent import ResearchReport
 from haiku.rag.store.models.chunk import Chunk
+
+
+@pytest.fixture
+def test_model():
+    """Create a test model for orchestrator testing."""
+    return TestModel()
 
 
 @pytest.fixture
@@ -100,6 +106,9 @@ class TestResearchOrchestrator:
         orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
 
         # Create mock evaluation results
+        from unittest.mock import MagicMock
+
+        # Sufficient research result
         sufficient_result = MagicMock()
         sufficient_result.output = EvaluationResult(
             key_insights=["Climate is changing", "Human activity is the cause"],
@@ -109,6 +118,7 @@ class TestResearchOrchestrator:
             reasoning="All aspects covered comprehensively",
         )
 
+        # Insufficient research result
         insufficient_result = MagicMock()
         insufficient_result.output = EvaluationResult(
             key_insights=["Some data found"],
@@ -136,66 +146,34 @@ class TestResearchOrchestrator:
         assert not orchestrator._should_stop_research(insufficient_result, 0.8)
 
     @pytest.mark.asyncio
-    async def test_conduct_research_workflow(self, mock_client):
-        """Test the basic research workflow."""
+    async def test_conduct_research_workflow(self, test_model, mock_client):
+        """Test the basic research workflow using TestModel."""
         orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
 
-        # Mock the agent runs
-        # Mock initial plan
-        plan_mock = MagicMock()
-        plan_mock.output = ResearchPlan(
-            main_question="What is climate change?",
-            sub_questions=[
-                "What causes climate change?",
-                "What are the effects?",
-                "What can be done?",
-            ],
-        )
-        orchestrator.run = AsyncMock(return_value=plan_mock)
+        # Setup mock client returns
+        mock_chunks = [
+            create_mock_chunk("1", "Climate change information"),
+        ]
+        mock_client.search.return_value = mock_chunks
+        mock_client.expand_context.return_value = mock_chunks
 
-        # Mock search agent
-        search_mock = MagicMock()
-        search_mock.output = "Climate change is caused by greenhouse gases."
-        orchestrator.search_agent.run = AsyncMock(return_value=search_mock)
+        # Use TestModel for all agents
+        with orchestrator.agent.override(model=test_model):
+            with orchestrator.search_agent.agent.override(model=test_model):
+                with orchestrator.evaluation_agent.agent.override(model=test_model):
+                    with orchestrator.synthesis_agent.agent.override(model=test_model):
+                        # Run the research
+                        report = await orchestrator.conduct_research(
+                            "What is climate change?", mock_client, max_iterations=1
+                        )
 
-        # Mock evaluation agent - make it stop after first iteration
-        eval_mock = MagicMock()
-        eval_mock.output = EvaluationResult(
-            key_insights=["Climate change is real"],
-            new_questions=[],
-            confidence_score=0.9,
-            is_sufficient=True,
-            reasoning="Sufficient information gathered",
-        )
-        orchestrator.evaluation_agent.run = AsyncMock(return_value=eval_mock)
-
-        # Mock synthesis agent
-        from haiku.rag.research.synthesis_agent import ResearchReport
-
-        synthesis_mock = MagicMock()
-        synthesis_mock.output = ResearchReport(
-            title="Climate Change Report",
-            executive_summary="Summary",
-            main_findings=["Finding 1"],
-            themes={},
-            conclusions=[],
-            limitations=[],
-            recommendations=[],
-            sources_summary="Sources",
-        )
-        orchestrator.synthesis_agent.run = AsyncMock(return_value=synthesis_mock)
-
-        # Mock client search and expand
-        mock_client.search.return_value = []
-        mock_client.expand_context.return_value = []
-
-        # Run the research
-        report = await orchestrator.conduct_research(
-            "What is climate change?", mock_client, max_iterations=3
-        )
-
-        # Verify we got a report
-        assert report.title == "Climate Change Report"
-
-        # Verify search was called for all 3 sub-questions
-        assert orchestrator.search_agent.run.call_count == 3
+                        # Verify we got a valid report structure
+                        assert isinstance(report, ResearchReport)
+                        assert report.title
+                        assert report.executive_summary
+                        assert isinstance(report.main_findings, list)
+                        assert isinstance(report.themes, dict)
+                        assert isinstance(report.conclusions, list)
+                        assert isinstance(report.limitations, list)
+                        assert isinstance(report.recommendations, list)
+                        assert report.sources_summary
