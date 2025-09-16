@@ -1,27 +1,27 @@
-"""Search specialist agent that answers questions using RAG."""
-
-from typing import Any
-
 from pydantic_ai import RunContext
+from pydantic_ai.run import AgentRunResult
 
 from haiku.rag.research.base import BaseResearchAgent
 from haiku.rag.research.dependencies import ResearchDependencies
+from haiku.rag.research.prompts import SEARCH_AGENT_PROMPT
 
 
-class SearchSpecialistAgent(BaseResearchAgent):
+class SearchSpecialistAgent(BaseResearchAgent[str]):
     """Agent specialized in answering questions using RAG search."""
 
-    def __init__(self, provider: str, model: str):
+    def __init__(self, provider: str, model: str) -> None:
         # Output is a string answer, like the QA agent
         super().__init__(provider, model, output_type=str)
 
-    async def run(self, prompt: str, deps: ResearchDependencies, **kwargs) -> Any:
+    async def run(
+        self, prompt: str, deps: ResearchDependencies, **kwargs
+    ) -> AgentRunResult[str]:
         """Execute the agent and store QA response in context."""
         # Run the base agent
         result = await super().run(prompt, deps, **kwargs)
 
         # Store the QA response if we got an answer
-        if hasattr(result, "output") and result.output:
+        if result.output:
             # Get the sources from the last search (which the tool just stored)
             if deps.context.search_results:
                 last_search = deps.context.search_results[-1]
@@ -31,16 +31,7 @@ class SearchSpecialistAgent(BaseResearchAgent):
         return result
 
     def get_system_prompt(self) -> str:
-        return """You are a search and question-answering specialist.
-
-        Your role is to:
-        1. Search the knowledge base for relevant information
-        2. Analyze the retrieved documents
-        3. Provide a comprehensive answer to the question
-        4. Base your answer strictly on the information found
-
-        Use the search_and_answer tool to retrieve relevant documents and formulate your response.
-        Be thorough and specific in your answers, citing relevant information from the sources."""
+        return SEARCH_AGENT_PROMPT
 
     def register_tools(self) -> None:
         """Register search-specific tools."""

@@ -1,5 +1,3 @@
-"""Shared dependencies for multi-agent research workflow."""
-
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
@@ -28,9 +26,6 @@ class ResearchContext(BaseModel):
     )
     gaps: list[str] = Field(
         default_factory=list, description="Identified information gaps"
-    )
-    follow_up_questions: list[str] = Field(
-        default_factory=list, description="Generated follow-up questions"
     )
 
     def add_search_result(self, query: str, results: list["SearchResult"]) -> None:

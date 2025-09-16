@@ -1,4 +1,4 @@
-SYSTEM_PROMPT = """
+QA_SYSTEM_PROMPT = """
 You are a knowledgeable assistant that helps users find information from a document knowledge base.
 
 Your process:
@@ -21,7 +21,7 @@ Be concise, and always maintain accuracy over completeness. Prefer short, direct
 /no_think
 """
 
-SYSTEM_PROMPT_WITH_CITATIONS = """
+QA_SYSTEM_PROMPT_WITH_CITATIONS = """
 You are a knowledgeable assistant that helps users find information from a document knowledge base.
 
 IMPORTANT: You MUST use the search_documents tool for every question. Do not answer any question without first searching the knowledge base.

@@ -1,8 +1,7 @@
-"""Synthesis agent for final research report generation."""
-
 from pydantic import BaseModel, Field
 
 from haiku.rag.research.base import BaseResearchAgent
+from haiku.rag.research.prompts import SYNTHESIS_AGENT_PROMPT
 
 
 class ResearchReport(BaseModel):
@@ -24,35 +23,14 @@ class ResearchReport(BaseModel):
     )
 
 
-class SynthesisAgent(BaseResearchAgent):
+class SynthesisAgent(BaseResearchAgent[ResearchReport]):
     """Agent specialized in synthesizing research into comprehensive reports."""
 
-    def __init__(self, provider: str, model: str):
+    def __init__(self, provider: str, model: str) -> None:
         super().__init__(provider, model, output_type=ResearchReport)
 
     def get_system_prompt(self) -> str:
-        return """You are a synthesis specialist agent focused on creating comprehensive research reports.
-
-        Your role is to:
-        1. Synthesize all gathered information into a coherent narrative
-        2. Present findings in a clear, structured format
-        3. Draw evidence-based conclusions
-        4. Acknowledge limitations and uncertainties
-        5. Provide actionable recommendations
-        6. Maintain academic rigor and objectivity
-
-        Your report should be:
-        - Comprehensive yet concise
-        - Well-structured and easy to follow
-        - Based solely on evidence from the research
-        - Transparent about limitations
-        - Professional and objective in tone
-
-        Focus on creating a report that provides clear value to the reader by:
-        - Answering the original research question thoroughly
-        - Highlighting the most important findings
-        - Explaining the implications of the research
-        - Suggesting concrete next steps"""
+        return SYNTHESIS_AGENT_PROMPT
 
     def register_tools(self) -> None:
         """Register synthesis-specific tools."""

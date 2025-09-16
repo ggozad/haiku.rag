@@ -1,13 +1,12 @@
-"""Base class for research agents with common patterns."""
-
 from abc import ABC, abstractmethod
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.run import AgentRunResult
 
 from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchDependencies
@@ -15,18 +14,18 @@ from haiku.rag.research.dependencies import ResearchDependencies
 T = TypeVar("T")
 
 
-class BaseResearchAgent(ABC):
+class BaseResearchAgent(ABC, Generic[T]):
     """Base class for all research agents."""
 
     def __init__(
         self,
         provider: str,
         model: str,
-        output_type: type[T] | None = None,
+        output_type: type[T],
     ):
         self.provider = provider
         self.model = model
-        self.output_type = output_type or str
+        self.output_type = output_type
 
         model_obj = self._get_model(provider, model)
 
@@ -69,12 +68,14 @@ class BaseResearchAgent(ABC):
         """Register agent-specific tools."""
         pass
 
-    async def run(self, prompt: str, deps: ResearchDependencies, **kwargs) -> Any:
+    async def run(
+        self, prompt: str, deps: ResearchDependencies, **kwargs
+    ) -> AgentRunResult[T]:
         """Execute the agent."""
         return await self._agent.run(prompt, deps=deps, **kwargs)
 
     @property
-    def agent(self) -> Agent[ResearchDependencies, Any]:
+    def agent(self) -> Agent[ResearchDependencies, T]:
         """Access the underlying Pydantic AI agent."""
         return self._agent
 

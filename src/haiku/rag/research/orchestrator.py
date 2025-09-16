@@ -1,17 +1,18 @@
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+from pydantic_ai.format_prompt import format_as_xml
+from pydantic_ai.run import AgentRunResult
 from rich.console import Console
 
 from haiku.rag.config import Config
-from haiku.rag.research.analysis_agent import AnalysisAgent, AnalysisResult
 from haiku.rag.research.base import BaseResearchAgent
-from haiku.rag.research.clarification_agent import (
-    ClarificationAgent,
-    ClarificationResult,
-)
 from haiku.rag.research.dependencies import ResearchContext, ResearchDependencies
+from haiku.rag.research.evaluation_agent import (
+    AnalysisEvaluationAgent,
+    EvaluationResult,
+)
+from haiku.rag.research.prompts import ORCHESTRATOR_PROMPT
 from haiku.rag.research.search_agent import SearchSpecialistAgent
 from haiku.rag.research.synthesis_agent import ResearchReport, SynthesisAgent
 
@@ -21,11 +22,11 @@ class ResearchPlan(BaseModel):
 
     main_question: str = Field(description="The main research question")
     sub_questions: list[str] = Field(
-        description="Decomposed sub-questions to investigate"
+        description="Decomposed sub-questions to investigate (max 3)", max_length=3
     )
 
 
-class ResearchOrchestrator(BaseResearchAgent):
+class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
     """Orchestrator agent that coordinates the research workflow."""
 
     def __init__(
@@ -37,108 +38,40 @@ class ResearchOrchestrator(BaseResearchAgent):
 
         super().__init__(provider, model, output_type=ResearchPlan)
 
-        self.search_agent = SearchSpecialistAgent(provider, model)
-        self.analysis_agent = AnalysisAgent(provider, model)
-        self.clarification_agent = ClarificationAgent(provider, model)
-        self.synthesis_agent = SynthesisAgent(provider, model)
+        self.search_agent: SearchSpecialistAgent = SearchSpecialistAgent(
+            provider, model
+        )
+        self.evaluation_agent: AnalysisEvaluationAgent = AnalysisEvaluationAgent(
+            provider, model
+        )
+        self.synthesis_agent: SynthesisAgent = SynthesisAgent(provider, model)
 
     def get_system_prompt(self) -> str:
-        return """You are a research orchestrator responsible for coordinating a comprehensive research workflow.
-
-        Your role is to:
-        1. Understand and decompose the research question
-        2. Plan a systematic research approach
-        3. Coordinate specialized agents to gather and analyze information
-        4. Ensure comprehensive coverage of the topic
-        5. Iterate based on findings and gaps
-
-        Create a research plan that:
-        - Breaks down complex questions into manageable parts
-        - Identifies multiple search strategies
-        - Defines clear success criteria
-        - Ensures thorough investigation
-        /no_think"""
+        return ORCHESTRATOR_PROMPT
 
     def register_tools(self) -> None:
         """Register orchestration tools."""
+        # Tools are no longer needed - orchestrator directly calls agents
+        pass
 
-        @self.agent.tool
-        async def delegate_search(
-            ctx: RunContext[ResearchDependencies], queries: list[str], limit: int = 5
-        ) -> list[Any]:
-            """Delegate search to the search specialist agent for multiple queries."""
-            all_results = []
-
-            # Search for each query
-            # The search agent will automatically store results in context
-            for query in queries:
-                result = await self.search_agent.run(
-                    f"Search for: {query} with limit {limit}",
-                    deps=ctx.deps,
-                    usage=ctx.usage,
-                )
-                all_results.append(result)
-
-            return all_results
-
-        @self.agent.tool
-        async def delegate_analysis(
-            ctx: RunContext[ResearchDependencies],
-        ) -> AnalysisResult:
-            """Delegate analysis to the analysis agent."""
-            # Get search results from context
-            all_documents = []
-            for search in ctx.deps.context.search_results:
-                all_documents.extend(search.get("results", []))
-
-            # Pass documents for analysis
-            result = await self.analysis_agent.run(
-                f"Analyze these {len(all_documents)} documents from our search",
-                deps=ctx.deps,
-                usage=ctx.usage,
-            )
-
-            # Store analysis insights in context
-            if hasattr(result, "output") and isinstance(result.output, AnalysisResult):
-                for insight in result.output.key_insights:
-                    ctx.deps.context.add_insight(insight)
-
-            return result.output if hasattr(result, "output") else result
-
-        @self.agent.tool
-        async def delegate_clarification(
-            ctx: RunContext[ResearchDependencies],
-        ) -> ClarificationResult:
-            """Delegate gap analysis to the clarification agent."""
-            result = await self.clarification_agent.run(
-                f"Evaluate the completeness of research on: {ctx.deps.context.original_question}",
-                deps=ctx.deps,
-                usage=ctx.usage,
-            )
-
-            # Store identified gaps in context
-            if hasattr(result, "output") and isinstance(
-                result.output, ClarificationResult
-            ):
-                for gap in result.output.information_gaps:
-                    ctx.deps.context.add_gap(gap)
-                ctx.deps.context.follow_up_questions.extend(
-                    result.output.follow_up_questions
-                )
-
-            return result.output if hasattr(result, "output") else result
-
-        @self.agent.tool
-        async def generate_report(
-            ctx: RunContext[ResearchDependencies],
-        ) -> ResearchReport:
-            """Generate final research report using synthesis agent."""
-            result = await self.synthesis_agent.run(
-                f"Create a comprehensive research report for: {ctx.deps.context.original_question}",
-                deps=ctx.deps,
-                usage=ctx.usage,
-            )
-            return result.output if hasattr(result, "output") else result
+    def _format_context_for_prompt(self, context: ResearchContext) -> str:
+        """Format the research context as XML for inclusion in prompts."""
+        context_data = {
+            "original_question": context.original_question,
+            "unanswered_questions": context.sub_questions,
+            "qa_responses": [
+                {
+                    "question": qa["question"],
+                    "answer": qa["answer"][:500] + "..."
+                    if len(qa["answer"]) > 500
+                    else qa["answer"],
+                }
+                for qa in context.qa_responses
+            ],
+            "insights": context.insights,
+            "gaps": context.gaps,
+        }
+        return format_as_xml(context_data, root_tag="research_context")
 
     async def conduct_research(
         self,
@@ -174,11 +107,10 @@ class ResearchOrchestrator(BaseResearchAgent):
         if console:
             console.print("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
 
-        plan_result = await self.run(
+        plan_result: AgentRunResult[ResearchPlan] = await self.run(
             f"Create a research plan for: {question}", deps=deps
         )
 
-        assert plan_result.output and isinstance(plan_result.output, ResearchPlan)
         context.sub_questions = plan_result.output.sub_questions
 
         if console:
@@ -198,99 +130,101 @@ class ResearchOrchestrator(BaseResearchAgent):
                     f"[bold yellow]🔄 Iteration {iteration + 1}/{max_iterations}[/bold yellow]"
                 )
 
-            # Determine what to search for in this iteration
-            if context.follow_up_questions:
-                # Use follow-up questions from previous clarification
-                search_target = context.follow_up_questions[:3]  # Take top 3 follow-ups
-                search_prompt = ", ".join(search_target)
-            elif iteration < len(context.sub_questions):
-                # Use pre-planned sub-questions
-                search_prompt = context.sub_questions[iteration]
-            else:
-                # Fall back to original question
-                search_prompt = question
-
-            # Search phase - directly call the search agent
-            if console:
-                console.print(
-                    f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {search_prompt}"
-                )
-
-            await self.search_agent.run(search_prompt, deps=deps)
-
-            if console:
-                # Show documents found
-                if context.search_results:
-                    latest_results = context.search_results[-1]
-                    console.print(
-                        f"   Found [green]{len(latest_results.get('results', []))} documents[/green]"
-                    )
-
-                # Show the answer generated
-                if context.qa_responses:
-                    latest_qa = context.qa_responses[-1]
-                    answer_preview = (
-                        latest_qa["answer"][:200] + "..."
-                        if len(latest_qa["answer"]) > 200
-                        else latest_qa["answer"]
-                    )
-                    console.print(f"   [bold]Answer:[/bold] {answer_preview}")
-
-            # Analysis phase (only if we have results)
-            if context.search_results:
+            # Check if we have questions to search
+            if not context.sub_questions:
+                # No more questions to explore
                 if console:
                     console.print(
-                        "\n[bold cyan]📊 Analyzing gathered information...[/bold cyan]"
+                        "[yellow]No more questions to explore. Concluding research.[/yellow]"
                     )
+                break
 
-                analysis_result = await self.analysis_agent.run(
-                    "Analyze the gathered information", deps=deps
-                )
+            # Use current sub-questions for this iteration
+            questions_to_search = context.sub_questions
 
-                if console and hasattr(analysis_result, "output"):
-                    output = analysis_result.output
-                    if hasattr(output, "key_insights") and output.key_insights:
-                        console.print("   [bold]Key insights:[/bold]")
-                        for insight in output.key_insights[:3]:
-                            console.print(f"   • {insight}")
-
-            # Clarification phase - evaluate completeness
+            # Search phase - answer all questions in this iteration
             if console:
                 console.print(
-                    "\n[bold cyan]🔎 Evaluating research completeness...[/bold cyan]"
+                    f"\n[bold cyan]🔍 Searching & Answering {len(questions_to_search)} questions:[/bold cyan]"
+                )
+                for i, q in enumerate(questions_to_search, 1):
+                    console.print(f"   {i}. {q}")
+
+            # Run searches for all questions and remove answered ones
+            answered_questions = []
+            for search_question in questions_to_search:
+                await self.search_agent.run(search_question, deps=deps)
+
+                # Mark this question as answered
+                answered_questions.append(search_question)
+
+                if console and context.qa_responses:
+                    # Show the last QA response (which should be for this question)
+                    latest_qa = context.qa_responses[-1]
+                    answer_preview = (
+                        latest_qa["answer"][:150] + "..."
+                        if len(latest_qa["answer"]) > 150
+                        else latest_qa["answer"]
+                    )
+                    console.print(
+                        f"\n   [green]✓[/green] {search_question[:50]}..."
+                        if len(search_question) > 50
+                        else f"\n   [green]✓[/green] {search_question}"
+                    )
+                    console.print(f"      {answer_preview}")
+
+            # Remove answered questions from the list
+            for question in answered_questions:
+                if question in context.sub_questions:
+                    context.sub_questions.remove(question)
+
+            # Analysis and Evaluation phase
+            if console:
+                console.print(
+                    "\n[bold cyan]📊 Analyzing and evaluating research progress...[/bold cyan]"
                 )
 
-            clarification_result = await self.clarification_agent.run(
-                f"Evaluate the completeness of research for: {question}. "
-                f"Consider all information gathered so far and determine if we have sufficient "
-                f"information to provide a comprehensive answer.",
+            # Format context for the evaluation agent
+            context_xml = self._format_context_for_prompt(context)
+            evaluation_prompt = f"""Analyze all gathered information and evaluate the completeness of research.
+
+{context_xml}
+
+Evaluate the research progress for the original question and identify any remaining gaps."""
+
+            evaluation_result = await self.evaluation_agent.run(
+                evaluation_prompt,
                 deps=deps,
             )
 
-            if console and hasattr(clarification_result, "output"):
-                output = clarification_result.output
-                if hasattr(output, "confidence_score"):
-                    console.print(
-                        f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]"
-                    )
-                if hasattr(output, "is_sufficient"):
-                    status = (
-                        "[green]Yes[/green]"
-                        if output.is_sufficient
-                        else "[red]No[/red]"
-                    )
-                    console.print(f"   Sufficient: {status}")
+            if console and evaluation_result.output:
+                output = evaluation_result.output
+                if output.key_insights:
+                    console.print("   [bold]Key insights:[/bold]")
+                    for insight in output.key_insights[:3]:
+                        console.print(f"   • {insight}")
+                console.print(
+                    f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]"
+                )
+                status = (
+                    "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
+                )
+                console.print(f"   Sufficient: {status}")
 
-            # Check if research is sufficient based on semantic evaluation
-            if self._should_stop_research(clarification_result, confidence_threshold):
-                # Log the reasoning for stopping
-                if (
-                    console
-                    and hasattr(clarification_result, "output")
-                    and isinstance(clarification_result.output, ClarificationResult)
-                ):
+            # Store insights
+            for insight in evaluation_result.output.key_insights:
+                context.add_insight(insight)
+
+            # Add new questions to the sub-questions list
+            for new_q in evaluation_result.output.new_questions:
+                if new_q not in context.sub_questions:
+                    context.sub_questions.append(new_q)
+
+            # Check if research is sufficient
+            if self._should_stop_research(evaluation_result, confidence_threshold):
+                if console:
                     console.print(
-                        f"\n[bold green]✅ Stopping research:[/bold green] {clarification_result.output.reasoning}"
+                        f"\n[bold green]✅ Stopping research:[/bold green] {evaluation_result.output.reasoning}"
                     )
                 break
 
@@ -300,30 +234,31 @@ class ResearchOrchestrator(BaseResearchAgent):
                 "\n[bold cyan]📝 Generating final research report...[/bold cyan]"
             )
 
-        report_result = await self.synthesis_agent.run(
-            "Generate the final research report", deps=deps
+        # Format context for the synthesis agent
+        final_context_xml = self._format_context_for_prompt(context)
+        synthesis_prompt = f"""Generate a comprehensive research report based on all gathered information.
+
+{final_context_xml}
+
+Create a detailed report that synthesizes all findings into a coherent response."""
+
+        report_result: AgentRunResult[ResearchReport] = await self.synthesis_agent.run(
+            synthesis_prompt, deps=deps
         )
 
         if console:
             console.print("[bold green]✅ Research complete![/bold green]")
 
-        return (
-            report_result.output if hasattr(report_result, "output") else report_result
-        )
+        return report_result.output
 
     def _should_stop_research(
-        self, clarification_result: Any, confidence_threshold: float
+        self,
+        evaluation_result: AgentRunResult[EvaluationResult],
+        confidence_threshold: float,
     ) -> bool:
-        """Determine if research should stop based on semantic completeness evaluation."""
+        """Determine if research should stop based on evaluation."""
 
-        if not hasattr(clarification_result, "output") or not isinstance(
-            clarification_result.output, ClarificationResult
-        ):
-            # If we can't evaluate, continue researching
-            return False
+        result = evaluation_result.output
 
-        result = clarification_result.output
-
-        # Use the LLM's semantic evaluation
         # Stop if the agent indicates sufficient information AND confidence exceeds threshold
         return result.is_sufficient and result.confidence_score >= confidence_threshold
