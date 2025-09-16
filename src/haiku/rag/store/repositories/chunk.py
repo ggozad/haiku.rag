@@ -171,9 +171,10 @@ class ChunkRepository:
                     processed_markdown, name="content.md"
                 )
             except Exception as e:
-                logger.warning(
+                logger.error(
                     f"Failed to apply MARKDOWN_PREPROCESSOR '{preprocessor_path}': {e}. Proceeding without preprocessing."
                 )
+                raise e
 
         chunk_texts = await chunker.chunk(processed_document)
 
