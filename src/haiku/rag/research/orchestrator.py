@@ -56,16 +56,12 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
 
     def _format_context_for_prompt(self, context: ResearchContext) -> str:
         """Format the research context as XML for inclusion in prompts."""
+
         context_data = {
             "original_question": context.original_question,
             "unanswered_questions": context.sub_questions,
             "qa_responses": [
-                {
-                    "question": qa["question"],
-                    "answer": qa["answer"][:500] + "..."
-                    if len(qa["answer"]) > 500
-                    else qa["answer"],
-                }
+                {"question": qa["question"], "answer": qa["answer"]}
                 for qa in context.qa_responses
             ],
             "insights": context.insights,
@@ -201,7 +197,7 @@ Evaluate the research progress for the original question and identify any remain
                 output = evaluation_result.output
                 if output.key_insights:
                     console.print("   [bold]Key insights:[/bold]")
-                    for insight in output.key_insights[:3]:
+                    for insight in output.key_insights:
                         console.print(f"   • {insight}")
                 console.print(
                     f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]"

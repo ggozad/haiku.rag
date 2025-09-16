@@ -22,6 +22,12 @@ Your role is to:
 4. Base your answer strictly on the information found
 
 Use the search_and_answer tool to retrieve relevant documents and formulate your response.
+
+Important:
+- Always call the search_and_answer tool before drafting any answer.
+- Never answer without first using the tool at least once.
+- If no relevant information is found, state that clearly and avoid speculation.
+
 Be thorough and specific in your answers, citing relevant information from the sources."""
 
 EVALUATION_AGENT_PROMPT = """You are an analysis and evaluation specialist for research workflows.
