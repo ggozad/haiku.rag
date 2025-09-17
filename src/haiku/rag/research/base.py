@@ -73,7 +73,7 @@ class BaseResearchAgent[T](ABC):
         pass
 
     async def run(
-        self, prompt: str, deps: ResearchDependencies, **kwargs
+        self, prompt: str, deps: "ResearchDependencies", **kwargs
     ) -> AgentRunResult[T]:
         """Execute the agent."""
         return await self._agent.run(prompt, deps=deps, **kwargs)
