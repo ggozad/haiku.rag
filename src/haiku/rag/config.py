@@ -31,7 +31,7 @@ class AppConfig(BaseModel):
 
     # Research defaults (fallback to QA if not provided via env)
     RESEARCH_PROVIDER: str = "ollama"
-    RESEARCH_MODEL: str = "qwen3"
+    RESEARCH_MODEL: str = "gpt-oss"
 
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0

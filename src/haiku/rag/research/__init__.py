@@ -1,6 +1,11 @@
 """Multi-agent research workflow for advanced RAG queries."""
 
-from haiku.rag.research.base import BaseResearchAgent, ResearchOutput, SearchResult
+from haiku.rag.research.base import (
+    BaseResearchAgent,
+    ResearchOutput,
+    SearchAnswer,
+    SearchResult,
+)
 from haiku.rag.research.dependencies import ResearchContext, ResearchDependencies
 from haiku.rag.research.evaluation_agent import (
     AnalysisEvaluationAgent,
@@ -18,6 +23,7 @@ __all__ = [
     "SearchResult",
     "ResearchOutput",
     # Specialized agents
+    "SearchAnswer",
     "SearchSpecialistAgent",
     "AnalysisEvaluationAgent",
     "EvaluationResult",

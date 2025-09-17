@@ -1,4 +1,4 @@
-from haiku.rag.research.search_agent import SearchSpecialistAgent
+from haiku.rag.research import SearchAnswer, SearchSpecialistAgent
 
 
 class TestSearchSpecialistAgent:
@@ -8,4 +8,4 @@ class TestSearchSpecialistAgent:
         agent = SearchSpecialistAgent(provider="openai", model="gpt-4")
         assert agent.provider == "openai"
         assert agent.model == "gpt-4"
-        assert agent.output_type is str
+        assert agent.output_type is SearchAnswer

@@ -61,7 +61,7 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
             "original_question": context.original_question,
             "unanswered_questions": context.sub_questions,
             "qa_responses": [
-                {"question": qa["question"], "answer": qa["answer"]}
+                {"question": qa.query, "answer": qa.answer}
                 for qa in context.qa_responses
             ],
             "insights": context.insights,
@@ -149,18 +149,23 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
             # Run searches for all questions and remove answered ones
             answered_questions = []
             for search_question in questions_to_search:
-                await self.search_agent.run(search_question, deps=deps)
-
-                # Mark this question as answered
-                answered_questions.append(search_question)
+                try:
+                    await self.search_agent.run(search_question, deps=deps)
+                except Exception as e:  # pragma: no cover - defensive
+                    if console:
+                        console.print(
+                            f"\n   [red]×[/red] Omitting failed question: {search_question} ({e})"
+                        )
+                finally:
+                    answered_questions.append(search_question)
 
                 if console and context.qa_responses:
                     # Show the last QA response (which should be for this question)
                     latest_qa = context.qa_responses[-1]
                     answer_preview = (
-                        latest_qa["answer"][:150] + "..."
-                        if len(latest_qa["answer"]) > 150
-                        else latest_qa["answer"]
+                        latest_qa.answer[:150] + "..."
+                        if len(latest_qa.answer) > 150
+                        else latest_qa.answer
                     )
                     console.print(
                         f"\n   [green]✓[/green] {search_question[:50]}..."

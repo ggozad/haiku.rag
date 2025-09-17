@@ -1,11 +1,7 @@
-from typing import TYPE_CHECKING, Any
-
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-
-if TYPE_CHECKING:
-    from haiku.rag.research.base import SearchResult
+from haiku.rag.research.base import SearchAnswer
 
 
 class ResearchContext(BaseModel):
@@ -15,11 +11,8 @@ class ResearchContext(BaseModel):
     sub_questions: list[str] = Field(
         default_factory=list, description="Decomposed sub-questions"
     )
-    search_results: list[dict[str, Any]] = Field(
-        default_factory=list, description="Accumulated search results"
-    )
-    qa_responses: list[dict[str, Any]] = Field(
-        default_factory=list, description="Question-answer pairs with sources"
+    qa_responses: list["SearchAnswer"] = Field(
+        default_factory=list, description="Structured QA pairs used during research"
     )
     insights: list[str] = Field(
         default_factory=list, description="Key insights discovered"
@@ -28,26 +21,9 @@ class ResearchContext(BaseModel):
         default_factory=list, description="Identified information gaps"
     )
 
-    def add_search_result(self, query: str, results: list["SearchResult"]) -> None:
-        """Add search results to context."""
-        self.search_results.append(
-            {
-                "query": query,
-                "results": results,
-            }
-        )
-
-    def add_qa_response(
-        self, question: str, answer: str, sources: list["SearchResult"]
-    ) -> None:
-        """Add a QA response with its source documents."""
-        self.qa_responses.append(
-            {
-                "question": question,
-                "answer": answer,
-                "sources": sources,
-            }
-        )
+    def add_qa_response(self, qa: "SearchAnswer") -> None:
+        """Add a structured QA response (minimal context already included)."""
+        self.qa_responses.append(qa)
 
     def add_insight(self, insight: str) -> None:
         """Add a key insight."""

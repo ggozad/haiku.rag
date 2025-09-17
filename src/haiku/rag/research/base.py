@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -9,12 +11,12 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.run import AgentRunResult
 
 from haiku.rag.config import Config
-from haiku.rag.research.dependencies import ResearchDependencies
 
-T = TypeVar("T")
+if TYPE_CHECKING:
+    from haiku.rag.research.dependencies import ResearchDependencies
 
 
-class BaseResearchAgent(ABC, Generic[T]):
+class BaseResearchAgent[T](ABC):
     """Base class for all research agents."""
 
     def __init__(
@@ -28,6 +30,9 @@ class BaseResearchAgent(ABC, Generic[T]):
         self.output_type = output_type
 
         model_obj = self._get_model(provider, model)
+
+        # Import deps type lazily to avoid circular import during module load
+        from haiku.rag.research.dependencies import ResearchDependencies
 
         self._agent = Agent(
             model=model_obj,
@@ -75,7 +80,7 @@ class BaseResearchAgent(ABC, Generic[T]):
         return await self._agent.run(prompt, deps=deps, **kwargs)
 
     @property
-    def agent(self) -> Agent[ResearchDependencies, T]:
+    def agent(self) -> Agent[Any, T]:
         """Access the underlying Pydantic AI agent."""
         return self._agent
 
@@ -96,3 +101,23 @@ class ResearchOutput(BaseModel):
     detailed_findings: list[str]
     sources: list[str]
     confidence: float
+
+
+class SearchAnswer(BaseModel):
+    """Structured output for the SearchSpecialist agent."""
+
+    query: str = Field(description="The search query that was performed")
+    answer: str = Field(description="The answer generated based on the context")
+    context: list[str] = Field(
+        description=(
+            "Only the minimal set of relevant snippets (verbatim) that directly "
+            "support the answer"
+        )
+    )
+    sources: list[str] = Field(
+        description=(
+            "Document URIs corresponding to the snippets actually used in the"
+            " answer (one URI per snippet; omit if none)"
+        ),
+        default_factory=list,
+    )
