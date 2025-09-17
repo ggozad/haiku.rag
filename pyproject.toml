@@ -1,6 +1,6 @@
 [project]
 name = "haiku.rag"
-version = "0.9.1"
+version = "0.9.2"
 description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
