@@ -33,10 +33,18 @@ class BaseResearchAgent[T](ABC):
         # Import deps type lazily to avoid circular import during module load
         from haiku.rag.research.dependencies import ResearchDependencies
 
+        # If the agent is expected to return plain text, pass `str` directly.
+        # Otherwise, wrap the model with ToolOutput for robust tool-handling retries.
+        agent_output_type: Any
+        if self.output_type is str:  # plain text output
+            agent_output_type = str
+        else:
+            agent_output_type = ToolOutput(self.output_type, max_retries=3)
+
         self._agent = Agent(
             model=model_obj,
             deps_type=ResearchDependencies,
-            output_type=ToolOutput(self.output_type, max_retries=3),
+            output_type=agent_output_type,
             system_prompt=self.get_system_prompt(),
         )
 

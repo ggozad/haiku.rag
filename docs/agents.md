@@ -43,6 +43,8 @@ The research workflow coordinates specialized agents to plan, search, analyze, a
 Components:
 
 - Orchestrator: Plans, coordinates, and loops until confidence is sufficient
+- Presearch Survey: Runs a quick KB scan and summarizes relevant chunk text to
+  ground the initial plan (plain-text summary; no URIs or scores)
 - Search Specialist: Performs targeted RAG searches and answers sub‑questions
 - Analysis & Evaluation: Extracts insights, identifies gaps, proposes new questions
 - Synthesis: Produces a final structured research report

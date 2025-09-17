@@ -122,12 +122,7 @@ class HaikuRAGApp:
                         self.console.print(f"• {finding}")
                     self.console.print()
 
-                # Themes
-                if report.themes:
-                    self.console.print("[bold cyan]Key Themes:[/bold cyan]")
-                    for theme, explanation in report.themes.items():
-                        self.console.print(f"• [bold]{theme}[/bold]: {explanation}")
-                    self.console.print()
+                # (Themes section removed)
 
                 # Conclusions
                 if report.conclusions:
@@ -261,7 +256,7 @@ class HaikuRAGApp:
                 elif transport == "sse":
                     await server.run_sse_async()
                 else:
-                    await server.run_http_async("streamable-http")
+                    await server.run_http_async(transport="streamable-http")
             except KeyboardInterrupt:
                 pass
             finally:

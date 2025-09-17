@@ -12,11 +12,12 @@ class ResearchReport(BaseModel):
     main_findings: list[str] = Field(
         description="Primary research findings with supporting evidence"
     )
-    themes: dict[str, str] = Field(description="Major themes and their explanations")
     conclusions: list[str] = Field(description="Evidence-based conclusions")
-    limitations: list[str] = Field(description="Limitations of the current research")
+    limitations: list[str] = Field(
+        description="Limitations of the current research", default=[]
+    )
     recommendations: list[str] = Field(
-        description="Actionable recommendations based on findings"
+        description="Actionable recommendations based on findings", default=[]
     )
     sources_summary: str = Field(
         description="Summary of sources used and their reliability"

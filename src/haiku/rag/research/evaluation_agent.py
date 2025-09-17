@@ -11,7 +11,9 @@ class EvaluationResult(BaseModel):
         description="Main insights extracted from the research so far"
     )
     new_questions: list[str] = Field(
-        description="New sub-questions to add to the research (max 3)", max_length=3
+        description="New sub-questions to add to the research (max 3)",
+        max_length=3,
+        default=[],
     )
     confidence_score: float = Field(
         description="Confidence level in the completeness of research (0-1)",

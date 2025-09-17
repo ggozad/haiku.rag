@@ -172,7 +172,6 @@ class TestResearchOrchestrator:
                         assert report.title
                         assert report.executive_summary
                         assert isinstance(report.main_findings, list)
-                        assert isinstance(report.themes, dict)
                         assert isinstance(report.conclusions, list)
                         assert isinstance(report.limitations, list)
                         assert isinstance(report.recommendations, list)
