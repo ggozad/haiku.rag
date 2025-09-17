@@ -55,6 +55,7 @@ haiku-rag migrate old_database.sqlite  # Migrate from SQLite
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
 - [Python](python.md) - Python API reference
+- [Agents](agents.md) - QA agent and multi-agent research
 
 ## License
 

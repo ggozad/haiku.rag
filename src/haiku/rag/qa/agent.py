@@ -6,7 +6,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.qa.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_CITATIONS
+from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT, QA_SYSTEM_PROMPT_WITH_CITATIONS
 
 
 class SearchResult(BaseModel):
@@ -31,7 +31,9 @@ class QuestionAnswerAgent:
     ):
         self._client = client
 
-        system_prompt = SYSTEM_PROMPT_WITH_CITATIONS if use_citations else SYSTEM_PROMPT
+        system_prompt = (
+            QA_SYSTEM_PROMPT_WITH_CITATIONS if use_citations else QA_SYSTEM_PROMPT
+        )
         model_obj = self._get_model(provider, model)
 
         self._agent = Agent(

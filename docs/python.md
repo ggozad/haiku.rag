@@ -204,3 +204,5 @@ print(answer)
 The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources.
 
 The QA provider and model can be configured via environment variables (see [Configuration](configuration.md)).
+
+See also: [Agents](agents.md) for details on the QA agent and the multi‑agent research workflow.

@@ -27,7 +27,11 @@ class AppConfig(BaseModel):
     RERANK_MODEL: str = ""
 
     QA_PROVIDER: str = "ollama"
-    QA_MODEL: str = "qwen3"
+    QA_MODEL: str = "gpt-oss"
+
+    # Research defaults (fallback to QA if not provided via env)
+    RESEARCH_PROVIDER: str = "ollama"
+    RESEARCH_MODEL: str = "gpt-oss"
 
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0
@@ -37,9 +41,11 @@ class AppConfig(BaseModel):
     MARKDOWN_PREPROCESSOR: str = ""
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+
     VLLM_EMBEDDINGS_BASE_URL: str = ""
     VLLM_RERANK_BASE_URL: str = ""
     VLLM_QA_BASE_URL: str = ""
+    VLLM_RESEARCH_BASE_URL: str = ""
 
     # Provider keys
     VOYAGE_API_KEY: str = ""

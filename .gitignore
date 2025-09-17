@@ -18,3 +18,5 @@ tests/data/
 # environment variables
 .env
 TODO.md
+PLAN.md
+DEVNOTES.md

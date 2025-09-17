@@ -3,6 +3,7 @@ import warnings
 from importlib.metadata import version
 from pathlib import Path
 
+import logfire
 import typer
 from rich.console import Console
 
@@ -11,6 +12,9 @@ from haiku.rag.config import Config
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
+
+logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_pydantic_ai()
 
 if not Config.ENV == "development":
     warnings.filterwarnings("ignore")
@@ -233,6 +237,38 @@ def ask(
 ):
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.ask(question=question, cite=cite))
+
+
+@cli.command("research", help="Run multi-agent research and output a concise report")
+def research(
+    question: str = typer.Argument(
+        help="The research question to investigate",
+    ),
+    max_iterations: int = typer.Option(
+        3,
+        "--max-iterations",
+        "-n",
+        help="Maximum search/analyze iterations",
+    ),
+    db: Path = typer.Option(
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Show verbose progress output",
+    ),
+):
+    app = HaikuRAGApp(db_path=db)
+    asyncio.run(
+        app.research(
+            question=question,
+            max_iterations=max_iterations,
+            verbose=verbose,
+        )
+    )
 
 
 @cli.command("settings", help="Display current configuration settings")
