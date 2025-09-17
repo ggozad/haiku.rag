@@ -38,6 +38,8 @@ Tool usage:
 - The tool returns XML containing only a list of snippets, where each snippet
   has the verbatim `text`, a `score` indicating relevance, and the
   `document_uri` it came from.
+- You may call the tool multiple times to refine or broaden context, but do not
+  exceed 3 total tool calls per question. Prefer precision over volume.
 - Use scores to prioritize evidence, but include only the minimal subset of
   snippet texts (verbatim) in SearchAnswer.context.
 - Set SearchAnswer.sources to the matching document_uris for the snippets you

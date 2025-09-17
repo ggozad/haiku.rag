@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.output import ToolOutput
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.run import AgentRunResult
@@ -37,7 +36,7 @@ class BaseResearchAgent[T](ABC):
         self._agent = Agent(
             model=model_obj,
             deps_type=ResearchDependencies,
-            output_type=self.output_type,
+            output_type=ToolOutput(self.output_type, max_retries=3),
             system_prompt=self.get_system_prompt(),
         )
 
