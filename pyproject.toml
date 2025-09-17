@@ -22,14 +22,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling>=2.49.0",
-    "fastmcp>=2.8.1",
+    "docling>=2.52.0",
+    "fastmcp>=2.12.3",
     "httpx>=0.28.1",
-    "lancedb>=0.24.3",
-    "ollama>=0.5.3",
-    "pydantic>=2.11.7",
-    "pydantic-ai>=0.8.1",
-    "python-dotenv>=1.1.0",
+    "lancedb>=0.25.0",
+    "pydantic>=2.11.9",
+    "pydantic-ai>=1.0.8",
+    "python-dotenv>=1.1.1",
     "rich>=14.1.0",
     "tiktoken>=0.11.0",
     "typer>=0.16.1",
@@ -37,7 +36,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-voyageai = ["voyageai>=0.3.2"]
+voyageai = ["voyageai>=0.3.5"]
 mxbai = ["mxbai-rerank>=0.1.6"]
 
 [project.scripts]
