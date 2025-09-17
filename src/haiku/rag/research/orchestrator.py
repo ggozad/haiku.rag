@@ -12,6 +12,7 @@ from haiku.rag.research.evaluation_agent import (
     AnalysisEvaluationAgent,
     EvaluationResult,
 )
+from haiku.rag.research.presearch_agent import PresearchSurveyAgent
 from haiku.rag.research.prompts import ORCHESTRATOR_PROMPT
 from haiku.rag.research.search_agent import SearchSpecialistAgent
 from haiku.rag.research.synthesis_agent import ResearchReport, SynthesisAgent
@@ -41,6 +42,9 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
         self.search_agent: SearchSpecialistAgent = SearchSpecialistAgent(
             provider, model
         )
+        self.presearch_agent: PresearchSurveyAgent = PresearchSurveyAgent(
+            provider, model
+        )
         self.evaluation_agent: AnalysisEvaluationAgent = AnalysisEvaluationAgent(
             provider, model
         )
@@ -61,7 +65,12 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
             "original_question": context.original_question,
             "unanswered_questions": context.sub_questions,
             "qa_responses": [
-                {"question": qa.query, "answer": qa.answer}
+                {
+                    "question": qa.query,
+                    "answer": qa.answer,
+                    "context_snippets": qa.context,
+                    "sources": qa.sources,
+                }
                 for qa in context.qa_responses
             ],
             "insights": context.insights,
@@ -99,12 +108,38 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
         # Use provided console or create a new one
         console = console or Console() if verbose else None
 
+        # Run a simple presearch survey to summarize KB context
+        if console:
+            console.print(
+                "\n[bold cyan]🔎 Presearch: summarizing KB context...[/bold cyan]"
+            )
+
+        presearch_result = await self.presearch_agent.run(question, deps=deps)
+
         # Create initial research plan
         if console:
             console.print("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
 
+        # Include the presearch summary to ground the planning step.
+
+        planning_context_xml = format_as_xml(
+            {
+                "original_question": question,
+                "presearch_summary": presearch_result.output or "",
+            },
+            root_tag="planning_context",
+        )
+
+        plan_prompt = (
+            "Create a research plan for the main question below.\n\n"
+            f"Main question: {question}\n\n"
+            "Use this brief presearch summary to inform the plan. Focus the 3 sub-questions "
+            "on the most important aspects not already obvious from the current KB context.\n\n"
+            f"{planning_context_xml}"
+        )
+
         plan_result: AgentRunResult[ResearchPlan] = await self.run(
-            f"Create a research plan for: {question}", deps=deps
+            plan_prompt, deps=deps
         )
 
         context.sub_questions = plan_result.output.sub_questions

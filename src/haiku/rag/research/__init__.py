@@ -12,6 +12,7 @@ from haiku.rag.research.evaluation_agent import (
     EvaluationResult,
 )
 from haiku.rag.research.orchestrator import ResearchOrchestrator, ResearchPlan
+from haiku.rag.research.presearch_agent import PresearchSurveyAgent
 from haiku.rag.research.search_agent import SearchSpecialistAgent
 from haiku.rag.research.synthesis_agent import ResearchReport, SynthesisAgent
 
@@ -25,6 +26,7 @@ __all__ = [
     # Specialized agents
     "SearchAnswer",
     "SearchSpecialistAgent",
+    "PresearchSurveyAgent",
     "AnalysisEvaluationAgent",
     "EvaluationResult",
     "SynthesisAgent",
