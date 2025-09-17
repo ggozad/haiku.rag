@@ -51,16 +51,16 @@ packages = ["src/haiku"]
 
 [dependency-groups]
 dev = [
-    "datasets>=3.6.0",
-    "logfire>=4.6.0",
+    "datasets>=4.1.0",
+    "logfire>=4.7.0",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.14",
     "pre-commit>=4.2.0",
     "pyright>=1.1.405",
-    "pytest>=8.4.0",
-    "pytest-asyncio>=1.0.0",
-    "pytest-cov>=6.2.1",
-    "ruff>=0.11.13",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.13.0",
 ]
 
 [tool.ruff]
