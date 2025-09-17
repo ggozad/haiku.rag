@@ -27,7 +27,7 @@ class AppConfig(BaseModel):
     RERANK_MODEL: str = ""
 
     QA_PROVIDER: str = "ollama"
-    QA_MODEL: str = "qwen3"
+    QA_MODEL: str = "gpt-oss"
 
     # Research defaults (fallback to QA if not provided via env)
     RESEARCH_PROVIDER: str = "ollama"
