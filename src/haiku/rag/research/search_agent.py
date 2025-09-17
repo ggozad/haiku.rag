@@ -42,6 +42,7 @@ class SearchSpecialistAgent(BaseResearchAgent[SearchAnswer]):
         ) -> str:
             """Search the KB and return a concise context pack."""
             # Remove quotes from queries as this requires positional indexing in lancedb
+            # XXX: Investigate how to do that with lancedb
             query = query.replace('"', "")
             search_results = await ctx.deps.client.search(query, limit=limit)
             expanded = await ctx.deps.client.expand_context(search_results)
