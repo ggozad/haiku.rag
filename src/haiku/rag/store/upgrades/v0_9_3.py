@@ -12,9 +12,25 @@ if TYPE_CHECKING:  # pragma: no cover - for type hints only
     from haiku.rag.store.engine import Store
 
 
+def _infer_vector_dim(store: Store) -> int:
+    """Infer vector dimension from existing data; fallback to embedder config."""
+    try:
+        arrow = store.chunks_table.search().limit(1).to_arrow()
+        rows = arrow.to_pylist()
+        if rows:
+            vec = rows[0].get("vector")
+            if isinstance(vec, list) and vec:
+                return len(vec)
+    except Exception:
+        pass
+    # Fallback to configured embedder vector dim
+    return getattr(store.embedder, "_vector_dim", 1024)
+
+
 def _apply_chunk_order(store: Store) -> None:
     """Add integer 'order' column to chunks and backfill from metadata."""
-    vector_dim = store.embedder._vector_dim
+
+    vector_dim = _infer_vector_dim(store)
 
     # ============== Chunks: add 'order' column and backfill ==============
     class ChunkRecordV2(LanceModel):
