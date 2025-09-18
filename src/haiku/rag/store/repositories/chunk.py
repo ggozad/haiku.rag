@@ -28,7 +28,9 @@ class ChunkRepository:
     def _ensure_fts_index(self) -> None:
         """Ensure FTS index exists on the content column."""
         try:
-            self.store.chunks_table.create_fts_index("content", replace=True)
+            self.store.chunks_table.create_fts_index(
+                "content", replace=True, with_position=True, remove_stop_words=False
+            )
         except Exception as e:
             # Log the error but don't fail - FTS might already exist
             logger.debug(f"FTS index creation skipped: {e}")
@@ -236,8 +238,10 @@ class ChunkRepository:
         self.store.chunks_table = self.store.db.create_table(
             "chunks", schema=self.store.ChunkRecord
         )
-        # Create FTS index on the new table
-        self.store.chunks_table.create_fts_index("content", replace=True)
+        # Create FTS index on the new table with phrase query support
+        self.store.chunks_table.create_fts_index(
+            "content", replace=True, with_position=True, remove_stop_words=False
+        )
 
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""

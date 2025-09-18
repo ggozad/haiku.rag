@@ -118,8 +118,10 @@ class Store:
             self.chunks_table = self.db.open_table("chunks")
         else:
             self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
-            # Create FTS index on the new table
-            self.chunks_table.create_fts_index("content", replace=True)
+            # Create FTS index on the new table with phrase query support
+            self.chunks_table.create_fts_index(
+                "content", replace=True, with_position=True, remove_stop_words=False
+            )
 
         # Create or get settings table
         if "settings" in existing_tables:
@@ -222,8 +224,10 @@ class Store:
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
         self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
 
-        # Create FTS index on the new table
-        self.chunks_table.create_fts_index("content", replace=True)
+        # Create FTS index on the new table with phrase query support
+        self.chunks_table.create_fts_index(
+            "content", replace=True, with_position=True, remove_stop_words=False
+        )
 
     def close(self):
         """Close the database connection."""

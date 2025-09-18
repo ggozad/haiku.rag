@@ -1,15 +1,10 @@
-from __future__ import annotations
-
 import json
-from typing import TYPE_CHECKING
 
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
-from . import Upgrade
-
-if TYPE_CHECKING:  # pragma: no cover - for type hints only
-    from haiku.rag.store.engine import Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.upgrades import Upgrade
 
 
 def _infer_vector_dim(store: Store) -> int:
@@ -32,7 +27,6 @@ def _apply_chunk_order(store: Store) -> None:
 
     vector_dim = _infer_vector_dim(store)
 
-    # ============== Chunks: add 'order' column and backfill ==============
     class ChunkRecordV2(LanceModel):
         id: str
         document_id: str
@@ -88,7 +82,6 @@ def _apply_chunk_order(store: Store) -> None:
         pass
 
     store.chunks_table = store.db.create_table("chunks", schema=ChunkRecordV2)
-    # Recreate FTS index on content
     store.chunks_table.create_fts_index("content", replace=True)
 
     if new_chunk_records:
@@ -99,4 +92,21 @@ upgrade_order = Upgrade(
     version="0.9.3",
     apply=_apply_chunk_order,
     description="Add 'order' column to chunks and backfill from metadata",
+)
+
+
+def _apply_fts_phrase_support(store: Store) -> None:
+    """Recreate FTS index with phrase query support and no stop-word removal."""
+    try:
+        store.chunks_table.create_fts_index(
+            "content", replace=True, with_position=True, remove_stop_words=False
+        )
+    except Exception:
+        pass
+
+
+upgrade_fts_phrase = Upgrade(
+    version="0.9.3",
+    apply=_apply_fts_phrase_support,
+    description="Enable FTS phrase queries (with positions) and keep stop-words",
 )
