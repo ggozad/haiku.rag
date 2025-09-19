@@ -22,10 +22,8 @@ class SearchSpecialistAgent(BaseResearchAgent[SearchAnswer]):
         the QA response with the last search results as sources.
         """
         result = await super().run(prompt, deps, **kwargs)
-
-        if result.output:
-            deps.context.add_qa_response(result.output)
-
+        deps.context.add_qa_response(result.output)
+        deps.context.sub_questions.remove(prompt)
         return result
 
     def get_system_prompt(self) -> str:

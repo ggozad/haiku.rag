@@ -165,7 +165,7 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
                 break
 
             # Use current sub-questions for this iteration
-            questions_to_search = context.sub_questions
+            questions_to_search = context.sub_questions[:]
 
             # Search phase - answer all questions in this iteration
             self._log(
@@ -175,17 +175,8 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
                 self._log(f"   {i}. {q}")
 
             # Run searches for all questions and remove answered ones
-            answered_questions = []
             for search_question in questions_to_search:
-                try:
-                    await self.search_agent.run(search_question, deps=deps)
-                except Exception as e:  # pragma: no cover - defensive
-                    self._log(
-                        f"\n   [red]×[/red] Omitting failed question: {search_question} ({e})"
-                    )
-                finally:
-                    answered_questions.append(search_question)
-
+                await self.search_agent.run(search_question, deps=deps)
                 if self._console and context.qa_responses:
                     # Show the last QA response (which should be for this question)
                     latest_qa = context.qa_responses[-1]
@@ -196,11 +187,6 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
                     )
                     self._log(f"\n   [green]✓[/green] {search_question}")
                     self._log(f"      {answer_preview}")
-
-            # Remove answered questions from the list
-            for question in answered_questions:
-                if question in context.sub_questions:
-                    context.sub_questions.remove(question)
 
             # Analysis and Evaluation phase
             self._log(
