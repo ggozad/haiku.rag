@@ -36,7 +36,3 @@ class AnalysisEvaluationAgent(BaseResearchAgent[EvaluationResult]):
 
     def get_system_prompt(self) -> str:
         return EVALUATION_AGENT_PROMPT
-
-    def register_tools(self) -> None:
-        """No additional tools needed - uses LLM capabilities directly."""
-        pass

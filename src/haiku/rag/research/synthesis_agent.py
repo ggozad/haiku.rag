@@ -32,9 +32,3 @@ class SynthesisAgent(BaseResearchAgent[ResearchReport]):
 
     def get_system_prompt(self) -> str:
         return SYNTHESIS_AGENT_PROMPT
-
-    def register_tools(self) -> None:
-        """Register synthesis-specific tools."""
-        # The agent will use its LLM capabilities directly for synthesis
-        # The structured output will guide the report generation
-        pass

@@ -75,7 +75,6 @@ class BaseResearchAgent[T](ABC):
         """Return the system prompt for this agent."""
         pass
 
-    @abstractmethod
     def register_tools(self) -> None:
         """Register agent-specific tools."""
         pass

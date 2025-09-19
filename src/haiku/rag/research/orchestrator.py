@@ -53,11 +53,6 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
     def get_system_prompt(self) -> str:
         return ORCHESTRATOR_PROMPT
 
-    def register_tools(self) -> None:
-        """Register orchestration tools."""
-        # Tools are no longer needed - orchestrator directly calls agents
-        pass
-
     def _format_context_for_prompt(self, context: ResearchContext) -> str:
         """Format the research context as XML for inclusion in prompts."""
 
