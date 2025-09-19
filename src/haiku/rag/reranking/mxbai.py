@@ -1,4 +1,4 @@
-from mxbai_rerank import MxbaiRerankV2
+from mxbai_rerank import MxbaiRerankV2  # pyright: ignore[reportMissingImports]
 
 from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase

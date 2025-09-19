@@ -36,50 +36,69 @@ answer = await agent.answer("What is climate change?")
 print(answer)
 ```
 
-### Research Multi‑Agent
+### Research Graph
 
-The research workflow coordinates specialized agents to plan, search, analyze, and synthesize a comprehensive answer. It is designed for deeper questions that benefit from iterative investigation and structured reporting.
+The research workflow is implemented as a typed pydantic‑graph. It plans, searches (in parallel batches), evaluates, and synthesizes into a final report — with clear stop conditions and shared state.
 
-Components:
+```mermaid
+---
+title: Research graph
+---
+stateDiagram-v2
+  PlanNode --> SearchDispatchNode
+  SearchDispatchNode --> EvaluateNode
+  EvaluateNode --> SearchDispatchNode
+  EvaluateNode --> SynthesizeNode
+  SynthesizeNode --> [*]
+```
 
-- Orchestrator: Plans, coordinates, and loops until confidence is sufficient
-- Presearch Survey: Runs a quick KB scan and summarizes relevant chunk text to
-  ground the initial plan (plain-text summary; no URIs or scores)
-- Search Specialist: Performs targeted RAG searches and answers sub‑questions
-- Analysis & Evaluation: Extracts insights, identifies gaps, proposes new questions
-- Synthesis: Produces a final structured research report
+Key nodes:
+
+- Plan: builds up to 3 standalone sub‑questions (uses an internal presearch tool)
+- Search (batched): answers sub‑questions using the KB with minimal, verbatim context
+- Evaluate: extracts insights, proposes new questions, and checks sufficiency/confidence
+- Synthesize: generates a final structured report
 
 Primary models:
 
-- `ResearchPlan` — produced by the orchestrator when planning
-  - `main_question: str`
-  - `sub_questions: list[str]` (standalone, self‑contained queries)
-- `SearchAnswer` — produced by the search specialist for each sub‑question
-  - `query: str` — the executed sub‑question
-  - `answer: str` — the agent’s answer grounded in retrieved context
-  - `context: list[str]` — minimal verbatim snippets used for the answer
-  - `sources: list[str]` — document URIs aligned with `context`
-- `EvaluationResult` — insights, new standalone questions, sufficiency & confidence
-- `ResearchReport` — the final synthesized report
+- `SearchAnswer` — one per sub‑question (query, answer, context, sources)
+- `EvaluationResult` — insights, new questions, sufficiency, confidence
+- `ResearchReport` — final report (title, executive summary, findings, conclusions, …)
 
+CLI usage:
+
+```bash
+haiku-rag research "How does haiku.rag organize and query documents?" \
+  --max-iterations 2 \
+  --confidence-threshold 0.8 \
+  --max-concurrency 3 \
+  --verbose
+```
 
 Python usage:
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.research import ResearchOrchestrator
-
-client = HaikuRAG(path_to_db)
-orchestrator = ResearchOrchestrator(provider="ollama", model="gpt-oss")
-
-report = await orchestrator.conduct_research(
-    question="What are the main drivers and recent trends of global temperature anomalies since 1990?",
-    client=client,
-    max_iterations=2,
-    confidence_threshold=0.8,
-    verbose=True,
+from haiku.rag.research import (
+    ResearchContext,
+    ResearchDeps,
+    ResearchState,
+    build_research_graph,
+    PlanNode,
 )
 
-print(report.title)
-print(report.executive_summary)
+async with HaikuRAG(path_to_db) as client:
+    graph = build_research_graph()
+    state = ResearchState(
+        question="What are the main drivers and trends of global temperature anomalies since 1990?",
+        context=ResearchContext(original_question=... ),
+        max_iterations=2,
+        confidence_threshold=0.8,
+        max_concurrency=3,
+    )
+    deps = ResearchDeps(client=client)
+    result = await graph.run(PlanNode(provider=None, model=None), state=state, deps=deps)
+    report = result.output
+    print(report.title)
+    print(report.executive_summary)
 ```

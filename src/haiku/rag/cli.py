@@ -13,10 +13,10 @@ from haiku.rag.logging import configure_cli_logging
 from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
 
-logfire.configure(send_to_logfire="if-token-present")
-logfire.instrument_pydantic_ai()
-
-if not Config.ENV == "development":
+if Config.ENV == "development":
+    logfire.configure(send_to_logfire="if-token-present")
+    logfire.instrument_pydantic_ai()
+else:
     warnings.filterwarnings("ignore")
 
 cli = typer.Typer(
@@ -250,6 +250,16 @@ def research(
         "-n",
         help="Maximum search/analyze iterations",
     ),
+    confidence_threshold: float = typer.Option(
+        0.8,
+        "--confidence-threshold",
+        help="Minimum confidence (0-1) to stop",
+    ),
+    max_concurrency: int = typer.Option(
+        1,
+        "--max-concurrency",
+        help="Max concurrent searches per iteration (planned)",
+    ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
@@ -266,6 +276,8 @@ def research(
         app.research(
             question=question,
             max_iterations=max_iterations,
+            confidence_threshold=confidence_threshold,
+            max_concurrency=max_concurrency,
             verbose=verbose,
         )
     )

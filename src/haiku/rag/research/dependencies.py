@@ -1,9 +1,8 @@
 from pydantic import BaseModel, Field
-from pydantic_ai import format_as_xml
 from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.research.base import SearchAnswer
+from haiku.rag.research.models import SearchAnswer
 
 
 class ResearchContext(BaseModel):
@@ -13,7 +12,7 @@ class ResearchContext(BaseModel):
     sub_questions: list[str] = Field(
         default_factory=list, description="Decomposed sub-questions"
     )
-    qa_responses: list["SearchAnswer"] = Field(
+    qa_responses: list[SearchAnswer] = Field(
         default_factory=list, description="Structured QA pairs used during research"
     )
     insights: list[str] = Field(
@@ -23,7 +22,7 @@ class ResearchContext(BaseModel):
         default_factory=list, description="Identified information gaps"
     )
 
-    def add_qa_response(self, qa: "SearchAnswer") -> None:
+    def add_qa_response(self, qa: SearchAnswer) -> None:
         """Add a structured QA response (minimal context already included)."""
         self.qa_responses.append(qa)
 
@@ -46,24 +45,3 @@ class ResearchDependencies(BaseModel):
     client: HaikuRAG = Field(description="RAG client for document operations")
     context: ResearchContext = Field(description="Shared research context")
     console: Console | None = None
-
-
-def _format_context_for_prompt(context: ResearchContext) -> str:
-    """Format the research context as XML for inclusion in prompts."""
-
-    context_data = {
-        "original_question": context.original_question,
-        "unanswered_questions": context.sub_questions,
-        "qa_responses": [
-            {
-                "question": qa.query,
-                "answer": qa.answer,
-                "context_snippets": qa.context,
-                "sources": qa.sources,
-            }
-            for qa in context.qa_responses
-        ],
-        "insights": context.insights,
-        "gaps": context.gaps,
-    }
-    return format_as_xml(context_data, root_tag="research_context")

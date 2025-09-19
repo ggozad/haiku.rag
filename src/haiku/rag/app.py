@@ -9,7 +9,13 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
-from haiku.rag.research.orchestrator import ResearchOrchestrator
+from haiku.rag.research.dependencies import ResearchContext
+from haiku.rag.research.graph import (
+    PlanNode,
+    ResearchDeps,
+    ResearchState,
+    build_research_graph,
+)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -80,28 +86,53 @@ class HaikuRAGApp:
                 self.console.print(f"[red]Error: {e}[/red]")
 
     async def research(
-        self, question: str, max_iterations: int = 3, verbose: bool = False
+        self,
+        question: str,
+        max_iterations: int = 3,
+        confidence_threshold: float = 0.8,
+        max_concurrency: int = 1,
+        verbose: bool = False,
     ):
-        """Run multi-agent research on a question."""
+        """Run research via the pydantic-graph pipeline (default)."""
         async with HaikuRAG(db_path=self.db_path) as client:
             try:
-                # Create orchestrator with default config or fallback to QA
-                orchestrator = ResearchOrchestrator()
-
                 if verbose:
-                    self.console.print(
-                        f"[bold cyan]Starting research with {orchestrator.provider}:{orchestrator.model}[/bold cyan]"
-                    )
+                    self.console.print("[bold cyan]Starting research[/bold cyan]")
                     self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                     self.console.print()
 
-                # Conduct research
-                report = await orchestrator.conduct_research(
+                graph = build_research_graph()
+                state = ResearchState(
                     question=question,
-                    client=client,
+                    context=ResearchContext(original_question=question),
                     max_iterations=max_iterations,
-                    verbose=verbose,
+                    confidence_threshold=confidence_threshold,
+                    max_concurrency=max_concurrency,
                 )
+                deps = ResearchDeps(
+                    client=client, console=self.console if verbose else None
+                )
+
+                start = PlanNode(
+                    provider=Config.RESEARCH_PROVIDER or Config.QA_PROVIDER,
+                    model=Config.RESEARCH_MODEL or Config.QA_MODEL,
+                )
+                # Prefer graph.run; fall back to iter if unavailable
+                report = None
+                try:
+                    result = await graph.run(start, state=state, deps=deps)
+                    report = result.output
+                except Exception:
+                    from pydantic_graph import End
+
+                    async with graph.iter(start, state=state, deps=deps) as run:
+                        node = run.next_node
+                        while not isinstance(node, End):
+                            node = await run.next(node)
+                        if run.result:
+                            report = run.result.output
+                if report is None:
+                    raise RuntimeError("Graph did not produce a report")
 
                 # Display the report
                 self.console.print("[bold green]Research Report[/bold green]")
@@ -113,6 +144,12 @@ class HaikuRAGApp:
                 self.console.print("[bold cyan]Executive Summary:[/bold cyan]")
                 self.console.print(report.executive_summary)
                 self.console.print()
+
+                # Confidence (from last evaluation)
+                if state.last_eval:
+                    conf = state.last_eval.confidence_score  # type: ignore[attr-defined]
+                    self.console.print(f"[bold cyan]Confidence:[/bold cyan] {conf:.1%}")
+                    self.console.print()
 
                 # Main Findings
                 if report.main_findings:

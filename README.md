@@ -11,6 +11,7 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
 - **Multiple embedding providers**: Ollama, VoyageAI, OpenAI, vLLM
 - **Multiple QA providers**: Any provider/model supported by Pydantic AI
+- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
 - **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
 - **Reranking**: Default search result reranking with MixedBread AI, Cohere, or vLLM
 - **Question answering**: Built-in QA agents on your documents
@@ -38,6 +39,14 @@ haiku-rag ask "Who is the author of haiku.rag?"
 # Ask questions with citations
 haiku-rag ask "Who is the author of haiku.rag?" --cite
 
+# Multi‑agent research (iterative plan/search/evaluate)
+haiku-rag research \
+  "What are the main drivers and trends of global temperature anomalies since 1990?" \
+  --max-iterations 2 \
+  --confidence-threshold 0.8 \
+  --max-concurrency 3 \
+  --verbose
+
 # Rebuild database (re-chunk and re-embed all documents)
 haiku-rag rebuild
 
@@ -53,6 +62,13 @@ haiku-rag serve
 
 ```python
 from haiku.rag.client import HaikuRAG
+from haiku.rag.research import (
+    ResearchContext,
+    ResearchDeps,
+    ResearchState,
+    build_research_graph,
+    PlanNode,
+)
 
 async with HaikuRAG("database.lancedb") as client:
     # Add document
@@ -70,6 +86,25 @@ async with HaikuRAG("database.lancedb") as client:
     # Ask questions with citations
     answer = await client.ask("Who is the author of haiku.rag?", cite=True)
     print(answer)
+
+    # Multi‑agent research pipeline (Plan → Search → Evaluate → Synthesize)
+    graph = build_research_graph()
+    state = ResearchState(
+        question=(
+            "What are the main drivers and trends of global temperature "
+            "anomalies since 1990?"
+        ),
+        context=ResearchContext(original_question="…"),
+        max_iterations=2,
+        confidence_threshold=0.8,
+        max_concurrency=3,
+    )
+    deps = ResearchDeps(client=client)
+    start = PlanNode(provider=None, model=None)
+    result = await graph.run(start, state=state, deps=deps)
+    report = result.output
+    print(report.title)
+    print(report.executive_summary)
 ```
 
 ## MCP Server
