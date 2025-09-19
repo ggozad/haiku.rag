@@ -35,6 +35,7 @@ def create_chunk_model(vector_dim: int):
         document_id: str
         content: str
         metadata: str = Field(default="{}")
+        order: int = Field(default=0)
         vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
 
     return ChunkRecord
@@ -117,8 +118,10 @@ class Store:
             self.chunks_table = self.db.open_table("chunks")
         else:
             self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
-            # Create FTS index on the new table
-            self.chunks_table.create_fts_index("content", replace=True)
+            # Create FTS index on the new table with phrase query support
+            self.chunks_table.create_fts_index(
+                "content", replace=True, with_position=True, remove_stop_words=False
+            )
 
         # Create or get settings table
         if "settings" in existing_tables:
@@ -133,21 +136,41 @@ class Store:
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )
 
-        # Set current version in settings
-        current_version = metadata.version("haiku.rag")
-        self.set_haiku_version(current_version)
-
-        # Check if we need to perform upgrades
+        # Run pending upgrades based on stored version and package version
         try:
-            existing_settings = list(
-                self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
+            from haiku.rag.store.upgrades import run_pending_upgrades
+
+            current_version = metadata.version("haiku.rag")
+            db_version = self.get_haiku_version()
+
+            run_pending_upgrades(self, db_version, current_version)
+
+            # After upgrades complete (or if none), set stored version
+            # to the greater of the installed package version and the
+            # highest available upgrade step version in code.
+            try:
+                from packaging.version import parse as _v
+
+                from haiku.rag.store.upgrades import upgrades as _steps
+
+                highest_step = max((_v(u.version) for u in _steps), default=None)
+                effective_version = (
+                    str(max(_v(current_version), highest_step))
+                    if highest_step is not None
+                    else current_version
+                )
+            except Exception:
+                effective_version = current_version
+
+            self.set_haiku_version(effective_version)
+        except Exception as e:
+            # Avoid hard failure on initial connection; log and continue so CLI remains usable.
+            logger.warning(
+                "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
+                self.get_haiku_version(),
+                metadata.version("haiku.rag") if hasattr(metadata, "version") else "",
+                e,
             )
-            if existing_settings:
-                db_version = self.get_haiku_version()  # noqa: F841
-                # TODO: Add upgrade logic here similar to SQLite version when needed
-        except Exception:
-            # Settings table might not exist yet in fresh databases
-            pass
 
     def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""
@@ -201,8 +224,10 @@ class Store:
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
         self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
 
-        # Create FTS index on the new table
-        self.chunks_table.create_fts_index("content", replace=True)
+        # Create FTS index on the new table with phrase query support
+        self.chunks_table.create_fts_index(
+            "content", replace=True, with_position=True, remove_stop_words=False
+        )
 
     def close(self):
         """Close the database connection."""

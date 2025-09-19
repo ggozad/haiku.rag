@@ -43,10 +43,9 @@ async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
 
     assert len(chunks) > 0
 
-    # Verify chunk metadata contains order information
+    # Verify chunk order is set correctly
     for i, chunk in enumerate(chunks):
-        assert "order" in chunk.metadata
-        assert chunk.metadata["order"] == i
+        assert chunk.order == i
 
     store.close()
 
