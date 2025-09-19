@@ -46,6 +46,7 @@ class BaseResearchAgent[T](ABC):
             deps_type=ResearchDependencies,
             output_type=agent_output_type,
             system_prompt=self.get_system_prompt(),
+            retries=3,
         )
 
         # Register tools
