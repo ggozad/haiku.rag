@@ -108,40 +108,27 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
         # Use provided console or create a new one
         console = console or Console() if verbose else None
 
+        # Create initial research plan
         # Run a simple presearch survey to summarize KB context
         if console:
+            console.print("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
             console.print(
                 "\n[bold cyan]🔎 Presearch: summarizing KB context...[/bold cyan]"
             )
 
         presearch_result = await self.presearch_agent.run(question, deps=deps)
 
-        # Create initial research plan
-        if console:
-            console.print("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
-
-        # Include the presearch summary to ground the planning step.
-
-        planning_context_xml = format_as_xml(
-            {
-                "original_question": question,
-                "presearch_summary": presearch_result.output or "",
-            },
-            root_tag="planning_context",
-        )
-
         plan_prompt = (
             "Create a research plan for the main question below.\n\n"
             f"Main question: {question}\n\n"
             "Use this brief presearch summary to inform the plan. Focus the 3 sub-questions "
             "on the most important aspects not already obvious from the current KB context.\n\n"
-            f"{planning_context_xml}"
+            f"{presearch_result.output}"
         )
 
         plan_result: AgentRunResult[ResearchPlan] = await self.run(
             plan_prompt, deps=deps
         )
-
         context.sub_questions = plan_result.output.sub_questions
 
         if console:
