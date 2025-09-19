@@ -7,7 +7,7 @@ from haiku.rag.research.common import get_model, log
 from haiku.rag.research.dependencies import ResearchDependencies
 from haiku.rag.research.models import ResearchPlan, ResearchReport
 from haiku.rag.research.nodes.search import SearchDispatchNode
-from haiku.rag.research.prompts import ORCHESTRATOR_PROMPT
+from haiku.rag.research.prompts import PLAN_PROMPT
 from haiku.rag.research.state import ResearchDeps, ResearchState
 
 
@@ -28,7 +28,7 @@ class PlanNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             model=get_model(self.provider, self.model),
             output_type=ResearchPlan,
             instructions=(
-                ORCHESTRATOR_PROMPT
+                PLAN_PROMPT
                 + "\n\nUse the gather_context tool once on the main question before planning."
             ),
             retries=3,
