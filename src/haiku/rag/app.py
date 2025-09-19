@@ -101,7 +101,6 @@ class HaikuRAGApp:
                     client=client,
                     max_iterations=max_iterations,
                     verbose=verbose,
-                    console=self.console if verbose else None,
                 )
 
                 # Display the report

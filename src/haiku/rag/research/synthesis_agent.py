@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
+from pydantic_ai.run import AgentRunResult
 
 from haiku.rag.research.base import BaseResearchAgent
+from haiku.rag.research.dependencies import (
+    ResearchDependencies,
+    _format_context_for_prompt,
+)
 from haiku.rag.research.prompts import SYNTHESIS_AGENT_PROMPT
 
 
@@ -30,11 +35,26 @@ class SynthesisAgent(BaseResearchAgent[ResearchReport]):
     def __init__(self, provider: str, model: str) -> None:
         super().__init__(provider, model, output_type=ResearchReport)
 
+    async def run(
+        self, prompt: str, deps: ResearchDependencies, **kwargs
+    ) -> AgentRunResult[ResearchReport]:
+        console = deps.console
+        if console:
+            console.print(
+                "\n[bold cyan]📝 Generating final research report...[/bold cyan]"
+            )
+
+        context_xml = _format_context_for_prompt(deps.context)
+        synthesis_prompt = f"""Generate a comprehensive research report based on all gathered information.
+
+{context_xml}
+
+Create a detailed report that synthesizes all findings into a coherent response."""
+        result = await super().run(synthesis_prompt, deps, **kwargs)
+        if console:
+            console.print("[bold green]✅ Research complete![/bold green]")
+
+        return result
+
     def get_system_prompt(self) -> str:
         return SYNTHESIS_AGENT_PROMPT
-
-    def register_tools(self) -> None:
-        """Register synthesis-specific tools."""
-        # The agent will use its LLM capabilities directly for synthesis
-        # The structured output will guide the report generation
-        pass

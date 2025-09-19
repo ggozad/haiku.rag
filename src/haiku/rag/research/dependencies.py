@@ -1,4 +1,6 @@
 from pydantic import BaseModel, Field
+from pydantic_ai import format_as_xml
+from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.base import SearchAnswer
@@ -43,3 +45,25 @@ class ResearchDependencies(BaseModel):
 
     client: HaikuRAG = Field(description="RAG client for document operations")
     context: ResearchContext = Field(description="Shared research context")
+    console: Console | None = None
+
+
+def _format_context_for_prompt(context: ResearchContext) -> str:
+    """Format the research context as XML for inclusion in prompts."""
+
+    context_data = {
+        "original_question": context.original_question,
+        "unanswered_questions": context.sub_questions,
+        "qa_responses": [
+            {
+                "question": qa.query,
+                "answer": qa.answer,
+                "context_snippets": qa.context,
+                "sources": qa.sources,
+            }
+            for qa in context.qa_responses
+        ],
+        "insights": context.insights,
+        "gaps": context.gaps,
+    }
+    return format_as_xml(context_data, root_tag="research_context")
