@@ -38,7 +38,19 @@ print(answer)
 
 ### Research Graph
 
-The research workflow is now implemented as a typed pydantic‑graph. It plans, searches (in parallel batches), evaluates, and synthesizes into a final report — with clear stop conditions and shared state.
+The research workflow is implemented as a typed pydantic‑graph. It plans, searches (in parallel batches), evaluates, and synthesizes into a final report — with clear stop conditions and shared state.
+
+```mermaid
+---
+title: Research graph
+---
+stateDiagram-v2
+  PlanNode --> SearchDispatchNode
+  SearchDispatchNode --> EvaluateNode
+  EvaluateNode --> SearchDispatchNode
+  EvaluateNode --> SynthesizeNode
+  SynthesizeNode --> [*]
+```
 
 Key nodes:
 
