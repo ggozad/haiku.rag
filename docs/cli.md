@@ -84,6 +84,24 @@ haiku-rag ask "Who is the author of haiku.rag?" --cite
 
 The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used.
 
+## Research
+
+Run the multi-step research graph:
+
+```bash
+haiku-rag research "How does haiku.rag organize and query documents?" \
+  --max-iterations 2 \
+  --confidence-threshold 0.8 \
+  --max-concurrency 3 \
+  --verbose
+```
+
+Flags:
+- `--max-iterations, -n`: maximum search/evaluate cycles (default: 3)
+- `--confidence-threshold`: stop once evaluation confidence meets/exceeds this (default: 0.8)
+- `--max-concurrency`: number of sub-questions searched in parallel each iteration (default: 3)
+- `--verbose`: show planning, searching previews, evaluation summary, and stop reason
+
 ## Server
 
 Start the MCP server:
