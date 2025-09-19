@@ -45,7 +45,7 @@ class BaseResearchAgent[T](ABC):
             model=model_obj,
             deps_type=ResearchDependencies,
             output_type=agent_output_type,
-            system_prompt=self.get_system_prompt(),
+            instructions=self.get_system_prompt(),
             retries=3,
         )
 

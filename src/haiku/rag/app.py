@@ -86,7 +86,7 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path) as client:
             try:
                 # Create orchestrator with default config or fallback to QA
-                orchestrator = ResearchOrchestrator(verbose=verbose)
+                orchestrator = ResearchOrchestrator()
 
                 if verbose:
                     self.console.print(
@@ -100,6 +100,7 @@ class HaikuRAGApp:
                     question=question,
                     client=client,
                     max_iterations=max_iterations,
+                    verbose=verbose,
                 )
 
                 # Display the report

@@ -15,6 +15,12 @@ class PresearchSurveyAgent(BaseResearchAgent[str]):
     async def run(
         self, prompt: str, deps: ResearchDependencies, **kwargs
     ) -> AgentRunResult[str]:
+        console = deps.console
+        if console:
+            console.print(
+                "\n[bold cyan]🔎 Presearch: summarizing KB context...[/bold cyan]"
+            )
+
         return await super().run(prompt, deps, **kwargs)
 
     def get_system_prompt(self) -> str:
@@ -28,7 +34,6 @@ class PresearchSurveyAgent(BaseResearchAgent[str]):
             limit: int = 6,
         ) -> str:
             """Return verbatim concatenation of relevant chunk texts."""
-            query = query.replace('"', "")
             results = await ctx.deps.client.search(query, limit=limit)
             expanded = await ctx.deps.client.expand_context(results)
             return "\n\n".join(chunk.content for chunk, _ in expanded)

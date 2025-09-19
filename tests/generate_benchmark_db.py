@@ -12,7 +12,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
 
-logfire.configure()
+logfire.configure(send_to_logfire="if-token-present")
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
 console = Console()

@@ -70,17 +70,14 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.research import ResearchOrchestrator
 
 client = HaikuRAG(path_to_db)
-orchestrator = ResearchOrchestrator(
-    provider="ollama",
-    model="gpt-oss",
-    verbose=True
-)
+orchestrator = ResearchOrchestrator(provider="ollama", model="gpt-oss")
 
 report = await orchestrator.conduct_research(
     question="What are the main drivers and recent trends of global temperature anomalies since 1990?",
     client=client,
     max_iterations=2,
     confidence_threshold=0.8,
+    verbose=True,
 )
 
 print(report.title)

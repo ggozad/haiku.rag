@@ -21,9 +21,18 @@ class SearchSpecialistAgent(BaseResearchAgent[SearchAnswer]):
         Pydantic AI enforces `SearchAnswer` as the output model; we just store
         the QA response with the last search results as sources.
         """
+        console = deps.console
+        if console:
+            console.print(f"\t{prompt}")
+
         result = await super().run(prompt, deps, **kwargs)
         deps.context.add_qa_response(result.output)
         deps.context.sub_questions.remove(prompt)
+        if console:
+            answer = result.output.answer
+            answer_preview = answer[:150] + "…" if len(answer) > 150 else answer
+            console.log(f"\n   [green]✓[/green] {answer_preview}")
+
         return result
 
     def get_system_prompt(self) -> str:
@@ -39,9 +48,6 @@ class SearchSpecialistAgent(BaseResearchAgent[SearchAnswer]):
             limit: int = 5,
         ) -> str:
             """Search the KB and return a concise context pack."""
-            # Remove quotes from queries as this requires positional indexing in lancedb
-            # XXX: Investigate how to do that with lancedb
-            query = query.replace('"', "")
             search_results = await ctx.deps.client.search(query, limit=limit)
             expanded = await ctx.deps.client.expand_context(search_results)
 
