@@ -90,7 +90,7 @@ class HaikuRAGApp:
         question: str,
         max_iterations: int = 3,
         confidence_threshold: float = 0.8,
-        max_concurrency: int = 3,
+        max_concurrency: int = 1,
         verbose: bool = False,
     ):
         """Run research via the pydantic-graph pipeline (default)."""

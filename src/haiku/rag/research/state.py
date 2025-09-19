@@ -20,6 +20,6 @@ class ResearchState:
     sub_questions: list[str] = field(default_factory=list)
     iterations: int = 0
     max_iterations: int = 3
-    max_concurrency: int = 3
+    max_concurrency: int = 1
     confidence_threshold: float = 0.8
     last_eval: EvaluationResult | None = None

@@ -256,7 +256,7 @@ def research(
         help="Minimum confidence (0-1) to stop",
     ),
     max_concurrency: int = typer.Option(
-        3,
+        1,
         "--max-concurrency",
         help="Max concurrent searches per iteration (planned)",
     ),
