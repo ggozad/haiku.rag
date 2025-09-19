@@ -1111,7 +1111,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.9.3"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "docling" },
@@ -1120,6 +1120,7 @@ dependencies = [
     { name = "lancedb" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
+    { name = "pydantic-graph" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "tiktoken" },
@@ -1158,6 +1159,7 @@ requires-dist = [
     { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
     { name = "pydantic", specifier = ">=2.11.9" },
     { name = "pydantic-ai", specifier = ">=1.0.8" },
+    { name = "pydantic-graph", specifier = ">=1.0.8" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "tiktoken", specifier = ">=0.11.0" },
