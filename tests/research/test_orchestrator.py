@@ -4,6 +4,7 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchContext, ResearchDependencies
 from haiku.rag.research.evaluation_agent import EvaluationResult
 from haiku.rag.research.orchestrator import ResearchOrchestrator, ResearchPlan
@@ -70,7 +71,9 @@ class TestResearchOrchestrator:
 
     def test_orchestrator_initialization(self):
         """Test that orchestrator initializes all agents correctly."""
-        orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
+        orchestrator = ResearchOrchestrator(
+            provider=Config.RESEARCH_PROVIDER, model=Config.RESEARCH_MODEL
+        )
 
         # Check all agents are initialized
         assert orchestrator.search_agent is not None
@@ -78,21 +81,25 @@ class TestResearchOrchestrator:
         assert orchestrator.synthesis_agent is not None
 
         # Check they all use the same provider and model
-        assert orchestrator.search_agent.provider == "openai"
-        assert orchestrator.search_agent.model == "gpt-4"
-        assert orchestrator.evaluation_agent.provider == "openai"
-        assert orchestrator.evaluation_agent.model == "gpt-4"
-        assert orchestrator.synthesis_agent.provider == "openai"
-        assert orchestrator.synthesis_agent.model == "gpt-4"
+        assert orchestrator.search_agent.provider == Config.RESEARCH_PROVIDER
+        assert orchestrator.search_agent.model == Config.RESEARCH_MODEL
+        assert orchestrator.evaluation_agent.provider == Config.RESEARCH_PROVIDER
+        assert orchestrator.evaluation_agent.model == Config.RESEARCH_MODEL
+        assert orchestrator.synthesis_agent.provider == Config.RESEARCH_PROVIDER
+        assert orchestrator.synthesis_agent.model == Config.RESEARCH_MODEL
 
     def test_orchestrator_has_correct_output_type(self):
         """Test that orchestrator's output type is ResearchPlan."""
-        orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
+        orchestrator = ResearchOrchestrator(
+            provider=Config.RESEARCH_PROVIDER, model=Config.RESEARCH_MODEL
+        )
         assert orchestrator.output_type == ResearchPlan
 
     def test_orchestrator_has_no_tools(self):
         """Test that orchestrator no longer registers tools (direct agent calls now)."""
-        orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
+        orchestrator = ResearchOrchestrator(
+            provider=Config.RESEARCH_PROVIDER, model=Config.RESEARCH_MODEL
+        )
 
         # Get the tools from the agent
         tools = orchestrator.agent._function_toolset.tools
@@ -103,7 +110,9 @@ class TestResearchOrchestrator:
 
     def test_should_stop_research_logic(self):
         """Test the stopping logic based on EvaluationResult."""
-        orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
+        orchestrator = ResearchOrchestrator(
+            provider=Config.RESEARCH_PROVIDER, model=Config.RESEARCH_MODEL
+        )
 
         # Create mock evaluation results
         from unittest.mock import MagicMock
@@ -148,7 +157,9 @@ class TestResearchOrchestrator:
     @pytest.mark.asyncio
     async def test_conduct_research_workflow(self, test_model, mock_client):
         """Test the basic research workflow using TestModel."""
-        orchestrator = ResearchOrchestrator(provider="openai", model="gpt-4")
+        orchestrator = ResearchOrchestrator(
+            provider=Config.RESEARCH_PROVIDER, model=Config.RESEARCH_MODEL
+        )
 
         # Setup mock client returns
         mock_chunks = [
