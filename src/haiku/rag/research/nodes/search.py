@@ -36,11 +36,10 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             batch.append(state.sub_questions.pop(0))
 
         async def answer_one(sub_q: str) -> SearchAnswer | None:
-            if deps.console:
-                deps.console.print(
-                    f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {sub_q}"
-                )
-
+            log(
+                deps.console,
+                f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {sub_q}",
+            )
             agent = Agent(
                 model=get_model(self.provider, self.model),
                 output_type=ToolOutput(SearchAnswer, max_retries=3),
@@ -87,6 +86,6 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             state.context.add_qa_response(ans)
             if deps.console:
                 preview = ans.answer[:150] + ("…" if len(ans.answer) > 150 else "")
-                deps.console.log(f"   [green]✓[/green] {preview}")
+                log(deps.console, f"   [green]✓[/green] {preview}")
 
         return SearchDispatchNode(self.provider, self.model)

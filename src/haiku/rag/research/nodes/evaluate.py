@@ -57,16 +57,16 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         state.last_eval = output
         state.iterations += 1
 
-        if deps.console:
-            if output.key_insights:
-                deps.console.print("   [bold]Key insights:[/bold]")
-                for ins in output.key_insights:
-                    deps.console.print(f"   • {ins}")
-            deps.console.print(
-                f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]"
-            )
-            status = "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
-            deps.console.print(f"   Sufficient: {status}")
+        if output.key_insights:
+            log(deps.console, "   [bold]Key insights:[/bold]")
+            for ins in output.key_insights:
+                log(deps.console, f"   • {ins}")
+        log(
+            deps.console,
+            f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]",
+        )
+        status = "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
+        log(deps.console, f"   Sufficient: {status}")
 
         from haiku.rag.research.nodes.search import SearchDispatchNode
 
@@ -74,8 +74,7 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             output.is_sufficient
             and output.confidence_score >= state.confidence_threshold
         ) or state.iterations >= state.max_iterations:
-            if deps.console:
-                deps.console.print("\n[bold green]✅ Stopping research.[/bold green]")
+            log(deps.console, "\n[bold green]✅ Stopping research.[/bold green]")
             return SynthesizeNode(self.provider, self.model)
 
         return SearchDispatchNode(self.provider, self.model)
