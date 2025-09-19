@@ -31,7 +31,10 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
     """Orchestrator agent that coordinates the research workflow."""
 
     def __init__(
-        self, provider: str | None = Config.RESEARCH_PROVIDER, model: str | None = None
+        self,
+        provider: str | None = Config.RESEARCH_PROVIDER,
+        model: str | None = None,
+        verbose: bool = False,
     ):
         # Use provided values or fall back to config defaults
         provider = provider or Config.RESEARCH_PROVIDER or Config.QA_PROVIDER
@@ -49,6 +52,10 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
             provider, model
         )
         self.synthesis_agent: SynthesisAgent = SynthesisAgent(provider, model)
+        if verbose:
+            self._console = Console()
+
+        self.verbose = verbose
 
     def get_system_prompt(self) -> str:
         return ORCHESTRATOR_PROMPT
@@ -73,14 +80,30 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
         }
         return format_as_xml(context_data, root_tag="research_context")
 
+    def _should_stop_research(
+        self,
+        evaluation_result: AgentRunResult[EvaluationResult],
+        confidence_threshold: float,
+    ) -> bool:
+        """Determine if research should stop based on evaluation."""
+
+        result = evaluation_result.output
+        return result.is_sufficient and result.confidence_score >= confidence_threshold
+
+    def _log(self, line="", rule=False):
+        if not self._console:
+            return
+        if rule:
+            self._console.rule(line)
+        else:
+            self._console.print(line)
+
     async def conduct_research(
         self,
         question: str,
         client: Any,
         max_iterations: int = 3,
         confidence_threshold: float = 0.8,
-        verbose: bool = False,
-        console: Console | None = None,
     ) -> ResearchReport:
         """Conduct comprehensive research on a question.
 
@@ -100,16 +123,10 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
         context = ResearchContext(original_question=question)
         deps = ResearchDependencies(client=client, context=context)
 
-        # Use provided console or create a new one
-        console = console or Console() if verbose else None
-
         # Create initial research plan
         # Run a simple presearch survey to summarize KB context
-        if console:
-            console.print("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
-            console.print(
-                "\n[bold cyan]🔎 Presearch: summarizing KB context...[/bold cyan]"
-            )
+        self._log("\n[bold cyan]📋 Creating research plan...[/bold cyan]")
+        self._log("\n[bold cyan]🔎 Presearch: summarizing KB context...[/bold cyan]")
 
         presearch_result = await self.presearch_agent.run(question, deps=deps)
 
@@ -126,42 +143,36 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
         )
         context.sub_questions = plan_result.output.sub_questions
 
-        if console:
-            console.print("\n[bold green]✅ Research Plan Created:[/bold green]")
-            console.print(
-                f"   [bold]Main Question:[/bold] {plan_result.output.main_question}"
-            )
-            console.print("   [bold]Sub-questions:[/bold]")
-            for i, sq in enumerate(plan_result.output.sub_questions, 1):
-                console.print(f"      {i}. {sq}")
-            console.print()
+        self._log("\n[bold green]✅ Research Plan Created:[/bold green]")
+        self._log(f"   [bold]Main Question:[/bold] {plan_result.output.main_question}")
+        self._log("   [bold]Sub-questions:[/bold]")
+        for i, sq in enumerate(plan_result.output.sub_questions, 1):
+            self._log(f"      {i}. {sq}")
 
         # Execute research iterations
         for iteration in range(max_iterations):
-            if console:
-                console.rule(
-                    f"[bold yellow]🔄 Iteration {iteration + 1}/{max_iterations}[/bold yellow]"
-                )
+            self._log(
+                f"[bold yellow]🔄 Iteration {iteration + 1}/{max_iterations}[/bold yellow]",
+                rule=True,
+            )
 
             # Check if we have questions to search
             if not context.sub_questions:
                 # No more questions to explore
-                if console:
-                    console.print(
-                        "[yellow]No more questions to explore. Concluding research.[/yellow]"
-                    )
+                self._log(
+                    "[yellow]No more questions to explore. Concluding research.[/yellow]"
+                )
                 break
 
             # Use current sub-questions for this iteration
             questions_to_search = context.sub_questions
 
             # Search phase - answer all questions in this iteration
-            if console:
-                console.print(
-                    f"\n[bold cyan]🔍 Searching & Answering {len(questions_to_search)} questions:[/bold cyan]"
-                )
-                for i, q in enumerate(questions_to_search, 1):
-                    console.print(f"   {i}. {q}")
+            self._log(
+                f"\n[bold cyan]🔍 Searching & Answering {len(questions_to_search)} questions:[/bold cyan]"
+            )
+            for i, q in enumerate(questions_to_search, 1):
+                self._log(f"   {i}. {q}")
 
             # Run searches for all questions and remove answered ones
             answered_questions = []
@@ -169,27 +180,22 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
                 try:
                     await self.search_agent.run(search_question, deps=deps)
                 except Exception as e:  # pragma: no cover - defensive
-                    if console:
-                        console.print(
-                            f"\n   [red]×[/red] Omitting failed question: {search_question} ({e})"
-                        )
+                    self._log(
+                        f"\n   [red]×[/red] Omitting failed question: {search_question} ({e})"
+                    )
                 finally:
                     answered_questions.append(search_question)
 
-                if console and context.qa_responses:
+                if self._console and context.qa_responses:
                     # Show the last QA response (which should be for this question)
                     latest_qa = context.qa_responses[-1]
                     answer_preview = (
-                        latest_qa.answer[:150] + "..."
+                        latest_qa.answer[:150] + "…"
                         if len(latest_qa.answer) > 150
                         else latest_qa.answer
                     )
-                    console.print(
-                        f"\n   [green]✓[/green] {search_question[:50]}..."
-                        if len(search_question) > 50
-                        else f"\n   [green]✓[/green] {search_question}"
-                    )
-                    console.print(f"      {answer_preview}")
+                    self._log(f"\n   [green]✓[/green] {search_question}")
+                    self._log(f"      {answer_preview}")
 
             # Remove answered questions from the list
             for question in answered_questions:
@@ -197,10 +203,9 @@ class ResearchOrchestrator(BaseResearchAgent[ResearchPlan]):
                     context.sub_questions.remove(question)
 
             # Analysis and Evaluation phase
-            if console:
-                console.print(
-                    "\n[bold cyan]📊 Analyzing and evaluating research progress...[/bold cyan]"
-                )
+            self._log(
+                "\n[bold cyan]📊 Analyzing and evaluating research progress...[/bold cyan]"
+            )
 
             # Format context for the evaluation agent
             context_xml = self._format_context_for_prompt(context)
@@ -215,19 +220,14 @@ Evaluate the research progress for the original question and identify any remain
                 deps=deps,
             )
 
-            if console and evaluation_result.output:
-                output = evaluation_result.output
-                if output.key_insights:
-                    console.print("   [bold]Key insights:[/bold]")
-                    for insight in output.key_insights:
-                        console.print(f"   • {insight}")
-                console.print(
-                    f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]"
-                )
-                status = (
-                    "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
-                )
-                console.print(f"   Sufficient: {status}")
+            output = evaluation_result.output
+            if output.key_insights:
+                self._log("   [bold]Key insights:[/bold]")
+                for insight in output.key_insights:
+                    self._log(f"   • {insight}")
+            self._log(f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]")
+            status = "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
+            self._log(f"   Sufficient: {status}")
 
             # Store insights
             for insight in evaluation_result.output.key_insights:
@@ -240,17 +240,13 @@ Evaluate the research progress for the original question and identify any remain
 
             # Check if research is sufficient
             if self._should_stop_research(evaluation_result, confidence_threshold):
-                if console:
-                    console.print(
-                        f"\n[bold green]✅ Stopping research:[/bold green] {evaluation_result.output.reasoning}"
-                    )
+                self._log(
+                    f"\n[bold green]✅ Stopping research:[/bold green] {evaluation_result.output.reasoning}"
+                )
                 break
 
         # Generate final report
-        if console:
-            console.print(
-                "\n[bold cyan]📝 Generating final research report...[/bold cyan]"
-            )
+        self._log("\n[bold cyan]📝 Generating final research report...[/bold cyan]")
 
         # Format context for the synthesis agent
         final_context_xml = self._format_context_for_prompt(context)
@@ -264,19 +260,6 @@ Create a detailed report that synthesizes all findings into a coherent response.
             synthesis_prompt, deps=deps
         )
 
-        if console:
-            console.print("[bold green]✅ Research complete![/bold green]")
+        self._log("[bold green]✅ Research complete![/bold green]")
 
         return report_result.output
-
-    def _should_stop_research(
-        self,
-        evaluation_result: AgentRunResult[EvaluationResult],
-        confidence_threshold: float,
-    ) -> bool:
-        """Determine if research should stop based on evaluation."""
-
-        result = evaluation_result.output
-
-        # Stop if the agent indicates sufficient information AND confidence exceeds threshold
-        return result.is_sufficient and result.confidence_score >= confidence_threshold
