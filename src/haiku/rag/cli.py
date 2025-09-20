@@ -17,6 +17,7 @@ if Config.ENV == "development":
     logfire.configure(send_to_logfire="if-token-present")
     logfire.instrument_pydantic_ai()
 else:
+    configure_cli_logging()
     warnings.filterwarnings("ignore")
 
 cli = typer.Typer(
@@ -113,8 +114,9 @@ def main(
     ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    # Ensure only haiku.rag logs are emitted in CLI context
-    configure_cli_logging()
+    if Config.ENV != "development":
+        # Ensure only haiku.rag logs are emitted in CLI context
+        configure_cli_logging()
     # Run version check before any command
     asyncio.run(check_version())
 
