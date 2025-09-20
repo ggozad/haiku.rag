@@ -11,7 +11,6 @@ haiku-rag serve
 Transport options:
 - Default - Streamable HTTP transport
 - `--stdio` - Standard input/output transport
-- `--sse` - Server-sent events transport
 
 ## File Monitoring
 

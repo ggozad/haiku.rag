@@ -356,11 +356,6 @@ def serve(
         "--stdio",
         help="Run MCP server on stdio Transport",
     ),
-    sse: bool = typer.Option(
-        False,
-        "--sse",
-        help="Run MCP server on SSE transport",
-    ),
 ) -> None:
     """Start the MCP server."""
     from haiku.rag.app import HaikuRAGApp
@@ -370,8 +365,6 @@ def serve(
     transport = None
     if stdio:
         transport = "stdio"
-    elif sse:
-        transport = "sse"
 
     asyncio.run(app.serve(transport=transport))
 
