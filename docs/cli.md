@@ -111,9 +111,6 @@ haiku-rag serve
 
 # stdio transport
 haiku-rag serve --stdio
-
-# SSE transport
-haiku-rag serve --sse
 ```
 
 ## Settings

@@ -19,7 +19,7 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients.
 
 ## Starting MCP Server
 
-The MCP server starts automatically with the serve command and supports Streamable HTTP, stdio and SSE transports:
+The MCP server starts automatically with the serve command and supports Streamable HTTP and stdio transports:
 
 ```bash
 # Default streamable HTTP transport
@@ -27,7 +27,4 @@ haiku-rag serve
 
 # stdio transport (for Claude Desktop)
 haiku-rag serve --stdio
-
-# SSE transport
-haiku-rag serve --sse
 ```
