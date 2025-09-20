@@ -9,10 +9,6 @@ from io import BytesIO
 from pathlib import Path
 from types import ModuleType
 
-import httpx
-from docling.document_converter import DocumentConverter
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.io import DocumentStream
 from packaging.version import Version, parse
 
 
@@ -82,6 +78,9 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
         the running version and the latest version.
     """
 
+    # Lazy import to avoid pulling httpx (and its deps) on module import
+    import httpx
+
     async with httpx.AsyncClient() as client:
         running_version = parse(metadata.version("haiku.rag"))
         try:
@@ -94,7 +93,7 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
     return running_version >= pypi_version, running_version, pypi_version
 
 
-def text_to_docling_document(text: str, name: str = "content.md") -> DoclingDocument:
+def text_to_docling_document(text: str, name: str = "content.md"):
     """Convert text content to a DoclingDocument.
 
     Args:
@@ -104,6 +103,10 @@ def text_to_docling_document(text: str, name: str = "content.md") -> DoclingDocu
     Returns:
         A DoclingDocument created from the text content.
     """
+    # Lazy import docling deps to keep import-time light
+    from docling.document_converter import DocumentConverter  # type: ignore
+    from docling_core.types.io import DocumentStream  # type: ignore
+
     bytes_io = BytesIO(text.encode("utf-8"))
     doc_stream = DocumentStream(name=name, stream=bytes_io)
     converter = DocumentConverter()

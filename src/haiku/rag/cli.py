@@ -3,28 +3,15 @@ import warnings
 from importlib.metadata import version
 from pathlib import Path
 
-import logfire
 import typer
-from rich.console import Console
 
-from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import Config
 from haiku.rag.logging import configure_cli_logging
-from haiku.rag.migration import migrate_sqlite_to_lancedb
 from haiku.rag.utils import is_up_to_date
-
-if Config.ENV == "development":
-    logfire.configure(send_to_logfire="if-token-present")
-    logfire.instrument_pydantic_ai()
-else:
-    configure_cli_logging()
-    warnings.filterwarnings("ignore")
 
 cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
 )
-
-console = Console()
 
 
 def complete_document_ids(ctx: typer.Context, incomplete: str):
@@ -90,16 +77,16 @@ async def check_version():
     """Check if haiku.rag is up to date and show warning if not."""
     up_to_date, current_version, latest_version = await is_up_to_date()
     if not up_to_date:
-        console.print(
-            f"[yellow]Warning: haiku.rag is outdated. Current: {current_version}, Latest: {latest_version}[/yellow]"
+        typer.echo(
+            f"Warning: haiku.rag is outdated. Current: {current_version}, Latest: {latest_version}",
         )
-        console.print("[yellow]Please update.[/yellow]")
+        typer.echo("Please update.")
 
 
 def version_callback(value: bool):
     if value:
         v = version("haiku.rag")
-        console.print(f"haiku.rag version {v}")
+        typer.echo(f"haiku.rag version {v}")
         raise typer.Exit()
 
 
@@ -114,11 +101,26 @@ def main(
     ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    if Config.ENV != "development":
-        # Ensure only haiku.rag logs are emitted in CLI context
+    # Configure logging minimally for CLI context
+    if Config.ENV == "development":
+        # Lazy import logfire only in development
+        try:
+            import logfire  # type: ignore
+
+            logfire.configure(send_to_logfire="if-token-present")
+            logfire.instrument_pydantic_ai()
+        except Exception:
+            pass
+    else:
         configure_cli_logging()
+        warnings.filterwarnings("ignore")
+
     # Run version check before any command
-    asyncio.run(check_version())
+    try:
+        asyncio.run(check_version())
+    except Exception:
+        # Do not block CLI on version check issues
+        pass
 
 
 @cli.command("list", help="List all stored documents")
@@ -129,6 +131,8 @@ def list_documents(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.list_documents())
 
@@ -144,6 +148,8 @@ def add_document_text(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.add_document_from_text(text=text))
 
@@ -160,6 +166,8 @@ def add_document_src(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.add_document_from_source(source=source))
 
@@ -176,6 +184,8 @@ def get_document(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.get_document(doc_id=doc_id))
 
@@ -192,6 +202,8 @@ def delete_document(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.delete_document(doc_id=doc_id))
 
@@ -217,6 +229,8 @@ def search(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.search(query=query, limit=limit))
 
@@ -237,6 +251,8 @@ def ask(
         help="Include citations in the response",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.ask(question=question, cite=cite))
 
@@ -273,6 +289,8 @@ def research(
         help="Show verbose progress output",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(
         app.research(
@@ -287,6 +305,8 @@ def research(
 
 @cli.command("settings", help="Display current configuration settings")
 def settings():
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=Path())  # Don't need actual DB for settings
     app.show_settings()
 
@@ -302,6 +322,8 @@ def rebuild(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.rebuild())
 
@@ -314,6 +336,8 @@ def vacuum(
         help="Path to the LanceDB database file",
     ),
 ):
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=db)
     asyncio.run(app.vacuum())
 
@@ -339,9 +363,7 @@ def serve(
     ),
 ) -> None:
     """Start the MCP server."""
-    if stdio and sse:
-        console.print("[red]Error: Cannot use both --stdio and --http options[/red]")
-        raise typer.Exit(1)
+    from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
 
@@ -362,6 +384,9 @@ def migrate(
 ):
     # Generate LanceDB path in same parent directory
     lancedb_path = sqlite_path.parent / (sqlite_path.stem + ".lancedb")
+
+    # Lazy import to avoid heavy deps on simple invocations
+    from haiku.rag.migration import migrate_sqlite_to_lancedb
 
     success = asyncio.run(migrate_sqlite_to_lancedb(sqlite_path, lancedb_path))
 
