@@ -572,18 +572,21 @@ async def test_client_expand_context(temp_db_path):
     # Mock Config to have CONTEXT_CHUNK_RADIUS = 2
     with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 2):
         async with HaikuRAG(temp_db_path) as client:
-            # Create chunks manually
+            # Create chunks manually with precomputed embeddings to avoid network
+            dim = client.chunk_repository.embedder._vector_dim
+            z = [0.0] * dim
             manual_chunks = [
-                Chunk(content="Chunk 0 content", order=0),
-                Chunk(content="Chunk 1 content", order=1),
-                Chunk(content="Chunk 2 content", order=2),
-                Chunk(content="Chunk 3 content", order=3),
-                Chunk(content="Chunk 4 content", order=4),
+                Chunk(content="Chunk 0 content", order=0, embedding=z),
+                Chunk(content="Chunk 1 content", order=1, embedding=z),
+                Chunk(content="Chunk 2 content", order=2, embedding=z),
+                Chunk(content="Chunk 3 content", order=3, embedding=z),
+                Chunk(content="Chunk 4 content", order=4, embedding=z),
             ]
 
         doc = await client.create_document(
             content="Full document content",
             uri="test_doc.txt",
+            title="test_doc_title",
             chunks=manual_chunks,
         )
 
@@ -596,16 +599,18 @@ async def test_client_expand_context(temp_db_path):
         middle_chunk = next(c for c in chunks if c.order == 2)
         search_results = [(middle_chunk, 0.8)]
 
-        # Test expand_context with radius=2
+        # Test expand_context with radius=2 and document title preserved
         expanded_results = await client.expand_context(search_results, radius=2)
 
         assert len(expanded_results) == 1
         expanded_chunk, score = expanded_results[0]
 
-        # Check that the expanded chunk has combined content
+        # Check that the expanded chunk has combined content and preserves title/uri
         assert expanded_chunk.id == middle_chunk.id
         assert score == 0.8
         assert "Chunk 2 content" in expanded_chunk.content
+        assert expanded_chunk.document_title == "test_doc_title"
+        assert expanded_chunk.document_uri == "test_doc.txt"
 
         # Should include all chunks (radius=2 from chunk 2 = chunks 0,1,2,3,4)
         assert "Chunk 0 content" in expanded_chunk.content

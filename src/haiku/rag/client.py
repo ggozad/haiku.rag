@@ -459,6 +459,7 @@ class HaikuRAG:
                     content="".join(combined_content_parts),
                     metadata=original_chunk.metadata,
                     document_uri=original_chunk.document_uri,
+                    document_title=original_chunk.document_title,
                     document_meta=original_chunk.document_meta,
                 )
 
