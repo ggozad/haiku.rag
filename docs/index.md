@@ -15,6 +15,7 @@
 - **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, code files and more. Or add a URL!
 - **MCP server**: Exposes functionality as MCP tools
 - **CLI commands**: Access all functionality from your terminal
+  - Add sources from text, files, or URLs, optionally with a human‑readable title
 - **Python client**: Call `haiku.rag` from your own python applications
 
 ## Quick Start
@@ -42,6 +43,7 @@ async with HaikuRAG("database.lancedb") as client:
 Or use the CLI:
 ```bash
 haiku-rag add "Your document content"
+haiku-rag add-src /path/to/document.pdf --title "Q3 Financial Report"
 haiku-rag search "query"
 haiku-rag ask "Who is the author of haiku.rag?"
 haiku-rag migrate old_database.sqlite  # Migrate from SQLite

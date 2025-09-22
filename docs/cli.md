@@ -33,6 +33,9 @@ From file or URL:
 ```bash
 haiku-rag add-src /path/to/document.pdf
 haiku-rag add-src https://example.com/article.html
+
+# Optionally set a human‑readable title stored in the DB schema
+haiku-rag add-src /mnt/data/doc1.pdf --title "Q3 Financial Report"
 ```
 
 !!! note
@@ -83,6 +86,7 @@ haiku-rag ask "Who is the author of haiku.rag?" --cite
 ```
 
 The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used.
+When available, citations use the document title; otherwise they fall back to the URI.
 
 ## Research
 

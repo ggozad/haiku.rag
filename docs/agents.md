@@ -13,7 +13,8 @@ The simple QA agent answers a single question using the knowledge base. It retri
 Key points:
 
 - Uses a single `search_documents` tool to fetch relevant chunks
-- Can be run with or without inline citations in the prompt
+- Can be run with or without inline citations in the prompt (citations prefer
+  document titles when present, otherwise URIs)
 - Returns a plain string answer
 
 Python usage:
