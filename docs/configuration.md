@@ -211,6 +211,16 @@ Authentication is handled through standard cloud provider credentials (AWS CLI, 
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization is still performed locally.
 
+#### Disable database auto-creation
+
+By default, haiku.rag creates the local LanceDB directory and required tables on first use. To prevent accidental database creation and fail fast if a database hasn’t been set up yet, set:
+
+```bash
+DISABLE_DB_AUTOCREATE=true
+```
+
+When enabled, for local paths, haiku.rag errors if the LanceDB directory does not exist, and it will not create parent directories.
+
 ### Document Processing
 
 ```bash

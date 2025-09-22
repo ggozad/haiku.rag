@@ -54,6 +54,19 @@ class Store:
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
+        # Local filesystem handling for DB directory
+        if not self._has_cloud_config():
+            if Config.DISABLE_DB_AUTOCREATE:
+                # LanceDB uses a directory path for local databases; enforce presence
+                if not db_path.exists():
+                    raise FileNotFoundError(
+                        f"LanceDB path does not exist: {db_path}. Auto-creation is disabled."
+                    )
+            else:
+                # Ensure parent directories exist when autocreation allowed
+                if not db_path.parent.exists():
+                    Path.mkdir(db_path.parent, parents=True)
+
         # Connect to LanceDB
         self.db = self._connect_to_lancedb(db_path)
 

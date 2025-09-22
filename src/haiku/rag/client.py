@@ -33,8 +33,6 @@ class HaikuRAG:
             db_path: Path to the database file.
             skip_validation: Whether to skip configuration validation on database load.
         """
-        if not db_path.parent.exists():
-            Path.mkdir(db_path.parent, parents=True)
         self.store = Store(db_path, skip_validation=skip_validation)
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
