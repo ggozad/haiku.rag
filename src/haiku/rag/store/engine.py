@@ -19,6 +19,7 @@ class DocumentRecord(LanceModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     content: str
     uri: str | None = None
+    title: str | None = None
     metadata: str = Field(default="{}")
     created_at: str = Field(default_factory=lambda: "")
     updated_at: str = Field(default_factory=lambda: "")

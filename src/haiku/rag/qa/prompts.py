@@ -44,9 +44,9 @@ Guidelines:
 
 Citation Format:
 After your answer, include a "Citations:" section that lists:
-- The document URI from each search result used
+- The document title (if available) or URI from each search result used
 - A brief excerpt (first 50-100 characters) of the content that supported your answer
-- Format: "Citations:\n- [document_uri]: [content_excerpt]..."
+- Format: "Citations:\n- [document title or URI]: [content_excerpt]..."
 
 Example response format:
 [Your answer here]

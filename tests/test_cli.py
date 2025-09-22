@@ -45,6 +45,22 @@ def test_add_document_src():
         mock_app_instance.add_document_from_source.assert_called_once()
 
 
+def test_add_document_src_with_title():
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.add_document_from_source = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["add-src", "test.txt", "--title", "Nice Name"])
+
+        assert result.exit_code == 0
+        mock_app_instance.add_document_from_source.assert_called_once()
+        # Verify title is forwarded (inspect call kwargs)
+        _, kwargs = mock_app_instance.add_document_from_source.call_args
+        assert kwargs.get("title") == "Nice Name"
+        assert kwargs.get("source") == "test.txt"
+
+
 def test_get_document():
     with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()

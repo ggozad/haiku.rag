@@ -50,6 +50,7 @@ class HaikuRAG:
         self,
         docling_document,
         uri: str | None = None,
+        title: str | None = None,
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
     ) -> Document:
@@ -58,6 +59,7 @@ class HaikuRAG:
         document = Document(
             content=content,
             uri=uri,
+            title=title,
             metadata=metadata or {},
         )
         return await self.document_repository._create_with_docling(
@@ -68,6 +70,7 @@ class HaikuRAG:
         self,
         content: str,
         uri: str | None = None,
+        title: str | None = None,
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
     ) -> Document:
@@ -88,6 +91,7 @@ class HaikuRAG:
         document = Document(
             content=content,
             uri=uri,
+            title=title,
             metadata=metadata or {},
         )
         return await self.document_repository._create_with_docling(
@@ -95,7 +99,7 @@ class HaikuRAG:
         )
 
     async def create_document_from_source(
-        self, source: str | Path, metadata: dict = {}
+        self, source: str | Path, title: str | None = None, metadata: dict | None = None
     ) -> Document:
         """Create or update a document from a file path or URL.
 
@@ -116,11 +120,16 @@ class HaikuRAG:
             httpx.RequestError: If URL request fails
         """
 
+        # Normalize metadata
+        metadata = metadata or {}
+
         # Check if it's a URL
         source_str = str(source)
         parsed_url = urlparse(source_str)
         if parsed_url.scheme in ("http", "https"):
-            return await self._create_or_update_document_from_url(source_str, metadata)
+            return await self._create_or_update_document_from_url(
+                source_str, title=title, metadata=metadata
+            )
         elif parsed_url.scheme == "file":
             # Handle file:// URI by converting to path
             source_path = Path(parsed_url.path)
@@ -136,37 +145,51 @@ class HaikuRAG:
         uri = source_path.absolute().as_uri()
         md5_hash = hashlib.md5(source_path.read_bytes()).hexdigest()
 
-        # Check if document already exists
-        existing_doc = await self.get_document_by_uri(uri)
-        if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
-            # MD5 unchanged, return existing document
-            return existing_doc
-
-        docling_document = FileReader.parse_file(source_path)
-
-        # Get content type from file extension
+        # Get content type from file extension (do before early return)
         content_type, _ = mimetypes.guess_type(str(source_path))
         if not content_type:
             content_type = "application/octet-stream"
-
         # Merge metadata with contentType and md5
         metadata.update({"contentType": content_type, "md5": md5_hash})
+
+        # Check if document already exists
+        existing_doc = await self.get_document_by_uri(uri)
+        if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
+            # MD5 unchanged; update title/metadata if provided
+            updated = False
+            if title is not None and title != existing_doc.title:
+                existing_doc.title = title
+                updated = True
+            if metadata:
+                existing_doc.metadata = {**(existing_doc.metadata or {}), **metadata}
+                updated = True
+            if updated:
+                return await self.document_repository.update(existing_doc)
+            return existing_doc
+
+        # Parse file only when content changed or new document
+        docling_document = FileReader.parse_file(source_path)
 
         if existing_doc:
             # Update existing document
             existing_doc.content = docling_document.export_to_markdown()
             existing_doc.metadata = metadata
+            if title is not None:
+                existing_doc.title = title
             return await self.document_repository._update_with_docling(
                 existing_doc, docling_document
             )
         else:
             # Create new document using DoclingDocument
             return await self._create_document_with_docling(
-                docling_document=docling_document, uri=uri, metadata=metadata
+                docling_document=docling_document,
+                uri=uri,
+                title=title,
+                metadata=metadata,
             )
 
     async def _create_or_update_document_from_url(
-        self, url: str, metadata: dict = {}
+        self, url: str, title: str | None = None, metadata: dict | None = None
     ) -> Document:
         """Create or update a document from a URL by downloading and parsing the content.
 
@@ -186,20 +209,35 @@ class HaikuRAG:
             ValueError: If the content cannot be parsed
             httpx.RequestError: If URL request fails
         """
+        metadata = metadata or {}
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url)
             response.raise_for_status()
 
             md5_hash = hashlib.md5(response.content).hexdigest()
 
+            # Get content type early (used for potential no-op update)
+            content_type = response.headers.get("content-type", "").lower()
+
             # Check if document already exists
             existing_doc = await self.get_document_by_uri(url)
             if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
-                # MD5 unchanged, return existing document
+                # MD5 unchanged; update title/metadata if provided
+                updated = False
+                if title is not None and title != existing_doc.title:
+                    existing_doc.title = title
+                    updated = True
+                metadata.update({"contentType": content_type, "md5": md5_hash})
+                if metadata:
+                    existing_doc.metadata = {
+                        **(existing_doc.metadata or {}),
+                        **metadata,
+                    }
+                    updated = True
+                if updated:
+                    return await self.document_repository.update(existing_doc)
                 return existing_doc
-
-            # Get content type to determine file extension
-            content_type = response.headers.get("content-type", "").lower()
             file_extension = self._get_extension_from_content_type_or_url(
                 url, content_type
             )
@@ -226,12 +264,17 @@ class HaikuRAG:
             if existing_doc:
                 existing_doc.content = docling_document.export_to_markdown()
                 existing_doc.metadata = metadata
+                if title is not None:
+                    existing_doc.title = title
                 return await self.document_repository._update_with_docling(
                     existing_doc, docling_document
                 )
             else:
                 return await self._create_document_with_docling(
-                    docling_document=docling_document, uri=url, metadata=metadata
+                    docling_document=docling_document,
+                    uri=url,
+                    title=title,
+                    metadata=metadata,
                 )
 
     def _get_extension_from_content_type_or_url(
@@ -416,6 +459,7 @@ class HaikuRAG:
                     content="".join(combined_content_parts),
                     metadata=original_chunk.metadata,
                     document_uri=original_chunk.document_uri,
+                    document_title=original_chunk.document_title,
                     document_meta=original_chunk.document_meta,
                 )
 
@@ -522,7 +566,7 @@ class HaikuRAG:
 
                     # Try to re-create from source (this creates the document with chunks)
                     new_doc = await self.create_document_from_source(
-                        doc.uri, doc.metadata or {}
+                        source=doc.uri, metadata=doc.metadata or {}
                     )
 
                     assert new_doc.id is not None, "New document ID should not be None"

@@ -78,7 +78,9 @@ async def test_add_document_from_source(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.add_document_from_source(file_path)
 
-    mock_client.create_document_from_source.assert_called_once_with(file_path)
+    mock_client.create_document_from_source.assert_called_once_with(
+        file_path, title=None
+    )
     mock_rich_print.assert_called_once_with(mock_doc, truncate=True)
     mock_print.assert_called_once_with(
         "[b]Document with id [cyan]1[/cyan] added successfully.[/b]"

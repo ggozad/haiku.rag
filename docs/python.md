@@ -23,6 +23,7 @@ From text:
 doc = await client.create_document(
     content="Your document content here",
     uri="doc://example",
+    title="My Example Document",  # optional human‑readable title
     metadata={"source": "manual", "topic": "example"}
 )
 ```
@@ -54,12 +55,16 @@ doc = await client.create_document(
 
 From file:
 ```python
-doc = await client.create_document_from_source("path/to/document.pdf")
+doc = await client.create_document_from_source(
+    "path/to/document.pdf", title="Project Brief"
+)
 ```
 
 From URL:
 ```python
-doc = await client.create_document_from_source("https://example.com/article.html")
+doc = await client.create_document_from_source(
+    "https://example.com/article.html", title="Example Article"
+)
 ```
 
 ### Retrieving Documents
@@ -159,6 +164,7 @@ for chunk, relevance_score in results:
     print(f"Content: {chunk.content}")
     print(f"From document: {chunk.document_id}")
     print(f"Document URI: {chunk.document_uri}")
+    print(f"Document Title: {chunk.document_title}")  # when available
     print(f"Document metadata: {chunk.document_meta}")
 ```
 
@@ -201,7 +207,7 @@ answer = await client.ask("Who is the author of haiku.rag?", cite=True)
 print(answer)
 ```
 
-The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources.
+The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
 
 The QA provider and model can be configured via environment variables (see [Configuration](configuration.md)).
 

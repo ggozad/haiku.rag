@@ -39,9 +39,9 @@ class HaikuRAGApp:
                 f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
             )
 
-    async def add_document_from_source(self, source: str):
+    async def add_document_from_source(self, source: str, title: str | None = None):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            doc = await self.client.create_document_from_source(source)
+            doc = await self.client.create_document_from_source(source, title=title)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
                 f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
@@ -252,8 +252,16 @@ class HaikuRAGApp:
             content = Markdown(content)
         else:
             content = Markdown(doc.content)
+        title_part = (
+            f" [repr.attrib_name]title[/repr.attrib_name]: {doc.title}"
+            if doc.title
+            else ""
+        )
         self.console.print(
-            f"[repr.attrib_name]id[/repr.attrib_name]: {doc.id} [repr.attrib_name]uri[/repr.attrib_name]: {doc.uri} [repr.attrib_name]meta[/repr.attrib_name]: {doc.metadata}"
+            f"[repr.attrib_name]id[/repr.attrib_name]: {doc.id} "
+            f"[repr.attrib_name]uri[/repr.attrib_name]: {doc.uri}"
+            + title_part
+            + f" [repr.attrib_name]meta[/repr.attrib_name]: {doc.metadata}"
         )
         self.console.print(
             f"[repr.attrib_name]created at[/repr.attrib_name]: {doc.created_at} [repr.attrib_name]updated at[/repr.attrib_name]: {doc.updated_at}"
@@ -272,6 +280,9 @@ class HaikuRAGApp:
         if chunk.document_uri:
             self.console.print("[repr.attrib_name]document uri[/repr.attrib_name]:")
             self.console.print(chunk.document_uri)
+        if chunk.document_title:
+            self.console.print("[repr.attrib_name]document title[/repr.attrib_name]:")
+            self.console.print(chunk.document_title)
         if chunk.document_meta:
             self.console.print("[repr.attrib_name]document meta[/repr.attrib_name]:")
             self.console.print(chunk.document_meta)

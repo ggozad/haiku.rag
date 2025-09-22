@@ -106,6 +106,42 @@ async def test_client_create_document_from_source(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_client_create_document_from_source_with_title(temp_db_path):
+    """Test creating a document from a file source with a title."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_content = "This is test content from a file."
+            temp_path = Path(temp_dir) / "test_title.txt"
+            temp_path.write_text(test_content)
+
+            doc = await client.create_document_from_source(
+                source=temp_path, title="My Doc"
+            )
+            assert doc.id is not None
+            assert doc.title == "My Doc"
+
+
+@pytest.mark.asyncio
+async def test_client_update_title_noop_behavior(temp_db_path):
+    """When content is unchanged, updating title should update document without re-chunking."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test_update_title.txt"
+            temp_path.write_text("Original content")
+
+            doc1 = await client.create_document_from_source(temp_path, title="Title A")
+            assert doc1.id is not None
+
+            # Re-add with same content but new title
+            doc2 = await client.create_document_from_source(temp_path, title="Title B")
+            assert doc2.id == doc1.id
+            # Fetch and verify title updated
+            got = await client.get_document_by_id(doc1.id)
+            assert got is not None
+            assert got.title == "Title B"
+
+
+@pytest.mark.asyncio
 async def test_client_create_document_from_source_unsupported(temp_db_path):
     """Test creating a document from an unsupported file type."""
     async with HaikuRAG(temp_db_path) as client:
@@ -536,18 +572,21 @@ async def test_client_expand_context(temp_db_path):
     # Mock Config to have CONTEXT_CHUNK_RADIUS = 2
     with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 2):
         async with HaikuRAG(temp_db_path) as client:
-            # Create chunks manually
+            # Create chunks manually with precomputed embeddings to avoid network
+            dim = client.chunk_repository.embedder._vector_dim
+            z = [0.0] * dim
             manual_chunks = [
-                Chunk(content="Chunk 0 content", order=0),
-                Chunk(content="Chunk 1 content", order=1),
-                Chunk(content="Chunk 2 content", order=2),
-                Chunk(content="Chunk 3 content", order=3),
-                Chunk(content="Chunk 4 content", order=4),
+                Chunk(content="Chunk 0 content", order=0, embedding=z),
+                Chunk(content="Chunk 1 content", order=1, embedding=z),
+                Chunk(content="Chunk 2 content", order=2, embedding=z),
+                Chunk(content="Chunk 3 content", order=3, embedding=z),
+                Chunk(content="Chunk 4 content", order=4, embedding=z),
             ]
 
         doc = await client.create_document(
             content="Full document content",
             uri="test_doc.txt",
+            title="test_doc_title",
             chunks=manual_chunks,
         )
 
@@ -560,16 +599,18 @@ async def test_client_expand_context(temp_db_path):
         middle_chunk = next(c for c in chunks if c.order == 2)
         search_results = [(middle_chunk, 0.8)]
 
-        # Test expand_context with radius=2
+        # Test expand_context with radius=2 and document title preserved
         expanded_results = await client.expand_context(search_results, radius=2)
 
         assert len(expanded_results) == 1
         expanded_chunk, score = expanded_results[0]
 
-        # Check that the expanded chunk has combined content
+        # Check that the expanded chunk has combined content and preserves title/uri
         assert expanded_chunk.id == middle_chunk.id
         assert score == 0.8
         assert "Chunk 2 content" in expanded_chunk.content
+        assert expanded_chunk.document_title == "test_doc_title"
+        assert expanded_chunk.document_uri == "test_doc.txt"
 
         # Should include all chunks (radius=2 from chunk 2 = chunks 0,1,2,3,4)
         assert "Chunk 0 content" in expanded_chunk.content

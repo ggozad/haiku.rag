@@ -12,5 +12,6 @@ class Chunk(BaseModel):
     metadata: dict = {}
     order: int = 0
     document_uri: str | None = None
+    document_title: str | None = None
     document_meta: dict = {}
     embedding: list[float] | None = None
