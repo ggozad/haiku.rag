@@ -317,6 +317,7 @@ class ChunkRepository:
         )
 
         doc_uri = doc_results[0].uri if doc_results else None
+        doc_title = doc_results[0].title if doc_results else None
         doc_meta = doc_results[0].metadata if doc_results else "{}"
 
         chunks: list[Chunk] = []
@@ -330,6 +331,7 @@ class ChunkRepository:
                     metadata=md,
                     order=rec.order,
                     document_uri=doc_uri,
+                    document_title=doc_title,
                     document_meta=json.loads(doc_meta),
                 )
             )
@@ -398,6 +400,7 @@ class ChunkRepository:
             # Get document info from pre-fetched map
             doc = documents_map.get(chunk_record.document_id)
             doc_uri = doc.uri if doc else None
+            doc_title = doc.title if doc else None
             doc_meta = doc.metadata if doc else "{}"
 
             md = json.loads(chunk_record.metadata)
@@ -409,6 +412,7 @@ class ChunkRepository:
                 metadata=md,
                 order=chunk_record.order,
                 document_uri=doc_uri,
+                document_title=doc_title,
                 document_meta=json.loads(doc_meta),
             )
 

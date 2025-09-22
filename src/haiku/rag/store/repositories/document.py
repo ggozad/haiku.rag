@@ -34,7 +34,7 @@ class DocumentRepository:
             id=record.id,
             content=record.content,
             uri=record.uri,
-            title=getattr(record, "title", None),
+            title=record.title,
             metadata=json.loads(record.metadata),
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
