@@ -34,6 +34,7 @@ class DocumentRepository:
             id=record.id,
             content=record.content,
             uri=record.uri,
+            title=getattr(record, "title", None),
             metadata=json.loads(record.metadata),
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
@@ -56,6 +57,7 @@ class DocumentRepository:
             id=doc_id,
             content=entity.content,
             uri=entity.uri,
+            title=entity.title,
             metadata=json.dumps(entity.metadata),
             created_at=now,
             updated_at=now,
@@ -97,6 +99,7 @@ class DocumentRepository:
             values={
                 "content": entity.content,
                 "uri": entity.uri,
+                "title": entity.title,
                 "metadata": json.dumps(entity.metadata),
                 "updated_at": now,
             },

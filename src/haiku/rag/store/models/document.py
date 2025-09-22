@@ -11,6 +11,7 @@ class Document(BaseModel):
     id: str | None = None
     content: str
     uri: str | None = None
+    title: str | None = None
     metadata: dict = {}
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
