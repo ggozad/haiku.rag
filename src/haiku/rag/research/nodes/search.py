@@ -59,7 +59,9 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
                     {
                         "text": chunk.content,
                         "score": score,
-                        "document_uri": (chunk.document_uri or ""),
+                        "document_uri": (
+                            chunk.document_title or chunk.document_uri or ""
+                        ),
                     }
                     for chunk, score in expanded
                 ]

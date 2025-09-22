@@ -19,8 +19,8 @@ class SearchAnswer(BaseModel):
     )
     sources: list[str] = Field(
         description=(
-            "Document URIs corresponding to the snippets actually used in the"
-            " answer (one URI per snippet; omit if none)"
+            "Document titles (if available) or URIs corresponding to the"
+            " snippets actually used in the answer (one per snippet; omit if none)"
         ),
         default_factory=list,
     )

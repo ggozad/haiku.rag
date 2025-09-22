@@ -12,7 +12,9 @@ from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT, QA_SYSTEM_PROMPT_WITH_CITATIO
 class SearchResult(BaseModel):
     content: str = Field(description="The document text content")
     score: float = Field(description="Relevance score (higher is more relevant)")
-    document_uri: str = Field(description="Source URI/path of the document")
+    document_uri: str = Field(
+        description="Source title (if available) or URI/path of the document"
+    )
 
 
 class Dependencies(BaseModel):
@@ -59,7 +61,7 @@ class QuestionAnswerAgent:
                 SearchResult(
                     content=chunk.content,
                     score=score,
-                    document_uri=chunk.document_uri or "",
+                    document_uri=(chunk.document_title or chunk.document_uri or ""),
                 )
                 for chunk, score in expanded_results
             ]

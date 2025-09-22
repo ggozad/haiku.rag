@@ -107,6 +107,38 @@ async def test_chunks_include_document_info(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_chunks_include_document_title(temp_db_path):
+    """Test that search results include the parent document title when present."""
+    store = Store(temp_db_path)
+    doc_repo = DocumentRepository(store)
+    chunk_repo = ChunkRepository(store)
+
+    # Create a document with URI and title
+    document = Document(
+        content="This is a test document with a custom title to verify enrichment.",
+        uri="file:///tmp/title-test.md",
+        title="My Custom Title",
+    )
+
+    # Create the document with chunks
+    from haiku.rag.utils import text_to_docling_document
+
+    dl = text_to_docling_document(document.content, name="title-test.md")
+    await doc_repo._create_with_docling(document, dl)
+
+    # Perform a search that should find this document
+    results = await chunk_repo.search("custom title", limit=3, search_type="hybrid")
+
+    assert results, "Expected at least one search result"
+    for chunk, _ in results:
+        # All returned chunks for this doc should carry the document title
+        if chunk.document_uri == "file:///tmp/title-test.md":
+            assert chunk.document_title == "My Custom Title"
+
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_search_score_types(temp_db_path):
     """Test that different search types return appropriate score ranges."""
     store = Store(temp_db_path)
