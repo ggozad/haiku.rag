@@ -58,7 +58,7 @@ def _apply_add_document_title(store: Store) -> None:
 
 
 upgrade_add_title = Upgrade(
-    version="0.10.2",
+    version="0.10.1",
     apply=_apply_add_document_title,
     description="Add nullable 'title' column to documents table",
 )

@@ -55,8 +55,8 @@ def run_pending_upgrades(store: Store, from_version: str, to_version: str) -> No
 
 from .v0_9_3 import upgrade_fts_phrase as upgrade_0_9_3_fts  # noqa: E402
 from .v0_9_3 import upgrade_order as upgrade_0_9_3_order  # noqa: E402
-from .v0_10_2 import upgrade_add_title as upgrade_0_10_2_add_title  # noqa: E402
+from .v0_10_1 import upgrade_add_title as upgrade_0_10_1_add_title  # noqa: E402
 
 upgrades.append(upgrade_0_9_3_order)
 upgrades.append(upgrade_0_9_3_fts)
-upgrades.append(upgrade_0_10_2_add_title)
+upgrades.append(upgrade_0_10_1_add_title)
