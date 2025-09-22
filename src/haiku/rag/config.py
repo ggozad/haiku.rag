@@ -53,6 +53,10 @@ class AppConfig(BaseModel):
     ANTHROPIC_API_KEY: str = ""
     COHERE_API_KEY: str = ""
 
+    # If true, refuse to auto-create a new LanceDB database or tables
+    # and error out when the database does not already exist.
+    DISABLE_DB_AUTOCREATE: bool = False
+
     @field_validator("MONITOR_DIRECTORIES", mode="before")
     @classmethod
     def parse_monitor_directories(cls, v):
