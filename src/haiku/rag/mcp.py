@@ -17,6 +17,7 @@ class DocumentResult(BaseModel):
     id: str | None
     content: str
     uri: str | None = None
+    title: str | None = None
     metadata: dict[str, Any] = {}
     created_at: str
     updated_at: str
@@ -28,13 +29,15 @@ def create_mcp_server(db_path: Path) -> FastMCP:
 
     @mcp.tool()
     async def add_document_from_file(
-        file_path: str, metadata: dict[str, Any] | None = None
+        file_path: str,
+        metadata: dict[str, Any] | None = None,
+        title: str | None = None,
     ) -> str | None:
         """Add a document to the RAG system from a file path."""
         try:
             async with HaikuRAG(db_path) as rag:
                 document = await rag.create_document_from_source(
-                    Path(file_path), metadata or {}
+                    Path(file_path), title=title, metadata=metadata or {}
                 )
                 return document.id
         except Exception:
@@ -42,24 +45,31 @@ def create_mcp_server(db_path: Path) -> FastMCP:
 
     @mcp.tool()
     async def add_document_from_url(
-        url: str, metadata: dict[str, Any] | None = None
+        url: str, metadata: dict[str, Any] | None = None, title: str | None = None
     ) -> str | None:
         """Add a document to the RAG system from a URL."""
         try:
             async with HaikuRAG(db_path) as rag:
-                document = await rag.create_document_from_source(url, metadata or {})
+                document = await rag.create_document_from_source(
+                    url, title=title, metadata=metadata or {}
+                )
                 return document.id
         except Exception:
             return None
 
     @mcp.tool()
     async def add_document_from_text(
-        content: str, uri: str | None = None, metadata: dict[str, Any] | None = None
+        content: str,
+        uri: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        title: str | None = None,
     ) -> str | None:
         """Add a document to the RAG system from text content."""
         try:
             async with HaikuRAG(db_path) as rag:
-                document = await rag.create_document(content, uri, metadata or {})
+                document = await rag.create_document(
+                    content, uri, title=title, metadata=metadata or {}
+                )
                 return document.id
         except Exception:
             return None
@@ -102,6 +112,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                     id=document.id,
                     content=document.content,
                     uri=document.uri,
+                    title=document.title,
                     metadata=document.metadata,
                     created_at=str(document.created_at),
                     updated_at=str(document.updated_at),
@@ -123,6 +134,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                         id=doc.id,
                         content=doc.content,
                         uri=doc.uri,
+                        title=doc.title,
                         metadata=doc.metadata,
                         created_at=str(doc.created_at),
                         updated_at=str(doc.updated_at),

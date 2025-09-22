@@ -160,6 +160,11 @@ def add_document_src(
         help="The file path or URL of the document to add",
         autocompletion=complete_local_paths,
     ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Optional human-readable title to store with the document",
+    ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
@@ -169,7 +174,7 @@ def add_document_src(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.add_document_from_source(source=source))
+    asyncio.run(app.add_document_from_source(source=source, title=title))
 
 
 @cli.command("get", help="Get and display a document by its ID")

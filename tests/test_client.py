@@ -106,6 +106,42 @@ async def test_client_create_document_from_source(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_client_create_document_from_source_with_title(temp_db_path):
+    """Test creating a document from a file source with a title."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_content = "This is test content from a file."
+            temp_path = Path(temp_dir) / "test_title.txt"
+            temp_path.write_text(test_content)
+
+            doc = await client.create_document_from_source(
+                source=temp_path, title="My Doc"
+            )
+            assert doc.id is not None
+            assert doc.title == "My Doc"
+
+
+@pytest.mark.asyncio
+async def test_client_update_title_noop_behavior(temp_db_path):
+    """When content is unchanged, updating title should update document without re-chunking."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test_update_title.txt"
+            temp_path.write_text("Original content")
+
+            doc1 = await client.create_document_from_source(temp_path, title="Title A")
+            assert doc1.id is not None
+
+            # Re-add with same content but new title
+            doc2 = await client.create_document_from_source(temp_path, title="Title B")
+            assert doc2.id == doc1.id
+            # Fetch and verify title updated
+            got = await client.get_document_by_id(doc1.id)
+            assert got is not None
+            assert got.title == "Title B"
+
+
+@pytest.mark.asyncio
 async def test_client_create_document_from_source_unsupported(temp_db_path):
     """Test creating a document from an unsupported file type."""
     async with HaikuRAG(temp_db_path) as client:
