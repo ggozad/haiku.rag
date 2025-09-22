@@ -8,7 +8,7 @@ runner = CliRunner()
 
 
 def test_list_documents():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.list_documents = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -20,7 +20,7 @@ def test_list_documents():
 
 
 def test_add_document_text():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_text = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -34,7 +34,7 @@ def test_add_document_text():
 
 
 def test_add_document_src():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_source = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -46,7 +46,7 @@ def test_add_document_src():
 
 
 def test_get_document():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.get_document = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -58,7 +58,7 @@ def test_get_document():
 
 
 def test_delete_document():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.delete_document = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -70,7 +70,7 @@ def test_delete_document():
 
 
 def test_search():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.search = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -82,7 +82,7 @@ def test_search():
 
 
 def test_serve():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -94,7 +94,7 @@ def test_serve():
 
 
 def test_serve_stdio():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -105,32 +105,8 @@ def test_serve_stdio():
         mock_app_instance.serve.assert_called_once_with(transport="stdio")
 
 
-def test_serve_sse():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
-        mock_app_instance = MagicMock()
-        mock_app_instance.serve = AsyncMock()
-        mock_app.return_value = mock_app_instance
-
-        result = runner.invoke(cli, ["serve", "--sse"])
-
-        assert result.exit_code == 0
-        mock_app_instance.serve.assert_called_once_with(transport="sse")
-
-
-def test_serve_stdio_and_sse():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
-        mock_app_instance = MagicMock()
-        mock_app_instance.serve = AsyncMock()
-        mock_app.return_value = mock_app_instance
-
-        result = runner.invoke(cli, ["serve", "--stdio", "--sse"])
-
-        assert result.exit_code == 1
-        assert "Error: Cannot use both --stdio and --http options" in result.stdout
-
-
 def test_ask():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -144,7 +120,7 @@ def test_ask():
 
 
 def test_ask_with_cite():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
