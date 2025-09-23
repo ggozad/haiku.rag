@@ -1,7 +1,9 @@
 import asyncio
+import json
 import warnings
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -137,12 +139,12 @@ def list_documents(
     asyncio.run(app.list_documents())
 
 
-def _parse_meta_options(meta: list[str] | None) -> dict[str, str]:
+def _parse_meta_options(meta: list[str] | None) -> dict[str, Any]:
     """Parse repeated --meta KEY=VALUE options into a dictionary.
 
     Raises a Typer error if any entry is malformed.
     """
-    result: dict[str, str] = {}
+    result: dict[str, Any] = {}
     if not meta:
         return result
     for item in meta:
@@ -151,7 +153,13 @@ def _parse_meta_options(meta: list[str] | None) -> dict[str, str]:
         key, value = item.split("=", 1)
         if not key:
             raise typer.BadParameter("--meta key cannot be empty")
-        result[key] = value
+        # Best-effort JSON coercion: numbers, booleans, null, arrays/objects
+        try:
+            parsed = json.loads(value)
+            result[key] = parsed
+        except Exception:
+            # Leave as string if not valid JSON literal
+            result[key] = value
     return result
 
 

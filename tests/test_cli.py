@@ -112,6 +112,31 @@ def test_add_document_src_with_meta():
         assert kwargs.get("metadata") == {"source": "manual", "lang": "en"}
 
 
+def test_add_document_text_with_numeric_meta():
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.add_document_from_text = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(
+            cli,
+            [
+                "add",
+                "some text",
+                "--meta",
+                "version=3",
+                "--meta",
+                "published=true",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_app_instance.add_document_from_text.assert_called_once()
+        _, kwargs = mock_app_instance.add_document_from_text.call_args
+        assert kwargs.get("text") == "some text"
+        assert kwargs.get("metadata") == {"version": 3, "published": True}
+
+
 def test_get_document():
     with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()

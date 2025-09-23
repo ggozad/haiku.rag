@@ -40,8 +40,9 @@ haiku-rag add-src https://example.com/article.html
 # Optionally set a human‑readable title stored in the DB schema
 haiku-rag add-src /mnt/data/doc1.pdf --title "Q3 Financial Report"
 
-# Optionally attach metadata (repeat --meta)
-haiku-rag add-src /mnt/data/doc1.pdf --meta source=manual --meta lang=en
+# Optionally attach metadata (repeat --meta). Values use JSON parsing if possible:
+# numbers, booleans, null, arrays/objects; otherwise kept as strings.
+haiku-rag add-src /mnt/data/doc1.pdf --meta source=manual --meta page_count=12 --meta published=true
 ```
 
 !!! note
