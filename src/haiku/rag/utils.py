@@ -163,3 +163,37 @@ def load_callable(path: str):
             f"Attribute '{func_name}' in module '{module_part}' is not callable"
         )
     return func
+
+
+def prefetch_models():
+    """Prefetch runtime models (Docling + Ollama as configured)."""
+    import httpx
+    from docling.utils.model_downloader import download_models
+
+    from haiku.rag.config import Config
+
+    download_models()
+
+    # Collect Ollama models from config
+    required_models: set[str] = set()
+    if Config.EMBEDDINGS_PROVIDER == "ollama":
+        required_models.add(Config.EMBEDDINGS_MODEL)
+    if Config.QA_PROVIDER == "ollama":
+        required_models.add(Config.QA_MODEL)
+    if Config.RESEARCH_PROVIDER == "ollama":
+        required_models.add(Config.RESEARCH_MODEL)
+    if Config.RERANK_PROVIDER == "ollama":
+        required_models.add(Config.RERANK_MODEL)
+
+    if not required_models:
+        return
+
+    base_url = Config.OLLAMA_BASE_URL
+
+    with httpx.Client(timeout=None) as client:
+        for model in sorted(required_models):
+            with client.stream(
+                "POST", f"{base_url}/api/pull", json={"model": model}
+            ) as r:
+                for _ in r.iter_lines():
+                    pass

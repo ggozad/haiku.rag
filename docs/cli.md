@@ -163,6 +163,18 @@ when want to switch embeddings provider or model:
 haiku-rag rebuild
 ```
 
+### Download Models
+
+Download required runtime models:
+
+```bash
+haiku-rag download-models
+```
+
+This command:
+- Downloads Docling OCR/conversion models (no-op if already present).
+- Pulls Ollama models referenced in your configuration (embeddings, QA, research, rerank).
+
 ## Migration
 
 ### Migrate from SQLite to LanceDB
