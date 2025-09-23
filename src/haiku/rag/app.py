@@ -38,9 +38,6 @@ class HaikuRAGApp:
             f"  [repr.attrib_name]path[/repr.attrib_name]: {self.db_path}"
         )
 
-        # Prevent accidental creation: require existing local path
-        # (For cloud/object storage users, info should be invoked with proper env vars and
-        #  an existing local cache/path if applicable.)
         if not self.db_path.exists():
             self.console.print("[red]Database path does not exist.[/red]")
             return
@@ -53,11 +50,18 @@ class HaikuRAGApp:
             self.console.print(f"[red]Failed to open database: {e}[/red]")
             return
 
-        # Resolve LanceDB version (best-effort)
         try:
             ldb_version = pkg_version("lancedb")
         except Exception:
             ldb_version = "unknown"
+        try:
+            hr_version = pkg_version("haiku.rag")
+        except Exception:
+            hr_version = "unknown"
+        try:
+            docling_version = pkg_version("docling")
+        except Exception:
+            docling_version = "unknown"
 
         # Read settings (if present) to find stored haiku.rag version and embedding config
         stored_version = "unknown"
@@ -81,13 +85,11 @@ class HaikuRAGApp:
                     else None
                 )
 
-        # Count documents efficiently (best-effort, avoiding full scans)
         num_docs = 0
         if "documents" in table_names:
             docs_tbl = db.open_table("documents")
             num_docs = int(docs_tbl.count_rows())  # type: ignore[attr-defined]
 
-        # Render collected info
         self.console.print(
             f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
         )
@@ -104,10 +106,18 @@ class HaikuRAGApp:
                 "  [repr.attrib_name]embeddings[/repr.attrib_name]: unknown"
             )
         self.console.print(
+            f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs}"
+        )
+        self.console.rule()
+        self.console.print("[bold]Versions[/bold]")
+        self.console.print(
+            f"  [repr.attrib_name]haiku.rag[/repr.attrib_name]: {hr_version}"
+        )
+        self.console.print(
             f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {ldb_version}"
         )
         self.console.print(
-            f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs}"
+            f"  [repr.attrib_name]docling[/repr.attrib_name]: {docling_version}"
         )
 
     async def list_documents(self):

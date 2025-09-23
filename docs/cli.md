@@ -138,8 +138,12 @@ Shows:
 - path to the database
 - stored haiku.rag version (from settings)
 - embeddings provider/model and vector dimension
-- LanceDB version
 - number of documents
+
+At the end, a separate “Versions” section lists runtime package versions:
+- haiku.rag
+- lancedb
+- docling
 
 ### Vacuum (Optimize and Cleanup)
 
