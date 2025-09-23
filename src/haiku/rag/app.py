@@ -121,7 +121,7 @@ class HaikuRAGApp:
             doc = await self.client.create_document(text)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
-                f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
+                f"[bold green]Document {doc.id} added successfully.[/bold green]"
             )
 
     async def add_document_from_source(self, source: str, title: str | None = None):
@@ -129,7 +129,7 @@ class HaikuRAGApp:
             doc = await self.client.create_document_from_source(source, title=title)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
-                f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
+                f"[bold green]Document {doc.id} added successfully.[/bold green]"
             )
 
     async def get_document(self, doc_id: str):
@@ -144,7 +144,9 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
-                self.console.print(f"[b]Document {doc_id} deleted successfully.[/b]")
+                self.console.print(
+                    f"[bold green]Document {doc_id} deleted successfully.[/bold green]"
+                )
             else:
                 self.console.print(
                     f"[yellow]Document with id {doc_id} not found.[/yellow]"
@@ -154,7 +156,7 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path) as self.client:
             results = await self.client.search(query, limit=limit)
             if not results:
-                self.console.print("[red]No results found.[/red]")
+                self.console.print("[yellow]No results found.[/yellow]")
                 return
             for chunk, score in results:
                 self._rich_print_search_result(chunk, score)
@@ -287,14 +289,16 @@ class HaikuRAGApp:
                     return
 
                 self.console.print(
-                    f"[b]Rebuilding database with {total_docs} documents...[/b]"
+                    f"[bold cyan]Rebuilding database with {total_docs} documents...[/bold cyan]"
                 )
                 with Progress() as progress:
                     task = progress.add_task("Rebuilding...", total=total_docs)
                     async for _ in client.rebuild_database():
                         progress.update(task, advance=1)
 
-                self.console.print("[b]Database rebuild completed successfully.[/b]")
+                self.console.print(
+                    "[bold green]Database rebuild completed successfully.[/bold green]"
+                )
             except Exception as e:
                 self.console.print(f"[red]Error rebuilding database: {e}[/red]")
 
@@ -303,7 +307,9 @@ class HaikuRAGApp:
         try:
             async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:
                 await client.vacuum()
-            self.console.print("[b]Vacuum completed successfully.[/b]")
+            self.console.print(
+                "[bold green]Vacuum completed successfully.[/bold green]"
+            )
         except Exception as e:
             self.console.print(f"[red]Error during vacuum: {e}[/red]")
 
@@ -325,7 +331,9 @@ class HaikuRAGApp:
             else:
                 display_value = field_value
 
-            self.console.print(f"  [cyan]{field_name}[/cyan]: {display_value}")
+            self.console.print(
+                f"  [repr.attrib_name]{field_name}[/repr.attrib_name]: {display_value}"
+            )
 
     def _rich_print_document(self, doc: Document, truncate: bool = False):
         """Format a document for display."""

@@ -57,7 +57,7 @@ async def test_add_document_from_text(app: HaikuRAGApp, monkeypatch):
     mock_client.create_document.assert_called_once_with("test document")
     mock_rich_print.assert_called_once_with(mock_doc, truncate=True)
     mock_print.assert_called_once_with(
-        "[b]Document with id [cyan]1[/cyan] added successfully.[/b]"
+        "[bold green]Document 1 added successfully.[/bold green]"
     )
 
 
@@ -83,7 +83,7 @@ async def test_add_document_from_source(app: HaikuRAGApp, monkeypatch):
     )
     mock_rich_print.assert_called_once_with(mock_doc, truncate=True)
     mock_print.assert_called_once_with(
-        "[b]Document with id [cyan]1[/cyan] added successfully.[/b]"
+        "[bold green]Document 1 added successfully.[/bold green]"
     )
 
 
@@ -135,7 +135,9 @@ async def test_delete_document(app: HaikuRAGApp, monkeypatch):
         await app.delete_document("1")
 
     mock_client.delete_document.assert_called_once_with("1")
-    mock_print.assert_called_once_with("[b]Document 1 deleted successfully.[/b]")
+    mock_print.assert_called_once_with(
+        "[bold green]Document 1 deleted successfully.[/bold green]"
+    )
 
 
 @pytest.mark.asyncio
@@ -170,7 +172,7 @@ async def test_search_no_results(app: HaikuRAGApp, monkeypatch):
         await app.search("query")
 
     mock_client.search.assert_called_once_with("query", limit=5)
-    mock_print.assert_called_once_with("[red]No results found.[/red]")
+    mock_print.assert_called_once_with("[yellow]No results found.[/yellow]")
 
 
 @pytest.mark.asyncio
