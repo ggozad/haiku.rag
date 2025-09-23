@@ -361,6 +361,18 @@ def info(
     asyncio.run(app.info())
 
 
+@cli.command("download-models", help="Download Docling and Ollama models per config")
+def download_models_cmd():
+    from haiku.rag.utils import prefetch_models
+
+    try:
+        prefetch_models()
+        typer.echo("Models downloaded successfully.")
+    except Exception as e:
+        typer.echo(f"Error downloading models: {e}")
+        raise typer.Exit(1)
+
+
 @cli.command(
     "serve", help="Start the haiku.rag MCP server (by default in streamable HTTP mode)"
 )

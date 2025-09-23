@@ -72,3 +72,13 @@ VLLM_RERANK_BASE_URL="http://localhost:8001"
 - Python 3.10+
 - Ollama (for default embeddings)
 - vLLM server (for vLLM provider)
+
+## Pre-download Models (Optional)
+
+You can prefetch all required runtime models before first use:
+
+```bash
+haiku-rag download-models
+```
+
+This will download Docling models and pull any Ollama models referenced by your current configuration.
