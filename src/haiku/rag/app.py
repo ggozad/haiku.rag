@@ -1,4 +1,6 @@
 import asyncio
+import json
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from rich.console import Console
@@ -25,6 +27,117 @@ class HaikuRAGApp:
         self.db_path = db_path
         self.console = Console()
 
+    async def info(self):
+        """Display read-only information about the database without modifying it."""
+
+        import lancedb
+
+        # Basic: show path
+        self.console.print("[bold]haiku.rag database info[/bold]")
+        self.console.print(
+            f"  [repr.attrib_name]path[/repr.attrib_name]: {self.db_path}"
+        )
+
+        if not self.db_path.exists():
+            self.console.print("[red]Database path does not exist.[/red]")
+            return
+
+        # Connect without going through Store to avoid upgrades/validation writes
+        try:
+            db = lancedb.connect(self.db_path)
+            table_names = set(db.table_names())
+        except Exception as e:
+            self.console.print(f"[red]Failed to open database: {e}[/red]")
+            return
+
+        try:
+            ldb_version = pkg_version("lancedb")
+        except Exception:
+            ldb_version = "unknown"
+        try:
+            hr_version = pkg_version("haiku.rag")
+        except Exception:
+            hr_version = "unknown"
+        try:
+            docling_version = pkg_version("docling")
+        except Exception:
+            docling_version = "unknown"
+
+        # Read settings (if present) to find stored haiku.rag version and embedding config
+        stored_version = "unknown"
+        embed_provider: str | None = None
+        embed_model: str | None = None
+        vector_dim: int | None = None
+
+        if "settings" in table_names:
+            settings_tbl = db.open_table("settings")
+            arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
+            rows = arrow.to_pylist() if arrow is not None else []
+            if rows:
+                raw = rows[0].get("settings") or "{}"
+                data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                stored_version = str(data.get("version", stored_version))
+                embed_provider = data.get("EMBEDDINGS_PROVIDER")
+                embed_model = data.get("EMBEDDINGS_MODEL")
+                vector_dim = (
+                    int(data.get("EMBEDDINGS_VECTOR_DIM"))  # pyright: ignore[reportArgumentType]
+                    if data.get("EMBEDDINGS_VECTOR_DIM") is not None
+                    else None
+                )
+
+        num_docs = 0
+        if "documents" in table_names:
+            docs_tbl = db.open_table("documents")
+            num_docs = int(docs_tbl.count_rows())  # type: ignore[attr-defined]
+
+        # Table versions per table (direct API)
+        doc_versions = (
+            len(list(db.open_table("documents").list_versions()))
+            if "documents" in table_names
+            else 0
+        )
+        chunk_versions = (
+            len(list(db.open_table("chunks").list_versions()))
+            if "chunks" in table_names
+            else 0
+        )
+
+        self.console.print(
+            f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
+        )
+        if embed_provider or embed_model or vector_dim:
+            provider_part = embed_provider or "unknown"
+            model_part = embed_model or "unknown"
+            dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
+            self.console.print(
+                "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
+                f"{provider_part}/{model_part} (dim: {dim_part})"
+            )
+        else:
+            self.console.print(
+                "  [repr.attrib_name]embeddings[/repr.attrib_name]: unknown"
+            )
+        self.console.print(
+            f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: {doc_versions}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]versions (chunks)[/repr.attrib_name]: {chunk_versions}"
+        )
+        self.console.rule()
+        self.console.print("[bold]Versions[/bold]")
+        self.console.print(
+            f"  [repr.attrib_name]haiku.rag[/repr.attrib_name]: {hr_version}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {ldb_version}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]docling[/repr.attrib_name]: {docling_version}"
+        )
+
     async def list_documents(self):
         async with HaikuRAG(db_path=self.db_path) as self.client:
             documents = await self.client.list_documents()
@@ -36,7 +149,7 @@ class HaikuRAGApp:
             doc = await self.client.create_document(text)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
-                f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
+                f"[bold green]Document {doc.id} added successfully.[/bold green]"
             )
 
     async def add_document_from_source(self, source: str, title: str | None = None):
@@ -44,7 +157,7 @@ class HaikuRAGApp:
             doc = await self.client.create_document_from_source(source, title=title)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
-                f"[b]Document with id [cyan]{doc.id}[/cyan] added successfully.[/b]"
+                f"[bold green]Document {doc.id} added successfully.[/bold green]"
             )
 
     async def get_document(self, doc_id: str):
@@ -59,7 +172,9 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
-                self.console.print(f"[b]Document {doc_id} deleted successfully.[/b]")
+                self.console.print(
+                    f"[bold green]Document {doc_id} deleted successfully.[/bold green]"
+                )
             else:
                 self.console.print(
                     f"[yellow]Document with id {doc_id} not found.[/yellow]"
@@ -69,7 +184,7 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path) as self.client:
             results = await self.client.search(query, limit=limit)
             if not results:
-                self.console.print("[red]No results found.[/red]")
+                self.console.print("[yellow]No results found.[/yellow]")
                 return
             for chunk, score in results:
                 self._rich_print_search_result(chunk, score)
@@ -202,14 +317,16 @@ class HaikuRAGApp:
                     return
 
                 self.console.print(
-                    f"[b]Rebuilding database with {total_docs} documents...[/b]"
+                    f"[bold cyan]Rebuilding database with {total_docs} documents...[/bold cyan]"
                 )
                 with Progress() as progress:
                     task = progress.add_task("Rebuilding...", total=total_docs)
                     async for _ in client.rebuild_database():
                         progress.update(task, advance=1)
 
-                self.console.print("[b]Database rebuild completed successfully.[/b]")
+                self.console.print(
+                    "[bold green]Database rebuild completed successfully.[/bold green]"
+                )
             except Exception as e:
                 self.console.print(f"[red]Error rebuilding database: {e}[/red]")
 
@@ -218,7 +335,9 @@ class HaikuRAGApp:
         try:
             async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:
                 await client.vacuum()
-            self.console.print("[b]Vacuum completed successfully.[/b]")
+            self.console.print(
+                "[bold green]Vacuum completed successfully.[/bold green]"
+            )
         except Exception as e:
             self.console.print(f"[red]Error during vacuum: {e}[/red]")
 
@@ -240,7 +359,9 @@ class HaikuRAGApp:
             else:
                 display_value = field_value
 
-            self.console.print(f"  [cyan]{field_name}[/cyan]: {display_value}")
+            self.console.print(
+                f"  [repr.attrib_name]{field_name}[/repr.attrib_name]: {display_value}"
+            )
 
     def _rich_print_document(self, doc: Document, truncate: bool = False):
         """Format a document for display."""

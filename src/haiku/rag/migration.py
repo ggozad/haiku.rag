@@ -51,7 +51,7 @@ class SQLiteToLanceDBMigrator:
 
                 sqlite_conn.enable_load_extension(True)
                 sqlite_vec.load(sqlite_conn)
-                self.console.print("[blue]Loaded sqlite-vec extension[/blue]")
+                self.console.print("[cyan]Loaded sqlite-vec extension[/cyan]")
             except Exception as e:
                 self.console.print(
                     f"[yellow]Warning: Could not load sqlite-vec extension: {e}[/yellow]"
@@ -92,7 +92,7 @@ class SQLiteToLanceDBMigrator:
             sqlite_conn.close()
 
             # Optimize and cleanup using centralized vacuum
-            self.console.print("[blue]Optimizing LanceDB...[/blue]")
+            self.console.print("[cyan]Optimizing LanceDB...[/cyan]")
             try:
                 lance_store.vacuum()
                 self.console.print("[green]✅ Optimization completed[/green]")

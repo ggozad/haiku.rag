@@ -126,6 +126,26 @@ haiku-rag settings
 
 ## Maintenance
 
+### Info (Read-only)
+
+Display database metadata without upgrading or modifying it:
+
+```bash
+haiku-rag info [--db /path/to/your.lancedb]
+```
+
+Shows:
+- path to the database
+- stored haiku.rag version (from settings)
+- embeddings provider/model and vector dimension
+- number of documents
+- table versions per table (documents, chunks)
+
+At the end, a separate “Versions” section lists runtime package versions:
+- haiku.rag
+- lancedb
+- docling
+
 ### Vacuum (Optimize and Cleanup)
 
 Reduce disk usage by optimizing and pruning old table versions across all tables:

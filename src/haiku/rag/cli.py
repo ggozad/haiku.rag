@@ -347,6 +347,20 @@ def vacuum(
     asyncio.run(app.vacuum())
 
 
+@cli.command("info", help="Show read-only database info (no upgrades or writes)")
+def info(
+    db: Path = typer.Option(
+        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    from haiku.rag.app import HaikuRAGApp
+
+    app = HaikuRAGApp(db_path=db)
+    asyncio.run(app.info())
+
+
 @cli.command(
     "serve", help="Start the haiku.rag MCP server (by default in streamable HTTP mode)"
 )
