@@ -28,7 +28,8 @@ uv pip install haiku.rag
 
 # Add documents
 haiku-rag add "Your content here"
-haiku-rag add-src document.pdf
+haiku-rag add "Your content here" --meta author=alice --meta topic=notes
+haiku-rag add-src document.pdf --meta source=manual
 
 # Search
 haiku-rag search "query"

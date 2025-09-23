@@ -28,9 +28,10 @@ def test_add_document_text():
         result = runner.invoke(cli, ["add", "test document"])
 
         assert result.exit_code == 0
-        mock_app_instance.add_document_from_text.assert_called_once_with(
-            text="test document"
-        )
+        mock_app_instance.add_document_from_text.assert_called_once()
+        _, kwargs = mock_app_instance.add_document_from_text.call_args
+        assert kwargs.get("text") == "test document"
+        assert kwargs.get("metadata") is None
 
 
 def test_add_document_src():
@@ -57,8 +58,58 @@ def test_add_document_src_with_title():
         mock_app_instance.add_document_from_source.assert_called_once()
         # Verify title is forwarded (inspect call kwargs)
         _, kwargs = mock_app_instance.add_document_from_source.call_args
-        assert kwargs.get("title") == "Nice Name"
+    assert kwargs.get("title") == "Nice Name"
+    assert kwargs.get("source") == "test.txt"
+
+
+def test_add_document_text_with_meta():
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.add_document_from_text = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(
+            cli,
+            [
+                "add",
+                "some text",
+                "--meta",
+                "author=alice",
+                "--meta",
+                "topic=notes",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_app_instance.add_document_from_text.assert_called_once()
+        _, kwargs = mock_app_instance.add_document_from_text.call_args
+        assert kwargs.get("text") == "some text"
+        assert kwargs.get("metadata") == {"author": "alice", "topic": "notes"}
+
+
+def test_add_document_src_with_meta():
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.add_document_from_source = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(
+            cli,
+            [
+                "add-src",
+                "test.txt",
+                "--meta",
+                "source=manual",
+                "--meta",
+                "lang=en",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_app_instance.add_document_from_source.assert_called_once()
+        _, kwargs = mock_app_instance.add_document_from_source.call_args
         assert kwargs.get("source") == "test.txt"
+        assert kwargs.get("metadata") == {"source": "manual", "lang": "en"}
 
 
 def test_get_document():

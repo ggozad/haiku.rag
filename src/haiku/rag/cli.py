@@ -137,10 +137,34 @@ def list_documents(
     asyncio.run(app.list_documents())
 
 
+def _parse_meta_options(meta: list[str] | None) -> dict[str, str]:
+    """Parse repeated --meta KEY=VALUE options into a dictionary.
+
+    Raises a Typer error if any entry is malformed.
+    """
+    result: dict[str, str] = {}
+    if not meta:
+        return result
+    for item in meta:
+        if "=" not in item:
+            raise typer.BadParameter("--meta must be in KEY=VALUE format")
+        key, value = item.split("=", 1)
+        if not key:
+            raise typer.BadParameter("--meta key cannot be empty")
+        result[key] = value
+    return result
+
+
 @cli.command("add", help="Add a document from text input")
 def add_document_text(
     text: str = typer.Argument(
         help="The text content of the document to add",
+    ),
+    meta: list[str] | None = typer.Option(
+        None,
+        "--meta",
+        help="Metadata entries as KEY=VALUE (repeatable)",
+        metavar="KEY=VALUE",
     ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
@@ -151,7 +175,8 @@ def add_document_text(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.add_document_from_text(text=text))
+    metadata = _parse_meta_options(meta)
+    asyncio.run(app.add_document_from_text(text=text, metadata=metadata or None))
 
 
 @cli.command("add-src", help="Add a document from a file path or URL")
@@ -165,6 +190,12 @@ def add_document_src(
         "--title",
         help="Optional human-readable title to store with the document",
     ),
+    meta: list[str] | None = typer.Option(
+        None,
+        "--meta",
+        help="Metadata entries as KEY=VALUE (repeatable)",
+        metavar="KEY=VALUE",
+    ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
@@ -174,7 +205,12 @@ def add_document_src(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.add_document_from_source(source=source, title=title))
+    metadata = _parse_meta_options(meta)
+    asyncio.run(
+        app.add_document_from_source(
+            source=source, title=title, metadata=metadata or None
+        )
+    )
 
 
 @cli.command("get", help="Get and display a document by its ID")

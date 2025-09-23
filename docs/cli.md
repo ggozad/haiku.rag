@@ -27,6 +27,9 @@ haiku-rag list
 From text:
 ```bash
 haiku-rag add "Your document content here"
+
+# Attach metadata (repeat --meta for multiple entries)
+haiku-rag add "Your document content here" --meta author=alice --meta topic=notes
 ```
 
 From file or URL:
@@ -36,6 +39,9 @@ haiku-rag add-src https://example.com/article.html
 
 # Optionally set a human‑readable title stored in the DB schema
 haiku-rag add-src /mnt/data/doc1.pdf --title "Q3 Financial Report"
+
+# Optionally attach metadata (repeat --meta)
+haiku-rag add-src /mnt/data/doc1.pdf --meta source=manual --meta lang=en
 ```
 
 !!! note

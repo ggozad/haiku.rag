@@ -144,17 +144,21 @@ class HaikuRAGApp:
             for doc in documents:
                 self._rich_print_document(doc, truncate=True)
 
-    async def add_document_from_text(self, text: str):
+    async def add_document_from_text(self, text: str, metadata: dict | None = None):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            doc = await self.client.create_document(text)
+            doc = await self.client.create_document(text, metadata=metadata)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
                 f"[bold green]Document {doc.id} added successfully.[/bold green]"
             )
 
-    async def add_document_from_source(self, source: str, title: str | None = None):
+    async def add_document_from_source(
+        self, source: str, title: str | None = None, metadata: dict | None = None
+    ):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            doc = await self.client.create_document_from_source(source, title=title)
+            doc = await self.client.create_document_from_source(
+                source, title=title, metadata=metadata
+            )
             self._rich_print_document(doc, truncate=True)
             self.console.print(
                 f"[bold green]Document {doc.id} added successfully.[/bold green]"

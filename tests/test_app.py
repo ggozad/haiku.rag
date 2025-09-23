@@ -54,7 +54,10 @@ async def test_add_document_from_text(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.add_document_from_text("test document")
 
-    mock_client.create_document.assert_called_once_with("test document")
+    mock_client.create_document.assert_called_once()
+    args, kwargs = mock_client.create_document.call_args
+    assert args[0] == "test document"
+    assert kwargs.get("metadata") is None
     mock_rich_print.assert_called_once_with(mock_doc, truncate=True)
     mock_print.assert_called_once_with(
         "[bold green]Document 1 added successfully.[/bold green]"
@@ -78,9 +81,11 @@ async def test_add_document_from_source(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.add_document_from_source(file_path)
 
-    mock_client.create_document_from_source.assert_called_once_with(
-        file_path, title=None
-    )
+    mock_client.create_document_from_source.assert_called_once()
+    args, kwargs = mock_client.create_document_from_source.call_args
+    assert args[0] == file_path
+    assert kwargs.get("title") is None
+    assert kwargs.get("metadata") is None
     mock_rich_print.assert_called_once_with(mock_doc, truncate=True)
     mock_print.assert_called_once_with(
         "[bold green]Document 1 added successfully.[/bold green]"
