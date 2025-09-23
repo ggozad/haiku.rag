@@ -144,6 +144,16 @@ def test_ask_with_cite():
         result = runner.invoke(cli, ["ask", "What is Python?", "--cite"])
 
         assert result.exit_code == 0
-        mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True
-        )
+    mock_app_instance.ask.assert_called_once_with(question="What is Python?", cite=True)
+
+
+def test_info():
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.info = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["info"])
+
+        assert result.exit_code == 0
+        mock_app_instance.info.assert_called_once()

@@ -1,4 +1,6 @@
 import asyncio
+import json
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from rich.console import Console
@@ -24,6 +26,89 @@ class HaikuRAGApp:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.console = Console()
+
+    async def info(self):
+        """Display read-only information about the database without modifying it."""
+
+        import lancedb
+
+        # Basic: show path
+        self.console.print("[bold]haiku.rag database info[/bold]")
+        self.console.print(
+            f"  [repr.attrib_name]path[/repr.attrib_name]: {self.db_path}"
+        )
+
+        # Prevent accidental creation: require existing local path
+        # (For cloud/object storage users, info should be invoked with proper env vars and
+        #  an existing local cache/path if applicable.)
+        if not self.db_path.exists():
+            self.console.print("[red]Database path does not exist.[/red]")
+            return
+
+        # Connect without going through Store to avoid upgrades/validation writes
+        try:
+            db = lancedb.connect(self.db_path)
+            table_names = set(db.table_names())
+        except Exception as e:
+            self.console.print(f"[red]Failed to open database: {e}[/red]")
+            return
+
+        # Resolve LanceDB version (best-effort)
+        try:
+            ldb_version = pkg_version("lancedb")
+        except Exception:
+            ldb_version = "unknown"
+
+        # Read settings (if present) to find stored haiku.rag version and embedding config
+        stored_version = "unknown"
+        embed_provider: str | None = None
+        embed_model: str | None = None
+        vector_dim: int | None = None
+
+        if "settings" in table_names:
+            settings_tbl = db.open_table("settings")
+            arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
+            rows = arrow.to_pylist() if arrow is not None else []
+            if rows:
+                raw = rows[0].get("settings") or "{}"
+                data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                stored_version = str(data.get("version", stored_version))
+                embed_provider = data.get("EMBEDDINGS_PROVIDER")
+                embed_model = data.get("EMBEDDINGS_MODEL")
+                vector_dim = (
+                    int(data.get("EMBEDDINGS_VECTOR_DIM"))  # pyright: ignore[reportArgumentType]
+                    if data.get("EMBEDDINGS_VECTOR_DIM") is not None
+                    else None
+                )
+
+        # Count documents efficiently (best-effort, avoiding full scans)
+        num_docs = 0
+        if "documents" in table_names:
+            docs_tbl = db.open_table("documents")
+            num_docs = int(docs_tbl.count_rows())  # type: ignore[attr-defined]
+
+        # Render collected info
+        self.console.print(
+            f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
+        )
+        if embed_provider or embed_model or vector_dim:
+            provider_part = embed_provider or "unknown"
+            model_part = embed_model or "unknown"
+            dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
+            self.console.print(
+                "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
+                f"{provider_part}/{model_part} (dim: {dim_part})"
+            )
+        else:
+            self.console.print(
+                "  [repr.attrib_name]embeddings[/repr.attrib_name]: unknown"
+            )
+        self.console.print(
+            f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {ldb_version}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs}"
+        )
 
     async def list_documents(self):
         async with HaikuRAG(db_path=self.db_path) as self.client:
