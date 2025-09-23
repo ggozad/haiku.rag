@@ -90,6 +90,18 @@ class HaikuRAGApp:
             docs_tbl = db.open_table("documents")
             num_docs = int(docs_tbl.count_rows())  # type: ignore[attr-defined]
 
+        # Table versions per table (direct API)
+        doc_versions = (
+            len(list(db.open_table("documents").list_versions()))
+            if "documents" in table_names
+            else 0
+        )
+        chunk_versions = (
+            len(list(db.open_table("chunks").list_versions()))
+            if "chunks" in table_names
+            else 0
+        )
+
         self.console.print(
             f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
         )
@@ -107,6 +119,12 @@ class HaikuRAGApp:
             )
         self.console.print(
             f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: {doc_versions}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]versions (chunks)[/repr.attrib_name]: {chunk_versions}"
         )
         self.console.rule()
         self.console.print("[bold]Versions[/bold]")

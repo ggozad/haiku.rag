@@ -139,6 +139,7 @@ Shows:
 - stored haiku.rag version (from settings)
 - embeddings provider/model and vector dimension
 - number of documents
+- table versions per table (documents, chunks)
 
 At the end, a separate “Versions” section lists runtime package versions:
 - haiku.rag
