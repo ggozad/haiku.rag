@@ -43,7 +43,8 @@ async with HaikuRAG("database.lancedb") as client:
 Or use the CLI:
 ```bash
 haiku-rag add "Your document content"
-haiku-rag add-src /path/to/document.pdf --title "Q3 Financial Report"
+haiku-rag add "Your document content" --meta author=alice
+haiku-rag add-src /path/to/document.pdf --title "Q3 Financial Report" --meta source=manual
 haiku-rag search "query"
 haiku-rag ask "Who is the author of haiku.rag?"
 haiku-rag migrate old_database.sqlite  # Migrate from SQLite
