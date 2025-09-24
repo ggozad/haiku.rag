@@ -21,7 +21,6 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
     graph = build_research_graph()
 
     state = ResearchState(
-        question="What is haiku.rag?",
         context=ResearchContext(original_question="What is haiku.rag?"),
         max_iterations=1,
         confidence_threshold=0.5,
@@ -32,7 +31,7 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
     )  # client unused in patched nodes
 
     async def fake_plan_run(self, ctx) -> Any:
-        ctx.state.sub_questions = [
+        ctx.state.context.sub_questions = [
             "Describe haiku.rag in one sentence",
             "List core components of haiku.rag",
         ]
@@ -41,8 +40,8 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
 
     async def fake_search_dispatch_run(self, ctx) -> Any:
         # Answer all pending questions deterministically, then move to evaluation
-        while ctx.state.sub_questions:
-            q = ctx.state.sub_questions.pop(0)
+        while ctx.state.context.sub_questions:
+            q = ctx.state.context.sub_questions.pop(0)
             # pydantic BaseModel kwargs not fully typed for pyright
             ctx.state.context.add_qa_response(
                 SearchAnswer(query=q, answer="A", context=["x"], sources=["s"])  # pyright: ignore[reportCallIssue]

@@ -55,8 +55,8 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         for insight in output.key_insights:
             state.context.add_insight(insight)
         for new_q in output.new_questions:
-            if new_q not in state.sub_questions:
-                state.sub_questions.append(new_q)
+            if new_q not in state.context.sub_questions:
+                state.context.sub_questions.append(new_q)
 
         state.last_eval = output
         state.iterations += 1

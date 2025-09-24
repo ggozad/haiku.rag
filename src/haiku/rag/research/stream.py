@@ -34,13 +34,13 @@ class ResearchStateSnapshot:
             last_sufficient = state.last_eval.is_sufficient
 
         return cls(
-            question=state.question,
-            sub_questions=list(state.sub_questions),
+            question=context.original_question,
+            sub_questions=list(context.sub_questions),
             iterations=state.iterations,
             max_iterations=state.max_iterations,
             max_concurrency=state.max_concurrency,
             confidence_threshold=state.confidence_threshold,
-            pending_sub_questions=len(state.sub_questions),
+            pending_sub_questions=len(context.sub_questions),
             answered_questions=len(context.qa_responses),
             insights=list(context.insights),
             gaps=list(context.gaps),

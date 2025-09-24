@@ -222,9 +222,9 @@ class HaikuRAGApp:
                     self.console.print()
 
                 graph = build_research_graph()
+                context = ResearchContext(original_question=question)
                 state = ResearchState(
-                    question=question,
-                    context=ResearchContext(original_question=question),
+                    context=context,
                     max_iterations=max_iterations,
                     confidence_threshold=confidence_threshold,
                     max_concurrency=max_concurrency,

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from rich.console import Console
 
@@ -23,9 +23,7 @@ class ResearchDeps:
 
 @dataclass
 class ResearchState:
-    question: str
     context: ResearchContext
-    sub_questions: list[str] = field(default_factory=list)
     iterations: int = 0
     max_iterations: int = 3
     max_concurrency: int = 1

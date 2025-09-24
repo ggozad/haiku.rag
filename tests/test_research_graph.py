@@ -9,7 +9,6 @@ def test_build_graph_and_state():
     assert graph is not None
 
     state = ResearchState(
-        question="What are the key features of haiku.rag?",
         context=ResearchContext(
             original_question="What are the key features of haiku.rag?"
         ),
@@ -17,7 +16,7 @@ def test_build_graph_and_state():
         confidence_threshold=0.8,
     )
     assert state.iterations == 0
-    assert state.sub_questions == []
+    assert state.context.sub_questions == []
 
 
 def test_async_loop_available():
