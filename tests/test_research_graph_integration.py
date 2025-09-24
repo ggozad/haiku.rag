@@ -53,11 +53,13 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
         ctx.state.last_eval = EvaluationResult(
             key_insights=["ok"],
             new_questions=[],
+            gaps=["gap"],
             confidence_score=1.0,
             is_sufficient=True,
             reasoning="done",
         )
         ctx.state.iterations += 1
+        ctx.state.context.add_gap("gap")
         ctx.deps.emit_log("evaluated", ctx.state)
         return SynthesizeNode(self.provider, self.model)
 

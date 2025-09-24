@@ -57,6 +57,8 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         for new_q in output.new_questions:
             if new_q not in state.context.sub_questions:
                 state.context.sub_questions.append(new_q)
+        for gap in output.gaps:
+            state.context.add_gap(gap)
 
         state.last_eval = output
         state.iterations += 1
@@ -65,6 +67,10 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             log(deps, state, "   [bold]Key insights:[/bold]")
             for ins in output.key_insights:
                 log(deps, state, f"   • {ins}")
+        if output.gaps:
+            log(deps, state, "   [bold yellow]Remaining gaps:[/bold yellow]")
+            for gap in output.gaps:
+                log(deps, state, f"   • {gap}")
         log(
             deps,
             state,
