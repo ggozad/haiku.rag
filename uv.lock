@@ -1111,7 +1111,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.10.2"
+version = "0.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "docling" },
