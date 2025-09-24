@@ -113,6 +113,8 @@ Flags:
 - `--max-concurrency`: number of sub-questions searched in parallel each iteration (default: 3)
 - `--verbose`: show planning, searching previews, evaluation summary, and stop reason
 
+When `--verbose` is set the CLI also consumes the internal research stream, printing every `log` event as agents progress through planning, search, evaluation, and synthesis. If you build your own integration, call `stream_research_graph` to access the same `log`, `report`, and `error` events and render them however you like while the graph is running.
+
 ## Server
 
 Start the MCP server:

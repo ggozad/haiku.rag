@@ -37,6 +37,9 @@ class EvaluationResult(BaseModel):
         max_length=3,
         default=[],
     )
+    gaps: list[str] = Field(
+        description="Concrete information gaps that remain", default_factory=list
+    )
     confidence_score: float = Field(
         description="Confidence level in the completeness of research (0-1)",
         ge=0.0,

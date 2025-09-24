@@ -18,6 +18,7 @@ from haiku.rag.research.graph import (
     ResearchState,
     build_research_graph,
 )
+from haiku.rag.research.stream import stream_research_graph
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -221,9 +222,9 @@ class HaikuRAGApp:
                     self.console.print()
 
                 graph = build_research_graph()
+                context = ResearchContext(original_question=question)
                 state = ResearchState(
-                    question=question,
-                    context=ResearchContext(original_question=question),
+                    context=context,
                     max_iterations=max_iterations,
                     confidence_threshold=confidence_threshold,
                     max_concurrency=max_concurrency,
@@ -236,22 +237,20 @@ class HaikuRAGApp:
                     provider=Config.RESEARCH_PROVIDER or Config.QA_PROVIDER,
                     model=Config.RESEARCH_MODEL or Config.QA_MODEL,
                 )
-                # Prefer graph.run; fall back to iter if unavailable
                 report = None
-                try:
-                    result = await graph.run(start, state=state, deps=deps)
-                    report = result.output
-                except Exception:
-                    from pydantic_graph import End
+                async for event in stream_research_graph(graph, start, state, deps):
+                    if event.type == "report":
+                        report = event.report
+                        break
+                    if event.type == "error":
+                        self.console.print(
+                            f"[red]Error during research: {event.message}[/red]"
+                        )
+                        return
 
-                    async with graph.iter(start, state=state, deps=deps) as run:
-                        node = run.next_node
-                        while not isinstance(node, End):
-                            node = await run.next(node)
-                        if run.result:
-                            report = run.result.output
                 if report is None:
-                    raise RuntimeError("Graph did not produce a report")
+                    self.console.print("[red]Research did not produce a report.[/red]")
+                    return
 
                 # Display the report
                 self.console.print("[bold green]Research Report[/bold green]")

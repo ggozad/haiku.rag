@@ -25,7 +25,8 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         deps = ctx.deps
 
         log(
-            deps.console,
+            deps,
+            state,
             "\n[bold cyan]📊 Analyzing and evaluating research progress...[/bold cyan]",
         )
 
@@ -43,7 +44,10 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             f"{context_xml}"
         )
         agent_deps = ResearchDependencies(
-            client=deps.client, context=state.context, console=deps.console
+            client=deps.client,
+            context=state.context,
+            console=deps.console,
+            stream=deps.stream,
         )
         eval_result = await agent.run(prompt, deps=agent_deps)
         output = eval_result.output
@@ -51,22 +55,29 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         for insight in output.key_insights:
             state.context.add_insight(insight)
         for new_q in output.new_questions:
-            if new_q not in state.sub_questions:
-                state.sub_questions.append(new_q)
+            if new_q not in state.context.sub_questions:
+                state.context.sub_questions.append(new_q)
+        for gap in output.gaps:
+            state.context.add_gap(gap)
 
         state.last_eval = output
         state.iterations += 1
 
         if output.key_insights:
-            log(deps.console, "   [bold]Key insights:[/bold]")
+            log(deps, state, "   [bold]Key insights:[/bold]")
             for ins in output.key_insights:
-                log(deps.console, f"   • {ins}")
+                log(deps, state, f"   • {ins}")
+        if output.gaps:
+            log(deps, state, "   [bold yellow]Remaining gaps:[/bold yellow]")
+            for gap in output.gaps:
+                log(deps, state, f"   • {gap}")
         log(
-            deps.console,
+            deps,
+            state,
             f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]",
         )
         status = "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
-        log(deps.console, f"   Sufficient: {status}")
+        log(deps, state, f"   Sufficient: {status}")
 
         from haiku.rag.research.nodes.search import SearchDispatchNode
 
@@ -74,7 +85,7 @@ class EvaluateNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             output.is_sufficient
             and output.confidence_score >= state.confidence_threshold
         ) or state.iterations >= state.max_iterations:
-            log(deps.console, "\n[bold green]✅ Stopping research.[/bold green]")
+            log(deps, state, "\n[bold green]✅ Stopping research.[/bold green]")
             return SynthesizeNode(self.provider, self.model)
 
         return SearchDispatchNode(self.provider, self.model)

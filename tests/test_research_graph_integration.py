@@ -13,6 +13,7 @@ from haiku.rag.research.graph import (
     build_research_graph,
 )
 from haiku.rag.research.models import EvaluationResult, ResearchReport, SearchAnswer
+from haiku.rag.research.stream import stream_research_graph
 
 
 @pytest.mark.asyncio
@@ -20,7 +21,6 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
     graph = build_research_graph()
 
     state = ResearchState(
-        question="What is haiku.rag?",
         context=ResearchContext(original_question="What is haiku.rag?"),
         max_iterations=1,
         confidence_threshold=0.5,
@@ -31,31 +31,36 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
     )  # client unused in patched nodes
 
     async def fake_plan_run(self, ctx) -> Any:
-        ctx.state.sub_questions = [
+        ctx.state.context.sub_questions = [
             "Describe haiku.rag in one sentence",
             "List core components of haiku.rag",
         ]
+        ctx.deps.emit_log("planning", ctx.state)
         return SearchDispatchNode(self.provider, self.model)
 
     async def fake_search_dispatch_run(self, ctx) -> Any:
         # Answer all pending questions deterministically, then move to evaluation
-        while ctx.state.sub_questions:
-            q = ctx.state.sub_questions.pop(0)
+        while ctx.state.context.sub_questions:
+            q = ctx.state.context.sub_questions.pop(0)
             # pydantic BaseModel kwargs not fully typed for pyright
             ctx.state.context.add_qa_response(
                 SearchAnswer(query=q, answer="A", context=["x"], sources=["s"])  # pyright: ignore[reportCallIssue]
             )
+            ctx.deps.emit_log(f"answered:{q}", ctx.state)
         return EvaluateNode(self.provider, self.model)
 
     async def fake_evaluate_run(self, ctx) -> Any:
         ctx.state.last_eval = EvaluationResult(
             key_insights=["ok"],
             new_questions=[],
+            gaps=["gap"],
             confidence_score=1.0,
             is_sufficient=True,
             reasoning="done",
         )
         ctx.state.iterations += 1
+        ctx.state.context.add_gap("gap")
+        ctx.deps.emit_log("evaluated", ctx.state)
         return SynthesizeNode(self.provider, self.model)
 
     async def fake_synthesize_run(self, ctx) -> Any:
@@ -81,9 +86,16 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
 
     start = PlanNode(provider="test", model="test")
 
-    result = await graph.run(start, state=state, deps=deps)
-    report = result.output
+    collected = []
+    async for event in stream_research_graph(graph, start, state, deps):
+        collected.append(event)
+        if event.type == "report":
+            report = event.report
+            break
+    else:  # pragma: no cover - defensive guard
+        report = None
 
     assert isinstance(report, ResearchReport)
     assert report.title == "Haiku RAG"
     assert len(state.context.qa_responses) == 2
+    assert any(evt.type == "log" for evt in collected)

@@ -3,6 +3,7 @@ from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.models import SearchAnswer
+from haiku.rag.research.stream import ResearchStream
 
 
 class ResearchContext(BaseModel):
@@ -45,3 +46,6 @@ class ResearchDependencies(BaseModel):
     client: HaikuRAG = Field(description="RAG client for document operations")
     context: ResearchContext = Field(description="Shared research context")
     console: Console | None = None
+    stream: ResearchStream | None = Field(
+        default=None, description="Optional research event stream"
+    )

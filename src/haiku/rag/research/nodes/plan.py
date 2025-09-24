@@ -22,7 +22,7 @@ class PlanNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         state = ctx.state
         deps = ctx.deps
 
-        log(deps.console, "\n[bold cyan]📋 Creating research plan...[/bold cyan]")
+        log(deps, state, "\n[bold cyan]📋 Creating research plan...[/bold cyan]")
 
         plan_agent = Agent(
             model=get_model(self.provider, self.model),
@@ -45,19 +45,26 @@ class PlanNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
 
         prompt = (
             "Plan a focused research approach for the main question.\n\n"
-            f"Main question: {state.question}"
+            f"Main question: {state.context.original_question}"
         )
 
         agent_deps = ResearchDependencies(
-            client=deps.client, context=state.context, console=deps.console
+            client=deps.client,
+            context=state.context,
+            console=deps.console,
+            stream=deps.stream,
         )
         plan_result = await plan_agent.run(prompt, deps=agent_deps)
-        state.sub_questions = list(plan_result.output.sub_questions)
+        state.context.sub_questions = list(plan_result.output.sub_questions)
 
-        log(deps.console, "\n[bold green]✅ Research Plan Created:[/bold green]")
-        log(deps.console, f"   [bold]Main Question:[/bold] {state.question}")
-        log(deps.console, "   [bold]Sub-questions:[/bold]")
-        for i, sq in enumerate(state.sub_questions, 1):
-            log(deps.console, f"      {i}. {sq}")
+        log(deps, state, "\n[bold green]✅ Research Plan Created:[/bold green]")
+        log(
+            deps,
+            state,
+            f"   [bold]Main Question:[/bold] {state.context.original_question}",
+        )
+        log(deps, state, "   [bold]Sub-questions:[/bold]")
+        for i, sq in enumerate(state.context.sub_questions, 1):
+            log(deps, state, f"      {i}. {sq}")
 
         return SearchDispatchNode(self.provider, self.model)
