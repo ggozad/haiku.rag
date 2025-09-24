@@ -64,11 +64,12 @@ haiku-rag serve
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research import (
+    PlanNode,
     ResearchContext,
     ResearchDeps,
     ResearchState,
     build_research_graph,
-    PlanNode,
+    stream_research_graph,
 )
 
 async with HaikuRAG("database.lancedb") as client:
@@ -90,22 +91,40 @@ async with HaikuRAG("database.lancedb") as client:
 
     # Multi‑agent research pipeline (Plan → Search → Evaluate → Synthesize)
     graph = build_research_graph()
+    question = (
+        "What are the main drivers and trends of global temperature "
+        "anomalies since 1990?"
+    )
     state = ResearchState(
-        question=(
-            "What are the main drivers and trends of global temperature "
-            "anomalies since 1990?"
-        ),
-        context=ResearchContext(original_question="…"),
+        context=ResearchContext(original_question=question),
         max_iterations=2,
         confidence_threshold=0.8,
-        max_concurrency=3,
+        max_concurrency=2,
     )
     deps = ResearchDeps(client=client)
-    start = PlanNode(provider=None, model=None)
-    result = await graph.run(start, state=state, deps=deps)
-    report = result.output
-    print(report.title)
-    print(report.executive_summary)
+
+    # Blocking run (final result only)
+    result = await graph.run(
+        PlanNode(provider="openai", model="gpt-4o-mini"),
+        state=state,
+        deps=deps,
+    )
+    print(result.output.title)
+
+    # Streaming progress (log/report/error events)
+    async for event in stream_research_graph(
+        graph,
+        PlanNode(provider="openai", model="gpt-4o-mini"),
+        state,
+        deps,
+    ):
+        if event.type == "log":
+            iteration = event.state.iterations if event.state else state.iterations
+            print(f"[{iteration}] {event.message}")
+        elif event.type == "report":
+            print("\nResearch complete!\n")
+            print(event.report.title)
+            print(event.report.executive_summary)
 ```
 
 ## MCP Server

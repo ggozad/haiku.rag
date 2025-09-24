@@ -76,30 +76,75 @@ haiku-rag research "How does haiku.rag organize and query documents?" \
   --verbose
 ```
 
-Python usage:
+Python usage (blocking result):
 
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research import (
+    PlanNode,
     ResearchContext,
     ResearchDeps,
     ResearchState,
     build_research_graph,
-    PlanNode,
 )
 
 async with HaikuRAG(path_to_db) as client:
     graph = build_research_graph()
+    question = "What are the main drivers and trends of global temperature anomalies since 1990?"
     state = ResearchState(
-        question="What are the main drivers and trends of global temperature anomalies since 1990?",
-        context=ResearchContext(original_question=... ),
+        context=ResearchContext(original_question=question),
         max_iterations=2,
         confidence_threshold=0.8,
-        max_concurrency=3,
+        max_concurrency=2,
     )
     deps = ResearchDeps(client=client)
-    result = await graph.run(PlanNode(provider=None, model=None), state=state, deps=deps)
+
+    result = await graph.run(
+        PlanNode(provider="openai", model="gpt-4o-mini"),
+        state=state,
+        deps=deps,
+    )
+
     report = result.output
     print(report.title)
     print(report.executive_summary)
+```
+
+Python usage (streamed events):
+
+```python
+from haiku.rag.client import HaikuRAG
+from haiku.rag.research import (
+    PlanNode,
+    ResearchContext,
+    ResearchDeps,
+    ResearchState,
+    build_research_graph,
+    stream_research_graph,
+)
+
+async with HaikuRAG(path_to_db) as client:
+    graph = build_research_graph()
+    question = "What are the main drivers and trends of global temperature anomalies since 1990?"
+    state = ResearchState(
+        context=ResearchContext(original_question=question),
+        max_iterations=2,
+        confidence_threshold=0.8,
+        max_concurrency=2,
+    )
+    deps = ResearchDeps(client=client)
+
+    async for event in stream_research_graph(
+        graph,
+        PlanNode(provider="openai", model="gpt-4o-mini"),
+        state,
+        deps,
+    ):
+        if event.type == "log":
+            iteration = event.state.iterations if event.state else state.iterations
+            print(f"[{iteration}] {event.message}")
+        elif event.type == "report":
+            print("\nResearch complete!\n")
+            print(event.report.title)
+            print(event.report.executive_summary)
 ```
