@@ -47,9 +47,10 @@ title: Research graph
 ---
 stateDiagram-v2
   PlanNode --> SearchDispatchNode
-  SearchDispatchNode --> EvaluateNode
-  EvaluateNode --> SearchDispatchNode
-  EvaluateNode --> SynthesizeNode
+  SearchDispatchNode --> AnalyzeInsightsNode
+  AnalyzeInsightsNode --> DecisionNode
+  DecisionNode --> SearchDispatchNode
+  DecisionNode --> SynthesizeNode
   SynthesizeNode --> [*]
 ```
 
@@ -57,12 +58,15 @@ Key nodes:
 
 - Plan: builds up to 3 standalone sub‑questions (uses an internal presearch tool)
 - Search (batched): answers sub‑questions using the KB with minimal, verbatim context
-- Evaluate: extracts insights, proposes new questions, and checks sufficiency/confidence
+- Analyze: aggregates fresh insights, updates gaps, and suggests new sub-questions
+- Decision: checks sufficiency/confidence thresholds and chooses whether to iterate
 - Synthesize: generates a final structured report
 
 Primary models:
 
 - `SearchAnswer` — one per sub‑question (query, answer, context, sources)
+- `InsightRecord` / `GapRecord` — structured tracking of findings and open issues
+- `InsightAnalysis` — output of the analysis stage (insights, gaps, commentary)
 - `EvaluationResult` — insights, new questions, sufficiency, confidence
 - `ResearchReport` — final report (title, executive summary, findings, conclusions, …)
 

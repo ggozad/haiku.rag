@@ -42,8 +42,14 @@ class ResearchStateSnapshot:
             confidence_threshold=state.confidence_threshold,
             pending_sub_questions=len(context.sub_questions),
             answered_questions=len(context.qa_responses),
-            insights=list(context.insights),
-            gaps=list(context.gaps),
+            insights=[
+                f"{insight.status.value}:{insight.summary}"
+                for insight in context.insights
+            ],
+            gaps=[
+                f"{gap.severity.value}/{'resolved' if gap.resolved else 'open'}:{gap.description}"
+                for gap in context.gaps
+            ],
             last_confidence=last_confidence,
             last_sufficient=last_sufficient,
         )

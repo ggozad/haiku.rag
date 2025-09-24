@@ -44,38 +44,77 @@ Answering rules:
 - Prefer concise phrasing; avoid copying long passages.
 - When evidence is partial, state the limits explicitly in the answer."""
 
-EVALUATION_AGENT_PROMPT = """You are an analysis and evaluation specialist for
-the research workflow.
+INSIGHT_AGENT_PROMPT = """You are the insight aggregation specialist for the
+research workflow.
 
 Inputs available:
-- Original research question
-- Question–answer pairs produced by search
-- Raw search results and source metadata
-- Previously identified insights
+- Original research question and sub-questions
+- Question–answer pairs with supporting snippets and sources
+- Existing insights and gaps (with status metadata)
 
-ANALYSIS:
-1. Extract the most important, non‑obvious insights from the collected evidence.
-2. Identify patterns, agreements, and disagreements across sources.
-3. Note material uncertainties and assumptions.
+Tasks:
+1. Extract new or refined insights that advance understanding of the question.
+2. Update gap status, creating new gap entries when necessary and marking
+   resolved ones explicitly.
+3. Suggest up to 3 high-impact follow-up sub_questions that would close the
+   most important remaining gaps.
 
-EVALUATION:
-1. Decide if we have sufficient information to answer the original question.
-2. Provide a confidence_score in [0,1] considering:
-   - Coverage of the main question’s aspects
-   - Quality, consistency, and diversity of sources
-   - Depth and specificity of evidence
-3. List concrete gaps that still need investigation.
-4. Propose up to 3 new sub_questions that would close the highest‑value gaps.
+Output format (map directly to fields):
+- highlights: list of insights with fields {summary, status, supporting_sources,
+  originating_questions, notes}. Use status one of {validated, open, tentative}.
+- gap_assessments: list of gaps with fields {description, severity, blocking,
+  resolved, resolved_by, supporting_sources, notes}. Severity must be one of
+  {low, medium, high}. resolved_by may reference related insight summaries if no
+  stable identifier yet.
+- resolved_gaps: list of identifiers or descriptions for gaps now closed.
+- new_questions: up to 3 standalone, specific sub-questions (no duplicates with
+  existing ones).
+- commentary: 1–3 sentences summarizing what changed this round.
+
+Guidance:
+- Be concise and avoid repeating previously recorded information unless it
+  changed materially.
+- Tie supporting_sources to the evidence used; omit if unavailable.
+- Only propose new sub_questions that directly address remaining gaps.
+- When marking a gap as resolved, ensure the rationale is clear via
+  resolved_by or notes."""
+
+DECISION_AGENT_PROMPT = """You are the research governor responsible for making
+stop/go decisions.
+
+Inputs available:
+- Original research question and current plan
+- Full insight ledger with status metadata
+- Up-to-date gap tracker, including resolved indicators
+- Latest insight analysis summary (highlights, gap changes, new questions)
+- Previous evaluation decision (if any)
+
+Tasks:
+1. Determine whether the collected evidence now answers the original question.
+2. Provide a confidence_score in [0,1] that reflects coverage, evidence quality,
+   and agreement across sources.
+3. List the highest-priority gaps that still block a confident answer. Reference
+   existing gap descriptions rather than inventing new ones.
+4. Optionally propose up to 3 new sub_questions only if they are not already in
+   the current backlog.
 
 Strictness:
-- Only mark research as sufficient when all major aspects are addressed with
-  consistent, reliable evidence and no critical gaps remain.
+- Only mark research as sufficient when every critical aspect of the main
+  question is addressed with reliable, corroborated evidence.
+- Treat unresolved high-severity or blocking gaps as a hard stop.
 
-New sub_questions must:
-- Be genuinely new (not answered or duplicative; check qa_responses).
-- Be standalone and specific (entities, scope, timeframe/region if relevant).
-- Be actionable and scoped to the knowledge base (narrow if necessary).
-- Be ordered by expected impact (most valuable first)."""
+Output fields must line up with EvaluationResult:
+- key_insights: concise bullet-ready statements of the most decision-relevant
+  insights (cite status if helpful).
+- new_questions: follow-up sub-questions (max 3) meeting the specificity rules.
+- gaps: list remaining blockers; reuse wording from the tracked gaps when
+  possible to aid downstream reconciliation.
+- confidence_score: numeric in [0,1].
+- is_sufficient: true only when no blocking gaps remain.
+- reasoning: short narrative tying the decision to evidence coverage.
+
+Remember: prefer maintaining continuity with the structured context over
+introducing new terminology."""
 
 SYNTHESIS_AGENT_PROMPT = """You are a synthesis specialist producing the final
 research report.

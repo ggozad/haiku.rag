@@ -25,9 +25,9 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         state = ctx.state
         deps = ctx.deps
         if not state.context.sub_questions:
-            from haiku.rag.research.nodes.evaluate import EvaluateNode
+            from haiku.rag.research.nodes.analysis import AnalyzeInsightsNode
 
-            return EvaluateNode(self.provider, self.model)
+            return AnalyzeInsightsNode(self.provider, self.model)
 
         # Take up to max_concurrency questions and answer them concurrently
         take = max(1, state.max_concurrency)
