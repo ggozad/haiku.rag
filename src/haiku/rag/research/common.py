@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import format_as_xml
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -7,6 +7,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchContext
+
+if TYPE_CHECKING:  # pragma: no cover
+    from haiku.rag.research.state import ResearchDeps, ResearchState
 
 
 def get_model(provider: str, model: str) -> Any:
@@ -27,9 +30,8 @@ def get_model(provider: str, model: str) -> Any:
         return f"{provider}:{model}"
 
 
-def log(console, msg: str) -> None:
-    if console:
-        console.print(msg)
+def log(deps: "ResearchDeps", state: "ResearchState", msg: str) -> None:
+    deps.emit_log(msg, state)
 
 
 def format_context_for_prompt(context: ResearchContext) -> str:

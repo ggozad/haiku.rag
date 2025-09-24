@@ -37,7 +37,8 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
 
         async def answer_one(sub_q: str) -> SearchAnswer | None:
             log(
-                deps.console,
+                deps,
+                state,
                 f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {sub_q}",
             )
             agent = Agent(
@@ -71,12 +72,15 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
                 return format_as_xml(entries, root_tag="snippets")
 
             agent_deps = ResearchDependencies(
-                client=deps.client, context=state.context, console=deps.console
+                client=deps.client,
+                context=state.context,
+                console=deps.console,
+                stream=deps.stream,
             )
             try:
                 result = await agent.run(sub_q, deps=agent_deps)
             except Exception as e:
-                log(deps.console, f"[red]Search failed:[/red] {e}")
+                log(deps, state, f"[red]Search failed:[/red] {e}")
                 return None
 
             return result.output
@@ -86,8 +90,7 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             if ans is None:
                 continue
             state.context.add_qa_response(ans)
-            if deps.console:
-                preview = ans.answer[:150] + ("…" if len(ans.answer) > 150 else "")
-                log(deps.console, f"   [green]✓[/green] {preview}")
+            preview = ans.answer[:150] + ("…" if len(ans.answer) > 150 else "")
+            log(deps, state, f"   [green]✓[/green] {preview}")
 
         return SearchDispatchNode(self.provider, self.model)

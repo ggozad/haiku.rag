@@ -24,7 +24,8 @@ class SynthesizeNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         deps = ctx.deps
 
         log(
-            deps.console,
+            deps,
+            state,
             "\n[bold cyan]📝 Generating final research report...[/bold cyan]",
         )
 
@@ -43,9 +44,12 @@ class SynthesizeNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
             "Create a detailed report that synthesizes all findings into a coherent response."
         )
         agent_deps = ResearchDependencies(
-            client=deps.client, context=state.context, console=deps.console
+            client=deps.client,
+            context=state.context,
+            console=deps.console,
+            stream=deps.stream,
         )
         result = await agent.run(prompt, deps=agent_deps)
 
-        log(deps.console, "[bold green]✅ Research complete![/bold green]")
+        log(deps, state, "[bold green]✅ Research complete![/bold green]")
         return End(result.output)

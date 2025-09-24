@@ -6,6 +6,11 @@ from haiku.rag.research.graph import (
     build_research_graph,
 )
 from haiku.rag.research.models import EvaluationResult, ResearchReport, SearchAnswer
+from haiku.rag.research.stream import (
+    ResearchStateSnapshot,
+    ResearchStreamEvent,
+    stream_research_graph,
+)
 
 __all__ = [
     "ResearchDependencies",
@@ -17,4 +22,7 @@ __all__ = [
     "ResearchState",
     "PlanNode",
     "build_research_graph",
+    "stream_research_graph",
+    "ResearchStreamEvent",
+    "ResearchStateSnapshot",
 ]
