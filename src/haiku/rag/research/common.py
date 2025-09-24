@@ -7,6 +7,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchContext
+from haiku.rag.research.models import InsightAnalysis
 
 if TYPE_CHECKING:  # pragma: no cover
     from haiku.rag.research.state import ResearchDeps, ResearchState
@@ -49,7 +50,69 @@ def format_context_for_prompt(context: ResearchContext) -> str:
             }
             for qa in context.qa_responses
         ],
-        "insights": context.insights,
-        "gaps": context.gaps,
+        "insights": [
+            {
+                "id": insight.id,
+                "summary": insight.summary,
+                "status": insight.status.value,
+                "supporting_sources": insight.supporting_sources,
+                "originating_questions": insight.originating_questions,
+                "notes": insight.notes,
+            }
+            for insight in context.insights
+        ],
+        "gaps": [
+            {
+                "id": gap.id,
+                "description": gap.description,
+                "severity": gap.severity.value,
+                "blocking": gap.blocking,
+                "resolved": gap.resolved,
+                "resolved_by": gap.resolved_by,
+                "supporting_sources": gap.supporting_sources,
+                "notes": gap.notes,
+            }
+            for gap in context.gaps
+        ],
     }
     return format_as_xml(context_data, root_tag="research_context")
+
+
+def format_analysis_for_prompt(
+    analysis: InsightAnalysis | None,
+) -> str:
+    """Format the latest insight analysis as XML for prompts."""
+
+    if analysis is None:
+        return "<latest_analysis />"
+
+    data = {
+        "commentary": analysis.commentary,
+        "highlights": [
+            {
+                "id": insight.id,
+                "summary": insight.summary,
+                "status": insight.status.value,
+                "supporting_sources": insight.supporting_sources,
+                "originating_questions": insight.originating_questions,
+                "notes": insight.notes,
+            }
+            for insight in analysis.highlights
+        ],
+        "gap_assessments": [
+            {
+                "id": gap.id,
+                "description": gap.description,
+                "severity": gap.severity.value,
+                "blocking": gap.blocking,
+                "resolved": gap.resolved,
+                "resolved_by": gap.resolved_by,
+                "supporting_sources": gap.supporting_sources,
+                "notes": gap.notes,
+            }
+            for gap in analysis.gap_assessments
+        ],
+        "resolved_gaps": analysis.resolved_gaps,
+        "new_questions": analysis.new_questions,
+    }
+    return format_as_xml(data, root_tag="latest_analysis")

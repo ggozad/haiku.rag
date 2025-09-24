@@ -4,7 +4,8 @@ import pytest
 
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import (
-    EvaluateNode,
+    AnalyzeInsightsNode,
+    DecisionNode,
     PlanNode,
     ResearchDeps,
     ResearchState,
@@ -12,7 +13,16 @@ from haiku.rag.research.graph import (
     SynthesizeNode,
     build_research_graph,
 )
-from haiku.rag.research.models import EvaluationResult, ResearchReport, SearchAnswer
+from haiku.rag.research.models import (
+    EvaluationResult,
+    GapRecord,
+    GapSeverity,
+    InsightAnalysis,
+    InsightRecord,
+    InsightStatus,
+    ResearchReport,
+    SearchAnswer,
+)
 from haiku.rag.research.stream import stream_research_graph
 
 
@@ -39,7 +49,7 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
         return SearchDispatchNode(self.provider, self.model)
 
     async def fake_search_dispatch_run(self, ctx) -> Any:
-        # Answer all pending questions deterministically, then move to evaluation
+        # Answer all pending questions deterministically, then move to analysis
         while ctx.state.context.sub_questions:
             q = ctx.state.context.sub_questions.pop(0)
             # pydantic BaseModel kwargs not fully typed for pyright
@@ -47,20 +57,46 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
                 SearchAnswer(query=q, answer="A", context=["x"], sources=["s"])  # pyright: ignore[reportCallIssue]
             )
             ctx.deps.emit_log(f"answered:{q}", ctx.state)
-        return EvaluateNode(self.provider, self.model)
+        return AnalyzeInsightsNode(self.provider, self.model)
 
-    async def fake_evaluate_run(self, ctx) -> Any:
-        ctx.state.last_eval = EvaluationResult(
-            key_insights=["ok"],
+    async def fake_analyze_run(self, ctx) -> Any:
+        analysis = InsightAnalysis(
+            highlights=[
+                InsightRecord(
+                    summary="haiku.rag orchestrates research stages",
+                    status=InsightStatus.VALIDATED,
+                    supporting_sources=["s"],
+                    originating_questions=["Describe haiku.rag in one sentence"],
+                )
+            ],
+            gap_assessments=[
+                GapRecord(
+                    description="Need a final summary",
+                    severity=GapSeverity.LOW,
+                    blocking=False,
+                    resolved=False,
+                )
+            ],
+            resolved_gaps=[],
             new_questions=[],
-            gaps=["gap"],
+            commentary="Insights captured for synthesis",
+        )
+        ctx.state.context.integrate_analysis(analysis)
+        ctx.state.last_analysis = analysis
+        ctx.deps.emit_log("analysis", ctx.state)
+        return DecisionNode(self.provider, self.model)
+
+    async def fake_decision_run(self, ctx) -> Any:
+        ctx.state.last_eval = EvaluationResult(
+            key_insights=["haiku.rag coordinates planning, search, and synthesis"],
+            new_questions=[],
+            gaps=["Need a final summary"],
             confidence_score=1.0,
             is_sufficient=True,
             reasoning="done",
         )
         ctx.state.iterations += 1
-        ctx.state.context.add_gap("gap")
-        ctx.deps.emit_log("evaluated", ctx.state)
+        ctx.deps.emit_log("decision", ctx.state)
         return SynthesizeNode(self.provider, self.model)
 
     async def fake_synthesize_run(self, ctx) -> Any:
@@ -81,7 +117,8 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
     monkeypatch.setattr(
         SearchDispatchNode, "run", fake_search_dispatch_run, raising=False
     )
-    monkeypatch.setattr(EvaluateNode, "run", fake_evaluate_run, raising=False)
+    monkeypatch.setattr(AnalyzeInsightsNode, "run", fake_analyze_run, raising=False)
+    monkeypatch.setattr(DecisionNode, "run", fake_decision_run, raising=False)
     monkeypatch.setattr(SynthesizeNode, "run", fake_synthesize_run, raising=False)
 
     start = PlanNode(provider="test", model="test")

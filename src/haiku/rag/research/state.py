@@ -4,7 +4,7 @@ from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.models import EvaluationResult
+from haiku.rag.research.models import EvaluationResult, InsightAnalysis
 from haiku.rag.research.stream import ResearchStream
 
 
@@ -29,3 +29,4 @@ class ResearchState:
     max_concurrency: int = 1
     confidence_threshold: float = 0.8
     last_eval: EvaluationResult | None = None
+    last_analysis: InsightAnalysis | None = None
