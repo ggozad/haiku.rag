@@ -10,6 +10,8 @@ from haiku.rag.utils import text_to_docling_document
 class FileReader:
     # Extensions supported by docling
     docling_extensions: ClassVar[list[str]] = [
+        ".adoc",
+        ".asc",
         ".asciidoc",
         ".bmp",
         ".csv",
