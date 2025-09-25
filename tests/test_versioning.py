@@ -92,3 +92,33 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     chunks_repo = ChunkRepository(store)
     original_chunks = await chunks_repo.get_by_document_id(created.id)  # type: ignore[arg-type]
     assert len(original_chunks) > 0
+
+
+def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("run_pending_upgrades should not be called for new DB")
+
+    monkeypatch.setattr(
+        "haiku.rag.store.upgrades.run_pending_upgrades",
+        fail_if_called,
+    )
+
+    Store(temp_db_path)
+
+
+def test_existing_database_runs_upgrades(monkeypatch, temp_db_path):
+    Store(temp_db_path)
+
+    called = {"value": False}
+
+    def mark_called(*_args, **_kwargs):
+        called["value"] = True
+
+    monkeypatch.setattr(
+        "haiku.rag.store.upgrades.run_pending_upgrades",
+        mark_called,
+    )
+
+    Store(temp_db_path)
+
+    assert called["value"]
