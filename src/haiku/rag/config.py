@@ -20,8 +20,8 @@ class AppConfig(BaseModel):
     MONITOR_DIRECTORIES: list[Path] = []
 
     EMBEDDINGS_PROVIDER: str = "ollama"
-    EMBEDDINGS_MODEL: str = "mxbai-embed-large"
-    EMBEDDINGS_VECTOR_DIM: int = 1024
+    EMBEDDINGS_MODEL: str = "qwen3-embedding"
+    EMBEDDINGS_VECTOR_DIM: int = 4096
 
     RERANK_PROVIDER: str = ""
     RERANK_MODEL: str = ""
