@@ -157,7 +157,8 @@ class Store:
             current_version = metadata.version("haiku.rag")
             db_version = self.get_haiku_version()
 
-            run_pending_upgrades(self, db_version, current_version)
+            if db_version != "0.0.0":
+                run_pending_upgrades(self, db_version, current_version)
 
             # After upgrades complete (or if none), set stored version
             # to the greater of the installed package version and the
