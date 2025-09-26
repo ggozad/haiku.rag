@@ -7,6 +7,7 @@ import pytest
 from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.store.models.chunk import Chunk
 
 
@@ -504,7 +505,7 @@ async def test_client_create_document_with_custom_chunks(temp_db_path):
             Chunk(
                 content="This is the second chunk",
                 metadata={"custom": "metadata2"},
-                embedding=[0.1] * 1024,
+                embedding=[0.1] * Config.EMBEDDINGS_VECTOR_DIM,
                 order=1,
             ),  # With embedding
             Chunk(
