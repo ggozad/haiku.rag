@@ -2,8 +2,9 @@
 
 We use the [repliqa](https://huggingface.co/datasets/ServiceNow/repliqa) dataset for the evaluation of `haiku.rag`.
 
-You can perform your own evaluations using as example the script found at
-`tests/generate_benchmark_db.py`. The evaluation flow is orchestrated with
+You can perform your own evaluations with the Typer CLI in
+`evaluations/benchmark.py`, for example `python -m evaluations.benchmark repliqa`.
+The evaluation flow is orchestrated with
 [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
 which we leverage for dataset management, scoring, and report generation.
 

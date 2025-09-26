@@ -1,11 +1,10 @@
 import pytest
 from datasets import Dataset
 
+from evaluations.llm_judge import LLMJudge
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.qa.agent import QuestionAnswerAgent
-
-from .llm_judge import LLMJudge
 
 OPENAI_AVAILABLE = bool(Config.OPENAI_API_KEY)
 ANTHROPIC_AVAILABLE = bool(Config.ANTHROPIC_API_KEY)
