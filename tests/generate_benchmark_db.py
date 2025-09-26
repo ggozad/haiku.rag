@@ -19,7 +19,7 @@ from haiku.rag.config import Config
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
 
-logfire.configure(send_to_logfire="if-token-present")
+logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
 console = Console()
@@ -162,63 +162,71 @@ async def run_qa_benchmark(k: int | None = None):
         ],
     )
 
-    console.print("[yellow]Running QA benchmark...[/yellow]")
-
     total_processed = 0
     passing_cases = 0
     failures: list[ReportCaseFailure[str, str, dict[str, str]]] = []
 
-    async with HaikuRAG(db_path) as rag:
-        qa = get_qa_agent(rag)
+    with Progress(console=console) as progress:
+        qa_task = progress.add_task(
+            "[yellow]Evaluating QA cases...",
+            total=len(evaluation_dataset.cases),
+        )
 
-        async def answer_question(question: str) -> str:
-            return await qa.answer(question)
+        async with HaikuRAG(db_path) as rag:
+            qa = get_qa_agent(rag)
 
-        for case in evaluation_dataset.cases:
-            console.print(f"\n[bold]Evaluating case:[/bold] {case.name}")
+            async def answer_question(question: str) -> str:
+                return await qa.answer(question)
 
-            single_case_dataset = EvalDataset[str, str, dict[str, str]](
-                cases=[case],
-                evaluators=evaluation_dataset.evaluators,
-            )
+            for case in evaluation_dataset.cases:
+                progress.console.print(f"\n[bold]Evaluating case:[/bold] {case.name}")
 
-            report = await single_case_dataset.evaluate(
-                answer_question,
-                name="qa_answer",
-                max_concurrency=1,
-                progress=False,
-            )
+                single_case_dataset = EvalDataset[str, str, dict[str, str]](
+                    cases=[case],
+                    evaluators=evaluation_dataset.evaluators,
+                )
 
-            total_processed += 1
+                report = await single_case_dataset.evaluate(
+                    answer_question,
+                    name="qa_answer",
+                    max_concurrency=1,
+                    progress=False,
+                )
 
-            if report.cases:
-                result_case = report.cases[0]
+                total_processed += 1
 
-                equivalence = result_case.assertions.get("answer_equivalent")
-                console.print(f"Question: {result_case.inputs}")
-                console.print(f"Expected: {result_case.expected_output}")
-                console.print(f"Generated: {result_case.output}")
-                if equivalence is not None:
-                    console.print(
-                        f"Equivalent: {equivalence.value}"
-                        + (f" — {equivalence.reason}" if equivalence.reason else "")
+                if report.cases:
+                    result_case = report.cases[0]
+
+                    equivalence = result_case.assertions.get("answer_equivalent")
+                    progress.console.print(f"Question: {result_case.inputs}")
+                    progress.console.print(f"Expected: {result_case.expected_output}")
+                    progress.console.print(f"Generated: {result_case.output}")
+                    if equivalence is not None:
+                        progress.console.print(
+                            f"Equivalent: {equivalence.value}"
+                            + (f" — {equivalence.reason}" if equivalence.reason else "")
+                        )
+                        if equivalence.value:
+                            passing_cases += 1
+
+                    progress.console.print("")
+
+                if report.failures:
+                    failures.extend(report.failures)
+                    failure = report.failures[0]
+                    progress.console.print(
+                        "[red]Failure encountered during case evaluation:[/red]"
                     )
-                    if equivalence.value:
-                        passing_cases += 1
+                    progress.console.print(f"Question: {failure.inputs}")
+                    progress.console.print(f"Error: {failure.error_message}")
+                    progress.console.print("")
 
-                console.print("")
-
-            if report.failures:
-                failures.extend(report.failures)
-                failure = report.failures[0]
-                console.print("[red]Failure encountered during case evaluation:[/red]")
-                console.print(f"Question: {failure.inputs}")
-                console.print(f"Error: {failure.error_message}")
-                console.print("")
-
-            console.print(
-                f"[green]Accuracy: {(passing_cases / total_processed):.4f}[/green]"
-            )
+                progress.console.print(
+                    f"[green]Accuracy: {(passing_cases / total_processed):.4f} "
+                    f"{passing_cases}/{total_processed}[/green]"
+                )
+                progress.advance(qa_task)
     total_cases = total_processed
     accuracy = passing_cases / total_cases if total_cases > 0 else 0
 
