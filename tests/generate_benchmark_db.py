@@ -205,6 +205,7 @@ async def run_qa_benchmark(k: int | None = None):
                     )
                     if equivalence.value:
                         passing_cases += 1
+
                 console.print("")
 
             if report.failures:
@@ -215,6 +216,9 @@ async def run_qa_benchmark(k: int | None = None):
                 console.print(f"Error: {failure.error_message}")
                 console.print("")
 
+            console.print(
+                f"[green]Accuracy: {(passing_cases / total_processed):.4f}[/green]"
+            )
     total_cases = total_processed
     accuracy = passing_cases / total_cases if total_cases > 0 else 0
 
