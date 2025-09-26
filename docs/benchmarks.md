@@ -3,7 +3,9 @@
 We use the [repliqa](https://huggingface.co/datasets/ServiceNow/repliqa) dataset for the evaluation of `haiku.rag`.
 
 You can perform your own evaluations using as example the script found at
-`tests/generate_benchmark_db.py`.
+`tests/generate_benchmark_db.py`. The evaluation flow is orchestrated with
+[`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
+which we leverage for dataset management, scoring, and report generation.
 
 ## Recall
 
@@ -24,7 +26,9 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 
 ## Question/Answer evaluation
 
-Again using the same dataset, we use a QA agent to answer the question. In addition we use an LLM judge (using the Ollama `qwen3`) to evaluate whether the answer is correct or not. The obtained accuracy is as follows:
+Again using the same dataset, we use a QA agent to answer the question.
+`pydantic-evals` runs each case and coordinates an LLM judge (Ollama `qwen3`) to
+determine whether the answer is correct. The obtained accuracy is as follows:
 
 | Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
 |------------------------------------|-----------------------------------|-----------|------------------------|
