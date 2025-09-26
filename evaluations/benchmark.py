@@ -47,8 +47,12 @@ async def populate_db(spec: DatasetSpec) -> None:
 
                 existing = await rag.get_document_by_uri(payload.uri)
                 if existing is not None:
-                    progress.advance(task)
-                    continue
+                    assert existing.id
+                    chunks = await rag.chunk_repository.get_by_document_id(existing.id)
+                    if chunks:
+                        progress.advance(task)
+                        continue
+                    await rag.document_repository.delete(existing.id)
 
                 await rag.create_document(
                     content=payload.content,
