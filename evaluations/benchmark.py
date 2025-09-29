@@ -263,24 +263,22 @@ async def run_qa_benchmark(
 
 async def evaluate_dataset(
     spec: DatasetSpec,
+    skip_db: bool,
     skip_retrieval: bool,
     skip_qa: bool,
     qa_limit: int | None,
 ) -> None:
-    console.print(f"Using dataset: {spec.key}", style="bold magenta")
-    await populate_db(spec)
+    if not skip_db:
+        console.print(f"Using dataset: {spec.key}", style="bold magenta")
+        await populate_db(spec)
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
         await run_retrieval_benchmark(spec)
-    else:
-        console.print("Skipping retrieval benchmark by request.")
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
         await run_qa_benchmark(spec, qa_limit=qa_limit)
-    else:
-        console.print("Skipping QA benchmark by request.")
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -289,6 +287,9 @@ app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.
 @app.command()
 def run(
     dataset: str = typer.Argument(..., help="Dataset key to evaluate."),
+    skip_db: bool = typer.Option(
+        False, "--skip-db", help="Skip updateing the evaluation db."
+    ),
     skip_retrieval: bool = typer.Option(
         False, "--skip-retrieval", help="Skip retrieval benchmark."
     ),
@@ -307,6 +308,7 @@ def run(
     asyncio.run(
         evaluate_dataset(
             spec=spec,
+            skip_db=skip_db,
             skip_retrieval=skip_retrieval,
             skip_qa=skip_qa,
             qa_limit=qa_limit,
