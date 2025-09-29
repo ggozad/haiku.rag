@@ -75,9 +75,11 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
 
     corpus = spec.retrieval_loader()
 
-    correct_at_1 = 0
-    correct_at_2 = 0
-    correct_at_3 = 0
+    recall_totals = {
+        1: 0.0,
+        3: 0.0,
+        5: 0.0,
+    }
     total_queries = 0
 
     with Progress() as progress:
@@ -92,30 +94,30 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
                     progress.advance(task)
                     continue
 
-                matches = await rag.search(query=sample.question, limit=3)
+                matches = await rag.search(query=sample.question, limit=5)
                 if not matches:
                     progress.advance(task)
                     continue
 
                 total_queries += 1
 
-                for position, (chunk, _) in enumerate(matches):
-                    retrieved = (
-                        await rag.get_document_by_id(chunk.document_id)
-                        if chunk.document_id is not None
-                        else None
-                    )
-                    if retrieved and _is_relevant_match(retrieved.uri, sample):
-                        if position == 0:
-                            correct_at_1 += 1
-                            correct_at_2 += 1
-                            correct_at_3 += 1
-                        elif position == 1:
-                            correct_at_2 += 1
-                            correct_at_3 += 1
-                        elif position == 2:
-                            correct_at_3 += 1
-                        break
+                retrieved_uris: list[str] = []
+                for chunk, _ in matches:
+                    if chunk.document_id is None:
+                        continue
+                    retrieved_doc = await rag.get_document_by_id(chunk.document_id)
+                    if retrieved_doc and retrieved_doc.uri:
+                        retrieved_uris.append(retrieved_doc.uri)
+
+                # Compute per-query recall@K by counting how many relevant
+                # documents are retrieved within the first K results and
+                # averaging these fractions across all queries.
+                for cutoff in (1, 3, 5):
+                    top_k = set(retrieved_uris[:cutoff])
+                    relevant = set(sample.expected_uris)
+                    if relevant:
+                        matched = len(top_k & relevant)
+                        recall_totals[cutoff] += matched / len(relevant)
 
                 progress.advance(task)
 
@@ -123,20 +125,20 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
         console.print("No retrieval cases to evaluate.")
         return None
 
-    recall_at_1 = correct_at_1 / total_queries
-    recall_at_2 = correct_at_2 / total_queries
-    recall_at_3 = correct_at_3 / total_queries
+    recall_at_1 = recall_totals[1] / total_queries
+    recall_at_3 = recall_totals[3] / total_queries
+    recall_at_5 = recall_totals[5] / total_queries
 
     console.print("\n=== Retrieval Benchmark Results ===", style="bold cyan")
     console.print(f"Total queries: {total_queries}")
     console.print(f"Recall@1: {recall_at_1:.4f}")
-    console.print(f"Recall@2: {recall_at_2:.4f}")
     console.print(f"Recall@3: {recall_at_3:.4f}")
+    console.print(f"Recall@5: {recall_at_5:.4f}")
 
     return {
         "recall@1": recall_at_1,
-        "recall@2": recall_at_2,
         "recall@3": recall_at_3,
+        "recall@5": recall_at_5,
     }
 
 
