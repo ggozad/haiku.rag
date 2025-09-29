@@ -18,6 +18,7 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 | Embedding Model                       | Document in top 1 | Document in top 3 | Reranker               |
 |---------------------------------------|-------------------|-------------------|------------------------|
 | Ollama / `qwen3-embedding`            | 0.81              | 0.95              | None                   |
+| Ollama / `qwen3-embedding`            | 0.91              | 0.98              | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
 | Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
 | Ollama / `nomic-embed-text-v1.5`      | 0.74              | 0.90              | None                   |
