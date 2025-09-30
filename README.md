@@ -40,6 +40,9 @@ haiku-rag ask "Who is the author of haiku.rag?"
 # Ask questions with citations
 haiku-rag ask "Who is the author of haiku.rag?" --cite
 
+# Deep QA (multi-agent question decomposition)
+haiku-rag ask "Who is the author of haiku.rag?" --deep --cite
+
 # Multi‑agent research (iterative plan/search/evaluate)
 haiku-rag research \
   "What are the main drivers and trends of global temperature anomalies since 1990?" \

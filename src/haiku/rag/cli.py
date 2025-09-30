@@ -299,11 +299,16 @@ def ask(
         "--cite",
         help="Include citations in the response",
     ),
+    deep: bool = typer.Option(
+        False,
+        "--deep",
+        help="Use deep multi-agent QA for complex questions",
+    ),
 ):
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.ask(question=question, cite=cite))
+    asyncio.run(app.ask(question=question, cite=cite, deep=deep))
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")

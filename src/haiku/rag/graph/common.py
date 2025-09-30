@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
@@ -6,8 +6,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import Config
 
-if TYPE_CHECKING:  # pragma: no cover
-    from haiku.rag.research.state import ResearchDeps, ResearchState
+
+class HasEmitLog(Protocol):
+    def emit_log(self, message: str, state: Any = None) -> None: ...
 
 
 def get_model(provider: str, model: str) -> Any:
@@ -28,5 +29,5 @@ def get_model(provider: str, model: str) -> Any:
         return f"{provider}:{model}"
 
 
-def log(deps: "ResearchDeps", state: "ResearchState", msg: str) -> None:
-    deps.emit_log(msg, state)
+def log(deps: HasEmitLog, state: Any, message: str) -> None:
+    deps.emit_log(message, state)

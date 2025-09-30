@@ -92,7 +92,12 @@ Ask questions with citations showing source documents:
 haiku-rag ask "Who is the author of haiku.rag?" --cite
 ```
 
-The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used.
+Use deep QA for complex questions (multi-agent decomposition):
+```bash
+haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --cite
+```
+
+The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used. With `--deep`, the question is decomposed into sub-questions that are answered in parallel before synthesizing a final answer.
 When available, citations use the document title; otherwise they fall back to the URI.
 
 ## Research
