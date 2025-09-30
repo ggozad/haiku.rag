@@ -17,6 +17,7 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
 | Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
 | Ollama / `nomic-embed-text-v1.5`      | 0.74              | 0.90              | None                   |
+| Ollama / `qwen3-embedding`            | 0.81              | 0.95              | None                   |
 <!-- | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
 | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
 | OpenAI / `text-embeddings-3-small`    | 0.83              | 0.90              | Cohere / `rerank-v3.5` | -->
@@ -27,6 +28,7 @@ Again using the same dataset, we use a QA agent to answer the question. In addit
 
 | Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
 |------------------------------------|-----------------------------------|-----------|------------------------|
+| Ollama / `qwen3-embedding. `       | Ollama / `gpt-oss`                | 0.93      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.85      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.87      | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
