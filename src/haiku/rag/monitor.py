@@ -1,13 +1,13 @@
+import logging
 from pathlib import Path
 
 from watchfiles import Change, DefaultFilter, awatch
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.logging import get_logger
 from haiku.rag.reader import FileReader
 from haiku.rag.store.models.document import Document
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class FileFilter(DefaultFilter):
