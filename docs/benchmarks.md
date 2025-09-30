@@ -37,3 +37,29 @@ determine whether the answer is correct. The obtained accuracy is as follows:
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
 
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
+
+## Wix dataset
+
+We also track retrieval performance on [WixQA](https://huggingface.co/datasets/Wix/WixQA),
+a dataset of real customer support questions paired with curated answers from
+Wix. The benchmark follows the evaluation protocol described in the
+[WixQA paper](https://arxiv.org/abs/2505.08643) and gives us a view into how the
+system handles conversational, product-specific support queries.
+
+For recall, we index the reference answer passages shipped with the dataset and
+run retrieval against each user question. Each sample supplies one or more
+relevant passage URIs; we count how many of those URIs land inside the top *k*
+retrieved documents, divide by the number of relevant passages for that query,
+and average across all queries.
+
+The results for recall using the `WixQA` dataset are as follows:
+
+| Embedding Model            | Document in top 1 | Document in top 3 | Reranker               |
+|----------------------------|-------------------|-------------------|------------------------|
+| `qwen3-embedding`          | 0.36              | 0.57              | `mxbai-rerank-base-v2` |
+
+And for QA accuracy,
+
+| Embedding Model            | QA Model  | Accuracy | Reranker               |
+|----------------------------|-----------|----------|------------------------|
+| `qwen3-embedding`          | `gpt-oss` | 0.75     | `mxbai-rerank-base-v2` |
