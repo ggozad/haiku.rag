@@ -97,7 +97,12 @@ Use deep QA for complex questions (multi-agent decomposition):
 haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --cite
 ```
 
-The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used. With `--deep`, the question is decomposed into sub-questions that are answered in parallel before synthesizing a final answer.
+Show verbose output with deep QA:
+```bash
+haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --verbose
+```
+
+The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used. With `--deep`, the question is decomposed into sub-questions that are answered in parallel before synthesizing a final answer. With `--verbose` (only with `--deep`), you'll see the planning, searching, evaluation, and synthesis steps as they happen.
 When available, citations use the document title; otherwise they fall back to the URI.
 
 ## Research

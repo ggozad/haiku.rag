@@ -207,7 +207,7 @@ def test_ask():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=False
+            question="What is Python?", cite=False, deep=False, verbose=False
         )
 
 
@@ -221,7 +221,7 @@ def test_ask_with_cite():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True, deep=False
+            question="What is Python?", cite=True, deep=False, verbose=False
         )
 
 
@@ -235,7 +235,7 @@ def test_ask_with_deep():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=True
+            question="What is Python?", cite=False, deep=True, verbose=False
         )
 
 
@@ -249,7 +249,21 @@ def test_ask_with_deep_and_cite():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True, deep=True
+            question="What is Python?", cite=True, deep=True, verbose=False
+        )
+
+
+def test_ask_with_deep_and_verbose():
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.ask = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["ask", "What is Python?", "--deep", "--verbose"])
+
+        assert result.exit_code == 0
+        mock_app_instance.ask.assert_called_once_with(
+            question="What is Python?", cite=False, deep=True, verbose=True
         )
 
 

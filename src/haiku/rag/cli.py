@@ -304,11 +304,16 @@ def ask(
         "--deep",
         help="Use deep multi-agent QA for complex questions",
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Show verbose progress output (only with --deep)",
+    ),
 ):
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.ask(question=question, cite=cite, deep=deep))
+    asyncio.run(app.ask(question=question, cite=cite, deep=deep, verbose=verbose))
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")

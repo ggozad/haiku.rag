@@ -194,10 +194,18 @@ class HaikuRAGApp:
             for chunk, score in results:
                 self._rich_print_search_result(chunk, score)
 
-    async def ask(self, question: str, cite: bool = False, deep: bool = False):
+    async def ask(
+        self,
+        question: str,
+        cite: bool = False,
+        deep: bool = False,
+        verbose: bool = False,
+    ):
         async with HaikuRAG(db_path=self.db_path) as self.client:
             try:
                 if deep:
+                    from rich.console import Console
+
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.nodes import DeepPlanNode
@@ -208,7 +216,9 @@ class HaikuRAGApp:
                         original_question=question, use_citations=cite
                     )
                     state = DeepQAState(context=context)
-                    deps = DeepQADeps(client=self.client)
+                    deps = DeepQADeps(
+                        client=self.client, console=Console() if verbose else None
+                    )
 
                     start_node = DeepPlanNode(
                         provider=Config.QA_PROVIDER,
