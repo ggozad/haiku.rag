@@ -133,17 +133,17 @@ class SettingsRepository:
 
         if stored_provider and stored_provider != current_provider:
             incompatible_changes.append(
-                f"Embedding provider changed from '{stored_provider}' to '{current_provider}'"
+                f"Stored (db) embedding provider: '{stored_provider}' -> Environment (current) embedding provider: '{current_provider}'"
             )
 
         if stored_model and stored_model != current_model:
             incompatible_changes.append(
-                f"Embedding model changed from '{stored_model}' to '{current_model}'"
+                f"Stored (db) embedding model '{stored_model}' -> Environment (current) embedding model '{current_model}'"
             )
 
         if stored_vector_dim and stored_vector_dim != current_vector_dim:
             incompatible_changes.append(
-                f"Vector dimension changed from {stored_vector_dim} to {current_vector_dim}"
+                f"Stored (db) embedding vector dimension {stored_vector_dim} -> Environment (current) embedding vector dimension {current_vector_dim}"
             )
 
         if incompatible_changes:
