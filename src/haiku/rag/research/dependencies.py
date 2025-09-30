@@ -4,11 +4,11 @@ from pydantic import BaseModel, Field
 from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.graph.models import SearchAnswer
 from haiku.rag.research.models import (
     GapRecord,
     InsightAnalysis,
     InsightRecord,
-    SearchAnswer,
 )
 from haiku.rag.research.stream import ResearchStream
 

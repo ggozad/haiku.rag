@@ -3,15 +3,13 @@ from dataclasses import dataclass
 from pydantic_ai import Agent
 from pydantic_graph import BaseNode, GraphRunContext
 
+from haiku.rag.graph.common import get_model, log
 from haiku.rag.research.common import (
     format_analysis_for_prompt,
     format_context_for_prompt,
-    get_model,
-    log,
 )
 from haiku.rag.research.dependencies import ResearchDependencies
 from haiku.rag.research.models import EvaluationResult, InsightAnalysis, ResearchReport
-from haiku.rag.research.nodes.synthesize import SynthesizeNode
 from haiku.rag.research.prompts import DECISION_AGENT_PROMPT, INSIGHT_AGENT_PROMPT
 from haiku.rag.research.state import ResearchDeps, ResearchState
 
@@ -88,6 +86,8 @@ class AnalyzeInsightsNode(BaseNode[ResearchState, ResearchDeps, ResearchReport])
             log(deps, state, "   [cyan]Proposed follow-ups:[/cyan]")
             for question in analysis.new_questions:
                 log(deps, state, f"   • {question}")
+
+        from haiku.rag.graph.nodes.analysis import DecisionNode
 
         return DecisionNode(self.provider, self.model)
 
@@ -169,7 +169,8 @@ class DecisionNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         status = "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
         log(deps, state, f"   Sufficient: {status}")
 
-        from haiku.rag.research.nodes.search import SearchDispatchNode
+        from haiku.rag.graph.nodes.search import SearchDispatchNode
+        from haiku.rag.graph.nodes.synthesize import SynthesizeNode
 
         if (
             output.is_sufficient
