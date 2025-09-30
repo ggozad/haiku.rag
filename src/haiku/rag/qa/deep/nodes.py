@@ -11,7 +11,7 @@ from haiku.rag.graph.common import get_model, log
 from haiku.rag.graph.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
 from haiku.rag.qa.deep.dependencies import DeepQADependencies
-from haiku.rag.qa.deep.models import DeepAnswer, DeepEvaluation
+from haiku.rag.qa.deep.models import DeepQAAnswer, DeepQAEvaluation
 from haiku.rag.qa.deep.prompts import (
     DECISION_PROMPT,
     SYNTHESIS_PROMPT,
@@ -21,13 +21,13 @@ from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 
 @dataclass
-class DeepPlanNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
+class DeepQAPlanNode(BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]):
     provider: str
     model: str
 
     async def run(
         self, ctx: GraphRunContext[DeepQAState, DeepQADeps]
-    ) -> BaseNode[DeepQAState, DeepQADeps, DeepAnswer]:
+    ) -> BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]:
         state = ctx.state
         deps = ctx.deps
 
@@ -77,22 +77,22 @@ class DeepPlanNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
         for i, sq in enumerate(state.context.sub_questions, 1):
             log(deps, state, f"      {i}. {sq}")
 
-        return DeepSearchDispatchNode(self.provider, self.model)
+        return DeepQASearchDispatchNode(self.provider, self.model)
 
 
 @dataclass
-class DeepSearchDispatchNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
+class DeepQASearchDispatchNode(BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]):
     provider: str
     model: str
 
     async def run(
         self, ctx: GraphRunContext[DeepQAState, DeepQADeps]
-    ) -> BaseNode[DeepQAState, DeepQADeps, DeepAnswer]:
+    ) -> BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]:
         state = ctx.state
         deps = ctx.deps
 
         if not state.context.sub_questions:
-            return DeepDecisionNode(self.provider, self.model)
+            return DeepQADecisionNode(self.provider, self.model)
 
         # Take up to max_concurrency questions and answer them concurrently
         take = max(1, state.max_concurrency)
@@ -157,17 +157,17 @@ class DeepSearchDispatchNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
             preview = ans.answer[:150] + ("…" if len(ans.answer) > 150 else "")
             log(deps, state, f"   [green]✓[/green] {preview}")
 
-        return DeepSearchDispatchNode(self.provider, self.model)
+        return DeepQASearchDispatchNode(self.provider, self.model)
 
 
 @dataclass
-class DeepDecisionNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
+class DeepQADecisionNode(BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]):
     provider: str
     model: str
 
     async def run(
         self, ctx: GraphRunContext[DeepQAState, DeepQADeps]
-    ) -> BaseNode[DeepQAState, DeepQADeps, DeepAnswer]:
+    ) -> BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]:
         state = ctx.state
         deps = ctx.deps
 
@@ -179,7 +179,7 @@ class DeepDecisionNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
 
         agent = Agent(
             model=get_model(self.provider, self.model),
-            output_type=DeepEvaluation,
+            output_type=DeepQAEvaluation,
             instructions=DECISION_PROMPT,
             retries=3,
             deps_type=DeepQADependencies,
@@ -236,24 +236,24 @@ class DeepDecisionNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
                     f"\n[bold yellow]⚠️  Reached max iterations ({state.max_iterations})[/bold yellow]",
                 )
             log(deps, state, "\n[bold green]✅ Moving to synthesis.[/bold green]")
-            return DeepSynthesizeNode(self.provider, self.model)
+            return DeepQASynthesizeNode(self.provider, self.model)
 
         log(
             deps,
             state,
             f"\n[bold cyan]🔄 Starting iteration {state.iterations + 1}...[/bold cyan]",
         )
-        return DeepSearchDispatchNode(self.provider, self.model)
+        return DeepQASearchDispatchNode(self.provider, self.model)
 
 
 @dataclass
-class DeepSynthesizeNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
+class DeepQASynthesizeNode(BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]):
     provider: str
     model: str
 
     async def run(
         self, ctx: GraphRunContext[DeepQAState, DeepQADeps]
-    ) -> End[DeepAnswer]:
+    ) -> End[DeepQAAnswer]:
         state = ctx.state
         deps = ctx.deps
 
@@ -271,7 +271,7 @@ class DeepSynthesizeNode(BaseNode[DeepQAState, DeepQADeps, DeepAnswer]):
 
         agent = Agent(
             model=get_model(self.provider, self.model),
-            output_type=DeepAnswer,
+            output_type=DeepQAAnswer,
             instructions=prompt_template,
             retries=3,
             deps_type=DeepQADependencies,

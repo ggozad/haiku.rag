@@ -268,9 +268,9 @@ async def test_ask_with_verbose(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with deep QA."""
-    from haiku.rag.qa.deep.models import DeepAnswer
+    from haiku.rag.qa.deep.models import DeepQAAnswer
 
-    mock_output = DeepAnswer(answer="Deep QA answer", sources=["test.md"])
+    mock_output = DeepQAAnswer(answer="Deep QA answer", sources=["test.md"])
     mock_result = MagicMock()
     mock_result.output = mock_output
 
@@ -298,9 +298,9 @@ async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with deep QA and citations."""
-    from haiku.rag.qa.deep.models import DeepAnswer
+    from haiku.rag.qa.deep.models import DeepQAAnswer
 
-    mock_output = DeepAnswer(
+    mock_output = DeepQAAnswer(
         answer="Deep QA answer with citations [test.md]", sources=["test.md"]
     )
     mock_result = MagicMock()
@@ -330,9 +330,9 @@ async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with deep QA and verbose output."""
-    from haiku.rag.qa.deep.models import DeepAnswer
+    from haiku.rag.qa.deep.models import DeepQAAnswer
 
-    mock_output = DeepAnswer(answer="Deep QA answer", sources=["test.md"])
+    mock_output = DeepQAAnswer(answer="Deep QA answer", sources=["test.md"])
     mock_result = MagicMock()
     mock_result.output = mock_output
 

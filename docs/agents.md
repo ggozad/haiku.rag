@@ -47,12 +47,11 @@ Deep QA is a multi-agent system that decomposes complex questions into sub-quest
 title: Deep QA graph
 ---
 stateDiagram-v2
-  DeepPlanNode --> DeepSearchDispatchNode
-  DeepSearchDispatchNode --> DeepSearchDispatchNode
-  DeepSearchDispatchNode --> DeepDecisionNode
-  DeepDecisionNode --> DeepSearchDispatchNode
-  DeepDecisionNode --> DeepSynthesizeNode
-  DeepSynthesizeNode --> [*]
+  DeepQAPlanNode --> DeepQASearchDispatchNode
+  DeepQASearchDispatchNode --> DeepQADecisionNode
+  DeepQADecisionNode --> DeepQASearchDispatchNode
+  DeepQADecisionNode --> DeepQASynthesizeNode
+  DeepQASynthesizeNode --> [*]
 ```
 
 Key nodes:
@@ -86,7 +85,7 @@ Python usage:
 from haiku.rag.client import HaikuRAG
 from haiku.rag.qa.deep.dependencies import DeepQAContext
 from haiku.rag.qa.deep.graph import build_deep_qa_graph
-from haiku.rag.qa.deep.nodes import DeepPlanNode
+from haiku.rag.qa.deep.nodes import DeepQAPlanNode
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 async with HaikuRAG(path_to_db) as client:
@@ -104,7 +103,7 @@ async with HaikuRAG(path_to_db) as client:
     deps = DeepQADeps(client=client)
 
     result = await graph.run(
-        start_node=DeepPlanNode(provider="openai", model="gpt-4o-mini"),
+        start_node=DeepQAPlanNode(provider="openai", model="gpt-4o-mini"),
         state=state,
         deps=deps
     )

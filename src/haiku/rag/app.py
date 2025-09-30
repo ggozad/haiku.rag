@@ -208,7 +208,7 @@ class HaikuRAGApp:
 
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
-                    from haiku.rag.qa.deep.nodes import DeepPlanNode
+                    from haiku.rag.qa.deep.nodes import DeepQAPlanNode
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph()
@@ -220,7 +220,7 @@ class HaikuRAGApp:
                         client=self.client, console=Console() if verbose else None
                     )
 
-                    start_node = DeepPlanNode(
+                    start_node = DeepQAPlanNode(
                         provider=Config.QA_PROVIDER,
                         model=Config.QA_MODEL,
                     )

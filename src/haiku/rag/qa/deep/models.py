@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-class DeepEvaluation(BaseModel):
+class DeepQAEvaluation(BaseModel):
     is_sufficient: bool = Field(
         description="Whether we have sufficient information to answer the question"
     )
@@ -12,7 +12,7 @@ class DeepEvaluation(BaseModel):
     )
 
 
-class DeepAnswer(BaseModel):
+class DeepQAAnswer(BaseModel):
     answer: str = Field(description="The comprehensive answer to the question")
     sources: list[str] = Field(
         description="Document titles or URIs used to generate the answer",
