@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator
@@ -17,6 +18,8 @@ from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.utils import text_to_docling_document
+
+logger = logging.getLogger(__name__)
 
 
 class HaikuRAG:
@@ -538,8 +541,8 @@ class HaikuRAG:
         """Rebuild the database by deleting all chunks and re-indexing all documents.
 
         For documents with URIs:
-        - Deletes the document and re-adds it from source if source exists
-        - Skips documents where source no longer exists
+        - Re-adds from source if source exists
+        - Re-embeds from existing content if source is missing
 
         For documents without URIs:
         - Re-creates chunks from existing content
@@ -559,29 +562,51 @@ class HaikuRAG:
         for doc in documents:
             assert doc.id is not None, "Document ID should not be None"
             if doc.uri:
-                # Document has a URI - delete and try to re-add from source
+                # Document has a URI - check if source is accessible
+                source_accessible = False
+                parsed_url = urlparse(doc.uri)
+
                 try:
-                    # Delete the old document first
-                    await self.delete_document(doc.id)
+                    if parsed_url.scheme == "file":
+                        # Check if file exists
+                        source_path = Path(parsed_url.path)
+                        source_accessible = source_path.exists()
+                    elif parsed_url.scheme in ("http", "https"):
+                        # For URLs, we'll try to create and catch errors
+                        source_accessible = True
+                    else:
+                        source_accessible = False
+                except Exception:
+                    source_accessible = False
 
-                    # Try to re-create from source (this creates the document with chunks)
-                    new_doc = await self.create_document_from_source(
-                        source=doc.uri, metadata=doc.metadata or {}
+                if source_accessible:
+                    # Source exists - delete and recreate from source
+                    try:
+                        await self.delete_document(doc.id)
+                        new_doc = await self.create_document_from_source(
+                            source=doc.uri, metadata=doc.metadata or {}
+                        )
+                        assert new_doc.id is not None, (
+                            "New document ID should not be None"
+                        )
+                        yield new_doc.id
+                    except Exception as e:
+                        logger.error(
+                            "Error recreating document from source %s: %s",
+                            doc.uri,
+                            e,
+                        )
+                        continue
+                else:
+                    # Source missing - re-embed from existing content
+                    logger.warning(
+                        "Source missing for %s, re-embedding from content", doc.uri
                     )
-
-                    assert new_doc.id is not None, "New document ID should not be None"
-                    yield new_doc.id
-
-                except (FileNotFoundError, ValueError, OSError) as e:
-                    # Source doesn't exist or can't be accessed - document already deleted, skip
-                    print(f"Skipping document with URI {doc.uri}: {e}")
-                    continue
-                except Exception as e:
-                    # Unexpected error - log it and skip
-                    print(
-                        f"Unexpected error processing document with URI {doc.uri}: {e}"
+                    docling_document = text_to_docling_document(doc.content)
+                    await self.chunk_repository.create_chunks_for_document(
+                        doc.id, docling_document
                     )
-                    continue
+                    yield doc.id
             else:
                 # Document without URI - re-create chunks from existing content
                 docling_document = text_to_docling_document(doc.content)
