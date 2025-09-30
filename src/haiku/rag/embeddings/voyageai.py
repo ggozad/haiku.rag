@@ -6,6 +6,8 @@ try:
     class Embedder(EmbedderBase):
         async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
             client = Client()
+            if not text:
+                return []
             if isinstance(text, str):
                 res = client.embed([text], model=self._model, output_dtype="float")
                 return res.embeddings[0]  # type: ignore[return-value]

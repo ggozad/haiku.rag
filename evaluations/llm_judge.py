@@ -37,7 +37,7 @@ class LLMJudgeResponseSchema(BaseModel):
 class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
-    def __init__(self, model: str = "qwen3"):
+    def __init__(self, model: str = "gpt-oss"):
         # Create Ollama model
         ollama_model = OpenAIChatModel(
             model_name=model,
@@ -49,6 +49,7 @@ class LLMJudge:
             model=ollama_model,
             output_type=LLMJudgeResponseSchema,
             system_prompt=ANSWER_EQUIVALENCE_RUBRIC,
+            retries=3,
         )
 
     async def judge_answers(

@@ -2,8 +2,9 @@
 
 We use the [repliqa](https://huggingface.co/datasets/ServiceNow/repliqa) dataset for the evaluation of `haiku.rag`.
 
-You can perform your own evaluations using as example the script found at
-`tests/generate_benchmark_db.py`. The evaluation flow is orchestrated with
+You can perform your own evaluations with the Typer CLI in
+`evaluations/benchmark.py`, for example `python -m evaluations.benchmark repliqa`.
+The evaluation flow is orchestrated with
 [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
 which we leverage for dataset management, scoring, and report generation.
 
@@ -16,13 +17,11 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 
 | Embedding Model                       | Document in top 1 | Document in top 3 | Reranker               |
 |---------------------------------------|-------------------|-------------------|------------------------|
+| Ollama / `qwen3-embedding`            | 0.81              | 0.95              | None                   |
+| Ollama / `qwen3-embedding`            | 0.91              | 0.98              | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
 | Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
 | Ollama / `nomic-embed-text-v1.5`      | 0.74              | 0.90              | None                   |
-| Ollama / `qwen3-embedding`            | 0.81              | 0.95              | None                   |
-<!-- | OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
-| OpenAI / `text-embeddings-3-small`    | 0.75              | 0.88              | None                   |
-| OpenAI / `text-embeddings-3-small`    | 0.83              | 0.90              | Cohere / `rerank-v3.5` | -->
 
 ## Question/Answer evaluation
 
@@ -38,5 +37,29 @@ determine whether the answer is correct. The obtained accuracy is as follows:
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
 
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
-<!-- | Ollama / `mxbai-embed-large`       | Anthropic / `Claude Sonnet 3.7`   | 0.79      | None                   |
-| OpenAI / `text-embeddings-3-small` | OpenAI / `gpt-4-turbo`            | 0.62      | None                   | -->
+
+## Wix dataset
+
+We also track retrieval performance on [WixQA](https://huggingface.co/datasets/Wix/WixQA),
+a dataset of real customer support questions paired with curated answers from
+Wix. The benchmark follows the evaluation protocol described in the
+[WixQA paper](https://arxiv.org/abs/2505.08643) and gives us a view into how the
+system handles conversational, product-specific support queries.
+
+For recall, we index the reference answer passages shipped with the dataset and
+run retrieval against each user question. Each sample supplies one or more
+relevant passage URIs; we count how many of those URIs land inside the top *k*
+retrieved documents, divide by the number of relevant passages for that query,
+and average across all queries.
+
+The results for recall using the `WixQA` dataset are as follows:
+
+| Embedding Model            | Document in top 1 | Document in top 3 | Reranker               |
+|----------------------------|-------------------|-------------------|------------------------|
+| `qwen3-embedding`          | 0.36              | 0.57              | `mxbai-rerank-base-v2` |
+
+And for QA accuracy,
+
+| Embedding Model            | QA Model  | Accuracy | Reranker               |
+|----------------------------|-----------|----------|------------------------|
+| `qwen3-embedding`          | `gpt-oss` | 0.75     | `mxbai-rerank-base-v2` |

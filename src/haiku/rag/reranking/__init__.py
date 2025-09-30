@@ -1,3 +1,5 @@
+import os
+
 from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 
@@ -17,6 +19,7 @@ def get_reranker() -> RerankerBase | None:
         try:
             from haiku.rag.reranking.mxbai import MxBAIReranker
 
+            os.environ["TOKENIZERS_PARALLELISM"] = "true"
             _reranker = MxBAIReranker()
             return _reranker
         except ImportError:

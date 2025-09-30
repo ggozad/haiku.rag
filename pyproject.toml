@@ -48,6 +48,9 @@ haiku-rag = "haiku.rag.cli:cli"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = ["/docs", "/evaluations", "/tests", "/.github"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/haiku"]
 

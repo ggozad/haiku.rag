@@ -9,6 +9,8 @@ class Embedder(EmbedderBase):
         client = AsyncOpenAI(
             base_url=f"{Config.VLLM_EMBEDDINGS_BASE_URL}/v1", api_key="dummy"
         )
+        if not text:
+            return []
         response = await client.embeddings.create(
             model=self._model,
             input=text,
