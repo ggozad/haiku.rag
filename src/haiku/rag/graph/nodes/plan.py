@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext
 from pydantic_graph import BaseNode, GraphRunContext
 
-from haiku.rag.research.common import get_model, log
+from haiku.rag.graph.common import get_model, log
+from haiku.rag.graph.models import ResearchPlan
+from haiku.rag.graph.prompts import PLAN_PROMPT
 from haiku.rag.research.dependencies import ResearchDependencies
-from haiku.rag.research.models import ResearchPlan, ResearchReport
-from haiku.rag.research.nodes.search import SearchDispatchNode
-from haiku.rag.research.prompts import PLAN_PROMPT
+from haiku.rag.research.models import ResearchReport
 from haiku.rag.research.state import ResearchDeps, ResearchState
 
 
@@ -66,5 +66,7 @@ class PlanNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         log(deps, state, "   [bold]Sub-questions:[/bold]")
         for i, sq in enumerate(state.context.sub_questions, 1):
             log(deps, state, f"      {i}. {sq}")
+
+        from haiku.rag.graph.nodes.search import SearchDispatchNode
 
         return SearchDispatchNode(self.provider, self.model)

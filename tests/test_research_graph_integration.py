@@ -2,15 +2,15 @@ from typing import Any, cast
 
 import pytest
 
+from haiku.rag.graph.models import SearchAnswer
+from haiku.rag.graph.nodes.analysis import AnalyzeInsightsNode, DecisionNode
+from haiku.rag.graph.nodes.plan import PlanNode
+from haiku.rag.graph.nodes.search import SearchDispatchNode
+from haiku.rag.graph.nodes.synthesize import SynthesizeNode
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import (
-    AnalyzeInsightsNode,
-    DecisionNode,
-    PlanNode,
     ResearchDeps,
     ResearchState,
-    SearchDispatchNode,
-    SynthesizeNode,
     build_research_graph,
 )
 from haiku.rag.research.models import (
@@ -21,7 +21,6 @@ from haiku.rag.research.models import (
     InsightRecord,
     InsightStatus,
     ResearchReport,
-    SearchAnswer,
 )
 from haiku.rag.research.stream import stream_research_graph
 

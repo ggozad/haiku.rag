@@ -246,3 +246,111 @@ async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
         await app.ask("test question", cite=True)
 
     mock_client.ask.assert_called_once_with("test question", cite=True)
+
+
+@pytest.mark.asyncio
+async def test_ask_with_verbose(app: HaikuRAGApp, monkeypatch):
+    """Test asking a question with verbose (should be ignored for non-deep)."""
+    mock_answer = "Test answer"
+    mock_client = AsyncMock()
+    mock_client.ask.return_value = mock_answer
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        await app.ask("test question", verbose=True)
+
+    mock_client.ask.assert_called_once_with("test question", cite=False)
+
+
+@pytest.mark.asyncio
+async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
+    """Test asking a question with deep QA."""
+    from haiku.rag.qa.deep.models import DeepQAAnswer
+
+    mock_output = DeepQAAnswer(answer="Deep QA answer", sources=["test.md"])
+    mock_result = MagicMock()
+    mock_result.output = mock_output
+
+    mock_graph = AsyncMock()
+    mock_graph.run.return_value = mock_result
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        with patch(
+            "haiku.rag.qa.deep.graph.build_deep_qa_graph", return_value=mock_graph
+        ):
+            await app.ask("test question", deep=True)
+
+    mock_graph.run.assert_called_once()
+    call_kwargs = mock_graph.run.call_args[1]
+    assert call_kwargs["state"].context.original_question == "test question"
+    assert call_kwargs["state"].context.use_citations is False
+
+
+@pytest.mark.asyncio
+async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
+    """Test asking a question with deep QA and citations."""
+    from haiku.rag.qa.deep.models import DeepQAAnswer
+
+    mock_output = DeepQAAnswer(
+        answer="Deep QA answer with citations [test.md]", sources=["test.md"]
+    )
+    mock_result = MagicMock()
+    mock_result.output = mock_output
+
+    mock_graph = AsyncMock()
+    mock_graph.run.return_value = mock_result
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        with patch(
+            "haiku.rag.qa.deep.graph.build_deep_qa_graph", return_value=mock_graph
+        ):
+            await app.ask("test question", deep=True, cite=True)
+
+    mock_graph.run.assert_called_once()
+    call_kwargs = mock_graph.run.call_args[1]
+    assert call_kwargs["state"].context.original_question == "test question"
+    assert call_kwargs["state"].context.use_citations is True
+
+
+@pytest.mark.asyncio
+async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
+    """Test asking a question with deep QA and verbose output."""
+    from haiku.rag.qa.deep.models import DeepQAAnswer
+
+    mock_output = DeepQAAnswer(answer="Deep QA answer", sources=["test.md"])
+    mock_result = MagicMock()
+    mock_result.output = mock_output
+
+    mock_graph = AsyncMock()
+    mock_graph.run.return_value = mock_result
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        with patch(
+            "haiku.rag.qa.deep.graph.build_deep_qa_graph", return_value=mock_graph
+        ):
+            await app.ask("test question", deep=True, verbose=True)
+
+    mock_graph.run.assert_called_once()
+    call_kwargs = mock_graph.run.call_args[1]
+    assert call_kwargs["deps"].console is not None

@@ -3,10 +3,9 @@ from dataclasses import dataclass
 from pydantic_ai import Agent
 from pydantic_graph import BaseNode, End, GraphRunContext
 
-from haiku.rag.research.common import format_context_for_prompt, get_model, log
-from haiku.rag.research.dependencies import (
-    ResearchDependencies,
-)
+from haiku.rag.graph.common import get_model, log
+from haiku.rag.research.common import format_context_for_prompt
+from haiku.rag.research.dependencies import ResearchDependencies
 from haiku.rag.research.models import ResearchReport
 from haiku.rag.research.prompts import SYNTHESIS_AGENT_PROMPT
 from haiku.rag.research.state import ResearchDeps, ResearchState

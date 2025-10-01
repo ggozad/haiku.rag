@@ -7,10 +7,11 @@ from pydantic_ai.format_prompt import format_as_xml
 from pydantic_ai.output import ToolOutput
 from pydantic_graph import BaseNode, GraphRunContext
 
-from haiku.rag.research.common import get_model, log
+from haiku.rag.graph.common import get_model, log
+from haiku.rag.graph.models import SearchAnswer
+from haiku.rag.graph.prompts import SEARCH_AGENT_PROMPT
 from haiku.rag.research.dependencies import ResearchDependencies
-from haiku.rag.research.models import ResearchReport, SearchAnswer
-from haiku.rag.research.prompts import SEARCH_AGENT_PROMPT
+from haiku.rag.research.models import ResearchReport
 from haiku.rag.research.state import ResearchDeps, ResearchState
 
 
@@ -25,7 +26,7 @@ class SearchDispatchNode(BaseNode[ResearchState, ResearchDeps, ResearchReport]):
         state = ctx.state
         deps = ctx.deps
         if not state.context.sub_questions:
-            from haiku.rag.research.nodes.analysis import AnalyzeInsightsNode
+            from haiku.rag.graph.nodes.analysis import AnalyzeInsightsNode
 
             return AnalyzeInsightsNode(self.provider, self.model)
 

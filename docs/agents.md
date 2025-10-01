@@ -1,8 +1,9 @@
 ## Agents
 
-Two agentic flows are provided by haiku.rag:
+Three agentic flows are provided by haiku.rag:
 
 - Simple QA Agent — a focused question answering agent
+- Deep QA Agent — multi-agent question decomposition for complex questions
 - Research Multi‑Agent — a multi‑step, analyzable research workflow
 
 
@@ -35,6 +36,80 @@ agent = QuestionAnswerAgent(
 
 answer = await agent.answer("What is climate change?")
 print(answer)
+```
+
+### Deep QA Agent
+
+Deep QA is a multi-agent system that decomposes complex questions into sub-questions, answers them in batches, evaluates sufficiency, and iterates if needed before synthesizing a final answer. It's lighter than the full research workflow but more powerful than the simple QA agent.
+
+```mermaid
+---
+title: Deep QA graph
+---
+stateDiagram-v2
+  DeepQAPlanNode --> DeepQASearchDispatchNode
+  DeepQASearchDispatchNode --> DeepQADecisionNode
+  DeepQADecisionNode --> DeepQASearchDispatchNode
+  DeepQADecisionNode --> DeepQASynthesizeNode
+  DeepQASynthesizeNode --> [*]
+```
+
+Key nodes:
+
+- **Plan**: Decomposes the question into focused sub-questions
+- **Search (batched)**: Answers sub-questions in parallel batches (respects max_concurrency)
+- **Decision**: Evaluates if we have sufficient information or need another iteration
+- **Synthesize**: Generates the final comprehensive answer
+
+Key differences from Research:
+
+- **Simpler evaluation**: Uses sufficiency check (not confidence + insight analysis)
+- **Direct answers**: Returns just the answer (not a full research report)
+- **Question-focused**: Optimized for answering specific questions, not open-ended research
+- **Supports citations**: Can include inline source citations like `[document.md]`
+- **Configurable iterations**: Control max_iterations (default: 2) and max_concurrency (default: 3)
+
+CLI usage:
+
+```bash
+# Deep QA without citations
+haiku-rag ask "What are the main features of haiku.rag?" --deep
+
+# Deep QA with citations
+haiku-rag ask "What are the main features of haiku.rag?" --deep --cite
+```
+
+Python usage:
+
+```python
+from haiku.rag.client import HaikuRAG
+from haiku.rag.qa.deep.dependencies import DeepQAContext
+from haiku.rag.qa.deep.graph import build_deep_qa_graph
+from haiku.rag.qa.deep.nodes import DeepQAPlanNode
+from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+
+async with HaikuRAG(path_to_db) as client:
+    graph = build_deep_qa_graph()
+    context = DeepQAContext(
+        original_question="What are the main features of haiku.rag?",
+        use_citations=True
+    )
+    state = DeepQAState(
+        context=context,
+        max_sub_questions=3,
+        max_iterations=2,
+        max_concurrency=3
+    )
+    deps = DeepQADeps(client=client)
+
+    result = await graph.run(
+        start_node=DeepQAPlanNode(provider="openai", model="gpt-4o-mini"),
+        state=state,
+        deps=deps
+    )
+
+    print(result.output.answer)
+    print(result.output.sources)
 ```
 
 ### Research Graph
