@@ -143,7 +143,7 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
 
 
 async def run_qa_benchmark(
-    spec: DatasetSpec, qa_limit: int | None = None
+    spec: DatasetSpec, qa_limit: int | None = None, deep: bool = False
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if qa_limit is not None:
@@ -187,10 +187,33 @@ async def run_qa_benchmark(
         )
 
         async with HaikuRAG(spec.db_path) as rag:
-            qa = get_qa_agent(rag)
+            if deep:
+                from haiku.rag.qa.deep.dependencies import DeepQAContext
+                from haiku.rag.qa.deep.graph import build_deep_qa_graph
+                from haiku.rag.qa.deep.nodes import DeepQAPlanNode
+                from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
-            async def answer_question(question: str) -> str:
-                return await qa.answer(question)
+                graph = build_deep_qa_graph()
+                deps = DeepQADeps(client=rag)
+
+                async def answer_question(question: str) -> str:
+                    context = DeepQAContext(
+                        original_question=question, use_citations=False
+                    )
+                    state = DeepQAState(context=context)
+                    start_node = DeepQAPlanNode(
+                        provider=Config.QA_PROVIDER,
+                        model=Config.QA_MODEL,
+                    )
+                    result = await graph.run(
+                        start_node=start_node, state=state, deps=deps
+                    )
+                    return result.output.answer
+            else:
+                qa = get_qa_agent(rag)
+
+                async def answer_question(question: str) -> str:
+                    return await qa.answer(question)
 
             for case in evaluation_dataset.cases:
                 progress.console.print(f"\n[bold]Evaluating case:[/bold] {case.name}")
@@ -267,6 +290,7 @@ async def evaluate_dataset(
     skip_retrieval: bool,
     skip_qa: bool,
     qa_limit: int | None,
+    deep: bool = False,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -278,7 +302,7 @@ async def evaluate_dataset(
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, qa_limit=qa_limit)
+        await run_qa_benchmark(spec, qa_limit=qa_limit, deep=deep)
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -297,6 +321,9 @@ def run(
     qa_limit: int | None = typer.Option(
         None, "--qa-limit", help="Limit number of QA cases."
     ),
+    deep: bool = typer.Option(
+        False, "--deep", help="Use deep multi-agent QA for complex questions."
+    ),
 ) -> None:
     spec = DATASETS.get(dataset.lower())
     if spec is None:
@@ -312,6 +339,7 @@ def run(
             skip_retrieval=skip_retrieval,
             skip_qa=skip_qa,
             qa_limit=qa_limit,
+            deep=deep,
         )
     )
 

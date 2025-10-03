@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from datasets import Dataset
 from pydantic_evals import Case
+
+if TYPE_CHECKING:
+    from datasets import Dataset
 
 
 @dataclass
@@ -22,9 +26,9 @@ class RetrievalSample:
     skip: bool = False
 
 
-DocumentLoader = Callable[[], Dataset]
+DocumentLoader = Callable[[], "Dataset"]
 DocumentMapper = Callable[[Mapping[str, Any]], DocumentPayload | None]
-RetrievalLoader = Callable[[], Dataset]
+RetrievalLoader = Callable[[], "Dataset"]
 RetrievalMapper = Callable[[Mapping[str, Any]], RetrievalSample | None]
 CaseBuilder = Callable[[int, Mapping[str, Any]], Case[str, str, dict[str, str]]]
 
