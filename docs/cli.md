@@ -80,6 +80,14 @@ With options:
 haiku-rag search "python programming" --limit 10
 ```
 
+With query expansion (multi-query search):
+```bash
+# Generate 2 query variants + search with original (3 queries total)
+haiku-rag search "machine learning" --query-variants 2
+```
+
+Query expansion uses an LLM to generate alternative phrasings of your query, then searches with all variants and fuses results using Reciprocal Rank Fusion. This improves recall by capturing documents that match semantically but use different terminology.
+
 ## Question Answering
 
 Ask questions about your documents:
@@ -102,7 +110,12 @@ Show verbose output with deep QA:
 haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --verbose
 ```
 
-The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used. With `--deep`, the question is decomposed into sub-questions that are answered in parallel before synthesizing a final answer. With `--verbose` (only with `--deep`), you'll see the planning, searching, evaluation, and synthesis steps as they happen.
+Use query expansion to improve retrieval:
+```bash
+haiku-rag ask "What is machine learning?" --query-variants 2
+```
+
+The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used. With `--deep`, the question is decomposed into sub-questions that are answered in parallel before synthesizing a final answer. With `--verbose` (only with `--deep`), you'll see the planning, searching, evaluation, and synthesis steps as they happen. With `--query-variants`, the QA agent's search tool will use multi-query expansion to improve retrieval recall.
 When available, citations use the document title; otherwise they fall back to the URI.
 
 ## Research

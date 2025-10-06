@@ -168,6 +168,18 @@ for chunk, relevance_score in results:
     print(f"Document metadata: {chunk.document_meta}")
 ```
 
+With query expansion (multi-query search):
+```python
+# Generate 2 query variants + search with original (3 queries total)
+results = await client.search(
+    query="machine learning",
+    limit=5,
+    query_variants=2
+)
+```
+
+Query expansion uses an LLM to generate alternative phrasings of your query, then searches with all variants and fuses results using Reciprocal Rank Fusion (RRF). This improves recall by capturing documents that match semantically but use different terminology. The fusion happens before optional reranking.
+
 ### Expanding Search Context
 
 Expand search results with adjacent chunks for more complete context:
@@ -207,7 +219,17 @@ answer = await client.ask("Who is the author of haiku.rag?", cite=True)
 print(answer)
 ```
 
-The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
+Use query expansion to improve retrieval:
+
+```python
+answer = await client.ask(
+    "What is machine learning?",
+    cite=True,
+    query_variants=2
+)
+```
+
+The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI. With `query_variants > 0`, the QA agent's search tool will use multi-query expansion to improve retrieval recall.
 
 The QA provider and model can be configured via environment variables (see [Configuration](configuration.md)).
 
