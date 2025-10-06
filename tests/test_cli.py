@@ -170,7 +170,9 @@ def test_search():
         result = runner.invoke(cli, ["search", "query"])
 
         assert result.exit_code == 0
-        mock_app_instance.search.assert_called_once_with(query="query", limit=5)
+        mock_app_instance.search.assert_called_once_with(
+            query="query", limit=5, query_variants=0
+        )
 
 
 def test_serve():
@@ -207,7 +209,11 @@ def test_ask():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=False, verbose=False
+            question="What is Python?",
+            cite=False,
+            deep=False,
+            verbose=False,
+            query_variants=0,
         )
 
 
@@ -221,7 +227,11 @@ def test_ask_with_cite():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True, deep=False, verbose=False
+            question="What is Python?",
+            cite=True,
+            deep=False,
+            verbose=False,
+            query_variants=0,
         )
 
 
@@ -235,7 +245,11 @@ def test_ask_with_deep():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=True, verbose=False
+            question="What is Python?",
+            cite=False,
+            deep=True,
+            verbose=False,
+            query_variants=0,
         )
 
 
@@ -249,7 +263,11 @@ def test_ask_with_deep_and_cite():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True, deep=True, verbose=False
+            question="What is Python?",
+            cite=True,
+            deep=True,
+            verbose=False,
+            query_variants=0,
         )
 
 
@@ -263,7 +281,11 @@ def test_ask_with_deep_and_verbose():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=True, verbose=True
+            question="What is Python?",
+            cite=False,
+            deep=True,
+            verbose=True,
+            query_variants=0,
         )
 
 

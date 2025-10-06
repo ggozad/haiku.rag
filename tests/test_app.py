@@ -159,7 +159,7 @@ async def test_search(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.search("query")
 
-    mock_client.search.assert_called_once_with("query", limit=5)
+    mock_client.search.assert_called_once_with("query", limit=5, query_variants=0)
     assert mock_rich_print_search.call_count == len(mock_results)
 
 
@@ -176,7 +176,7 @@ async def test_search_no_results(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.search("query")
 
-    mock_client.search.assert_called_once_with("query", limit=5)
+    mock_client.search.assert_called_once_with("query", limit=5, query_variants=0)
     mock_print.assert_called_once_with("[yellow]No results found.[/yellow]")
 
 
@@ -228,7 +228,9 @@ async def test_ask_without_cite(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.ask("test question")
 
-    mock_client.ask.assert_called_once_with("test question", cite=False)
+    mock_client.ask.assert_called_once_with(
+        "test question", cite=False, query_variants=0
+    )
 
 
 @pytest.mark.asyncio
@@ -245,7 +247,9 @@ async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.ask("test question", cite=True)
 
-    mock_client.ask.assert_called_once_with("test question", cite=True)
+    mock_client.ask.assert_called_once_with(
+        "test question", cite=True, query_variants=0
+    )
 
 
 @pytest.mark.asyncio
@@ -262,7 +266,9 @@ async def test_ask_with_verbose(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.ask("test question", verbose=True)
 
-    mock_client.ask.assert_called_once_with("test question", cite=False)
+    mock_client.ask.assert_called_once_with(
+        "test question", cite=False, query_variants=0
+    )
 
 
 @pytest.mark.asyncio
