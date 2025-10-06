@@ -46,17 +46,29 @@ Wix. The benchmark follows the evaluation protocol described in the
 [WixQA paper](https://arxiv.org/abs/2505.08643) and gives us a view into how the
 system handles conversational, product-specific support queries.
 
-For recall, we index the reference answer passages shipped with the dataset and
+For retrieval evaluation, we index the reference answer passages shipped with the dataset and
 run retrieval against each user question. Each sample supplies one or more
-relevant passage URIs; we count how many of those URIs land inside the top *k*
-retrieved documents, divide by the number of relevant passages for that query,
-and average across all queries.
+relevant passage URIs. We track two complementary metrics:
 
-The results for recall using the `WixQA` dataset are as follows:
+- **Recall@K**: Fraction of relevant documents retrieved in top K results. Measures coverage.
+- **Success@K**: Fraction of queries with at least one relevant document in top K. Most relevant for RAG, where finding one good document is often sufficient.
 
-| Embedding Model            | Document in top 1 | Document in top 3 | Reranker               |
-|----------------------------|-------------------|-------------------|------------------------|
-| `qwen3-embedding`          | 0.36              | 0.57              | `mxbai-rerank-base-v2` |
+### Recall@K Results
+
+| Embedding Model            | Recall@1 | Recall@3 | Recall@5 | Reranker               |
+|----------------------------|----------|----------|----------|------------------------|
+| `qwen3-embedding`          | 0.31     | 0.48     | 0.54     | None                   |
+| `qwen3-embedding`          | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` |
+
+### Success@K Results
+
+| Embedding Model            | Success@1 | Success@3 | Success@5 | Reranker               |
+|----------------------------|-----------|-----------|-----------|------------------------|
+| `qwen3-embedding`          | 0.36      | 0.54      | 0.62      | None                   |
+| `qwen3-embedding`          | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` |
+
+
+## QA Accuracy
 
 And for QA accuracy,
 
