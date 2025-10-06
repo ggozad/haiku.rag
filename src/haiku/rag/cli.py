@@ -272,6 +272,11 @@ def search(
         "-l",
         help="Maximum number of results to return",
     ),
+    query_variants: int = typer.Option(
+        0,
+        "--query-variants",
+        help="Number of query variants to generate for multi-query search (0 = disabled)",
+    ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
@@ -281,7 +286,7 @@ def search(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.search(query=query, limit=limit))
+    asyncio.run(app.search(query=query, limit=limit, query_variants=query_variants))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")
@@ -309,11 +314,24 @@ def ask(
         "--verbose",
         help="Show verbose progress output (only with --deep)",
     ),
+    query_variants: int = typer.Option(
+        0,
+        "--query-variants",
+        help="Number of query variants to generate for multi-query search (0 = disabled)",
+    ),
 ):
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.ask(question=question, cite=cite, deep=deep, verbose=verbose))
+    asyncio.run(
+        app.ask(
+            question=question,
+            cite=cite,
+            deep=deep,
+            verbose=verbose,
+            query_variants=query_variants,
+        )
+    )
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")

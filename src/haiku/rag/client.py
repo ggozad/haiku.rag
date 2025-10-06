@@ -560,19 +560,22 @@ class HaikuRAG:
         merged.append(current)
         return merged
 
-    async def ask(self, question: str, cite: bool = False) -> str:
+    async def ask(
+        self, question: str, cite: bool = False, query_variants: int = 0
+    ) -> str:
         """Ask a question using the configured QA agent.
 
         Args:
             question: The question to ask.
             cite: Whether to include citations in the response.
+            query_variants: Number of query variants to generate for multi-query search (default: 0).
 
         Returns:
             The generated answer as a string.
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(self, use_citations=cite)
+        qa_agent = get_qa_agent(self, use_citations=cite, query_variants=query_variants)
         return await qa_agent.answer(question)
 
     async def rebuild_database(self) -> AsyncGenerator[str, None]:

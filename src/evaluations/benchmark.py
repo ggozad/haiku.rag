@@ -68,7 +68,9 @@ def _is_relevant_match(retrieved_uri: str | None, sample: RetrievalSample) -> bo
     return retrieved_uri is not None and retrieved_uri in sample.expected_uris
 
 
-async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
+async def run_retrieval_benchmark(
+    spec: DatasetSpec, query_variants: int = 0
+) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
         return None
@@ -99,7 +101,9 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
                     progress.advance(task)
                     continue
 
-                matches = await rag.search(query=sample.question, limit=5)
+                matches = await rag.search(
+                    query=sample.question, limit=5, query_variants=query_variants
+                )
                 if not matches:
                     progress.advance(task)
                     continue
@@ -161,7 +165,7 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
 
 
 async def run_qa_benchmark(
-    spec: DatasetSpec, qa_limit: int | None = None
+    spec: DatasetSpec, qa_limit: int | None = None, query_variants: int = 0
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if qa_limit is not None:
@@ -205,7 +209,7 @@ async def run_qa_benchmark(
         )
 
         async with HaikuRAG(spec.db_path) as rag:
-            qa = get_qa_agent(rag)
+            qa = get_qa_agent(rag, query_variants=query_variants)
 
             async def answer_question(question: str) -> str:
                 return await qa.answer(question)
@@ -285,6 +289,7 @@ async def evaluate_dataset(
     skip_retrieval: bool,
     skip_qa: bool,
     qa_limit: int | None,
+    query_variants: int,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -292,11 +297,11 @@ async def evaluate_dataset(
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
-        await run_retrieval_benchmark(spec)
+        await run_retrieval_benchmark(spec, query_variants=query_variants)
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, qa_limit=qa_limit)
+        await run_qa_benchmark(spec, qa_limit=qa_limit, query_variants=query_variants)
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -315,6 +320,11 @@ def run(
     qa_limit: int | None = typer.Option(
         None, "--qa-limit", help="Limit number of QA cases."
     ),
+    query_variants: int = typer.Option(
+        0,
+        "--query-variants",
+        help="Number of query variants to generate for multi-query search (0 = disabled)",
+    ),
 ) -> None:
     spec = DATASETS.get(dataset.lower())
     if spec is None:
@@ -330,6 +340,7 @@ def run(
             skip_retrieval=skip_retrieval,
             skip_qa=skip_qa,
             qa_limit=qa_limit,
+            query_variants=query_variants,
         )
     )
 

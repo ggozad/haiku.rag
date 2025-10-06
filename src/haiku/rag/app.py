@@ -185,9 +185,11 @@ class HaikuRAGApp:
                     f"[yellow]Document with id {doc_id} not found.[/yellow]"
                 )
 
-    async def search(self, query: str, limit: int = 5):
+    async def search(self, query: str, limit: int = 5, query_variants: int = 0):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            results = await self.client.search(query, limit=limit)
+            results = await self.client.search(
+                query, limit=limit, query_variants=query_variants
+            )
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
                 return
@@ -200,6 +202,7 @@ class HaikuRAGApp:
         cite: bool = False,
         deep: bool = False,
         verbose: bool = False,
+        query_variants: int = 0,
     ):
         async with HaikuRAG(db_path=self.db_path) as self.client:
             try:
@@ -230,7 +233,9 @@ class HaikuRAGApp:
                     )
                     answer = result.output.answer
                 else:
-                    answer = await self.client.ask(question, cite=cite)
+                    answer = await self.client.ask(
+                        question, cite=cite, query_variants=query_variants
+                    )
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
