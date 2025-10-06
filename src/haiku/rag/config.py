@@ -36,6 +36,7 @@ class AppConfig(BaseModel):
     # HyDE defaults (fallback to QA if not provided via env)
     HYDE_PROVIDER: str = ""
     HYDE_MODEL: str = ""
+    HYDE_PROMPT: str = ""
 
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0

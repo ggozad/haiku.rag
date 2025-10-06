@@ -40,8 +40,13 @@ async def generate_hypothetical_document(query: str) -> str:
 
     agent = Agent(model=model)
 
-    prompt = f"""Write a detailed technical answer to this question as if from documentation.
-Use specific terminology and examples. Write 2-3 concise paragraphs.
+    # Use custom prompt if configured, otherwise use default
+    if Config.HYDE_PROMPT:
+        prompt = Config.HYDE_PROMPT.format(query=query)
+    else:
+        # Default prompt: shorter, more focused
+        prompt = f"""Answer this question concisely as if from technical documentation.
+Use specific terminology. Keep it brief (2-3 sentences).
 
 Question: {query}"""
 
