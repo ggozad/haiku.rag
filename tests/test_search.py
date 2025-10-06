@@ -206,3 +206,39 @@ async def test_search_score_types(temp_db_path):
             )
 
     store.close()
+
+
+@pytest.mark.asyncio
+async def test_search_with_query_expansion(temp_db_path):
+    """Test that search with query expansion returns relevant results."""
+    from haiku.rag.client import HaikuRAG
+
+    async with HaikuRAG(temp_db_path) as client:
+        # Create documents with different phrasings of similar concepts
+        await client.create_document(
+            "Machine learning is a subset of artificial intelligence that enables computers to learn from data."
+        )
+        await client.create_document(
+            "Deep learning uses neural networks with multiple layers to process complex patterns."
+        )
+        await client.create_document(
+            "Supervised learning algorithms learn from labeled training data."
+        )
+
+        # Search with query expansion (2 variants + original = 3 queries total)
+        results = await client.search("What is ML?", limit=2, query_variants=2)
+
+        # Should return results
+        assert len(results) > 0
+
+        # Results should be relevant (contain machine learning related content)
+        found_ml_content = False
+        for chunk, score in results:
+            if (
+                "machine learning" in chunk.content.lower()
+                or "learning" in chunk.content.lower()
+            ):
+                found_ml_content = True
+                break
+
+        assert found_ml_content, "Expected to find machine learning related content"

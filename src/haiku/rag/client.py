@@ -361,7 +361,11 @@ class HaikuRAG:
         return await self.document_repository.list_all(limit=limit, offset=offset)
 
     async def search(
-        self, query: str, limit: int = 5, search_type: str = "hybrid"
+        self,
+        query: str,
+        limit: int = 5,
+        search_type: str = "hybrid",
+        query_variants: int = 0,
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using the specified search method with optional reranking.
 
@@ -369,6 +373,8 @@ class HaikuRAG:
             query: The search query string.
             limit: Maximum number of results to return.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
+            query_variants: Number of query variants to generate for multi-query search.
+                          When > 0, searches with original query + variants (default: 0).
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
@@ -376,21 +382,53 @@ class HaikuRAG:
         # Get reranker if available
         reranker = get_reranker()
 
+        # Determine search limit
+        search_limit = limit * 3 if reranker else limit
+
+        # Handle query expansion
+        if query_variants > 0:
+            from haiku.rag.query_expansion import QueryExpander
+
+            expander = QueryExpander(
+                provider=Config.QA_PROVIDER,
+                model=Config.QA_MODEL,
+                num_queries=query_variants,
+            )
+            variants = await expander.expand(query)
+
+            # Search with original query + all variants and fuse results using RRF
+            all_results: dict[str, tuple[Chunk, list[float]]] = {}
+            queries = [query] + variants
+
+            for search_query in queries:
+                variant_results = await self.chunk_repository.search(
+                    search_query, search_limit, search_type
+                )
+                for rank, (chunk, score) in enumerate(variant_results, start=1):
+                    assert chunk.id is not None
+                    if chunk.id not in all_results:
+                        all_results[chunk.id] = (chunk, [])
+                    # RRF score: 1 / (k + rank), using k=60 as standard
+                    all_results[chunk.id][1].append(1.0 / (60 + rank))
+
+            # Combine RRF scores and sort
+            fused_results = [
+                (chunk, sum(scores)) for chunk, scores in all_results.values()
+            ]
+            fused_results.sort(key=lambda x: x[1], reverse=True)
+            search_results = fused_results[:search_limit]
+        else:
+            search_results = await self.chunk_repository.search(
+                query, search_limit, search_type
+            )
+
+        # Apply reranking if available
         if reranker is None:
-            # No reranking - return direct search results
-            return await self.chunk_repository.search(query, limit, search_type)
+            return search_results[:limit]
 
-        # Get more initial results (3X) for reranking
-        search_limit = limit * 3
-        search_results = await self.chunk_repository.search(
-            query, search_limit, search_type
-        )
-
-        # Apply reranking
         chunks = [chunk for chunk, _ in search_results]
         reranked_results = await reranker.rerank(query, chunks, top_n=limit)
 
-        # Return reranked results with scores from reranker
         return reranked_results
 
     async def expand_context(
