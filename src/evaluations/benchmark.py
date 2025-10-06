@@ -80,6 +80,11 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
         3: 0.0,
         5: 0.0,
     }
+    success_totals = {
+        1: 0.0,
+        3: 0.0,
+        5: 0.0,
+    }
     total_queries = 0
 
     with Progress() as progress:
@@ -109,15 +114,16 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
                     if retrieved_doc and retrieved_doc.uri:
                         retrieved_uris.append(retrieved_doc.uri)
 
-                # Compute per-query recall@K by counting how many relevant
-                # documents are retrieved within the first K results and
-                # averaging these fractions across all queries.
+                # Compute metrics for each cutoff
                 for cutoff in (1, 3, 5):
                     top_k = set(retrieved_uris[:cutoff])
                     relevant = set(sample.expected_uris)
                     if relevant:
                         matched = len(top_k & relevant)
+                        # Recall: fraction of relevant docs retrieved
                         recall_totals[cutoff] += matched / len(relevant)
+                        # Success: binary - did we get at least one relevant doc?
+                        success_totals[cutoff] += 1.0 if matched > 0 else 0.0
 
                 progress.advance(task)
 
@@ -129,16 +135,28 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
     recall_at_3 = recall_totals[3] / total_queries
     recall_at_5 = recall_totals[5] / total_queries
 
+    success_at_1 = success_totals[1] / total_queries
+    success_at_3 = success_totals[3] / total_queries
+    success_at_5 = success_totals[5] / total_queries
+
     console.print("\n=== Retrieval Benchmark Results ===", style="bold cyan")
     console.print(f"Total queries: {total_queries}")
-    console.print(f"Recall@1: {recall_at_1:.4f}")
-    console.print(f"Recall@3: {recall_at_3:.4f}")
-    console.print(f"Recall@5: {recall_at_5:.4f}")
+    console.print("\nRecall@K (fraction of relevant docs retrieved):")
+    console.print(f"  Recall@1: {recall_at_1:.4f}")
+    console.print(f"  Recall@3: {recall_at_3:.4f}")
+    console.print(f"  Recall@5: {recall_at_5:.4f}")
+    console.print("\nSuccess@K (queries with at least one relevant doc):")
+    console.print(f"  Success@1: {success_at_1:.4f} ({success_at_1 * 100:.1f}%)")
+    console.print(f"  Success@3: {success_at_3:.4f} ({success_at_3 * 100:.1f}%)")
+    console.print(f"  Success@5: {success_at_5:.4f} ({success_at_5 * 100:.1f}%)")
 
     return {
         "recall@1": recall_at_1,
         "recall@3": recall_at_3,
         "recall@5": recall_at_5,
+        "success@1": success_at_1,
+        "success@3": success_at_3,
+        "success@5": success_at_5,
     }
 
 
