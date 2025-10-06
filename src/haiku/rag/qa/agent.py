@@ -42,6 +42,7 @@ class QuestionAnswerAgent:
             model=model_obj,
             deps_type=Dependencies,
             system_prompt=system_prompt,
+            retries=3,
         )
 
         @self._agent.tool
