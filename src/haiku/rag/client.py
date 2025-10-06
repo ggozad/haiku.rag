@@ -377,36 +377,117 @@ class HaikuRAG:
             limit: Maximum number of results to return.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
             hyde: Use HyDE (Hypothetical Document Embeddings) for retrieval.
+                 When enabled, blends HyDE results with direct query results.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
         """
-        # Apply HyDE if enabled
-        search_query = query
-        if hyde:
-            from haiku.rag.hyde import generate_hypothetical_document
-
-            search_query = await generate_hypothetical_document(query)
-
         # Get reranker if available
         reranker = get_reranker()
 
-        if reranker is None:
-            # No reranking - return direct search results
-            return await self.chunk_repository.search(search_query, limit, search_type)
+        if hyde:
+            # HyDE mode: blend hypothetical document search with direct query search
+            from haiku.rag.hyde import generate_hypothetical_document
 
-        # Get more initial results (3X) for reranking
-        search_limit = limit * 3
-        search_results = await self.chunk_repository.search(
-            search_query, search_limit, search_type
-        )
+            hypothetical = await generate_hypothetical_document(query)
 
-        # Apply reranking (use original query for reranking, not hypothetical)
-        chunks = [chunk for chunk, _ in search_results]
-        reranked_results = await reranker.rerank(query, chunks, top_n=limit)
+            # Search with both query and hypothetical
+            search_limit = limit * 2 if reranker is None else limit * 3
 
-        # Return reranked results with scores from reranker
-        return reranked_results
+            hyde_results = await self.chunk_repository.search(
+                hypothetical, search_limit, search_type
+            )
+            query_results = await self.chunk_repository.search(
+                query, search_limit, search_type
+            )
+
+            # Merge results with weighted scores
+            merged_results = self._merge_search_results(
+                hyde_results,
+                query_results,
+                hyde_weight=Config.HYDE_WEIGHT,
+                query_weight=1.0 - Config.HYDE_WEIGHT,
+            )
+
+            if reranker is None:
+                return merged_results[:limit]
+
+            # Apply reranking to merged results
+            chunks = [chunk for chunk, _ in merged_results]
+            reranked_results = await reranker.rerank(query, chunks, top_n=limit)
+            return reranked_results
+        else:
+            # Normal search without HyDE
+            if reranker is None:
+                return await self.chunk_repository.search(query, limit, search_type)
+
+            # Get more initial results (3X) for reranking
+            search_limit = limit * 3
+            search_results = await self.chunk_repository.search(
+                query, search_limit, search_type
+            )
+
+            # Apply reranking
+            chunks = [chunk for chunk, _ in search_results]
+            reranked_results = await reranker.rerank(query, chunks, top_n=limit)
+            return reranked_results
+
+    def _merge_search_results(
+        self,
+        results1: list[tuple[Chunk, float]],
+        results2: list[tuple[Chunk, float]],
+        hyde_weight: float = 0.6,
+        query_weight: float = 0.4,
+    ) -> list[tuple[Chunk, float]]:
+        """Merge two search result sets with weighted scoring.
+
+        Args:
+            results1: First set of search results (HyDE).
+            results2: Second set of search results (direct query).
+            hyde_weight: Weight for HyDE results (default 0.6).
+            query_weight: Weight for query results (should be 1 - hyde_weight).
+
+        Returns:
+            Merged and deduplicated results sorted by combined score.
+        """
+
+        # Normalize scores for each result set
+        def normalize_scores(
+            results: list[tuple[Chunk, float]],
+        ) -> dict[str, tuple[Chunk, float]]:
+            if not results:
+                return {}
+            scores = [score for _, score in results]
+            min_score, max_score = min(scores), max(scores)
+            score_range = max_score - min_score if max_score > min_score else 1.0
+
+            return {
+                chunk.id: (chunk, (score - min_score) / score_range)
+                for chunk, score in results
+                if chunk.id
+            }
+
+        hyde_normalized = normalize_scores(results1)
+        query_normalized = normalize_scores(results2)
+
+        # Combine scores
+        all_chunk_ids = set(hyde_normalized.keys()) | set(query_normalized.keys())
+        merged = []
+
+        for chunk_id in all_chunk_ids:
+            hyde_chunk, hyde_score = hyde_normalized.get(chunk_id, (None, 0.0))
+            query_chunk, query_score = query_normalized.get(chunk_id, (None, 0.0))
+
+            chunk = hyde_chunk or query_chunk
+            if chunk:
+                combined_score = (hyde_score * hyde_weight) + (
+                    query_score * query_weight
+                )
+                merged.append((chunk, combined_score))
+
+        # Sort by combined score and return
+        merged.sort(key=lambda x: x[1], reverse=True)
+        return merged
 
     async def expand_context(
         self,

@@ -37,6 +37,9 @@ class AppConfig(BaseModel):
     HYDE_PROVIDER: str = ""
     HYDE_MODEL: str = ""
     HYDE_PROMPT: str = ""
+    HYDE_WEIGHT: float = (
+        0.6  # Weight for HyDE results (query weight is 1 - HYDE_WEIGHT)
+    )
 
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0
