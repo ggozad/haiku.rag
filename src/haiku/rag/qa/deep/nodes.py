@@ -48,7 +48,9 @@ class DeepQAPlanNode(BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]):
         async def gather_context(
             ctx2: RunContext[DeepQADependencies], query: str, limit: int = 6
         ) -> str:
-            results = await ctx2.deps.client.search(query, limit=limit)
+            results = await ctx2.deps.client.search(
+                query, limit=limit, hyde=ctx2.deps.context.use_hyde
+            )
             expanded = await ctx2.deps.client.expand_context(results)
             return "\n\n".join(chunk.content for chunk, _ in expanded)
 
@@ -118,7 +120,9 @@ class DeepQASearchDispatchNode(BaseNode[DeepQAState, DeepQADeps, DeepQAAnswer]):
             async def search_and_answer(
                 ctx2: RunContext[DeepQADependencies], query: str, limit: int = 5
             ) -> str:
-                search_results = await ctx2.deps.client.search(query, limit=limit)
+                search_results = await ctx2.deps.client.search(
+                    query, limit=limit, hyde=ctx2.deps.context.use_hyde
+                )
                 expanded = await ctx2.deps.client.expand_context(search_results)
 
                 entries: list[dict[str, Any]] = [

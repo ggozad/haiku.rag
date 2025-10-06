@@ -33,6 +33,10 @@ class AppConfig(BaseModel):
     RESEARCH_PROVIDER: str = "ollama"
     RESEARCH_MODEL: str = "gpt-oss"
 
+    # HyDE defaults (fallback to QA if not provided via env)
+    HYDE_PROVIDER: str = ""
+    HYDE_MODEL: str = ""
+
     CHUNK_SIZE: int = 256
     CONTEXT_CHUNK_RADIUS: int = 0
 

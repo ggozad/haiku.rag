@@ -55,20 +55,18 @@ relevant passage URIs. We track two complementary metrics:
 
 ### Recall@K Results
 
-| Embedding Model            | Recall@1 | Recall@3 | Recall@5 | Reranker               |
-|----------------------------|----------|----------|----------|------------------------|
-| `qwen3-embedding`          | 0.31     | 0.48     | 0.54     | None                   |
-| `qwen3-embedding`          | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` |
+| Embedding Model            | Recall@1 | Recall@3 | Recall@5 | Reranker               | HyDE |
+|----------------------------|----------|----------|----------|------------------------|------|
+| `qwen3-embedding`          | 0.31     | 0.48     | 0.54     | None                   | No   |
+| `qwen3-embedding`          | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` | No   |
 
 ### Success@K Results
 
-| Embedding Model            | Success@1 | Success@3 | Success@5 | Reranker               |
-|----------------------------|-----------|-----------|-----------|------------------------|
-| `qwen3-embedding`          | 0.36      | 0.54      | 0.62      | None                   |
-| `qwen3-embedding`          | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` |
+| Embedding Model            | Success@1 | Success@3 | Success@5 | Reranker               | HyDE |
+|----------------------------|-----------|-----------|-----------|------------------------|------|
+| `qwen3-embedding`          | 0.36      | 0.54      | 0.62      | None                   | No   |
+| `qwen3-embedding`          | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` | No   |
 
-
-## QA Accuracy
 
 And for QA accuracy,
 

@@ -16,6 +16,9 @@ class DeepQAContext(BaseModel):
     use_citations: bool = Field(
         default=False, description="Whether to include citations in the answer"
     )
+    use_hyde: bool = Field(
+        default=False, description="Whether to use HyDE for retrieval"
+    )
 
     def add_qa_response(self, qa: SearchAnswer) -> None:
         self.qa_responses.append(qa)

@@ -272,6 +272,11 @@ def search(
         "-l",
         help="Maximum number of results to return",
     ),
+    hyde: bool = typer.Option(
+        False,
+        "--hyde",
+        help="Use HyDE (Hypothetical Document Embeddings) for retrieval",
+    ),
     db: Path = typer.Option(
         Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
         "--db",
@@ -281,7 +286,7 @@ def search(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.search(query=query, limit=limit))
+    asyncio.run(app.search(query=query, limit=limit, hyde=hyde))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")
@@ -304,6 +309,11 @@ def ask(
         "--deep",
         help="Use deep multi-agent QA for complex questions",
     ),
+    hyde: bool = typer.Option(
+        False,
+        "--hyde",
+        help="Use HyDE (Hypothetical Document Embeddings) for retrieval",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -313,7 +323,9 @@ def ask(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.ask(question=question, cite=cite, deep=deep, verbose=verbose))
+    asyncio.run(
+        app.ask(question=question, cite=cite, deep=deep, hyde=hyde, verbose=verbose)
+    )
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")

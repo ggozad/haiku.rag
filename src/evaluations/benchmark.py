@@ -68,7 +68,9 @@ def _is_relevant_match(retrieved_uri: str | None, sample: RetrievalSample) -> bo
     return retrieved_uri is not None and retrieved_uri in sample.expected_uris
 
 
-async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
+async def run_retrieval_benchmark(
+    spec: DatasetSpec, hyde: bool = False
+) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
         return None
@@ -99,7 +101,7 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
                     progress.advance(task)
                     continue
 
-                matches = await rag.search(query=sample.question, limit=5)
+                matches = await rag.search(query=sample.question, limit=5, hyde=hyde)
                 if not matches:
                     progress.advance(task)
                     continue
@@ -286,6 +288,7 @@ async def evaluate_dataset(
     skip_retrieval: bool,
     skip_qa: bool,
     qa_limit: int | None,
+    hyde: bool,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -293,7 +296,9 @@ async def evaluate_dataset(
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
-        await run_retrieval_benchmark(spec)
+        if hyde:
+            console.print("[cyan]HyDE enabled for retrieval[/cyan]")
+        await run_retrieval_benchmark(spec, hyde=hyde)
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
@@ -316,6 +321,11 @@ def run(
     qa_limit: int | None = typer.Option(
         None, "--qa-limit", help="Limit number of QA cases."
     ),
+    hyde: bool = typer.Option(
+        False,
+        "--hyde",
+        help="Use HyDE (Hypothetical Document Embeddings) for retrieval.",
+    ),
 ) -> None:
     spec = DATASETS.get(dataset.lower())
     if spec is None:
@@ -331,6 +341,7 @@ def run(
             skip_retrieval=skip_retrieval,
             skip_qa=skip_qa,
             qa_limit=qa_limit,
+            hyde=hyde,
         )
     )
 

@@ -185,9 +185,9 @@ class HaikuRAGApp:
                     f"[yellow]Document with id {doc_id} not found.[/yellow]"
                 )
 
-    async def search(self, query: str, limit: int = 5):
+    async def search(self, query: str, limit: int = 5, hyde: bool = False):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            results = await self.client.search(query, limit=limit)
+            results = await self.client.search(query, limit=limit, hyde=hyde)
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
                 return
@@ -199,6 +199,7 @@ class HaikuRAGApp:
         question: str,
         cite: bool = False,
         deep: bool = False,
+        hyde: bool = False,
         verbose: bool = False,
     ):
         async with HaikuRAG(db_path=self.db_path) as self.client:
@@ -213,7 +214,7 @@ class HaikuRAGApp:
 
                     graph = build_deep_qa_graph()
                     context = DeepQAContext(
-                        original_question=question, use_citations=cite
+                        original_question=question, use_citations=cite, use_hyde=hyde
                     )
                     state = DeepQAState(context=context)
                     deps = DeepQADeps(
@@ -230,7 +231,7 @@ class HaikuRAGApp:
                     )
                     answer = result.output.answer
                 else:
-                    answer = await self.client.ask(question, cite=cite)
+                    answer = await self.client.ask(question, cite=cite, hyde=hyde)
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()

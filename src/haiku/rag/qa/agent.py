@@ -29,10 +29,12 @@ class QuestionAnswerAgent:
         provider: str,
         model: str,
         use_citations: bool = False,
+        use_hyde: bool = False,
         q: float = 0.0,
         system_prompt: str | None = None,
     ):
         self._client = client
+        self._use_hyde = use_hyde
 
         if system_prompt is None:
             system_prompt = (
@@ -57,7 +59,9 @@ class QuestionAnswerAgent:
 
             # Remove quotes from queries as this requires positional indexing in lancedb
             query = query.replace('"', "")
-            search_results = await ctx.deps.client.search(query, limit=limit)
+            search_results = await ctx.deps.client.search(
+                query, limit=limit, hyde=self._use_hyde
+            )
             expanded_results = await ctx.deps.client.expand_context(search_results)
 
             return [

@@ -364,7 +364,11 @@ class HaikuRAG:
         return await self.document_repository.list_all(limit=limit, offset=offset)
 
     async def search(
-        self, query: str, limit: int = 5, search_type: str = "hybrid"
+        self,
+        query: str,
+        limit: int = 5,
+        search_type: str = "hybrid",
+        hyde: bool = False,
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using the specified search method with optional reranking.
 
@@ -372,24 +376,32 @@ class HaikuRAG:
             query: The search query string.
             limit: Maximum number of results to return.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
+            hyde: Use HyDE (Hypothetical Document Embeddings) for retrieval.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
         """
+        # Apply HyDE if enabled
+        search_query = query
+        if hyde:
+            from haiku.rag.hyde import generate_hypothetical_document
+
+            search_query = await generate_hypothetical_document(query)
+
         # Get reranker if available
         reranker = get_reranker()
 
         if reranker is None:
             # No reranking - return direct search results
-            return await self.chunk_repository.search(query, limit, search_type)
+            return await self.chunk_repository.search(search_query, limit, search_type)
 
         # Get more initial results (3X) for reranking
         search_limit = limit * 3
         search_results = await self.chunk_repository.search(
-            query, search_limit, search_type
+            search_query, search_limit, search_type
         )
 
-        # Apply reranking
+        # Apply reranking (use original query for reranking, not hypothetical)
         chunks = [chunk for chunk, _ in search_results]
         reranked_results = await reranker.rerank(query, chunks, top_n=limit)
 
@@ -526,7 +538,11 @@ class HaikuRAG:
         return merged
 
     async def ask(
-        self, question: str, cite: bool = False, system_prompt: str | None = None
+        self,
+        question: str,
+        cite: bool = False,
+        system_prompt: str | None = None,
+        hyde: bool = False,
     ) -> str:
         """Ask a question using the configured QA agent.
 
@@ -534,13 +550,16 @@ class HaikuRAG:
             question: The question to ask.
             cite: Whether to include citations in the response.
             system_prompt: Optional custom system prompt for the QA agent.
+            hyde: Use HyDE (Hypothetical Document Embeddings) for retrieval.
 
         Returns:
             The generated answer as a string.
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(self, use_citations=cite, system_prompt=system_prompt)
+        qa_agent = get_qa_agent(
+            self, use_citations=cite, system_prompt=system_prompt, use_hyde=hyde
+        )
         return await qa_agent.answer(question)
 
     async def rebuild_database(self) -> AsyncGenerator[str, None]:

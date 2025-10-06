@@ -7,6 +7,7 @@ def get_qa_agent(
     client: HaikuRAG,
     use_citations: bool = False,
     system_prompt: str | None = None,
+    use_hyde: bool = False,
 ) -> QuestionAnswerAgent:
     provider = Config.QA_PROVIDER
     model_name = Config.QA_MODEL
@@ -17,4 +18,5 @@ def get_qa_agent(
         model=model_name,
         use_citations=use_citations,
         system_prompt=system_prompt,
+        use_hyde=use_hyde,
     )
