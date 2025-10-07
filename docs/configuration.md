@@ -232,6 +232,12 @@ CHUNK_SIZE=256
 # When expanded chunks overlap or are adjacent, they are automatically merged
 # into single chunks with continuous content to eliminate duplication
 CONTEXT_CHUNK_RADIUS=0
+
+# Vacuum retention threshold (seconds) for automatic cleanup
+# When documents are added/updated, old table versions older than this are removed
+# Default: 60 seconds (safe for concurrent connections)
+# Set to 0 for aggressive cleanup (removes all old versions immediately)
+VACUUM_RETENTION_SECONDS=60
 ```
 
 #### Markdown Preprocessor

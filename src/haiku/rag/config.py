@@ -57,6 +57,11 @@ class AppConfig(BaseModel):
     # and error out when the database does not already exist.
     DISABLE_DB_AUTOCREATE: bool = False
 
+    # Vacuum retention threshold in seconds. Only versions older than this
+    # threshold will be removed during vacuum operations. Default is 60 seconds
+    # to allow concurrent connections to safely use recent versions.
+    VACUUM_RETENTION_SECONDS: int = 60
+
     @field_validator("MONITOR_DIRECTORIES", mode="before")
     @classmethod
     def parse_monitor_directories(cls, v):

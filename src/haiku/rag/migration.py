@@ -27,7 +27,7 @@ class SQLiteToLanceDBMigrator:
         self.lancedb_path = lancedb_path
         self.console = Console()
 
-    def migrate(self) -> bool:
+    async def migrate(self) -> bool:
         """Perform the migration."""
         try:
             self.console.print(
@@ -94,7 +94,7 @@ class SQLiteToLanceDBMigrator:
             # Optimize and cleanup using centralized vacuum
             self.console.print("[cyan]Optimizing LanceDB...[/cyan]")
             try:
-                lance_store.vacuum()
+                await lance_store.vacuum()
                 self.console.print("[green]✅ Optimization completed[/green]")
             except Exception as e:
                 self.console.print(
@@ -313,4 +313,4 @@ async def migrate_sqlite_to_lancedb(
         lancedb_path = sqlite_path.parent / (sqlite_path.stem + ".lancedb")
 
     migrator = SQLiteToLanceDBMigrator(sqlite_path, lancedb_path)
-    return migrator.migrate()
+    return await migrator.migrate()

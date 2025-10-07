@@ -46,6 +46,9 @@ class HaikuRAG:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
+        # Wait for any pending vacuum to complete before closing
+        async with self.store._vacuum_lock:
+            pass
         self.close()
         return False
 
@@ -617,13 +620,13 @@ class HaikuRAG:
 
         # Final maintenance: centralized vacuum to curb disk usage
         try:
-            self.store.vacuum()
+            await self.store.vacuum()
         except Exception:
             pass
 
     async def vacuum(self) -> None:
         """Optimize and clean up old versions across all tables."""
-        self.store.vacuum()
+        await self.store.vacuum()
 
     def close(self):
         """Close the underlying store connection."""
