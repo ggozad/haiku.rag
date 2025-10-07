@@ -525,19 +525,22 @@ class HaikuRAG:
         merged.append(current)
         return merged
 
-    async def ask(self, question: str, cite: bool = False) -> str:
+    async def ask(
+        self, question: str, cite: bool = False, system_prompt: str | None = None
+    ) -> str:
         """Ask a question using the configured QA agent.
 
         Args:
             question: The question to ask.
             cite: Whether to include citations in the response.
+            system_prompt: Optional custom system prompt for the QA agent.
 
         Returns:
             The generated answer as a string.
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(self, use_citations=cite)
+        qa_agent = get_qa_agent(self, use_citations=cite, system_prompt=system_prompt)
         return await qa_agent.answer(question)
 
     async def rebuild_database(self) -> AsyncGenerator[str, None]:

@@ -30,12 +30,14 @@ class QuestionAnswerAgent:
         model: str,
         use_citations: bool = False,
         q: float = 0.0,
+        system_prompt: str | None = None,
     ):
         self._client = client
 
-        system_prompt = (
-            QA_SYSTEM_PROMPT_WITH_CITATIONS if use_citations else QA_SYSTEM_PROMPT
-        )
+        if system_prompt is None:
+            system_prompt = (
+                QA_SYSTEM_PROMPT_WITH_CITATIONS if use_citations else QA_SYSTEM_PROMPT
+            )
         model_obj = self._get_model(provider, model)
 
         self._agent = Agent(

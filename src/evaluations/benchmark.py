@@ -15,6 +15,7 @@ from rich.progress import Progress
 from evaluations.config import DatasetSpec, RetrievalSample
 from evaluations.datasets import DATASETS
 from evaluations.llm_judge import ANSWER_EQUIVALENCE_RUBRIC
+from evaluations.prompts import WIX_SUPPORT_PROMPT
 from haiku.rag import logging  # noqa: F401
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -204,7 +205,8 @@ async def run_qa_benchmark(
         )
 
         async with HaikuRAG(spec.db_path) as rag:
-            qa = get_qa_agent(rag)
+            system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
+            qa = get_qa_agent(rag, system_prompt=system_prompt)
 
             async def answer_question(question: str) -> str:
                 return await qa.answer(question)

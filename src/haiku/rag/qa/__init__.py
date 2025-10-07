@@ -3,7 +3,11 @@ from haiku.rag.config import Config
 from haiku.rag.qa.agent import QuestionAnswerAgent
 
 
-def get_qa_agent(client: HaikuRAG, use_citations: bool = False) -> QuestionAnswerAgent:
+def get_qa_agent(
+    client: HaikuRAG,
+    use_citations: bool = False,
+    system_prompt: str | None = None,
+) -> QuestionAnswerAgent:
     provider = Config.QA_PROVIDER
     model_name = Config.QA_MODEL
 
@@ -12,4 +16,5 @@ def get_qa_agent(client: HaikuRAG, use_citations: bool = False) -> QuestionAnswe
         provider=provider,
         model=model_name,
         use_citations=use_citations,
+        system_prompt=system_prompt,
     )
