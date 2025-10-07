@@ -1111,7 +1111,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.11.3"
+version = "0.11.4"
 source = { editable = "." }
 dependencies = [
     { name = "docling" },
@@ -1153,10 +1153,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "docling", specifier = ">=2.55.1" },
+    { name = "docling", specifier = ">=2.52.0" },
     { name = "fastmcp", specifier = ">=2.12.3" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "lancedb", specifier = ">=0.25.1" },
+    { name = "lancedb", specifier = ">=0.25.0" },
     { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
     { name = "pydantic", specifier = ">=2.11.9" },
     { name = "pydantic-ai", specifier = ">=1.0.8" },
@@ -1178,7 +1178,7 @@ dev = [
     { name = "mkdocs-material", specifier = ">=9.6.14" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pydantic-evals", specifier = ">=1.0.8" },
-    { name = "pyright", specifier = ">=1.1.406" },
+    { name = "pyright", specifier = ">=1.1.405" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },

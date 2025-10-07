@@ -2,7 +2,7 @@
 
 name = "haiku.rag"
 description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB"
-version = "0.11.3"
+version = "0.11.4"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -23,10 +23,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling>=2.55.1",
+    "docling>=2.52.0",
     "fastmcp>=2.12.3",
     "httpx>=0.28.1",
-    "lancedb>=0.25.1",
+    "lancedb>=0.25.0",
     "pydantic>=2.11.9",
     "pydantic-ai>=1.0.8",
     "pydantic-graph>=1.0.8",
@@ -62,7 +62,7 @@ dev = [
     "mkdocs-material>=9.6.14",
     "pydantic-evals>=1.0.8",
     "pre-commit>=4.2.0",
-    "pyright>=1.1.406",
+    "pyright>=1.1.405",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
