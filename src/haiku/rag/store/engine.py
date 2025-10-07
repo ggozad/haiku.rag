@@ -78,14 +78,20 @@ class Store:
         if not skip_validation:
             self._validate_configuration()
 
-    def vacuum(self) -> None:
-        """Optimize and clean up old versions across all tables to reduce disk usage."""
+    def vacuum(self, retention_seconds: int = Config.VACUUM_RETENTION_SECONDS) -> None:
+        """Optimize and clean up old versions across all tables to reduce disk usage.
+
+        Args:
+            retention_seconds: Retention threshold in seconds. Only versions older
+                              than this will be removed. Defaults to Config.VACUUM_RETENTION_SECONDS.
+        """
         if self._has_cloud_config() and str(Config.LANCEDB_URI).startswith("db://"):
             return
 
-        # Perform maintenance per table using optimize() with cleanup_older_than 0
+        # Perform maintenance per table using optimize() with configurable retention
+        retention = timedelta(seconds=retention_seconds)
         for table in [self.documents_table, self.chunks_table, self.settings_table]:
-            table.optimize(cleanup_older_than=timedelta(0))
+            table.optimize(cleanup_older_than=retention)
 
     def _connect_to_lancedb(self, db_path: Path):
         """Establish connection to LanceDB (local, cloud, or object storage)."""
