@@ -80,17 +80,16 @@ class Store:
         if not skip_validation:
             self._validate_configuration()
 
-    async def vacuum(
-        self, retention_seconds: int = Config.VACUUM_RETENTION_SECONDS
-    ) -> None:
+    async def vacuum(self, retention_seconds: int | None = None) -> None:
         """Optimize and clean up old versions across all tables to reduce disk usage.
 
         Args:
             retention_seconds: Retention threshold in seconds. Only versions older
-                              than this will be removed. Defaults to Config.VACUUM_RETENTION_SECONDS.
+                              than this will be removed. If None, uses Config.VACUUM_RETENTION_SECONDS.
 
         Note:
             If vacuum is already running, this method returns immediately without blocking.
+            Use asyncio.create_task(store.vacuum()) for non-blocking background execution.
         """
         if self._has_cloud_config() and str(Config.LANCEDB_URI).startswith("db://"):
             return
@@ -101,6 +100,9 @@ class Store:
 
         async with self._vacuum_lock:
             try:
+                # Evaluate config at runtime to allow dynamic changes
+                if retention_seconds is None:
+                    retention_seconds = Config.VACUUM_RETENTION_SECONDS
                 # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
                 for table in [

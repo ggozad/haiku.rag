@@ -46,6 +46,9 @@ class HaikuRAG:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
+        # Wait for any pending vacuum to complete before closing
+        async with self.store._vacuum_lock:
+            pass
         self.close()
         return False
 

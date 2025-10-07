@@ -194,3 +194,34 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
     assert after_zero_chunk_versions < initial_chunk_versions, (
         "Should have fewer versions after vacuum(0)"
     )
+
+
+@pytest.mark.asyncio
+async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
+    """Test that background vacuum completes when context manager exits."""
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.config import Config
+    from haiku.rag.utils import text_to_docling_document
+
+    # Set aggressive vacuum retention for this test
+    monkeypatch.setattr(Config, "VACUUM_RETENTION_SECONDS", 0)
+
+    async with HaikuRAG(db_path=temp_db_path) as client:
+        # Create multiple documents - each creation triggers automatic vacuum with retention=0
+        # This aggressively cleans up old versions between operations
+        for i in range(3):
+            doc = Document(content=f"Test document {i}")
+            dl_doc = text_to_docling_document(f"Test document {i}", name=f"test{i}.md")
+            await client.document_repository._create_with_docling(doc, dl_doc)
+
+    # After context exit, automatic vacuum should have kept versions minimal
+    store = Store(temp_db_path)
+    final_versions = len(list(store.documents_table.list_versions()))
+
+    # With retention_seconds=0, vacuum aggressively cleans up between operations
+    # Should have very few versions remaining (1-2)
+    assert final_versions <= 2, (
+        f"Aggressive vacuum should keep minimal versions, got {final_versions}"
+    )
+    assert final_versions >= 1, "Should have at least one version remaining"
+    store.close()
