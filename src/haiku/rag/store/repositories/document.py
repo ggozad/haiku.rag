@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -200,8 +201,9 @@ class DocumentRepository:
                     chunk.order = order
                     await self.chunk_repository.create(chunk)
 
-            # Vacuum old versions after successful creation
-            self.store.vacuum()
+            # Vacuum old versions in background (non-blocking)
+            asyncio.create_task(self.store.vacuum())
+
             return created_doc
         except Exception:
             # Roll back to the captured versions and re-raise
@@ -232,8 +234,9 @@ class DocumentRepository:
                 updated_doc.id, docling_document
             )
 
-            # Vacuum old versions after successful update
-            self.store.vacuum()
+            # Vacuum old versions in background (non-blocking)
+            asyncio.create_task(self.store.vacuum())
+
             return updated_doc
         except Exception:
             # Roll back to the captured versions and re-raise

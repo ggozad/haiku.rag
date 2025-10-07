@@ -617,13 +617,13 @@ class HaikuRAG:
 
         # Final maintenance: centralized vacuum to curb disk usage
         try:
-            self.store.vacuum()
+            await self.store.vacuum()
         except Exception:
             pass
 
     async def vacuum(self) -> None:
         """Optimize and clean up old versions across all tables."""
-        self.store.vacuum()
+        await self.store.vacuum()
 
     def close(self):
         """Close the underlying store connection."""

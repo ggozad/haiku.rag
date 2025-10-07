@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import timedelta
@@ -51,6 +52,7 @@ class Store:
     def __init__(self, db_path: Path, skip_validation: bool = False):
         self.db_path: Path = db_path
         self.embedder = get_embedder()
+        self._vacuum_lock = asyncio.Lock()
 
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
@@ -78,20 +80,38 @@ class Store:
         if not skip_validation:
             self._validate_configuration()
 
-    def vacuum(self, retention_seconds: int = Config.VACUUM_RETENTION_SECONDS) -> None:
+    async def vacuum(
+        self, retention_seconds: int = Config.VACUUM_RETENTION_SECONDS
+    ) -> None:
         """Optimize and clean up old versions across all tables to reduce disk usage.
 
         Args:
             retention_seconds: Retention threshold in seconds. Only versions older
                               than this will be removed. Defaults to Config.VACUUM_RETENTION_SECONDS.
+
+        Note:
+            If vacuum is already running, this method returns immediately without blocking.
         """
         if self._has_cloud_config() and str(Config.LANCEDB_URI).startswith("db://"):
             return
 
-        # Perform maintenance per table using optimize() with configurable retention
-        retention = timedelta(seconds=retention_seconds)
-        for table in [self.documents_table, self.chunks_table, self.settings_table]:
-            table.optimize(cleanup_older_than=retention)
+        # Skip if already running (non-blocking)
+        if self._vacuum_lock.locked():
+            return
+
+        async with self._vacuum_lock:
+            try:
+                # Perform maintenance per table using optimize() with configurable retention
+                retention = timedelta(seconds=retention_seconds)
+                for table in [
+                    self.documents_table,
+                    self.chunks_table,
+                    self.settings_table,
+                ]:
+                    table.optimize(cleanup_older_than=retention)
+            except (RuntimeError, OSError) as e:
+                # Handle resource errors gracefully
+                logger.debug(f"Vacuum skipped due to resource constraints: {e}")
 
     def _connect_to_lancedb(self, db_path: Path):
         """Establish connection to LanceDB (local, cloud, or object storage)."""

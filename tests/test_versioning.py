@@ -158,7 +158,7 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
 
     # Vacuum with default threshold (60 seconds) - should keep recent versions
     # Note: vacuum may create new versions even when not cleaning up old ones
-    store.vacuum()
+    await store.vacuum()
 
     after_default_doc_versions = len(list(store.documents_table.list_versions()))
     after_default_chunk_versions = len(list(store.chunks_table.list_versions()))
@@ -173,7 +173,7 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
     )
 
     # Vacuum with 0 threshold - should significantly reduce versions
-    store.vacuum(retention_seconds=0)
+    await store.vacuum(retention_seconds=0)
 
     after_zero_doc_versions = len(list(store.documents_table.list_versions()))
     after_zero_chunk_versions = len(list(store.chunks_table.list_versions()))

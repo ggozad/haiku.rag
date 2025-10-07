@@ -1,4 +1,3 @@
-import asyncio
 import inspect
 import json
 import logging
@@ -23,7 +22,6 @@ class ChunkRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self.embedder = get_embedder()
-        self._optimize_lock = asyncio.Lock()
 
     def _ensure_fts_index(self) -> None:
         """Ensure FTS index exists on the content column."""
@@ -34,21 +32,6 @@ class ChunkRepository:
         except Exception as e:
             # Log the error but don't fail - FTS might already exist
             logger.debug(f"FTS index creation skipped: {e}")
-
-    async def _optimize(self) -> None:
-        """Optimize the chunks table to refresh indexes."""
-        # Skip optimization for LanceDB Cloud as it handles this automatically
-        if Config.LANCEDB_URI and Config.LANCEDB_URI.startswith("db://"):
-            return
-
-        async with self._optimize_lock:
-            try:
-                self.store.chunks_table.optimize()
-            except (RuntimeError, OSError) as e:
-                # Handle "too many open files" and other resource errors gracefully
-                logger.debug(
-                    f"Table optimization skipped due to resource constraints: {e}"
-                )
 
     async def create(self, entity: Chunk) -> Chunk:
         """Create a chunk in the database."""
@@ -77,11 +60,6 @@ class ChunkRepository:
         self.store.chunks_table.add([chunk_record])
 
         entity.id = chunk_id
-
-        # Try to optimize if not currently locked (non-blocking)
-        if not self._optimize_lock.locked():
-            asyncio.create_task(self._optimize())
-
         return entity
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
@@ -125,10 +103,6 @@ class ChunkRepository:
                 "vector": embedding,
             },
         )
-        # Try to optimize if not currently locked (non-blocking)
-        if not self._optimize_lock.locked():
-            asyncio.create_task(self._optimize())
-
         return entity
 
     async def delete(self, entity_id: str) -> bool:
@@ -227,8 +201,6 @@ class ChunkRepository:
         if chunk_records:
             self.store.chunks_table.add(chunk_records)
 
-        # Force optimization once at the end for bulk operations
-        await self._optimize()
         return created_chunks
 
     async def delete_all(self) -> None:
