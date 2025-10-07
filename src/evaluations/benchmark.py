@@ -61,7 +61,6 @@ async def populate_db(spec: DatasetSpec) -> None:
                     metadata=payload.metadata,
                 )
                 progress.advance(task)
-            rag.store.vacuum()
 
 
 def _is_relevant_match(retrieved_uri: str | None, sample: RetrievalSample) -> bool:
