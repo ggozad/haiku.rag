@@ -207,6 +207,19 @@ answer = await client.ask("Who is the author of haiku.rag?", cite=True)
 print(answer)
 ```
 
+Customize the QA agent's behavior with a custom system prompt:
+
+```python
+custom_prompt = """You are a technical support expert for WIX.
+Answer questions based on the knowledge base documents provided.
+Be concise and helpful."""
+
+answer = await client.ask(
+    "How do I create a blog?",
+    system_prompt=custom_prompt
+)
+```
+
 The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
 
 The QA provider and model can be configured via environment variables (see [Configuration](configuration.md)).
