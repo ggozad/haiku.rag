@@ -1,0 +1,253 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.ggozad/haiku-rag",
+  "version": "{{VERSION}}",
+  "description": "Agentic Retrieval Augmented Generation (RAG) with LanceDB",
+  "repository": {
+    "url": "https://github.com/ggozad/haiku.rag",
+    "source": "github"
+  },
+  "homepage": "https://github.com/ggozad/haiku.rag",
+  "license": "MIT",
+  "keywords": ["rag", "lancedb", "vector-database", "embeddings", "search", "qa", "research"],
+  "vendor": {
+    "name": "Yiorgis Gozadinos",
+    "url": "https://github.com/ggozad"
+  },
+  "deployment": {
+    "packages": [
+      {
+        "type": "pypi",
+        "package": "haiku.rag",
+        "command": {
+          "linux-x86_64": {
+            "shell": "uvx",
+            "args": ["haiku.rag", "serve", "--stdio"]
+          },
+          "darwin-arm64": {
+            "shell": "uvx",
+            "args": ["haiku.rag", "serve", "--stdio"]
+          },
+          "darwin-x86_64": {
+            "shell": "uvx",
+            "args": ["haiku.rag", "serve", "--stdio"]
+          },
+          "win32-x86_64": {
+            "shell": "uvx.exe",
+            "args": ["haiku.rag", "serve", "--stdio"]
+          }
+        },
+        "environmentVariables": [
+          {
+            "name": "ENV",
+            "description": "Runtime environment (production or development)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "DEFAULT_DATA_DIR",
+            "description": "Default directory for LanceDB data and assets",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "MONITOR_DIRECTORIES",
+            "description": "Comma-separated paths to watch for file changes in server mode",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "LANCEDB_URI",
+            "description": "LanceDB connection URI (use db:// for cloud or a filesystem path)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "LANCEDB_REGION",
+            "description": "LanceDB cloud region (if using cloud)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "LANCEDB_API_KEY",
+            "description": "LanceDB API key (required for LanceDB Cloud)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": true
+          },
+          {
+            "name": "EMBEDDINGS_PROVIDER",
+            "description": "Embeddings provider (e.g. ollama, openai, voyageai)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "EMBEDDINGS_MODEL",
+            "description": "Embeddings model name (provider-specific)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "EMBEDDINGS_VECTOR_DIM",
+            "description": "Embedding vector dimension (must match model)",
+            "format": "number",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "QA_PROVIDER",
+            "description": "Question answering provider (e.g. ollama, openai, anthropic)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "QA_MODEL",
+            "description": "Question answering model name (provider-specific)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "RESEARCH_PROVIDER",
+            "description": "Research provider for multi-agent research (e.g. ollama, openai, anthropic)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "RESEARCH_MODEL",
+            "description": "Research model name for multi-agent research (provider-specific)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "RERANK_PROVIDER",
+            "description": "Rerank provider (e.g. mixedbread, cohere)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "RERANK_MODEL",
+            "description": "Rerank model name (provider-specific)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "CHUNK_SIZE",
+            "description": "Chunk size for splitting documents (characters)",
+            "format": "number",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "CONTEXT_CHUNK_RADIUS",
+            "description": "Number of adjacent chunks to include around search hits",
+            "format": "number",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "OLLAMA_BASE_URL",
+            "description": "Base URL for Ollama server",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "VLLM_EMBEDDINGS_BASE_URL",
+            "description": "Base URL for vLLM embeddings endpoint",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "VLLM_RERANK_BASE_URL",
+            "description": "Base URL for vLLM rerank endpoint",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "VLLM_QA_BASE_URL",
+            "description": "Base URL for vLLM QA endpoint",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "VLLM_RESEARCH_BASE_URL",
+            "description": "Base URL for vLLM research endpoint",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "MARKDOWN_PREPROCESSOR",
+            "description": "Dotted path or file path to a callable that preprocesses markdown content before chunking",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "DISABLE_DB_AUTOCREATE",
+            "description": "If true, refuse to auto-create a new LanceDB database or tables",
+            "format": "boolean",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "VACUUM_RETENTION_SECONDS",
+            "description": "Vacuum retention threshold in seconds (default: 60)",
+            "format": "number",
+            "isRequired": false,
+            "isSecret": false
+          },
+          {
+            "name": "OPENAI_API_KEY",
+            "description": "OpenAI API key (if using OpenAI for embeddings or QA)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": true
+          },
+          {
+            "name": "VOYAGE_API_KEY",
+            "description": "VoyageAI API key (if using VoyageAI for embeddings)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": true
+          },
+          {
+            "name": "ANTHROPIC_API_KEY",
+            "description": "Anthropic API key (if using Anthropic for QA)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": true
+          },
+          {
+            "name": "COHERE_API_KEY",
+            "description": "Cohere API key (if using Cohere for reranking)",
+            "format": "string",
+            "isRequired": false,
+            "isSecret": true
+          }
+        ]
+      }
+    ]
+  },
+  "transports": [
+    {
+      "type": "stdio"
+    }
+  ]
+}
