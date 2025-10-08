@@ -366,7 +366,7 @@ def download_models_cmd():
 
 
 @cli.command(
-    "serve", help="Start the haiku.rag MCP server (by default in streamable HTTP mode)"
+    "serve", help="Start the haiku.rag server (MCP by default, or A2A with --a2a)"
 )
 def serve(
     db: Path = typer.Option(
@@ -379,17 +379,63 @@ def serve(
         "--stdio",
         help="Run MCP server on stdio Transport",
     ),
+    a2a: bool = typer.Option(
+        False,
+        "--a2a",
+        help="Run A2A (Agent-to-Agent) server instead of MCP",
+    ),
+    a2a_agent: str = typer.Option(
+        "qa",
+        "--a2a-agent",
+        help="Which agent to serve via A2A: 'qa', 'qa-deep', or 'research'",
+    ),
+    a2a_host: str = typer.Option(
+        "127.0.0.1",
+        "--a2a-host",
+        help="Host to bind A2A server to",
+    ),
+    a2a_port: int = typer.Option(
+        8000,
+        "--a2a-port",
+        help="Port to bind A2A server to",
+    ),
 ) -> None:
-    """Start the MCP server."""
-    from haiku.rag.app import HaikuRAGApp
+    """Start the MCP or A2A server."""
+    if a2a:
+        try:
+            from haiku.rag.a2a import create_qa_a2a_app, create_research_a2a_app
+        except ImportError as e:
+            typer.echo(f"Error: {e}")
+            raise typer.Exit(1)
 
-    app = HaikuRAGApp(db_path=db)
+        import uvicorn
 
-    transport = None
-    if stdio:
-        transport = "stdio"
+        if a2a_agent == "qa":
+            typer.echo(f"Starting QA agent A2A server on {a2a_host}:{a2a_port}")
+            app = create_qa_a2a_app(db_path=db, deep=False)
+        elif a2a_agent == "qa-deep":
+            typer.echo(f"Starting deep QA agent A2A server on {a2a_host}:{a2a_port}")
+            app = create_qa_a2a_app(db_path=db, deep=True)
+        elif a2a_agent == "research":
+            typer.echo(f"Starting research agent A2A server on {a2a_host}:{a2a_port}")
+            app = create_research_a2a_app(db_path=db)
+        else:
+            typer.echo(
+                f"Error: Unknown agent type '{a2a_agent}'. Use 'qa', 'qa-deep', or 'research'"
+            )
+            raise typer.Exit(1)
 
-    asyncio.run(app.serve(transport=transport))
+        uvicorn.run(app, host=a2a_host, port=a2a_port)
+    else:
+        from haiku.rag.app import HaikuRAGApp
+
+        app = HaikuRAGApp(db_path=db)
+
+        transport = None
+        if stdio:
+            transport = "stdio"
+
+        asyncio.run(app.serve(transport=transport))
 
 
 @cli.command("migrate", help="Migrate an SQLite database to LanceDB")
