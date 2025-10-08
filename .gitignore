@@ -21,3 +21,7 @@ tests/data/
 TODO.md
 PLAN.md
 DEVNOTES.md
+
+# mcp registry
+.mcpregistry_github_token
+.mcpregistry_registry_token

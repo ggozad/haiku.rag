@@ -1,0 +1,35 @@
+name: Publish to MCP Registry
+on:
+  workflow_run:
+    workflows: ["Build & publish to pypi"]
+    types:
+      - completed
+
+jobs:
+  publish-mcp:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate server.json from template
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          sed "s/{{VERSION}}/$VERSION/g" server.json > server.json.tmp
+          mv server.json.tmp server.json
+          echo "Generated server.json with version: $VERSION"
+      - name: Install MCP Publisher
+        run: |
+          curl -L https://github.com/modelcontextprotocol/publisher/releases/latest/download/mcp-publisher-linux-x86_64 -o mcp-publisher
+          chmod +x mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+      - name: Login to MCP Registry
+        run: mcp-publisher login github-oidc
+      - name: Publish to MCP Registry
+        run: mcp-publisher publish
