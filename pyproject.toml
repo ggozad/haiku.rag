@@ -40,6 +40,7 @@ dependencies = [
 [project.optional-dependencies]
 voyageai = ["voyageai>=0.3.5"]
 mxbai = ["mxbai-rerank>=0.1.6"]
+a2a = ["fasta2a>=0.1.0"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
