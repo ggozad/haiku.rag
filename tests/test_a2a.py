@@ -139,6 +139,76 @@ async def test_extract_question_from_task_no_text():
 
 
 @pytest.mark.asyncio
+async def test_lru_memory_storage_lru_eviction():
+    """Test that LRUMemoryStorage evicts least recently used contexts."""
+    from fasta2a.storage import InMemoryStorage
+
+    from haiku.rag.a2a import LRUMemoryStorage
+
+    base_storage = InMemoryStorage()
+    storage = LRUMemoryStorage(storage=base_storage, max_contexts=3)
+
+    # Add 3 contexts (at limit)
+    await storage.update_context("ctx1", [])
+    await storage.update_context("ctx2", [])
+    await storage.update_context("ctx3", [])
+
+    # All 3 should be tracked
+    assert len(storage.context_order) == 3
+    assert "ctx1" in storage.context_order
+    assert "ctx2" in storage.context_order
+    assert "ctx3" in storage.context_order
+
+    # Add 4th context - should evict ctx1 (oldest)
+    await storage.update_context("ctx4", [])
+    assert len(storage.context_order) == 3
+    assert "ctx1" not in storage.context_order
+    assert "ctx2" in storage.context_order
+    assert "ctx3" in storage.context_order
+    assert "ctx4" in storage.context_order
+
+    # Access ctx2 (moves it to end)
+    await storage.load_context("ctx2")
+
+    # Add 5th context - should evict ctx3 (now oldest since ctx2 was accessed)
+    await storage.update_context("ctx5", [])
+    assert len(storage.context_order) == 3
+    assert "ctx3" not in storage.context_order
+    assert "ctx2" in storage.context_order  # Still present (was accessed)
+    assert "ctx4" in storage.context_order
+    assert "ctx5" in storage.context_order
+
+
+@pytest.mark.asyncio
+async def test_lru_memory_storage_access_order():
+    """Test that accessing contexts updates their order."""
+    from fasta2a.storage import InMemoryStorage
+
+    from haiku.rag.a2a import LRUMemoryStorage
+
+    base_storage = InMemoryStorage()
+    storage = LRUMemoryStorage(storage=base_storage, max_contexts=2)
+
+    # Add 2 contexts
+    await storage.update_context("ctx1", [])
+    await storage.update_context("ctx2", [])
+
+    # Order should be: ctx1, ctx2
+    assert list(storage.context_order.keys()) == ["ctx1", "ctx2"]
+
+    # Load ctx1 (moves to end)
+    await storage.load_context("ctx1")
+    # Order should be: ctx2, ctx1
+    assert list(storage.context_order.keys()) == ["ctx2", "ctx1"]
+
+    # Add ctx3 - should evict ctx2 (oldest)
+    await storage.update_context("ctx3", [])
+    assert "ctx2" not in storage.context_order
+    assert "ctx1" in storage.context_order
+    assert "ctx3" in storage.context_order
+
+
+@pytest.mark.asyncio
 async def test_a2a_app_creation(temp_db_path):
     """Test that A2A app can be created successfully."""
     from haiku.rag.a2a import create_a2a_app
