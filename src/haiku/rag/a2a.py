@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import logfire
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_core import to_jsonable_python
@@ -12,7 +12,6 @@ from pydantic_core import to_jsonable_python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.graph.common import get_model
-from haiku.rag.qa.agent import SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +37,17 @@ logfire.configure(send_to_logfire="if-token-present", service_name="a2a")
 logfire.instrument_pydantic_ai()
 
 ModelMessagesTypeAdapter = TypeAdapter(list[ModelMessage])
+
+
+class SearchResult(BaseModel):
+    """Search result with both title and URI for A2A agent."""
+
+    content: str = Field(description="The document text content")
+    score: float = Field(description="Relevance score (higher is more relevant)")
+    document_title: str | None = Field(
+        description="Human-readable document title", default=None
+    )
+    document_uri: str = Field(description="Document URI/path for get_full_document")
 
 
 class AgentDependencies(BaseModel):
@@ -70,15 +80,18 @@ Critical rules:
 - Be concise and direct
 
 Citation Format:
-After your answer, include a "Sources:" section listing document URIs from search results.
-Format: "Sources:\n- [document_uri]"
+After your answer, include a "Sources:" section listing documents from search results.
+Show both title and URI if available, otherwise just the URI.
+Format: "Sources:\n- [document_title] ([document_uri])" or "Sources:\n- [document_uri]"
 
 Example:
 [Your answer here]
 
 Sources:
-- /path/to/document.pdf
-- /another/document.md
+- Python Documentation (/guides/python.md)
+- /guides/python-basics.md
+
+Note: When using get_full_document, always use document_uri (not document_title).
 """
 
 
@@ -195,7 +208,8 @@ def create_a2a_app(db_path: Path):
             SearchResult(
                 content=chunk.content,
                 score=score,
-                document_uri=(chunk.document_title or chunk.document_uri or ""),
+                document_title=chunk.document_title,
+                document_uri=(chunk.document_uri or ""),
             )
             for chunk, score in expanded_results
         ]
