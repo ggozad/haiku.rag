@@ -81,22 +81,15 @@ def a2a_to_pydantic_messages(a2a_messages: list[Message]) -> list[ModelMessage]:
     return []
 
 
-def create_qa_a2a_app(
-    db_path: Path,
-    deep: bool = False,
-):
-    """Create an A2A app for the QA agent.
+def create_a2a_app(db_path: Path):
+    """Create an A2A app for the conversational QA agent.
 
     Args:
         db_path: Path to the LanceDB database
-        deep: Use deep multi-agent QA for complex questions
 
     Returns:
         A FastA2A ASGI application
     """
-    if deep:
-        raise NotImplementedError("Deep QA agent not yet implemented for A2A")
-
     from haiku.rag.qa.agent import Dependencies, QuestionAnswerAgent
 
     # Create the agent (client will be provided per-task in custom worker)
@@ -184,6 +177,7 @@ def create_qa_a2a_app(
                 raise
 
         async def cancel_task(self, params: TaskIdParams) -> None:
+            """Cancel a task - not implemented for this worker."""
             pass
 
         def build_message_history(self, history: list[Message]) -> list[Message]:
@@ -249,19 +243,7 @@ def create_qa_a2a_app(
     return FastA2A(
         storage=storage,
         broker=broker,
-        name="haiku-rag-qa",
-        description="Question answering agent powered by haiku.rag RAG system",
+        name="haiku-rag",
+        description="Conversational question answering agent powered by haiku.rag RAG system",
         lifespan=lifespan,
     )
-
-
-def create_research_a2a_app(db_path: Path):
-    """Create an A2A app for the research agent.
-
-    Args:
-        db_path: Path to the LanceDB database
-
-    Returns:
-        A FastA2A ASGI application
-    """
-    raise NotImplementedError("Research agent not yet implemented for A2A")
