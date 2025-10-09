@@ -262,8 +262,6 @@ def create_a2a_app(db_path: Path):
         Returns chunks of text with their relevance scores and document URIs.
         Use get_full_document if you need to see the complete document content.
         """
-        # Remove quotes from queries as this requires positional indexing in lancedb
-        query = query.replace('"', "")
         search_results = await ctx.deps.client.search(query, limit=limit)
         expanded_results = await ctx.deps.client.expand_context(search_results)
 

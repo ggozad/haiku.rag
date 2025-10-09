@@ -54,9 +54,6 @@ class QuestionAnswerAgent:
             limit: int = 3,
         ) -> list[SearchResult]:
             """Search the knowledge base for relevant documents."""
-
-            # Remove quotes from queries as this requires positional indexing in lancedb
-            query = query.replace('"', "")
             search_results = await ctx.deps.client.search(query, limit=limit)
             expanded_results = await ctx.deps.client.expand_context(search_results)
 
