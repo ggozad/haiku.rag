@@ -1,13 +1,20 @@
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import logfire
-from pydantic import TypeAdapter
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic import BaseModel, TypeAdapter
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import ModelMessage
+from pydantic_core import to_jsonable_python
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.graph.common import get_model
+from haiku.rag.qa.agent import SearchResult
+
+logger = logging.getLogger(__name__)
 
 try:
     from fasta2a import FastA2A, Worker  # type: ignore
@@ -33,52 +40,118 @@ logfire.instrument_pydantic_ai()
 ModelMessagesTypeAdapter = TypeAdapter(list[ModelMessage])
 
 
-def a2a_to_pydantic_messages(a2a_messages: list[Message]) -> list[ModelMessage]:
-    """Convert A2A messages to pydantic-ai ModelMessage format.
+class AgentDependencies(BaseModel):
+    """Dependencies for the A2A conversational agent."""
+
+    model_config = {"arbitrary_types_allowed": True}
+    client: HaikuRAG
+
+
+A2A_SYSTEM_PROMPT = """You are Haiku.rag, an AI assistant that helps users find information from a document knowledge base.
+
+IMPORTANT: You are NOT any person mentioned in the documents. You retrieve and present information about them.
+
+Tools available:
+- search_documents: Query for relevant text chunks
+- get_full_document: Get complete document content by document_uri
+- list_documents: Show available documents
+
+Your process:
+1. Search phase: For straightforward questions use one search, for complex questions search multiple times with different queries
+2. Synthesis phase: Combine the search results into a comprehensive answer
+3. When user requests full document: use get_full_document with the exact document_uri from Sources
+
+Critical rules:
+- ONLY answer based on information found via search_documents
+- NEVER fabricate or assume information
+- If not found, say: "I cannot find information about this in the knowledge base."
+- For follow-ups, understand context (pronouns like "he", "it") but always search for facts
+- ALWAYS include citations at the end showing document URIs used
+- Be concise and direct
+
+Citation Format:
+After your answer, include a "Sources:" section listing document URIs from search results.
+Format: "Sources:\n- [document_uri]"
+
+Example:
+[Your answer here]
+
+Sources:
+- /path/to/document.pdf
+- /another/document.md
+"""
+
+
+def load_message_history(context: list[Message]) -> list[ModelMessage]:
+    """Load pydantic-ai message history from A2A context.
+
+    The context stores serialized pydantic-ai message history directly,
+    which we deserialize and return.
 
     Args:
-        a2a_messages: List of A2A Message objects
+        context: A2A context messages
 
     Returns:
-        List of pydantic-ai ModelMessage objects suitable for agent.run()
+        List of pydantic-ai ModelMessage objects
     """
-    pydantic_messages = []
+    if not context:
+        return []
 
-    for msg in a2a_messages:
-        role = msg.get("role", "user")
+    # Context should contain a single "state" message with full history
+    for msg in context:
         parts = msg.get("parts", [])
-
-        # Extract text content from all text parts
-        text_content = " ".join(
-            part.get("text", "") for part in parts if part.get("kind") == "text"
-        )
-
-        if not text_content:
-            continue
-
-        # Build message dict with proper part_kind discriminators
-        if role == "user":
-            pydantic_messages.append(
-                {
-                    "parts": [{"content": text_content, "part_kind": "user-prompt"}],
-                    "kind": "request",
-                }
-            )
-        elif role == "agent":
-            # Agent responses become ModelResponse with TextPart
-            pydantic_messages.append(
-                {
-                    "parts": [{"content": text_content, "part_kind": "text"}],
-                    "kind": "response",
-                    "model_name": "unknown",
-                }
-            )
-
-    # Validate and convert to proper ModelMessage objects
-    if pydantic_messages:
-        return ModelMessagesTypeAdapter.validate_python(pydantic_messages)
+        for part in parts:
+            if part.get("kind") == "data":
+                metadata = part.get("metadata", {})
+                if metadata.get("type") == "conversation_state":
+                    stored_history = part.get("data", {}).get("message_history", [])
+                    if stored_history:
+                        return ModelMessagesTypeAdapter.validate_python(stored_history)
 
     return []
+
+
+def save_message_history(message_history: list[ModelMessage]) -> Message:
+    """Save pydantic-ai message history to A2A context format.
+
+    Args:
+        message_history: Full pydantic-ai message history
+
+    Returns:
+        A2A Message containing the serialized state (stored as agent role)
+    """
+    serialized = to_jsonable_python(message_history)
+    return Message(
+        role="agent",
+        parts=[
+            DataPart(
+                kind="data",
+                data={"message_history": serialized},
+                metadata={"type": "conversation_state"},
+            )
+        ],
+        kind="message",
+        message_id=str(uuid.uuid4()),
+    )
+
+
+def extract_question_from_task(task_history: list[Message]) -> str | None:
+    """Extract the user's question from task history.
+
+    Args:
+        task_history: Task history messages
+
+    Returns:
+        The question text if found, None otherwise
+    """
+    for msg in task_history:
+        if msg.get("role") == "user":
+            for part in msg.get("parts", []):
+                if part.get("kind") == "text":
+                    text = part.get("text", "").strip()
+                    if text:
+                        return text
+    return None
 
 
 def create_a2a_app(db_path: Path):
@@ -90,21 +163,72 @@ def create_a2a_app(db_path: Path):
     Returns:
         A FastA2A ASGI application
     """
-    from haiku.rag.qa.agent import Dependencies, QuestionAnswerAgent
-
-    # Create the agent (client will be provided per-task in custom worker)
-    temp_client = HaikuRAG(db_path)
-    qa_agent = QuestionAnswerAgent(
-        client=temp_client,
-        provider=Config.QA_PROVIDER,
-        model=Config.QA_MODEL,
-    )
-
-    # Create custom worker using base Worker class
     storage = InMemoryStorage()
     broker = InMemoryBroker()
 
-    class QAWorker(Worker[list[Message]]):
+    # Create the agent with native search tool
+    model = get_model(Config.QA_PROVIDER, Config.QA_MODEL)
+    agent = Agent(
+        model=model,
+        deps_type=AgentDependencies,
+        system_prompt=A2A_SYSTEM_PROMPT,
+        retries=3,
+    )
+
+    @agent.tool
+    async def search_documents(
+        ctx: RunContext[AgentDependencies],
+        query: str,
+        limit: int = 3,
+    ) -> list[SearchResult]:
+        """Search the knowledge base for relevant documents.
+
+        Returns chunks of text with their relevance scores and document URIs.
+        Use get_full_document if you need to see the complete document content.
+        """
+        # Remove quotes from queries as this requires positional indexing in lancedb
+        query = query.replace('"', "")
+        search_results = await ctx.deps.client.search(query, limit=limit)
+        expanded_results = await ctx.deps.client.expand_context(search_results)
+
+        return [
+            SearchResult(
+                content=chunk.content,
+                score=score,
+                document_uri=(chunk.document_title or chunk.document_uri or ""),
+            )
+            for chunk, score in expanded_results
+        ]
+
+    @agent.tool
+    async def get_full_document(
+        ctx: RunContext[AgentDependencies],
+        document_uri: str,
+    ) -> str:
+        """Retrieve the complete content of a document by its URI.
+
+        Use this when you need more context than what's in a search result chunk.
+        The document_uri comes from search_documents results.
+        """
+        document = await ctx.deps.client.get_document_by_uri(document_uri)
+        if document is None:
+            return f"Document not found: {document_uri}"
+
+        return document.content
+
+    @agent.tool
+    async def list_documents(
+        ctx: RunContext[AgentDependencies],
+        limit: int = 10,
+    ) -> list[str]:
+        """List documents in the knowledge base.
+
+        Returns document URIs/titles. Use this to help users discover what's available.
+        """
+        documents = await ctx.deps.client.list_documents(limit=limit)
+        return [doc.title or doc.uri or f"Document {doc.id}" for doc in documents]
+
+    class ConversationalWorker(Worker[list[Message]]):
         async def run_task(self, params: TaskSendParams) -> None:
             task = await self.storage.load_task(params["id"])
             if task is None:
@@ -117,39 +241,28 @@ def create_a2a_app(db_path: Path):
 
             await self.storage.update_task(task["id"], state="working")
 
-            # Load full conversation context from previous tasks
-            context = await self.storage.load_context(task["context_id"]) or []
-            current_task_history = task.get("history", [])
-
-            # Extract the user's question from the latest message
-            user_messages = [
-                msg for msg in current_task_history if msg["role"] == "user"
-            ]
-            if not user_messages:
+            # Extract the user's question
+            question = extract_question_from_task(task.get("history", []))
+            if not question:
                 await self.storage.update_task(task["id"], state="failed")
                 return
 
-            last_user_msg = user_messages[-1]
-            question = ""
-            for part in last_user_msg.get("parts", []):
-                if part.get("kind") == "text":
-                    question = part.get("text", "")
-                    break
-
             try:
-                # Create fresh client for this task and run QA agent
+                # Load conversation context
+                context = await self.storage.load_context(task["context_id"]) or []
+                # Load conversation history
+                message_history = load_message_history(context)
+
+                # Create fresh client for this task and run agent
                 async with HaikuRAG(db_path) as client:
-                    deps = Dependencies(client=client)
+                    deps = AgentDependencies(client=client)
 
-                    # Convert conversation history to pydantic-ai format
-                    message_history = a2a_to_pydantic_messages(context)
-
-                    # Run agent with full conversation history
-                    result = await qa_agent._agent.run(
+                    # Run agent with full conversation history including tool calls
+                    result = await agent.run(
                         question, deps=deps, message_history=message_history
                     )
 
-                    # Build response message
+                    # Build response message for A2A protocol
                     response_message = Message(
                         role="agent",
                         parts=[TextPart(kind="text", text=str(result.output))],
@@ -157,11 +270,15 @@ def create_a2a_app(db_path: Path):
                         message_id=str(uuid.uuid4()),
                     )
 
-                    # Store complete agent state (all messages including tool calls)
-                    # Add both the user question and agent response to context
-                    context.extend(current_task_history)
-                    context.append(response_message)
-                    await self.storage.update_context(task["context_id"], context)
+                    # Update context with complete conversation state
+                    # Store all messages from this run (includes tool calls & results)
+                    updated_history = message_history + result.new_messages()
+                    state_message = save_message_history(updated_history)
+
+                    # Replace old state with new complete state
+                    await self.storage.update_context(
+                        task["context_id"], [state_message]
+                    )
 
                     # Build rich artifacts with search results and answer
                     artifacts = self.build_artifacts(result)
@@ -172,7 +289,14 @@ def create_a2a_app(db_path: Path):
                         new_messages=[response_message],
                         new_artifacts=artifacts,
                     )
-            except Exception:
+            except Exception as e:
+                logger.error(
+                    "Task execution failed: task_id=%s, question=%s, error=%s",
+                    task["id"],
+                    question,
+                    str(e),
+                    exc_info=True,
+                )
                 await self.storage.update_task(task["id"], state="failed")
                 raise
 
@@ -181,57 +305,24 @@ def create_a2a_app(db_path: Path):
             pass
 
         def build_message_history(self, history: list[Message]) -> list[Message]:
+            """Required by Worker interface but unused - history stored in context."""
             return history
 
         def build_artifacts(self, result) -> list[Artifact]:
-            """Build rich artifacts from agent result including search details."""
-            artifacts: list[Artifact] = []
+            """Build artifacts from agent result.
 
-            # Main answer artifact
-            artifacts.append(
+            Note: Full conversation history (including tool calls) is stored in
+            context, so we only create a simple answer artifact here.
+            """
+            return [
                 Artifact(
                     artifact_id=str(uuid.uuid4()),
                     name="answer",
                     parts=[TextPart(kind="text", text=str(result.output))],
                 )
-            )
+            ]
 
-            # Extract search tool calls and results from message history
-            search_results = []
-            for msg in result.all_messages():
-                if isinstance(msg, ModelResponse):
-                    for part in msg.parts:
-                        if isinstance(part, ToolCallPart):
-                            if part.tool_name == "search_documents":
-                                search_results.append(
-                                    {
-                                        "tool_call": part.tool_name,
-                                        "args": part.args,
-                                    }
-                                )
-
-            # Create search results artifact if we found any searches
-            if search_results:
-                artifacts.append(
-                    Artifact(
-                        artifact_id=str(uuid.uuid4()),
-                        name="search_activity",
-                        parts=[
-                            DataPart(
-                                kind="data",
-                                data={
-                                    "searches": search_results,
-                                    "count": len(search_results),
-                                },
-                                metadata={"type": "search_history"},
-                            )
-                        ],
-                    )
-                )
-
-            return artifacts
-
-    worker = QAWorker(storage=storage, broker=broker)
+    worker = ConversationalWorker(storage=storage, broker=broker)
 
     # Create FastA2A app with custom worker lifecycle
     @asynccontextmanager
