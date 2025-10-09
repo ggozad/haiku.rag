@@ -64,6 +64,7 @@ nav:
       - Agents: agents.md
       - Python: python.md
       - MCP: mcp.md
+      - A2A: a2a.md
       - Benchmarks: benchmarks.md
 markdown_extensions:
   - admonition
