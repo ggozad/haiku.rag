@@ -81,3 +81,16 @@ Each conversation is identified by a `context_id`. All messages within the same 
 - Remember what was discussed
 - Track which documents were already found
 - Provide contextual follow-up answers
+
+### Memory Management
+
+To prevent memory growth, the server uses LRU (Least Recently Used) eviction:
+
+- Maximum 1000 contexts kept in memory (configurable via `A2A_MAX_CONTEXTS`)
+- When limit exceeded, least recently used contexts are automatically evicted
+- No periodic cleanup needed - eviction happens on-demand
+
+Configure via environment variable:
+```bash
+export A2A_MAX_CONTEXTS=1000
+```
