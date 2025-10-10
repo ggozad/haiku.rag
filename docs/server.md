@@ -1,8 +1,10 @@
 # Server Mode
 
-The server provides automatic file monitoring and MCP functionality.
+The server provides automatic file monitoring, MCP functionality, and A2A agent support.
 
 ## Starting the Server
+
+### MCP Server (Default)
 
 ```bash
 haiku-rag serve
@@ -11,6 +13,18 @@ haiku-rag serve
 Transport options:
 - Default - Streamable HTTP transport
 - `--stdio` - Standard input/output transport
+
+### A2A Server
+
+```bash
+haiku-rag serve --a2a
+```
+
+Options:
+- `--a2a-host` - Host to bind to (default: 127.0.0.1)
+- `--a2a-port` - Port to bind to (default: 8000)
+
+See [A2A documentation](a2a.md) for details on the conversational agent.
 
 ## File Monitoring
 

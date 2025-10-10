@@ -428,7 +428,7 @@ def download_models_cmd():
 
 
 @cli.command(
-    "serve", help="Start the haiku.rag MCP server (by default in streamable HTTP mode)"
+    "serve", help="Start the haiku.rag server (MCP by default, or A2A with --a2a)"
 )
 def serve(
     db: Path = typer.Option(
@@ -441,17 +441,45 @@ def serve(
         "--stdio",
         help="Run MCP server on stdio Transport",
     ),
+    a2a: bool = typer.Option(
+        False,
+        "--a2a",
+        help="Run A2A (Agent-to-Agent) server instead of MCP",
+    ),
+    a2a_host: str = typer.Option(
+        "127.0.0.1",
+        "--a2a-host",
+        help="Host to bind A2A server to",
+    ),
+    a2a_port: int = typer.Option(
+        8000,
+        "--a2a-port",
+        help="Port to bind A2A server to",
+    ),
 ) -> None:
-    """Start the MCP server."""
-    from haiku.rag.app import HaikuRAGApp
+    """Start the MCP or A2A server."""
+    if a2a:
+        try:
+            from haiku.rag.a2a import create_a2a_app
+        except ImportError as e:
+            typer.echo(f"Error: {e}")
+            raise typer.Exit(1)
 
-    app = HaikuRAGApp(db_path=db)
+        import uvicorn
 
-    transport = None
-    if stdio:
-        transport = "stdio"
+        typer.echo(f"Starting A2A server on {a2a_host}:{a2a_port}")
+        app = create_a2a_app(db_path=db)
+        uvicorn.run(app, host=a2a_host, port=a2a_port)
+    else:
+        from haiku.rag.app import HaikuRAGApp
 
-    asyncio.run(app.serve(transport=transport))
+        app = HaikuRAGApp(db_path=db)
+
+        transport = None
+        if stdio:
+            transport = "stdio"
+
+        asyncio.run(app.serve(transport=transport))
 
 
 @cli.command("migrate", help="Migrate an SQLite database to LanceDB")

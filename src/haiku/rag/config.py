@@ -62,6 +62,10 @@ class AppConfig(BaseModel):
     # to allow concurrent connections to safely use recent versions.
     VACUUM_RETENTION_SECONDS: int = 60
 
+    # Maximum number of A2A contexts to keep in memory. When exceeded, least
+    # recently used contexts will be evicted. Default is 1000.
+    A2A_MAX_CONTEXTS: int = 1000
+
     @field_validator("MONITOR_DIRECTORIES", mode="before")
     @classmethod
     def parse_monitor_directories(cls, v):
