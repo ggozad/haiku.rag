@@ -23,6 +23,7 @@ try:
         Artifact,
         DataPart,
         Message,
+        Skill,
         TaskIdParams,
         TaskSendParams,
         TaskState,
@@ -206,6 +207,29 @@ class LRUMemoryStorage(Storage[list["Message"]]):  # type: ignore
     async def submit_task(self, context_id: str, message: "Message"):
         """Delegate to underlying storage."""
         return await self.storage.submit_task(context_id, message)
+
+
+def get_agent_skills() -> list[Skill]:
+    """Define the skills exposed by the haiku.rag A2A agent.
+
+    Returns:
+        List of skills describing the agent's capabilities
+    """
+    return [
+        Skill(
+            id="document-qa",
+            name="Document Question Answering",
+            description="Answer questions based on a knowledge base of documents using semantic search and retrieval",
+            tags=["question-answering", "search", "knowledge-base", "rag"],
+            input_modes=["application/json"],
+            output_modes=["application/json"],
+            examples=[
+                "What does the documentation say about authentication?",
+                "Find information about Python best practices",
+                "Show me the full API documentation",
+            ],
+        )
+    ]
 
 
 def extract_question_from_task(task_history: list[Message]) -> str | None:
@@ -412,5 +436,6 @@ def create_a2a_app(db_path: Path):
         broker=broker,
         name="haiku-rag",
         description="Conversational question answering agent powered by haiku.rag RAG system",
+        skills=get_agent_skills(),
         lifespan=lifespan,
     )

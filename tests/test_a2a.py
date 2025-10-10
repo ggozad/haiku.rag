@@ -227,3 +227,36 @@ async def test_a2a_app_creation(temp_db_path):
     assert app.name == "haiku-rag"
     assert app.description is not None
     assert "conversational" in app.description.lower()
+
+
+@pytest.mark.asyncio
+async def test_a2a_app_has_skills(temp_db_path):
+    """Test that A2A app exposes skills describing its capabilities."""
+    from haiku.rag.a2a import create_a2a_app
+
+    # Create a test database
+    async with HaikuRAG(temp_db_path) as client:
+        await client.create_document(content="Test document", uri="test_doc")
+
+    # Create A2A app
+    app = create_a2a_app(temp_db_path)
+
+    # Verify app has skills
+    assert app.skills is not None
+    assert len(app.skills) > 0
+
+    # Check that at least one skill exists
+    skill = app.skills[0]
+    assert "id" in skill
+    assert "name" in skill
+    assert "description" in skill
+    assert "tags" in skill
+    assert "input_modes" in skill
+    assert "output_modes" in skill
+
+    # Verify the skill describes document search/QA capabilities
+    skill_text = f"{skill['name']} {skill['description']}".lower()
+    assert any(
+        keyword in skill_text
+        for keyword in ["search", "question", "answer", "document", "knowledge"]
+    )
