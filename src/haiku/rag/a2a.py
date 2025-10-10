@@ -393,7 +393,9 @@ def create_a2a_app(db_path: Path):
                 async with HaikuRAG(db_path) as client:
                     if skill == "deep-qa":
                         # Run deep QA graph
-                        deep_result = await self.run_deep_qa(client, question)
+                        deep_result, deep_state = await self.run_deep_qa(
+                            client, question
+                        )
 
                         # Build response message
                         response_message = Message(
@@ -403,14 +405,10 @@ def create_a2a_app(db_path: Path):
                             message_id=str(uuid.uuid4()),
                         )
 
-                        # Build artifacts (basic for now, will be enhanced in commit 3)
-                        artifacts = [
-                            Artifact(
-                                artifact_id=str(uuid.uuid4()),
-                                name="answer",
-                                parts=[TextPart(kind="text", text=deep_result.answer)],
-                            )
-                        ]
+                        # Build rich artifacts with research breakdown
+                        artifacts = self.build_deep_qa_artifacts(
+                            deep_result, deep_state
+                        )
 
                         await self.storage.update_task(
                             task["id"],
@@ -477,7 +475,7 @@ def create_a2a_app(db_path: Path):
                 question: User's question
 
             Returns:
-                DeepQAAnswer with answer and sources
+                Tuple of (DeepQAAnswer, DeepQAState) with answer and state
             """
             graph = build_deep_qa_graph()
             context = DeepQAContext(original_question=question, use_citations=False)
@@ -488,7 +486,7 @@ def create_a2a_app(db_path: Path):
             )
 
             result = await graph.run(start_node=start_node, state=state, deps=deps)
-            return result.output
+            return result.output, state
 
         async def cancel_task(self, params: TaskIdParams) -> None:
             """Cancel a task - not implemented for this worker."""
@@ -511,6 +509,56 @@ def create_a2a_app(db_path: Path):
                     parts=[TextPart(kind="text", text=str(result.output))],
                 )
             ]
+
+        def build_deep_qa_artifacts(self, result, state: DeepQAState) -> list[Artifact]:
+            """Build rich artifacts from deep QA result.
+
+            Args:
+                result: DeepQAAnswer with final answer
+                state: DeepQAState with research process details
+
+            Returns:
+                List of artifacts including answer and research breakdown
+            """
+            artifacts = [
+                # Final answer artifact
+                Artifact(
+                    artifact_id=str(uuid.uuid4()),
+                    name="answer",
+                    parts=[TextPart(kind="text", text=result.answer)],
+                )
+            ]
+
+            # Add research process artifact with sub-questions and answers
+            if state.context.qa_responses:
+                research_data = {
+                    "original_question": state.context.original_question,
+                    "iterations": state.iterations,
+                    "sub_questions_answered": [
+                        {
+                            "question": qa.query,
+                            "answer": qa.answer,
+                            "sources": qa.sources,
+                        }
+                        for qa in state.context.qa_responses
+                    ],
+                }
+
+                artifacts.append(
+                    Artifact(
+                        artifact_id=str(uuid.uuid4()),
+                        name="research_process",
+                        parts=[
+                            DataPart(
+                                kind="data",
+                                data=research_data,
+                                metadata={"type": "deep_qa_research"},
+                            )
+                        ],
+                    )
+                )
+
+            return artifacts
 
     worker = ConversationalWorker(storage=storage, broker=broker)
 
