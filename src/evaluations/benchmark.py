@@ -212,8 +212,6 @@ async def run_qa_benchmark(
                 return await qa.answer(question)
 
             for case in evaluation_dataset.cases:
-                progress.console.print(f"\n[bold]Evaluating case:[/bold] {case.name}")
-
                 single_case_dataset = EvalDataset[str, str, dict[str, str]](
                     cases=[case],
                     evaluators=evaluation_dataset.evaluators,
@@ -232,18 +230,9 @@ async def run_qa_benchmark(
                     result_case = report.cases[0]
 
                     equivalence = result_case.assertions.get("answer_equivalent")
-                    progress.console.print(f"Question: {result_case.inputs}")
-                    progress.console.print(f"Expected: {result_case.expected_output}")
-                    progress.console.print(f"Generated: {result_case.output}")
                     if equivalence is not None:
-                        progress.console.print(
-                            f"Equivalent: {equivalence.value}"
-                            + (f" — {equivalence.reason}" if equivalence.reason else "")
-                        )
                         if equivalence.value:
                             passing_cases += 1
-
-                    progress.console.print("")
 
                 if report.failures:
                     failures.extend(report.failures)
@@ -251,13 +240,14 @@ async def run_qa_benchmark(
                     progress.console.print(
                         "[red]Failure encountered during case evaluation:[/red]"
                     )
-                    progress.console.print(f"Question: {failure.inputs}")
                     progress.console.print(f"Error: {failure.error_message}")
                     progress.console.print("")
 
-                progress.console.print(
-                    f"[green]Accuracy: {(passing_cases / total_processed):.4f} "
-                    f"{passing_cases}/{total_processed}[/green]"
+                progress.update(
+                    qa_task,
+                    description="[yellow]Evaluating QA cases...[/yellow] "
+                    f"[green]Accuracy: {(passing_cases / total_processed):.2f} "
+                    f"{passing_cases}/{total_processed}[/green]",
                 )
                 progress.advance(qa_task)
 
