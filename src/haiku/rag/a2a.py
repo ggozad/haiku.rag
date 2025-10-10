@@ -366,6 +366,54 @@ def create_a2a_app(db_path: Path):
         return [doc.title or doc.uri or f"Document {doc.id}" for doc in documents]
 
     class ConversationalWorker(Worker[list[Message]]):
+        async def evaluate_answer_adequacy(self, question: str, answer: str) -> bool:
+            """Use LLM to evaluate if answer adequately addresses the question.
+
+            Args:
+                question: The original question
+                answer: The answer to evaluate
+
+            Returns:
+                True if answer is adequate, False if more research needed
+            """
+            from pydantic import BaseModel, Field
+
+            class AnswerEvaluation(BaseModel):
+                is_adequate: bool = Field(
+                    description="True if the answer adequately addresses the question, False if more research is needed"
+                )
+                reasoning: str = Field(
+                    description="Brief explanation of the evaluation"
+                )
+
+            evaluation_agent = Agent(
+                model=get_model(Config.QA_PROVIDER, Config.QA_MODEL),
+                output_type=AnswerEvaluation,
+                system_prompt="""You evaluate whether an answer adequately addresses a question.
+
+Consider:
+- Completeness: Does it answer all parts of the question?
+- Specificity: Is it specific enough or too vague?
+- Relevance: Does it directly address what was asked?
+- Depth: For complex questions, does it provide sufficient depth?
+
+Return is_adequate=True if the answer satisfactorily addresses the question.
+Return is_adequate=False if the answer is incomplete, too vague, or requires deeper research.""",
+                retries=1,
+            )
+
+            prompt = f"""Question: {question}
+
+Answer: {answer}
+
+Does this answer adequately address the question?"""
+
+            result = await evaluation_agent.run(prompt)
+            logger.info(
+                f"Answer evaluation: is_adequate={result.output.is_adequate}, reasoning={result.output.reasoning}"
+            )
+            return result.output.is_adequate
+
         async def run_task(self, params: TaskSendParams) -> None:
             task = await self.storage.load_task(params["id"])
             if task is None:
@@ -387,17 +435,17 @@ def create_a2a_app(db_path: Path):
                 await self.storage.update_task(task["id"], state="failed")
                 return
 
-            logger.info(f"Task {task['id']} using skill: {skill}")
+            logger.info(f"Task {task['id']} requested skill: {skill}")
 
             try:
                 async with HaikuRAG(db_path) as client:
                     if skill == "deep-qa":
-                        # Run deep QA graph
+                        # Explicitly requested deep QA
+                        logger.info(f"Task {task['id']}: Running deep QA (explicit)")
                         deep_result, deep_state = await self.run_deep_qa(
                             client, question
                         )
 
-                        # Build response message
                         response_message = Message(
                             role="agent",
                             parts=[TextPart(kind="text", text=deep_result.answer)],
@@ -405,7 +453,6 @@ def create_a2a_app(db_path: Path):
                             message_id=str(uuid.uuid4()),
                         )
 
-                        # Build rich artifacts with research breakdown
                         artifacts = self.build_deep_qa_artifacts(
                             deep_result, deep_state
                         )
@@ -417,7 +464,9 @@ def create_a2a_app(db_path: Path):
                             new_artifacts=artifacts,
                         )
                     else:
-                        # Load conversation context for simple QA
+                        # Try simple QA first (default behavior or explicit document-qa)
+                        logger.info(f"Task {task['id']}: Trying simple QA first")
+
                         context = (
                             await self.storage.load_context(task["context_id"]) or []
                         )
@@ -425,37 +474,72 @@ def create_a2a_app(db_path: Path):
 
                         deps = AgentDependencies(client=client)
 
-                        # Run agent with full conversation history including tool calls
                         result = await agent.run(
                             question, deps=deps, message_history=message_history
                         )
 
-                        # Build response message for A2A protocol
-                        response_message = Message(
-                            role="agent",
-                            parts=[TextPart(kind="text", text=str(result.output))],
-                            kind="message",
-                            message_id=str(uuid.uuid4()),
+                        answer = str(result.output)
+
+                        # Evaluate answer adequacy
+                        is_adequate = await self.evaluate_answer_adequacy(
+                            question, answer
                         )
 
-                        # Update context with complete conversation state
-                        updated_history = message_history + result.new_messages()
-                        state_message = save_message_history(updated_history)
+                        if not is_adequate:
+                            # Escalate to deep QA
+                            logger.info(
+                                f"Task {task['id']}: Answer inadequate, escalating to deep QA"
+                            )
+                            deep_result, deep_state = await self.run_deep_qa(
+                                client, question
+                            )
 
-                        # Replace old state with new complete state
-                        await self.storage.update_context(
-                            task["context_id"], [state_message]
-                        )
+                            response_message = Message(
+                                role="agent",
+                                parts=[TextPart(kind="text", text=deep_result.answer)],
+                                kind="message",
+                                message_id=str(uuid.uuid4()),
+                            )
 
-                        # Build rich artifacts with search results and answer
-                        artifacts = self.build_artifacts(result)
+                            artifacts = self.build_deep_qa_artifacts(
+                                deep_result, deep_state
+                            )
 
-                        await self.storage.update_task(
-                            task["id"],
-                            state="completed",
-                            new_messages=[response_message],
-                            new_artifacts=artifacts,
-                        )
+                            await self.storage.update_task(
+                                task["id"],
+                                state="completed",
+                                new_messages=[response_message],
+                                new_artifacts=artifacts,
+                            )
+                        else:
+                            # Simple QA answer is adequate
+                            logger.info(
+                                f"Task {task['id']}: Simple QA answer is adequate"
+                            )
+
+                            response_message = Message(
+                                role="agent",
+                                parts=[TextPart(kind="text", text=answer)],
+                                kind="message",
+                                message_id=str(uuid.uuid4()),
+                            )
+
+                            # Update context with complete conversation state
+                            updated_history = message_history + result.new_messages()
+                            state_message = save_message_history(updated_history)
+
+                            await self.storage.update_context(
+                                task["context_id"], [state_message]
+                            )
+
+                            artifacts = self.build_artifacts(result)
+
+                            await self.storage.update_task(
+                                task["id"],
+                                state="completed",
+                                new_messages=[response_message],
+                                new_artifacts=artifacts,
+                            )
             except Exception as e:
                 logger.error(
                     "Task execution failed: task_id=%s, question=%s, error=%s",
