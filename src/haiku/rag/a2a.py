@@ -13,6 +13,10 @@ from pydantic_core import to_jsonable_python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.graph.common import get_model
+from haiku.rag.qa.deep.dependencies import DeepQAContext
+from haiku.rag.qa.deep.graph import build_deep_qa_graph
+from haiku.rag.qa.deep.nodes import DeepQAPlanNode
+from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 logger = logging.getLogger(__name__)
 
@@ -386,47 +390,74 @@ def create_a2a_app(db_path: Path):
             logger.info(f"Task {task['id']} using skill: {skill}")
 
             try:
-                # Load conversation context
-                context = await self.storage.load_context(task["context_id"]) or []
-                # Load conversation history
-                message_history = load_message_history(context)
-
-                # Create fresh client for this task and run agent
                 async with HaikuRAG(db_path) as client:
-                    deps = AgentDependencies(client=client)
+                    if skill == "deep-qa":
+                        # Run deep QA graph
+                        deep_result = await self.run_deep_qa(client, question)
 
-                    # Run agent with full conversation history including tool calls
-                    result = await agent.run(
-                        question, deps=deps, message_history=message_history
-                    )
+                        # Build response message
+                        response_message = Message(
+                            role="agent",
+                            parts=[TextPart(kind="text", text=deep_result.answer)],
+                            kind="message",
+                            message_id=str(uuid.uuid4()),
+                        )
 
-                    # Build response message for A2A protocol
-                    response_message = Message(
-                        role="agent",
-                        parts=[TextPart(kind="text", text=str(result.output))],
-                        kind="message",
-                        message_id=str(uuid.uuid4()),
-                    )
+                        # Build artifacts (basic for now, will be enhanced in commit 3)
+                        artifacts = [
+                            Artifact(
+                                artifact_id=str(uuid.uuid4()),
+                                name="answer",
+                                parts=[TextPart(kind="text", text=deep_result.answer)],
+                            )
+                        ]
 
-                    # Update context with complete conversation state
-                    # Store all messages from this run (includes tool calls & results)
-                    updated_history = message_history + result.new_messages()
-                    state_message = save_message_history(updated_history)
+                        await self.storage.update_task(
+                            task["id"],
+                            state="completed",
+                            new_messages=[response_message],
+                            new_artifacts=artifacts,
+                        )
+                    else:
+                        # Load conversation context for simple QA
+                        context = (
+                            await self.storage.load_context(task["context_id"]) or []
+                        )
+                        message_history = load_message_history(context)
 
-                    # Replace old state with new complete state
-                    await self.storage.update_context(
-                        task["context_id"], [state_message]
-                    )
+                        deps = AgentDependencies(client=client)
 
-                    # Build rich artifacts with search results and answer
-                    artifacts = self.build_artifacts(result)
+                        # Run agent with full conversation history including tool calls
+                        result = await agent.run(
+                            question, deps=deps, message_history=message_history
+                        )
 
-                    await self.storage.update_task(
-                        task["id"],
-                        state="completed",
-                        new_messages=[response_message],
-                        new_artifacts=artifacts,
-                    )
+                        # Build response message for A2A protocol
+                        response_message = Message(
+                            role="agent",
+                            parts=[TextPart(kind="text", text=str(result.output))],
+                            kind="message",
+                            message_id=str(uuid.uuid4()),
+                        )
+
+                        # Update context with complete conversation state
+                        updated_history = message_history + result.new_messages()
+                        state_message = save_message_history(updated_history)
+
+                        # Replace old state with new complete state
+                        await self.storage.update_context(
+                            task["context_id"], [state_message]
+                        )
+
+                        # Build rich artifacts with search results and answer
+                        artifacts = self.build_artifacts(result)
+
+                        await self.storage.update_task(
+                            task["id"],
+                            state="completed",
+                            new_messages=[response_message],
+                            new_artifacts=artifacts,
+                        )
             except Exception as e:
                 logger.error(
                     "Task execution failed: task_id=%s, question=%s, error=%s",
@@ -437,6 +468,27 @@ def create_a2a_app(db_path: Path):
                 )
                 await self.storage.update_task(task["id"], state="failed")
                 raise
+
+        async def run_deep_qa(self, client: HaikuRAG, question: str):
+            """Run deep QA graph for complex questions.
+
+            Args:
+                client: HaikuRAG client
+                question: User's question
+
+            Returns:
+                DeepQAAnswer with answer and sources
+            """
+            graph = build_deep_qa_graph()
+            context = DeepQAContext(original_question=question, use_citations=False)
+            state = DeepQAState(context=context)
+            deps = DeepQADeps(client=client, console=None)
+            start_node = DeepQAPlanNode(
+                provider=Config.QA_PROVIDER, model=Config.QA_MODEL
+            )
+
+            result = await graph.run(start_node=start_node, state=state, deps=deps)
+            return result.output
 
         async def cancel_task(self, params: TaskIdParams) -> None:
             """Cancel a task - not implemented for this worker."""
