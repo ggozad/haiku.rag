@@ -94,3 +94,44 @@ Configure via environment variable:
 ```bash
 export A2A_MAX_CONTEXTS=1000
 ```
+
+## Security
+
+By default, the A2A agent runs without authenticationto. For production deployments, you should add authentication.
+
+### Adding Authentication
+
+The `create_a2a_app()` function accepts optional security parameters that declare authentication requirements in the agent card:
+
+```python
+from haiku.rag.a2a import create_a2a_app
+
+app = create_a2a_app(
+    db_path,
+    security_schemes={
+        "apiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "API key authentication",
+        }
+    },
+    security=[{"apiKeyAuth": []}],
+)
+```
+
+This populates the agent card at `/.well-known/agent-card.json` so other agents can discover your authentication requirements.
+
+### Security Examples
+
+Three working examples are provided in `examples/a2a-security/`:
+
+1. **API Key** (`apikey_example.py`) - Simple header-based authentication
+2. **OAuth2 GitHub** (`oauth2_github.py`) - GitHub Personal Access Token authentication
+3. **OAuth2 Enterprise** (`oauth2_example.py`) - Full OAuth2 with JWT verification
+
+Each example shows:
+
+- How to declare security in the agent card
+- How to implement authentication middleware
+- How to verify credentials

@@ -42,11 +42,17 @@ __all__ = [
 ]
 
 
-def create_a2a_app(db_path: Path):
+def create_a2a_app(
+    db_path: Path,
+    security_schemes: dict | None = None,
+    security: list[dict[str, list[str]]] | None = None,
+):
     """Create an A2A app for the conversational QA agent.
 
     Args:
         db_path: Path to the LanceDB database
+        security_schemes: Optional security scheme definitions for the AgentCard
+        security: Optional security requirements for the AgentCard
 
     Returns:
         A FastA2A ASGI application
@@ -133,7 +139,7 @@ def create_a2a_app(db_path: Path):
             async with worker.run():
                 yield
 
-    return FastA2A(
+    app = FastA2A(
         storage=storage,
         broker=broker,
         name="haiku-rag",
@@ -141,3 +147,44 @@ def create_a2a_app(db_path: Path):
         skills=get_agent_skills(),
         lifespan=lifespan,
     )
+
+    # Add security configuration if provided
+    if security_schemes or security:
+        # Monkey-patch the agent card endpoint to include security
+        async def _agent_card_endpoint_with_security(request):
+            from fasta2a.schema import AgentCapabilities, AgentCard, agent_card_ta
+            from starlette.responses import Response
+
+            if app._agent_card_json_schema is None:
+                agent_card = AgentCard(
+                    name=app.name,
+                    description=app.description
+                    or "An AI agent exposed as an A2A agent.",
+                    url=app.url,
+                    version=app.version,
+                    protocol_version="0.3.0",
+                    skills=app.skills,
+                    default_input_modes=app.default_input_modes,
+                    default_output_modes=app.default_output_modes,
+                    capabilities=AgentCapabilities(
+                        streaming=False,
+                        push_notifications=False,
+                        state_transition_history=False,
+                    ),
+                )
+                if app.provider is not None:
+                    agent_card["provider"] = app.provider
+                if security_schemes:
+                    agent_card["security_schemes"] = security_schemes
+                if security:
+                    agent_card["security"] = security
+                app._agent_card_json_schema = agent_card_ta.dump_json(
+                    agent_card, by_alias=True
+                )
+            return Response(
+                content=app._agent_card_json_schema, media_type="application/json"
+            )
+
+        app._agent_card_endpoint = _agent_card_endpoint_with_security
+
+    return app
