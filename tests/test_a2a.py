@@ -9,6 +9,7 @@ from haiku.rag.a2a import (
     load_message_history,
     save_message_history,
 )
+from haiku.rag.a2a.storage import LRUMemoryStorage
 from haiku.rag.client import HaikuRAG
 
 pytest.importorskip("fasta2a")
@@ -145,8 +146,6 @@ async def test_lru_memory_storage_lru_eviction():
     """Test that LRUMemoryStorage evicts least recently used contexts."""
     from fasta2a.storage import InMemoryStorage
 
-    from haiku.rag.a2a import LRUMemoryStorage
-
     base_storage = InMemoryStorage()
     storage = LRUMemoryStorage(storage=base_storage, max_contexts=3)
 
@@ -185,8 +184,6 @@ async def test_lru_memory_storage_lru_eviction():
 async def test_lru_memory_storage_access_order():
     """Test that accessing contexts updates their order."""
     from fasta2a.storage import InMemoryStorage
-
-    from haiku.rag.a2a import LRUMemoryStorage
 
     base_storage = InMemoryStorage()
     storage = LRUMemoryStorage(storage=base_storage, max_contexts=2)
