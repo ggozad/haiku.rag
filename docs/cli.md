@@ -54,16 +54,14 @@ haiku-rag add-src /mnt/data/doc1.pdf --meta source=manual --meta page_count=12 -
 ### Get Document
 
 ```bash
-haiku-rag get <TAB>
-# or
-haiku-rag get 3f4a...   # document ID (autocomplete supported)
+haiku-rag get 3f4a...   # document ID
 ```
 
 ### Delete Document
 
 ```bash
-haiku-rag delete <TAB>
-haiku-rag rm <TAB>       # alias
+haiku-rag delete 3f4a...   # document ID
+haiku-rag rm 3f4a...       # alias
 ```
 
 Use this when you want to change things like the embedding model or chunk size for example.
@@ -212,20 +210,3 @@ This will:
 - Optimize the new database for best performance
 
 The original SQLite database remains unchanged, so you can safely migrate without risk of data loss.
-
-## Shell Autocompletion
-
-Enable shell autocompletion for faster, error‑free usage.
-
-- Temporary (current shell only):
-  ```bash
-  eval "$(haiku-rag --show-completion)"
-  ```
-- Permanent installation:
-  ```bash
-  haiku-rag --install-completion
-  ```
-
-What’s completed:
-- `get` and `delete`/`rm`: Document IDs from the selected database (respects `--db`).
-- `add-src`: Local filesystem paths (URLs can still be typed manually).
