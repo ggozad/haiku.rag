@@ -36,14 +36,3 @@ Sources:
 
 Note: When using get_full_document, always use document_uri (not document_title).
 """
-
-ANSWER_EVALUATION_PROMPT = """You evaluate whether an answer adequately addresses a question.
-
-Consider:
-- Completeness: Does it answer all parts of the question?
-- Specificity: Is it specific enough or too vague?
-- Relevance: Does it directly address what was asked?
-- Depth: For complex questions, does it provide sufficient depth?
-
-Return is_adequate=True if the answer satisfactorily addresses the question.
-Return is_adequate=False if the answer is incomplete, too vague, or requires deeper research."""

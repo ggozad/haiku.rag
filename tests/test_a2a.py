@@ -4,7 +4,6 @@ import pytest
 
 from haiku.rag.a2a import (
     extract_question_from_task,
-    extract_skill_preference,
     get_agent_skills,
     load_message_history,
     save_message_history,
@@ -262,89 +261,16 @@ async def test_a2a_app_has_skills(temp_db_path):
 
 
 def test_get_agent_skills():
-    """Test that agent skills include both document-qa and deep-qa."""
+    """Test that agent skills include document-qa."""
     skills = get_agent_skills()
 
-    assert len(skills) == 2
+    assert len(skills) == 1
 
     skill_ids = [skill["id"] for skill in skills]
     assert "document-qa" in skill_ids
-    assert "deep-qa" in skill_ids
 
     # Check document-qa skill
     doc_qa = next(s for s in skills if s["id"] == "document-qa")
     assert "Document Question Answering" in doc_qa["name"]
     assert "semantic search" in doc_qa["description"]
     assert "question-answering" in doc_qa["tags"]
-
-    # Check deep-qa skill
-    deep_qa = next(s for s in skills if s["id"] == "deep-qa")
-    assert "Deep Question Answering" in deep_qa["name"]
-    assert "Multi-step" in deep_qa["description"]
-    assert "research" in deep_qa["tags"]
-
-
-@pytest.mark.asyncio
-async def test_extract_skill_preference_with_metadata():
-    """Test extracting skill preference from message metadata."""
-    from fasta2a.schema import DataPart
-
-    task_history: list[Message] = [
-        Message(
-            role="user",
-            parts=[
-                TextPart(kind="text", text="Complex question"),
-                DataPart(
-                    kind="data",
-                    data={"skill": "deep-qa"},
-                    metadata={"type": "skill_preference"},
-                ),
-            ],
-            kind="message",
-            message_id=str(uuid.uuid4()),
-        )
-    ]
-
-    skill = extract_skill_preference(task_history)
-    assert skill == "deep-qa"
-
-
-@pytest.mark.asyncio
-async def test_extract_skill_preference_default():
-    """Test that skill preference defaults to document-qa."""
-    task_history: list[Message] = [
-        Message(
-            role="user",
-            parts=[TextPart(kind="text", text="What is Python?")],
-            kind="message",
-            message_id=str(uuid.uuid4()),
-        )
-    ]
-
-    skill = extract_skill_preference(task_history)
-    assert skill == "document-qa"
-
-
-@pytest.mark.asyncio
-async def test_extract_skill_preference_no_skill_in_data():
-    """Test skill preference when DataPart exists but has no skill."""
-    from fasta2a.schema import DataPart
-
-    task_history: list[Message] = [
-        Message(
-            role="user",
-            parts=[
-                TextPart(kind="text", text="Question"),
-                DataPart(
-                    kind="data",
-                    data={"other": "value"},
-                    metadata={"type": "skill_preference"},
-                ),
-            ],
-            kind="message",
-            message_id=str(uuid.uuid4()),
-        )
-    ]
-
-    skill = extract_skill_preference(task_history)
-    assert skill == "document-qa"

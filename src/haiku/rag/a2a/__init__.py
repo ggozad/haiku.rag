@@ -13,11 +13,7 @@ from haiku.rag.graph.common import get_model
 from .context import load_message_history, save_message_history
 from .models import AgentDependencies, SearchResult
 from .prompts import A2A_SYSTEM_PROMPT
-from .skills import (
-    extract_question_from_task,
-    extract_skill_preference,
-    get_agent_skills,
-)
+from .skills import extract_question_from_task, get_agent_skills
 from .storage import LRUMemoryStorage
 from .worker import ConversationalWorker
 
@@ -41,7 +37,6 @@ __all__ = [
     "load_message_history",
     "save_message_history",
     "extract_question_from_task",
-    "extract_skill_preference",
     "get_agent_skills",
     "LRUMemoryStorage",
 ]
