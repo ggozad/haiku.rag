@@ -366,7 +366,8 @@ def download_models_cmd():
 
 
 @cli.command(
-    "serve", help="Start the haiku.rag server (MCP by default, or A2A with --a2a)"
+    "serve",
+    help="Start haiku.rag server. Use --monitor, --mcp, and/or --a2a to enable services.",
 )
 def serve(
     db: Path = typer.Option(
@@ -374,15 +375,30 @@ def serve(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    monitor: bool = typer.Option(
+        False,
+        "--monitor",
+        help="Enable file monitoring",
+    ),
+    mcp: bool = typer.Option(
+        False,
+        "--mcp",
+        help="Enable MCP server",
+    ),
     stdio: bool = typer.Option(
         False,
         "--stdio",
-        help="Run MCP server on stdio Transport",
+        help="Run MCP server on stdio Transport (requires --mcp)",
+    ),
+    mcp_port: int = typer.Option(
+        8001,
+        "--mcp-port",
+        help="Port to bind MCP server to (ignored with --stdio)",
     ),
     a2a: bool = typer.Option(
         False,
         "--a2a",
-        help="Run A2A (Agent-to-Agent) server instead of MCP",
+        help="Enable A2A (Agent-to-Agent) server",
     ),
     a2a_host: str = typer.Option(
         "127.0.0.1",
@@ -395,29 +411,35 @@ def serve(
         help="Port to bind A2A server to",
     ),
 ) -> None:
-    """Start the MCP or A2A server."""
-    if a2a:
-        try:
-            from haiku.rag.a2a import create_a2a_app
-        except ImportError as e:
-            typer.echo(f"Error: {e}")
-            raise typer.Exit(1)
+    """Start the server with selected services."""
+    # Require at least one service flag
+    if not (monitor or mcp or a2a):
+        typer.echo(
+            "Error: At least one service flag (--monitor, --mcp, or --a2a) must be specified"
+        )
+        raise typer.Exit(1)
 
-        import uvicorn
+    if stdio and not mcp:
+        typer.echo("Error: --stdio requires --mcp")
+        raise typer.Exit(1)
 
-        typer.echo(f"Starting A2A server on {a2a_host}:{a2a_port}")
-        app = create_a2a_app(db_path=db)
-        uvicorn.run(app, host=a2a_host, port=a2a_port)
-    else:
-        from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.app import HaikuRAGApp
 
-        app = HaikuRAGApp(db_path=db)
+    app = HaikuRAGApp(db_path=db)
 
-        transport = None
-        if stdio:
-            transport = "stdio"
+    transport = "stdio" if stdio else None
 
-        asyncio.run(app.serve(transport=transport))
+    asyncio.run(
+        app.serve(
+            enable_monitor=monitor,
+            enable_mcp=mcp,
+            mcp_transport=transport,
+            mcp_port=mcp_port,
+            enable_a2a=a2a,
+            a2a_host=a2a_host,
+            a2a_port=a2a_port,
+        )
+    )
 
 
 @cli.command("migrate", help="Migrate an SQLite database to LanceDB")

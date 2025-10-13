@@ -173,28 +173,123 @@ def test_search():
         mock_app_instance.search.assert_called_once_with(query="query", limit=5)
 
 
-def test_serve():
+def test_serve_no_flags():
+    """Test serve command fails without flags."""
+    result = runner.invoke(cli, ["serve"])
+    assert result.exit_code == 1
+    assert "At least one service flag" in result.output
+
+
+def test_serve_mcp_only():
+    """Test serve command with MCP only."""
     with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
 
-        result = runner.invoke(cli, ["serve"])
+        result = runner.invoke(cli, ["serve", "--mcp"])
 
         assert result.exit_code == 0
-        mock_app_instance.serve.assert_called_once_with(transport=None)
+        mock_app_instance.serve.assert_called_once()
+        _, kwargs = mock_app_instance.serve.call_args
+        assert kwargs["enable_monitor"] is False
+        assert kwargs["enable_mcp"] is True
+        assert kwargs["enable_a2a"] is False
+        assert kwargs["mcp_transport"] is None
+        assert kwargs["mcp_port"] == 8001
 
 
-def test_serve_stdio():
+def test_serve_mcp_stdio():
+    """Test serve command with MCP stdio transport."""
     with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
 
-        result = runner.invoke(cli, ["serve", "--stdio"])
+        result = runner.invoke(cli, ["serve", "--mcp", "--stdio"])
 
         assert result.exit_code == 0
-        mock_app_instance.serve.assert_called_once_with(transport="stdio")
+        mock_app_instance.serve.assert_called_once()
+        _, kwargs = mock_app_instance.serve.call_args
+        assert kwargs["mcp_transport"] == "stdio"
+
+
+def test_serve_monitor_only():
+    """Test serve command with monitor only."""
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.serve = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["serve", "--monitor"])
+
+        assert result.exit_code == 0
+        mock_app_instance.serve.assert_called_once()
+        _, kwargs = mock_app_instance.serve.call_args
+        assert kwargs["enable_monitor"] is True
+        assert kwargs["enable_mcp"] is False
+        assert kwargs["enable_a2a"] is False
+
+
+def test_serve_a2a_only():
+    """Test serve command with A2A only."""
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.serve = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["serve", "--a2a"])
+
+        assert result.exit_code == 0
+        mock_app_instance.serve.assert_called_once()
+        _, kwargs = mock_app_instance.serve.call_args
+        assert kwargs["enable_monitor"] is False
+        assert kwargs["enable_mcp"] is False
+        assert kwargs["enable_a2a"] is True
+        assert kwargs["a2a_host"] == "127.0.0.1"
+        assert kwargs["a2a_port"] == 8000
+
+
+def test_serve_all_services():
+    """Test serve command with all services."""
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.serve = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["serve", "--monitor", "--mcp", "--a2a"])
+
+        assert result.exit_code == 0
+        mock_app_instance.serve.assert_called_once()
+        _, kwargs = mock_app_instance.serve.call_args
+        assert kwargs["enable_monitor"] is True
+        assert kwargs["enable_mcp"] is True
+        assert kwargs["enable_a2a"] is True
+
+
+def test_serve_custom_ports():
+    """Test serve command with custom ports."""
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.serve = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(
+            cli, ["serve", "--mcp", "--mcp-port", "9000", "--a2a", "--a2a-port", "9001"]
+        )
+
+        assert result.exit_code == 0
+        mock_app_instance.serve.assert_called_once()
+        _, kwargs = mock_app_instance.serve.call_args
+        assert kwargs["mcp_port"] == 9000
+        assert kwargs["a2a_port"] == 9001
+
+
+def test_serve_stdio_without_mcp():
+    """Test serve command fails when --stdio is used without --mcp."""
+    result = runner.invoke(cli, ["serve", "--stdio", "--monitor"])
+    assert result.exit_code == 1
+    assert "--stdio requires --mcp" in result.output
 
 
 def test_ask():
