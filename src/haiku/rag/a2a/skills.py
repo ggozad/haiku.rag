@@ -1,5 +1,3 @@
-"""A2A skill definitions and utilities."""
-
 try:
     from fasta2a.schema import Message, Skill  # type: ignore
 except ImportError as e:
@@ -27,6 +25,32 @@ def get_agent_skills() -> list[Skill]:
                 "What does the documentation say about authentication?",
                 "Find information about Python best practices",
                 "Show me the full API documentation",
+            ],
+        ),
+        Skill(
+            id="document-search",
+            name="Document Search",
+            description="Search for relevant document chunks in the knowledge base using hybrid (semantic and BM25) search",
+            tags=["search", "retrieval", "semantic-search"],
+            input_modes=["application/json"],
+            output_modes=["application/json"],
+            examples=[
+                "Search for Python best practices",
+                "Find documents about authentication",
+                "Look for API documentation",
+            ],
+        ),
+        Skill(
+            id="document-retrieve",
+            name="Document Retrieval",
+            description="Retrieve the complete content of a specific document by its URI",
+            tags=["retrieval", "fetch", "document"],
+            input_modes=["application/json"],
+            output_modes=["application/json"],
+            examples=[
+                "Get the full content of document X",
+                "Retrieve document by URI",
+                "Show me the complete document",
             ],
         ),
     ]

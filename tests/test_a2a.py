@@ -261,16 +261,382 @@ async def test_a2a_app_has_skills(temp_db_path):
 
 
 def test_get_agent_skills():
-    """Test that agent skills include document-qa."""
+    """Test that agent skills include all three skills."""
     skills = get_agent_skills()
 
-    assert len(skills) == 1
+    assert len(skills) == 3
 
     skill_ids = [skill["id"] for skill in skills]
     assert "document-qa" in skill_ids
+    assert "document-search" in skill_ids
+    assert "document-retrieve" in skill_ids
 
     # Check document-qa skill
     doc_qa = next(s for s in skills if s["id"] == "document-qa")
     assert "Document Question Answering" in doc_qa["name"]
     assert "semantic search" in doc_qa["description"]
     assert "question-answering" in doc_qa["tags"]
+
+    # Check document-search skill
+    doc_search = next(s for s in skills if s["id"] == "document-search")
+    assert "Document Search" in doc_search["name"]
+    assert "search" in doc_search["tags"]
+
+    # Check document-retrieve skill
+    doc_retrieve = next(s for s in skills if s["id"] == "document-retrieve")
+    assert "Document Retrieval" in doc_retrieve["name"]
+    assert "retrieval" in doc_retrieve["tags"]
+
+
+@pytest.mark.asyncio
+async def test_build_artifacts_for_search():
+    """Test that search operations produce structured search artifacts."""
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+
+    from haiku.rag.a2a.worker import ConversationalWorker
+
+    class MockResult:
+        output = "Found 1 relevant results:\n\n1. *Score: 0.9* | **test**\nresult"
+
+        def new_messages(self):
+            return [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="search_documents",
+                            args={"query": "test", "limit": 3},
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="search_documents",
+                            content=[{"content": "result", "score": 0.9}],
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+            ]
+
+    from pathlib import Path
+
+    from fasta2a.broker import InMemoryBroker
+    from fasta2a.storage import InMemoryStorage
+
+    worker = ConversationalWorker(
+        storage=InMemoryStorage(),
+        broker=InMemoryBroker(),
+        db_path=Path("/tmp/test.db"),
+        agent=None,  # type: ignore
+    )
+
+    artifacts = worker.build_artifacts(MockResult(), "search", "test query")
+
+    assert len(artifacts) == 1
+    assert artifacts[0].get("name") == "search_results"
+    assert len(artifacts[0]["parts"]) == 1
+    assert artifacts[0]["parts"][0]["kind"] == "data"
+    assert "results" in artifacts[0]["parts"][0]["data"]
+    assert "query" in artifacts[0]["parts"][0]["data"]
+
+
+@pytest.mark.asyncio
+async def test_build_artifacts_for_retrieve():
+    """Test that retrieve operations produce document artifacts."""
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+
+    from haiku.rag.a2a.worker import ConversationalWorker
+
+    class MockResult:
+        output = "Document content"
+
+        def new_messages(self):
+            return [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="get_full_document",
+                            args={"document_uri": "test.txt"},
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="get_full_document",
+                            content="Full document content here",
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+            ]
+
+    from pathlib import Path
+
+    from fasta2a.broker import InMemoryBroker
+    from fasta2a.storage import InMemoryStorage
+
+    worker = ConversationalWorker(
+        storage=InMemoryStorage(),
+        broker=InMemoryBroker(),
+        db_path=Path("/tmp/test.db"),
+        agent=None,  # type: ignore
+    )
+
+    artifacts = worker.build_artifacts(MockResult(), "retrieve", "test query")
+
+    assert len(artifacts) == 1
+    assert artifacts[0].get("name") == "document"
+    assert artifacts[0]["parts"][0]["kind"] == "text"
+    assert artifacts[0]["parts"][0]["text"] == "Full document content here"
+
+
+@pytest.mark.asyncio
+async def test_build_artifacts_for_multiple_searches():
+    """Test that multiple searches each get their own artifact with correct results."""
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+    from pydantic_ai.messages import TextPart as AITextPart
+
+    from haiku.rag.a2a.worker import ConversationalWorker
+
+    class MockResult:
+        output = "Answer based on multiple searches"
+
+        def new_messages(self):
+            return [
+                # First search
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="search_documents",
+                            args={"query": "first query", "limit": 2},
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="search_documents",
+                            content=[
+                                {"content": "result 1", "score": 0.9},
+                                {"content": "result 2", "score": 0.8},
+                            ],
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+                # Second search
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="search_documents",
+                            args={"query": "second query", "limit": 2},
+                            tool_call_id="call_2",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="search_documents",
+                            content=[
+                                {"content": "result 3", "score": 0.7},
+                                {"content": "result 4", "score": 0.6},
+                            ],
+                            tool_call_id="call_2",
+                        )
+                    ]
+                ),
+                ModelResponse(
+                    parts=[AITextPart(content="Answer based on multiple searches")]
+                ),
+            ]
+
+    from pathlib import Path
+
+    from fasta2a.broker import InMemoryBroker
+    from fasta2a.storage import InMemoryStorage
+
+    worker = ConversationalWorker(
+        storage=InMemoryStorage(),
+        broker=InMemoryBroker(),
+        db_path=Path("/tmp/test.db"),
+        agent=None,  # type: ignore
+    )
+
+    artifacts = worker.build_artifacts(MockResult(), "qa", "What is the answer?")
+
+    # Should have 2 search artifacts + 1 qa_result artifact
+    assert len(artifacts) == 3
+
+    # First search artifact
+    assert artifacts[0].get("name") == "search_results"
+    part_0 = artifacts[0]["parts"][0]
+    assert part_0.get("data", {}).get("query") == "first query"
+    results_1 = part_0.get("data", {}).get("results", [])
+    assert len(results_1) == 2
+    assert results_1[0]["content"] == "result 1"
+    assert results_1[1]["content"] == "result 2"
+
+    # Second search artifact
+    assert artifacts[1].get("name") == "search_results"
+    part_1 = artifacts[1]["parts"][0]
+    assert part_1.get("data", {}).get("query") == "second query"
+    results_2 = part_1.get("data", {}).get("results", [])
+    assert len(results_2) == 2
+    assert results_2[0]["content"] == "result 3"
+    assert results_2[1]["content"] == "result 4"
+
+    # Q&A artifact
+    assert artifacts[2].get("name") == "qa_result"
+
+
+@pytest.mark.asyncio
+async def test_qa_artifact_for_conversational_messages():
+    """Test that conversational Q&A messages always create qa_result artifacts."""
+    from pydantic_ai.messages import ModelResponse
+    from pydantic_ai.messages import TextPart as AITextPart
+
+    from haiku.rag.a2a.worker import ConversationalWorker
+
+    class MockResult:
+        output = "Hello! How can I help you?"
+
+        def new_messages(self):
+            # No tool calls, just a conversational response
+            return [
+                ModelResponse(parts=[AITextPart(content="Hello! How can I help you?")]),
+            ]
+
+    from pathlib import Path
+
+    from fasta2a.broker import InMemoryBroker
+    from fasta2a.storage import InMemoryStorage
+
+    worker = ConversationalWorker(
+        storage=InMemoryStorage(),
+        broker=InMemoryBroker(),
+        db_path=Path("/tmp/test.db"),
+        agent=None,  # type: ignore
+    )
+
+    artifacts = worker.build_artifacts(MockResult(), "qa", "Hello")
+
+    # Should have qa_result artifact (even without tools, for A2A traceability)
+    assert len(artifacts) == 1
+    assert artifacts[0].get("name") == "qa_result"
+    part = artifacts[0]["parts"][0]
+    assert part.get("data", {}).get("question") == "Hello"
+    assert part.get("data", {}).get("answer") == "Hello! How can I help you?"
+
+
+@pytest.mark.asyncio
+async def test_build_artifacts_for_qa():
+    """Test that Q&A operations produce artifacts for each tool call."""
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+    from pydantic_ai.messages import TextPart as AITextPart
+
+    from haiku.rag.a2a.worker import ConversationalWorker
+
+    class MockResult:
+        output = "This is the answer"
+
+        def new_messages(self):
+            # Multiple tool calls indicates Q&A workflow
+            return [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="search_documents",
+                            args={"query": "test", "limit": 3},
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="search_documents",
+                            content=[{"content": "result", "score": 0.9}],
+                            tool_call_id="call_1",
+                        )
+                    ]
+                ),
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="get_full_document",
+                            args={"document_uri": "test.txt"},
+                            tool_call_id="call_2",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="get_full_document",
+                            content="Full content",
+                            tool_call_id="call_2",
+                        )
+                    ]
+                ),
+                ModelResponse(parts=[AITextPart(content="This is the answer")]),
+            ]
+
+    from pathlib import Path
+
+    from fasta2a.broker import InMemoryBroker
+    from fasta2a.storage import InMemoryStorage
+
+    worker = ConversationalWorker(
+        storage=InMemoryStorage(),
+        broker=InMemoryBroker(),
+        db_path=Path("/tmp/test.db"),
+        agent=None,  # type: ignore
+    )
+
+    artifacts = worker.build_artifacts(MockResult(), "qa", "What is Python?")
+
+    # Q&A should produce artifacts for each tool call (search + retrieve) + final Q&A artifact
+    assert len(artifacts) == 3
+
+    # First artifact is from search_documents
+    assert artifacts[0].get("name") == "search_results"
+    assert artifacts[0]["parts"][0]["kind"] == "data"
+    assert "results" in artifacts[0]["parts"][0]["data"]
+    assert artifacts[0]["parts"][0]["data"]["query"] == "test"
+
+    # Second artifact is from get_full_document
+    assert artifacts[1].get("name") == "document"
+    assert artifacts[1]["parts"][0]["kind"] == "text"
+
+    # Third artifact is the Q&A result
+    assert artifacts[2].get("name") == "qa_result"
+    assert artifacts[2]["parts"][0]["kind"] == "data"
+    assert artifacts[2]["parts"][0]["data"]["question"] == "What is Python?"
+    assert artifacts[2]["parts"][0]["data"]["answer"] == "This is the answer"
+    assert artifacts[2]["parts"][0]["data"]["skill"] == "document-qa"

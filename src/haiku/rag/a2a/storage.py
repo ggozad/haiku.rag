@@ -1,5 +1,3 @@
-"""Storage implementations for A2A contexts."""
-
 import logging
 from collections import OrderedDict
 

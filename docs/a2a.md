@@ -9,7 +9,10 @@ The A2A server exposes `haiku.rag` as a conversational agent using the Agent-to-
 - **Intelligent Search**: Performs single or multiple searches depending on question complexity
 - **Source Citations**: Always includes sources with both titles and URIs
 - **Full Document Retrieval**: Can fetch complete documents on request
-- **Document Discovery**: Lists available documents to help users explore the knowledge base
+- **Multiple Skills**: Exposes three distinct skills with appropriate artifacts:
+  - `document-qa`: Conversational question answering (default)
+  - `document-search`: Semantic search with structured results
+  - `document-retrieve`: Fetch complete documents by URI
 
 ## Starting A2A Server
 
@@ -82,13 +85,37 @@ Each conversation is identified by a `context_id`. All messages within the same 
 - Track which documents were already found
 - Provide contextual follow-up answers
 
+### Skills
+
+The agent exposes three skills:
+
+- **document-qa** (default): Conversational question answering including follow-ups and multi-turn dialogue
+- **document-search**: Direct semantic search returning formatted results
+- **document-retrieve**: Fetch complete document content by URI
+
+### Artifacts
+
+All operations create artifacts for traceability:
+
+- **search_results**: Created for each `search_documents` tool call
+
+  - Contains query and array of SearchResult objects (content, score, document_title, document_uri)
+
+- **document**: Created for each `get_full_document` tool call
+
+  - Contains complete document text
+
+- **qa_result**: Created for all document-qa operations
+
+  - Contains question, answer, and skill identifier
+  - Always created for Q&A, even when answering from conversation history without tools
+
 ### Memory Management
 
 To prevent memory growth, the server uses LRU (Least Recently Used) eviction:
 
 - Maximum 1000 contexts kept in memory (configurable via `A2A_MAX_CONTEXTS`)
 - When limit exceeded, least recently used contexts are automatically evicted
-- No periodic cleanup needed - eviction happens on-demand
 
 Configure via environment variable:
 ```bash

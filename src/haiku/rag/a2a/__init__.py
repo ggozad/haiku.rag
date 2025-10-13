@@ -1,5 +1,3 @@
-"""A2A (Agent-to-Agent) server integration for haiku.rag."""
-
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -111,18 +109,6 @@ def create_a2a_app(
             return f"Document not found: {document_uri}"
 
         return document.content
-
-    @agent.tool
-    async def list_documents(
-        ctx: RunContext[AgentDependencies],
-        limit: int = 10,
-    ) -> list[str]:
-        """List documents in the knowledge base.
-
-        Returns document URIs/titles. Use this to help users discover what's available.
-        """
-        documents = await ctx.deps.client.list_documents(limit=limit)
-        return [doc.title or doc.uri or f"Document {doc.id}" for doc in documents]
 
     worker = ConversationalWorker(
         storage=storage,

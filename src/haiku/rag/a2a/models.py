@@ -1,5 +1,3 @@
-"""Data models for A2A integration."""
-
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG

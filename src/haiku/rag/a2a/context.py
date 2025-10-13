@@ -1,5 +1,3 @@
-"""Context management for A2A conversations."""
-
 import uuid
 
 from pydantic import TypeAdapter
