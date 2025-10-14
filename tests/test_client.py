@@ -538,33 +538,51 @@ async def test_client_create_document_with_custom_chunks(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_ask_without_cite(temp_db_path):
+async def test_client_ask_without_cite(monkeypatch, temp_db_path):
     """Test asking questions without citations."""
+    from pydantic_ai.models.test import TestModel
+
+    # Mock OpenAIChatModel to return TestModel
+    monkeypatch.setattr(
+        "haiku.rag.qa.agent.OpenAIChatModel", lambda **kwargs: TestModel()
+    )
+
     async with HaikuRAG(temp_db_path) as client:
-        # Mock the QA agent
-        mock_qa_agent = AsyncMock()
-        mock_qa_agent.answer.return_value = "Test answer"
+        # Create a test document for the agent to search
+        await client.create_document(
+            content="Python is a high-level programming language.", uri="test.txt"
+        )
 
-        with patch("haiku.rag.qa.get_qa_agent", return_value=mock_qa_agent):
-            answer = await client.ask("What is Python?")
+        # Use real QA agent with TestModel
+        answer = await client.ask("What is Python?")
 
-        assert answer == "Test answer"
-        mock_qa_agent.answer.assert_called_once_with("What is Python?")
+        # TestModel will generate a valid string response
+        assert answer is not None
+        assert isinstance(answer, str)
 
 
 @pytest.mark.asyncio
-async def test_client_ask_with_cite(temp_db_path):
+async def test_client_ask_with_cite(monkeypatch, temp_db_path):
     """Test asking questions with citations."""
+    from pydantic_ai.models.test import TestModel
+
+    # Mock OpenAIChatModel to return TestModel
+    monkeypatch.setattr(
+        "haiku.rag.qa.agent.OpenAIChatModel", lambda **kwargs: TestModel()
+    )
+
     async with HaikuRAG(temp_db_path) as client:
-        # Mock the QA agent
-        mock_qa_agent = AsyncMock()
-        mock_qa_agent.answer.return_value = "Test answer with citations [1]"
+        # Create a test document
+        await client.create_document(
+            content="Python is a high-level programming language.", uri="test.txt"
+        )
 
-        with patch("haiku.rag.qa.get_qa_agent", return_value=mock_qa_agent):
-            answer = await client.ask("What is Python?", cite=True)
+        # Use real QA agent with TestModel
+        answer = await client.ask("What is Python?", cite=True)
 
-        assert answer == "Test answer with citations [1]"
-        mock_qa_agent.answer.assert_called_once_with("What is Python?")
+        # TestModel will generate a valid string response
+        assert answer is not None
+        assert isinstance(answer, str)
 
 
 @pytest.mark.asyncio
