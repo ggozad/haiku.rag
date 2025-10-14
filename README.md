@@ -171,4 +171,6 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA agent and multi-agent research
+- [MCP Server](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
+- [A2A Agent](https://ggozad.github.io/haiku.rag/a2a/) - Agent-to-Agent protocol support
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance Benchmarks
