@@ -148,6 +148,26 @@ haiku-rag serve --mcp --mcp-port 9000 --a2a --a2a-port 9001
 
 See [Server Mode](server.md) for details on available services.
 
+### A2A Interactive Client
+
+Connect to and chat with haiku.rag's A2A server:
+
+```bash
+# Connect to local server
+haiku-rag a2aclient
+
+# Connect to remote server
+haiku-rag a2aclient --url https://example.com:8000
+```
+
+The interactive client provides:
+- Rich markdown rendering of agent responses
+- Multi-turn conversation with context
+- Agent card discovery and display
+- Compact artifact summaries
+
+See [A2A documentation](a2a.md) for more details.
+
 ## Settings
 
 View current configuration settings:

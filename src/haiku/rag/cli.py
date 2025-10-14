@@ -460,5 +460,27 @@ def migrate(
         raise typer.Exit(1)
 
 
+@cli.command(
+    "a2aclient", help="Run interactive client to chat with haiku.rag's A2A server"
+)
+def a2aclient(
+    url: str = typer.Option(
+        "http://localhost:8000",
+        "--url",
+        help="Base URL of the A2A server",
+    ),
+):
+    try:
+        from haiku.rag.a2a.client import run_interactive_client
+    except ImportError:
+        typer.echo(
+            "Error: A2A support requires the 'a2a' extra. "
+            "Install with: uv pip install 'haiku.rag[a2a]'"
+        )
+        raise typer.Exit(1)
+
+    asyncio.run(run_interactive_client(url=url))
+
+
 if __name__ == "__main__":
     cli()

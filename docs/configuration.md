@@ -73,7 +73,7 @@ Configure which LLM provider to use for question answering. Any provider and mod
 
 ```bash
 QA_PROVIDER="ollama"
-QA_MODEL="qwen3"
+QA_MODEL="gpt-oss"
 OLLAMA_BASE_URL="http://localhost:11434"
 ```
 

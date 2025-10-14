@@ -29,6 +29,32 @@ Example:
 haiku-rag serve --a2a --a2a-host 0.0.0.0 --a2a-port 8080
 ```
 
+## Interactive A2A Client
+
+Test and interact with haiku.rag's A2A server using the built-in interactive client:
+
+```bash
+haiku-rag a2aclient
+```
+
+Client options:
+- `--url` - Base URL of the A2A server (default: http://localhost:8000)
+
+Example:
+```bash
+# Connect to local server
+haiku-rag a2aclient
+
+# Connect to remote server
+haiku-rag a2aclient --url https://example.com:8000
+```
+
+The interactive client provides:
+- Rich markdown rendering of agent responses
+- Conversation context across multiple turns
+- Agent card discovery and display
+- Compact artifact summaries
+
 ## Requirements
 
 A2A support requires the `a2a` extra:

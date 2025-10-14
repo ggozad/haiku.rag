@@ -149,10 +149,14 @@ Provides tools for document management and search directly in your AI assistant.
 Run as a conversational agent with the Agent-to-Agent protocol:
 
 ```bash
+# Start the A2A server
 haiku-rag serve --a2a
+
+# Connect with the interactive client (in another terminal)
+haiku-rag a2aclient
 ```
 
-Provides a conversational interface with:
+The A2A agent provides:
 - Multi-turn dialogue with context
 - Intelligent multi-search for complex questions
 - Source citations with titles and URIs
