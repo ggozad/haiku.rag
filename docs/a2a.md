@@ -31,6 +31,9 @@ haiku-rag serve --a2a --a2a-host 0.0.0.0 --a2a-port 8080
 
 ## Interactive A2A Client
 
+!!! note
+    The interactive A2A client is an excellent way to do conversational research with `haiku.rag`.
+
 Test and interact with haiku.rag's A2A server using the built-in interactive client:
 
 ```bash
@@ -50,6 +53,7 @@ haiku-rag a2aclient --url https://example.com:8000
 ```
 
 The interactive client provides:
+
 - Rich markdown rendering of agent responses
 - Conversation context across multiple turns
 - Agent card discovery and display
