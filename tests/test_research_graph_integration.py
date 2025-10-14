@@ -1,32 +1,21 @@
-from typing import Any, cast
-
 import pytest
+from pydantic_ai.models.test import TestModel
 
-from haiku.rag.graph.models import SearchAnswer
-from haiku.rag.graph.nodes.analysis import AnalyzeInsightsNode, DecisionNode
+from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.nodes.plan import PlanNode
-from haiku.rag.graph.nodes.search import SearchDispatchNode
-from haiku.rag.graph.nodes.synthesize import SynthesizeNode
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import (
     ResearchDeps,
     ResearchState,
     build_research_graph,
 )
-from haiku.rag.research.models import (
-    EvaluationResult,
-    GapRecord,
-    GapSeverity,
-    InsightAnalysis,
-    InsightRecord,
-    InsightStatus,
-    ResearchReport,
-)
+from haiku.rag.research.models import ResearchReport
 from haiku.rag.research.stream import stream_research_graph
 
 
 @pytest.mark.asyncio
-async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
+async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
+    """Test research graph with mocked LLM using TestModel."""
     graph = build_research_graph()
 
     state = ResearchState(
@@ -35,103 +24,43 @@ async def test_graph_end_to_end_with_patched_nodes(monkeypatch):
         confidence_threshold=0.5,
         max_concurrency=2,
     )
-    deps = ResearchDeps(
-        client=cast(Any, None), console=None
-    )  # client unused in patched nodes
 
-    async def fake_plan_run(self, ctx) -> Any:
-        ctx.state.context.sub_questions = [
-            "Describe haiku.rag in one sentence",
-            "List core components of haiku.rag",
-        ]
-        ctx.deps.emit_log("planning", ctx.state)
-        return SearchDispatchNode(self.provider, self.model)
+    # Use real client but with TestModel for LLM calls
+    client = HaikuRAG(temp_db_path)
+    deps = ResearchDeps(client=client, console=None)
 
-    async def fake_search_dispatch_run(self, ctx) -> Any:
-        # Answer all pending questions deterministically, then move to analysis
-        while ctx.state.context.sub_questions:
-            q = ctx.state.context.sub_questions.pop(0)
-            # pydantic BaseModel kwargs not fully typed for pyright
-            ctx.state.context.add_qa_response(
-                SearchAnswer(query=q, answer="A", context=["x"], sources=["s"])  # pyright: ignore[reportCallIssue]
-            )
-            ctx.deps.emit_log(f"answered:{q}", ctx.state)
-        return AnalyzeInsightsNode(self.provider, self.model)
+    # Mock get_model to return TestModel which generates valid schema-compliant data
+    # Need to patch in all modules that import it
+    def test_model_factory(provider, model):
+        return TestModel()
 
-    async def fake_analyze_run(self, ctx) -> Any:
-        analysis = InsightAnalysis(
-            highlights=[
-                InsightRecord(
-                    summary="haiku.rag orchestrates research stages",
-                    status=InsightStatus.VALIDATED,
-                    supporting_sources=["s"],
-                    originating_questions=["Describe haiku.rag in one sentence"],
-                )
-            ],
-            gap_assessments=[
-                GapRecord(
-                    description="Need a final summary",
-                    severity=GapSeverity.LOW,
-                    blocking=False,
-                    resolved=False,
-                )
-            ],
-            resolved_gaps=[],
-            new_questions=[],
-            commentary="Insights captured for synthesis",
-        )
-        ctx.state.context.integrate_analysis(analysis)
-        ctx.state.last_analysis = analysis
-        ctx.deps.emit_log("analysis", ctx.state)
-        return DecisionNode(self.provider, self.model)
-
-    async def fake_decision_run(self, ctx) -> Any:
-        ctx.state.last_eval = EvaluationResult(
-            key_insights=["haiku.rag coordinates planning, search, and synthesis"],
-            new_questions=[],
-            gaps=["Need a final summary"],
-            confidence_score=1.0,
-            is_sufficient=True,
-            reasoning="done",
-        )
-        ctx.state.iterations += 1
-        ctx.deps.emit_log("decision", ctx.state)
-        return SynthesizeNode(self.provider, self.model)
-
-    async def fake_synthesize_run(self, ctx) -> Any:
-        report = ResearchReport(
-            title="Haiku RAG",
-            executive_summary="...",
-            main_findings=["f1"],
-            conclusions=["c1"],
-            limitations=[],
-            recommendations=[],
-            sources_summary="s",
-        )
-        from pydantic_graph import End
-
-        return End(report)
-
-    monkeypatch.setattr(PlanNode, "run", fake_plan_run, raising=False)
+    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.nodes.plan.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.nodes.search.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.nodes.analysis.get_model", test_model_factory)
     monkeypatch.setattr(
-        SearchDispatchNode, "run", fake_search_dispatch_run, raising=False
+        "haiku.rag.graph.nodes.synthesize.get_model", test_model_factory
     )
-    monkeypatch.setattr(AnalyzeInsightsNode, "run", fake_analyze_run, raising=False)
-    monkeypatch.setattr(DecisionNode, "run", fake_decision_run, raising=False)
-    monkeypatch.setattr(SynthesizeNode, "run", fake_synthesize_run, raising=False)
 
     start = PlanNode(provider="test", model="test")
 
     collected = []
+    report = None
     async for event in stream_research_graph(graph, start, state, deps):
         collected.append(event)
         if event.type == "report":
             report = event.report
             break
-    else:  # pragma: no cover - defensive guard
-        report = None
+        elif event.type == "error":
+            pytest.fail(f"Graph execution failed: {event.error}")
 
+    # TestModel will generate valid structured output for each node
+    assert report is not None, (
+        f"No report generated. Events collected: {[e.type for e in collected]}"
+    )
     assert isinstance(report, ResearchReport)
-    assert report.title == "Haiku RAG"
-    assert len(state.context.qa_responses) == 2
+    assert report.title is not None
+    assert isinstance(report.title, str)
     assert any(evt.type == "log" for evt in collected)
+
+    client.close()

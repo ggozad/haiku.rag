@@ -1,22 +1,17 @@
-from typing import Any, cast
-
 import pytest
+from pydantic_ai.models.test import TestModel
 
+from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.models import SearchAnswer
 from haiku.rag.qa.deep.dependencies import DeepQAContext
 from haiku.rag.qa.deep.graph import build_deep_qa_graph
-from haiku.rag.qa.deep.models import DeepQAAnswer
-from haiku.rag.qa.deep.nodes import (
-    DeepQADecisionNode,
-    DeepQAPlanNode,
-    DeepQASearchDispatchNode,
-    DeepQASynthesizeNode,
-)
+from haiku.rag.qa.deep.nodes import DeepQAPlanNode
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 
 @pytest.mark.asyncio
-async def test_deep_qa_graph_end_to_end(monkeypatch):
+async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
+    """Test deep Q&A graph with mocked LLM using TestModel."""
     graph = build_deep_qa_graph()
 
     state = DeepQAState(
@@ -25,116 +20,59 @@ async def test_deep_qa_graph_end_to_end(monkeypatch):
         ),
         max_sub_questions=3,
     )
-    deps = DeepQADeps(client=cast(Any, None), console=None)
 
-    async def fake_plan_run(self, ctx) -> Any:
-        ctx.state.context.sub_questions = [
-            "Describe haiku.rag in one sentence",
-            "List core components of haiku.rag",
-        ]
-        return DeepQASearchDispatchNode(self.provider, self.model)
+    # Use real client but with TestModel for LLM calls
+    client = HaikuRAG(temp_db_path)
+    deps = DeepQADeps(client=client, console=None)
 
-    async def fake_search_dispatch_run(self, ctx) -> Any:
-        if not ctx.state.context.sub_questions:
-            return DeepQADecisionNode(self.provider, self.model)
+    # Mock get_model to return TestModel which generates valid schema-compliant data
+    def test_model_factory(provider, model):
+        return TestModel()
 
-        batch = ctx.state.context.sub_questions[:]
-        ctx.state.context.sub_questions.clear()
+    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.qa.deep.nodes.get_model", test_model_factory)
 
-        for question in batch:
-            ctx.state.context.add_qa_response(
-                SearchAnswer(
-                    query=question,
-                    answer=f"Answer to: {question}",
-                    context=["Context snippet"],
-                    sources=["test.md"],
-                )
-            )
-        return DeepQASearchDispatchNode(self.provider, self.model)
-
-    async def fake_decision_run(self, ctx) -> Any:
-        ctx.state.iterations += 1
-        return DeepQASynthesizeNode(self.provider, self.model)
-
-    async def fake_synthesize_run(self, ctx) -> Any:
-        from pydantic_graph import End
-
-        return End(
-            DeepQAAnswer(
-                answer="haiku.rag is a RAG system with components A, B, C.",
-                sources=["test.md"],
-            )
-        )
-
-    monkeypatch.setattr(DeepQAPlanNode, "run", fake_plan_run)
-    monkeypatch.setattr(DeepQASearchDispatchNode, "run", fake_search_dispatch_run)
-    monkeypatch.setattr(DeepQADecisionNode, "run", fake_decision_run)
-    monkeypatch.setattr(DeepQASynthesizeNode, "run", fake_synthesize_run)
-
-    start = DeepQAPlanNode(provider="ollama", model="test")
+    start = DeepQAPlanNode(provider="test", model="test")
     result = await graph.run(start_node=start, state=state, deps=deps)
 
-    assert result.output.answer == "haiku.rag is a RAG system with components A, B, C."
-    assert result.output.sources == ["test.md"]
-    assert len(state.context.qa_responses) == 2
+    # TestModel will generate valid structured output based on schemas
+    assert result.output.answer is not None
+    assert isinstance(result.output.answer, str)
+    assert isinstance(result.output.sources, list)
+
+    client.close()
 
 
 @pytest.mark.asyncio
-async def test_deep_qa_with_citations(monkeypatch):
+async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
+    """Test deep Q&A with citations enabled using TestModel."""
     graph = build_deep_qa_graph()
 
     state = DeepQAState(
         context=DeepQAContext(original_question="What is Python?", use_citations=True),
         max_sub_questions=2,
     )
-    deps = DeepQADeps(client=cast(Any, None), console=None)
 
-    async def fake_plan_run(self, ctx) -> Any:
-        ctx.state.context.sub_questions = ["What is Python used for?"]
-        return DeepQASearchDispatchNode(self.provider, self.model)
+    # Use real client but with TestModel for LLM calls
+    client = HaikuRAG(temp_db_path)
+    deps = DeepQADeps(client=client, console=None)
 
-    async def fake_search_dispatch_run(self, ctx) -> Any:
-        if not ctx.state.context.sub_questions:
-            return DeepQADecisionNode(self.provider, self.model)
+    # Mock get_model to return TestModel
+    def test_model_factory(provider, model):
+        return TestModel()
 
-        batch = ctx.state.context.sub_questions[:]
-        ctx.state.context.sub_questions.clear()
+    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.qa.deep.nodes.get_model", test_model_factory)
 
-        for question in batch:
-            ctx.state.context.add_qa_response(
-                SearchAnswer(
-                    query=question,
-                    answer="Python is used for web development and data science.",
-                    context=["Python snippet"],
-                    sources=["python.md"],
-                )
-            )
-        return DeepQASearchDispatchNode(self.provider, self.model)
-
-    async def fake_decision_run(self, ctx) -> Any:
-        ctx.state.iterations += 1
-        return DeepQASynthesizeNode(self.provider, self.model)
-
-    async def fake_synthesize_run(self, ctx) -> Any:
-        from pydantic_graph import End
-
-        return End(
-            DeepQAAnswer(
-                answer="Python is a programming language [python.md].",
-                sources=["python.md"],
-            )
-        )
-
-    monkeypatch.setattr(DeepQAPlanNode, "run", fake_plan_run)
-    monkeypatch.setattr(DeepQASearchDispatchNode, "run", fake_search_dispatch_run)
-    monkeypatch.setattr(DeepQADecisionNode, "run", fake_decision_run)
-    monkeypatch.setattr(DeepQASynthesizeNode, "run", fake_synthesize_run)
-
-    start = DeepQAPlanNode(provider="ollama", model="test")
+    start = DeepQAPlanNode(provider="test", model="test")
     result = await graph.run(start_node=start, state=state, deps=deps)
 
-    assert "[python.md]" in result.output.answer
+    # Verify citations flag was used
     assert state.context.use_citations is True
+    assert result.output.answer is not None
+    assert isinstance(result.output.sources, list)
+
+    client.close()
 
 
 @pytest.mark.asyncio
