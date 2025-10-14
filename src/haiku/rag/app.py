@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from haiku.rag.research.graph import (
 from haiku.rag.research.stream import stream_research_graph
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+
+logger = logging.getLogger(__name__)
 
 
 class HaikuRAGApp:
@@ -448,23 +451,81 @@ class HaikuRAGApp:
         self.console.print(content)
         self.console.rule()
 
-    async def serve(self, transport: str | None = None):
-        """Start the MCP server."""
+    async def serve(
+        self,
+        enable_monitor: bool = True,
+        enable_mcp: bool = True,
+        mcp_transport: str | None = None,
+        mcp_port: int = 8001,
+        enable_a2a: bool = False,
+        a2a_host: str = "127.0.0.1",
+        a2a_port: int = 8000,
+    ):
+        """Start the server with selected services."""
         async with HaikuRAG(self.db_path) as client:
-            monitor = FileWatcher(paths=Config.MONITOR_DIRECTORIES, client=client)
-            monitor_task = asyncio.create_task(monitor.observe())
-            server = create_mcp_server(self.db_path)
+            tasks = []
+
+            # Start file monitor if enabled
+            if enable_monitor:
+                monitor = FileWatcher(paths=Config.MONITOR_DIRECTORIES, client=client)
+                monitor_task = asyncio.create_task(monitor.observe())
+                tasks.append(monitor_task)
+
+            # Start MCP server if enabled
+            if enable_mcp:
+                server = create_mcp_server(self.db_path)
+
+                async def run_mcp():
+                    if mcp_transport == "stdio":
+                        await server.run_stdio_async()
+                    else:
+                        logger.info(f"Starting MCP server on port {mcp_port}")
+                        await server.run_http_async(
+                            transport="streamable-http", port=mcp_port
+                        )
+
+                mcp_task = asyncio.create_task(run_mcp())
+                tasks.append(mcp_task)
+
+            # Start A2A server if enabled
+            if enable_a2a:
+                try:
+                    from haiku.rag.a2a import create_a2a_app
+                except ImportError as e:
+                    logger.error(f"Failed to import A2A: {e}")
+                    return
+
+                import uvicorn
+
+                logger.info(f"Starting A2A server on {a2a_host}:{a2a_port}")
+
+                async def run_a2a():
+                    app = create_a2a_app(db_path=self.db_path)
+                    config = uvicorn.Config(
+                        app,
+                        host=a2a_host,
+                        port=a2a_port,
+                        log_level="warning",
+                        access_log=False,
+                    )
+                    server = uvicorn.Server(config)
+                    await server.serve()
+
+                a2a_task = asyncio.create_task(run_a2a())
+                tasks.append(a2a_task)
+
+            if not tasks:
+                logger.warning("No services enabled")
+                return
 
             try:
-                if transport == "stdio":
-                    await server.run_stdio_async()
-                else:
-                    await server.run_http_async(transport="streamable-http")
+                # Wait for any task to complete (or KeyboardInterrupt)
+                await asyncio.gather(*tasks)
             except KeyboardInterrupt:
                 pass
             finally:
-                monitor_task.cancel()
-                try:
-                    await monitor_task
-                except asyncio.CancelledError:
-                    pass
+                # Cancel all tasks
+                for task in tasks:
+                    task.cancel()
+                # Wait for cancellation
+                await asyncio.gather(*tasks, return_exceptions=True)

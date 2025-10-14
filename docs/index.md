@@ -10,10 +10,11 @@
 - **Support for various embedding providers**: Ollama, VoyageAI, OpenAI or add your own
 - **Native Hybrid Search**: Vector search combined with full-text search using native LanceDB RRF reranking
 - **Reranking**: Optional result reranking with MixedBread AI or Cohere
-- **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic.
+- **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic
 - **File monitoring**: Automatically index files when run as a server
 - **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, code files and more. Or add a URL!
 - **MCP server**: Exposes functionality as MCP tools
+- **A2A agent**: Conversational agent with context and multi-turn dialogue support
 - **CLI commands**: Access all functionality from your terminal
   - Add sources from text, files, or URLs, optionally with a human‑readable title
 - **Python client**: Call `haiku.rag` from your own python applications
@@ -57,6 +58,7 @@ haiku-rag migrate old_database.sqlite  # Migrate from SQLite
 - [CLI](cli.md) - Command line interface usage
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
+- [A2A](a2a.md) - Agent-to-Agent conversational protocol
 - [Python](python.md) - Python API reference
 - [Agents](agents.md) - QA agent and multi-agent research
 

@@ -366,7 +366,8 @@ def download_models_cmd():
 
 
 @cli.command(
-    "serve", help="Start the haiku.rag MCP server (by default in streamable HTTP mode)"
+    "serve",
+    help="Start haiku.rag server. Use --monitor, --mcp, and/or --a2a to enable services.",
 )
 def serve(
     db: Path = typer.Option(
@@ -374,22 +375,71 @@ def serve(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    monitor: bool = typer.Option(
+        False,
+        "--monitor",
+        help="Enable file monitoring",
+    ),
+    mcp: bool = typer.Option(
+        False,
+        "--mcp",
+        help="Enable MCP server",
+    ),
     stdio: bool = typer.Option(
         False,
         "--stdio",
-        help="Run MCP server on stdio Transport",
+        help="Run MCP server on stdio Transport (requires --mcp)",
+    ),
+    mcp_port: int = typer.Option(
+        8001,
+        "--mcp-port",
+        help="Port to bind MCP server to (ignored with --stdio)",
+    ),
+    a2a: bool = typer.Option(
+        False,
+        "--a2a",
+        help="Enable A2A (Agent-to-Agent) server",
+    ),
+    a2a_host: str = typer.Option(
+        "127.0.0.1",
+        "--a2a-host",
+        help="Host to bind A2A server to",
+    ),
+    a2a_port: int = typer.Option(
+        8000,
+        "--a2a-port",
+        help="Port to bind A2A server to",
     ),
 ) -> None:
-    """Start the MCP server."""
+    """Start the server with selected services."""
+    # Require at least one service flag
+    if not (monitor or mcp or a2a):
+        typer.echo(
+            "Error: At least one service flag (--monitor, --mcp, or --a2a) must be specified"
+        )
+        raise typer.Exit(1)
+
+    if stdio and not mcp:
+        typer.echo("Error: --stdio requires --mcp")
+        raise typer.Exit(1)
+
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
 
-    transport = None
-    if stdio:
-        transport = "stdio"
+    transport = "stdio" if stdio else None
 
-    asyncio.run(app.serve(transport=transport))
+    asyncio.run(
+        app.serve(
+            enable_monitor=monitor,
+            enable_mcp=mcp,
+            mcp_transport=transport,
+            mcp_port=mcp_port,
+            enable_a2a=a2a,
+            a2a_host=a2a_host,
+            a2a_port=a2a_port,
+        )
+    )
 
 
 @cli.command("migrate", help="Migrate an SQLite database to LanceDB")
@@ -408,6 +458,28 @@ def migrate(
 
     if not success:
         raise typer.Exit(1)
+
+
+@cli.command(
+    "a2aclient", help="Run interactive client to chat with haiku.rag's A2A server"
+)
+def a2aclient(
+    url: str = typer.Option(
+        "http://localhost:8000",
+        "--url",
+        help="Base URL of the A2A server",
+    ),
+):
+    try:
+        from haiku.rag.a2a.client import run_interactive_client
+    except ImportError:
+        typer.echo(
+            "Error: A2A support requires the 'a2a' extra. "
+            "Install with: uv pip install 'haiku.rag[a2a]'"
+        )
+        raise typer.Exit(1)
+
+    asyncio.run(run_interactive_client(url=url))
 
 
 if __name__ == "__main__":

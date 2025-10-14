@@ -18,6 +18,7 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **File monitoring**: Auto-index files when run as server
 - **40+ file formats**: PDF, DOCX, HTML, Markdown, code files, URLs
 - **MCP server**: Expose as tools for AI assistants
+- **A2A agent**: Conversational agent with context and multi-turn dialogue
 - **CLI & Python API**: Use from command line or Python
 
 ## Quick Start
@@ -142,6 +143,24 @@ haiku-rag serve --stdio
 ```
 
 Provides tools for document management and search directly in your AI assistant.
+
+## A2A Agent
+
+Run as a conversational agent with the Agent-to-Agent protocol:
+
+```bash
+# Start the A2A server
+haiku-rag serve --a2a
+
+# Connect with the interactive client (in another terminal)
+haiku-rag a2aclient
+```
+
+The A2A agent provides:
+- Multi-turn dialogue with context
+- Intelligent multi-search for complex questions
+- Source citations with titles and URIs
+- Full document retrieval on request
 
 ## Documentation
 

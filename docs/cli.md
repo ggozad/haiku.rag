@@ -125,14 +125,48 @@ When `--verbose` is set the CLI also consumes the internal research stream, prin
 
 ## Server
 
-Start the MCP server:
+Start services (requires at least one flag):
 ```bash
-# HTTP transport (default)
-haiku-rag serve
+# MCP server only (HTTP transport)
+haiku-rag serve --mcp
 
-# stdio transport
-haiku-rag serve --stdio
+# MCP server (stdio transport)
+haiku-rag serve --mcp --stdio
+
+# A2A server only
+haiku-rag serve --a2a
+
+# File monitoring only
+haiku-rag serve --monitor
+
+# All services
+haiku-rag serve --monitor --mcp --a2a
+
+# Custom ports
+haiku-rag serve --mcp --mcp-port 9000 --a2a --a2a-port 9001
 ```
+
+See [Server Mode](server.md) for details on available services.
+
+### A2A Interactive Client
+
+Connect to and chat with haiku.rag's A2A server:
+
+```bash
+# Connect to local server
+haiku-rag a2aclient
+
+# Connect to remote server
+haiku-rag a2aclient --url https://example.com:8000
+```
+
+The interactive client provides:
+- Rich markdown rendering of agent responses
+- Multi-turn conversation with context
+- Agent card discovery and display
+- Compact artifact summaries
+
+See [A2A documentation](a2a.md) for more details.
 
 ## Settings
 
