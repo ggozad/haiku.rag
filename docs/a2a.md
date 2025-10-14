@@ -124,7 +124,7 @@ export A2A_MAX_CONTEXTS=1000
 
 ## Security
 
-By default, the A2A agent runs without authenticationto. For production deployments, you should add authentication.
+By default, the A2A agent runs without authentication. For production deployments, you should add authentication.
 
 ### Adding Authentication
 

@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from pathlib import Path
@@ -64,8 +65,6 @@ class ConversationalWorker(Worker[list[Message]]):
             async with HaikuRAG(self.db_path) as client:
                 context = await self.storage.load_context(task["context_id"]) or []
                 message_history = load_message_history(context)
-
-                from haiku.rag.a2a.models import AgentDependencies
 
                 deps = AgentDependencies(client=client)
 
@@ -274,8 +273,6 @@ class ConversationalWorker(Worker[list[Message]]):
                         )
 
                         if tool_name == "search_documents" and content:
-                            import json
-
                             from fasta2a.schema import DataPart
 
                             # Extract query from tool call arguments
