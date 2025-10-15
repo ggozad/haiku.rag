@@ -24,8 +24,8 @@ RUN uv pip install --system -e ".[voyageai,mxbai,a2a]"
 # Create data directory for the database
 RUN mkdir -p /data
 
-# Default database path
-ENV HAIKU_RAG_DB_PATH=/data/haiku.rag.lancedb
+# Set default data directory
+ENV DEFAULT_DATA_DIR=/data
 
 # Expose ports for MCP and A2A
 EXPOSE 8000 8001

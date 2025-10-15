@@ -11,8 +11,8 @@ services:
       - ./data:/data  # Persist database
       - ./docs:/docs  # Mount documents directory for monitoring
     environment:
-      # Database
-      - HAIKU_RAG_DB_PATH=/data/haiku.rag.lancedb
+      # Database directory
+      - DEFAULT_DATA_DIR=/data
 
       # File monitoring
       - MONITOR_DIRECTORIES=/docs

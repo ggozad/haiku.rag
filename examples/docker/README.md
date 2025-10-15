@@ -15,6 +15,9 @@ Place documents in `docs/` for automatic indexing.
 ## Usage
 
 ```bash
+# List documents
+docker compose exec haiku-rag haiku-rag list
+
 # Search
 docker compose exec haiku-rag haiku-rag search "your query"
 
