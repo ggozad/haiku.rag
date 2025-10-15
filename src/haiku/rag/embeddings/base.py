@@ -1,3 +1,5 @@
+from typing import overload
+
 from haiku.rag.config import Config
 
 
@@ -8,6 +10,12 @@ class EmbedderBase:
     def __init__(self, model: str, vector_dim: int):
         self._model = model
         self._vector_dim = vector_dim
+
+    @overload
+    async def embed(self, text: str) -> list[float]: ...
+
+    @overload
+    async def embed(self, text: list[str]) -> list[list[float]]: ...
 
     async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
         raise NotImplementedError(

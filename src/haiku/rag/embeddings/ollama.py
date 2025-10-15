@@ -1,3 +1,5 @@
+from typing import overload
+
 from openai import AsyncOpenAI
 
 from haiku.rag.config import Config
@@ -5,6 +7,12 @@ from haiku.rag.embeddings.base import EmbedderBase
 
 
 class Embedder(EmbedderBase):
+    @overload
+    async def embed(self, text: str) -> list[float]: ...
+
+    @overload
+    async def embed(self, text: list[str]) -> list[list[float]]: ...
+
     async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
         client = AsyncOpenAI(base_url=f"{Config.OLLAMA_BASE_URL}/v1", api_key="dummy")
         if not text:

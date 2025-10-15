@@ -1,9 +1,17 @@
+from typing import overload
+
 from openai import AsyncOpenAI
 
 from haiku.rag.embeddings.base import EmbedderBase
 
 
 class Embedder(EmbedderBase):
+    @overload
+    async def embed(self, text: str) -> list[float]: ...
+
+    @overload
+    async def embed(self, text: list[str]) -> list[list[float]]: ...
+
     async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
         client = AsyncOpenAI()
         if not text:
