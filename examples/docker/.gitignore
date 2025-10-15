@@ -1,0 +1,8 @@
+# Data directory
+data/
+
+# Documents directory
+docs/
+
+# Environment file with secrets
+.env
