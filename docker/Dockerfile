@@ -1,34 +1,36 @@
-# Use Python 3.12 slim image
-FROM python:3.12-slim
+# syntax=docker/dockerfile:1
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies required for building Python packages
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+# Enable bytecode compilation for faster startup
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-# Install uv for fast Python package management
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+# Install dependencies into a venv
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --extra voyageai --extra mxbai --extra a2a
 
-# Copy project files
-COPY . /app
+# Install the project itself
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-editable --extra voyageai --extra mxbai --extra a2a
 
-# Install haiku.rag with all extras in development mode
-RUN uv pip install --system -e ".[voyageai,mxbai,a2a]"
-
-# Create data directory for the database
-RUN mkdir -p /data
+# Final layer
+FROM python:3.13-slim
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app
 
 # Set default data directory
+RUN mkdir -p /data
 ENV DEFAULT_DATA_DIR=/data
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Expose ports for MCP and A2A
 EXPOSE 8000 8001
 
-# Default command runs all services (monitoring, MCP, A2A)
-CMD ["haiku-rag", "serve", "--monitor", "--mcp", "--mcp-port", "8001", "--a2a", "--a2a-host", "0.0.0.0", "--a2a-port", "8000", "--db", "/data/haiku.rag.lancedb"]
+# Run all services (monitoring, MCP, A2A)
+CMD ["python", "-m", "haiku.rag.cli", "serve", "--monitor", "--mcp", "--mcp-port", "8001", "--a2a", "--a2a-host", "0.0.0.0", "--a2a-port", "8000", "--db", "/data/haiku.rag.lancedb"]

@@ -19,8 +19,11 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Virtual environments (uv best practice)
 .venv/
 venv/
+env/
 
 # Data
 *.lancedb/
@@ -42,6 +45,11 @@ Thumbs.db
 .git/
 .gitignore
 
+# Development
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Examples
-examples/docker/data/
-examples/docker/docs/
+examples/
