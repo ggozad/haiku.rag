@@ -187,6 +187,7 @@ def print_response(response: dict[str, Any], console: Console):
 
     # Print artifacts summary with details
     if artifacts:
+        console.rule("[dim]Artifacts generated[/dim]")
         summary_lines = []
 
         for artifact in artifacts:
