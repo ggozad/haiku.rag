@@ -1,5 +1,6 @@
 name: Publish to MCP Registry
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Build & publish to pypi"]
     types:
@@ -8,7 +9,7 @@ on:
 jobs:
   publish-mcp:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       id-token: write
