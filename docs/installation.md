@@ -82,3 +82,17 @@ haiku-rag download-models
 ```
 
 This will download Docling models and pull any Ollama models referenced by your current configuration.
+
+## Docker
+
+```bash
+docker pull ghcr.io/ggozad/haiku.rag:latest
+```
+
+Run the container with all services:
+
+```bash
+docker run -p 8000:8000 -p 8001:8001 -v $(pwd)/data:/data ghcr.io/ggozad/haiku.rag:latest
+```
+
+This starts the MCP server on port 8001 and A2A server on port 8000, with data persisted to `./data`.

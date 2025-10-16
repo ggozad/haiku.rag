@@ -28,6 +28,9 @@ env/
 # Data
 *.lancedb/
 data/
+
+# Docs
+mkdocs.yml
 docs/
 
 # IDE
@@ -50,6 +53,7 @@ tests/
 .pytest_cache/
 .coverage
 htmlcov/
-
+src/evaluations/
+server.json
 # Examples
 examples/

@@ -1,11 +1,11 @@
 # haiku.rag Docker Image
 
-Dockerfile for building haiku.rag with all extras (voyageai, mxbai, a2a).
+Pre-built images are available at `ghcr.io/ggozad/haiku.rag` with all extras (voyageai, mxbai, a2a).
 
-## Building
+## Using Pre-built Image
 
 ```bash
-docker build -f docker/Dockerfile -t haiku-rag .
+docker pull ghcr.io/ggozad/haiku.rag:latest
 ```
 
 ## Running
@@ -17,7 +17,13 @@ docker run -p 8000:8000 -p 8001:8001 \
   -e EMBEDDINGS_MODEL=nomic-embed-text \
   -e QA_PROVIDER=ollama \
   -e QA_MODEL=qwen3\
-  haiku-rag
+  ghcr.io/ggozad/haiku.rag:latest
+```
+
+## Building Locally
+
+```bash
+docker build -f docker/Dockerfile -t haiku-rag .
 ```
 
 Note: The environment variables above override the defaults. See [Configuration docs](https://ggozad.github.io/haiku.rag/configuration/) for all options.
