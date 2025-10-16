@@ -2,6 +2,17 @@
 
 This directory contains example scripts demonstrating various features of haiku.rag.
 
+## Docker Example
+
+**Directory:** `docker/`
+
+Complete Docker setup for running haiku.rag with all services:
+- File monitoring for automatic document indexing
+- MCP server for AI assistant integration
+- A2A agent for conversational interactions
+
+See `docker/README.md` for setup instructions.
+
 ## A2A Security Examples
 
 **Directory:** `a2a-security/`

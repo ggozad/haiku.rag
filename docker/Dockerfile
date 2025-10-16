@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+
+WORKDIR /app
+
+# Enable bytecode compilation for faster startup
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# Install dependencies into a venv
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --extra voyageai --extra mxbai --extra a2a
+
+# Install the project itself
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-editable --extra voyageai --extra mxbai --extra a2a
+
+# Final layer
+FROM python:3.13-slim
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app
+
+# Set default data directory
+RUN mkdir -p /data
+ENV DEFAULT_DATA_DIR=/data
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Expose ports for MCP and A2A
+EXPOSE 8000 8001
+
+# Run all services (monitoring, MCP, A2A)
+CMD ["python", "-m", "haiku.rag.cli", "serve", "--monitor", "--mcp", "--mcp-port", "8001", "--a2a", "--a2a-host", "0.0.0.0", "--a2a-port", "8000", "--db", "/data/haiku.rag.lancedb"]
