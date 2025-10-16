@@ -128,10 +128,10 @@ def add_document_text(
     asyncio.run(app.add_document_from_text(text=text, metadata=metadata or None))
 
 
-@cli.command("add-src", help="Add a document from a file path or URL")
+@cli.command("add-src", help="Add a document from a file path, directory, or URL")
 def add_document_src(
     source: str = typer.Argument(
-        help="The file path or URL of the document to add",
+        help="The file path, directory, or URL of the document(s) to add",
     ),
     title: str | None = typer.Option(
         None,

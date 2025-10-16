@@ -9,6 +9,7 @@ from datasets import Dataset
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.document import Document
 
 
 @pytest.mark.asyncio
@@ -88,6 +89,7 @@ async def test_client_create_document_from_source(temp_db_path):
 
             # Test create_document_from_source with Path
             doc = await client.create_document_from_source(source=temp_path)
+            assert isinstance(doc, Document)
 
             assert doc.id is not None
             assert doc.content == test_content
@@ -98,6 +100,7 @@ async def test_client_create_document_from_source(temp_db_path):
 
             # Test create_document_from_source with string path
             doc2 = await client.create_document_from_source(source=str(temp_path))
+            assert isinstance(doc2, Document)
 
             assert doc2.id is not None
             assert doc2.content == test_content
@@ -118,6 +121,7 @@ async def test_client_create_document_from_source_with_title(temp_db_path):
             doc = await client.create_document_from_source(
                 source=temp_path, title="My Doc"
             )
+            assert isinstance(doc, Document)
             assert doc.id is not None
             assert doc.title == "My Doc"
 
@@ -131,10 +135,12 @@ async def test_client_update_title_noop_behavior(temp_db_path):
             temp_path.write_text("Original content")
 
             doc1 = await client.create_document_from_source(temp_path, title="Title A")
+            assert isinstance(doc1, Document)
             assert doc1.id is not None
 
             # Re-add with same content but new title
             doc2 = await client.create_document_from_source(temp_path, title="Title B")
+            assert isinstance(doc2, Document)
             assert doc2.id == doc1.id
             # Fetch and verify title updated
             got = await client.get_document_by_id(doc1.id)
@@ -170,6 +176,41 @@ async def test_client_create_document_from_source_nonexistent(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_client_create_document_from_directory(temp_db_path):
+    """Test creating documents from a directory recursively."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_dir = Path(temp_dir) / "test_docs"
+            test_dir.mkdir()
+
+            (test_dir / "doc1.txt").write_text("Content of doc1")
+            (test_dir / "doc2.md").write_text("# Content of doc2")
+
+            subdir = test_dir / "subdir"
+            subdir.mkdir()
+            (subdir / "doc3.py").write_text("print('hello')")
+
+            (test_dir / "unsupported.xyz").write_text("unsupported file")
+
+            result = await client.create_document_from_source(test_dir)
+
+            assert isinstance(result, list)
+            assert len(result) == 3
+
+            for doc in result:
+                assert doc.id is not None
+                assert doc.uri is not None
+                assert "md5" in doc.metadata
+                assert "contentType" in doc.metadata
+
+            uris = [doc.uri for doc in result if doc.uri]
+            assert any("doc1.txt" in uri for uri in uris)
+            assert any("doc2.md" in uri for uri in uris)
+            assert any("doc3.py" in uri for uri in uris)
+            assert not any("unsupported.xyz" in uri for uri in uris)
+
+
+@pytest.mark.asyncio
 async def test_client_create_document_from_url(temp_db_path):
     """Test creating a document from a URL."""
     async with HaikuRAG(temp_db_path) as client:
@@ -183,6 +224,7 @@ async def test_client_create_document_from_url(temp_db_path):
             doc = await client.create_document_from_source(
                 source="https://example.com/test.html", metadata={"source_type": "web"}
             )
+            assert isinstance(doc, Document)
 
             assert doc.id is not None
             assert "Test Page" in doc.content
@@ -212,6 +254,7 @@ async def test_client_create_document_from_url_with_different_content_types(
             doc = await client.create_document_from_source(
                 "https://api.example.com/data.json"
             )
+            assert isinstance(doc, Document)
 
             assert doc.id is not None
             assert "Test JSON" in doc.content
@@ -230,6 +273,7 @@ async def test_client_create_document_from_url_with_different_content_types(
             doc = await client.create_document_from_source(
                 "https://example.com/readme.txt"
             )
+            assert isinstance(doc, Document)
 
             assert doc.id is not None
             assert doc.content == "This is plain text content from a URL."
@@ -333,6 +377,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
             temp_path.write_text(test_content)
 
             doc = await client.create_document_from_source(temp_path)
+            assert isinstance(doc, Document)
 
             assert doc.metadata["contentType"] == "text/plain"
             assert doc.metadata["md5"] == expected_md5
@@ -346,6 +391,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
                 url_doc = await client.create_document_from_source(
                     "https://example.com/test.txt"
                 )
+                assert isinstance(url_doc, Document)
 
                 assert url_doc.metadata["contentType"] == "text/plain"
                 assert url_doc.metadata["md5"] == expected_md5
@@ -363,12 +409,14 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
 
             # First call - should create new document
             doc1 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc1, Document)
             assert doc1.id is not None
             assert doc1.content == test_content
             original_id = doc1.id
 
             # Second call with same content - should return existing document (no-op)
             doc2 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc2, Document)
             assert doc2.id == original_id  # Same document
             assert doc2.content == test_content
 
@@ -378,6 +426,7 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
 
             # Third call with changed content - should update existing document
             doc3 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc3, Document)
             assert doc3.id == original_id  # Same document ID
             assert doc3.content == updated_content  # Updated content
 
@@ -404,11 +453,13 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
         with patch("httpx.AsyncClient.get", return_value=mock_response1):
             # First call - should create new document
             doc1 = await client.create_document_from_source(url)
+            assert isinstance(doc1, Document)
             assert doc1.id is not None
             original_id = doc1.id
 
             # Second call with same content - should return existing document (no-op)
             doc2 = await client.create_document_from_source(url)
+            assert isinstance(doc2, Document)
             assert doc2.id == original_id  # Same document
 
         mock_response2 = AsyncMock()
@@ -419,6 +470,7 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
         with patch("httpx.AsyncClient.get", return_value=mock_response2):
             # Third call with changed content - should update existing document
             doc3 = await client.create_document_from_source(url)
+            assert isinstance(doc3, Document)
             assert doc3.id == original_id  # Same document ID
             assert doc3.content == updated_content.decode()  # Updated content
 

@@ -1194,7 +1194,7 @@ dev = [
     { name = "mkdocs-material", specifier = ">=9.6.14" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pydantic-evals", specifier = ">=1.0.8" },
-    { name = "pyright", specifier = ">=1.1.405" },
+    { name = "pyright", specifier = ">=1.1.406" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },

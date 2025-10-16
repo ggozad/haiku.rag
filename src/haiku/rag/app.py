@@ -160,13 +160,20 @@ class HaikuRAGApp:
         self, source: str, title: str | None = None, metadata: dict | None = None
     ):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            doc = await self.client.create_document_from_source(
+            result = await self.client.create_document_from_source(
                 source, title=title, metadata=metadata
             )
-            self._rich_print_document(doc, truncate=True)
-            self.console.print(
-                f"[bold green]Document {doc.id} added successfully.[/bold green]"
-            )
+            if isinstance(result, list):
+                for doc in result:
+                    self._rich_print_document(doc, truncate=True)
+                self.console.print(
+                    f"[bold green]{len(result)} documents added successfully.[/bold green]"
+                )
+            else:
+                self._rich_print_document(result, truncate=True)
+                self.console.print(
+                    f"[bold green]Document {result.id} added successfully.[/bold green]"
+                )
 
     async def get_document(self, doc_id: str):
         async with HaikuRAG(db_path=self.db_path) as self.client:
