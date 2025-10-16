@@ -106,8 +106,8 @@ class HaikuRAG:
 
     async def create_document_from_source(
         self, source: str | Path, title: str | None = None, metadata: dict | None = None
-    ) -> Document:
-        """Create or update a document from a file path or URL.
+    ) -> Document | list[Document]:
+        """Create or update document(s) from a file path, directory, or URL.
 
         Checks if a document with the same URI already exists:
         - If MD5 is unchanged, returns existing document
@@ -115,11 +115,13 @@ class HaikuRAG:
         - If no document exists, creates a new one
 
         Args:
-            source: File path (as string or Path) or URL to parse
+            source: File path, directory (as string or Path), or URL to parse
+            title: Optional title (only used for single files, not directories)
             metadata: Optional metadata dictionary
 
         Returns:
-            Document instance (created, updated, or existing)
+            Document instance (created, updated, or existing) for single files/URLs
+            List of Document instances for directories
 
         Raises:
             ValueError: If the file/URL cannot be parsed or doesn't exist
@@ -142,6 +144,45 @@ class HaikuRAG:
         else:
             # Handle as regular file path
             source_path = Path(source) if isinstance(source, str) else source
+
+        # Handle directories
+        if source_path.is_dir():
+            documents = []
+            supported_extensions = set(FileReader.extensions)
+            for file_path in source_path.rglob("*"):
+                if (
+                    file_path.is_file()
+                    and file_path.suffix.lower() in supported_extensions
+                ):
+                    doc = await self._create_document_from_file(
+                        file_path, title=None, metadata=metadata
+                    )
+                    documents.append(doc)
+            return documents
+
+        # Handle single file
+        return await self._create_document_from_file(
+            source_path, title=title, metadata=metadata
+        )
+
+    async def _create_document_from_file(
+        self, source_path: Path, title: str | None = None, metadata: dict | None = None
+    ) -> Document:
+        """Create or update a document from a single file path.
+
+        Args:
+            source_path: Path to the file
+            title: Optional title
+            metadata: Optional metadata dictionary
+
+        Returns:
+            Document instance (created, updated, or existing)
+
+        Raises:
+            ValueError: If the file cannot be parsed or doesn't exist
+        """
+        metadata = metadata or {}
+
         if source_path.suffix.lower() not in FileReader.extensions:
             raise ValueError(f"Unsupported file extension: {source_path.suffix}")
 
@@ -592,6 +633,8 @@ class HaikuRAG:
                         new_doc = await self.create_document_from_source(
                             source=doc.uri, metadata=doc.metadata or {}
                         )
+                        # URIs always point to single files/URLs, never directories
+                        assert isinstance(new_doc, Document)
                         assert new_doc.id is not None, (
                             "New document ID should not be None"
                         )

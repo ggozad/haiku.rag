@@ -372,3 +372,26 @@ def test_info():
 
         assert result.exit_code == 0
         mock_app_instance.info.assert_called_once()
+
+
+def test_add_document_src_directory(tmp_path):
+    """Test adding documents from a directory recursively."""
+    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.add_document_from_source = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        test_dir = tmp_path / "test_docs"
+        test_dir.mkdir()
+        (test_dir / "doc1.txt").write_text("doc1")
+        (test_dir / "doc2.md").write_text("doc2")
+        subdir = test_dir / "subdir"
+        subdir.mkdir()
+        (subdir / "doc3.pdf").write_text("doc3")
+
+        result = runner.invoke(cli, ["add-src", str(test_dir)])
+
+        assert result.exit_code == 0
+        mock_app_instance.add_document_from_source.assert_called_once()
+        call_args = mock_app_instance.add_document_from_source.call_args
+        assert call_args[1]["source"] == str(test_dir)
