@@ -1,5 +1,7 @@
 # Installation
 
+`haiku.rag` need Python version 3.12 or newer.
+
 ## Basic Installation
 
 ```bash
