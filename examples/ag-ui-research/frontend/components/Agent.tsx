@@ -11,13 +11,37 @@ import StateDisplay from "./StateDisplay";
 
 interface ResearchState {
 	question: string;
+	phase: string; // idle|planning|searching|analyzing|evaluating|done
 	status: string;
-	current_iteration: number;
-	max_iterations: number;
+	plan: Array<{
+		id: number;
+		question: string;
+		status: string; // pending|searching|done
+	}>;
+	current_question_index: number;
+	current_search: {
+		query: string;
+		type: string;
+		results?: Array<{
+			chunk: string;
+			score: number;
+			source: string;
+			expanded: boolean;
+		}>;
+	} | null;
+	insights: Array<{
+		summary: string;
+		confidence: number;
+		sources: string[];
+	}>;
 	confidence: number;
-	plan: Array<Record<string, unknown>>;
-	findings: Array<Record<string, unknown>>;
-	final_report: Record<string, unknown> | null;
+	final_report: {
+		title: string;
+		summary: string;
+		findings: string[];
+		conclusions: string[];
+		sources: string[];
+	} | null;
 }
 
 function AgentContent() {
@@ -26,20 +50,52 @@ function AgentContent() {
 		name: "research_agent",
 		initialState: {
 			question: "",
-			status: "idle",
-			current_iteration: 0,
-			max_iterations: 2,
-			confidence: 0.0,
+			phase: "idle",
+			status: "",
 			plan: [],
-			findings: [],
+			current_question_index: 0,
+			current_search: null,
+			insights: [],
+			confidence: 0.0,
 			final_report: null,
 		},
 	});
+
+	// Log state changes
+	console.log("[FRONTEND] Current state:", state);
 
 	// Render state updates from the research agent
 	useCoAgentStateRender<ResearchState>({
 		name: "research_agent",
 		render: ({ state: newState }) => {
+			console.log("[FRONTEND] State render update:", newState);
+			// Show different messages based on phase
+			let phaseMessage = "";
+			switch (newState.phase) {
+				case "planning":
+					phaseMessage = "Planning research...";
+					break;
+				case "searching":
+					phaseMessage = newState.current_search
+						? `Searching: ${newState.current_search.query}`
+						: "Searching...";
+					break;
+				case "analyzing":
+					phaseMessage = "Extracting insights...";
+					break;
+				case "evaluating":
+					phaseMessage = `Evaluating confidence: ${(newState.confidence * 100).toFixed(0)}%`;
+					break;
+				case "synthesizing":
+					phaseMessage = "Generating final report...";
+					break;
+				case "done":
+					phaseMessage = "Research complete!";
+					break;
+				default:
+					phaseMessage = newState.status || "Ready";
+			}
+
 			return (
 				<div
 					style={{
@@ -50,9 +106,7 @@ function AgentContent() {
 						border: "1px solid #91d5ff",
 					}}
 				>
-					<strong>Research Update:</strong> Status: {newState.status},
-					Iteration: {newState.current_iteration}/{newState.max_iterations},
-					Confidence: {(newState.confidence * 100).toFixed(0)}%
+					<strong>Research Update:</strong> {phaseMessage}
 				</div>
 			);
 		},

@@ -8,14 +8,14 @@ services:
     environment:
       - QA_PROVIDER=${QA_PROVIDER:-ollama}
       - QA_MODEL=${QA_MODEL:-gpt-oss:latest}
-      - DB_PATH=${DB_PATH:-/app/data/haiku_rag.lancedb}
+      - DB_PATH=/app/data/haiku.rag.lancedb
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     volumes:
       - ./backend:/app
       - /app/.venv
-      - ./data:/app/data
+      - ${DB_PATH}:/app/data/haiku.rag.lancedb
     networks:
       - ag-ui-network
     extra_hosts:
