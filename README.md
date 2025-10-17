@@ -25,6 +25,7 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
 ```bash
 # Install
+# Python 3.12 or newer required
 uv pip install haiku.rag
 
 # Add documents
