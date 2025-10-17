@@ -21,21 +21,30 @@ class ResearchState(BaseModel):
     phase: str = "idle"  # idle|planning|searching|analyzing|evaluating|done
     status: str = ""  # Human-readable message
 
-    # Research plan
-    plan: list[dict] = []  # [{id, question, status: pending|searching|done}]
+    # Research plan with embedded search results
+    plan: list[
+        dict
+    ] = []  # [{id, question, status: pending|searching|done, search_results: {type, results: [...]}}]
     current_question_index: int = 0
 
-    # Search results (live updates)
-    current_search: dict | None = (
-        None  # {query, type, results: [{chunk, score, expanded}]}
-    )
-
     # Accumulated findings
-    insights: list[dict] = []  # [{summary, confidence, sources}]
+    insights: list[
+        dict
+    ] = []  # [{summary, confidence, source_refs: [{chunk_id, document_uri, document_title, chunk_position}]}]
+
+    # Document registry - tracks all referenced documents
+    document_registry: dict[
+        str, dict
+    ] = {}  # {doc_uri: {title, chunks_referenced: [chunk_id]}}
+
+    # Document viewer state
+    current_document: dict | None = None  # {uri, title, content, total_chunks}
 
     # Final output
     confidence: float = 0.0
-    final_report: dict | None = None
+    final_report: dict | None = (
+        None  # {title, summary, findings, conclusions, citations: [{document_uri, document_title, chunk_ids}]}
+    )
 
 
 @dataclass
@@ -69,17 +78,28 @@ You work step-by-step with the user to conduct deep research on complex question
 Your workflow:
 1. When user asks a question, propose a research plan (3-5 sub-questions)
 2. Wait for user approval before proceeding
-3. For each sub-question:
+3. For each sub-question IN ORDER (0, 1, 2, etc.):
    - Announce what you're searching for
-   - Execute search and show results with scores
-   - Extract insights from the results
+   - Execute search_question for that question ID
+   - IMMEDIATELY extract insights using extract_insights_from_results with the SAME question ID
    - Ask user if they want to continue to next question
 4. Evaluate overall confidence in your findings
 5. Ask user if confident enough or should search more
-6. Synthesize final report with citations
+6. Synthesize final report with complete citations
+
+CRITICAL RULES:
+- ALWAYS call search_question BEFORE extract_insights_from_results for each question
+- Process questions in sequence: search Q0 → extract Q0 → search Q1 → extract Q1, etc.
+- NEVER skip ahead to extract insights for a question you haven't searched yet
+
+Document Viewing:
+- Users can request to view the full content of any cited document
+- When a user asks to "show document X" or "view source Y", use the get_full_document tool
+- Document URIs are tracked automatically as you search
+- The final report includes structured citations linking back to source documents
 
 Be transparent: always announce what you're doing before you do it.
-Show search scores, explain your reasoning, and involve the user in decisions.
+Show search scores, explain your reasoning, cite your sources, and involve the user in decisions.
 """,
     )
 
@@ -181,31 +201,56 @@ Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", 
         else:
             expanded_map = {}
 
-        # Process results
+        # Process results and update document registry
         results = []
         for chunk, score in search_results:
+            # Update document registry
+            doc_uri = chunk.document_uri or "unknown"
+            doc_title = chunk.document_title or chunk.document_uri or "Unknown"
+
+            if doc_uri not in ctx.deps.state.document_registry:
+                ctx.deps.state.document_registry[doc_uri] = {
+                    "title": doc_title,
+                    "chunks_referenced": [],
+                }
+
+            if (
+                chunk.id
+                not in ctx.deps.state.document_registry[doc_uri]["chunks_referenced"]
+            ):
+                ctx.deps.state.document_registry[doc_uri]["chunks_referenced"].append(
+                    chunk.id
+                )
+
             # Check if this chunk was expanded
             if chunk.id in expanded_map:
                 expanded_chunk, _ = expanded_map[chunk.id]
                 result_data = {
                     "chunk": expanded_chunk.content[:500],  # Truncate for display
+                    "chunk_id": chunk.id,
+                    "document_uri": doc_uri,
+                    "document_title": doc_title,
+                    "chunk_position": chunk.order,
+                    "full_chunk_content": expanded_chunk.content,
                     "score": round(score, 3),
-                    "source": chunk.document_title or chunk.document_uri or "Unknown",
                     "expanded": True,
                 }
             else:
                 result_data = {
                     "chunk": chunk.content[:500],  # Truncate for display
+                    "chunk_id": chunk.id,
+                    "document_uri": doc_uri,
+                    "document_title": doc_title,
+                    "chunk_position": chunk.order,
+                    "full_chunk_content": chunk.content,
                     "score": round(score, 3),
-                    "source": chunk.document_title or chunk.document_uri or "Unknown",
                     "expanded": False,
                 }
 
             results.append(result_data)
 
-        # Update state
-        ctx.deps.state.current_search = {
-            "query": question,
+        # Store search results in the plan item
+        plan[question_id]["search_results"] = {
             "type": search_type,
             "results": results,
         }
@@ -218,29 +263,52 @@ Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", 
     @agent.tool
     async def extract_insights_from_results(
         ctx: RunContext[ResearchDeps],
+        question_id: int,
     ) -> StateSnapshotEvent:
-        """Extract key insights from current search results."""
-        current_search = ctx.deps.state.current_search
-        if not current_search:
-            raise ValueError("No current search results to analyze")
+        """Extract key insights from search results for a specific question.
+
+        IMPORTANT: You must call search_question for this question_id BEFORE calling this tool.
+        This tool requires that search results already exist for the given question.
+
+        Args:
+            question_id: ID of the question whose results to analyze
+        """
+        plan = ctx.deps.state.plan
+        if question_id >= len(plan):
+            raise ValueError(f"Question ID {question_id} not found in plan")
+
+        question_item = plan[question_id]
+        if "search_results" not in question_item:
+            raise ValueError(
+                f"No search results found for question ID {question_id}. "
+                f"You must call search_question(question_id={question_id}) first before extracting insights."
+            )
+
+        search_results = question_item["search_results"]
 
         # Update state
         ctx.deps.state.phase = "analyzing"
         ctx.deps.state.status = "Extracting insights from results..."
 
-        # Build context from results
-        context = "\n\n".join(
-            [f"[Source: {r['source']}] {r['chunk']}" for r in current_search["results"]]
-        )
+        # Build context from results with chunk IDs for reference
+        context_parts = []
+        for idx, r in enumerate(search_results["results"]):
+            context_parts.append(
+                f"[Result {idx}] [Source: {r['document_title']}] {r['full_chunk_content']}"
+            )
+        context = "\n\n".join(context_parts)
 
         # Use LLM to extract insights
-        extract_prompt = f"""Analyze these search results and extract 1-3 key insights that help answer the question: "{current_search["query"]}"
+        question_text = question_item["question"]
+        extract_prompt = f"""Analyze these search results and extract 1-3 key insights that help answer the question: "{question_text}"
 
 Search Results:
 {context}
 
+For each insight, reference which result numbers (0, 1, 2, etc.) support it.
+
 Return a JSON array of insights with format:
-[{{"summary": "brief insight", "confidence": 0.0-1.0, "sources": ["source1", "source2"]}}]"""
+[{{"summary": "brief insight", "confidence": 0.0-1.0, "result_indices": [0, 1, ...]}}]"""
 
         response = await ctx.deps.client.ask(extract_prompt)
 
@@ -248,22 +316,48 @@ Return a JSON array of insights with format:
         import json
 
         try:
-            new_insights = json.loads(response)
+            raw_insights = json.loads(response)
         except json.JSONDecodeError:
-            # Fallback: create simple insight
-            new_insights = [
+            # Fallback: create simple insight referencing all results
+            raw_insights = [
                 {
                     "summary": response[:200],
                     "confidence": 0.7,
-                    "sources": [r["source"] for r in current_search["results"][:3]],
+                    "result_indices": list(
+                        range(min(3, len(search_results["results"])))
+                    ),
                 }
             ]
+
+        # Convert result indices to structured source references
+        new_insights = []
+        for insight in raw_insights:
+            result_indices = insight.get("result_indices", [])
+            source_refs = []
+
+            for idx in result_indices:
+                if 0 <= idx < len(search_results["results"]):
+                    result = search_results["results"][idx]
+                    source_refs.append(
+                        {
+                            "chunk_id": result["chunk_id"],
+                            "document_uri": result["document_uri"],
+                            "document_title": result["document_title"],
+                            "chunk_position": result["chunk_position"],
+                        }
+                    )
+
+            new_insights.append(
+                {
+                    "summary": insight["summary"],
+                    "confidence": insight.get("confidence", 0.7),
+                    "source_refs": source_refs,
+                }
+            )
 
         # Add to accumulated insights
         ctx.deps.state.insights.extend(new_insights)
 
-        # Clear current search
-        ctx.deps.state.current_search = None
         ctx.deps.state.status = f"Extracted {len(new_insights)} insights"
         print("[AGENT] Insights extracted, sending state snapshot")
 
@@ -336,17 +430,28 @@ Return JSON: {{"confidence": 0.0-1.0, "gaps": ["gap1", "gap2"], "recommendation"
         ctx.deps.state.phase = "synthesizing"
         ctx.deps.state.status = "Generating final report..."
 
+        # Build summary of insights with source information
+        insights_summary = []
+        for i in insights:
+            source_titles = [ref["document_title"] for ref in i.get("source_refs", [])]
+            unique_sources = list(
+                dict.fromkeys(source_titles)
+            )  # Preserve order, remove duplicates
+            insights_summary.append(
+                f"- {i['summary']} (sources: {', '.join(unique_sources[:2])})"
+            )
+
         # Build report prompt
         report_prompt = f"""Generate a comprehensive research report answering: "{ctx.deps.state.question}"
 
 Based on these insights:
-{chr(10).join([f"- {i['summary']} (sources: {', '.join(i.get('sources', [])[:2])})" for i in insights])}
+{chr(10).join(insights_summary)}
 
 Create a structured report with:
 - Executive Summary (2-3 sentences)
 - Main Findings (bullet points)
 - Conclusions
-- Sources
+- Sources (list the document titles mentioned above)
 
 Return JSON with format:
 {{
@@ -371,16 +476,78 @@ Return JSON with format:
                 "summary": response[:300],
                 "findings": [i["summary"] for i in insights],
                 "conclusions": ["See findings above"],
-                "sources": list(
-                    set([s for i in insights for s in i.get("sources", [])])
-                ),
+                "sources": [],
             }
+
+        # Build structured citations from document registry
+        citations = []
+        for doc_uri, doc_info in ctx.deps.state.document_registry.items():
+            citations.append(
+                {
+                    "document_uri": doc_uri,
+                    "document_title": doc_info["title"],
+                    "chunk_ids": doc_info["chunks_referenced"],
+                }
+            )
+
+        # Add citations to report
+        report["citations"] = citations
 
         # Update state
         ctx.deps.state.final_report = report
         ctx.deps.state.phase = "done"
         ctx.deps.state.status = "Research complete"
         print("[AGENT] Report complete, sending state snapshot")
+
+        return _as_state_snapshot(ctx)
+
+    @agent.tool
+    async def get_full_document(
+        ctx: RunContext[ResearchDeps],
+        document_uri: str,
+    ) -> StateSnapshotEvent:
+        """Retrieve and display the full content of a document by its URI.
+
+        Args:
+            document_uri: The URI identifier of the document to retrieve
+        """
+        # Update state
+        ctx.deps.state.status = f"Retrieving document: {document_uri}"
+
+        # Get document from haiku.rag
+        document = await ctx.deps.client.get_document_by_uri(document_uri)
+
+        if document is None:
+            ctx.deps.state.status = f"Document not found: {document_uri}"
+            ctx.deps.state.current_document = {
+                "uri": document_uri,
+                "title": "Not Found",
+                "content": f"Document with URI '{document_uri}' was not found in the database.",
+                "total_chunks": 0,
+            }
+        else:
+            # Get all chunks for this document to count them
+            all_chunks = await ctx.deps.client.search(
+                query="",  # Empty query to get all chunks
+                limit=1000,
+                search_type="fts",
+            )
+            chunks_for_doc = [
+                c for c, _ in all_chunks if c.document_uri == document_uri
+            ]
+
+            ctx.deps.state.current_document = {
+                "uri": document.uri or document_uri,
+                "title": document.title or "Untitled",
+                "content": document.content,
+                "total_chunks": len(chunks_for_doc),
+                "metadata": document.metadata,
+            }
+            ctx.deps.state.status = (
+                f"Retrieved document: {document.title or document_uri}"
+            )
+
+        print(f"[AGENT] Document retrieved: {document_uri}")
 
         return _as_state_snapshot(ctx)
 

@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 
+interface SourceRef {
+	chunk_id: string;
+	document_uri: string;
+	document_title: string;
+	chunk_position: number;
+}
+
 interface ResearchState {
 	question: string;
 	phase: string;
@@ -10,23 +17,40 @@ interface ResearchState {
 		id: number;
 		question: string;
 		status: string;
+		search_results?: {
+			type: string;
+			results: Array<{
+				chunk: string;
+				chunk_id: string;
+				document_uri: string;
+				document_title: string;
+				chunk_position: number;
+				full_chunk_content: string;
+				score: number;
+				expanded: boolean;
+			}>;
+		};
 	}>;
 	current_question_index: number;
-	current_search: {
-		query: string;
-		type: string;
-		results?: Array<{
-			chunk: string;
-			score: number;
-			source: string;
-			expanded: boolean;
-		}>;
-	} | null;
 	insights: Array<{
 		summary: string;
 		confidence: number;
-		sources: string[];
+		source_refs: SourceRef[];
 	}>;
+	document_registry: Record<
+		string,
+		{
+			title: string;
+			chunks_referenced: string[];
+		}
+	>;
+	current_document: {
+		uri: string;
+		title: string;
+		content: string;
+		total_chunks: number;
+		metadata?: Record<string, unknown>;
+	} | null;
 	confidence: number;
 	final_report: {
 		title: string;
@@ -34,6 +58,11 @@ interface ResearchState {
 		findings: string[];
 		conclusions: string[];
 		sources: string[];
+		citations: Array<{
+			document_uri: string;
+			document_title: string;
+			chunk_ids: string[];
+		}>;
 	} | null;
 }
 
@@ -46,15 +75,26 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 		Record<string, boolean>
 	>({
 		plan: true,
-		search: true,
 		insights: true,
 		report: true,
+		document: true,
 	});
+
+	const [expandedQuestions, setExpandedQuestions] = useState<
+		Record<number, boolean>
+	>({});
 
 	const toggleSection = (section: string) => {
 		setExpandedSections((prev) => ({
 			...prev,
 			[section]: !prev[section],
+		}));
+	};
+
+	const toggleQuestion = (questionId: number) => {
+		setExpandedQuestions((prev) => ({
+			...prev,
+			[questionId]: !prev[questionId],
 		}));
 	};
 
@@ -271,174 +311,170 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 								<div
 									key={item.id}
 									style={{
-										padding: "0.75rem",
+										marginBottom: "0.5rem",
 										background: "white",
 										borderRadius: "4px",
-										marginBottom: "0.5rem",
 										border: "1px solid #e2e8f0",
-										display: "flex",
-										gap: "0.75rem",
+										overflow: "hidden",
 									}}
 								>
-									<div
+									<button
+										type="button"
+										onClick={() => toggleQuestion(item.id)}
 										style={{
-											fontSize: "1.25rem",
-											color:
-												item.status === "done"
-													? "#48bb78"
-													: item.status === "searching"
-														? "#4299e1"
-														: "#a0aec0",
+											width: "100%",
+											display: "flex",
+											gap: "0.75rem",
+											padding: "0.75rem",
+											background: "white",
+											border: "none",
+											cursor: "pointer",
+											textAlign: "left",
+											alignItems: "center",
 										}}
 									>
-										{item.status === "done"
-											? "✓"
-											: item.status === "searching"
-												? "🔍"
-												: "⏳"}
-									</div>
-									<div style={{ flex: 1 }}>
 										<div
 											style={{
-												fontSize: "0.875rem",
-												color: "#4a5568",
+												fontSize: "1.25rem",
+												color:
+													item.status === "done"
+														? "#48bb78"
+														: item.status === "searching"
+															? "#4299e1"
+															: "#a0aec0",
+												flexShrink: 0,
 											}}
 										>
-											{item.question}
+											{item.status === "done"
+												? "✓"
+												: item.status === "searching"
+													? "🔍"
+													: "⏳"}
 										</div>
-									</div>
-								</div>
-							))}
-						</div>
-					)}
-				</div>
-			)}
-
-			{/* Current Search Results */}
-			{state.current_search && (
-				<div
-					style={{
-						background: "white",
-						borderRadius: "8px",
-						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-						overflow: "hidden",
-					}}
-				>
-					<button
-						type="button"
-						onClick={() => toggleSection("search")}
-						style={{
-							width: "100%",
-							display: "flex",
-							justifyContent: "space-between",
-							alignItems: "center",
-							padding: "0.75rem",
-							background: "#edf2f7",
-							border: "1px solid #e2e8f0",
-							borderRadius: "4px",
-							cursor: "pointer",
-							fontSize: "1rem",
-							fontWeight: "600",
-							color: "#2d3748",
-						}}
-					>
-						<span>
-							Search Results: {state.current_search.query.substring(0, 50)}...
-						</span>
-						<span>{expandedSections.search ? "▼" : "▶"}</span>
-					</button>
-					{expandedSections.search && (
-						<div
-							style={{
-								padding: "1rem",
-								background: "#f7fafc",
-								border: "1px solid #e2e8f0",
-								borderTop: "none",
-								borderRadius: "0 0 4px 4px",
-							}}
-						>
-							{state.current_search.results && (
-								<div>
-									<div
-										style={{
-											fontSize: "0.875rem",
-											color: "#718096",
-											marginBottom: "0.5rem",
-										}}
-									>
-										Type: {state.current_search.type} |{" "}
-										{state.current_search.results.length} results
-									</div>
-									{state.current_search.results.map((result, idx) => (
-										<div
-											key={`${result.source}-${idx}`}
-											style={{
-												padding: "0.75rem",
-												background: "white",
-												borderRadius: "4px",
-												marginBottom: "0.5rem",
-												border: "1px solid #e2e8f0",
-											}}
-										>
-											<div
-												style={{
-													display: "flex",
-													justifyContent: "space-between",
-													marginBottom: "0.5rem",
-												}}
-											>
-												<span
-													style={{
-														fontSize: "0.875rem",
-														fontWeight: "600",
-														color: "#4a5568",
-													}}
-												>
-													{result.source}
-												</span>
-												<div style={{ display: "flex", gap: "0.5rem" }}>
-													{result.expanded && (
-														<span
-															style={{
-																fontSize: "0.75rem",
-																padding: "0.125rem 0.5rem",
-																background: "#bee3f8",
-																color: "#2c5282",
-																borderRadius: "4px",
-															}}
-														>
-															Expanded
-														</span>
-													)}
-													<span
-														style={{
-															fontSize: "0.875rem",
-															fontWeight: "bold",
-															color:
-																result.score > 0.8
-																	? "#48bb78"
-																	: result.score > 0.6
-																		? "#ed8936"
-																		: "#a0aec0",
-														}}
-													>
-														{result.score.toFixed(2)}
-													</span>
-												</div>
-											</div>
+										<div style={{ flex: 1 }}>
 											<div
 												style={{
 													fontSize: "0.875rem",
-													color: "#718096",
-													lineHeight: "1.4",
+													color: "#4a5568",
 												}}
 											>
-												{result.chunk}...
+												{item.question}
 											</div>
+											{item.search_results && (
+												<div
+													style={{
+														fontSize: "0.75rem",
+														color: "#718096",
+														marginTop: "0.25rem",
+													}}
+												>
+													{item.search_results.results.length} results
+												</div>
+											)}
 										</div>
-									))}
+										{item.search_results && (
+											<span
+												style={{
+													fontSize: "0.875rem",
+													color: "#718096",
+												}}
+											>
+												{expandedQuestions[item.id] ? "▼" : "▶"}
+											</span>
+										)}
+									</button>
+
+									{/* Search Results nested inside question */}
+									{expandedQuestions[item.id] && item.search_results && (
+										<div
+											style={{
+												padding: "1rem",
+												background: "#f7fafc",
+												borderTop: "1px solid #e2e8f0",
+											}}
+										>
+											<div
+												style={{
+													fontSize: "0.75rem",
+													color: "#718096",
+													marginBottom: "0.5rem",
+													fontWeight: "600",
+												}}
+											>
+												Search Type: {item.search_results.type}
+											</div>
+											{item.search_results.results.map((result, idx) => (
+												<div
+													key={`${result.chunk_id}-${idx}`}
+													style={{
+														padding: "0.75rem",
+														background: "white",
+														borderRadius: "4px",
+														marginBottom: "0.5rem",
+														border: "1px solid #e2e8f0",
+													}}
+												>
+													<div
+														style={{
+															display: "flex",
+															justifyContent: "space-between",
+															marginBottom: "0.5rem",
+														}}
+													>
+														<span
+															style={{
+																fontSize: "0.875rem",
+																fontWeight: "600",
+																color: "#2d3748",
+															}}
+														>
+															{result.document_title}
+														</span>
+														<div style={{ display: "flex", gap: "0.5rem" }}>
+															{result.expanded && (
+																<span
+																	style={{
+																		fontSize: "0.75rem",
+																		padding: "0.125rem 0.5rem",
+																		background: "#bee3f8",
+																		color: "#2c5282",
+																		borderRadius: "4px",
+																	}}
+																>
+																	Expanded
+																</span>
+															)}
+															<span
+																style={{
+																	fontSize: "0.875rem",
+																	fontWeight: "bold",
+																	color:
+																		result.score > 0.8
+																			? "#48bb78"
+																			: result.score > 0.6
+																				? "#ed8936"
+																				: "#a0aec0",
+																}}
+															>
+																{result.score.toFixed(2)}
+															</span>
+														</div>
+													</div>
+													<div
+														style={{
+															fontSize: "0.875rem",
+															color: "#718096",
+															lineHeight: "1.4",
+														}}
+													>
+														{result.chunk}...
+													</div>
+												</div>
+											))}
+										</div>
+									)}
 								</div>
-							)}
+							))}
 						</div>
 					)}
 				</div>
@@ -520,7 +556,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 												color: "#718096",
 											}}
 										>
-											{insight.sources.length} sources
+											{insight.source_refs?.length || 0} sources
 										</span>
 									</div>
 									<div
@@ -528,10 +564,30 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 											fontSize: "0.875rem",
 											color: "#2d3748",
 											lineHeight: "1.5",
+											marginBottom: "0.5rem",
 										}}
 									>
 										{insight.summary}
 									</div>
+									{insight.source_refs && insight.source_refs.length > 0 && (
+										<div
+											style={{
+												fontSize: "0.75rem",
+												color: "#718096",
+												marginTop: "0.5rem",
+											}}
+										>
+											<span style={{ fontWeight: "600" }}>Sources: </span>
+											{insight.source_refs.map((ref, refIdx) => (
+												<span key={ref.chunk_id}>
+													{refIdx > 0 && ", "}
+													<span style={{ fontSize: "0.75rem" }}>
+														{ref.document_title}
+													</span>
+												</span>
+											))}
+										</div>
+									)}
 								</div>
 							))}
 						</div>
@@ -672,21 +728,65 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										marginBottom: "0.5rem",
 									}}
 								>
-									Sources
+									Citations
 								</h4>
-								<div
-									style={{
-										fontSize: "0.75rem",
-										color: "#718096",
-										lineHeight: "1.4",
-									}}
-								>
-									{state.final_report.sources.map((source) => (
-										<div key={source} style={{ marginBottom: "0.25rem" }}>
-											{source}
-										</div>
-									))}
-								</div>
+								{state.final_report.citations &&
+								state.final_report.citations.length > 0 ? (
+									<div
+										style={{
+											display: "flex",
+											flexDirection: "column",
+											gap: "0.5rem",
+										}}
+									>
+										{state.final_report.citations.map((citation) => (
+											<div
+												key={citation.document_uri}
+												style={{
+													padding: "0.5rem",
+													background: "#f7fafc",
+													borderRadius: "4px",
+													border: "1px solid #e2e8f0",
+												}}
+											>
+												<div
+													style={{
+														fontSize: "0.875rem",
+														fontWeight: "600",
+														color: "#2d3748",
+														marginBottom: "0.25rem",
+													}}
+												>
+													{citation.document_title}
+												</div>
+												<div
+													style={{
+														fontSize: "0.75rem",
+														color: "#718096",
+													}}
+												>
+													{citation.chunk_ids.length} chunk
+													{citation.chunk_ids.length !== 1 ? "s" : ""}{" "}
+													referenced
+												</div>
+											</div>
+										))}
+									</div>
+								) : (
+									<div
+										style={{
+											fontSize: "0.75rem",
+											color: "#718096",
+											lineHeight: "1.4",
+										}}
+									>
+										{state.final_report.sources?.map((source) => (
+											<div key={source} style={{ marginBottom: "0.25rem" }}>
+												{source}
+											</div>
+										))}
+									</div>
+								)}
 							</div>
 						</div>
 					)}

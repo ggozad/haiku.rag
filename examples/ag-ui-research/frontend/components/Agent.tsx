@@ -9,31 +9,55 @@ import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import StateDisplay from "./StateDisplay";
 
+interface SourceRef {
+	chunk_id: string;
+	document_uri: string;
+	document_title: string;
+	chunk_position: number;
+}
+
 interface ResearchState {
 	question: string;
-	phase: string; // idle|planning|searching|analyzing|evaluating|done
+	phase: string;
 	status: string;
 	plan: Array<{
 		id: number;
 		question: string;
-		status: string; // pending|searching|done
+		status: string;
+		search_results?: {
+			type: string;
+			results: Array<{
+				chunk: string;
+				chunk_id: string;
+				document_uri: string;
+				document_title: string;
+				chunk_position: number;
+				full_chunk_content: string;
+				score: number;
+				expanded: boolean;
+			}>;
+		};
 	}>;
 	current_question_index: number;
-	current_search: {
-		query: string;
-		type: string;
-		results?: Array<{
-			chunk: string;
-			score: number;
-			source: string;
-			expanded: boolean;
-		}>;
-	} | null;
 	insights: Array<{
 		summary: string;
 		confidence: number;
-		sources: string[];
+		source_refs: SourceRef[];
 	}>;
+	document_registry: Record<
+		string,
+		{
+			title: string;
+			chunks_referenced: string[];
+		}
+	>;
+	current_document: {
+		uri: string;
+		title: string;
+		content: string;
+		total_chunks: number;
+		metadata?: Record<string, unknown>;
+	} | null;
 	confidence: number;
 	final_report: {
 		title: string;
@@ -41,6 +65,11 @@ interface ResearchState {
 		findings: string[];
 		conclusions: string[];
 		sources: string[];
+		citations: Array<{
+			document_uri: string;
+			document_title: string;
+			chunk_ids: string[];
+		}>;
 	} | null;
 }
 
@@ -54,8 +83,9 @@ function AgentContent() {
 			status: "",
 			plan: [],
 			current_question_index: 0,
-			current_search: null,
 			insights: [],
+			document_registry: {},
+			current_document: null,
 			confidence: 0.0,
 			final_report: null,
 		},
@@ -76,9 +106,7 @@ function AgentContent() {
 					phaseMessage = "Planning research...";
 					break;
 				case "searching":
-					phaseMessage = newState.current_search
-						? `Searching: ${newState.current_search.query}`
-						: "Searching...";
+					phaseMessage = "Searching...";
 					break;
 				case "analyzing":
 					phaseMessage = "Extracting insights...";
