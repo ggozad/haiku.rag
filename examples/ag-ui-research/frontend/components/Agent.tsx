@@ -5,7 +5,7 @@ import {
 	useCoAgent,
 	useCoAgentStateRender,
 } from "@copilotkit/react-core";
-import { CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import StateDisplay from "./StateDisplay";
 
@@ -113,57 +113,69 @@ function AgentContent() {
 	});
 
 	return (
-		<div style={{ display: "flex", height: "100vh" }}>
-			<div
-				style={{
-					flex: 1,
-					padding: "2rem",
-					overflow: "auto",
-				}}
-			>
+		<>
+			<style>{`
+				.chat-container {
+					width: 50%;
+					height: 100vh;
+					border-right: 1px solid #e2e8f0;
+					display: flex;
+					flex-direction: column;
+				}
+				.chat-container > * {
+					flex: 1;
+					min-height: 0;
+				}
+			`}</style>
+			<div style={{ display: "flex", height: "100vh" }}>
+				{/* Chat on the left */}
+				<div className="chat-container">
+					<CopilotChat
+						labels={{
+							title: "Research Assistant",
+							initial:
+								"Hello! I can help you conduct deep research on complex questions using the haiku.rag knowledge base. Ask me anything!",
+						}}
+					/>
+				</div>
+
+				{/* State display on the right */}
 				<div
 					style={{
-						maxWidth: "800px",
-						margin: "0 auto",
+						width: "50%",
+						height: "100vh",
+						overflow: "auto",
+						background: "#f7fafc",
 					}}
 				>
-					<header style={{ marginBottom: "2rem" }}>
-						<h1
-							style={{
-								fontSize: "2.5rem",
-								fontWeight: "bold",
-								marginBottom: "0.5rem",
-								color: "#1a202c",
-							}}
-						>
-							Haiku.rag Research Assistant
-						</h1>
-						<p
-							style={{
-								fontSize: "1.125rem",
-								color: "#4a5568",
-								lineHeight: "1.6",
-							}}
-						>
-							Interactive research powered by <strong>Haiku.rag</strong>,{" "}
-							<strong>Pydantic AI</strong>, and <strong>AG-UI</strong>
-						</p>
-					</header>
+					<div style={{ padding: "2rem" }}>
+						<header style={{ marginBottom: "2rem" }}>
+							<h1
+								style={{
+									fontSize: "2rem",
+									fontWeight: "bold",
+									marginBottom: "0.5rem",
+									color: "#1a202c",
+								}}
+							>
+								Research State
+							</h1>
+							<p
+								style={{
+									fontSize: "0.875rem",
+									color: "#4a5568",
+									lineHeight: "1.6",
+								}}
+							>
+								Live updates from the research agent
+							</p>
+						</header>
 
-					<StateDisplay state={state} />
+						<StateDisplay state={state} />
+					</div>
 				</div>
 			</div>
-
-			<CopilotSidebar
-				defaultOpen={true}
-				clickOutsideToClose={false}
-				labels={{
-					title: "Research Assistant",
-					initial:
-						"Hello! I can help you conduct deep research on complex questions using the haiku.rag knowledge base. Ask me anything!",
-				}}
-			/>
-		</div>
+		</>
 	);
 }
 

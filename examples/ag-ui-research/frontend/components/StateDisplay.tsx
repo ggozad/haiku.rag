@@ -72,26 +72,20 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 	return (
 		<div
 			style={{
-				background: "white",
-				borderRadius: "8px",
-				padding: "1.5rem",
-				boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-				marginTop: "2rem",
+				display: "flex",
+				flexDirection: "column",
+				gap: "1rem",
 			}}
 		>
-			<h2
+			{/* Phase Progress */}
+			<div
 				style={{
-					fontSize: "1.5rem",
-					fontWeight: "600",
-					marginBottom: "1rem",
-					color: "#2d3748",
+					background: "white",
+					borderRadius: "8px",
+					padding: "1.5rem",
+					boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
 				}}
 			>
-				Research State
-			</h2>
-
-			{/* Phase Progress */}
-			<div style={{ marginBottom: "2rem" }}>
 				<div
 					style={{
 						fontSize: "0.875rem",
@@ -144,11 +138,10 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 			{state.question && (
 				<div
 					style={{
-						padding: "1rem",
-						background: "#f7fafc",
-						borderRadius: "4px",
-						border: "1px solid #e2e8f0",
-						marginBottom: "1rem",
+						background: "white",
+						borderRadius: "8px",
+						padding: "1.5rem",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
 					}}
 				>
 					<div
@@ -176,11 +169,10 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 			{state.confidence > 0 && (
 				<div
 					style={{
-						padding: "1rem",
-						background: "#f7fafc",
-						borderRadius: "4px",
-						border: "1px solid #e2e8f0",
-						marginBottom: "1rem",
+						background: "white",
+						borderRadius: "8px",
+						padding: "1.5rem",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
 					}}
 				>
 					<div
@@ -236,7 +228,14 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 
 			{/* Research Plan */}
 			{state.plan.length > 0 && (
-				<div style={{ marginBottom: "1rem" }}>
+				<div
+					style={{
+						background: "white",
+						borderRadius: "8px",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+						overflow: "hidden",
+					}}
+				>
 					<button
 						type="button"
 						onClick={() => toggleSection("plan")}
@@ -317,7 +316,14 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 
 			{/* Current Search Results */}
 			{state.current_search && (
-				<div style={{ marginBottom: "1rem" }}>
+				<div
+					style={{
+						background: "white",
+						borderRadius: "8px",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+						overflow: "hidden",
+					}}
+				>
 					<button
 						type="button"
 						onClick={() => toggleSection("search")}
@@ -440,7 +446,14 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 
 			{/* Insights */}
 			{state.insights.length > 0 && (
-				<div style={{ marginBottom: "1rem" }}>
+				<div
+					style={{
+						background: "white",
+						borderRadius: "8px",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+						overflow: "hidden",
+					}}
+				>
 					<button
 						type="button"
 						onClick={() => toggleSection("insights")}
@@ -528,7 +541,14 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 
 			{/* Final Report */}
 			{state.final_report && (
-				<div>
+				<div
+					style={{
+						background: "white",
+						borderRadius: "8px",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+						overflow: "hidden",
+					}}
+				>
 					<button
 						type="button"
 						onClick={() => toggleSection("report")}
