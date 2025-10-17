@@ -69,7 +69,7 @@ VLLM_RERANK_BASE_URL="http://localhost:8001"
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.12+
 - Ollama (for default embeddings)
 - vLLM server (for vLLM provider)
 
