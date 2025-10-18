@@ -57,6 +57,7 @@ plugins:
 nav:
   - haiku.rag:
       - index.md
+      - Getting started: tutorial.md
       - Installation: installation.md
       - Configuration: configuration.md
       - CLI: cli.md

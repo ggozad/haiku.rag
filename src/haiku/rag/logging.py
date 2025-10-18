@@ -7,6 +7,7 @@ from rich.logging import RichHandler
 
 def get_logger() -> logging.Logger:
     """Return the library logger configured with a Rich handler."""
+
     logger = logging.getLogger("haiku.rag")
 
     handler = RichHandler(
