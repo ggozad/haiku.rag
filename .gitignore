@@ -25,3 +25,6 @@ DEVNOTES.md
 # mcp registry
 .mcpregistry_github_token
 .mcpregistry_registry_token
+
+# MkDocs site directory when doing local docs builds
+site/

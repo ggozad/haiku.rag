@@ -1,7 +1,10 @@
 # Tutorial
 
-These are the quickstart instructions to get going and familiar with `haiku.rag`. This tutorial is indented for people who are familiar with command line and Python, but not different AI ecosystem tools.
+This tutorial quickstart instructions for getting familiar with `haiku.rag`. This tutorial is indented for people who are familiar with command line and Python, but not different AI ecosystem tools.
 
+The tutorial covers:
+
+- RAG and embeddings basics
 - Install `haiku.rag` Python package
 - Set up environment variables for running `haiku.rag`
 - Adding and retrieving items
@@ -9,9 +12,17 @@ These are the quickstart instructions to get going and familiar with `haiku.rag`
 
 The tutorial uses OpenAI API service - no local installation needed and will work on computers with any amount of RAM and GPU. The OpenAI API is pay-as-you-go, so you need to top it up at least up top ~$5 when creating the API key.
 
+## Introduction
+
+Embeddings serve as the foundational bridge between unstructured text data and computational efficiency in AI systems, particularly within Retrieval-Augmented Generation (RAG) frameworks that enhance Large Language Models (LLMs). At their core, embeddings are dense vector representations of words, sentences, or documents, created by models like those from OpenAI, which encode semantic and contextual meaning into numerical forms. In a RAG pipeline, these embeddings enable the system to index and store vast amounts of information in a vector database, allowing for rapid similarity searches. When a user query is posed, its embedding is generated and compared against the stored vectors using metrics like cosine similarity to retrieve the most relevant documents or chunks of text. This retrieval step addresses a key limitation of standalone LLMs, which rely on pre-trained knowledge that can be outdated, incomplete, or prone to hallucinations, by providing external, grounded context to inform the model's output.
+
+You technically can create vector embeddings yourself without relying on pre-built models like OpenAI's, but it's impractical for most users due to the complexity and resources involved in training or implementing from scratch. Generating embeddings requires a neural network architecture (e.g., transformer-based) trained on massive datasets to learn semantic relationships, which demands significant computational power (GPUs/TPUs), expertise in machine learning, and access to billions of text examples for fine-tuning.
+
+`haiku.rag` is a Python libraru allowing you to set up your own embeddings database, pipeline to feed into it and query it with different LLM providers and related services.
+
 ## Setup
 
-[Get an OpenAI API key](https://platform.openai.com/api-keys).
+First, [get an OpenAI API key](https://platform.openai.com/api-keys).
 
 Install `haiku.rag` Python package using [uv](https://docs.astral.sh/uv/getting-started/installation/) or your favourite Python package manager:
 
@@ -24,7 +35,6 @@ Configure your OpenAI API key and embeddings model.
 
 - Haiku RAG supports [dotenv](https://pypi.org/project/python-dotenv/) environment files and environment varibles for configuration
 - [See OpenAPI vector embeddings documentation](https://platform.openai.com/docs/guides/embeddings/embedding-models)
-- For the list of OpenAI embedding models and `EMBEDDINGS_VECTOR_DIM`, ask ChatGPT for instructions
 
 Create a file called `.env` and add:
 
@@ -48,6 +58,8 @@ QA_PROVIDER="openai"
 QA_MODEL="gpt-4o-mini"  # or gpt-4, gpt-3.5-turbo, etc.
 ```
 
+For the list of available OpenAI embedding models and `EMBEDDINGS_VECTOR_DIM` options, ask ChatGPT for instructions.
+
 ## Adding the first documents
 
 Now you can add some pieces of text in the database:
@@ -64,13 +76,13 @@ What will happen
 - OpenAI translates the free form text to RAG embedding vectors needed for the retrieval
 - The vector values will be stored in a local database
 
-Show the database:
+Now you can view your [LanceDB](<(https://lancedb.com/) database, and the embeddings it is configured for:
 
 ```shell
 haiku-rag info
 ```
 
-You should get the back the [LanceDB](https://lancedb.com/) database information:
+You should get the back the information:
 
 ```
 haiku.rag database info
@@ -89,13 +101,15 @@ Versions
 
 ## Asking questions and retrieving information
 
-Now we can use OpenAI to retrieve information from our embeddings database.
+Now we can use OpenAI LLMs to retrieve information from our embeddings database.
 
-In this example, we connect to a remote OpenAI API instead of local ollama.
+In this example, we connect to a remote OpenAI API.
 Mak
 
 Behind the scenes [pydantic-ai](https://ai.pydantic.dev/) query is created
 using `OpenAIChatModel.request()`.
+
+The easiest way to do this is `ask` CLI command:
 
 ```shell
 haiku-rag ask "What is the best programming language in the world"
@@ -108,11 +122,11 @@ Answer:
 According to the document, Python is considered the best programming language in the world due to its flexibility, robust ecosystem, open-source licensing, and thousands of contributors.
 ```
 
-## Python information retrieval
+## Programmatic interaction in Python
 
 You can interact with Haiku RAG from Python in a similar manner as you can from the command line. Here we use Haiku RAG with the interactive Python command prompt (REPL).
 
-First we need to install `ipython` as the normal Python REPL does not work
+First we need to install `ipython`, as built-in Python REPL does not support async blocks.
 
 ```shell
 uv pip install ipython
@@ -160,13 +174,14 @@ According to the document, Python is considered the best programming language in
 
 ## Complex documents
 
-Haiku RAG can also handle types beyond plain text, assuming your AI backend knowns about this.
+Haiku RAG can also handle types beyond plain text..
 
-Here we add research papers about Python from [arxiv](https://arxiv.org/search/?query=python&searchtype=all&source=header).
+Here we add research papers about Python from [arxiv](https://arxiv.org/search/?query=python&searchtype=all&source=header) using URL retriever.
 
-````shell
+```shell
 # Better Python Programming for all: With the focus on Maintainability
 haiku-rag add-src --meta collection="Interesting Python papers" "https://arxiv.org/pdf/2408.09134"
+
 # Interoperability From OpenTelemetry to Kieker: Demonstrated as Export from the Astronomy Shop
 haiku-rag add-src --meta collection="Interesting Python papers" "https://arxiv.org/pdf/2510.11179"
 ```
@@ -184,10 +199,10 @@ Answer:
 David Georg Reichelt from Lancaster University wrote a paper titled "Interoperability From OpenTelemetry to Kieker: Demonstrated as Export from the Astronomy Shop." In his work, he indicates that there is a structural difference between Kieker’s synchronous traces and OpenTelemetry’s asynchronous traces, leading to  limited compatibility between the two systems. This highlights the challenges of interoperability in observability frameworks.
 ```
 
-We can also do offline PDF (to ensure OpenAI does not cheat) - a file we know that should not very well known in Internet:
+We can also add offline files, like PDFs. Here we add a local file to ensure OpenAI does not cheat - a file we know that should not very well known in Internet:
 
 ```shell
-# This static file is supplied with haiku.rag repo
+# This static file is supplied in haiku.rag repo
 haiku-rag add-src "examples/samples/PyCon Finland 2025 Schedule.html"
 ```
 
@@ -205,7 +220,7 @@ The following people are presenting talks at PyCon Finland 2025:
  3 Andreas Jung - Talk: Guillotina Volto: A New Backend for Volto
  4 Daniel Vahla - Talk: Experiences with AI in Software Projects
  5 Andreas Jung (also presenting another talk) - Talk: Debugging Python
- ```
+```
 
 ## Reseting the embeddings database
 
@@ -213,7 +228,7 @@ If you change your embeddings provider (OpenAI -> ollama) or its parameters, you
 
 ```shell
 rm -rf "/Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb"
-````
+```
 
 ## Configuration
 
