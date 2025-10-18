@@ -18,7 +18,7 @@ Embeddings serve as the foundational bridge between unstructured text data and c
 
 You technically can create vector embeddings yourself without relying on pre-built models like OpenAI's, but it's impractical for most users due to the complexity and resources involved in training or implementing from scratch. Generating embeddings requires a neural network architecture (e.g., transformer-based) trained on massive datasets to learn semantic relationships, which demands significant computational power (GPUs/TPUs), expertise in machine learning, and access to billions of text examples for fine-tuning.
 
-`haiku.rag` is a Python libraru allowing you to set up your own embeddings database, pipeline to feed into it and query it with different LLM providers and related services.
+`haiku.rag` is a Python library allowing you to set up your own embeddings database, pipeline to feed into it and query it with different LLM providers and related services.
 
 ## Setup
 
