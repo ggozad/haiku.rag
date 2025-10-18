@@ -1,3 +1,5 @@
+import logging
+
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -7,6 +9,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT, QA_SYSTEM_PROMPT_WITH_CITATIONS
+
+
+logger = logging.getLogger(__name__)
 
 
 class SearchResult(BaseModel):
@@ -45,6 +50,14 @@ class QuestionAnswerAgent:
             deps_type=Dependencies,
             system_prompt=system_prompt,
             retries=3,
+        )
+
+        logger.info(
+            "Initialized QuestionAnswerAgent %s, with agent: %s, model: %s, client: %s", 
+            self,
+            self._agent, 
+            model_obj,
+            client,
         )
 
         @self._agent.tool

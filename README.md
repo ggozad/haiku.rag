@@ -158,6 +158,7 @@ haiku-rag a2aclient
 ```
 
 The A2A agent provides:
+
 - Multi-turn dialogue with context
 - Intelligent multi-search for complex questions
 - Source citations with titles and URIs
