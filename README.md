@@ -162,6 +162,14 @@ The A2A agent provides:
 - Source citations with titles and URIs
 - Full document retrieval on request
 
+## Examples
+
+See the [examples directory](examples/) for working examples:
+
+- **[Interactive Research Assistant](examples/ag-ui-research/)** - Full-stack research assistant with Pydantic AI and AG-UI featuring human-in-the-loop approval and real-time state synchronization
+- **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring, MCP server, and A2A agent
+- **[A2A Security](examples/a2a-security/)** - Authentication examples (API key, OAuth2, GitHub)
+
 ## Documentation
 
 Full documentation at: https://ggozad.github.io/haiku.rag/

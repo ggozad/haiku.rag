@@ -6,6 +6,8 @@ Three agentic flows are provided by haiku.rag:
 - Deep QA Agent — multi-agent question decomposition for complex questions
 - Research Multi‑Agent — a multi‑step, analyzable research workflow
 
+For an interactive example using Pydantic AI and AG-UI, see the [Interactive Research Assistant](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research) example.
+
 
 ### Simple QA Agent
 

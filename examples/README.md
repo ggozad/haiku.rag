@@ -2,6 +2,19 @@
 
 This directory contains example scripts demonstrating various features of haiku.rag.
 
+## Interactive Research Assistant
+
+**Directory:** `ag-ui-research/`
+
+Full-stack research assistant with interactive UI powered by Pydantic AI and AG-UI:
+- Multi-step research workflow with question decomposition
+- Human-in-the-loop approval for research plans
+- Real-time state synchronization between backend and frontend
+- Context expansion and insight extraction
+- Structured research reports with citations
+
+See `ag-ui-research/README.md` for setup instructions.
+
 ## Docker Example
 
 **Directory:** `docker/`
