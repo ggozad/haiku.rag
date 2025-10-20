@@ -582,7 +582,6 @@ class HaikuRAG:
         from haiku.rag.qa import get_qa_agent
 
         qa_agent = get_qa_agent(self, use_citations=cite, system_prompt=system_prompt)
-        logger.debug("Using QA agent: %s", qa_agent.__class__.__name__)
         return await qa_agent.answer(question)
 
     async def rebuild_database(self) -> AsyncGenerator[str, None]:
