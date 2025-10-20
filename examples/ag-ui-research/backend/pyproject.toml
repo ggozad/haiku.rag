@@ -1,0 +1,26 @@
+[project]
+name = "haiku-rag-research-assistant"
+version = "0.1.0"
+description = "Haiku.rag research assistant with AG-UI protocol support"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "starlette>=0.45.2",
+    "uvicorn[standard]>=0.34.2",
+    "pydantic-ai-slim[ag-ui,openai]>=1.1.0",
+    "python-dotenv>=1.0.1",
+    "haiku-rag>=0.12.1",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.406",
+    "ruff>=0.13.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
