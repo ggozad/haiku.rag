@@ -1,6 +1,6 @@
 # Tutorial
 
-This tutorial quickstart instructions for getting familiar with `haiku.rag`. This tutorial is indented for people who are familiar with command line and Python, but not different AI ecosystem tools.
+This tutorial quickstart instructions for getting familiar with `haiku.rag`. This tutorial is intended for people who are familiar with command line and Python, but not different AI ecosystem tools.
 
 The tutorial covers:
 
@@ -10,7 +10,7 @@ The tutorial covers:
 - Adding and retrieving items
 - Inspecting the database
 
-The tutorial uses OpenAI API service - no local installation needed and will work on computers with any amount of RAM and GPU. The OpenAI API is pay-as-you-go, so you need to top it up at least up top ~$5 when creating the API key.
+The tutorial uses OpenAI API service - no local installation needed and will work on computers with any amount of RAM and GPU. The OpenAI API is pay-as-you-go, so you need to top it up with at least ~$5 when creating the API key.
 
 ## Introduction
 
@@ -28,7 +28,7 @@ Install `haiku.rag` Python package using [uv](https://docs.astral.sh/uv/getting-
 
 ```shell
 # Python 3.12+ needed
-uv install haiku.rag
+uv pip install haiku.rag
 ```
 
 Configure your OpenAI API key and embeddings model.
@@ -76,7 +76,7 @@ What will happen
 - OpenAI translates the free form text to RAG embedding vectors needed for the retrieval
 - The vector values will be stored in a local database
 
-Now you can view your [LanceDB](<(https://lancedb.com/) database, and the embeddings it is configured for:
+Now you can view your [LanceDB](https://lancedb.com/) database, and the embeddings it is configured for:
 
 ```shell
 haiku-rag info
@@ -104,7 +104,6 @@ Versions
 Now we can use OpenAI LLMs to retrieve information from our embeddings database.
 
 In this example, we connect to a remote OpenAI API.
-Mak
 
 Behind the scenes [pydantic-ai](https://ai.pydantic.dev/) query is created
 using `OpenAIChatModel.request()`.
@@ -174,7 +173,7 @@ According to the document, Python is considered the best programming language in
 
 ## Complex documents
 
-Haiku RAG can also handle types beyond plain text..
+Haiku RAG can also handle types beyond plain text.
 
 Here we add research papers about Python from [arxiv](https://arxiv.org/search/?query=python&searchtype=all&source=header) using URL retriever.
 
@@ -199,7 +198,7 @@ Answer:
 David Georg Reichelt from Lancaster University wrote a paper titled "Interoperability From OpenTelemetry to Kieker: Demonstrated as Export from the Astronomy Shop." In his work, he indicates that there is a structural difference between Kieker’s synchronous traces and OpenTelemetry’s asynchronous traces, leading to  limited compatibility between the two systems. This highlights the challenges of interoperability in observability frameworks.
 ```
 
-We can also add offline files, like PDFs. Here we add a local file to ensure OpenAI does not cheat - a file we know that should not very well known in Internet:
+We can also add offline files, like PDFs. Here we add a local file to ensure OpenAI does not cheat - a file we know that should not be very well known in Internet:
 
 ```shell
 # This static file is supplied in haiku.rag repo
@@ -232,6 +231,6 @@ rm -rf "/Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb"
 
 ## Configuration
 
-See [Configuration page](./configuration.md) for more information about configurait
+See [Configuration page](./configuration.md) for more information about configuration
 
 For the available environment variable config options see [config.py](https://github.com/ggozad/haiku.rag/blob/main/src/haiku/rag/config.py).
