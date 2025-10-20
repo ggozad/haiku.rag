@@ -2,6 +2,8 @@
 
 Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), [Pydantic AI](https://ai.pydantic.dev/), and [AG-UI](https://docs.ag-ui.com/). Ask complex questions and watch the research process unfold in real-time.
 
+[Watch demo video](https://vimeo.com/1128874386)
+
 ## Features
 
 - **Multi-step research workflow**: Question decomposition, search, analysis, and synthesis
