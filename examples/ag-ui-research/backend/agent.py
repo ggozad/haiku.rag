@@ -76,7 +76,7 @@ def create_agent(
 You work step-by-step with the user to conduct deep research on complex questions.
 
 Your workflow:
-1. When user asks a question, propose a research plan (3-5 sub-questions)
+1. When user asks a question, propose a research plan (exactly 3 sub-questions)
 2. Wait for user approval before proceeding to the search phase
 3. Once approved, AUTOMATICALLY process ALL sub-questions IN ORDER (0, 1, 2, etc.) WITHOUT pausing:
    - For each sub-question:
@@ -123,11 +123,11 @@ Show search scores, explain your reasoning, cite your sources, and involve the u
         )
 
         # Use LLM to decompose the question
-        decompose_prompt = f"""Break down this research question into 3-5 specific sub-questions that would help answer it comprehensively.
+        decompose_prompt = f"""Break down this research question into exactly 3 specific sub-questions that would help answer it comprehensively.
 
 Research Question: {question}
 
-Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", ...]"""
+Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", "Question 3?"]"""
 
         response = await ctx.deps.client.ask(decompose_prompt)
 
@@ -142,7 +142,7 @@ Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", 
                 q.strip().lstrip("0123456789.-) ")
                 for q in response.split("\n")
                 if q.strip()
-            ][:5]
+            ][:3]
 
         # Create plan
         plan = [
@@ -256,7 +256,7 @@ Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", 
             "type": search_type,
             "results": results,
         }
-        plan[question_id]["status"] = "done"
+        plan[question_id]["status"] = "searched"
         ctx.deps.state.status = f"Found {len(results)} results"
         print("[AGENT] Search complete, sending state snapshot")
 
@@ -360,6 +360,8 @@ Return a JSON array of insights with format:
         # Add to accumulated insights
         ctx.deps.state.insights.extend(new_insights)
 
+        # Mark question as fully done (searched + analyzed)
+        plan[question_id]["status"] = "done"
         ctx.deps.state.status = f"Extracted {len(new_insights)} insights"
         print("[AGENT] Insights extracted, sending state snapshot")
 

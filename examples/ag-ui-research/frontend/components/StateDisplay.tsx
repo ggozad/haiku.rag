@@ -98,16 +98,11 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 		}));
 	};
 
-	// Phase indicator
-	const phases = [
-		"idle",
-		"planning",
-		"searching",
-		"analyzing",
-		"evaluating",
-		"done",
-	];
-	const currentPhaseIndex = phases.indexOf(state.phase);
+	// Calculate research progress
+	const completedQuestions = state.plan.filter((q) => q.status === "done").length;
+	const totalQuestions = state.plan.length;
+	const researchProgress =
+		totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0;
 
 	return (
 		<div
@@ -117,7 +112,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 				gap: "1rem",
 			}}
 		>
-			{/* Phase Progress */}
+			{/* Current Phase & Status */}
 			<div
 				style={{
 					background: "white",
@@ -133,45 +128,103 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 						marginBottom: "0.5rem",
 					}}
 				>
-					Progress
+					Current Phase
 				</div>
-				<div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-					{phases.slice(1).map((phase, idx) => (
-						<div key={phase} style={{ display: "flex", alignItems: "center" }}>
-							<div
+				<div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+					<div
+						style={{
+							padding: "0.5rem 1rem",
+							background:
+								state.phase === "idle"
+									? "#e2e8f0"
+									: state.phase === "planning"
+										? "#fef3c7"
+										: state.phase === "searching"
+											? "#dbeafe"
+											: state.phase === "analyzing"
+												? "#e0e7ff"
+												: state.phase === "evaluating"
+													? "#fce7f3"
+													: "#d1fae5",
+							color:
+								state.phase === "idle"
+									? "#718096"
+									: state.phase === "planning"
+										? "#92400e"
+										: state.phase === "searching"
+											? "#1e40af"
+											: state.phase === "analyzing"
+												? "#3730a3"
+												: state.phase === "evaluating"
+													? "#9f1239"
+													: "#065f46",
+							borderRadius: "6px",
+							fontSize: "1rem",
+							fontWeight: "700",
+							textTransform: "capitalize",
+						}}
+					>
+						{state.phase}
+					</div>
+					{state.status && (
+						<div
+							style={{
+								fontSize: "0.875rem",
+								color: "#4a5568",
+							}}
+						>
+							{state.status}
+						</div>
+					)}
+				</div>
+				{/* Research Progress Bar */}
+				{totalQuestions > 0 && state.phase !== "idle" && (
+					<div style={{ marginTop: "1rem" }}>
+						<div
+							style={{
+								display: "flex",
+								justifyContent: "space-between",
+								alignItems: "center",
+								marginBottom: "0.5rem",
+							}}
+						>
+							<span
 								style={{
-									padding: "0.25rem 0.75rem",
-									background:
-										idx < currentPhaseIndex
-											? "#48bb78"
-											: idx === currentPhaseIndex
-												? "#4299e1"
-												: "#e2e8f0",
-									color:
-										idx < currentPhaseIndex || idx === currentPhaseIndex
-											? "white"
-											: "#718096",
-									borderRadius: "4px",
 									fontSize: "0.75rem",
-									fontWeight: "600",
-									textTransform: "capitalize",
+									color: "#718096",
 								}}
 							>
-								{phase}
-							</div>
-							{idx < phases.length - 2 && (
-								<div
-									style={{
-										width: "1rem",
-										height: "2px",
-										background: idx < currentPhaseIndex ? "#48bb78" : "#e2e8f0",
-										margin: "0 0.25rem",
-									}}
-								/>
-							)}
+								Research Progress
+							</span>
+							<span
+								style={{
+									fontSize: "0.75rem",
+									fontWeight: "600",
+									color: "#2d3748",
+								}}
+							>
+								{completedQuestions}/{totalQuestions} questions
+							</span>
 						</div>
-					))}
-				</div>
+						<div
+							style={{
+								height: "0.5rem",
+								background: "#e2e8f0",
+								borderRadius: "4px",
+								overflow: "hidden",
+							}}
+						>
+							<div
+								style={{
+									width: `${researchProgress}%`,
+									height: "100%",
+									background: "#48bb78",
+									transition: "width 0.3s ease",
+								}}
+							/>
+						</div>
+					</div>
+				)}
 			</div>
 
 			{/* Question */}
@@ -339,7 +392,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 												color:
 													item.status === "done"
 														? "#48bb78"
-														: item.status === "searching"
+														: item.status === "searching" || item.status === "searched"
 															? "#4299e1"
 															: "#a0aec0",
 												flexShrink: 0,
@@ -349,7 +402,9 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 												? "✓"
 												: item.status === "searching"
 													? "🔍"
-													: "⏳"}
+													: item.status === "searched"
+														? "📊"
+														: "⏳"}
 										</div>
 										<div style={{ flex: 1 }}>
 											<div
