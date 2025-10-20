@@ -100,7 +100,9 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 	};
 
 	// Calculate research progress
-	const completedQuestions = state.plan.filter((q) => q.status === "done").length;
+	const completedQuestions = state.plan.filter(
+		(q) => q.status === "done",
+	).length;
 	const totalQuestions = state.plan.length;
 	const researchProgress =
 		totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0;
@@ -393,7 +395,8 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 												color:
 													item.status === "done"
 														? "#48bb78"
-														: item.status === "searching" || item.status === "searched"
+														: item.status === "searching" ||
+																item.status === "searched"
 															? "#4299e1"
 															: "#a0aec0",
 												flexShrink: 0,

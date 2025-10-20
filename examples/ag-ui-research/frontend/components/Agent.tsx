@@ -1,6 +1,5 @@
 "use client";
 
-import React, { useState } from "react";
 import {
 	CopilotKit,
 	useCoAgent,
@@ -76,7 +75,6 @@ interface ResearchState {
 }
 
 function AgentContent() {
-	// Use useCoAgent to sync state with the backend research agent
 	const { state } = useCoAgent<ResearchState>({
 		name: "research_agent",
 		initialState: {
@@ -93,132 +91,104 @@ function AgentContent() {
 		},
 	});
 
-	// Log state changes
-	console.log("[FRONTEND] Current state:", state);
-
-	// Human-in-the-loop: Request approval for research plan
-	console.log("[FRONTEND] Registering approve_research_plan action");
 	useCopilotAction({
 		name: "approve_research_plan",
 		description:
 			"Request user approval for the research plan. Returns 'APPROVED' if approved or 'REVISE' if user wants to revise.",
 		parameters: [],
-		renderAndWaitForResponse: ({ respond, status }) => {
-			console.log(
-				"[FRONTEND ACTION] renderAndWaitForResponse called",
-				{ status }
-			);
-
-			return (
-				<div
+		renderAndWaitForResponse: ({ respond, status }) => (
+			<div
+				style={{
+					padding: "1.5rem",
+					background: "white",
+					borderRadius: "8px",
+					border: "2px solid #4299e1",
+					marginBottom: "1rem",
+					boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+				}}
+			>
+				<h3
 					style={{
-						padding: "1.5rem",
-						background: "white",
-						borderRadius: "8px",
-						border: "2px solid #4299e1",
+						fontSize: "1.25rem",
+						fontWeight: "bold",
 						marginBottom: "1rem",
-						boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+						color: "#2d3748",
 					}}
 				>
-					<h3
-						style={{
-							fontSize: "1.25rem",
-							fontWeight: "bold",
-							marginBottom: "1rem",
-							color: "#2d3748",
-						}}
-					>
-						Research Plan Approval
-					</h3>
-					<p
-						style={{
-							fontSize: "0.875rem",
-							color: "#4a5568",
-							marginBottom: "1rem",
-						}}
-					>
-						Please review the research plan in the right pane.
-					</p>
+					Research Plan Approval
+				</h3>
+				<p
+					style={{
+						fontSize: "0.875rem",
+						color: "#4a5568",
+						marginBottom: "1rem",
+					}}
+				>
+					Please review the research plan in the right pane.
+				</p>
 
-					<div
+				<div
+					style={{
+						display: "flex",
+						gap: "1rem",
+					}}
+					className={status !== "executing" ? "hidden" : ""}
+				>
+					<button
+						type="button"
+						onClick={() => respond?.("REVISE")}
+						disabled={status !== "executing"}
 						style={{
-							display: "flex",
-							gap: "1rem",
+							flex: 1,
+							padding: "0.75rem",
+							background: "white",
+							border: "2px solid #e2e8f0",
+							borderRadius: "6px",
+							fontSize: "0.875rem",
+							fontWeight: "600",
+							cursor: status === "executing" ? "pointer" : "not-allowed",
+							opacity: status === "executing" ? 1 : 0.5,
 						}}
-						className={status !== "executing" ? "hidden" : ""}
 					>
-						<button
-							type="button"
-							onClick={() => respond?.("REVISE")}
-							disabled={status !== "executing"}
-							style={{
-								flex: 1,
-								padding: "0.75rem",
-								background: "white",
-								border: "2px solid #e2e8f0",
-								borderRadius: "6px",
-								fontSize: "0.875rem",
-								fontWeight: "600",
-								cursor: status === "executing" ? "pointer" : "not-allowed",
-								opacity: status === "executing" ? 1 : 0.5,
-							}}
-						>
-							Revise Plan
-						</button>
-						<button
-							type="button"
-							onClick={() => respond?.("APPROVED")}
-							disabled={status !== "executing"}
-							style={{
-								flex: 1,
-								padding: "0.75rem",
-								background: "#4299e1",
-								color: "white",
-								border: "none",
-								borderRadius: "6px",
-								fontSize: "0.875rem",
-								fontWeight: "600",
-								cursor: status === "executing" ? "pointer" : "not-allowed",
-								opacity: status === "executing" ? 1 : 0.5,
-							}}
-						>
-							Approve & Start Research
-						</button>
-					</div>
+						Revise Plan
+					</button>
+					<button
+						type="button"
+						onClick={() => respond?.("APPROVED")}
+						disabled={status !== "executing"}
+						style={{
+							flex: 1,
+							padding: "0.75rem",
+							background: "#4299e1",
+							color: "white",
+							border: "none",
+							borderRadius: "6px",
+							fontSize: "0.875rem",
+							fontWeight: "600",
+							cursor: status === "executing" ? "pointer" : "not-allowed",
+							opacity: status === "executing" ? 1 : 0.5,
+						}}
+					>
+						Approve & Start Research
+					</button>
 				</div>
-			);
-		},
+			</div>
+		),
 	});
 
-	// Render state updates from the research agent
 	useCoAgentStateRender<ResearchState>({
 		name: "research_agent",
 		render: ({ state: newState }) => {
-			console.log("[FRONTEND] State render update:", newState);
-			// Show different messages based on phase
-			let phaseMessage = "";
-			switch (newState.phase) {
-				case "planning":
-					phaseMessage = "Planning research...";
-					break;
-				case "searching":
-					phaseMessage = "Searching...";
-					break;
-				case "analyzing":
-					phaseMessage = "Extracting insights...";
-					break;
-				case "evaluating":
-					phaseMessage = `Evaluating confidence: ${(newState.confidence * 100).toFixed(0)}%`;
-					break;
-				case "synthesizing":
-					phaseMessage = "Generating final report...";
-					break;
-				case "done":
-					phaseMessage = "Research complete!";
-					break;
-				default:
-					phaseMessage = newState.status || "Ready";
-			}
+			const phaseMessages: Record<string, string> = {
+				planning: "Planning research...",
+				searching: "Searching...",
+				analyzing: "Extracting insights...",
+				evaluating: `Evaluating confidence: ${(newState.confidence * 100).toFixed(0)}%`,
+				synthesizing: "Generating final report...",
+				done: "Research complete!",
+			};
+			const phaseMessage =
+				phaseMessages[newState.phase] || newState.status || "Ready";
 
 			return (
 				<div

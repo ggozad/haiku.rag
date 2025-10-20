@@ -1,5 +1,3 @@
-"""Main entry point for the haiku.rag AG-UI research assistant backend."""
-
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -17,47 +15,37 @@ from haiku.rag.config import Config
 
 logger = logging.getLogger(__name__)
 
-# Global client instance
 client: HaikuRAG | None = None
+ag_ui_app = None
 
 
 @asynccontextmanager
 async def lifespan(app):
-    """Manage HaikuRAG client lifecycle."""
     global client
-
-    # Get database path from environment or use default
     db_path_str = os.getenv("DB_PATH", "haiku_rag.lancedb")
     db_path = Path(db_path_str)
 
     if not db_path.exists():
-        logger.error(
-            f"Database not found at {db_path}. Please initialize haiku.rag first."
-        )
+        logger.error(f"Database not found at {db_path}")
         logger.error("Run: haiku-rag add <path-to-documents>")
         raise RuntimeError(f"Database not found: {db_path}")
 
     logger.info(f"Initializing HaikuRAG client with database: {db_path}")
     client = HaikuRAG(db_path)
-
     logger.info("Research assistant backend ready")
-    logger.info(f"QA Provider: {Config.QA_PROVIDER}")
-    logger.info(f"QA Model: {Config.QA_MODEL}")
+    logger.info(f"QA Provider: {Config.QA_PROVIDER}, Model: {Config.QA_MODEL}")
 
     yield
 
-    # Cleanup
     if client:
         logger.info("Closing HaikuRAG client")
         client.close()
 
 
-# Create research agent instance
 agent = create_agent()
 
 
 async def health(request):
-    """Health check endpoint."""
     db_path_str = os.getenv("DB_PATH", "haiku_rag.lancedb")
     return JSONResponse(
         {
@@ -72,28 +60,16 @@ async def health(request):
     )
 
 
-# Create AG-UI app once with the client
-# State will be managed per-session by AG-UI
-ag_ui_app = None
-
-
 def get_ag_ui_app():
-    """Get or create AG-UI app."""
     global ag_ui_app
     if ag_ui_app is None and client is not None:
-        if client is None:
-            raise RuntimeError("Client not initialized")
-
-        # Create deps with shared client but new state per session
         research_deps = ResearchDeps(client=client, state=ResearchState())
-        logger.info("Creating AG-UI app with initial state")
+        logger.info("Creating AG-UI app")
         ag_ui_app = agent.to_ag_ui(deps=research_deps)
     return ag_ui_app
 
 
-# Initialize AG-UI app after client is ready in lifespan
 async def agent_endpoint(scope, receive, send):
-    """Proxy requests to AG-UI app."""
     app = get_ag_ui_app()
     if app is None:
         response = JSONResponse({"error": "Client not initialized"}, status_code=503)
@@ -102,7 +78,6 @@ async def agent_endpoint(scope, receive, send):
     await app(scope, receive, send)
 
 
-# Mount the AG-UI app at /agent and add health endpoint
 app = Starlette(
     routes=[
         Route("/health", health),
