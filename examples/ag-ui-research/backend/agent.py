@@ -304,36 +304,42 @@ Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", 
             )
         context = "\n\n".join(context_parts)
 
-        # Use LLM to extract insights
+        # Use LLM to extract insights with structured output
+        from pydantic import BaseModel
+        from pydantic_ai import Agent
+
+        class InsightResult(BaseModel):
+            summary: str
+            confidence: float
+            result_indices: list[int]
+
+        class InsightsList(BaseModel):
+            insights: list[InsightResult]
+
         question_text = question_item["question"]
         extract_prompt = f"""Analyze these search results and extract 1-3 key insights that help answer the question: "{question_text}"
 
 Search Results:
 {context}
 
-For each insight, reference which result numbers (0, 1, 2, etc.) support it.
+For each insight, reference which result numbers (0, 1, 2, etc.) support it."""
 
-Return a JSON array of insights with format:
-[{{"summary": "brief insight", "confidence": 0.0-1.0, "result_indices": [0, 1, ...]}}]"""
+        # Create a temporary agent with structured output using the same model
+        insight_agent: Agent[None, InsightsList] = Agent(
+            ctx.model,
+            output_type=InsightsList,
+        )
 
-        response = await ctx.deps.client.ask(extract_prompt)
-
-        # Parse insights
-        import json
-
-        try:
-            raw_insights = json.loads(response)
-        except json.JSONDecodeError:
-            # Fallback: create simple insight referencing all results
-            raw_insights = [
-                {
-                    "summary": response[:200],
-                    "confidence": 0.7,
-                    "result_indices": list(
-                        range(min(3, len(search_results["results"])))
-                    ),
-                }
-            ]
+        result = await insight_agent.run(extract_prompt)
+        raw_insights = [
+            {
+                "summary": insight.summary,
+                "confidence": insight.confidence,
+                "result_indices": insight.result_indices,
+            }
+            for insight in result.output.insights
+        ]
+        print(f"[AGENT] Extracted {len(raw_insights)} insights using structured output")
 
         # Convert result indices to structured source references
         new_insights = []
