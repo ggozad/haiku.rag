@@ -22,11 +22,13 @@
 ## Quick Start
 
 Install haiku.rag:
+
 ```bash
 uv pip install haiku.rag
 ```
 
 Use from Python:
+
 ```python
 from haiku.rag.client import HaikuRAG
 
@@ -42,6 +44,7 @@ async with HaikuRAG("database.lancedb") as client:
 ```
 
 Or use the CLI:
+
 ```bash
 haiku-rag add "Your document content"
 haiku-rag add "Your document content" --meta author=alice
@@ -53,6 +56,7 @@ haiku-rag migrate old_database.sqlite  # Migrate from SQLite
 
 ## Documentation
 
+- [Getting started](tutorial.md) - Tutorial
 - [Installation](installation.md) - Install haiku.rag with different providers
 - [Configuration](configuration.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
