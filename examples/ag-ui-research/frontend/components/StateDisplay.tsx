@@ -1,5 +1,6 @@
 "use client";
 
+import { Markdown } from "@copilotkit/react-ui";
 import { useState } from "react";
 
 interface SourceRef {
@@ -413,7 +414,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 													color: "#4a5568",
 												}}
 											>
-												{item.question}
+												<Markdown content={item.question} />
 											</div>
 											{item.search_results && (
 												<div
@@ -522,7 +523,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 															lineHeight: "1.4",
 														}}
 													>
-														{result.chunk}...
+														<Markdown content={`${result.chunk}...`} />
 													</div>
 												</div>
 											))}
@@ -622,7 +623,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 											marginBottom: "0.5rem",
 										}}
 									>
-										{insight.summary}
+										<Markdown content={insight.summary} />
 									</div>
 									{insight.source_refs && insight.source_refs.length > 0 && (
 										<div
@@ -712,15 +713,15 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 								>
 									Executive Summary
 								</h4>
-								<p
+								<div
 									style={{
 										fontSize: "0.875rem",
 										color: "#4a5568",
 										lineHeight: "1.6",
 									}}
 								>
-									{state.final_report.summary}
-								</p>
+									<Markdown content={state.final_report.summary} />
+								</div>
 							</div>
 							<div style={{ marginBottom: "1.5rem" }}>
 								<h4
@@ -741,9 +742,12 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										lineHeight: "1.6",
 									}}
 								>
-									{state.final_report.findings.map((finding) => (
-										<li key={finding} style={{ marginBottom: "0.5rem" }}>
-											{finding}
+									{state.final_report.findings.map((finding, idx) => (
+										<li
+											key={`finding-${idx}-${finding.substring(0, 30)}`}
+											style={{ marginBottom: "0.5rem" }}
+										>
+											<Markdown content={finding} />
 										</li>
 									))}
 								</ul>
@@ -767,9 +771,12 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										lineHeight: "1.6",
 									}}
 								>
-									{state.final_report.conclusions.map((conclusion) => (
-										<li key={conclusion} style={{ marginBottom: "0.5rem" }}>
-											{conclusion}
+									{state.final_report.conclusions.map((conclusion, idx) => (
+										<li
+											key={`conclusion-${idx}-${conclusion.substring(0, 30)}`}
+											style={{ marginBottom: "0.5rem" }}
+										>
+											<Markdown content={conclusion} />
 										</li>
 									))}
 								</ul>
