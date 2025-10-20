@@ -1,9 +1,11 @@
 "use client";
 
+import React, { useState } from "react";
 import {
 	CopilotKit,
 	useCoAgent,
 	useCoAgentStateRender,
+	useCopilotAction,
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
@@ -93,6 +95,100 @@ function AgentContent() {
 
 	// Log state changes
 	console.log("[FRONTEND] Current state:", state);
+
+	// Human-in-the-loop: Request approval for research plan
+	console.log("[FRONTEND] Registering approve_research_plan action");
+	useCopilotAction({
+		name: "approve_research_plan",
+		description:
+			"Request user approval for the research plan. Returns 'APPROVED' if approved or 'REVISE' if user wants to revise.",
+		parameters: [],
+		renderAndWaitForResponse: ({ respond, status }) => {
+			console.log(
+				"[FRONTEND ACTION] renderAndWaitForResponse called",
+				{ status }
+			);
+
+			return (
+				<div
+					style={{
+						padding: "1.5rem",
+						background: "white",
+						borderRadius: "8px",
+						border: "2px solid #4299e1",
+						marginBottom: "1rem",
+						boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+					}}
+				>
+					<h3
+						style={{
+							fontSize: "1.25rem",
+							fontWeight: "bold",
+							marginBottom: "1rem",
+							color: "#2d3748",
+						}}
+					>
+						Research Plan Approval
+					</h3>
+					<p
+						style={{
+							fontSize: "0.875rem",
+							color: "#4a5568",
+							marginBottom: "1rem",
+						}}
+					>
+						Please review the research plan in the right pane.
+					</p>
+
+					<div
+						style={{
+							display: "flex",
+							gap: "1rem",
+						}}
+						className={status !== "executing" ? "hidden" : ""}
+					>
+						<button
+							type="button"
+							onClick={() => respond?.("REVISE")}
+							disabled={status !== "executing"}
+							style={{
+								flex: 1,
+								padding: "0.75rem",
+								background: "white",
+								border: "2px solid #e2e8f0",
+								borderRadius: "6px",
+								fontSize: "0.875rem",
+								fontWeight: "600",
+								cursor: status === "executing" ? "pointer" : "not-allowed",
+								opacity: status === "executing" ? 1 : 0.5,
+							}}
+						>
+							Revise Plan
+						</button>
+						<button
+							type="button"
+							onClick={() => respond?.("APPROVED")}
+							disabled={status !== "executing"}
+							style={{
+								flex: 1,
+								padding: "0.75rem",
+								background: "#4299e1",
+								color: "white",
+								border: "none",
+								borderRadius: "6px",
+								fontSize: "0.875rem",
+								fontWeight: "600",
+								cursor: status === "executing" ? "pointer" : "not-allowed",
+								opacity: status === "executing" ? 1 : 0.5,
+							}}
+						>
+							Approve & Start Research
+						</button>
+					</div>
+				</div>
+			);
+		},
+	});
 
 	// Render state updates from the research agent
 	useCoAgentStateRender<ResearchState>({

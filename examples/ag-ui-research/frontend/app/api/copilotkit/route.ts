@@ -6,9 +6,6 @@ import {
 } from "@copilotkit/runtime";
 import type { NextRequest } from "next/server";
 
-// Service adapter for multi-agent support (empty since we only have one agent)
-const serviceAdapter = new ExperimentalEmptyAdapter();
-
 // Connect CopilotKit to PydanticAI via HttpAgent
 // The HttpAgent creates a bridge between the Next.js frontend and the Python backend
 // It communicates with the server created by agent.to_ag_ui()
@@ -20,6 +17,9 @@ const runtime = new CopilotRuntime({
 		}),
 	},
 });
+
+// Service adapter for multi-agent support (empty since we only have one agent)
+const serviceAdapter = new ExperimentalEmptyAdapter();
 
 // Next.js API route handler that proxies requests between frontend and backend
 export async function POST(request: NextRequest) {

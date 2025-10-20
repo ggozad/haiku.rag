@@ -68,30 +68,36 @@ def create_agent(
         qa_provider: QA provider for the agent (default: from Config.QA_PROVIDER)
         qa_model: Model name to use (default: from Config.QA_MODEL)
     """
+    print(f"[AGENT SETUP] Creating agent with provider={qa_provider}, model={qa_model}")
     agent = Agent(
         model=get_model(qa_provider, qa_model),
         deps_type=ResearchDeps,
         instructions="""You are a research co-pilot powered by haiku.rag.
 
-Your workflow:
-1. When user asks a question, IMMEDIATELY call propose_research_plan with the question
-2. Wait for user approval before proceeding
-3. Once approved, process questions ONE AT A TIME:
+Your workflow MUST follow these exact steps in order:
+1. Call propose_research_plan with the user's question
+2. After propose_research_plan completes, IMMEDIATELY call approve_research_plan (with no arguments)
+3. WAIT for approve_research_plan to return:
+   - If it returns "APPROVED", proceed to step 4
+   - If it returns "REVISE", ask the user "How would you like me to revise the research plan?" and wait for their response
+   - Once you receive their revision feedback, revise the plan and go back to step 1
+4. Once approved, process questions ONE AT A TIME:
    - Call search_question(question_id=0) and WAIT for it to complete
    - Then call extract_insights_from_results(question_id=0) and WAIT for it to complete
    - Then call search_question(question_id=1) and WAIT for it to complete
    - Then call extract_insights_from_results(question_id=1) and WAIT for it to complete
    - Then call search_question(question_id=2) and WAIT for it to complete
    - Then call extract_insights_from_results(question_id=2) and WAIT for it to complete
-4. After all questions are processed, call evaluate_research_confidence
-5. Ask user if they want to finalize or continue researching
-6. When user approves, call synthesize_final_report
+5. After all questions are processed, call evaluate_research_confidence
+6. Ask user if they want to finalize or continue researching
+7. When user approves, call synthesize_final_report
 
 CRITICAL RULES:
+- MANDATORY: Call approve_research_plan immediately after propose_research_plan - NO EXCEPTIONS
+- If approve_research_plan returns "REVISE", ask the user for revision feedback naturally in chat
 - Call ONE tool at a time - wait for each tool to return before calling the next
 - NEVER call extract_insights_from_results until search_question has completed and returned results
 - DO NOT explain what you're about to do - just call the tool
-- DO NOT say "I'll search for..." or "Let me search..." - just call search_question
 - The state updates will show the user what's happening - you don't need to narrate
 - Process all 3 questions automatically without asking for approval between them
 
@@ -152,6 +158,7 @@ Return ONLY a JSON array of sub-questions, like: ["Question 1?", "Question 2?", 
         ctx.deps.state.status = f"Proposed plan with {len(plan)} sub-questions"
         print(f"[AGENT] Plan created with {len(plan)} sub-questions")
         print("[AGENT] Sending state snapshot to frontend")
+        print("[AGENT] *** NEXT STEP: Agent should call approve_research_plan ***")
 
         return _as_state_snapshot(ctx)
 
