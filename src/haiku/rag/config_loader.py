@@ -9,12 +9,18 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     """Find the YAML config file using the search path.
 
     Search order:
-    1. CLI-provided path (if given)
+    1. CLI-provided path (via HAIKU_RAG_CONFIG_PATH env var or parameter)
     2. ./haiku.rag.yaml (current directory)
     3. ~/.config/haiku.rag/config.yaml (user config)
 
     Returns None if no config file is found.
     """
+    # Check environment variable first (set by CLI --config flag)
+    if not cli_path:
+        env_path = os.getenv("HAIKU_RAG_CONFIG_PATH")
+        if env_path:
+            cli_path = Path(env_path)
+
     if cli_path:
         if cli_path.exists():
             return cli_path

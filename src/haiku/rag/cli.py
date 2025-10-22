@@ -42,8 +42,19 @@ def main(
         callback=version_callback,
         help="Show version and exit",
     ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to YAML configuration file",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
+    # Store config path in environment for config loader to use
+    if config:
+        import os
+
+        os.environ["HAIKU_RAG_CONFIG_PATH"] = str(config.absolute())
+
     # Configure logging minimally for CLI context
     if Config.ENV == "development":
         # Lazy import logfire only in development
@@ -306,6 +317,54 @@ def settings():
 
     app = HaikuRAGApp(db_path=Path())  # Don't need actual DB for settings
     app.show_settings()
+
+
+@cli.command("init-config", help="Generate a YAML configuration file")
+def init_config(
+    output: Path = typer.Argument(
+        Path("haiku.rag.yaml"),
+        help="Output path for the config file",
+    ),
+    from_env: bool = typer.Option(
+        False,
+        "--from-env",
+        help="Migrate settings from .env file",
+    ),
+):
+    """Generate a YAML configuration file with defaults or from .env."""
+    import yaml
+
+    from haiku.rag.config_loader import generate_default_config, load_config_from_env
+
+    if output.exists():
+        typer.echo(
+            f"Error: {output} already exists. Remove it first or choose a different path."
+        )
+        raise typer.Exit(1)
+
+    if from_env:
+        # Load from environment variables (including .env if present)
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        config_data = load_config_from_env()
+        if not config_data:
+            typer.echo("Warning: No environment variables found to migrate.")
+            typer.echo("Generating default configuration instead.")
+            config_data = generate_default_config()
+    else:
+        config_data = generate_default_config()
+
+    # Write YAML with comments
+    with open(output, "w") as f:
+        f.write("# haiku.rag configuration file\n")
+        f.write(
+            "# See https://ggozad.github.io/haiku.rag/configuration/ for details\n\n"
+        )
+        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+    typer.echo(f"Configuration file created: {output}")
+    typer.echo("Edit the file to customize your settings.")
 
 
 @cli.command(
