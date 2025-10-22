@@ -1,12 +1,15 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic import BaseModel, field_validator
 
+from haiku.rag.config_loader import (
+    check_for_deprecated_env,
+    find_config_file,
+    flatten_yaml_to_env_dict,
+    load_yaml_config,
+)
 from haiku.rag.utils import get_default_data_dir
-
-load_dotenv()
 
 
 class AppConfig(BaseModel):
@@ -78,8 +81,19 @@ class AppConfig(BaseModel):
         return v
 
 
+# Load config from YAML file or use defaults
+config_path = find_config_file(None)
+if config_path:
+    yaml_data = load_yaml_config(config_path)
+    config_dict = flatten_yaml_to_env_dict(yaml_data)
+else:
+    config_dict = {}
+
+# Check for deprecated .env file
+check_for_deprecated_env()
+
 # Expose Config object for app to import
-Config = AppConfig.model_validate(os.environ)
+Config = AppConfig.model_validate(config_dict)
 if Config.OPENAI_API_KEY:
     os.environ["OPENAI_API_KEY"] = Config.OPENAI_API_KEY
 if Config.VOYAGE_API_KEY:
