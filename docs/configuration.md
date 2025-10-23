@@ -98,14 +98,26 @@ providers:
     qa_base_url: ""
     research_base_url: ""
 
-  api_keys:
-    voyage: ""
-    openai: ""
-    anthropic: ""
-    cohere: ""
-
 a2a:
   max_contexts: 1000
+```
+
+## API Keys
+
+API keys are configured through **environment variables**, not in the YAML file.
+
+```bash
+# OpenAI
+export OPENAI_API_KEY=your-key-here
+
+# Anthropic
+export ANTHROPIC_API_KEY=your-key-here
+
+# Voyage AI
+export VOYAGE_API_KEY=your-key-here
+
+# Cohere
+export CO_API_KEY=your-key-here
 ```
 
 ## File Monitoring
@@ -145,10 +157,12 @@ embeddings:
   provider: voyageai
   model: voyage-3.5
   vector_dim: 1024
+```
 
-providers:
-  api_keys:
-    voyage: your-api-key
+Set your API key via environment variable:
+
+```bash
+export VOYAGE_API_KEY=your-api-key
 ```
 
 ### OpenAI
@@ -160,10 +174,12 @@ embeddings:
   provider: openai
   model: text-embedding-3-small  # or text-embedding-3-large
   vector_dim: 1536
+```
 
-providers:
-  api_keys:
-    openai: your-api-key
+Set your API key via environment variable:
+
+```bash
+export OPENAI_API_KEY=your-api-key
 ```
 
 ### vLLM
@@ -207,10 +223,12 @@ OpenAI QA is included in the default installation:
 qa:
   provider: openai
   model: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
+```
 
-providers:
-  api_keys:
-    openai: your-api-key
+Set your API key via environment variable:
+
+```bash
+export OPENAI_API_KEY=your-api-key
 ```
 
 ### Anthropic
@@ -221,10 +239,12 @@ Anthropic QA is included in the default installation:
 qa:
   provider: anthropic
   model: claude-3-5-haiku-20241022  # or claude-3-5-sonnet-20241022, etc.
+```
 
-providers:
-  api_keys:
-    anthropic: your-api-key
+Set your API key via environment variable:
+
+```bash
+export ANTHROPIC_API_KEY=your-api-key
 ```
 
 ### vLLM
@@ -296,10 +316,12 @@ Cohere reranking is included in the default installation:
 reranking:
   provider: cohere
   model: rerank-v3.5
+```
 
-providers:
-  api_keys:
-    cohere: your-api-key
+Set your API key via environment variable:
+
+```bash
+export CO_API_KEY=your-api-key
 ```
 
 ### vLLM

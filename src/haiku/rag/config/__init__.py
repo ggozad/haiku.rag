@@ -9,7 +9,6 @@ from haiku.rag.config.loader import (
 )
 from haiku.rag.config.models import (
     A2AConfig,
-    APIKeysConfig,
     AppConfig,
     EmbeddingsConfig,
     LanceDBConfig,
@@ -35,7 +34,6 @@ __all__ = [
     "ProcessingConfig",
     "OllamaConfig",
     "VLLMConfig",
-    "APIKeysConfig",
     "ProvidersConfig",
     "A2AConfig",
     "find_config_file",
@@ -54,14 +52,3 @@ else:
 
 # Check for deprecated .env file
 check_for_deprecated_env()
-
-# Export API keys to os.environ for provider libraries
-if Config.providers.api_keys.openai:
-    os.environ["OPENAI_API_KEY"] = Config.providers.api_keys.openai
-if Config.providers.api_keys.voyage:
-    os.environ["VOYAGE_API_KEY"] = Config.providers.api_keys.voyage
-if Config.providers.api_keys.anthropic:
-    os.environ["ANTHROPIC_API_KEY"] = Config.providers.api_keys.anthropic
-if Config.providers.api_keys.cohere:
-    # Cohere SDK expects CO_API_KEY (not COHERE_API_KEY)
-    os.environ["CO_API_KEY"] = Config.providers.api_keys.cohere

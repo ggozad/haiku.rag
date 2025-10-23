@@ -1,4 +1,3 @@
-from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
@@ -12,7 +11,8 @@ except ImportError as e:
 
 class CohereReranker(RerankerBase):
     def __init__(self):
-        self._client = cohere.ClientV2(api_key=Config.providers.api_keys.cohere)
+        # Cohere SDK reads CO_API_KEY from environment by default
+        self._client = cohere.ClientV2()
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

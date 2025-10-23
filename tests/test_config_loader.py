@@ -112,7 +112,6 @@ def test_load_config_from_env(monkeypatch):
     monkeypatch.setenv("EMBEDDINGS_VECTOR_DIM", "1536")
     monkeypatch.setenv("QA_PROVIDER", "anthropic")
     monkeypatch.setenv("QA_MODEL", "claude-3-haiku")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     config = load_config_from_env()
 
@@ -122,7 +121,6 @@ def test_load_config_from_env(monkeypatch):
     assert config["embeddings"]["vector_dim"] == "1536"
     assert config["qa"]["provider"] == "anthropic"
     assert config["qa"]["model"] == "claude-3-haiku"
-    assert config["providers"]["api_keys"]["openai"] == "test-key"
 
 
 def test_load_config_from_env_empty():

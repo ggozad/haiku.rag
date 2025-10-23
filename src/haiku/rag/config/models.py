@@ -56,17 +56,9 @@ class VLLMConfig(BaseModel):
     research_base_url: str = ""
 
 
-class APIKeysConfig(BaseModel):
-    voyage: str = ""
-    openai: str = ""
-    anthropic: str = ""
-    cohere: str = ""
-
-
 class ProvidersConfig(BaseModel):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     vllm: VLLMConfig = Field(default_factory=VLLMConfig)
-    api_keys: APIKeysConfig = Field(default_factory=APIKeysConfig)
 
 
 class A2AConfig(BaseModel):

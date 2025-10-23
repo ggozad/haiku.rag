@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from haiku.rag.config import Config
@@ -5,7 +7,7 @@ from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
 
-COHERE_AVAILABLE = bool(Config.providers.api_keys.cohere)
+COHERE_AVAILABLE = bool(os.getenv("CO_API_KEY"))
 VLLM_RERANK_AVAILABLE = bool(Config.providers.vllm.rerank_base_url)
 
 chunks = [

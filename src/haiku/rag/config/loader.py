@@ -90,7 +90,6 @@ def generate_default_config() -> dict:
                 "qa_base_url": "",
                 "research_base_url": "",
             },
-            "api_keys": {"voyage": "", "openai": "", "anthropic": "", "cohere": ""},
         },
         "a2a": {"max_contexts": 1000},
     }
@@ -126,10 +125,6 @@ def load_config_from_env() -> dict:
         "VLLM_RERANK_BASE_URL": ("providers", "vllm", "rerank_base_url"),
         "VLLM_QA_BASE_URL": ("providers", "vllm", "qa_base_url"),
         "VLLM_RESEARCH_BASE_URL": ("providers", "vllm", "research_base_url"),
-        "VOYAGE_API_KEY": ("providers", "api_keys", "voyage"),
-        "OPENAI_API_KEY": ("providers", "api_keys", "openai"),
-        "ANTHROPIC_API_KEY": ("providers", "api_keys", "anthropic"),
-        "COHERE_API_KEY": ("providers", "api_keys", "cohere"),
         "A2A_MAX_CONTEXTS": ("a2a", "max_contexts"),
     }
 
