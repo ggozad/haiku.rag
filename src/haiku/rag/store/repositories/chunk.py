@@ -1,17 +1,19 @@
 import inspect
 import json
 import logging
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from docling_core.types.doc.document import DoclingDocument
 from lancedb.rerankers import RRFReranker
 
-from haiku.rag.chunker import chunker
 from haiku.rag.config import Config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import load_callable, text_to_docling_document
+from haiku.rag.utils import load_callable
+
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +144,13 @@ class ChunkRepository:
         return chunks
 
     async def create_chunks_for_document(
-        self, document_id: str, document: DoclingDocument
+        self, document_id: str, document: "DoclingDocument"
     ) -> list[Chunk]:
         """Create chunks and embeddings for a document from DoclingDocument."""
+        # Lazy imports to avoid loading docling during module import
+        from haiku.rag.chunker import chunker
+        from haiku.rag.utils import text_to_docling_document
+
         # Optionally preprocess markdown before chunking
         processed_document = document
         preprocessor_path = Config.MARKDOWN_PREPROCESSOR
