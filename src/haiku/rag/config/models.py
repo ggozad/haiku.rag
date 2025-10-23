@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from haiku.rag.utils import get_default_data_dir
 
@@ -76,20 +76,3 @@ class AppConfig(BaseModel):
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     a2a: A2AConfig = Field(default_factory=A2AConfig)
-
-    @field_validator("storage", mode="before")
-    @classmethod
-    def parse_storage(cls, v):
-        """Parse storage config, handling comma-separated monitor directories."""
-        if isinstance(v, dict) and "monitor_directories" in v:
-            dirs = v["monitor_directories"]
-            if isinstance(dirs, str):
-                if not dirs.strip():
-                    v["monitor_directories"] = []
-                else:
-                    v["monitor_directories"] = [
-                        Path(path.strip()).absolute()
-                        for path in dirs.split(",")
-                        if path.strip()
-                    ]
-        return v

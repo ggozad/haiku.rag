@@ -131,6 +131,13 @@ def load_config_from_env() -> dict:
     for env_var, path in env_mappings.items():
         value = os.getenv(env_var)
         if value is not None:
+            # Special handling for MONITOR_DIRECTORIES - parse comma-separated list
+            if env_var == "MONITOR_DIRECTORIES":
+                if value.strip():
+                    value = [p.strip() for p in value.split(",") if p.strip()]
+                else:
+                    value = []
+
             if isinstance(path, tuple):
                 current = result
                 for key in path[:-1]:

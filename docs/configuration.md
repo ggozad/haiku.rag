@@ -465,3 +465,13 @@ haiku-rag init-config --from-env
 ```
 
 This will read your current environment variables and generate a `haiku.rag.yaml` file with those settings.
+
+!!! note
+    When migrating from environment variables, list values like `MONITOR_DIRECTORIES` that were comma-separated (`/path1,/path2`) will be converted to proper YAML lists. In YAML, always use list syntax:
+
+    ```yaml
+    storage:
+      monitor_directories:
+        - /path/to/dir1
+        - /path/to/dir2
+    ```
