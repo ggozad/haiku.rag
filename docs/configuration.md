@@ -1,20 +1,122 @@
 # Configuration
 
-Configuration is done through the use of environment variables.
+Configuration is done through YAML configuration files.
 
 !!! note
     If you create a db with certain settings and later change them, `haiku.rag` will detect incompatibilities (for example, if you change embedding provider) and will exit. You can **rebuild** the database to apply the new settings, see [Rebuild Database](./cli.md#rebuild-database).
+
+## Getting Started
+
+Generate a configuration file with defaults:
+
+```bash
+haiku-rag init-config
+```
+
+This creates a `haiku.rag.yaml` file in your current directory with all available settings.
+
+To migrate from environment variables (`.env` file):
+
+```bash
+haiku-rag init-config --from-env
+```
+
+## Configuration File Locations
+
+`haiku.rag` searches for configuration files in this order:
+
+1. Path specified via `--config` flag: `haiku-rag --config /path/to/config.yaml <command>`
+2. `./haiku.rag.yaml` (current directory)
+3. `~/.config/haiku.rag/config.yaml` (user config directory)
+
+## Minimal Configuration
+
+A minimal configuration file with defaults:
+
+```yaml
+# haiku.rag.yaml
+environment: production
+
+embeddings:
+  provider: ollama
+  model: qwen3-embedding
+  vector_dim: 4096
+
+qa:
+  provider: ollama
+  model: gpt-oss
+```
+
+## Complete Configuration Example
+
+```yaml
+# haiku.rag.yaml
+environment: production
+
+storage:
+  data_dir: ""  # Empty = use default platform location
+  monitor_directories:
+    - /path/to/documents
+    - /another/path
+  disable_autocreate: false
+  vacuum_retention_seconds: 60
+
+lancedb:
+  uri: ""  # Empty for local, or db://, s3://, az://, gs://
+  api_key: ""
+  region: ""
+
+embeddings:
+  provider: ollama
+  model: qwen3-embedding
+  vector_dim: 4096
+
+reranking:
+  provider: ""  # Empty to disable, or mxbai, cohere, vllm
+  model: ""
+
+qa:
+  provider: ollama
+  model: gpt-oss
+
+research:
+  provider: ""  # Empty to use qa settings
+  model: ""
+
+processing:
+  chunk_size: 256
+  context_chunk_radius: 0
+  markdown_preprocessor: ""
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+
+  vllm:
+    embeddings_base_url: ""
+    rerank_base_url: ""
+    qa_base_url: ""
+    research_base_url: ""
+
+  api_keys:
+    voyage: ""
+    openai: ""
+    anthropic: ""
+    cohere: ""
+
+a2a:
+  max_contexts: 1000
+```
 
 ## File Monitoring
 
 Set directories to monitor for automatic indexing:
 
-```bash
-# Monitor single directory
-MONITOR_DIRECTORIES="/path/to/documents"
-
-# Monitor multiple directories
-MONITOR_DIRECTORIES="/path/to/documents,/another_path/to/documents"
+```yaml
+storage:
+  monitor_directories:
+    - /path/to/documents
+    - /another_path/to/documents
 ```
 
 ## Embedding Providers
@@ -23,44 +125,60 @@ If you use Ollama, you can use any pulled model that supports embeddings.
 
 ### Ollama (Default)
 
-```bash
-EMBEDDINGS_PROVIDER="ollama"
-EMBEDDINGS_MODEL="mxbai-embed-large"
-EMBEDDINGS_VECTOR_DIM=1024
+```yaml
+embeddings:
+  provider: ollama
+  model: mxbai-embed-large
+  vector_dim: 1024
 ```
 
 ### VoyageAI
-If you want to use VoyageAI embeddings you will need to install `haiku.rag` with the VoyageAI extras,
+
+If you want to use VoyageAI embeddings you will need to install `haiku.rag` with the VoyageAI extras:
 
 ```bash
 uv pip install haiku.rag[voyageai]
 ```
 
-```bash
-EMBEDDINGS_PROVIDER="voyageai"
-EMBEDDINGS_MODEL="voyage-3.5"
-EMBEDDINGS_VECTOR_DIM=1024
-VOYAGE_API_KEY="your-api-key"
+```yaml
+embeddings:
+  provider: voyageai
+  model: voyage-3.5
+  vector_dim: 1024
+
+providers:
+  api_keys:
+    voyage: your-api-key
 ```
 
 ### OpenAI
-OpenAI embeddings are included in the default installation. Simply set environment variables:
 
-```bash
-EMBEDDINGS_PROVIDER="openai"
-EMBEDDINGS_MODEL="text-embedding-3-small"  # or text-embedding-3-large
-EMBEDDINGS_VECTOR_DIM=1536
-OPENAI_API_KEY="your-api-key"
+OpenAI embeddings are included in the default installation:
+
+```yaml
+embeddings:
+  provider: openai
+  model: text-embedding-3-small  # or text-embedding-3-large
+  vector_dim: 1536
+
+providers:
+  api_keys:
+    openai: your-api-key
 ```
 
 ### vLLM
+
 For high-performance local inference, you can use vLLM to serve embedding models with OpenAI-compatible APIs:
 
-```bash
-EMBEDDINGS_PROVIDER="vllm"
-EMBEDDINGS_MODEL="mixedbread-ai/mxbai-embed-large-v1"  # Any embedding model supported by vLLM
-EMBEDDINGS_VECTOR_DIM=512  # Dimension depends on the model
-VLLM_EMBEDDINGS_BASE_URL="http://localhost:8000"  # vLLM server URL
+```yaml
+embeddings:
+  provider: vllm
+  model: mixedbread-ai/mxbai-embed-large-v1
+  vector_dim: 512
+
+providers:
+  vllm:
+    embeddings_base_url: http://localhost:8000
 ```
 
 **Note:** You need to run a vLLM server separately with an embedding model loaded.
@@ -71,60 +189,79 @@ Configure which LLM provider to use for question answering. Any provider and mod
 
 ### Ollama (Default)
 
-```bash
-QA_PROVIDER="ollama"
-QA_MODEL="gpt-oss"
-OLLAMA_BASE_URL="http://localhost:11434"
+```yaml
+qa:
+  provider: ollama
+  model: gpt-oss
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
 ```
 
 ### OpenAI
 
-OpenAI QA is included in the default installation. Simply configure:
+OpenAI QA is included in the default installation:
 
-```bash
-QA_PROVIDER="openai"
-QA_MODEL="gpt-4o-mini"  # or gpt-4, gpt-3.5-turbo, etc.
-OPENAI_API_KEY="your-api-key"
+```yaml
+qa:
+  provider: openai
+  model: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
+
+providers:
+  api_keys:
+    openai: your-api-key
 ```
 
 ### Anthropic
 
-Anthropic QA is included in the default installation. Simply configure:
+Anthropic QA is included in the default installation:
 
-```bash
-QA_PROVIDER="anthropic"
-QA_MODEL="claude-3-5-haiku-20241022"  # or claude-3-5-sonnet-20241022, etc.
-ANTHROPIC_API_KEY="your-api-key"
+```yaml
+qa:
+  provider: anthropic
+  model: claude-3-5-haiku-20241022  # or claude-3-5-sonnet-20241022, etc.
+
+providers:
+  api_keys:
+    anthropic: your-api-key
 ```
 
 ### vLLM
 
-For high-performance local inference, you can use vLLM to serve models with OpenAI-compatible APIs:
+For high-performance local inference:
 
-```bash
-QA_PROVIDER="vllm"
-QA_MODEL="Qwen/Qwen3-4B"  # Any model with tool support in vLLM
-VLLM_QA_BASE_URL="http://localhost:8002"  # vLLM server URL
+```yaml
+qa:
+  provider: vllm
+  model: Qwen/Qwen3-4B  # Any model with tool support in vLLM
+
+providers:
+  vllm:
+    qa_base_url: http://localhost:8002
 ```
 
 **Note:** You need to run a vLLM server separately with a model that supports tool calling loaded. Consult the specific model's documentation for proper vLLM serving configuration.
 
 ### Other Providers
 
-Any provider supported by Pydantic AI can be used. Examples include:
+Any provider supported by Pydantic AI can be used. Examples:
 
-```bash
+```yaml
 # Google Gemini
-QA_PROVIDER="gemini"
-QA_MODEL="gemini-1.5-flash"
+qa:
+  provider: gemini
+  model: gemini-1.5-flash
 
 # Groq
-QA_PROVIDER="groq"
-QA_MODEL="llama-3.3-70b-versatile"
+qa:
+  provider: groq
+  model: llama-3.3-70b-versatile
 
 # Mistral
-QA_PROVIDER="mistral"
-QA_MODEL="mistral-small-latest"
+qa:
+  provider: mistral
+  model: mistral-small-latest
 ```
 
 See the [Pydantic AI documentation](https://ai.pydantic.dev/models/) for the complete list of supported providers and models.
@@ -133,7 +270,7 @@ See the [Pydantic AI documentation](https://ai.pydantic.dev/models/) for the com
 
 Reranking improves search quality by re-ordering the initial search results using specialized models. When enabled, the system retrieves more candidates (3x the requested limit) and then reranks them to return the most relevant results.
 
-Reranking is **disabled by default** (`RERANK_PROVIDER=""`) for faster searches. You can enable it by configuring one of the providers below.
+Reranking is **disabled by default** (`provider: ""`) for faster searches. You can enable it by configuring one of the providers below.
 
 ### MixedBread AI
 
@@ -145,29 +282,38 @@ uv pip install haiku.rag[mxbai]
 
 Then configure:
 
-```bash
-RERANK_PROVIDER="mxbai"
-RERANK_MODEL="mixedbread-ai/mxbai-rerank-base-v2"
+```yaml
+reranking:
+  provider: mxbai
+  model: mixedbread-ai/mxbai-rerank-base-v2
 ```
 
 ### Cohere
 
-Cohere reranking is included in the default installation. Simply configure:
+Cohere reranking is included in the default installation:
 
-```bash
-RERANK_PROVIDER="cohere"
-RERANK_MODEL="rerank-v3.5"
-COHERE_API_KEY="your-api-key"
+```yaml
+reranking:
+  provider: cohere
+  model: rerank-v3.5
+
+providers:
+  api_keys:
+    cohere: your-api-key
 ```
 
 ### vLLM
 
 For high-performance local reranking using dedicated reranking models:
 
-```bash
-RERANK_PROVIDER="vllm"
-RERANK_MODEL="mixedbread-ai/mxbai-rerank-base-v2"  # Any reranking model supported by vLLM
-VLLM_RERANK_BASE_URL="http://localhost:8001"  # vLLM server URL
+```yaml
+reranking:
+  provider: vllm
+  model: mixedbread-ai/mxbai-rerank-base-v2
+
+providers:
+  vllm:
+    rerank_base_url: http://localhost:8001
 ```
 
 **Note:** vLLM reranking uses the `/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded. Consult the specific model's documentation for proper vLLM serving configuration.
@@ -178,78 +324,91 @@ VLLM_RERANK_BASE_URL="http://localhost:8001"  # vLLM server URL
 
 By default, `haiku.rag` uses a local LanceDB database:
 
-```bash
-# Default data directory (where local LanceDB is stored)
-DEFAULT_DATA_DIR="/path/to/data"
+```yaml
+storage:
+  data_dir: /path/to/data  # Empty = use default platform location
 ```
 
-For remote storage, use the `LANCEDB_URI` setting with various backends:
+For remote storage, use the `lancedb` settings with various backends:
 
-```bash
+```yaml
 # LanceDB Cloud
-LANCEDB_URI="db://your-database-name"
-LANCEDB_API_KEY="your-api-key"
-LANCEDB_REGION="us-west-2"  # optional
+lancedb:
+  uri: db://your-database-name
+  api_key: your-api-key
+  region: us-west-2  # optional
 
 # Amazon S3
-LANCEDB_URI="s3://my-bucket/my-table"
+lancedb:
+  uri: s3://my-bucket/my-table
 # Use AWS credentials or IAM roles
 
 # Azure Blob Storage
-LANCEDB_URI="az://my-container/my-table"
+lancedb:
+  uri: az://my-container/my-table
 # Use Azure credentials
 
 # Google Cloud Storage
-LANCEDB_URI="gs://my-bucket/my-table"
+lancedb:
+  uri: gs://my-bucket/my-table
 # Use GCP credentials
 
 # HDFS
-LANCEDB_URI="hdfs://namenode:port/path/to/table"
+lancedb:
+  uri: hdfs://namenode:port/path/to/table
 ```
 
-Authentication is handled through standard cloud provider credentials (AWS CLI, Azure CLI, gcloud, etc.) or by setting `LANCEDB_API_KEY` for LanceDB Cloud.
+Authentication is handled through standard cloud provider credentials (AWS CLI, Azure CLI, gcloud, etc.) or by setting `api_key` for LanceDB Cloud.
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization is still performed locally.
 
 #### Disable database auto-creation
 
-By default, haiku.rag creates the local LanceDB directory and required tables on first use. To prevent accidental database creation and fail fast if a database hasn’t been set up yet, set:
+By default, haiku.rag creates the local LanceDB directory and required tables on first use. To prevent accidental database creation and fail fast if a database hasn't been set up yet:
 
-```bash
-DISABLE_DB_AUTOCREATE=true
+```yaml
+storage:
+  disable_autocreate: true
 ```
 
 When enabled, for local paths, haiku.rag errors if the LanceDB directory does not exist, and it will not create parent directories.
 
 ### Document Processing
 
-```bash
-# Chunk size for document processing
-CHUNK_SIZE=256
+```yaml
+processing:
+  # Chunk size for document processing
+  chunk_size: 256
 
-# Number of adjacent chunks to include before/after retrieved chunks for context
-# 0 = no expansion (default), 1 = include 1 chunk before and after, etc.
-# When expanded chunks overlap or are adjacent, they are automatically merged
-# into single chunks with continuous content to eliminate duplication
-CONTEXT_CHUNK_RADIUS=0
+  # Number of adjacent chunks to include before/after retrieved chunks for context
+  # 0 = no expansion (default), 1 = include 1 chunk before and after, etc.
+  # When expanded chunks overlap or are adjacent, they are automatically merged
+  # into single chunks with continuous content to eliminate duplication
+  context_chunk_radius: 0
 
-# Vacuum retention threshold (seconds) for automatic cleanup
-# When documents are added/updated, old table versions older than this are removed
-# Default: 60 seconds (safe for concurrent connections)
-# Set to 0 for aggressive cleanup (removes all old versions immediately)
-VACUUM_RETENTION_SECONDS=60
+  # Optional dotted path or file path to a callable that preprocesses
+  # markdown content before chunking
+  markdown_preprocessor: ""
+
+storage:
+  # Vacuum retention threshold (seconds) for automatic cleanup
+  # When documents are added/updated, old table versions older than this are removed
+  # Default: 60 seconds (safe for concurrent connections)
+  # Set to 0 for aggressive cleanup (removes all old versions immediately)
+  vacuum_retention_seconds: 60
 ```
 
 #### Markdown Preprocessor
 
 Optionally preprocess Markdown before chunking by pointing to a callable that receives and returns Markdown text. This is useful for normalizing content, stripping boilerplate, or applying custom transformations before chunk boundaries are computed.
 
-```bash
-# A callable path in one of these formats:
-# - package.module:func
-# - package.module.func
-# - /abs/or/relative/path/to/file.py:func
-MARKDOWN_PREPROCESSOR="my_pkg.preprocess:clean_md"
+```yaml
+processing:
+  # A callable path in one of these formats:
+  # - package.module:func
+  # - package.module.func
+  # - /abs/or/relative/path/to/file.py:func
+  markdown_preprocessor: my_pkg.preprocess:clean_md
 ```
 
 !!! note
@@ -271,3 +430,16 @@ def clean_md(text: str) -> str:
         out.append(line)
     return "\n".join(out)
 ```
+
+## Migration from Environment Variables
+
+!!! warning "Deprecation Notice"
+    Environment variable configuration via `.env` files is deprecated and will be removed in future versions. Please migrate to YAML configuration.
+
+To migrate your existing `.env` file to YAML:
+
+```bash
+haiku-rag init-config --from-env
+```
+
+This will read your current environment variables and generate a `haiku.rag.yaml` file with those settings.
