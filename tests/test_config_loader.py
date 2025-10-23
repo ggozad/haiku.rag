@@ -3,9 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.config_loader import (
+from haiku.rag.config.loader import (
     find_config_file,
-    flatten_yaml_to_env_dict,
     generate_default_config,
     load_config_from_env,
     load_yaml_config,
@@ -28,54 +27,6 @@ embeddings:
     assert config["embeddings"]["provider"] == "ollama"
     assert config["embeddings"]["model"] == "test-model"
     assert config["embeddings"]["vector_dim"] == 1024
-
-
-def test_flatten_yaml_to_env_dict():
-    """Test converting nested YAML to flat env dict."""
-    yaml_dict = {
-        "environment": "development",
-        "storage": {
-            "data_dir": "/tmp/data",
-            "monitor_directories": ["/path/one", "/path/two"],
-            "disable_autocreate": True,
-            "vacuum_retention_seconds": 30,
-        },
-        "embeddings": {
-            "provider": "openai",
-            "model": "text-embedding-3-small",
-            "vector_dim": 1536,
-        },
-        "qa": {"provider": "anthropic", "model": "claude-3-haiku"},
-        "processing": {"chunk_size": 512, "context_chunk_radius": 1},
-        "providers": {
-            "ollama": {"base_url": "http://localhost:11434"},
-            "api_keys": {"openai": "test-key", "anthropic": "test-key-2"},
-        },
-    }
-
-    result = flatten_yaml_to_env_dict(yaml_dict)
-
-    assert result["ENV"] == "development"
-    assert result["DEFAULT_DATA_DIR"] == "/tmp/data"
-    assert result["MONITOR_DIRECTORIES"] == "/path/one,/path/two"
-    assert result["DISABLE_DB_AUTOCREATE"] is True
-    assert result["VACUUM_RETENTION_SECONDS"] == 30
-    assert result["EMBEDDINGS_PROVIDER"] == "openai"
-    assert result["EMBEDDINGS_MODEL"] == "text-embedding-3-small"
-    assert result["EMBEDDINGS_VECTOR_DIM"] == 1536
-    assert result["QA_PROVIDER"] == "anthropic"
-    assert result["QA_MODEL"] == "claude-3-haiku"
-    assert result["CHUNK_SIZE"] == 512
-    assert result["CONTEXT_CHUNK_RADIUS"] == 1
-    assert result["OLLAMA_BASE_URL"] == "http://localhost:11434"
-    assert result["OPENAI_API_KEY"] == "test-key"
-    assert result["ANTHROPIC_API_KEY"] == "test-key-2"
-
-
-def test_flatten_yaml_empty():
-    """Test flattening empty YAML dict returns empty dict."""
-    result = flatten_yaml_to_env_dict({})
-    assert result == {}
 
 
 def test_find_config_file_cwd(tmp_path, monkeypatch):

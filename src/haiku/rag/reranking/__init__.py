@@ -15,7 +15,7 @@ def get_reranker() -> RerankerBase | None:
     if _reranker is not None:
         return _reranker
 
-    if Config.RERANK_PROVIDER == "mxbai":
+    if Config.reranking.provider == "mxbai":
         try:
             from haiku.rag.reranking.mxbai import MxBAIReranker
 
@@ -25,7 +25,7 @@ def get_reranker() -> RerankerBase | None:
         except ImportError:
             return None
 
-    if Config.RERANK_PROVIDER == "cohere":
+    if Config.reranking.provider == "cohere":
         try:
             from haiku.rag.reranking.cohere import CohereReranker
 

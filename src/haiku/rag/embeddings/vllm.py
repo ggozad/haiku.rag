@@ -15,7 +15,7 @@ class Embedder(EmbedderBase):
 
     async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
         client = AsyncOpenAI(
-            base_url=f"{Config.VLLM_EMBEDDINGS_BASE_URL}/v1", api_key="dummy"
+            base_url=f"{Config.providers.vllm.embeddings_base_url}/v1", api_key="dummy"
         )
         if not text:
             return []

@@ -35,14 +35,14 @@ def test_settings_save_and_retrieve(temp_db_path):
     store = Store(temp_db_path)
     settings_repo = SettingsRepository(store)
 
-    original_chunk_size = Config.CHUNK_SIZE
-    Config.CHUNK_SIZE = 2 * original_chunk_size
+    original_chunk_size = Config.processing.chunk_size
+    Config.processing.chunk_size = 2 * original_chunk_size
 
     settings_repo.save_current_settings()
     retrieved_settings = settings_repo.get_current_settings()
-    assert retrieved_settings["CHUNK_SIZE"] == 2 * original_chunk_size
+    assert retrieved_settings["processing"]["chunk_size"] == 2 * original_chunk_size
 
-    Config.CHUNK_SIZE = original_chunk_size
+    Config.processing.chunk_size = original_chunk_size
     store.close()
 
 
@@ -57,16 +57,16 @@ async def test_config_validation_on_db_load(temp_db_path):
     store1.close()
 
     # Change config
-    original_chunk_size = Config.CHUNK_SIZE
-    Config.CHUNK_SIZE = 999
+    original_chunk_size = Config.processing.chunk_size
+    Config.processing.chunk_size = 999
 
     try:
         # Loading the database should raise ConfigMismatchError
         with pytest.raises(ConfigMismatchError) as exc_info:
             Store(temp_db_path)
 
-        assert "CHUNK_SIZE" in str(exc_info.value)
-        assert "Consider rebuilding" in str(exc_info.value)
+        assert "chunk_size" in str(exc_info.value)
+        assert "rebuild" in str(exc_info.value).lower()
 
         # Rebuild
         async with HaikuRAG(db_path=temp_db_path, skip_validation=True) as client:
@@ -77,8 +77,8 @@ async def test_config_validation_on_db_load(temp_db_path):
         store2 = Store(temp_db_path)
         settings_repo2 = SettingsRepository(store2)
         db_settings = settings_repo2.get_current_settings()
-        assert db_settings["CHUNK_SIZE"] == 999
+        assert db_settings["processing"]["chunk_size"] == 999
         store2.close()
 
     finally:
-        Config.CHUNK_SIZE = original_chunk_size
+        Config.processing.chunk_size = original_chunk_size

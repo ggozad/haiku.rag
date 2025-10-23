@@ -12,7 +12,7 @@ except ImportError as e:
 
 class CohereReranker(RerankerBase):
     def __init__(self):
-        self._client = cohere.ClientV2(api_key=Config.COHERE_API_KEY)
+        self._client = cohere.ClientV2(api_key=Config.providers.api_keys.cohere)
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

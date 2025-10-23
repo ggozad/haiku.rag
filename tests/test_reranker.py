@@ -5,8 +5,8 @@ from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
 
-COHERE_AVAILABLE = bool(Config.COHERE_API_KEY)
-VLLM_RERANK_AVAILABLE = bool(Config.VLLM_RERANK_BASE_URL)
+COHERE_AVAILABLE = bool(Config.providers.api_keys.cohere)
+VLLM_RERANK_AVAILABLE = bool(Config.providers.vllm.rerank_base_url)
 
 chunks = [
     Chunk(content=content, document_id=str(i))
@@ -37,7 +37,7 @@ async def test_mxbai_reranker():
     try:
         from haiku.rag.reranking.mxbai import MxBAIReranker
 
-        Config.RERANK_MODEL = "mixedbread-ai/mxbai-rerank-base-v2"
+        Config.reranking.model = "mixedbread-ai/mxbai-rerank-base-v2"
         reranker = MxBAIReranker()
         # reranker._model = "mixedbread-ai/mxbai-rerank-base-v2"
         reranked = await reranker.rerank(
@@ -45,7 +45,7 @@ async def test_mxbai_reranker():
         )
         assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
         assert all(isinstance(score, float) for chunk, score in reranked)
-        Config.RERANK_MODEL = ""
+        Config.reranking.model = ""
 
     except ImportError:
         pytest.skip("MxBAI package not installed")

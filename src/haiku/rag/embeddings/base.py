@@ -4,8 +4,8 @@ from haiku.rag.config import Config
 
 
 class EmbedderBase:
-    _model: str = Config.EMBEDDINGS_MODEL
-    _vector_dim: int = Config.EMBEDDINGS_VECTOR_DIM
+    _model: str = Config.embeddings.model
+    _vector_dim: int = Config.embeddings.vector_dim
 
     def __init__(self, model: str, vector_dim: int):
         self._model = model

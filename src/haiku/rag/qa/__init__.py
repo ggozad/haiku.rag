@@ -8,8 +8,8 @@ def get_qa_agent(
     use_citations: bool = False,
     system_prompt: str | None = None,
 ) -> QuestionAnswerAgent:
-    provider = Config.QA_PROVIDER
-    model_name = Config.QA_MODEL
+    provider = Config.qa.provider
+    model_name = Config.qa.model
 
     return QuestionAnswerAgent(
         client=client,

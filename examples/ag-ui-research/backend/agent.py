@@ -38,13 +38,13 @@ def _as_state_snapshot(ctx: RunContext[ResearchDeps]) -> StateSnapshotEvent:
 
 
 def create_agent(
-    qa_provider: str = Config.QA_PROVIDER, qa_model: str = Config.QA_MODEL
+    qa_provider: str = Config.qa.provider, qa_model: str = Config.qa.model
 ) -> Agent[ResearchDeps, str]:
     """Create and configure the research agent.
 
     Args:
-        qa_provider: QA provider for the agent (default: from Config.QA_PROVIDER)
-        qa_model: Model name to use (default: from Config.QA_MODEL)
+        qa_provider: QA provider for the agent (default: from Config.qa.provider)
+        qa_model: Model name to use (default: from Config.qa.model)
     """
     print(f"[AGENT SETUP] Creating agent with provider={qa_provider}, model={qa_model}")
     agent = Agent(

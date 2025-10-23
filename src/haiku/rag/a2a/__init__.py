@@ -57,12 +57,12 @@ def create_a2a_app(
     """
     base_storage = InMemoryStorage()
     storage = LRUMemoryStorage(
-        storage=base_storage, max_contexts=Config.A2A_MAX_CONTEXTS
+        storage=base_storage, max_contexts=Config.a2a.max_contexts
     )
     broker = InMemoryBroker()
 
     # Create the agent with native search tool
-    model = get_model(Config.QA_PROVIDER, Config.QA_MODEL)
+    model = get_model(Config.qa.provider, Config.qa.model)
     agent = Agent(
         model=model,
         deps_type=AgentDependencies,
@@ -120,7 +120,7 @@ def create_a2a_app(
     # Create FastA2A app with custom worker lifecycle
     @asynccontextmanager
     async def lifespan(app):
-        logger.info(f"Started A2A server (max contexts: {Config.A2A_MAX_CONTEXTS})")
+        logger.info(f"Started A2A server (max contexts: {Config.a2a.max_contexts})")
         async with app.task_manager:
             async with worker.run():
                 yield

@@ -56,7 +56,7 @@ def main(
         os.environ["HAIKU_RAG_CONFIG_PATH"] = str(config.absolute())
 
     # Configure logging minimally for CLI context
-    if Config.ENV == "development":
+    if Config.environment == "development":
         # Lazy import logfire only in development
         try:
             import logfire  # type: ignore
@@ -80,7 +80,7 @@ def main(
 @cli.command("list", help="List all stored documents")
 def list_documents(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -127,7 +127,7 @@ def add_document_text(
         metavar="KEY=VALUE",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -156,7 +156,7 @@ def add_document_src(
         metavar="KEY=VALUE",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -178,7 +178,7 @@ def get_document(
         help="The ID of the document to get",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -195,7 +195,7 @@ def delete_document(
         help="The ID of the document to delete",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -222,7 +222,7 @@ def search(
         help="Maximum number of results to return",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -239,7 +239,7 @@ def ask(
         help="The question to ask",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -287,7 +287,7 @@ def research(
         help="Max concurrent searches per iteration (planned)",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -334,7 +334,7 @@ def init_config(
     """Generate a YAML configuration file with defaults or from .env."""
     import yaml
 
-    from haiku.rag.config_loader import generate_default_config, load_config_from_env
+    from haiku.rag.config.loader import generate_default_config, load_config_from_env
 
     if output.exists():
         typer.echo(
@@ -373,7 +373,7 @@ def init_config(
 )
 def rebuild(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -387,7 +387,7 @@ def rebuild(
 @cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
 def vacuum(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -401,7 +401,7 @@ def vacuum(
 @cli.command("info", help="Show read-only database info (no upgrades or writes)")
 def info(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -430,7 +430,7 @@ def download_models_cmd():
 )
 def serve(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),

@@ -204,7 +204,7 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     from haiku.rag.utils import text_to_docling_document
 
     # Set aggressive vacuum retention for this test
-    monkeypatch.setattr(Config, "VACUUM_RETENTION_SECONDS", 0)
+    monkeypatch.setattr(Config.storage, "vacuum_retention_seconds", 0)
 
     async with HaikuRAG(db_path=temp_db_path) as client:
         # Create multiple documents - each creation triggers automatic vacuum with retention=0

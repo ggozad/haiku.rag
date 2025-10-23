@@ -6,9 +6,9 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.qa.agent import QuestionAnswerAgent
 
-OPENAI_AVAILABLE = bool(Config.OPENAI_API_KEY)
-ANTHROPIC_AVAILABLE = bool(Config.ANTHROPIC_API_KEY)
-VLLM_QA_AVAILABLE = bool(Config.VLLM_QA_BASE_URL)
+OPENAI_AVAILABLE = bool(Config.providers.api_keys.openai)
+ANTHROPIC_AVAILABLE = bool(Config.providers.api_keys.anthropic)
+VLLM_QA_AVAILABLE = bool(Config.providers.vllm.qa_base_url)
 
 
 @pytest.mark.asyncio

@@ -38,10 +38,13 @@ def create_mcp_server(db_path: Path) -> FastMCP:
         """Add a document to the RAG system from a file path."""
         try:
             async with HaikuRAG(db_path) as rag:
-                document = await rag.create_document_from_source(
+                result = await rag.create_document_from_source(
                     Path(file_path), title=title, metadata=metadata or {}
                 )
-                return document.id
+                # Handle both single document and list of documents (directories)
+                if isinstance(result, list):
+                    return result[0].id if result else None
+                return result.id
         except Exception:
             return None
 
@@ -52,10 +55,13 @@ def create_mcp_server(db_path: Path) -> FastMCP:
         """Add a document to the RAG system from a URL."""
         try:
             async with HaikuRAG(db_path) as rag:
-                document = await rag.create_document_from_source(
+                result = await rag.create_document_from_source(
                     url, title=title, metadata=metadata or {}
                 )
-                return document.id
+                # Handle both single document and list of documents
+                if isinstance(result, list):
+                    return result[0].id if result else None
+                return result.id
         except Exception:
             return None
 
@@ -188,8 +194,8 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                     deps = DeepQADeps(client=rag)
 
                     start_node = DeepQAPlanNode(
-                        provider=Config.QA_PROVIDER,
-                        model=Config.QA_MODEL,
+                        provider=Config.qa.provider,
+                        model=Config.qa.model,
                     )
 
                     result = await graph.run(
@@ -241,8 +247,8 @@ def create_mcp_server(db_path: Path) -> FastMCP:
 
                 result = await graph.run(
                     PlanNode(
-                        provider=Config.RESEARCH_PROVIDER or Config.QA_PROVIDER,
-                        model=Config.RESEARCH_MODEL or Config.QA_MODEL,
+                        provider=Config.research.provider or Config.qa.provider,
+                        model=Config.research.model or Config.qa.model,
                     ),
                     state=state,
                     deps=deps,
