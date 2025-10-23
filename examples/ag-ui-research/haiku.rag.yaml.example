@@ -1,0 +1,20 @@
+# haiku.rag configuration for ag-ui-research example
+# Copy to haiku.rag.yaml and customize
+
+qa:
+  provider: ollama
+  model: gpt-oss:latest
+
+providers:
+  ollama:
+    base_url: http://host.docker.internal:11434
+
+# For OpenAI:
+# qa:
+#   provider: openai
+#   model: gpt-4o-mini
+
+# For Anthropic:
+# qa:
+#   provider: anthropic
+#   model: claude-3-5-haiku-20241022

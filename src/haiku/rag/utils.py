@@ -176,19 +176,19 @@ def prefetch_models():
 
     # Collect Ollama models from config
     required_models: set[str] = set()
-    if Config.EMBEDDINGS_PROVIDER == "ollama":
-        required_models.add(Config.EMBEDDINGS_MODEL)
-    if Config.QA_PROVIDER == "ollama":
-        required_models.add(Config.QA_MODEL)
-    if Config.RESEARCH_PROVIDER == "ollama":
-        required_models.add(Config.RESEARCH_MODEL)
-    if Config.RERANK_PROVIDER == "ollama":
-        required_models.add(Config.RERANK_MODEL)
+    if Config.embeddings.provider == "ollama":
+        required_models.add(Config.embeddings.model)
+    if Config.qa.provider == "ollama":
+        required_models.add(Config.qa.model)
+    if Config.research.provider == "ollama":
+        required_models.add(Config.research.model)
+    if Config.reranking.provider == "ollama":
+        required_models.add(Config.reranking.model)
 
     if not required_models:
         return
 
-    base_url = Config.OLLAMA_BASE_URL
+    base_url = Config.providers.ollama.base_url
 
     with httpx.Client(timeout=None) as client:
         for model in sorted(required_models):

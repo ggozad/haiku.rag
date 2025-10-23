@@ -16,8 +16,9 @@ tests/data/
 .pytest_cache/
 .ruff_cache/
 
-# environment variables
+# environment variables and config files
 .env
+haiku.rag.yaml
 TODO.md
 PLAN.md
 DEVNOTES.md

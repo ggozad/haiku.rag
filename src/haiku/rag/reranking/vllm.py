@@ -8,7 +8,7 @@ from haiku.rag.store.models.chunk import Chunk
 class VLLMReranker(RerankerBase):
     def __init__(self, model: str):
         self._model = model
-        self._base_url = Config.VLLM_RERANK_BASE_URL
+        self._base_url = Config.providers.vllm.rerank_base_url
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

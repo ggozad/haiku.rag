@@ -144,12 +144,13 @@ All operations create artifacts for traceability:
 
 To prevent memory growth, the server uses LRU (Least Recently Used) eviction:
 
-- Maximum 1000 contexts kept in memory (configurable via `A2A_MAX_CONTEXTS`)
+- Maximum 1000 contexts kept in memory (configurable via `a2a.max_contexts`)
 - When limit exceeded, least recently used contexts are automatically evicted
 
-Configure via environment variable:
-```bash
-export A2A_MAX_CONTEXTS=1000
+Configure in `haiku.rag.yaml`:
+```yaml
+a2a:
+  max_contexts: 1000
 ```
 
 ## Security

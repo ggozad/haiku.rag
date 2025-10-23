@@ -6,7 +6,7 @@ Run haiku.rag with file monitoring, MCP server, and A2A agent.
 
 ```bash
 mkdir -p data docs
-cp .env.example .env  # Edit if needed
+cp haiku.rag.yaml.example haiku.rag.yaml  # Edit as needed
 docker compose up -d
 ```
 
@@ -35,9 +35,17 @@ docker compose exec haiku-rag haiku-rag a2aclient --url http://localhost:8000
 
 ## Configuration
 
-Edit `.env` or `docker-compose.yml` to configure providers. See the [Configuration documentation](https://ggozad.github.io/haiku.rag/configuration/) for all options.
+Edit `haiku.rag.yaml` to configure providers, embeddings, and other settings. See the [Configuration documentation](https://ggozad.github.io/haiku.rag/configuration/) for all options.
 
 Default setup uses Ollama on the host (`host.docker.internal:11434`).
+
+For API keys (OpenAI, Anthropic, etc.), set them as environment variables:
+
+```bash
+export OPENAI_API_KEY=your-key-here
+export ANTHROPIC_API_KEY=your-key-here
+docker compose up -d
+```
 
 ## Documentation
 

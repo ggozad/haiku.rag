@@ -33,7 +33,7 @@ async def lifespan(app):
     logger.info(f"Initializing HaikuRAG client with database: {db_path}")
     client = HaikuRAG(db_path)
     logger.info("Research assistant backend ready")
-    logger.info(f"QA Provider: {Config.QA_PROVIDER}, Model: {Config.QA_MODEL}")
+    logger.info(f"QA Provider: {Config.qa.provider}, Model: {Config.qa.model}")
 
     yield
 
@@ -51,9 +51,9 @@ async def health(request):
         {
             "status": "healthy",
             "agent_model": str(agent.model),
-            "qa_provider": Config.QA_PROVIDER,
-            "qa_model": Config.QA_MODEL,
-            "ollama_base_url": Config.OLLAMA_BASE_URL,
+            "qa_provider": Config.qa.provider,
+            "qa_model": Config.qa.model,
+            "ollama_base_url": Config.providers.ollama.base_url,
             "db_path": db_path_str,
             "db_exists": Path(db_path_str).exists(),
         }
@@ -100,8 +100,8 @@ if __name__ == "__main__":
 
     print("Starting haiku.rag research assistant backend...")
     print(f"Agent model: {agent.model}")
-    print(f"QA provider: {Config.QA_PROVIDER}")
-    print(f"QA model: {Config.QA_MODEL}")
+    print(f"QA provider: {Config.qa.provider}")
+    print(f"QA model: {Config.qa.model}")
 
     uvicorn.run(
         "main:app",

@@ -59,7 +59,7 @@ class Store:
 
         # Local filesystem handling for DB directory
         if not self._has_cloud_config():
-            if Config.DISABLE_DB_AUTOCREATE:
+            if Config.storage.disable_autocreate:
                 # LanceDB uses a directory path for local databases; enforce presence
                 if not db_path.exists():
                     raise FileNotFoundError(
@@ -85,13 +85,13 @@ class Store:
 
         Args:
             retention_seconds: Retention threshold in seconds. Only versions older
-                              than this will be removed. If None, uses Config.VACUUM_RETENTION_SECONDS.
+                              than this will be removed. If None, uses Config.storage.vacuum_retention_seconds.
 
         Note:
             If vacuum is already running, this method returns immediately without blocking.
             Use asyncio.create_task(store.vacuum()) for non-blocking background execution.
         """
-        if self._has_cloud_config() and str(Config.LANCEDB_URI).startswith("db://"):
+        if self._has_cloud_config() and str(Config.lancedb.uri).startswith("db://"):
             return
 
         # Skip if already running (non-blocking)
@@ -102,7 +102,7 @@ class Store:
             try:
                 # Evaluate config at runtime to allow dynamic changes
                 if retention_seconds is None:
-                    retention_seconds = Config.VACUUM_RETENTION_SECONDS
+                    retention_seconds = Config.storage.vacuum_retention_seconds
                 # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
                 for table in [
@@ -120,9 +120,9 @@ class Store:
         # Check if we have cloud configuration
         if self._has_cloud_config():
             return lancedb.connect(
-                uri=Config.LANCEDB_URI,
-                api_key=Config.LANCEDB_API_KEY,
-                region=Config.LANCEDB_REGION,
+                uri=Config.lancedb.uri,
+                api_key=Config.lancedb.api_key,
+                region=Config.lancedb.region,
             )
         else:
             # Local file system connection
@@ -131,7 +131,7 @@ class Store:
     def _has_cloud_config(self) -> bool:
         """Check if cloud configuration is complete."""
         return bool(
-            Config.LANCEDB_URI and Config.LANCEDB_API_KEY and Config.LANCEDB_REGION
+            Config.lancedb.uri and Config.lancedb.api_key and Config.lancedb.region
         )
 
     def _validate_configuration(self) -> None:

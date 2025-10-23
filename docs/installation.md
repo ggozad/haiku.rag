@@ -47,25 +47,30 @@ vllm serve Qwen/Qwen3-4B --port 8002 --enable-auto-tool-choice --tool-call-parse
 vllm serve mixedbread-ai/mxbai-rerank-base-v2 --hf_overrides '{"architectures": ["Qwen2ForSequenceClassification"],"classifier_from_token": ["0", "1"], "method": "from_2_way_softmax"}' --port 8001
 ```
 
-Then configure haiku.rag to use the vLLM servers:
+Then configure haiku.rag to use the vLLM servers. Create a `haiku.rag.yaml` file:
 
-```bash
-# Embeddings
-EMBEDDINGS_PROVIDER="vllm"
-EMBEDDINGS_MODEL="mixedbread-ai/mxbai-embed-large-v1"
-EMBEDDINGS_VECTOR_DIM=512
-VLLM_EMBEDDINGS_BASE_URL="http://localhost:8000"
+```yaml
+embeddings:
+  provider: vllm
+  model: mixedbread-ai/mxbai-embed-large-v1
+  vector_dim: 512
 
-# QA (optional)
-QA_PROVIDER="vllm"
-QA_MODEL="Qwen/Qwen3-4B"
-VLLM_QA_BASE_URL="http://localhost:8002"
+qa:
+  provider: vllm
+  model: Qwen/Qwen3-4B
 
-# Reranking (optional)
-RERANK_PROVIDER="vllm"
-RERANK_MODEL="mixedbread-ai/mxbai-rerank-base-v2"
-VLLM_RERANK_BASE_URL="http://localhost:8001"
+reranking:
+  provider: vllm
+  model: mixedbread-ai/mxbai-rerank-base-v2
+
+providers:
+  vllm:
+    embeddings_base_url: http://localhost:8000
+    qa_base_url: http://localhost:8002
+    rerank_base_url: http://localhost:8001
 ```
+
+See [Configuration](configuration.md) for all available options.
 
 ## Requirements
 

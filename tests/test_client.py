@@ -557,7 +557,7 @@ async def test_client_create_document_with_custom_chunks(temp_db_path):
             Chunk(
                 content="This is the second chunk",
                 metadata={"custom": "metadata2"},
-                embedding=[0.1] * Config.EMBEDDINGS_VECTOR_DIM,
+                embedding=[0.1] * Config.embeddings.vector_dim,
                 order=1,
             ),  # With embedding
             Chunk(
@@ -641,7 +641,7 @@ async def test_client_ask_with_cite(monkeypatch, temp_db_path):
 async def test_client_expand_context(temp_db_path):
     """Test expanding search results with adjacent chunks."""
     # Mock Config to have CONTEXT_CHUNK_RADIUS = 2
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 2):
+    with patch("haiku.rag.client.Config.processing.context_chunk_radius", 2):
         async with HaikuRAG(temp_db_path) as client:
             # Create chunks manually with precomputed embeddings to avoid network
             dim = client.chunk_repository.embedder._vector_dim
@@ -710,7 +710,7 @@ async def test_client_expand_context_radius_zero(temp_db_path):
 @pytest.mark.asyncio
 async def test_client_expand_context_multiple_chunks(temp_db_path):
     """Test expand_context with multiple search results."""
-    with patch("haiku.rag.client.Config.CONTEXT_CHUNK_RADIUS", 1):
+    with patch("haiku.rag.client.Config.processing.context_chunk_radius", 1):
         async with HaikuRAG(temp_db_path) as client:
             # Create first document with manual chunks
             doc1_chunks = [

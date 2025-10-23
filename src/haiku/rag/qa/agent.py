@@ -71,13 +71,15 @@ class QuestionAnswerAgent:
         if provider == "ollama":
             return OpenAIChatModel(
                 model_name=model,
-                provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
+                provider=OllamaProvider(
+                    base_url=f"{Config.providers.ollama.base_url}/v1"
+                ),
             )
         elif provider == "vllm":
             return OpenAIChatModel(
                 model_name=model,
                 provider=OpenAIProvider(
-                    base_url=f"{Config.VLLM_QA_BASE_URL}/v1", api_key="none"
+                    base_url=f"{Config.providers.vllm.qa_base_url}/v1", api_key="none"
                 ),
             )
         else:

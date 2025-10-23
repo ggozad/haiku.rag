@@ -14,9 +14,9 @@ async def test_lancedb_cloud_skips_optimization(temp_db_path):
 
     # Mock all cloud config to simulate LanceDB Cloud usage
     with (
-        patch.object(Config, "LANCEDB_URI", "db://test-database"),
-        patch.object(Config, "LANCEDB_API_KEY", "test-api-key"),
-        patch.object(Config, "LANCEDB_REGION", "us-east-1"),
+        patch.object(Config.lancedb, "uri", "db://test-database"),
+        patch.object(Config.lancedb, "api_key", "test-api-key"),
+        patch.object(Config.lancedb, "region", "us-east-1"),
     ):
         # Mock the optimize method to track if it's called
         with patch.object(store.chunks_table, "optimize") as mock_optimize:
@@ -35,8 +35,8 @@ async def test_local_storage_calls_optimization(temp_db_path):
     # Create a store
     store = Store(temp_db_path)
 
-    # Ensure LANCEDB_URI is empty (local storage)
-    with patch.object(Config, "LANCEDB_URI", ""):
+    # Ensure uri is empty (local storage)
+    with patch.object(Config.lancedb, "uri", ""):
         # Mock the optimize method to track if it's called
         with patch.object(store.chunks_table, "optimize") as mock_optimize:
             # Call vacuum - this should optimize all tables for local storage

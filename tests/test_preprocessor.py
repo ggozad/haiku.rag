@@ -41,9 +41,9 @@ def add_marker(text: str) -> str:
 """
         )
 
-    original_pre = Config.MARKDOWN_PREPROCESSOR
+    original_pre = Config.processing.markdown_preprocessor
     try:
-        Config.MARKDOWN_PREPROCESSOR = f"{pre_file}:add_marker"
+        Config.processing.markdown_preprocessor = f"{pre_file}:add_marker"
 
         store = Store(temp_db_path)
         chunk_repo = ChunkRepository(store)
@@ -68,4 +68,4 @@ def add_marker(text: str) -> str:
 
         assert any(marker in c.content for c in chunks)
     finally:
-        Config.MARKDOWN_PREPROCESSOR = original_pre
+        Config.processing.markdown_preprocessor = original_pre

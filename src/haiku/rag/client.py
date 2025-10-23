@@ -25,7 +25,7 @@ class HaikuRAG:
 
     def __init__(
         self,
-        db_path: Path = Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        db_path: Path = Config.storage.data_dir / "haiku.rag.lancedb",
         skip_validation: bool = False,
     ):
         """Initialize the RAG client with a database path.
@@ -452,7 +452,7 @@ class HaikuRAG:
     async def expand_context(
         self,
         search_results: list[tuple[Chunk, float]],
-        radius: int = Config.CONTEXT_CHUNK_RADIUS,
+        radius: int = Config.processing.context_chunk_radius,
     ) -> list[tuple[Chunk, float]]:
         """Expand search results with adjacent chunks, merging overlapping chunks.
 

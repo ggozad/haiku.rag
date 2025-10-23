@@ -22,7 +22,7 @@ class Chunker:
 
     def __init__(
         self,
-        chunk_size: int = Config.CHUNK_SIZE,
+        chunk_size: int = Config.processing.chunk_size,
     ):
         self.chunk_size = chunk_size
         tokenizer = OpenAITokenizer(

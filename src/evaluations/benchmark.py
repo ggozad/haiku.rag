@@ -174,7 +174,7 @@ async def run_qa_benchmark(
 
     judge_model = OpenAIChatModel(
         model_name=QA_JUDGE_MODEL,
-        provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
+        provider=OllamaProvider(base_url=f"{Config.providers.ollama.base_url}/v1"),
     )
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](

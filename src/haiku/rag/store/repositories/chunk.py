@@ -153,7 +153,7 @@ class ChunkRepository:
 
         # Optionally preprocess markdown before chunking
         processed_document = document
-        preprocessor_path = Config.MARKDOWN_PREPROCESSOR
+        preprocessor_path = Config.processing.markdown_preprocessor
         if preprocessor_path:
             try:
                 pre_fn = load_callable(preprocessor_path)
