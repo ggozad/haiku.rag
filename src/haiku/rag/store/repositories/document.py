@@ -4,12 +4,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from docling_core.types.doc.document import DoclingDocument
-
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
+
     from haiku.rag.store.models.chunk import Chunk
 
 
@@ -171,7 +171,7 @@ class DocumentRepository:
     async def _create_with_docling(
         self,
         entity: Document,
-        docling_document: DoclingDocument,
+        docling_document: "DoclingDocument",
         chunks: list["Chunk"] | None = None,
     ) -> Document:
         """Create a document with its chunks and embeddings."""
@@ -211,7 +211,7 @@ class DocumentRepository:
             raise
 
     async def _update_with_docling(
-        self, entity: Document, docling_document: DoclingDocument
+        self, entity: Document, docling_document: "DoclingDocument"
     ) -> Document:
         """Update a document and regenerate its chunks."""
         assert entity.id is not None, "Document ID is required for update"

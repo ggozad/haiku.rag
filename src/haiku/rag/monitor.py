@@ -1,21 +1,27 @@
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from watchfiles import Change, DefaultFilter, awatch
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.reader import FileReader
 from haiku.rag.store.models.document import Document
+
+if TYPE_CHECKING:
+    from haiku.rag.reader import FileReader
 
 logger = logging.getLogger(__name__)
 
 
 class FileFilter(DefaultFilter):
     def __init__(self, *, ignore_paths: list[Path] | None = None) -> None:
+        # Lazy import to avoid loading docling
+        from haiku.rag.reader import FileReader
+
         self.extensions = tuple(FileReader.extensions)
         super().__init__(ignore_paths=ignore_paths)
 
-    def __call__(self, change: "Change", path: str) -> bool:
+    def __call__(self, change: Change, path: str) -> bool:
         return path.endswith(self.extensions) and super().__call__(change, path)
 
 
@@ -50,11 +56,15 @@ class FileWatcher:
             uri = file.as_uri()
             existing_doc = await self.client.get_document_by_uri(uri)
             if existing_doc:
-                doc = await self.client.create_document_from_source(str(file))
+                result = await self.client.create_document_from_source(str(file))
+                # Since we're passing a file (not directory), result should be a single Document
+                doc = result if isinstance(result, Document) else result[0]
                 logger.info(f"Updated document {existing_doc.id} from {file}")
                 return doc
             else:
-                doc = await self.client.create_document_from_source(str(file))
+                result = await self.client.create_document_from_source(str(file))
+                # Since we're passing a file (not directory), result should be a single Document
+                doc = result if isinstance(result, Document) else result[0]
                 logger.info(f"Created new document {doc.id} from {file}")
                 return doc
         except Exception as e:

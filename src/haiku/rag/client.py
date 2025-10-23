@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 import httpx
 
 from haiku.rag.config import Config
-from haiku.rag.reader import FileReader
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk
@@ -17,7 +16,6 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.utils import text_to_docling_document
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +89,9 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
+        # Lazy import to avoid loading docling
+        from haiku.rag.utils import text_to_docling_document
+
         # Convert content to DoclingDocument for processing
         docling_document = text_to_docling_document(content)
 
@@ -127,6 +128,8 @@ class HaikuRAG:
             ValueError: If the file/URL cannot be parsed or doesn't exist
             httpx.RequestError: If URL request fails
         """
+        # Lazy import to avoid loading docling
+        from haiku.rag.reader import FileReader
 
         # Normalize metadata
         metadata = metadata or {}
@@ -181,6 +184,9 @@ class HaikuRAG:
         Raises:
             ValueError: If the file cannot be parsed or doesn't exist
         """
+        # Lazy import to avoid loading docling
+        from haiku.rag.reader import FileReader
+
         metadata = metadata or {}
 
         if source_path.suffix.lower() not in FileReader.extensions:
@@ -256,6 +262,9 @@ class HaikuRAG:
             ValueError: If the content cannot be parsed
             httpx.RequestError: If URL request fails
         """
+        # Lazy import to avoid loading docling
+        from haiku.rag.reader import FileReader
+
         metadata = metadata or {}
 
         async with httpx.AsyncClient() as client:
@@ -379,6 +388,9 @@ class HaikuRAG:
 
     async def update_document(self, document: Document) -> Document:
         """Update an existing document."""
+        # Lazy import to avoid loading docling
+        from haiku.rag.utils import text_to_docling_document
+
         # Convert content to DoclingDocument
         docling_document = text_to_docling_document(document.content)
 
@@ -597,6 +609,9 @@ class HaikuRAG:
         Yields:
             int: The ID of the document currently being processed
         """
+        # Lazy import to avoid loading docling
+        from haiku.rag.utils import text_to_docling_document
+
         await self.chunk_repository.delete_all()
         self.store.recreate_embeddings_table()
 
