@@ -442,24 +442,6 @@ def serve(
     )
 
 
-@cli.command("migrate", help="Migrate an SQLite database to LanceDB")
-def migrate(
-    sqlite_path: Path = typer.Argument(
-        help="Path to the SQLite database file to migrate",
-    ),
-):
-    # Generate LanceDB path in same parent directory
-    lancedb_path = sqlite_path.parent / (sqlite_path.stem + ".lancedb")
-
-    # Lazy import to avoid heavy deps on simple invocations
-    from haiku.rag.migration import migrate_sqlite_to_lancedb
-
-    success = asyncio.run(migrate_sqlite_to_lancedb(sqlite_path, lancedb_path))
-
-    if not success:
-        raise typer.Exit(1)
-
-
 @cli.command(
     "a2aclient", help="Run interactive client to chat with haiku.rag's A2A server"
 )
