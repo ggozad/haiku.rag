@@ -102,6 +102,34 @@ a2a:
   max_contexts: 1000
 ```
 
+## Programmatic Configuration
+
+When using haiku.rag as a Python library, you can configure it programmatically using `set_config()`:
+
+```python
+from haiku.rag.config import set_config, AppConfig
+from haiku.rag.client import HaikuRAG
+
+# Create custom configuration
+custom_config = AppConfig(
+    qa={"provider": "openai", "model": "gpt-4o"},
+    embeddings={"provider": "ollama", "model": "qwen3-embedding"},
+    processing={"chunk_size": 512}
+)
+
+# Set the configuration globally
+set_config(custom_config)
+
+# All subsequent operations use this configuration
+client = HaikuRAG(db_path)
+```
+
+This is useful for:
+- Jupyter notebooks
+- Python scripts
+- Testing with different configurations
+- Applications that need runtime configuration
+
 ## API Keys
 
 API keys are configured through **environment variables**, not in the YAML file.
