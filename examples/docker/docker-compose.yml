@@ -10,46 +10,13 @@ services:
     volumes:
       - ./data:/data  # Persist database
       - ./docs:/docs  # Mount documents directory for monitoring
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro  # Mount config file
     environment:
-      # Database directory
-      - DEFAULT_DATA_DIR=/data
-
-      # File monitoring
-      - MONITOR_DIRECTORIES=/docs
-
-      # Set the Ollama base url for Ollama defaults
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-
-      # Embeddings provider (choose one)
-      # For OpenAI:
-      # - EMBEDDINGS_PROVIDER=openai
-      # - EMBEDDINGS_MODEL=text-embedding-3-small
-      # - OPENAI_API_KEY=your-key-here
-
-      # For VoyageAI:
-      # - EMBEDDINGS_PROVIDER=voyageai
-      # - EMBEDDINGS_MODEL=voyage-3
-      # - VOYAGE_API_KEY=your-key-here
-
-      # QA provider (uses Pydantic AI)
-      # - QA_PROVIDER=ollama
-
-      # For OpenAI:
-      # - QA_PROVIDER=openai
-      # - QA_MODEL=gpt-4o-mini
-      # - OPENAI_API_KEY=your-key-here
-
-      # Reranking (optional)
-      # - RERANKING_PROVIDER=mxbai
-      # - RERANKING_MODEL=mixedbread-ai/mxbai-rerank-large-v1
-      # - RERANKING_BASE_URL=http://host.docker.internal:11434
-
-      # Research agent (optional, defaults to QA provider/model)
-      # - RESEARCH_PROVIDER=openai
-      # - RESEARCH_MODEL=gpt-4o
-
-      # Environment
-      - ENV=production
+      # API keys (set as needed)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - CO_API_KEY=${CO_API_KEY}
 
     restart: unless-stopped
     healthcheck:

@@ -30,19 +30,27 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
    haiku-rag add-src document.pdf --db data/haiku_rag.lancedb
    ```
 
-2. **Configure environment** (optional)
+2. **Configure haiku.rag**
    ```bash
-   cp .env.example .env
-   # Edit .env to customize provider/model
+   cp haiku.rag.yaml.example haiku.rag.yaml
+   # Edit haiku.rag.yaml to customize provider/model
    ```
    See [haiku.rag configuration](https://ggozad.github.io/haiku.rag/configuration/) for details.
 
-3. **Start the application**
+3. **Set API keys** (if using non-Ollama providers)
+   ```bash
+   cp .env.example .env
+   # Edit .env to set your API keys
+   export OPENAI_API_KEY=your-key-here
+   export ANTHROPIC_API_KEY=your-key-here
+   ```
+
+4. **Start the application**
    ```bash
    docker compose up --build
    ```
 
-4. **Access the interface**
+5. **Access the interface**
    - Frontend: http://localhost:3000
    - Backend health: http://localhost:8000/health
 
@@ -60,6 +68,7 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
 ## Architecture
 
 - **Backend** (Python): Pydantic AI agent with haiku.rag integration
+  - Uses published `ghcr.io/ggozad/haiku.rag:latest` Docker image as base
   - `agent.py`: Research agent with tool definitions
   - `main.py`: Starlette app serving AG-UI protocol
 
@@ -70,11 +79,15 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
 
 ## Configuration
 
+Configuration is done through `haiku.rag.yaml` (see `haiku.rag.yaml.example`):
+
+- `qa.provider`: LLM provider (default: `ollama`)
+- `qa.model`: Model name (default: `gpt-oss:latest`)
+- `providers.ollama.base_url`: Ollama endpoint (default: `http://host.docker.internal:11434`)
+
 Environment variables (see `.env.example`):
 
 - `DB_PATH`: Path to haiku.rag database (default: `haiku_rag.lancedb`)
-- `QA_PROVIDER`: LLM provider (default: `ollama`)
-- `QA_MODEL`: Model name (default: `gpt-oss:latest`)
-- `OLLAMA_BASE_URL`: Ollama endpoint (default: `http://host.docker.internal:11434`)
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`: API keys for cloud providers
 
-For other providers (OpenAI, Anthropic, etc.), see [haiku.rag configuration docs](https://ggozad.github.io/haiku.rag/configuration/).
+For full configuration options, see [haiku.rag configuration docs](https://ggozad.github.io/haiku.rag/configuration/).
