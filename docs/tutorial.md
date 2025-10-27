@@ -225,6 +225,4 @@ rm -rf "/Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb"
 
 ## Configuration
 
-See [Configuration page](./configuration.md) for more information about configuration
-
-For the available environment variable config options see [config.py](https://github.com/ggozad/haiku.rag/blob/main/src/haiku/rag/config.py).
+See [Configuration page](./configuration.md) for complete documentation on YAML configuration and all available options.
