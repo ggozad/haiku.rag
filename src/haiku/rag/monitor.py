@@ -8,7 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
-    from haiku.rag.reader import FileReader
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,9 @@ class FileWatcher:
                 await self._delete_document(Path(path))
 
     async def refresh(self):
+        # Lazy import to avoid loading docling
+        from haiku.rag.reader import FileReader
+
         for path in self.paths:
             for f in Path(path).rglob("**/*"):
                 if f.is_file() and f.suffix in FileReader.extensions:
