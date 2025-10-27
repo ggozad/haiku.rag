@@ -6,8 +6,6 @@ from uuid import uuid4
 
 from lancedb.rerankers import RRFReranker
 
-from haiku.rag.config import Config
-from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.utils import load_callable
@@ -23,7 +21,7 @@ class ChunkRepository:
 
     def __init__(self, store: Store) -> None:
         self.store = store
-        self.embedder = get_embedder()
+        self.embedder = store.embedder
 
     def _ensure_fts_index(self) -> None:
         """Ensure FTS index exists on the content column."""
@@ -153,7 +151,7 @@ class ChunkRepository:
 
         # Optionally preprocess markdown before chunking
         processed_document = document
-        preprocessor_path = Config.processing.markdown_preprocessor
+        preprocessor_path = self.store._config.processing.markdown_preprocessor
         if preprocessor_path:
             try:
                 pre_fn = load_callable(preprocessor_path)

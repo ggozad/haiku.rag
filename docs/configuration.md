@@ -104,10 +104,10 @@ a2a:
 
 ## Programmatic Configuration
 
-When using haiku.rag as a Python library, you can configure it programmatically using `set_config()`:
+When using haiku.rag as a Python library, you can pass configuration directly to the `HaikuRAG` client:
 
 ```python
-from haiku.rag.config import set_config, AppConfig
+from haiku.rag.config import AppConfig
 from haiku.rag.client import HaikuRAG
 
 # Create custom configuration
@@ -117,18 +117,17 @@ custom_config = AppConfig(
     processing={"chunk_size": 512}
 )
 
-# Set the configuration globally
-set_config(custom_config)
-
-# All subsequent operations use this configuration
-client = HaikuRAG(db_path)
+# Pass configuration to the client
+client = HaikuRAG(config=custom_config)
 ```
+
+If you don't pass a config, the client uses the global configuration loaded from your YAML file or defaults.
 
 This is useful for:
 - Jupyter notebooks
 - Python scripts
 - Testing with different configurations
-- Applications that need runtime configuration
+- Applications that need multiple clients with different configurations
 
 ## API Keys
 

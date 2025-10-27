@@ -1,6 +1,5 @@
 import json
 
-from haiku.rag.config import Config
 from haiku.rag.store.engine import SettingsRecord, Store
 
 
@@ -73,7 +72,7 @@ class SettingsRepository:
 
     def save_current_settings(self) -> None:
         """Save the current configuration to the database."""
-        current_config = Config.model_dump(mode="json")
+        current_config = self.store._config.model_dump(mode="json")
 
         # Check if settings exist
         existing = list(
@@ -116,7 +115,7 @@ class SettingsRepository:
             self.save_current_settings()
             return
 
-        current_config = Config.model_dump(mode="json")
+        current_config = self.store._config.model_dump(mode="json")
 
         # Check if embedding provider or model has changed
         # Support both old flat structure and new nested structure for backward compatibility
