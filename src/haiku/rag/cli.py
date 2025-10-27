@@ -42,10 +42,21 @@ def main(
         callback=version_callback,
         help="Show version and exit",
     ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to YAML configuration file",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
+    # Store config path in environment for config loader to use
+    if config:
+        import os
+
+        os.environ["HAIKU_RAG_CONFIG_PATH"] = str(config.absolute())
+
     # Configure logging minimally for CLI context
-    if Config.ENV == "development":
+    if Config.environment == "development":
         # Lazy import logfire only in development
         try:
             import logfire  # type: ignore
@@ -69,7 +80,7 @@ def main(
 @cli.command("list", help="List all stored documents")
 def list_documents(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -116,7 +127,7 @@ def add_document_text(
         metavar="KEY=VALUE",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -145,7 +156,7 @@ def add_document_src(
         metavar="KEY=VALUE",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -167,7 +178,7 @@ def get_document(
         help="The ID of the document to get",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -184,7 +195,7 @@ def delete_document(
         help="The ID of the document to delete",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -211,7 +222,7 @@ def search(
         help="Maximum number of results to return",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -228,7 +239,7 @@ def ask(
         help="The question to ask",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -276,7 +287,7 @@ def research(
         help="Max concurrent searches per iteration (planned)",
     ),
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -308,13 +319,61 @@ def settings():
     app.show_settings()
 
 
+@cli.command("init-config", help="Generate a YAML configuration file")
+def init_config(
+    output: Path = typer.Argument(
+        Path("haiku.rag.yaml"),
+        help="Output path for the config file",
+    ),
+    from_env: bool = typer.Option(
+        False,
+        "--from-env",
+        help="Migrate settings from .env file",
+    ),
+):
+    """Generate a YAML configuration file with defaults or from .env."""
+    import yaml
+
+    from haiku.rag.config.loader import generate_default_config, load_config_from_env
+
+    if output.exists():
+        typer.echo(
+            f"Error: {output} already exists. Remove it first or choose a different path."
+        )
+        raise typer.Exit(1)
+
+    if from_env:
+        # Load from environment variables (including .env if present)
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        config_data = load_config_from_env()
+        if not config_data:
+            typer.echo("Warning: No environment variables found to migrate.")
+            typer.echo("Generating default configuration instead.")
+            config_data = generate_default_config()
+    else:
+        config_data = generate_default_config()
+
+    # Write YAML with comments
+    with open(output, "w") as f:
+        f.write("# haiku.rag configuration file\n")
+        f.write(
+            "# See https://ggozad.github.io/haiku.rag/configuration/ for details\n\n"
+        )
+        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+    typer.echo(f"Configuration file created: {output}")
+    typer.echo("Edit the file to customize your settings.")
+
+
 @cli.command(
     "rebuild",
     help="Rebuild the database by deleting all chunks and re-indexing all documents",
 )
 def rebuild(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -328,7 +387,7 @@ def rebuild(
 @cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
 def vacuum(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -342,7 +401,7 @@ def vacuum(
 @cli.command("info", help="Show read-only database info (no upgrades or writes)")
 def info(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -371,7 +430,7 @@ def download_models_cmd():
 )
 def serve(
     db: Path = typer.Option(
-        Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
         help="Path to the LanceDB database file",
     ),

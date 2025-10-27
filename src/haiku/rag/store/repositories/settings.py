@@ -1,6 +1,5 @@
 import json
 
-from haiku.rag.config import Config
 from haiku.rag.store.engine import SettingsRecord, Store
 
 
@@ -73,7 +72,7 @@ class SettingsRepository:
 
     def save_current_settings(self) -> None:
         """Save the current configuration to the database."""
-        current_config = Config.model_dump(mode="json")
+        current_config = self.store._config.model_dump(mode="json")
 
         # Check if settings exist
         existing = list(
@@ -116,17 +115,28 @@ class SettingsRepository:
             self.save_current_settings()
             return
 
-        current_config = Config.model_dump(mode="json")
+        current_config = self.store._config.model_dump(mode="json")
 
         # Check if embedding provider or model has changed
-        stored_provider = stored_settings.get("EMBEDDINGS_PROVIDER")
-        current_provider = current_config.get("EMBEDDINGS_PROVIDER")
+        # Support both old flat structure and new nested structure for backward compatibility
+        stored_embeddings = stored_settings.get("embeddings", {})
+        current_embeddings = current_config.get("embeddings", {})
 
-        stored_model = stored_settings.get("EMBEDDINGS_MODEL")
-        current_model = current_config.get("EMBEDDINGS_MODEL")
+        # Try nested structure first, fall back to flat for old databases
+        stored_provider = stored_embeddings.get("provider") or stored_settings.get(
+            "EMBEDDINGS_PROVIDER"
+        )
+        current_provider = current_embeddings.get("provider")
 
-        stored_vector_dim = stored_settings.get("EMBEDDINGS_VECTOR_DIM")
-        current_vector_dim = current_config.get("EMBEDDINGS_VECTOR_DIM")
+        stored_model = stored_embeddings.get("model") or stored_settings.get(
+            "EMBEDDINGS_MODEL"
+        )
+        current_model = current_embeddings.get("model")
+
+        stored_vector_dim = stored_embeddings.get("vector_dim") or stored_settings.get(
+            "EMBEDDINGS_VECTOR_DIM"
+        )
+        current_vector_dim = current_embeddings.get("vector_dim")
 
         # Check for incompatible changes
         incompatible_changes = []

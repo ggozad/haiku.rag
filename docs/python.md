@@ -189,7 +189,7 @@ for chunk, score in expanded_results:
 
 **Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
 
-This is automatically used by the QA system when `CONTEXT_CHUNK_RADIUS > 0` to provide better answers with more complete context.
+This is automatically used by the QA system when `processing.context_chunk_radius > 0` (configured in `haiku.rag.yaml`) to provide better answers with more complete context.
 
 ## Question Answering
 
@@ -222,6 +222,6 @@ answer = await client.ask(
 
 The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
 
-The QA provider and model can be configured via environment variables (see [Configuration](configuration.md)).
+The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration.md)).
 
 See also: [Agents](agents.md) for details on the QA agent and the multi‑agent research workflow.

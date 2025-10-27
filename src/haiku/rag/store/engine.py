@@ -10,7 +10,7 @@ import lancedb
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.embeddings import get_embedder
 
 logger = logging.getLogger(__name__)
@@ -49,9 +49,12 @@ class SettingsRecord(LanceModel):
 
 
 class Store:
-    def __init__(self, db_path: Path, skip_validation: bool = False):
+    def __init__(
+        self, db_path: Path, config: AppConfig = Config, skip_validation: bool = False
+    ):
         self.db_path: Path = db_path
-        self.embedder = get_embedder()
+        self._config = config
+        self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
 
         # Create the ChunkRecord model with the correct vector dimension
@@ -59,7 +62,7 @@ class Store:
 
         # Local filesystem handling for DB directory
         if not self._has_cloud_config():
-            if Config.DISABLE_DB_AUTOCREATE:
+            if self._config.storage.disable_autocreate:
                 # LanceDB uses a directory path for local databases; enforce presence
                 if not db_path.exists():
                     raise FileNotFoundError(
@@ -85,13 +88,15 @@ class Store:
 
         Args:
             retention_seconds: Retention threshold in seconds. Only versions older
-                              than this will be removed. If None, uses Config.VACUUM_RETENTION_SECONDS.
+                              than this will be removed. If None, uses config.storage.vacuum_retention_seconds.
 
         Note:
             If vacuum is already running, this method returns immediately without blocking.
             Use asyncio.create_task(store.vacuum()) for non-blocking background execution.
         """
-        if self._has_cloud_config() and str(Config.LANCEDB_URI).startswith("db://"):
+        if self._has_cloud_config() and str(self._config.lancedb.uri).startswith(
+            "db://"
+        ):
             return
 
         # Skip if already running (non-blocking)
@@ -102,7 +107,7 @@ class Store:
             try:
                 # Evaluate config at runtime to allow dynamic changes
                 if retention_seconds is None:
-                    retention_seconds = Config.VACUUM_RETENTION_SECONDS
+                    retention_seconds = self._config.storage.vacuum_retention_seconds
                 # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
                 for table in [
@@ -120,9 +125,9 @@ class Store:
         # Check if we have cloud configuration
         if self._has_cloud_config():
             return lancedb.connect(
-                uri=Config.LANCEDB_URI,
-                api_key=Config.LANCEDB_API_KEY,
-                region=Config.LANCEDB_REGION,
+                uri=self._config.lancedb.uri,
+                api_key=self._config.lancedb.api_key,
+                region=self._config.lancedb.region,
             )
         else:
             # Local file system connection
@@ -131,7 +136,9 @@ class Store:
     def _has_cloud_config(self) -> bool:
         """Check if cloud configuration is complete."""
         return bool(
-            Config.LANCEDB_URI and Config.LANCEDB_API_KEY and Config.LANCEDB_REGION
+            self._config.lancedb.uri
+            and self._config.lancedb.api_key
+            and self._config.lancedb.region
         )
 
     def _validate_configuration(self) -> None:
@@ -173,7 +180,7 @@ class Store:
                 "settings", schema=SettingsRecord
             )
             # Save current settings to the new database
-            settings_data = Config.model_dump(mode="json")
+            settings_data = self._config.model_dump(mode="json")
             self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )

@@ -1,37 +1,45 @@
 import os
 
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.reranking.base import RerankerBase
 
-_reranker: RerankerBase | None = None
+_reranker_cache: dict[int, RerankerBase | None] = {}
 
 
-def get_reranker() -> RerankerBase | None:
+def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
     """
     Factory function to get the appropriate reranker based on the configuration.
-    Returns None if if reranking is disabled.
-    """
-    global _reranker
-    if _reranker is not None:
-        return _reranker
+    Returns None if reranking is disabled.
 
-    if Config.RERANK_PROVIDER == "mxbai":
+    Args:
+        config: Configuration to use. Defaults to global Config.
+
+    Returns:
+        A reranker instance if configured, None otherwise.
+    """
+    # Use config id as cache key to support multiple configs
+    config_id = id(config)
+    if config_id in _reranker_cache:
+        return _reranker_cache[config_id]
+
+    reranker: RerankerBase | None = None
+
+    if config.reranking.provider == "mxbai":
         try:
             from haiku.rag.reranking.mxbai import MxBAIReranker
 
             os.environ["TOKENIZERS_PARALLELISM"] = "true"
-            _reranker = MxBAIReranker()
-            return _reranker
+            reranker = MxBAIReranker()
         except ImportError:
-            return None
+            reranker = None
 
-    if Config.RERANK_PROVIDER == "cohere":
+    elif config.reranking.provider == "cohere":
         try:
             from haiku.rag.reranking.cohere import CohereReranker
 
-            _reranker = CohereReranker()
-            return _reranker
+            reranker = CohereReranker()
         except ImportError:
-            return None
+            reranker = None
 
-    return None
+    _reranker_cache[config_id] = reranker
+    return reranker

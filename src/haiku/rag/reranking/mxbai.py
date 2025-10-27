@@ -8,7 +8,7 @@ from haiku.rag.store.models.chunk import Chunk
 class MxBAIReranker(RerankerBase):
     def __init__(self):
         self._client = MxbaiRerankV2(
-            Config.RERANK_MODEL, disable_transformers_warnings=True
+            Config.reranking.model, disable_transformers_warnings=True
         )
 
     async def rerank(

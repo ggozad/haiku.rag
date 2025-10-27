@@ -231,8 +231,8 @@ class HaikuRAGApp:
                     )
 
                     start_node = DeepQAPlanNode(
-                        provider=Config.QA_PROVIDER,
-                        model=Config.QA_MODEL,
+                        provider=Config.qa.provider,
+                        model=Config.qa.model,
                     )
 
                     result = await graph.run(
@@ -278,8 +278,8 @@ class HaikuRAGApp:
                 )
 
                 start = PlanNode(
-                    provider=Config.RESEARCH_PROVIDER or Config.QA_PROVIDER,
-                    model=Config.RESEARCH_MODEL or Config.QA_MODEL,
+                    provider=Config.research.provider or Config.qa.provider,
+                    model=Config.research.model or Config.qa.model,
                 )
                 report = None
                 async for event in stream_research_graph(graph, start, state, deps):
@@ -474,7 +474,9 @@ class HaikuRAGApp:
 
             # Start file monitor if enabled
             if enable_monitor:
-                monitor = FileWatcher(paths=Config.MONITOR_DIRECTORIES, client=client)
+                monitor = FileWatcher(
+                    paths=Config.storage.monitor_directories, client=client
+                )
                 monitor_task = asyncio.create_task(monitor.observe())
                 tasks.append(monitor_task)
 

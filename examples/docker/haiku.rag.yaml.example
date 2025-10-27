@@ -1,0 +1,25 @@
+# haiku.rag configuration for Docker deployment
+# See https://ggozad.github.io/haiku.rag/configuration/ for details
+
+environment: production
+
+storage:
+  data_dir: /data
+  monitor_directories:
+    - /docs
+
+embeddings:
+  provider: ollama
+  model: nomic-embed-text
+  vector_dim: 768
+
+qa:
+  provider: ollama
+  model: qwen3
+
+providers:
+  ollama:
+    base_url: http://host.docker.internal:11434
+
+# For other providers (OpenAI, Anthropic, VoyageAI, etc.),
+# see: https://ggozad.github.io/haiku.rag/configuration/

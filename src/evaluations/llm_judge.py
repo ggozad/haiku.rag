@@ -41,7 +41,7 @@ class LLMJudge:
         # Create Ollama model
         ollama_model = OpenAIChatModel(
             model_name=model,
-            provider=OllamaProvider(base_url=f"{Config.OLLAMA_BASE_URL}/v1"),
+            provider=OllamaProvider(base_url=f"{Config.providers.ollama.base_url}/v1"),
         )
 
         # Create Pydantic AI agent

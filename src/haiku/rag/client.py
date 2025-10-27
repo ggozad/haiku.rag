@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk
@@ -25,16 +25,23 @@ class HaikuRAG:
 
     def __init__(
         self,
-        db_path: Path = Config.DEFAULT_DATA_DIR / "haiku.rag.lancedb",
+        db_path: Path | None = None,
+        config: AppConfig = Config,
         skip_validation: bool = False,
     ):
         """Initialize the RAG client with a database path.
 
         Args:
-            db_path: Path to the database file.
+            db_path: Path to the database file. If None, uses config.storage.data_dir.
+            config: Configuration to use. Defaults to global Config.
             skip_validation: Whether to skip configuration validation on database load.
         """
-        self.store = Store(db_path, skip_validation=skip_validation)
+        self._config = config
+        if db_path is None:
+            db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
+        self.store = Store(
+            db_path, config=self._config, skip_validation=skip_validation
+        )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
 
@@ -430,7 +437,7 @@ class HaikuRAG:
             List of (chunk, score) tuples ordered by relevance.
         """
         # Get reranker if available
-        reranker = get_reranker()
+        reranker = get_reranker(config=self._config)
 
         if reranker is None:
             # No reranking - return direct search results
@@ -452,18 +459,20 @@ class HaikuRAG:
     async def expand_context(
         self,
         search_results: list[tuple[Chunk, float]],
-        radius: int = Config.CONTEXT_CHUNK_RADIUS,
+        radius: int | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Expand search results with adjacent chunks, merging overlapping chunks.
 
         Args:
             search_results: List of (chunk, score) tuples from search.
             radius: Number of adjacent chunks to include before/after each chunk.
-                   Defaults to CONTEXT_CHUNK_RADIUS config setting.
+                   If None, uses config.processing.context_chunk_radius.
 
         Returns:
             List of (chunk, score) tuples with expanded and merged context chunks.
         """
+        if radius is None:
+            radius = self._config.processing.context_chunk_radius
         if radius == 0:
             return search_results
 
@@ -593,7 +602,9 @@ class HaikuRAG:
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(self, use_citations=cite, system_prompt=system_prompt)
+        qa_agent = get_qa_agent(
+            self, config=self._config, use_citations=cite, system_prompt=system_prompt
+        )
         return await qa_agent.answer(question)
 
     async def rebuild_database(self) -> AsyncGenerator[str, None]:

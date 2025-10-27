@@ -45,11 +45,19 @@ This will start file monitoring, MCP server on port 8001, and A2A server on port
 
 ## File Monitoring
 
-Set `MONITOR_DIRECTORIES` environment variable to enable automatic file monitoring:
+Configure directories to monitor in your `haiku.rag.yaml`:
+
+```yaml
+storage:
+  monitor_directories:
+    - /path/to/documents
+    - /another/path
+```
+
+Then start the server:
 
 ```bash
-export MONITOR_DIRECTORIES="/path/to/documents"
-haiku-rag serve
+haiku-rag serve --monitor
 ```
 
 ### Monitoring Features

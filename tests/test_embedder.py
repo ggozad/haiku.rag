@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytest
 
@@ -6,9 +8,9 @@ from haiku.rag.embeddings.ollama import Embedder as OllamaEmbedder
 from haiku.rag.embeddings.openai import Embedder as OpenAIEmbedder
 from haiku.rag.embeddings.vllm import Embedder as VLLMEmbedder
 
-OPENAI_AVAILABLE = bool(Config.OPENAI_API_KEY)
-VOYAGEAI_AVAILABLE = bool(Config.VOYAGE_API_KEY)
-VLLM_EMBEDDINGS_AVAILABLE = bool(Config.VLLM_EMBEDDINGS_BASE_URL)
+OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
+VOYAGEAI_AVAILABLE = bool(os.getenv("VOYAGE_API_KEY"))
+VLLM_EMBEDDINGS_AVAILABLE = bool(Config.providers.vllm.embeddings_base_url)
 
 
 # Calculate cosine similarity

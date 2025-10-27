@@ -31,34 +31,28 @@ Install `haiku.rag` Python package using [uv](https://docs.astral.sh/uv/getting-
 uv pip install haiku.rag
 ```
 
-Configure your OpenAI API key and embeddings model.
+Configure haiku.rag to use OpenAI. Create a `haiku.rag.yaml` file:
 
-- Haiku RAG supports [dotenv](https://pypi.org/project/python-dotenv/) environment files and environment varibles for configuration
-- [See OpenAPI vector embeddings documentation](https://platform.openai.com/docs/guides/embeddings/embedding-models)
+```yaml
+embeddings:
+  provider: openai
+  model: text-embedding-3-small  # or text-embedding-3-large
+  vector_dim: 1536
 
-Create a file called `.env` and add:
-
-```shell
-#
-# These settings are relevant for converting documents to embeddings
-#
-
-EMBEDDINGS_PROVIDER="openai"
-# or text-embedding-3-large
-EMBEDDINGS_MODEL="text-embedding-3-small"
-EMBEDDINGS_VECTOR_DIM=1536
-OPENAI_API_KEY="<your OpenAPI API key goes here>"
-
-#
-# These settings are relevant for question answering chats
-#
-
-# We tell Haiku.rag to use OpenAI remote AI for chats, instead of local ollama.
-QA_PROVIDER="openai"
-QA_MODEL="gpt-4o-mini"  # or gpt-4, gpt-3.5-turbo, etc.
+qa:
+  provider: openai
+  model: gpt-4o-mini  # or gpt-4o, gpt-4, etc.
 ```
 
-For the list of available OpenAI embedding models and `EMBEDDINGS_VECTOR_DIM` options, ask ChatGPT for instructions.
+Set your OpenAI API key as an environment variable (API keys should not be stored in the YAML file):
+
+```bash
+export OPENAI_API_KEY="<your OpenAI API key>"
+```
+
+For the list of available OpenAI models and their vector dimensions, see the [OpenAI documentation](https://platform.openai.com/docs/guides/embeddings).
+
+See [Configuration](configuration.md) for all available options.
 
 ## Adding the first documents
 
@@ -231,6 +225,4 @@ rm -rf "/Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb"
 
 ## Configuration
 
-See [Configuration page](./configuration.md) for more information about configuration
-
-For the available environment variable config options see [config.py](https://github.com/ggozad/haiku.rag/blob/main/src/haiku/rag/config.py).
+See [Configuration page](./configuration.md) for complete documentation on YAML configuration and all available options.
