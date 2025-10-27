@@ -2,15 +2,6 @@ import uuid
 
 import pytest
 
-from haiku.rag.a2a import (
-    extract_question_from_task,
-    get_agent_skills,
-    load_message_history,
-    save_message_history,
-)
-from haiku.rag.a2a.storage import LRUMemoryStorage
-from haiku.rag.client import HaikuRAG
-
 pytest.importorskip("fasta2a")
 
 from fasta2a.schema import Message, TextPart  # noqa: E402
@@ -24,6 +15,15 @@ from pydantic_ai.messages import (  # noqa: E402
 from pydantic_ai.messages import (
     TextPart as AITextPart,
 )
+
+from haiku.rag.a2a import (
+    extract_question_from_task,
+    get_agent_skills,
+    load_message_history,
+    save_message_history,
+)
+from haiku.rag.a2a.storage import LRUMemoryStorage
+from haiku.rag.client import HaikuRAG
 
 
 @pytest.mark.asyncio

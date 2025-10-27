@@ -255,6 +255,7 @@ async def test_serve_monitor_only(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_serve_a2a_only(app: HaikuRAGApp, monkeypatch):
     """Test the serve method with A2A server only."""
+    pytest.importorskip("fasta2a")
     created_tasks = []
     original_create_task = asyncio.create_task
 
@@ -287,6 +288,7 @@ async def test_serve_a2a_only(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_serve_all_services(app: HaikuRAGApp, monkeypatch):
     """Test the serve method with all services enabled."""
+    pytest.importorskip("fasta2a")
     created_tasks = []
     original_create_task = asyncio.create_task
 
