@@ -14,7 +14,7 @@ services:
       - ./backend:/app
       - /app/.venv
       - ${DB_PATH}:/app/data/haiku.rag.lancedb
-      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro  # Mount config file
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     networks:
       - ag-ui-network
     extra_hosts:
