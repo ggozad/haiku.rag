@@ -46,7 +46,11 @@ class ProcessingConfig(BaseModel):
 
 
 class OllamaConfig(BaseModel):
-    base_url: str = "http://localhost:11434"
+    base_url: str = Field(
+        default_factory=lambda: __import__("os").environ.get(
+            "OLLAMA_BASE_URL", "http://localhost:11434"
+        )
+    )
 
 
 class VLLMConfig(BaseModel):
