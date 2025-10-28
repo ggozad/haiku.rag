@@ -1,5 +1,4 @@
 import os
-import warnings
 from pathlib import Path
 
 import yaml
@@ -43,19 +42,6 @@ def load_yaml_config(path: Path) -> dict:
     with open(path) as f:
         data = yaml.safe_load(f)
     return data or {}
-
-
-def check_for_deprecated_env() -> None:
-    """Check for .env file and warn if found."""
-    env_file = Path.cwd() / ".env"
-    if env_file.exists():
-        warnings.warn(
-            ".env file detected but YAML configuration is now preferred. "
-            "Environment variable configuration is deprecated and will be removed in future versions."
-            "Run 'haiku-rag init-config' to generate a YAML config file.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
 
 
 def generate_default_config() -> dict:

@@ -1,7 +1,6 @@
 import os
 
 from haiku.rag.config.loader import (
-    check_for_deprecated_env,
     find_config_file,
     generate_default_config,
     load_config_from_env,
@@ -49,6 +48,3 @@ if config_path:
     Config = AppConfig.model_validate(yaml_data)
 else:
     Config = AppConfig()
-
-# Check for deprecated .env file
-check_for_deprecated_env()
