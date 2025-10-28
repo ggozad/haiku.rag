@@ -129,9 +129,11 @@ This is useful for:
 - Testing with different configurations
 - Applications that need multiple clients with different configurations
 
-## API Keys
+## Environment Variables
 
-API keys are configured through **environment variables**, not in the YAML file.
+API keys and some provider settings are configured through **environment variables**, not in the YAML file.
+
+### API Keys
 
 ```bash
 # OpenAI
@@ -145,6 +147,13 @@ export VOYAGE_API_KEY=your-key-here
 
 # Cohere
 export CO_API_KEY=your-key-here
+```
+
+### Provider Configuration
+
+```bash
+# Ollama base URL (defaults to http://localhost:11434)
+export OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ## File Monitoring
@@ -170,6 +179,23 @@ embeddings:
   model: mxbai-embed-large
   vector_dim: 1024
 ```
+
+The Ollama base URL can be configured via environment variable or config file:
+
+```bash
+# Via environment variable (recommended)
+export OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Or in your config file:
+
+```yaml
+providers:
+  ollama:
+    base_url: http://localhost:11434
+```
+
+If neither is set, it defaults to `http://localhost:11434`.
 
 ### VoyageAI
 
@@ -236,7 +262,17 @@ Configure which LLM provider to use for question answering. Any provider and mod
 qa:
   provider: ollama
   model: gpt-oss
+```
 
+The Ollama base URL can be configured via the `OLLAMA_BASE_URL` environment variable, config file, or defaults to `http://localhost:11434`:
+
+```bash
+export OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Or in your config file:
+
+```yaml
 providers:
   ollama:
     base_url: http://localhost:11434

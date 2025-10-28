@@ -1,15 +1,17 @@
 from typing import overload
 
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 
 
 class EmbedderBase:
     _model: str = Config.embeddings.model
     _vector_dim: int = Config.embeddings.vector_dim
+    _config: AppConfig = Config
 
-    def __init__(self, model: str, vector_dim: int):
+    def __init__(self, model: str, vector_dim: int, config: AppConfig = Config):
         self._model = model
         self._vector_dim = vector_dim
+        self._config = config
 
     @overload
     async def embed(self, text: str) -> list[float]: ...
