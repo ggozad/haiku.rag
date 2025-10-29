@@ -66,6 +66,33 @@ haiku-rag serve --monitor
 - **File Added/Modified**: Automatically parses and updates documents
 - **File Deleted**: Removes corresponding documents from database
 
+### Filtering Files
+
+You can filter which files to monitor using gitignore-style patterns:
+
+```yaml
+storage:
+  monitor_directories:
+    - /path/to/documents
+
+  # Ignore patterns (exclude files)
+  monitor_ignore_patterns:
+    - "*draft*"         # Ignore draft files
+    - "temp/"           # Ignore temp directory
+    - "**/archive/**"   # Ignore archive directories
+
+  # Include patterns (whitelist files)
+  monitor_include_patterns:
+    - "*.md"           # Only markdown files
+    - "**/docs/**"     # Files in docs directories
+```
+
+**Pattern behavior:**
+- Extension filtering is applied first (only supported file types)
+- Include patterns create a whitelist (if specified)
+- Ignore patterns exclude files
+- Both can be combined for fine-grained control
+
 ### Supported Formats
 
 The server can parse 40+ file formats including:

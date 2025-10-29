@@ -58,6 +58,8 @@ storage:
   monitor_directories:
     - /path/to/documents
     - /another/path
+  monitor_ignore_patterns: []  # Gitignore-style patterns to exclude
+  monitor_include_patterns: []  # Gitignore-style patterns to include
   disable_autocreate: false
   vacuum_retention_seconds: 60
 
@@ -166,6 +168,60 @@ storage:
     - /path/to/documents
     - /another_path/to/documents
 ```
+
+### Filtering Monitored Files
+
+Use gitignore-style patterns to control which files are monitored:
+
+```yaml
+storage:
+  monitor_directories:
+    - /path/to/documents
+
+  # Exclude specific files or directories
+  monitor_ignore_patterns:
+    - "*draft*"         # Ignore files with "draft" in the name
+    - "temp/"           # Ignore temp directory
+    - "**/archive/**"   # Ignore all archive directories
+    - "*.backup"        # Ignore backup files
+
+  # Only include specific files (whitelist mode)
+  monitor_include_patterns:
+    - "*.md"            # Only markdown files
+    - "*.pdf"           # Only PDF files
+    - "**/docs/**"      # Only files in docs directories
+```
+
+**How patterns work:**
+
+1. **Extension filtering** - Only supported file types are considered
+2. **Include patterns** - If specified, only matching files are included (whitelist)
+3. **Ignore patterns** - Matching files are excluded (blacklist)
+4. **Combining both** - Include patterns are applied first, then ignore patterns
+
+**Common patterns:**
+
+```yaml
+# Only monitor markdown documentation, but ignore drafts
+monitor_include_patterns:
+  - "*.md"
+monitor_ignore_patterns:
+  - "*draft*"
+  - "*WIP*"
+
+# Monitor all supported files except in specific directories
+monitor_ignore_patterns:
+  - "node_modules/"
+  - ".git/"
+  - "**/test/**"
+  - "**/temp/**"
+```
+
+Patterns follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format):
+- `*` matches anything except `/`
+- `**` matches zero or more directories
+- `?` matches any single character
+- `[abc]` matches any character in the set
 
 ## Embedding Providers
 
