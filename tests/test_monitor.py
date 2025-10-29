@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import AppConfig, StorageConfig
+from haiku.rag.config import AppConfig, MonitorConfig
 from haiku.rag.monitor import FileWatcher
 from haiku.rag.store.models.document import Document
 
@@ -23,9 +23,7 @@ async def test_file_watcher_upsert_document():
         mock_client.create_document_from_source.return_value = mock_doc
         mock_client.get_document_by_uri.return_value = None  # No existing document
 
-        test_config = AppConfig(
-            storage=StorageConfig(monitor_directories=[temp_path.parent])
-        )
+        test_config = AppConfig(monitor=MonitorConfig(directories=[temp_path.parent]))
         watcher = FileWatcher(client=mock_client, config=test_config)
 
         result = await watcher._upsert_document(temp_path)
@@ -53,9 +51,7 @@ async def test_file_watcher_upsert_existing_document():
         mock_client.get_document_by_uri.return_value = existing_doc
         mock_client.create_document_from_source.return_value = updated_doc
 
-        test_config = AppConfig(
-            storage=StorageConfig(monitor_directories=[temp_path.parent])
-        )
+        test_config = AppConfig(monitor=MonitorConfig(directories=[temp_path.parent]))
         watcher = FileWatcher(client=mock_client, config=test_config)
 
         result = await watcher._upsert_document(temp_path)
@@ -76,9 +72,7 @@ async def test_file_watcher_delete_document():
     mock_client.get_document_by_uri.return_value = existing_doc
     mock_client.delete_document.return_value = True
 
-    test_config = AppConfig(
-        storage=StorageConfig(monitor_directories=[temp_path.parent])
-    )
+    test_config = AppConfig(monitor=MonitorConfig(directories=[temp_path.parent]))
     watcher = FileWatcher(client=mock_client, config=test_config)
 
     await watcher._delete_document(temp_path)
@@ -95,9 +89,7 @@ async def test_file_watcher_delete_nonexistent_document():
     mock_client = AsyncMock(spec=HaikuRAG)
     mock_client.get_document_by_uri.return_value = None
 
-    test_config = AppConfig(
-        storage=StorageConfig(monitor_directories=[temp_path.parent])
-    )
+    test_config = AppConfig(monitor=MonitorConfig(directories=[temp_path.parent]))
     watcher = FileWatcher(client=mock_client, config=test_config)
 
     await watcher._delete_document(temp_path)
@@ -210,9 +202,7 @@ async def test_file_watcher_with_ignore_patterns():
         mock_client.get_document_by_uri.return_value = None
 
         test_config = AppConfig(
-            storage=StorageConfig(
-                monitor_directories=[temp_path], monitor_ignore_patterns=["draft*"]
-            )
+            monitor=MonitorConfig(directories=[temp_path], ignore_patterns=["draft*"])
         )
         watcher = FileWatcher(client=mock_client, config=test_config)
 
@@ -243,9 +233,7 @@ async def test_file_watcher_with_include_patterns():
         mock_client.get_document_by_uri.return_value = None
 
         test_config = AppConfig(
-            storage=StorageConfig(
-                monitor_directories=[temp_path], monitor_include_patterns=["*.md"]
-            )
+            monitor=MonitorConfig(directories=[temp_path], include_patterns=["*.md"])
         )
         watcher = FileWatcher(client=mock_client, config=test_config)
 

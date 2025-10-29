@@ -7,11 +7,14 @@ from haiku.rag.utils import get_default_data_dir
 
 class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
-    monitor_directories: list[Path] = []
-    monitor_ignore_patterns: list[str] = []
-    monitor_include_patterns: list[str] = []
     disable_autocreate: bool = False
     vacuum_retention_seconds: int = 60
+
+
+class MonitorConfig(BaseModel):
+    directories: list[Path] = []
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
 
 
 class LanceDBConfig(BaseModel):
@@ -74,6 +77,7 @@ class A2AConfig(BaseModel):
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)

@@ -55,13 +55,15 @@ environment: production
 
 storage:
   data_dir: ""  # Empty = use default platform location
-  monitor_directories:
-    - /path/to/documents
-    - /another/path
-  monitor_ignore_patterns: []  # Gitignore-style patterns to exclude
-  monitor_include_patterns: []  # Gitignore-style patterns to include
   disable_autocreate: false
   vacuum_retention_seconds: 60
+
+monitor:
+  directories:
+    - /path/to/documents
+    - /another/path
+  ignore_patterns: []  # Gitignore-style patterns to exclude
+  include_patterns: []  # Gitignore-style patterns to include
 
 lancedb:
   uri: ""  # Empty for local, or db://, s3://, az://, gs://
@@ -163,8 +165,8 @@ export OLLAMA_BASE_URL=http://localhost:11434
 Set directories to monitor for automatic indexing:
 
 ```yaml
-storage:
-  monitor_directories:
+monitor:
+  directories:
     - /path/to/documents
     - /another_path/to/documents
 ```
@@ -174,19 +176,19 @@ storage:
 Use gitignore-style patterns to control which files are monitored:
 
 ```yaml
-storage:
-  monitor_directories:
+monitor:
+  directories:
     - /path/to/documents
 
   # Exclude specific files or directories
-  monitor_ignore_patterns:
+  ignore_patterns:
     - "*draft*"         # Ignore files with "draft" in the name
     - "temp/"           # Ignore temp directory
     - "**/archive/**"   # Ignore all archive directories
     - "*.backup"        # Ignore backup files
 
   # Only include specific files (whitelist mode)
-  monitor_include_patterns:
+  include_patterns:
     - "*.md"            # Only markdown files
     - "*.pdf"           # Only PDF files
     - "**/docs/**"      # Only files in docs directories
@@ -203,18 +205,20 @@ storage:
 
 ```yaml
 # Only monitor markdown documentation, but ignore drafts
-monitor_include_patterns:
-  - "*.md"
-monitor_ignore_patterns:
-  - "*draft*"
-  - "*WIP*"
+monitor:
+  include_patterns:
+    - "*.md"
+  ignore_patterns:
+    - "*draft*"
+    - "*WIP*"
 
 # Monitor all supported files except in specific directories
-monitor_ignore_patterns:
-  - "node_modules/"
-  - ".git/"
-  - "**/test/**"
-  - "**/temp/**"
+monitor:
+  ignore_patterns:
+    - "node_modules/"
+    - ".git/"
+    - "**/test/**"
+    - "**/temp/**"
 ```
 
 Patterns follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format):
@@ -589,8 +593,8 @@ This will read your current environment variables and generate a `haiku.rag.yaml
     When migrating from environment variables, list values like `MONITOR_DIRECTORIES` that were comma-separated (`/path1,/path2`) will be converted to proper YAML lists. In YAML, always use list syntax:
 
     ```yaml
-    storage:
-      monitor_directories:
+    monitor:
+      directories:
         - /path/to/dir1
         - /path/to/dir2
     ```

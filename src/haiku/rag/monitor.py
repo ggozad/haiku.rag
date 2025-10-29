@@ -64,10 +64,10 @@ class FileWatcher:
         client: HaikuRAG,
         config: AppConfig = Config,
     ):
-        self.paths = config.storage.monitor_directories
+        self.paths = config.monitor.directories
         self.client = client
-        self.ignore_patterns = config.storage.monitor_ignore_patterns or None
-        self.include_patterns = config.storage.monitor_include_patterns or None
+        self.ignore_patterns = config.monitor.ignore_patterns or None
+        self.include_patterns = config.monitor.include_patterns or None
 
     async def observe(self):
         logger.info(f"Watching files in {self.paths}")

@@ -48,8 +48,8 @@ This will start file monitoring, MCP server on port 8001, and A2A server on port
 Configure directories to monitor in your `haiku.rag.yaml`:
 
 ```yaml
-storage:
-  monitor_directories:
+monitor:
+  directories:
     - /path/to/documents
     - /another/path
 ```
@@ -71,18 +71,18 @@ haiku-rag serve --monitor
 You can filter which files to monitor using gitignore-style patterns:
 
 ```yaml
-storage:
-  monitor_directories:
+monitor:
+  directories:
     - /path/to/documents
 
   # Ignore patterns (exclude files)
-  monitor_ignore_patterns:
+  ignore_patterns:
     - "*draft*"         # Ignore draft files
     - "temp/"           # Ignore temp directory
     - "**/archive/**"   # Ignore archive directories
 
   # Include patterns (whitelist files)
-  monitor_include_patterns:
+  include_patterns:
     - "*.md"           # Only markdown files
     - "**/docs/**"     # Files in docs directories
 ```

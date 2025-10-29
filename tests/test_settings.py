@@ -86,7 +86,9 @@ async def test_config_validation_on_db_load(temp_db_path):
 
 def test_monitor_filter_patterns_config():
     """Test that monitor filter patterns are available in config."""
-    assert hasattr(Config.storage, "monitor_ignore_patterns")
-    assert hasattr(Config.storage, "monitor_include_patterns")
-    assert isinstance(Config.storage.monitor_ignore_patterns, list)
-    assert isinstance(Config.storage.monitor_include_patterns, list)
+    assert hasattr(Config.monitor, "ignore_patterns")
+    assert hasattr(Config.monitor, "include_patterns")
+    assert hasattr(Config.monitor, "directories")
+    assert isinstance(Config.monitor.ignore_patterns, list)
+    assert isinstance(Config.monitor.include_patterns, list)
+    assert isinstance(Config.monitor.directories, list)

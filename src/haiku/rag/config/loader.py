@@ -50,9 +50,13 @@ def generate_default_config() -> dict:
         "environment": "production",
         "storage": {
             "data_dir": "",
-            "monitor_directories": [],
             "disable_autocreate": False,
             "vacuum_retention_seconds": 60,
+        },
+        "monitor": {
+            "directories": [],
+            "ignore_patterns": [],
+            "include_patterns": [],
         },
         "lancedb": {"uri": "", "api_key": "", "region": ""},
         "embeddings": {
@@ -88,7 +92,7 @@ def load_config_from_env() -> dict:
     env_mappings = {
         "ENV": "environment",
         "DEFAULT_DATA_DIR": ("storage", "data_dir"),
-        "MONITOR_DIRECTORIES": ("storage", "monitor_directories"),
+        "MONITOR_DIRECTORIES": ("monitor", "directories"),
         "DISABLE_DB_AUTOCREATE": ("storage", "disable_autocreate"),
         "VACUUM_RETENTION_SECONDS": ("storage", "vacuum_retention_seconds"),
         "LANCEDB_URI": ("lancedb", "uri"),
