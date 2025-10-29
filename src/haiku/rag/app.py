@@ -474,9 +474,7 @@ class HaikuRAGApp:
 
             # Start file monitor if enabled
             if enable_monitor:
-                monitor = FileWatcher(
-                    paths=Config.storage.monitor_directories, client=client
-                )
+                monitor = FileWatcher(client=client)
                 monitor_task = asyncio.create_task(monitor.observe())
                 tasks.append(monitor_task)
 

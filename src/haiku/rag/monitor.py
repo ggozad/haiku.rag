@@ -2,9 +2,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pathspec
+from pathspec.patterns.gitwildmatch import GitWildMatchPattern
 from watchfiles import Change, DefaultFilter, awatch
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
@@ -14,25 +17,63 @@ logger = logging.getLogger(__name__)
 
 
 class FileFilter(DefaultFilter):
-    def __init__(self, *, ignore_paths: list[Path] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        ignore_patterns: list[str] | None = None,
+        include_patterns: list[str] | None = None,
+    ) -> None:
         # Lazy import to avoid loading docling
         from haiku.rag.reader import FileReader
 
         self.extensions = tuple(FileReader.extensions)
-        super().__init__(ignore_paths=ignore_paths)
+        self.ignore_spec = (
+            pathspec.PathSpec.from_lines(GitWildMatchPattern, ignore_patterns)
+            if ignore_patterns
+            else None
+        )
+        self.include_spec = (
+            pathspec.PathSpec.from_lines(GitWildMatchPattern, include_patterns)
+            if include_patterns
+            else None
+        )
+        super().__init__()
 
     def __call__(self, change: Change, path: str) -> bool:
-        return path.endswith(self.extensions) and super().__call__(change, path)
+        # Check extension filter
+        if not path.endswith(self.extensions):
+            return False
+
+        # Apply include patterns if specified (whitelist mode)
+        if self.include_spec:
+            if not self.include_spec.match_file(path):
+                return False
+
+        # Apply ignore patterns (blacklist mode)
+        if self.ignore_spec:
+            if self.ignore_spec.match_file(path):
+                return False
+
+        # Apply default watchfiles filter
+        return super().__call__(change, path)
 
 
 class FileWatcher:
-    def __init__(self, paths: list[Path], client: HaikuRAG):
-        self.paths = paths
+    def __init__(
+        self,
+        client: HaikuRAG,
+        config: AppConfig = Config,
+    ):
+        self.paths = config.storage.monitor_directories
         self.client = client
+        self.ignore_patterns = config.storage.monitor_ignore_patterns or None
+        self.include_patterns = config.storage.monitor_include_patterns or None
 
     async def observe(self):
         logger.info(f"Watching files in {self.paths}")
-        filter = FileFilter()
+        filter = FileFilter(
+            ignore_patterns=self.ignore_patterns, include_patterns=self.include_patterns
+        )
         await self.refresh()
 
         async for changes in awatch(*self.paths, watch_filter=filter):
@@ -49,10 +90,17 @@ class FileWatcher:
         # Lazy import to avoid loading docling
         from haiku.rag.reader import FileReader
 
+        # Create filter to apply same logic as observe()
+        filter = FileFilter(
+            ignore_patterns=self.ignore_patterns, include_patterns=self.include_patterns
+        )
+
         for path in self.paths:
             for f in Path(path).rglob("**/*"):
                 if f.is_file() and f.suffix in FileReader.extensions:
-                    await self._upsert_document(f)
+                    # Apply pattern filters
+                    if filter(Change.added, str(f)):
+                        await self._upsert_document(f)
 
     async def _upsert_document(self, file: Path) -> Document | None:
         try:
