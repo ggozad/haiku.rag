@@ -82,3 +82,11 @@ async def test_config_validation_on_db_load(temp_db_path):
 
     finally:
         Config.processing.chunk_size = original_chunk_size
+
+
+def test_monitor_filter_patterns_config():
+    """Test that monitor filter patterns are available in config."""
+    assert hasattr(Config.storage, "monitor_ignore_patterns")
+    assert hasattr(Config.storage, "monitor_include_patterns")
+    assert isinstance(Config.storage.monitor_ignore_patterns, list)
+    assert isinstance(Config.storage.monitor_include_patterns, list)
