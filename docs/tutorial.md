@@ -149,7 +149,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 logger.debug("AGI here we come")
 
-# Uses LanceDB database from Config.DEFAULT_DATA_DIR
+# Uses LanceDB database from default storage location
 async with HaikuRAG() as client:
     answer = await client.ask("What is the best programming language in the world?")
     print(answer)
