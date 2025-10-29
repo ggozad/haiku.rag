@@ -15,11 +15,14 @@ haiku-rag init-config
 
 This creates a `haiku.rag.yaml` file in your current directory with all available settings.
 
-To migrate from environment variables (`.env` file):
+!!! warning "Deprecation Notice"
+    Environment variable configuration via `.env` files is deprecated and will be removed in future versions. Please migrate to YAML configuration.
 
-```bash
-haiku-rag init-config --from-env
-```
+    To migrate from environment variables (`.env` file):
+
+    ```bash
+    haiku-rag init-config --from-env
+    ```
 
 ## Configuration File Locations
 
@@ -132,33 +135,6 @@ This is useful for:
 - Python scripts
 - Testing with different configurations
 - Applications that need multiple clients with different configurations
-
-## Environment Variables
-
-API keys and some provider settings are configured through **environment variables**, not in the YAML file.
-
-### API Keys
-
-```bash
-# OpenAI
-export OPENAI_API_KEY=your-key-here
-
-# Anthropic
-export ANTHROPIC_API_KEY=your-key-here
-
-# Voyage AI
-export VOYAGE_API_KEY=your-key-here
-
-# Cohere
-export CO_API_KEY=your-key-here
-```
-
-### Provider Configuration
-
-```bash
-# Ollama base URL (defaults to http://localhost:11434)
-export OLLAMA_BASE_URL=http://localhost:11434
-```
 
 ## File Monitoring
 
@@ -575,26 +551,3 @@ def clean_md(text: str) -> str:
         out.append(line)
     return "\n".join(out)
 ```
-
-## Migration from Environment Variables
-
-!!! warning "Deprecation Notice"
-    Environment variable configuration via `.env` files is deprecated and will be removed in future versions. Please migrate to YAML configuration.
-
-To migrate your existing `.env` file to YAML:
-
-```bash
-haiku-rag init-config --from-env
-```
-
-This will read your current environment variables and generate a `haiku.rag.yaml` file with those settings.
-
-!!! note
-    When migrating from environment variables, list values like `MONITOR_DIRECTORIES` that were comma-separated (`/path1,/path2`) will be converted to proper YAML lists. In YAML, always use list syntax:
-
-    ```yaml
-    monitor:
-      directories:
-        - /path/to/dir1
-        - /path/to/dir2
-    ```
