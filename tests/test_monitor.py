@@ -104,3 +104,154 @@ async def test_file_watcher_delete_nonexistent_document():
 
     mock_client.get_document_by_uri.assert_called_once_with(temp_path.as_uri())
     mock_client.delete_document.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_file_filter_ignore_patterns():
+    """Test FileFilter with ignore patterns."""
+    from watchfiles import Change
+
+    from haiku.rag.monitor import FileFilter
+
+    filter = FileFilter(ignore_patterns=["*draft*.md", "temp/", "**/archive/**"])
+
+    # Should ignore draft markdown files
+    assert not filter(Change.added, "/path/to/draft-post.md")
+
+    # Should ignore files in temp/ directory
+    assert not filter(Change.added, "/path/temp/notes.txt")
+
+    # Should ignore files in archive directories
+    assert not filter(Change.added, "/path/to/archive/old.pdf")
+
+    # Should NOT ignore regular markdown files
+    assert filter(Change.added, "/path/to/readme.md")
+
+    # Should NOT ignore files outside temp/
+    assert filter(Change.added, "/path/to/notes.txt")
+
+
+@pytest.mark.asyncio
+async def test_file_filter_include_patterns():
+    """Test FileFilter with include patterns (whitelist mode)."""
+    from watchfiles import Change
+
+    from haiku.rag.monitor import FileFilter
+
+    filter = FileFilter(include_patterns=["*.md", "**/docs/**"])
+
+    # Should include .md files
+    assert filter(Change.added, "/path/to/file.md")
+
+    # Should include files in docs/ directory
+    assert filter(Change.added, "/path/to/docs/guide.txt")
+
+    # Should NOT include .txt files outside docs/
+    assert not filter(Change.added, "/path/to/file.txt")
+
+
+@pytest.mark.asyncio
+async def test_file_filter_combined_patterns():
+    """Test FileFilter with both include and ignore patterns."""
+    from watchfiles import Change
+
+    from haiku.rag.monitor import FileFilter
+
+    # Include all markdown files, but ignore drafts
+    filter = FileFilter(
+        include_patterns=["*.md"], ignore_patterns=["*draft*.md", "archive/"]
+    )
+
+    # Should include regular .md files
+    assert filter(Change.added, "/path/to/readme.md")
+
+    # Should ignore draft .md files (ignore takes precedence after include)
+    assert not filter(Change.added, "/path/to/draft-post.md")
+
+    # Should ignore .md files in archive/ directory
+    assert not filter(Change.added, "/path/archive/old.md")
+
+    # Should NOT include .txt files (not in include patterns)
+    assert not filter(Change.added, "/path/to/file.txt")
+
+
+@pytest.mark.asyncio
+async def test_file_filter_extension_check():
+    """Test that FileFilter still respects extension filtering."""
+    from watchfiles import Change
+
+    from haiku.rag.monitor import FileFilter
+
+    filter = FileFilter()
+
+    # Should include files with supported extensions
+    assert filter(Change.added, "/path/to/document.pdf")
+    assert filter(Change.added, "/path/to/notes.md")
+
+    # Should not include files with unsupported extensions
+    assert not filter(Change.added, "/path/to/file.xyz")
+    assert not filter(Change.added, "/path/to/binary.bin")
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_with_ignore_patterns():
+    """Test FileWatcher respects ignore patterns from config."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        draft_file = temp_path / "draft.md"
+        readme_file = temp_path / "readme.md"
+
+        draft_file.write_text("Draft content")
+        readme_file.write_text("Readme content")
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        mock_doc = Document(id="1", content="Readme", uri=readme_file.as_uri())
+        mock_client.create_document_from_source.return_value = mock_doc
+        mock_client.get_document_by_uri.return_value = None
+
+        test_config = AppConfig(
+            storage=StorageConfig(
+                monitor_directories=[temp_path], monitor_ignore_patterns=["draft*"]
+            )
+        )
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        # Run refresh which should only process readme.md, not draft.md
+        await watcher.refresh()
+
+        # Should have only called for the readme file
+        assert mock_client.create_document_from_source.call_count == 1
+        mock_client.create_document_from_source.assert_called_with(str(readme_file))
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_with_include_patterns():
+    """Test FileWatcher respects include patterns from config."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        md_file = temp_path / "readme.md"
+        pdf_file = temp_path / "document.pdf"
+        py_file = temp_path / "script.py"
+
+        md_file.write_text("Markdown content")
+        pdf_file.write_text("PDF content")
+        py_file.write_text("Python content")
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        mock_doc = Document(id="1", content="Markdown", uri=md_file.as_uri())
+        mock_client.create_document_from_source.return_value = mock_doc
+        mock_client.get_document_by_uri.return_value = None
+
+        test_config = AppConfig(
+            storage=StorageConfig(
+                monitor_directories=[temp_path], monitor_include_patterns=["*.md"]
+            )
+        )
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        # Run refresh which should only process .md file, not .pdf or .py
+        await watcher.refresh()
+
+        # Should have only called for the .md file
+        assert mock_client.create_document_from_source.call_count == 1
+        mock_client.create_document_from_source.assert_called_with(str(md_file))
