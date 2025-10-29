@@ -40,9 +40,11 @@ async def test_app_info_outputs_and_read_only(temp_db_path, capsys):
                 settings=json.dumps(
                     {
                         "version": "1.2.3",
-                        "EMBEDDINGS_PROVIDER": "openai",
-                        "EMBEDDINGS_MODEL": "text-embedding-3-small",
-                        "EMBEDDINGS_VECTOR_DIM": 3,
+                        "embeddings": {
+                            "provider": "openai",
+                            "model": "text-embedding-3-small",
+                            "vector_dim": 3,
+                        },
                     }
                 ),
             )

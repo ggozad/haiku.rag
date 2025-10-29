@@ -81,13 +81,10 @@ class HaikuRAGApp:
                 raw = rows[0].get("settings") or "{}"
                 data = json.loads(raw) if isinstance(raw, str) else (raw or {})
                 stored_version = str(data.get("version", stored_version))
-                embed_provider = data.get("EMBEDDINGS_PROVIDER")
-                embed_model = data.get("EMBEDDINGS_MODEL")
-                vector_dim = (
-                    int(data.get("EMBEDDINGS_VECTOR_DIM"))  # pyright: ignore[reportArgumentType]
-                    if data.get("EMBEDDINGS_VECTOR_DIM") is not None
-                    else None
-                )
+                embeddings = data.get("embeddings", {})
+                embed_provider = embeddings.get("provider")
+                embed_model = embeddings.get("model")
+                vector_dim = embeddings.get("vector_dim")
 
         num_docs = 0
         if "documents" in table_names:
