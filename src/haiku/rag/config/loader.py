@@ -10,7 +10,7 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     Search order:
     1. CLI-provided path (via HAIKU_RAG_CONFIG_PATH env var or parameter)
     2. ./haiku.rag.yaml (current directory)
-    3. ~/.config/haiku.rag/config.yaml (user config)
+    3. Platform-specific user config directory
 
     Returns None if no config file is found.
     """
@@ -29,8 +29,10 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     if cwd_config.exists():
         return cwd_config
 
-    user_config_dir = Path.home() / ".config" / "haiku.rag"
-    user_config = user_config_dir / "config.yaml"
+    # Use same directory as data storage for config
+    from haiku.rag.utils import get_default_data_dir
+
+    user_config = get_default_data_dir() / "config.yaml"
     if user_config.exists():
         return user_config
 

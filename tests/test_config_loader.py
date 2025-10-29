@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import pytest
 
@@ -42,13 +41,17 @@ def test_find_config_file_cwd(tmp_path, monkeypatch):
 def test_find_config_file_user_config(tmp_path, monkeypatch):
     """Test finding config in user config directory."""
     monkeypatch.chdir(tmp_path)
-    user_config_dir = tmp_path / ".config" / "haiku.rag"
-    user_config_dir.mkdir(parents=True)
-    config_file = user_config_dir / "config.yaml"
-    config_file.write_text("environment: production")
 
-    # Mock home directory
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    # Mock get_default_data_dir to return tmp_path
+    def mock_get_default_data_dir():
+        return tmp_path
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
+    )
+
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("environment: production")
 
     found = find_config_file()
     assert found == config_file
@@ -77,7 +80,14 @@ def test_find_config_file_env_var(tmp_path, monkeypatch):
 def test_find_config_file_not_found(tmp_path, monkeypatch):
     """Test returning None when no config found."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    # Mock get_default_data_dir to return tmp_path
+    def mock_get_default_data_dir():
+        return tmp_path
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
+    )
 
     found = find_config_file()
     assert found is None
@@ -152,23 +162,28 @@ def test_load_config_from_env_empty():
 def test_config_precedence_cwd_over_user(tmp_path, monkeypatch):
     """Test that cwd config takes precedence over user config."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    # Mock get_default_data_dir to return tmp_path
+    def mock_get_default_data_dir():
+        return tmp_path
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
+    )
 
     # Create both configs
     cwd_config = tmp_path / "haiku.rag.yaml"
     cwd_config.write_text("environment: from-cwd")
 
-    user_config_dir = tmp_path / ".config" / "haiku.rag"
-    user_config_dir.mkdir(parents=True)
-    user_config = user_config_dir / "config.yaml"
+    user_config = tmp_path / "config.yaml"
     user_config.write_text("environment: from-user")
 
     found = find_config_file()
     assert found == cwd_config
     assert found is not None
 
-    config = load_yaml_config(found)
-    assert config["environment"] == "from-cwd"
+    config_data = load_yaml_config(found)
+    assert config_data["environment"] == "from-cwd"
 
 
 def test_config_precedence_env_var_over_cwd(tmp_path, monkeypatch):
