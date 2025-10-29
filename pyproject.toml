@@ -22,20 +22,20 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling>=2.56.1",
-    "fastmcp>=2.12.4",
+    "docling>=2.58.0",
+    "fastmcp>=2.13.0.2",
     "httpx>=0.28.1",
     "lancedb>=0.25.2",
     "pathspec>=0.12.1",
-    "pydantic>=2.12.2",
-    "pydantic-ai>=1.0.18",
-    "pydantic-graph>=1.0.18",
-    "python-dotenv>=1.1.1",
-    "pyyaml>=6.0.1",
+    "pydantic>=2.12.3",
+    "pydantic-ai>=1.7.0",
+    "pydantic-graph>=1.7.0",
+    "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
     "rich>=14.2.0",
     "tiktoken>=0.12.0",
-    "typer>=0.19.2",
-    "watchfiles>=1.1.0",
+    "typer>=0.19.2,<0.20.0",
+    "watchfiles>=1.1.1",
 ]
 
 [project.optional-dependencies]
@@ -58,17 +58,17 @@ packages = ["src/haiku"]
 
 [dependency-groups]
 dev = [
-    "datasets>=4.1.0",
-    "logfire>=4.7.0",
+    "datasets>=4.3.0",
+    "logfire>=4.14.2",
     "mkdocs>=1.6.1",
-    "mkdocs-material>=9.6.14",
-    "pydantic-evals>=1.0.8",
-    "pre-commit>=4.2.0",
-    "pyright>=1.1.406",
+    "mkdocs-material>=9.6.22",
+    "pydantic-evals>=1.7.0",
+    "pre-commit>=4.3.0",
+    "pyright>=1.1.407",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
-    "ruff>=0.13.0",
+    "ruff>=0.14.2",
 ]
 
 [tool.ruff]
