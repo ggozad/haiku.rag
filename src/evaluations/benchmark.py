@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, cast
 
 import logfire
@@ -12,13 +13,12 @@ from pydantic_evals.reporting import ReportCaseFailure
 from rich.console import Console
 from rich.progress import Progress
 
-from evaluations.config import DatasetSpec, RetrievalSample
+from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.llm_judge import ANSWER_EQUIVALENCE_RUBRIC
 from evaluations.prompts import WIX_SUPPORT_PROMPT
-from haiku.rag import logging  # noqa: F401
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
 
@@ -30,7 +30,7 @@ configure_cli_logging()
 console = Console()
 
 
-async def populate_db(spec: DatasetSpec) -> None:
+async def populate_db(spec: DatasetSpec, config: AppConfig) -> None:
     spec.db_path.parent.mkdir(parents=True, exist_ok=True)
     corpus = spec.document_loader()
     if spec.document_limit is not None:
@@ -38,7 +38,7 @@ async def populate_db(spec: DatasetSpec) -> None:
 
     with Progress() as progress:
         task = progress.add_task("[green]Populating database...", total=len(corpus))
-        async with HaikuRAG(spec.db_path) as rag:
+        async with HaikuRAG(spec.db_path, config=config) as rag:
             for doc in corpus:
                 doc_mapping = cast(Mapping[str, Any], doc)
                 payload = spec.document_mapper(doc_mapping)
@@ -64,11 +64,9 @@ async def populate_db(spec: DatasetSpec) -> None:
                 progress.advance(task)
 
 
-def _is_relevant_match(retrieved_uri: str | None, sample: RetrievalSample) -> bool:
-    return retrieved_uri is not None and retrieved_uri in sample.expected_uris
-
-
-async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
+async def run_retrieval_benchmark(
+    spec: DatasetSpec, config: AppConfig
+) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
         return None
@@ -91,7 +89,7 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
         task = progress.add_task(
             "[blue]Running retrieval benchmark...", total=len(corpus)
         )
-        async with HaikuRAG(spec.db_path) as rag:
+        async with HaikuRAG(spec.db_path, config=config) as rag:
             for doc in corpus:
                 doc_mapping = cast(Mapping[str, Any], doc)
                 sample = spec.retrieval_mapper(doc_mapping)
@@ -161,7 +159,7 @@ async def run_retrieval_benchmark(spec: DatasetSpec) -> dict[str, float] | None:
 
 
 async def run_qa_benchmark(
-    spec: DatasetSpec, qa_limit: int | None = None
+    spec: DatasetSpec, config: AppConfig, qa_limit: int | None = None
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if qa_limit is not None:
@@ -174,7 +172,7 @@ async def run_qa_benchmark(
 
     judge_model = OpenAIChatModel(
         model_name=QA_JUDGE_MODEL,
-        provider=OllamaProvider(base_url=f"{Config.providers.ollama.base_url}/v1"),
+        provider=OllamaProvider(base_url=f"{config.providers.ollama.base_url}/v1"),
     )
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
@@ -204,7 +202,7 @@ async def run_qa_benchmark(
             total=len(evaluation_dataset.cases),
         )
 
-        async with HaikuRAG(spec.db_path) as rag:
+        async with HaikuRAG(spec.db_path, config=config) as rag:
             system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
             qa = get_qa_agent(rag, system_prompt=system_prompt)
 
@@ -272,6 +270,7 @@ async def run_qa_benchmark(
 
 async def evaluate_dataset(
     spec: DatasetSpec,
+    config: AppConfig,
     skip_db: bool,
     skip_retrieval: bool,
     skip_qa: bool,
@@ -279,15 +278,15 @@ async def evaluate_dataset(
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
-        await populate_db(spec)
+        await populate_db(spec, config)
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
-        await run_retrieval_benchmark(spec)
+        await run_retrieval_benchmark(spec, config)
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, qa_limit=qa_limit)
+        await run_qa_benchmark(spec, config, qa_limit=qa_limit)
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -296,6 +295,9 @@ app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.
 @app.command()
 def run(
     dataset: str = typer.Argument(..., help="Dataset key to evaluate."),
+    config: Path | None = typer.Option(
+        None, "--config", help="Path to haiku.rag YAML config file."
+    ),
     skip_db: bool = typer.Option(
         False, "--skip-db", help="Skip updateing the evaluation db."
     ),
@@ -314,9 +316,28 @@ def run(
             f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
         )
 
+    # Load config from file or use defaults
+    if config:
+        if not config.exists():
+            raise typer.BadParameter(f"Config file not found: {config}")
+        console.print(f"Loading config from: {config}", style="dim")
+        yaml_data = load_yaml_config(config)
+        app_config = AppConfig.model_validate(yaml_data)
+    else:
+        # Try to find config file using standard search path
+        config_path = find_config_file(None)
+        if config_path:
+            console.print(f"Loading config from: {config_path}", style="dim")
+            yaml_data = load_yaml_config(config_path)
+            app_config = AppConfig.model_validate(yaml_data)
+        else:
+            console.print("No config file found, using defaults", style="dim")
+            app_config = AppConfig()
+
     asyncio.run(
         evaluate_dataset(
             spec=spec,
+            config=app_config,
             skip_db=skip_db,
             skip_retrieval=skip_retrieval,
             skip_qa=skip_qa,
