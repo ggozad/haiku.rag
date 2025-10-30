@@ -8,6 +8,25 @@ The evaluation flow is orchestrated with
 [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
 which we leverage for dataset management, scoring, and report generation.
 
+## Configuration
+
+The benchmark script accepts a `--config` option to specify a custom `haiku.rag.yaml` configuration file:
+
+```bash
+cd src && python -m evaluations.benchmark repliqa --config /path/to/haiku.rag.yaml
+```
+
+If no config file is specified, the script will search for a config file in the standard locations:
+1. `./haiku.rag.yaml` (current directory)
+2. User config directory
+3. Falls back to default configuration
+
+You can also use command-line options:
+- `--skip-db` - Skip updating the evaluation database
+- `--skip-retrieval` - Skip retrieval benchmark
+- `--skip-qa` - Skip QA benchmark
+- `--qa-limit N` - Limit number of QA cases to evaluate
+
 ## Recall
 
 In order to calculate recall, we load the `News Stories` from `repliqa_3` (1035 documents) and index them. Subsequently, we run a search over the `question` field for each row of the dataset and check whether we match the document that answers the question. Questions for which the answer cannot be found in the documents are ignored.
@@ -59,6 +78,7 @@ relevant passage URIs. We track two complementary metrics:
 |----------------------------|----------|----------|----------|------------------------|
 | `qwen3-embedding`          | 0.31     | 0.48     | 0.54     | None                   |
 | `qwen3-embedding`          | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` |
+| `qwen3-embedding`          | 0.36     | 0.58     | 0.67     | `zeroentropy`          |
 
 ### Success@K Results
 
@@ -66,7 +86,7 @@ relevant passage URIs. We track two complementary metrics:
 |----------------------------|-----------|-----------|-----------|------------------------|
 | `qwen3-embedding`          | 0.36      | 0.54      | 0.62      | None                   |
 | `qwen3-embedding`          | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` |
-
+| `qwen3-embedding`          | 0.41      | 0.66      | 0.76      | `zeroentropy`          |
 
 ## QA Accuracy
 
