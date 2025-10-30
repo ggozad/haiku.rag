@@ -10,23 +10,38 @@ This includes support for:
 - **Ollama** (default embedding provider using `mxbai-embed-large`)
 - **OpenAI** (GPT models for QA and embeddings)
 - **Anthropic** (Claude models for QA)
-- **Cohere** (reranking models)
 - **vLLM** (high-performance local inference for embeddings, QA, and reranking)
 
 ## Provider-Specific Installation
 
-For additional embedding providers, install with extras:
+For additional providers, install with extras:
 
-### VoyageAI
+### Embedding Providers
+
+#### VoyageAI
 
 ```bash
 uv pip install haiku.rag[voyageai]
 ```
 
-### MixedBread AI Reranking
+### Reranking Providers
+
+#### MixedBread AI
 
 ```bash
 uv pip install haiku.rag[mxbai]
+```
+
+#### Cohere
+
+```bash
+uv pip install haiku.rag[cohere]
+```
+
+#### Zero Entropy
+
+```bash
+uv pip install haiku.rag[zeroentropy]
 ```
 
 ### vLLM Setup

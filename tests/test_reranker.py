@@ -9,6 +9,7 @@ from haiku.rag.store.models.chunk import Chunk
 
 COHERE_AVAILABLE = bool(os.getenv("CO_API_KEY"))
 VLLM_RERANK_AVAILABLE = bool(Config.providers.vllm.rerank_base_url)
+ZEROENTROPY_AVAILABLE = bool(os.getenv("ZEROENTROPY_API_KEY"))
 
 chunks = [
     Chunk(content=content, document_id=str(i))
@@ -89,3 +90,26 @@ async def test_vllm_reranker():
     except Exception:
         # Skip test if vLLM rerank server is not available
         pytest.skip("vLLM rerank server not available")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not ZEROENTROPY_AVAILABLE, reason="Zero Entropy API key not available"
+)
+async def test_zeroentropy_reranker():
+    try:
+        from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
+
+        reranker = ZeroEntropyReranker("zerank-1")
+
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert len(reranked) == 2
+        assert all(isinstance(score, float) for chunk, score in reranked)
+        # Check that the top results are relevant to Harper Lee / To Kill a Mockingbird
+        top_ids = [chunk.document_id for chunk, score in reranked]
+        assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
+
+    except ImportError:
+        pytest.skip("Zero Entropy package not installed")
