@@ -221,6 +221,12 @@ def search(
         "-l",
         help="Maximum number of results to return",
     ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
     db: Path = typer.Option(
         Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
@@ -230,7 +236,7 @@ def search(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.search(query=query, limit=limit))
+    asyncio.run(app.search(query=query, limit=limit, filter=filter))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")
