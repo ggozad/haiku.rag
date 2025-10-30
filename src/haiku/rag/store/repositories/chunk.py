@@ -230,7 +230,11 @@ class ChunkRepository:
         return True
 
     async def search(
-        self, query: str, limit: int = 5, search_type: str = "hybrid"
+        self,
+        query: str,
+        limit: int = 5,
+        search_type: str = "hybrid",
+        filter: str | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using the specified search method.
 
@@ -238,6 +242,7 @@ class ChunkRepository:
             query: The search query string.
             limit: Maximum number of results to return.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
+            filter: Optional SQL WHERE clause to filter documents before searching chunks.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
@@ -245,19 +250,42 @@ class ChunkRepository:
         if not query.strip():
             return []
 
+        chunk_where_clause = None
+        if filter:
+            # We perform filtering as a two-step process, first filtering documents, then
+            # filtering chunks based on those document IDs.
+            # This is because LanceDB does not support joins directly in search queries.
+            matching_doc_ids = self._get_filtered_document_ids(filter)
+
+            if not matching_doc_ids:
+                return []
+
+            # Build WHERE clause for chunks table
+            # Use IN clause with document IDs
+            id_list = "', '".join(matching_doc_ids)
+            chunk_where_clause = f"document_id IN ('{id_list}')"
+
         if search_type == "vector":
             query_embedding = await self.embedder.embed(query)
 
             results = self.store.chunks_table.search(
                 query_embedding, query_type="vector", vector_column_name="vector"
-            ).limit(limit)
+            )
+
+            if chunk_where_clause:
+                results = results.where(chunk_where_clause)
+
+            results = results.limit(limit)
 
             return await self._process_search_results(results)
 
         elif search_type == "fts":
-            results = self.store.chunks_table.search(query, query_type="fts").limit(
-                limit
-            )
+            results = self.store.chunks_table.search(query, query_type="fts")
+
+            if chunk_where_clause:
+                results = results.where(chunk_where_clause)
+
+            results = results.limit(limit)
             return await self._process_search_results(results)
 
         else:  # hybrid (default)
@@ -267,9 +295,13 @@ class ChunkRepository:
             reranker = RRFReranker()
 
             # Perform native hybrid search with RRF reranking
+            results = self.store.chunks_table.search(query_type="hybrid")
+
+            if chunk_where_clause:
+                results = results.where(chunk_where_clause)
+
             results = (
-                self.store.chunks_table.search(query_type="hybrid")
-                .vector(query_embedding)
+                results.vector(query_embedding)
                 .text(query)
                 .rerank(reranker)
                 .limit(limit)
@@ -331,6 +363,15 @@ class ChunkRepository:
                 adjacent_chunks.append(c)
 
         return adjacent_chunks
+
+    def _get_filtered_document_ids(self, filter: str) -> list[str]:
+        """Query documents table with filter and return matching document IDs."""
+        filtered_docs = (
+            self.store.documents_table.search()
+            .where(filter)
+            .to_pydantic(DocumentRecord)
+        )
+        return [doc.id for doc in filtered_docs]
 
     async def _process_search_results(self, query_result) -> list[tuple[Chunk, float]]:
         """Process search results into chunks with document info and scores."""

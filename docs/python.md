@@ -168,6 +168,48 @@ for chunk, relevance_score in results:
     print(f"Document metadata: {chunk.document_meta}")
 ```
 
+### Filtering Search Results
+
+Filter search results to only include chunks from documents matching specific criteria:
+
+```python
+# Filter by document URI pattern
+results = await client.search(
+    query="machine learning",
+    limit=5,
+    filter="uri LIKE '%arxiv%'"
+)
+
+# Filter by exact document title
+results = await client.search(
+    query="neural networks",
+    limit=5,
+    filter="title = 'Deep Learning Guide'"
+)
+
+# Combine multiple filter conditions
+results = await client.search(
+    query="AI research",
+    limit=5,
+    filter="uri LIKE '%.pdf' AND title LIKE '%paper%'"
+)
+
+# Filter with any search type
+results = await client.search(
+    query="transformers",
+    limit=5,
+    search_type="vector",
+    filter="uri LIKE '%huggingface%'"
+)
+```
+
+**Note:** Filters apply to document properties only. Available columns for filtering:
+- `id` - Document ID
+- `uri` - Document URI/URL
+- `title` - Document title (if set)
+- `created_at`, `updated_at` - Timestamps
+- `metadata` - Document metadata (as string, use LIKE for pattern matching)
+
 ### Expanding Search Context
 
 Expand search results with adjacent chunks for more complete context:

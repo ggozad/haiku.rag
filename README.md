@@ -38,6 +38,9 @@ haiku-rag add-src document.pdf --meta source=manual
 # Search
 haiku-rag search "query"
 
+# Search with filters
+haiku-rag search "query" --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
+
 # Ask questions
 haiku-rag ask "Who is the author of haiku.rag?"
 
