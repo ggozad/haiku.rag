@@ -82,7 +82,7 @@ embeddings:
   vector_dim: 4096
 
 reranking:
-  provider: ""  # Empty to disable, or mxbai, cohere, vllm
+  provider: ""  # Empty to disable, or mxbai, cohere, zeroentropy, vllm
   model: ""
 
 qa:
@@ -412,7 +412,13 @@ reranking:
 
 ### Cohere
 
-Cohere reranking is included in the default installation:
+Install with cohere extras:
+
+```bash
+uv pip install haiku.rag[cohere]
+```
+
+Then configure:
 
 ```yaml
 reranking:
@@ -424,6 +430,28 @@ Set your API key via environment variable:
 
 ```bash
 export CO_API_KEY=your-api-key
+```
+
+### Zero Entropy
+
+Install with zeroentropy extras:
+
+```bash
+uv pip install haiku.rag[zeroentropy]
+```
+
+Then configure:
+
+```yaml
+reranking:
+  provider: zeroentropy
+  model: zerank-1  # Currently the only available model
+```
+
+Set your API key via environment variable:
+
+```bash
+export ZEROENTROPY_API_KEY=your-api-key
 ```
 
 ### vLLM

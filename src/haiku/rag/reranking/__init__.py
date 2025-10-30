@@ -41,5 +41,23 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         except ImportError:
             reranker = None
 
+    elif config.reranking.provider == "vllm":
+        try:
+            from haiku.rag.reranking.vllm import VLLMReranker
+
+            reranker = VLLMReranker(config.reranking.model)
+        except ImportError:
+            reranker = None
+
+    elif config.reranking.provider == "zeroentropy":
+        try:
+            from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
+
+            # Use configured model or default to zerank-1
+            model = config.reranking.model or "zerank-1"
+            reranker = ZeroEntropyReranker(model)
+        except ImportError:
+            reranker = None
+
     _reranker_cache[config_id] = reranker
     return reranker

@@ -42,6 +42,8 @@ dependencies = [
 voyageai = ["voyageai>=0.3.5"]
 mxbai = ["mxbai-rerank>=0.1.6"]
 a2a = ["fasta2a>=0.1.0"]
+cohere = ["cohere>=5.0.0"]
+zeroentropy = ["zeroentropy>=0.1.0a6"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"

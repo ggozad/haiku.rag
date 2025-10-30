@@ -15,7 +15,7 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **Multiple QA providers**: Any provider/model supported by Pydantic AI
 - **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
 - **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
-- **Reranking**: Default search result reranking with MixedBread AI, Cohere, or vLLM
+- **Reranking**: Default search result reranking with MixedBread AI, Cohere, Zero Entropy, or vLLM
 - **Question answering**: Built-in QA agents on your documents
 - **File monitoring**: Auto-index files when run as server
 - **40+ file formats**: PDF, DOCX, HTML, Markdown, code files, URLs
