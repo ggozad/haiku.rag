@@ -211,6 +211,55 @@ async def test_client_create_document_from_directory(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_client_create_document_from_directory_with_filters(
+    monkeypatch, temp_db_path
+):
+    """Test creating documents from a directory with ignore and include patterns."""
+    # Mock config to have ignore and include patterns
+    monkeypatch.setattr(
+        "haiku.rag.client.Config.monitor.ignore_patterns", ["**/ignore_me/**", "*.log"]
+    )
+    monkeypatch.setattr(
+        "haiku.rag.client.Config.monitor.include_patterns", ["**/include/**/*.txt"]
+    )
+
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_dir = Path(temp_dir) / "test_docs"
+            test_dir.mkdir()
+
+            # Create files in include directory - should be included
+            include_dir = test_dir / "include"
+            include_dir.mkdir()
+            (include_dir / "doc1.txt").write_text("Content of doc1")
+            (include_dir / "doc2.txt").write_text("Content of doc2")
+
+            # Create files outside include directory - should be excluded by include pattern
+            (test_dir / "doc3.txt").write_text("Content of doc3")
+
+            # Create files in ignore directory - should be excluded by ignore pattern
+            ignore_dir = test_dir / "ignore_me"
+            ignore_dir.mkdir()
+            (ignore_dir / "doc4.txt").write_text("Content of doc4")
+
+            # Create log file - should be excluded by ignore pattern
+            (test_dir / "debug.log").write_text("log content")
+
+            result = await client.create_document_from_source(test_dir)
+
+            assert isinstance(result, list)
+            # Should only include doc1.txt and doc2.txt from include directory
+            assert len(result) == 2
+
+            uris = [doc.uri for doc in result if doc.uri]
+            assert any("doc1.txt" in uri for uri in uris)
+            assert any("doc2.txt" in uri for uri in uris)
+            assert not any("doc3.txt" in uri for uri in uris)
+            assert not any("doc4.txt" in uri for uri in uris)
+            assert not any("debug.log" in uri for uri in uris)
+
+
+@pytest.mark.asyncio
 async def test_client_create_document_from_url(temp_db_path):
     """Test creating a document from a URL."""
     async with HaikuRAG(temp_db_path) as client:

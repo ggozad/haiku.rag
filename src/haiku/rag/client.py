@@ -135,9 +135,6 @@ class HaikuRAG:
             ValueError: If the file/URL cannot be parsed or doesn't exist
             httpx.RequestError: If URL request fails
         """
-        # Lazy import to avoid loading docling
-        from haiku.rag.reader import FileReader
-
         # Normalize metadata
         metadata = metadata or {}
 
@@ -157,15 +154,17 @@ class HaikuRAG:
 
         # Handle directories
         if source_path.is_dir():
+            from haiku.rag.monitor import FileFilter
+
             documents = []
-            supported_extensions = set(FileReader.extensions)
-            for file_path in source_path.rglob("*"):
-                if (
-                    file_path.is_file()
-                    and file_path.suffix.lower() in supported_extensions
-                ):
+            filter = FileFilter(
+                ignore_patterns=self._config.monitor.ignore_patterns or None,
+                include_patterns=self._config.monitor.include_patterns or None,
+            )
+            for path in source_path.rglob("*"):
+                if path.is_file() and filter.include_file(str(path)):
                     doc = await self._create_document_from_file(
-                        file_path, title=None, metadata=metadata
+                        path, title=None, metadata=metadata
                     )
                     documents.append(doc)
             return documents

@@ -45,6 +45,14 @@ haiku-rag add-src /mnt/data/doc1.pdf --title "Q3 Financial Report"
 haiku-rag add-src /mnt/data/doc1.pdf --meta source=manual --meta page_count=12 --meta published=true
 ```
 
+From directory (recursively adds all supported files):
+```bash
+haiku-rag add-src /path/to/documents/
+```
+
+!!! note
+    When adding a directory, the same content filters configured for [file monitoring](configuration.md#filtering-monitored-files) are applied. This means `ignore_patterns` and `include_patterns` from your configuration will be used to filter which files are added.
+
 !!! note
     As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
     of your data. Create/update operations are atomic‑feeling: if anything fails during chunking or embedding,
@@ -205,7 +213,7 @@ Reduce disk usage by optimizing and pruning old table versions across all tables
 haiku-rag vacuum
 ```
 
-**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 60 seconds (`VACUUM_RETENTION_SECONDS`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
+**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 60 seconds (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
 
 ### Rebuild Database
 

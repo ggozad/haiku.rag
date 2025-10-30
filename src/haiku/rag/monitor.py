@@ -40,6 +40,14 @@ class FileFilter(DefaultFilter):
         super().__init__()
 
     def __call__(self, change: Change, path: str) -> bool:
+        if not self.include_file(path):
+            return False
+
+        # Apply default watchfiles filter
+        return super().__call__(change, path)
+
+    def include_file(self, path: str) -> bool:
+        """Check if a file should be included based on filters."""
         # Check extension filter
         if not path.endswith(self.extensions):
             return False
@@ -54,8 +62,7 @@ class FileFilter(DefaultFilter):
             if self.ignore_spec.match_file(path):
                 return False
 
-        # Apply default watchfiles filter
-        return super().__call__(change, path)
+        return True
 
 
 class FileWatcher:
