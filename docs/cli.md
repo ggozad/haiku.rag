@@ -78,6 +78,18 @@ With options:
 haiku-rag search "python programming" --limit 10
 ```
 
+With filters (filter by document properties):
+```bash
+# Filter by URI pattern
+haiku-rag search "neural networks" --filter "uri LIKE '%arxiv%'"
+
+# Filter by exact title
+haiku-rag search "transformers" --filter "title = 'Deep Learning Guide'"
+
+# Combine multiple conditions
+haiku-rag search "AI" --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
+```
+
 ## Question Answering
 
 Ask questions about your documents:
