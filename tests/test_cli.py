@@ -170,7 +170,9 @@ def test_search():
         result = runner.invoke(cli, ["search", "query"])
 
         assert result.exit_code == 0
-        mock_app_instance.search.assert_called_once_with(query="query", limit=5)
+        mock_app_instance.search.assert_called_once_with(
+            query="query", limit=5, filter=None
+        )
 
 
 def test_serve_no_flags():

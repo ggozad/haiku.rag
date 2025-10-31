@@ -28,8 +28,10 @@ chunks = [
 
 @pytest.mark.asyncio
 async def test_reranker_base():
+    from haiku.rag.config import Config
+
     reranker = RerankerBase()
-    assert reranker._model == ""
+    assert reranker._model == Config.reranking.model
 
     with pytest.raises(NotImplementedError):
         await reranker.rerank("query", [])
