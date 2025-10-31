@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
-from haiku.rag.utils import text_to_docling_document
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,8 @@ def add_marker(text: str) -> str:
 
         chunk_repo.embedder.embed = fake_embed  # type: ignore[assignment]
 
-        docling = text_to_docling_document(document.content, name="test.md")
+        converter = get_converter(Config)
+        docling = converter.convert_text(document.content, name="test.md")
         chunks = await chunk_repo.create_chunks_for_document(created_doc.id, docling)
 
         assert any(marker in c.content for c in chunks)

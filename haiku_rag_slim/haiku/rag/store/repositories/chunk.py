@@ -151,7 +151,7 @@ class ChunkRepository:
         """Create chunks and embeddings for a document from DoclingDocument."""
         # Lazy imports to avoid loading docling during module import
         from haiku.rag.chunker import chunker
-        from haiku.rag.utils import text_to_docling_document
+        from haiku.rag.converters import get_converter
 
         # Optionally preprocess markdown before chunking
         processed_document = document
@@ -166,7 +166,8 @@ class ChunkRepository:
                 processed_markdown = result
                 if not isinstance(processed_markdown, str):
                     raise ValueError("Preprocessor must return a markdown string")
-                processed_document = text_to_docling_document(
+                converter = get_converter(self.store._config)
+                processed_document = converter.convert_text(
                     processed_markdown, name="content.md"
                 )
             except Exception as e:

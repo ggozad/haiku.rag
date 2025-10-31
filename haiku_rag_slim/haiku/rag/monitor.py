@@ -23,11 +23,18 @@ class FileFilter(DefaultFilter):
         *,
         ignore_patterns: list[str] | None = None,
         include_patterns: list[str] | None = None,
+        supported_extensions: list[str] | None = None,
     ) -> None:
-        # Lazy import to avoid loading docling
-        from haiku.rag.reader import FileReader
+        if supported_extensions is None:
+            # Default to docling-local extensions if not provided
+            from haiku.rag.converters.docling_local import DoclingLocalConverter
 
-        self.extensions = tuple(FileReader.extensions)
+            supported_extensions = (
+                DoclingLocalConverter.docling_extensions
+                + DoclingLocalConverter.text_extensions
+            )
+
+        self.extensions = tuple(supported_extensions)
         self.ignore_spec = (
             pathspec.PathSpec.from_lines(GitWildMatchPattern, ignore_patterns)
             if ignore_patterns
@@ -72,16 +79,21 @@ class FileWatcher:
         client: HaikuRAG,
         config: AppConfig = Config,
     ):
+        from haiku.rag.converters import get_converter
+
         self.paths = config.monitor.directories
         self.client = client
         self.ignore_patterns = config.monitor.ignore_patterns or None
         self.include_patterns = config.monitor.include_patterns or None
         self.delete_orphans = config.monitor.delete_orphans
+        self.supported_extensions = get_converter(config).supported_extensions
 
     async def observe(self):
         logger.info(f"Watching files in {self.paths}")
         filter = FileFilter(
-            ignore_patterns=self.ignore_patterns, include_patterns=self.include_patterns
+            ignore_patterns=self.ignore_patterns,
+            include_patterns=self.include_patterns,
+            supported_extensions=self.supported_extensions,
         )
         await self.refresh()
 
@@ -96,9 +108,6 @@ class FileWatcher:
                 await self._delete_document(Path(path))
 
     async def refresh(self):
-        # Lazy import to avoid loading docling
-        from haiku.rag.reader import FileReader
-
         # Delete orphaned documents in background if enabled
         if self.delete_orphans:
             logger.info("Starting orphan cleanup in background")
@@ -106,12 +115,14 @@ class FileWatcher:
 
         # Create filter to apply same logic as observe()
         filter = FileFilter(
-            ignore_patterns=self.ignore_patterns, include_patterns=self.include_patterns
+            ignore_patterns=self.ignore_patterns,
+            include_patterns=self.include_patterns,
+            supported_extensions=self.supported_extensions,
         )
 
         for path in self.paths:
             for f in Path(path).rglob("**/*"):
-                if f.is_file() and f.suffix in FileReader.extensions:
+                if f.is_file() and f.suffix in self.supported_extensions:
                     # Apply pattern filters
                     if filter(Change.added, str(f)):
                         await self._upsert_document(f)
