@@ -1,6 +1,8 @@
 import pytest
 from datasets import Dataset
 
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
@@ -33,9 +35,8 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
         document = Document(content=document_text)
 
         # Create the document with chunks and embeddings
-        from haiku.rag.utils import text_to_docling_document
-
-        docling_document = text_to_docling_document(document_text, name="test.md")
+        converter = get_converter(Config)
+        docling_document = converter.convert_text(document_text, name="test.md")
         created_document = await doc_repo._create_and_chunk(document, docling_document)
         documents.append((created_document, doc_data))
 
@@ -81,9 +82,8 @@ async def test_chunks_include_document_info(temp_db_path):
     )
 
     # Create the document with chunks
-    from haiku.rag.utils import text_to_docling_document
-
-    docling_document = text_to_docling_document(document.content, name="test.md")
+    converter = get_converter(Config)
+    docling_document = converter.convert_text(document.content, name="test.md")
     created_document = await doc_repo._create_and_chunk(document, docling_document)
 
     # Search for chunks
@@ -119,9 +119,8 @@ async def test_chunks_include_document_title(temp_db_path):
     )
 
     # Create the document with chunks
-    from haiku.rag.utils import text_to_docling_document
-
-    dl = text_to_docling_document(document.content, name="title-test.md")
+    converter = get_converter(Config)
+    dl = converter.convert_text(document.content, name="title-test.md")
     await doc_repo._create_and_chunk(document, dl)
 
     # Perform a search that should find this document
@@ -151,11 +150,10 @@ async def test_search_score_types(temp_db_path):
         "Computer vision systems can interpret and analyze visual information from images.",
     ]
 
+    converter = get_converter(Config)
     for content in documents_content:
         document = Document(content=content)
-        from haiku.rag.utils import text_to_docling_document
-
-        docling_document = text_to_docling_document(content, name="test.md")
+        docling_document = converter.convert_text(content, name="test.md")
         await doc_repo._create_and_chunk(document, docling_document)
 
     query = "machine learning"

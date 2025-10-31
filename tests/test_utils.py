@@ -1,11 +1,13 @@
-from haiku.rag.utils import text_to_docling_document
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 
 
 def test_text_to_docling_document():
-    """Test the text_to_docling_document utility function."""
+    """Test text to DoclingDocument conversion."""
     # Test basic text conversion
     simple_text = "This is a simple text document."
-    doc = text_to_docling_document(simple_text)
+    converter = get_converter(Config)
+    doc = converter.convert_text(simple_text)
 
     # Verify it returns a DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -18,7 +20,7 @@ def test_text_to_docling_document():
 
 
 def test_text_to_docling_document_with_custom_name():
-    """Test text_to_docling_document with custom name parameter."""
+    """Test text to DoclingDocument conversion with custom name parameter."""
     code_text = """# Python Code
 
 ```python
@@ -27,7 +29,8 @@ def hello():
     return True
 ```"""
 
-    doc = text_to_docling_document(code_text, name="hello.md")
+    converter = get_converter(Config)
+    doc = converter.convert_text(code_text, name="hello.md")
 
     # Verify it's a valid DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -41,7 +44,7 @@ def hello():
 
 
 def test_text_to_docling_document_markdown_content():
-    """Test text_to_docling_document with markdown content."""
+    """Test text to DoclingDocument conversion with markdown content."""
     markdown_text = """# Test Document
 
 This is a test document with:
@@ -58,7 +61,8 @@ def test():
 
 **Bold text** and *italic text*."""
 
-    doc = text_to_docling_document(markdown_text, name="test.md")
+    converter = get_converter(Config)
+    doc = converter.convert_text(markdown_text, name="test.md")
 
     # Verify it's a DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -73,8 +77,9 @@ def test():
 
 
 def test_text_to_docling_document_empty_content():
-    """Test text_to_docling_document with empty content."""
-    doc = text_to_docling_document("")
+    """Test text to DoclingDocument conversion with empty content."""
+    converter = get_converter(Config)
+    doc = converter.convert_text("")
 
     # Should still create a valid DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -87,7 +92,7 @@ def test_text_to_docling_document_empty_content():
 
 
 def test_text_to_docling_document_unicode_content():
-    """Test text_to_docling_document with unicode content."""
+    """Test text to DoclingDocument conversion with unicode content."""
     unicode_text = """# 测试文档
 
 这是一个包含中文的测试文档。
@@ -101,7 +106,8 @@ function saludar() {
 
 Emoji test: 🚀 ✅ 📝"""
 
-    doc = text_to_docling_document(unicode_text, name="unicode.md")
+    converter = get_converter(Config)
+    doc = converter.convert_text(unicode_text, name="unicode.md")
 
     # Verify it's a DoclingDocument
     from docling_core.types.doc.document import DoclingDocument

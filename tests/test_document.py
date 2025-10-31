@@ -1,6 +1,8 @@
 import pytest
 from datasets import Dataset
 
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -24,9 +26,8 @@ async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
     )
 
     # Convert text to DoclingDocument for chunk creation
-    from haiku.rag.utils import text_to_docling_document
-
-    docling_document = text_to_docling_document(document_text, name="test.md")
+    converter = get_converter(Config)
+    docling_document = converter.convert_text(document_text, name="test.md")
 
     # Create the document with chunks in the database
     created_document = await doc_repo._create_and_chunk(document, docling_document)
