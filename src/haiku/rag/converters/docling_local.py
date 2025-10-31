@@ -1,13 +1,23 @@
+"""Local docling converter implementation."""
+
+from io import BytesIO
 from pathlib import Path
 from typing import ClassVar
 
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter as DoclingDocConverter
 from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.io import DocumentStream
 
-from haiku.rag.utils import text_to_docling_document
+from haiku.rag.converters.base import DocumentConverter
 
 
-class FileReader:
+class DoclingLocalConverter(DocumentConverter):
+    """Converter that uses local docling for document conversion.
+
+    This converter runs docling locally in-process to convert documents.
+    It handles various document formats including PDF, DOCX, HTML, and plain text.
+    """
+
     # Extensions supported by docling
     docling_extensions: ClassVar[list[str]] = [
         ".adoc",
@@ -86,32 +96,67 @@ class FileReader:
         ".yml": "yaml",
     }
 
-    extensions: ClassVar[list[str]] = docling_extensions + text_extensions
+    @property
+    def supported_extensions(self) -> list[str]:
+        """Return list of file extensions supported by this converter."""
+        return self.docling_extensions + self.text_extensions
 
-    @staticmethod
-    def parse_file(path: Path) -> DoclingDocument:
+    def convert_file(self, path: Path) -> DoclingDocument:
+        """Convert a file to DoclingDocument using local docling.
+
+        Args:
+            path: Path to the file to convert.
+
+        Returns:
+            DoclingDocument representation of the file.
+
+        Raises:
+            ValueError: If the file cannot be converted.
+        """
         try:
             file_extension = path.suffix.lower()
 
-            if file_extension in FileReader.docling_extensions:
+            if file_extension in self.docling_extensions:
                 # Use docling for complex document formats
-                converter = DocumentConverter()
+                converter = DoclingDocConverter()
                 result = converter.convert(path)
                 return result.document
-            elif file_extension in FileReader.text_extensions:
+            elif file_extension in self.text_extensions:
                 # Read plain text files directly
                 content = path.read_text(encoding="utf-8")
 
                 # Wrap code files (but not plain txt) in markdown code blocks for better presentation
-                if file_extension in FileReader.code_markdown_identifier:
-                    language = FileReader.code_markdown_identifier[file_extension]
+                if file_extension in self.code_markdown_identifier:
+                    language = self.code_markdown_identifier[file_extension]
                     content = f"```{language}\n{content}\n```"
 
                 # Convert text to DoclingDocument by wrapping as markdown
-                return text_to_docling_document(content, name=f"{path.stem}.md")
+                return self.convert_text(content, name=f"{path.stem}.md")
             else:
                 # Fallback: try to read as text and convert to DoclingDocument
                 content = path.read_text(encoding="utf-8")
-                return text_to_docling_document(content, name=f"{path.stem}.md")
+                return self.convert_text(content, name=f"{path.stem}.md")
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")
+
+    def convert_text(self, text: str, name: str = "content.md") -> DoclingDocument:
+        """Convert text content to DoclingDocument using local docling.
+
+        Args:
+            text: The text content to convert.
+            name: The name to use for the document (defaults to "content.md").
+
+        Returns:
+            DoclingDocument representation of the text.
+
+        Raises:
+            ValueError: If the text cannot be converted.
+        """
+        try:
+            bytes_io = BytesIO(text.encode("utf-8"))
+            doc_stream = DocumentStream(name=name, stream=bytes_io)
+            converter = DoclingDocConverter()
+            result = converter.convert(doc_stream)
+            return result.document
+        except Exception as e:
+            raise ValueError(f"Failed to convert text to DoclingDocument: {e}")

@@ -2,7 +2,8 @@ import pytest
 from datasets import Dataset
 
 from haiku.rag.chunker import Chunker
-from haiku.rag.utils import text_to_docling_document
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 
 
 @pytest.mark.asyncio
@@ -11,7 +12,8 @@ async def test_chunker(qa_corpus: Dataset):
     doc_text = qa_corpus[0]["document_extracted"]
 
     # Convert text to DoclingDocument
-    doc = text_to_docling_document(doc_text, name="test.md")
+    converter = get_converter(Config)
+    doc = converter.convert_text(doc_text, name="test.md")
 
     chunks = await chunker.chunk(doc)
 

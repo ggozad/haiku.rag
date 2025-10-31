@@ -1,10 +1,11 @@
 import pytest
 
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
-from haiku.rag.utils import text_to_docling_document
 
 
 @pytest.mark.asyncio
@@ -34,7 +35,8 @@ async def test_version_rollback_on_create_failure(temp_db_path):
     # Attempt to create document with chunks; expect failure and rollback
     content = "Hello, rollback!"
     doc = Document(content=content)
-    dl_doc = text_to_docling_document(content, name="test.md")
+    converter = get_converter(Config)
+    dl_doc = converter.convert_text(content, name="test.md")
 
     with pytest.raises(RuntimeError):
         await repo._create_with_docling(doc, dl_doc)
@@ -65,7 +67,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     # Create a valid document first (with real chunking and stubbed embeddings)
     base_content = "Base content"
     base_doc = Document(content=base_content)
-    base_dl = text_to_docling_document(base_content, name="base.md")
+    base_dl = get_converter(Config).convert_text(base_content, name="base.md")
     created = await repo._create_with_docling(base_doc, base_dl)
 
     # Force new chunk creation to fail during update after writing
@@ -80,7 +82,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     # Attempt update
     updated_content = "Updated content"
     created.content = updated_content
-    updated_dl = text_to_docling_document(updated_content, name="updated.md")
+    updated_dl = get_converter(Config).convert_text(updated_content, name="updated.md")
 
     with pytest.raises(RuntimeError):
         await repo._update_with_docling(created, updated_dl)
@@ -141,12 +143,12 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
 
     # Create first document
     doc1 = Document(content="First document")
-    dl_doc1 = text_to_docling_document("First document", name="doc1.md")
+    dl_doc1 = get_converter(Config).convert_text("First document", name="doc1.md")
     await repo._create_with_docling(doc1, dl_doc1)
 
     # Create second document
     doc2 = Document(content="Second document")
-    dl_doc2 = text_to_docling_document("Second document", name="doc2.md")
+    dl_doc2 = get_converter(Config).convert_text("Second document", name="doc2.md")
     await repo._create_with_docling(doc2, dl_doc2)
 
     # Get initial version counts (should have multiple versions from creates)
@@ -201,7 +203,6 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     """Test that background vacuum completes when context manager exits."""
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config import Config
-    from haiku.rag.utils import text_to_docling_document
 
     # Set aggressive vacuum retention for this test
     monkeypatch.setattr(Config.storage, "vacuum_retention_seconds", 0)
@@ -211,7 +212,9 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
         # This aggressively cleans up old versions between operations
         for i in range(3):
             doc = Document(content=f"Test document {i}")
-            dl_doc = text_to_docling_document(f"Test document {i}", name=f"test{i}.md")
+            dl_doc = get_converter(Config).convert_text(
+                f"Test document {i}", name=f"test{i}.md"
+            )
             await client.document_repository._create_with_docling(doc, dl_doc)
 
     # After context exit, automatic vacuum should have kept versions minimal

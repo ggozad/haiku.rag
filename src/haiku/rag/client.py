@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from haiku.rag.config import AppConfig, Config
+from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk
@@ -96,11 +97,9 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
-        # Lazy import to avoid loading docling
-        from haiku.rag.utils import text_to_docling_document
-
         # Convert content to DoclingDocument for processing
-        docling_document = text_to_docling_document(content)
+        converter = get_converter(self._config)
+        docling_document = converter.convert_text(content)
 
         document = Document(
             content=content,
@@ -190,12 +189,10 @@ class HaikuRAG:
         Raises:
             ValueError: If the file cannot be parsed or doesn't exist
         """
-        # Lazy import to avoid loading docling
-        from haiku.rag.reader import FileReader
-
         metadata = metadata or {}
 
-        if source_path.suffix.lower() not in FileReader.extensions:
+        converter = get_converter(self._config)
+        if source_path.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {source_path.suffix}")
 
         if not source_path.exists():
@@ -227,7 +224,8 @@ class HaikuRAG:
             return existing_doc
 
         # Parse file only when content changed or new document
-        docling_document = FileReader.parse_file(source_path)
+        converter = get_converter(self._config)
+        docling_document = converter.convert_file(source_path)
 
         if existing_doc:
             # Update existing document
@@ -268,10 +266,10 @@ class HaikuRAG:
             ValueError: If the content cannot be parsed
             httpx.RequestError: If URL request fails
         """
-        # Lazy import to avoid loading docling
-        from haiku.rag.reader import FileReader
-
         metadata = metadata or {}
+
+        converter = get_converter(self._config)
+        supported_extensions = converter.supported_extensions
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url)
@@ -304,7 +302,7 @@ class HaikuRAG:
                 url, content_type
             )
 
-            if file_extension not in FileReader.extensions:
+            if file_extension not in supported_extensions:
                 raise ValueError(
                     f"Unsupported content type/extension: {content_type}/{file_extension}"
                 )
@@ -317,8 +315,8 @@ class HaikuRAG:
                 temp_file.flush()  # Ensure content is written to disk
                 temp_path = Path(temp_file.name)
 
-                # Parse the content using FileReader
-                docling_document = FileReader.parse_file(temp_path)
+                # Parse the content using converter
+                docling_document = converter.convert_file(temp_path)
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
@@ -394,11 +392,9 @@ class HaikuRAG:
 
     async def update_document(self, document: Document) -> Document:
         """Update an existing document."""
-        # Lazy import to avoid loading docling
-        from haiku.rag.utils import text_to_docling_document
-
         # Convert content to DoclingDocument
-        docling_document = text_to_docling_document(document.content)
+        converter = get_converter(self._config)
+        docling_document = converter.convert_text(document.content)
 
         return await self.document_repository._update_with_docling(
             document, docling_document
@@ -624,11 +620,10 @@ class HaikuRAG:
         Yields:
             int: The ID of the document currently being processed
         """
-        # Lazy import to avoid loading docling
-        from haiku.rag.utils import text_to_docling_document
-
         await self.chunk_repository.delete_all()
         self.store.recreate_embeddings_table()
+
+        converter = get_converter(self._config)
 
         # Update settings to current config
         settings_repo = SettingsRepository(self.store)
@@ -681,14 +676,14 @@ class HaikuRAG:
                     logger.warning(
                         "Source missing for %s, re-embedding from content", doc.uri
                     )
-                    docling_document = text_to_docling_document(doc.content)
+                    docling_document = converter.convert_text(doc.content)
                     await self.chunk_repository.create_chunks_for_document(
                         doc.id, docling_document
                     )
                     yield doc.id
             else:
                 # Document without URI - re-create chunks from existing content
-                docling_document = text_to_docling_document(doc.content)
+                docling_document = converter.convert_text(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
                     doc.id, docling_document
                 )
