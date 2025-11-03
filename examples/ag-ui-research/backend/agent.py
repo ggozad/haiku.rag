@@ -242,6 +242,7 @@ For each insight, reference which result numbers (0, 1, 2, etc.) support it."""
         insight_agent: Agent[None, InsightsList] = Agent(
             ctx.model,
             output_type=InsightsList,
+            retries=3,
         )
 
         result = await insight_agent.run(extract_prompt)
