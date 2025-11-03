@@ -3,27 +3,25 @@ from typing import Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.format_prompt import format_as_xml
 from pydantic_ai.output import ToolOutput
-from pydantic_graph.beta import GraphBuilder, StepContext
+from pydantic_graph.beta import Graph, GraphBuilder, StepContext
+from pydantic_graph.beta.join import reduce_list_append
 
-from haiku.rag.qa.deep.common import collect_answers_reducer, get_model, log
+from haiku.rag.graph_common import get_model, log
+from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
+from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
 from haiku.rag.qa.deep.dependencies import DeepQADependencies
-from haiku.rag.qa.deep.models import (
-    DeepQAAnswer,
-    DeepQAEvaluation,
-    ResearchPlan,
-    SearchAnswer,
-)
+from haiku.rag.qa.deep.models import DeepQAAnswer, DeepQAEvaluation
 from haiku.rag.qa.deep.prompts import (
     DECISION_PROMPT,
-    PLAN_PROMPT,
-    SEARCH_AGENT_PROMPT,
     SYNTHESIS_PROMPT,
     SYNTHESIS_PROMPT_WITH_CITATIONS,
 )
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 
-def build_deep_qa_graph(provider: str, model: str):
+def build_deep_qa_graph(
+    provider: str, model: str
+) -> Graph[DeepQAState, DeepQADeps, None, DeepQAAnswer]:
     g = GraphBuilder(
         state_type=DeepQAState,
         deps_type=DeepQADeps,
@@ -82,7 +80,7 @@ def build_deep_qa_graph(provider: str, model: str):
     @g.step
     async def search_one(
         ctx: StepContext[DeepQAState, DeepQADeps, str],
-    ) -> SearchAnswer | None:
+    ) -> SearchAnswer:
         state = ctx.state
         deps = ctx.deps
         sub_q = ctx.inputs
@@ -130,17 +128,22 @@ def build_deep_qa_graph(provider: str, model: str):
         )
         try:
             result = await agent.run(sub_q, deps=agent_deps)
+            answer = result.output
+            if answer:
+                state.context.add_qa_response(answer)
+                preview = answer.answer[:150] + (
+                    "…" if len(answer.answer) > 150 else ""
+                )
+                log(deps, state, f"   [green]✓[/green] {preview}")
+            return answer
         except Exception as e:
             log(deps, state, f"[red]Search failed:[/red] {e}")
-            return None
-
-        answer = result.output
-        if answer:
-            state.context.add_qa_response(answer)
-            preview = answer.answer[:150] + ("…" if len(answer.answer) > 150 else "")
-            log(deps, state, f"   [green]✓[/green] {preview}")
-
-        return answer
+            failure_answer = SearchAnswer(
+                query=sub_q,
+                answer=f"Search failed after retries: {str(e)}",
+                confidence=0.0,
+            )
+            return failure_answer
 
     @g.step
     async def get_batch(
@@ -291,8 +294,8 @@ def build_deep_qa_graph(provider: str, model: str):
 
     # Build the graph structure
     collect_answers = g.join(
-        collect_answers_reducer,
-        initial_factory=lambda: [],
+        reduce_list_append,
+        initial_factory=list[SearchAnswer],
     )
 
     g.add(

@@ -6,7 +6,7 @@ import logfire
 from pydantic_ai import Agent, RunContext
 
 from haiku.rag.config import Config
-from haiku.rag.qa.deep.common import get_model
+from haiku.rag.graph_common import get_model
 
 from .context import load_message_history, save_message_history
 from .models import AgentDependencies, SearchResult
