@@ -194,25 +194,20 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                     from haiku.rag.config import Config
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
-                    from haiku.rag.qa.deep.nodes import DeepQAPlanNode
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
-                    graph = build_deep_qa_graph()
+                    graph = build_deep_qa_graph(
+                        provider=Config.qa.provider,
+                        model=Config.qa.model,
+                    )
                     context = DeepQAContext(
                         original_question=question, use_citations=cite
                     )
                     state = DeepQAState(context=context)
                     deps = DeepQADeps(client=rag)
 
-                    start_node = DeepQAPlanNode(
-                        provider=Config.qa.provider,
-                        model=Config.qa.model,
-                    )
-
-                    result = await graph.run(
-                        start_node=start_node, state=state, deps=deps
-                    )
-                    answer = result.output.answer
+                    result = await graph.run(state=state, deps=deps)
+                    answer = result.answer
                 else:
                     answer = await rag.ask(question, cite=cite)
                 return answer
@@ -241,13 +236,15 @@ def create_mcp_server(db_path: Path) -> FastMCP:
             A research report with findings, or None if an error occurred.
         """
         try:
-            from haiku.rag.graph.nodes.plan import PlanNode
             from haiku.rag.research.dependencies import ResearchContext
             from haiku.rag.research.graph import build_research_graph
             from haiku.rag.research.state import ResearchDeps, ResearchState
 
             async with HaikuRAG(db_path) as rag:
-                graph = build_research_graph()
+                graph = build_research_graph(
+                    provider=Config.research.provider or Config.qa.provider,
+                    model=Config.research.model or Config.qa.model,
+                )
                 state = ResearchState(
                     context=ResearchContext(original_question=question),
                     max_iterations=max_iterations,
@@ -256,16 +253,9 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                 )
                 deps = ResearchDeps(client=rag)
 
-                result = await graph.run(
-                    PlanNode(
-                        provider=Config.research.provider or Config.qa.provider,
-                        model=Config.research.model or Config.qa.model,
-                    ),
-                    state=state,
-                    deps=deps,
-                )
+                result = await graph.run(state=state, deps=deps)
 
-                return result.output
+                return result
         except Exception:
             return None
 

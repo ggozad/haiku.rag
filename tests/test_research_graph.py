@@ -1,11 +1,12 @@
 import asyncio
 
 from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import ResearchState, build_research_graph
+from haiku.rag.research.graph import build_research_graph
+from haiku.rag.research.state import ResearchState
 
 
 def test_build_graph_and_state():
-    graph = build_research_graph()
+    graph = build_research_graph(provider="openai", model="gpt-4")
     assert graph is not None
 
     state = ResearchState(

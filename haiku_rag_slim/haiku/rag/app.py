@@ -13,12 +13,8 @@ from haiku.rag.config import Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
 from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import (
-    PlanNode,
-    ResearchDeps,
-    ResearchState,
-    build_research_graph,
-)
+from haiku.rag.research.graph import build_research_graph
+from haiku.rag.research.state import ResearchDeps, ResearchState
 from haiku.rag.research.stream import stream_research_graph
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -215,10 +211,12 @@ class HaikuRAGApp:
 
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
-                    from haiku.rag.qa.deep.nodes import DeepQAPlanNode
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
-                    graph = build_deep_qa_graph()
+                    graph = build_deep_qa_graph(
+                        provider=Config.qa.provider,
+                        model=Config.qa.model,
+                    )
                     context = DeepQAContext(
                         original_question=question, use_citations=cite
                     )
@@ -227,15 +225,8 @@ class HaikuRAGApp:
                         client=self.client, console=Console() if verbose else None
                     )
 
-                    start_node = DeepQAPlanNode(
-                        provider=Config.qa.provider,
-                        model=Config.qa.model,
-                    )
-
-                    result = await graph.run(
-                        start_node=start_node, state=state, deps=deps
-                    )
-                    answer = result.output.answer
+                    result = await graph.run(state=state, deps=deps)
+                    answer = result.answer
                 else:
                     answer = await self.client.ask(question, cite=cite)
 
@@ -262,7 +253,10 @@ class HaikuRAGApp:
                     self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                     self.console.print()
 
-                graph = build_research_graph()
+                graph = build_research_graph(
+                    provider=Config.research.provider or Config.qa.provider,
+                    model=Config.research.model or Config.qa.model,
+                )
                 context = ResearchContext(original_question=question)
                 state = ResearchState(
                     context=context,
@@ -274,12 +268,8 @@ class HaikuRAGApp:
                     client=client, console=self.console if verbose else None
                 )
 
-                start = PlanNode(
-                    provider=Config.research.provider or Config.qa.provider,
-                    model=Config.research.model or Config.qa.model,
-                )
                 report = None
-                async for event in stream_research_graph(graph, start, state, deps):
+                async for event in stream_research_graph(graph, state, deps):
                     if event.type == "report":
                         report = event.report
                         break

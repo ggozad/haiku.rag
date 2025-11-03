@@ -124,7 +124,6 @@ class ResearchStream:
 
 async def stream_research_graph(
     graph,
-    start,
     state: "ResearchState",
     deps,
 ) -> AsyncIterator[ResearchStreamEvent]:
@@ -132,7 +131,7 @@ async def stream_research_graph(
 
     from contextlib import suppress
 
-    from haiku.rag.research.state import ResearchDeps  # Local import to avoid cycle
+    from haiku.rag.research.state import ResearchDeps
 
     if not isinstance(deps, ResearchDeps):
         raise TypeError("deps must be an instance of ResearchDeps")
@@ -142,25 +141,13 @@ async def stream_research_graph(
 
     async def _execute() -> None:
         try:
-            report = None
-            try:
-                result = await graph.run(start, state=state, deps=deps)
-                report = result.output
-            except Exception:
-                from pydantic_graph import End
-
-                async with graph.iter(start, state=state, deps=deps) as run:
-                    node = run.next_node
-                    while not isinstance(node, End):
-                        node = await run.next(node)
-                    if run.result:
-                        report = run.result.output
+            report = await graph.run(state=state, deps=deps)
 
             if report is None:
                 raise RuntimeError("Graph did not produce a report")
 
             stream.report(report, state)
-        except Exception as exc:  # pragma: no cover - defensive path
+        except Exception as exc:
             stream.error(exc, state)
         finally:
             await stream.close()
