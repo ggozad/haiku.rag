@@ -7,6 +7,14 @@ from typing import Any
 
 import typer
 
+# Load environment variables from .env file before importing Config
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 from haiku.rag.config import Config
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.utils import is_up_to_date
