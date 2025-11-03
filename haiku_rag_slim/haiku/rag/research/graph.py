@@ -5,9 +5,9 @@ from pydantic_ai.format_prompt import format_as_xml
 from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import GraphBuilder, StepContext
 
-from haiku.rag.graph.common import get_model, log
-from haiku.rag.graph.models import ResearchPlan, SearchAnswer
-from haiku.rag.graph.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
+from haiku.rag.qa.deep.common import collect_answers_reducer, get_model, log
+from haiku.rag.qa.deep.models import ResearchPlan, SearchAnswer
+from haiku.rag.qa.deep.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
 from haiku.rag.research.common import (
     format_analysis_for_prompt,
     format_context_for_prompt,
@@ -60,7 +60,7 @@ def build_research_graph(provider: str, model: str):
             return "\n\n".join(chunk.content for chunk, _ in expanded)
 
         prompt = (
-            "Plan a focused research approach for the main question.\n\n"
+            "Plan a focused approach for the main question.\n\n"
             f"Main question: {state.context.original_question}"
         )
 
@@ -73,7 +73,7 @@ def build_research_graph(provider: str, model: str):
         plan_result = await plan_agent.run(prompt, deps=agent_deps)
         state.context.sub_questions = list(plan_result.output.sub_questions)
 
-        log(deps, state, "\n[bold green]✅ Research Plan Created:[/bold green]")
+        log(deps, state, "\n[bold green]✅ Plan Created:[/bold green]")
         log(
             deps,
             state,
@@ -148,8 +148,20 @@ def build_research_graph(provider: str, model: str):
         return answer
 
     @g.step
+    async def get_batch(
+        ctx: StepContext[ResearchState, ResearchDeps, None | bool],
+    ) -> list[str] | None:
+        """Get next batch of questions from state."""
+        state = ctx.state
+        take = max(1, state.max_concurrency)
+        batch: list[str] = []
+        while state.context.sub_questions and len(batch) < take:
+            batch.append(state.context.sub_questions.pop(0))
+        return batch if batch else None
+
+    @g.step
     async def analyze_insights(
-        ctx: StepContext[ResearchState, ResearchDeps, list[SearchAnswer | None]],
+        ctx: StepContext[ResearchState, ResearchDeps, list[SearchAnswer]],
     ) -> None:
         state = ctx.state
         deps = ctx.deps
@@ -298,18 +310,6 @@ def build_research_graph(provider: str, model: str):
         return should_continue
 
     @g.step
-    async def get_batch(
-        ctx: StepContext[ResearchState, ResearchDeps, None | bool],
-    ) -> list[str] | None:
-        """Get next batch of questions from state."""
-        state = ctx.state
-        take = max(1, state.max_concurrency)
-        batch: list[str] = []
-        while state.context.sub_questions and len(batch) < take:
-            batch.append(state.context.sub_questions.pop(0))
-        return batch if batch else None
-
-    @g.step
     async def synthesize(
         ctx: StepContext[ResearchState, ResearchDeps, None | bool],
     ) -> ResearchReport:
@@ -348,13 +348,8 @@ def build_research_graph(provider: str, model: str):
         return result.output
 
     # Build the graph structure
-    def collect_reducer(
-        acc: list[SearchAnswer | None], item: SearchAnswer | None
-    ) -> list[SearchAnswer | None]:
-        return acc + [item] if item else acc
-
     collect_answers = g.join(
-        collect_reducer,
+        collect_answers_reducer,
         initial_factory=lambda: [],
     )
 

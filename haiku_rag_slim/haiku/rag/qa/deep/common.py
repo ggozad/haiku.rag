@@ -5,6 +5,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import Config
+from haiku.rag.qa.deep.models import SearchAnswer
 
 
 class HasEmitLog(Protocol):
@@ -31,3 +32,10 @@ def get_model(provider: str, model: str) -> Any:
 
 def log(deps: HasEmitLog, state: Any, message: str) -> None:
     deps.emit_log(message, state)
+
+
+def collect_answers_reducer(
+    acc: list[SearchAnswer], item: SearchAnswer | None
+) -> list[SearchAnswer]:
+    """Reducer function to collect search answers, filtering out None values."""
+    return acc + [item] if item else acc

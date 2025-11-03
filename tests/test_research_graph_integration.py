@@ -17,7 +17,7 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     def test_model_factory(provider, model):
         return TestModel()
 
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.qa.deep.common.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph(provider="test", model="test")

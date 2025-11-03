@@ -257,7 +257,7 @@ async def test_mcp_ask_question_deep():
 
             mock_graph = AsyncMock()
             mock_result = AsyncMock()
-            mock_result.output.answer = "Deep answer"
+            mock_result.answer = "Deep answer"
             mock_graph.run = AsyncMock(return_value=mock_result)
             mock_graph_builder.return_value = mock_graph
 
@@ -299,9 +299,7 @@ async def test_mcp_research_question():
             mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
             mock_graph = AsyncMock()
-            mock_result = AsyncMock()
-            mock_result.output = mock_report
-            mock_graph.run = AsyncMock(return_value=mock_result)
+            mock_graph.run = AsyncMock(return_value=mock_report)
             mock_graph_builder.return_value = mock_graph
 
             tools = await mcp.get_tools()
