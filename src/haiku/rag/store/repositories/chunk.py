@@ -249,64 +249,51 @@ class ChunkRepository:
         """
         if not query.strip():
             return []
-
-        chunk_where_clause = None
+        filtered_docs_df = None
         if filter:
             # We perform filtering as a two-step process, first filtering documents, then
             # filtering chunks based on those document IDs.
             # This is because LanceDB does not support joins directly in search queries.
-            matching_doc_ids = self._get_filtered_document_ids(filter)
+            filtered_docs_df = (
+                self.store.documents_table.search()
+                .select(["id"])
+                .where(filter)
+                .to_pandas()
+            )
 
-            if not matching_doc_ids:
-                return []
-
-            # Build WHERE clause for chunks table
-            # Use IN clause with document IDs
-            id_list = "', '".join(matching_doc_ids)
-            chunk_where_clause = f"document_id IN ('{id_list}')"
-
+        # Prepare search query based on search type
         if search_type == "vector":
             query_embedding = await self.embedder.embed(query)
-
             results = self.store.chunks_table.search(
                 query_embedding, query_type="vector", vector_column_name="vector"
             )
 
-            if chunk_where_clause:
-                results = results.where(chunk_where_clause)
-
-            results = results.limit(limit)
-
-            return await self._process_search_results(results)
-
         elif search_type == "fts":
             results = self.store.chunks_table.search(query, query_type="fts")
 
-            if chunk_where_clause:
-                results = results.where(chunk_where_clause)
-
-            results = results.limit(limit)
-            return await self._process_search_results(results)
-
         else:  # hybrid (default)
             query_embedding = await self.embedder.embed(query)
-
             # Create RRF reranker
             reranker = RRFReranker()
-
             # Perform native hybrid search with RRF reranking
-            results = self.store.chunks_table.search(query_type="hybrid")
-
-            if chunk_where_clause:
-                results = results.where(chunk_where_clause)
-
             results = (
-                results.vector(query_embedding)
+                self.store.chunks_table.search(query_type="hybrid")
+                .vector(query_embedding)
                 .text(query)
                 .rerank(reranker)
-                .limit(limit)
             )
-            return await self._process_search_results(results)
+
+        # Apply filtering if needed (common for all search types)
+        if filtered_docs_df is not None:
+            chunks_df = results.to_pandas()
+            filtered_chunks_df = chunks_df.loc[
+                chunks_df["document_id"].isin(filtered_docs_df["id"])
+            ].head(limit)
+            return await self._process_search_results(filtered_chunks_df)
+
+        # No filtering needed, apply limit and return
+        results = results.limit(limit)
+        return await self._process_search_results(results)
 
     async def get_by_document_id(self, document_id: str) -> list[Chunk]:
         """Get all chunks for a specific document."""
@@ -364,39 +351,62 @@ class ChunkRepository:
 
         return adjacent_chunks
 
-    def _get_filtered_document_ids(self, filter: str) -> list[str]:
-        """Query documents table with filter and return matching document IDs."""
-        filtered_docs = (
-            self.store.documents_table.search()
-            .where(filter)
-            .to_pydantic(DocumentRecord)
-        )
-        return [doc.id for doc in filtered_docs]
-
     async def _process_search_results(self, query_result) -> list[tuple[Chunk, float]]:
         """Process search results into chunks with document info and scores."""
         chunks_with_scores = []
 
-        # Get both arrow and pydantic results to access scores
-        arrow_result = query_result.to_arrow()
-        pydantic_results = list(query_result.to_pydantic(self.store.ChunkRecord))
+        # Handle pandas DataFrame (from filtered results)
+        import pandas as pd
 
-        # Extract scores from arrow result based on search type
-        scores = []
-        column_names = arrow_result.column_names
+        if isinstance(query_result, pd.DataFrame):
+            # DataFrame already contains the data we need
+            pydantic_results = []
+            for _, row in query_result.iterrows():
+                chunk_record = self.store.ChunkRecord(
+                    id=str(row["id"]),
+                    document_id=str(row["document_id"]),
+                    content=str(row["content"]),
+                    metadata=str(row["metadata"]),
+                    order=int(row["order"]) if "order" in row else 0,
+                )
+                pydantic_results.append(chunk_record)
 
-        if "_distance" in column_names:
-            # Vector search - distance (lower is better, convert to similarity)
-            distances = arrow_result.column("_distance").to_pylist()
-            scores = [max(0.0, 1.0 / (1.0 + dist)) for dist in distances]
-        elif "_relevance_score" in column_names:
-            # Hybrid search - relevance score (higher is better)
-            scores = arrow_result.column("_relevance_score").to_pylist()
-        elif "_score" in column_names:
-            # FTS search - score (higher is better)
-            scores = arrow_result.column("_score").to_pylist()
+            # Extract scores from DataFrame columns
+            scores = []
+            if "_distance" in query_result.columns:
+                # Vector search - distance (lower is better, convert to similarity)
+                distances = query_result["_distance"].tolist()
+                scores = [max(0.0, 1.0 / (1.0 + dist)) for dist in distances]
+            elif "_relevance_score" in query_result.columns:
+                # Hybrid search - relevance score (higher is better)
+                scores = query_result["_relevance_score"].tolist()
+            elif "_score" in query_result.columns:
+                # FTS search - score (higher is better)
+                scores = query_result["_score"].tolist()
+            else:
+                raise ValueError("Unknown search result format, cannot extract scores")
         else:
-            raise ValueError("Unknown search result format, cannot extract scores")
+            # Handle LanceDB query result (original behavior)
+            # Get both arrow and pydantic results to access scores
+            arrow_result = query_result.to_arrow()
+            pydantic_results = list(query_result.to_pydantic(self.store.ChunkRecord))
+
+            # Extract scores from arrow result based on search type
+            scores = []
+            column_names = arrow_result.column_names
+
+            if "_distance" in column_names:
+                # Vector search - distance (lower is better, convert to similarity)
+                distances = arrow_result.column("_distance").to_pylist()
+                scores = [max(0.0, 1.0 / (1.0 + dist)) for dist in distances]
+            elif "_relevance_score" in column_names:
+                # Hybrid search - relevance score (higher is better)
+                scores = arrow_result.column("_relevance_score").to_pylist()
+            elif "_score" in column_names:
+                # FTS search - score (higher is better)
+                scores = arrow_result.column("_score").to_pylist()
+            else:
+                raise ValueError("Unknown search result format, cannot extract scores")
 
         # Collect all unique document IDs for batch lookup
         document_ids = list(set(chunk.document_id for chunk in pydantic_results))
