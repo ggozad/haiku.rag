@@ -4,6 +4,10 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+if TYPE_CHECKING:
+    import pandas as pd
+    from lancedb.query import LanceQueryBuilder
+
 from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import DocumentRecord, Store
@@ -351,62 +355,51 @@ class ChunkRepository:
 
         return adjacent_chunks
 
-    async def _process_search_results(self, query_result) -> list[tuple[Chunk, float]]:
-        """Process search results into chunks with document info and scores."""
-        chunks_with_scores = []
+    async def _process_search_results(
+        self, query_result: "pd.DataFrame | LanceQueryBuilder"
+    ) -> list[tuple[Chunk, float]]:
+        """Process search results into chunks with document info and scores.
 
-        # Handle pandas DataFrame (from filtered results)
+        Args:
+            query_result: Either a pandas DataFrame or a LanceDB query result
+        """
         import pandas as pd
 
+        def extract_scores(df: pd.DataFrame) -> list[float]:
+            """Extract scores from DataFrame columns based on search type."""
+            if "_distance" in df.columns:
+                # Vector search - convert distance to similarity
+                return [max(0.0, 1.0 / (1.0 + d)) for d in df["_distance"].tolist()]
+            elif "_relevance_score" in df.columns:
+                # Hybrid search - relevance score (higher is better)
+                return df["_relevance_score"].tolist()
+            elif "_score" in df.columns:
+                # FTS search - score (higher is better)
+                return df["_score"].tolist()
+            else:
+                raise ValueError("Unknown search result format, cannot extract scores")
+
+        # Convert everything to DataFrame for uniform processing
         if isinstance(query_result, pd.DataFrame):
-            # DataFrame already contains the data we need
-            pydantic_results = []
-            for _, row in query_result.iterrows():
-                chunk_record = self.store.ChunkRecord(
-                    id=str(row["id"]),
-                    document_id=str(row["document_id"]),
-                    content=str(row["content"]),
-                    metadata=str(row["metadata"]),
-                    order=int(row["order"]) if "order" in row else 0,
-                )
-                pydantic_results.append(chunk_record)
-
-            # Extract scores from DataFrame columns
-            scores = []
-            if "_distance" in query_result.columns:
-                # Vector search - distance (lower is better, convert to similarity)
-                distances = query_result["_distance"].tolist()
-                scores = [max(0.0, 1.0 / (1.0 + dist)) for dist in distances]
-            elif "_relevance_score" in query_result.columns:
-                # Hybrid search - relevance score (higher is better)
-                scores = query_result["_relevance_score"].tolist()
-            elif "_score" in query_result.columns:
-                # FTS search - score (higher is better)
-                scores = query_result["_score"].tolist()
-            else:
-                raise ValueError("Unknown search result format, cannot extract scores")
+            df = query_result
         else:
-            # Handle LanceDB query result (original behavior)
-            # Get both arrow and pydantic results to access scores
-            arrow_result = query_result.to_arrow()
-            pydantic_results = list(query_result.to_pydantic(self.store.ChunkRecord))
+            # Convert LanceDB query result to DataFrame
+            df = query_result.to_pandas()
 
-            # Extract scores from arrow result based on search type
-            scores = []
-            column_names = arrow_result.column_names
+        # Extract scores
+        scores = extract_scores(df)
 
-            if "_distance" in column_names:
-                # Vector search - distance (lower is better, convert to similarity)
-                distances = arrow_result.column("_distance").to_pylist()
-                scores = [max(0.0, 1.0 / (1.0 + dist)) for dist in distances]
-            elif "_relevance_score" in column_names:
-                # Hybrid search - relevance score (higher is better)
-                scores = arrow_result.column("_relevance_score").to_pylist()
-            elif "_score" in column_names:
-                # FTS search - score (higher is better)
-                scores = arrow_result.column("_score").to_pylist()
-            else:
-                raise ValueError("Unknown search result format, cannot extract scores")
+        # Convert DataFrame rows to ChunkRecords
+        pydantic_results = [
+            self.store.ChunkRecord(
+                id=str(row["id"]),
+                document_id=str(row["document_id"]),
+                content=str(row["content"]),
+                metadata=str(row["metadata"]),
+                order=int(row["order"]) if "order" in row else 0,
+            )
+            for _, row in df.iterrows()
+        ]
 
         # Collect all unique document IDs for batch lookup
         document_ids = list(set(chunk.document_id for chunk in pydantic_results))
@@ -423,29 +416,21 @@ class ChunkRepository:
             )
             documents_map = {doc.id: doc for doc in doc_results}
 
+        # Build final results with document info
+        chunks_with_scores = []
         for i, chunk_record in enumerate(pydantic_results):
-            # Get document info from pre-fetched map
             doc = documents_map.get(chunk_record.document_id)
-            doc_uri = doc.uri if doc else None
-            doc_title = doc.title if doc else None
-            doc_meta = doc.metadata if doc else "{}"
-
-            md = json.loads(chunk_record.metadata)
-
             chunk = Chunk(
                 id=chunk_record.id,
                 document_id=chunk_record.document_id,
                 content=chunk_record.content,
-                metadata=md,
+                metadata=json.loads(chunk_record.metadata),
                 order=chunk_record.order,
-                document_uri=doc_uri,
-                document_title=doc_title,
-                document_meta=json.loads(doc_meta),
+                document_uri=doc.uri if doc else None,
+                document_title=doc.title if doc else None,
+                document_meta=json.loads(doc.metadata if doc else "{}"),
             )
-
-            # Get score from arrow result
             score = scores[i] if i < len(scores) else 1.0
-
             chunks_with_scores.append((chunk, score))
 
         return chunks_with_scores
