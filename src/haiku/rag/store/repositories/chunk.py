@@ -253,17 +253,22 @@ class ChunkRepository:
         """
         if not query.strip():
             return []
-        filtered_docs_df = None
+        filtered_doc_ids = None
         if filter:
             # We perform filtering as a two-step process, first filtering documents, then
             # filtering chunks based on those document IDs.
             # This is because LanceDB does not support joins directly in search queries.
-            filtered_docs_df = (
+            docs_df = (
                 self.store.documents_table.search()
                 .select(["id"])
                 .where(filter)
                 .to_pandas()
             )
+            # Early exit if no documents match the filter
+            if docs_df.empty:
+                return []
+            # Keep as pandas Series for efficient vectorized operations
+            filtered_doc_ids = docs_df["id"]
 
         # Prepare search query based on search type
         if search_type == "vector":
@@ -288,10 +293,10 @@ class ChunkRepository:
             )
 
         # Apply filtering if needed (common for all search types)
-        if filtered_docs_df is not None:
+        if filtered_doc_ids is not None:
             chunks_df = results.to_pandas()
             filtered_chunks_df = chunks_df.loc[
-                chunks_df["document_id"].isin(filtered_docs_df["id"])
+                chunks_df["document_id"].isin(filtered_doc_ids)
             ].head(limit)
             return await self._process_search_results(filtered_chunks_df)
 
@@ -407,8 +412,9 @@ class ChunkRepository:
         # Batch fetch all documents at once
         documents_map = {}
         if document_ids:
-            # Create a WHERE clause for all document IDs
-            where_clause = " OR ".join(f"id = '{doc_id}'" for doc_id in document_ids)
+            # Use IN clause for efficient batch lookup
+            id_list = "', '".join(document_ids)
+            where_clause = f"id IN ('{id_list}')"
             doc_results = list(
                 self.store.documents_table.search()
                 .where(where_clause)
