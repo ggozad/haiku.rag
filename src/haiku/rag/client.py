@@ -409,18 +409,24 @@ class HaikuRAG:
         return await self.document_repository.delete(document_id)
 
     async def list_documents(
-        self, limit: int | None = None, offset: int | None = None
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        filter: str | None = None,
     ) -> list[Document]:
-        """List all documents with optional pagination.
+        """List all documents with optional pagination and filtering.
 
         Args:
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
+            filter: Optional SQL WHERE clause to filter documents.
 
         Returns:
-            List of Document instances.
+            List of Document instances matching the criteria.
         """
-        return await self.document_repository.list_all(limit=limit, offset=offset)
+        return await self.document_repository.list_all(
+            limit=limit, offset=offset, filter=filter
+        )
 
     async def search(
         self,

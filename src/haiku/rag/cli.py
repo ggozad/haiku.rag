@@ -92,11 +92,17 @@ def list_documents(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
 ):
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(app.list_documents())
+    asyncio.run(app.list_documents(filter=filter))
 
 
 def _parse_meta_options(meta: list[str] | None) -> dict[str, Any]:

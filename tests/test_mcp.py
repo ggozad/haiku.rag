@@ -215,7 +215,7 @@ async def test_mcp_list_documents():
             assert len(result) == 2
             assert result[0].id == "doc1"
             assert result[1].id == "doc2"
-            mock_rag.list_documents.assert_called_once_with(10, 0)
+            mock_rag.list_documents.assert_called_once_with(10, 0, None)
 
 
 @pytest.mark.asyncio

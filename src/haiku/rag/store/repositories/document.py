@@ -123,11 +123,25 @@ class DocumentRepository:
         return True
 
     async def list_all(
-        self, limit: int | None = None, offset: int | None = None
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        filter: str | None = None,
     ) -> list[Document]:
-        """List all documents with optional pagination."""
+        """List all documents with optional pagination and filtering.
+
+        Args:
+            limit: Maximum number of documents to return.
+            offset: Number of documents to skip.
+            filter: Optional SQL WHERE clause to filter documents.
+
+        Returns:
+            List of Document instances matching the criteria.
+        """
         query = self.store.documents_table.search()
 
+        if filter is not None:
+            query = query.where(filter)
         if offset is not None:
             query = query.offset(offset)
         if limit is not None:

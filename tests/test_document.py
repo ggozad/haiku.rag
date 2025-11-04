@@ -105,3 +105,46 @@ async def test_document_repository_crud(qa_corpus: Dataset, temp_db_path):
     assert retrieved_document is None
 
     store.close()
+
+
+@pytest.mark.asyncio
+async def test_document_list_with_filter(qa_corpus: Dataset, temp_db_path):
+    """Test listing documents with filter clause."""
+    store = Store(temp_db_path)
+    doc_repo = DocumentRepository(store)
+
+    first_doc = qa_corpus[0]
+    document_text = first_doc["document_extracted"]
+
+    doc1 = Document(
+        content=document_text,
+        uri="https://example.com/doc1.txt",
+        metadata={"source": "test", "category": "A"},
+    )
+    doc2 = Document(
+        content=document_text,
+        uri="https://arxiv.org/paper.pdf",
+        metadata={"source": "test", "category": "B"},
+    )
+    doc3 = Document(
+        content=document_text,
+        uri="https://example.com/doc3.txt",
+        metadata={"source": "test", "category": "A"},
+    )
+
+    created_doc1 = await doc_repo.create(doc1)
+    created_doc2 = await doc_repo.create(doc2)
+    created_doc3 = await doc_repo.create(doc3)
+
+    all_documents = await doc_repo.list_all()
+    assert len(all_documents) == 3
+
+    arxiv_documents = await doc_repo.list_all(filter="uri LIKE '%arxiv%'")
+    assert len(arxiv_documents) == 1
+    assert arxiv_documents[0].id == created_doc2.id
+
+    example_documents = await doc_repo.list_all(filter="uri LIKE '%example.com%'")
+    assert len(example_documents) == 2
+    assert {doc.id for doc in example_documents} == {created_doc1.id, created_doc3.id}
+
+    store.close()

@@ -84,6 +84,21 @@ List all documents:
 docs = await client.list_documents(limit=10, offset=0)
 ```
 
+Filter documents by properties:
+```python
+# Filter by URI pattern
+docs = await client.list_documents(filter="uri LIKE '%arxiv%'")
+
+# Filter by exact title
+docs = await client.list_documents(filter="title = 'My Document'")
+
+# Combine multiple conditions
+docs = await client.list_documents(
+    limit=10,
+    filter="uri LIKE '%.pdf' AND title LIKE '%paper%'"
+)
+```
+
 ### Updating Documents
 
 ```python

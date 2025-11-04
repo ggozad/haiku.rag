@@ -10,7 +10,7 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients.
 - `add_document_from_url` - Add documents from URLs
 - `add_document_from_text` - Add documents from raw text content
 - `get_document` - Retrieve specific documents by ID
-- `list_documents` - List all documents with pagination
+- `list_documents` - List all documents with pagination and optional filtering
 - `delete_document` - Delete documents by ID
 
 ### Search
