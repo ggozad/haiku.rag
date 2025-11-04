@@ -149,13 +149,16 @@ def build_deep_qa_graph(
     async def get_batch(
         ctx: StepContext[DeepQAState, DeepQADeps, None | bool],
     ) -> list[str] | None:
-        """Get next batch of questions from state."""
+        """Get all remaining questions for this iteration."""
         state = ctx.state
-        take = max(1, state.max_concurrency)
-        batch: list[str] = []
-        while state.context.sub_questions and len(batch) < take:
-            batch.append(state.context.sub_questions.pop(0))
-        return batch if batch else None
+
+        if not state.context.sub_questions:
+            return None
+
+        # Take ALL remaining questions - max_concurrency controls parallel execution within .map()
+        batch = list(state.context.sub_questions)
+        state.context.sub_questions.clear()
+        return batch
 
     @g.step
     async def decide(

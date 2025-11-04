@@ -301,11 +301,6 @@ def research(
         "--confidence-threshold",
         help="Minimum confidence (0-1) to stop",
     ),
-    max_concurrency: int = typer.Option(
-        1,
-        "--max-concurrency",
-        help="Max concurrent searches per iteration (planned)",
-    ),
     db: Path = typer.Option(
         Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
@@ -325,7 +320,6 @@ def research(
             question=question,
             max_iterations=max_iterations,
             confidence_threshold=confidence_threshold,
-            max_concurrency=max_concurrency,
             verbose=verbose,
         )
     )

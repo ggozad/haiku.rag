@@ -26,7 +26,6 @@ class ResearchState:
     context: ResearchContext
     iterations: int = 0
     max_iterations: int = 3
-    max_concurrency: int = 1
     confidence_threshold: float = 0.8
     last_eval: EvaluationResult | None = None
     last_analysis: InsightAnalysis | None = None

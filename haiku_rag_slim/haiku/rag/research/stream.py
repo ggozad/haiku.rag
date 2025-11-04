@@ -15,7 +15,6 @@ class ResearchStateSnapshot:
     sub_questions: list[str]
     iterations: int
     max_iterations: int
-    max_concurrency: int
     confidence_threshold: float
     pending_sub_questions: int
     answered_questions: int
@@ -38,7 +37,6 @@ class ResearchStateSnapshot:
             sub_questions=list(context.sub_questions),
             iterations=state.iterations,
             max_iterations=state.max_iterations,
-            max_concurrency=state.max_concurrency,
             confidence_threshold=state.confidence_threshold,
             pending_sub_questions=len(context.sub_questions),
             answered_questions=len(context.qa_responses),

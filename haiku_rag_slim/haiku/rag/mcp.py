@@ -219,7 +219,6 @@ def create_mcp_server(db_path: Path) -> FastMCP:
         question: str,
         max_iterations: int = 3,
         confidence_threshold: float = 0.8,
-        max_concurrency: int = 1,
     ) -> ResearchReport | None:
         """Run multi-agent research to investigate a complex question.
 
@@ -230,7 +229,6 @@ def create_mcp_server(db_path: Path) -> FastMCP:
             question: The research question to investigate.
             max_iterations: Maximum search/analyze iterations (default: 3).
             confidence_threshold: Minimum confidence score (0-1) to stop early (default: 0.8).
-            max_concurrency: Maximum concurrent searches per iteration (default: 1).
 
         Returns:
             A research report with findings, or None if an error occurred.
@@ -249,7 +247,6 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                     context=ResearchContext(original_question=question),
                     max_iterations=max_iterations,
                     confidence_threshold=confidence_threshold,
-                    max_concurrency=max_concurrency,
                 )
                 deps = ResearchDeps(client=rag)
 

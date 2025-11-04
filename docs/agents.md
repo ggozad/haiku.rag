@@ -59,7 +59,7 @@ stateDiagram-v2
 Key nodes:
 
 - **Plan**: Decomposes the question into focused sub-questions
-- **Search (batched)**: Answers sub-questions in parallel batches (respects max_concurrency)
+- **Search (parallel)**: Answers all sub-questions in parallel
 - **Decision**: Evaluates if we have sufficient information or need another iteration
 - **Synthesize**: Generates the final comprehensive answer
 
@@ -69,7 +69,7 @@ Key differences from Research:
 - **Direct answers**: Returns just the answer (not a full research report)
 - **Question-focused**: Optimized for answering specific questions, not open-ended research
 - **Supports citations**: Can include inline source citations like `[document.md]`
-- **Configurable iterations**: Control max_iterations (default: 2) and max_concurrency (default: 3)
+- **Configurable iterations**: Control max_iterations (default: 2)
 
 CLI usage:
 
@@ -99,8 +99,7 @@ async with HaikuRAG(path_to_db) as client:
     state = DeepQAState(
         context=context,
         max_sub_questions=3,
-        max_iterations=2,
-        max_concurrency=3
+        max_iterations=2
     )
     deps = DeepQADeps(client=client)
 
@@ -176,7 +175,6 @@ async with HaikuRAG(path_to_db) as client:
         context=ResearchContext(original_question=question),
         max_iterations=2,
         confidence_threshold=0.8,
-        max_concurrency=2,
     )
     deps = ResearchDeps(client=client)
 
@@ -211,7 +209,6 @@ async with HaikuRAG(path_to_db) as client:
         context=ResearchContext(original_question=question),
         max_iterations=2,
         confidence_threshold=0.8,
-        max_concurrency=2,
     )
     deps = ResearchDeps(client=client)
 

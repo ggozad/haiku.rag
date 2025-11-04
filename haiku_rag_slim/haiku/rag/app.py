@@ -242,7 +242,6 @@ class HaikuRAGApp:
         question: str,
         max_iterations: int = 3,
         confidence_threshold: float = 0.8,
-        max_concurrency: int = 1,
         verbose: bool = False,
     ):
         """Run research via the pydantic-graph pipeline (default)."""
@@ -262,7 +261,6 @@ class HaikuRAGApp:
                     context=context,
                     max_iterations=max_iterations,
                     confidence_threshold=confidence_threshold,
-                    max_concurrency=max_concurrency,
                 )
                 deps = ResearchDeps(
                     client=client, console=self.console if verbose else None

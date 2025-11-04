@@ -21,5 +21,4 @@ class DeepQAState:
     context: DeepQAContext
     max_sub_questions: int = 3
     max_iterations: int = 2
-    max_concurrency: int = 1
     iterations: int = 0
