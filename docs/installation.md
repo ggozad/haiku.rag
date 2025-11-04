@@ -1,48 +1,50 @@
 # Installation
 
-## Basic Installation
+## Choose Your Package
+
+**haiku.rag** is available in two packages:
+
+### Full Package (Recommended)
 
 ```bash
 uv pip install haiku.rag
 ```
 
-This includes support for:
-- **Ollama** (default embedding provider using `mxbai-embed-large`)
+The full package includes **all features and extras**:
+- **Document processing** (Docling) - PDF, DOCX, PPTX, images, and 40+ file formats
+- **All embedding providers** - Ollama, OpenAI, VoyageAI, Anthropic, vLLM
+- **All rerankers** - MixedBread AI, Cohere, Zero Entropy, vLLM
+- **A2A agent** - Agent-to-Agent protocol support
+
+This is the easiest way to get started with all features enabled.
+
+### Slim Package (Minimal Dependencies)
+
+```bash
+# Minimal installation (no document processing)
+uv pip install haiku.rag-slim
+
+# With document processing
+uv pip install haiku.rag-slim[docling]
+
+# With specific providers
+uv pip install haiku.rag-slim[docling,voyageai,mxbai]
+```
+
+The slim package has minimal dependencies and lets you install only what you need:
+
+- `docling` - PDF, DOCX, PPTX, images, and other document formats
+- `voyageai` - VoyageAI embeddings
+- `mxbai` - MixedBread AI reranking
+- `a2a` - Agent-to-Agent protocol support
+- `cohere` - Cohere reranking
+- `zeroentropy` - Zero Entropy reranking
+
+**Built-in providers** (no extras needed):
+- **Ollama** (default embedding provider)
 - **OpenAI** (GPT models for QA and embeddings)
 - **Anthropic** (Claude models for QA)
-- **vLLM** (high-performance local inference for embeddings, QA, and reranking)
-
-## Provider-Specific Installation
-
-For additional providers, install with extras:
-
-### Embedding Providers
-
-#### VoyageAI
-
-```bash
-uv pip install haiku.rag[voyageai]
-```
-
-### Reranking Providers
-
-#### MixedBread AI
-
-```bash
-uv pip install haiku.rag[mxbai]
-```
-
-#### Cohere
-
-```bash
-uv pip install haiku.rag[cohere]
-```
-
-#### Zero Entropy
-
-```bash
-uv pip install haiku.rag[zeroentropy]
-```
+- **vLLM** (high-performance local inference)
 
 ### vLLM Setup
 

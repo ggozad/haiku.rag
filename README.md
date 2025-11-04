@@ -23,13 +23,29 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **A2A agent**: Conversational agent with context and multi-turn dialogue
 - **CLI & Python API**: Use from command line or Python
 
+## Installation
+
+**Python 3.12 or newer required**
+
+### Full Package (Recommended)
+
+```bash
+uv pip install haiku.rag
+```
+
+Includes all features: document processing, all embedding providers, rerankers, and A2A agent support.
+
+### Slim Package (Minimal Dependencies)
+
+```bash
+uv pip install haiku.rag-slim
+```
+
+Install only the extras you need. See the [Installation](https://ggozad.github.io/haiku.rag/installation/) documentation for available options
+
 ## Quick Start
 
 ```bash
-# Install
-# Python 3.12 or newer required
-uv pip install haiku.rag
-
 # Add documents
 haiku-rag add "Your content here"
 haiku-rag add "Your content here" --meta author=alice --meta topic=notes
