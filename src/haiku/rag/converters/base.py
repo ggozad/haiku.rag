@@ -2,8 +2,10 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from docling_core.types.doc.document import DoclingDocument
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
 
 
 class DocumentConverter(ABC):
@@ -24,7 +26,7 @@ class DocumentConverter(ABC):
         pass
 
     @abstractmethod
-    def convert_file(self, path: Path) -> DoclingDocument:
+    def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument format.
 
         Args:
@@ -39,7 +41,7 @@ class DocumentConverter(ABC):
         pass
 
     @abstractmethod
-    def convert_text(self, text: str, name: str = "content.md") -> DoclingDocument:
+    def convert_text(self, text: str, name: str = "content.md") -> "DoclingDocument":
         """Convert text content to DoclingDocument format.
 
         Args:

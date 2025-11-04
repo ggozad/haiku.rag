@@ -2,26 +2,12 @@
 
 from io import BytesIO
 from pathlib import Path
-from typing import ClassVar
-
-<<<<<<<< HEAD:haiku_rag_slim/haiku/rag/reader.py
-from docling_core.types.doc.document import DoclingDocument
-from haiku.rag.utils import text_to_docling_document
-========
-from docling.document_converter import DocumentConverter as DoclingDocConverter
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.io import DocumentStream
+from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.converters.base import DocumentConverter
->>>>>>>> f7975a3d5946 (Introduce converters for supporting more than local docling document conversion. Transform existing FileReader and utils to "docling-local" converter):src/haiku/rag/converters/docling_local.py
 
-# Check if docling is available
-try:
-    import docling  # noqa: F401
-
-    DOCLING_AVAILABLE = True
-except ImportError:
-    DOCLING_AVAILABLE = False
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
 
 
 class DoclingLocalConverter(DocumentConverter):
@@ -114,7 +100,7 @@ class DoclingLocalConverter(DocumentConverter):
         """Return list of file extensions supported by this converter."""
         return self.docling_extensions + self.text_extensions
 
-    def convert_file(self, path: Path) -> DoclingDocument:
+    def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument using local docling.
 
         Args:
@@ -126,23 +112,14 @@ class DoclingLocalConverter(DocumentConverter):
         Raises:
             ValueError: If the file cannot be converted.
         """
+        from docling.document_converter import DocumentConverter as DoclingDocConverter
+
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
                 # Use docling for complex document formats
-<<<<<<<< HEAD:haiku_rag_slim/haiku/rag/reader.py
-                if not DOCLING_AVAILABLE:
-                    raise ImportError(
-                        "Docling is required for processing this file type. "
-                        "Install with: pip install haiku.rag-slim[docling]"
-                    )
-                from docling.document_converter import DocumentConverter
-
-                converter = DocumentConverter()
-========
                 converter = DoclingDocConverter()
->>>>>>>> f7975a3d5946 (Introduce converters for supporting more than local docling document conversion. Transform existing FileReader and utils to "docling-local" converter):src/haiku/rag/converters/docling_local.py
                 result = converter.convert(path)
                 return result.document
             elif file_extension in self.text_extensions:
@@ -159,17 +136,11 @@ class DoclingLocalConverter(DocumentConverter):
             else:
                 # Fallback: try to read as text and convert to DoclingDocument
                 content = path.read_text(encoding="utf-8")
-<<<<<<<< HEAD:haiku_rag_slim/haiku/rag/reader.py
-                return text_to_docling_document(content, name=f"{path.stem}.md")
-        except ImportError:
-            raise
-========
                 return self.convert_text(content, name=f"{path.stem}.md")
->>>>>>>> f7975a3d5946 (Introduce converters for supporting more than local docling document conversion. Transform existing FileReader and utils to "docling-local" converter):src/haiku/rag/converters/docling_local.py
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")
 
-    def convert_text(self, text: str, name: str = "content.md") -> DoclingDocument:
+    def convert_text(self, text: str, name: str = "content.md") -> "DoclingDocument":
         """Convert text content to DoclingDocument using local docling.
 
         Args:
@@ -182,6 +153,9 @@ class DoclingLocalConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted.
         """
+        from docling.document_converter import DocumentConverter as DoclingDocConverter
+        from docling_core.types.io import DocumentStream
+
         try:
             bytes_io = BytesIO(text.encode("utf-8"))
             doc_stream = DocumentStream(name=name, stream=bytes_io)
