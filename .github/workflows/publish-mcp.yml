@@ -2,7 +2,7 @@ name: Publish to MCP Registry
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Build & publish to pypi"]
+    workflows: ["Build & publish haiku.rag to pypi"]
     types:
       - completed
 
@@ -21,7 +21,7 @@ jobs:
           python-version: '3.12'
       - name: Generate server.json from template
         run: |
-          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('haiku_rag_slim/pyproject.toml', 'rb'))['project']['version'])")
           sed "s/{{VERSION}}/$VERSION/g" server.json > server.json.tmp
           mv server.json.tmp server.json
           echo "Generated server.json with version: $VERSION"
