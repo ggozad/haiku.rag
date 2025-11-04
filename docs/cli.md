@@ -22,6 +22,18 @@ The `haiku-rag` CLI provides complete document management functionality.
 haiku-rag list
 ```
 
+Filter documents by properties:
+```bash
+# Filter by URI pattern
+haiku-rag list --filter "uri LIKE '%arxiv%'"
+
+# Filter by exact title
+haiku-rag list --filter "title = 'My Document'"
+
+# Combine multiple conditions
+haiku-rag list --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
+```
+
 ### Add Documents
 
 From text:

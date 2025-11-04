@@ -130,12 +130,23 @@ def create_mcp_server(db_path: Path) -> FastMCP:
 
     @mcp.tool()
     async def list_documents(
-        limit: int | None = None, offset: int | None = None
+        limit: int | None = None,
+        offset: int | None = None,
+        filter: str | None = None,
     ) -> list[DocumentResult]:
-        """List all documents with optional pagination."""
+        """List all documents with optional pagination and filtering.
+
+        Args:
+            limit: Maximum number of documents to return.
+            offset: Number of documents to skip.
+            filter: Optional SQL WHERE clause to filter documents.
+
+        Returns:
+            List of DocumentResult instances matching the criteria.
+        """
         try:
             async with HaikuRAG(db_path) as rag:
-                documents = await rag.list_documents(limit, offset)
+                documents = await rag.list_documents(limit, offset, filter)
 
                 return [
                     DocumentResult(

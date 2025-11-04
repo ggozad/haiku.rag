@@ -139,9 +139,9 @@ class HaikuRAGApp:
             f"  [repr.attrib_name]docling[/repr.attrib_name]: {docling_version}"
         )
 
-    async def list_documents(self):
+    async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(db_path=self.db_path) as self.client:
-            documents = await self.client.list_documents()
+            documents = await self.client.list_documents(filter=filter)
             for doc in documents:
                 self._rich_print_document(doc, truncate=True)
 
