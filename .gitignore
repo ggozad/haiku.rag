@@ -11,7 +11,7 @@ wheels/
 
 # tests
 .coverage*
-src/evaluations/data/
+evaluations/evaluations/data/
 tests/data/
 .pytest_cache/
 .ruff_cache/

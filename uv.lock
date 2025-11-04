@@ -13,6 +13,13 @@ resolution-markers = [
     "(python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'linux')",
 ]
 
+[manifest]
+members = [
+    "haiku-rag",
+    "haiku-rag-evals",
+    "haiku-rag-slim",
+]
+
 [[package]]
 name = "accelerate"
 version = "1.10.1"
@@ -1153,7 +1160,68 @@ name = "haiku-rag"
 version = "0.13.3"
 source = { editable = "." }
 dependencies = [
-    { name = "docling" },
+    { name = "haiku-rag-slim", extra = ["a2a", "cohere", "docling", "mxbai", "voyageai", "zeroentropy"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "datasets" },
+    { name = "logfire" },
+    { name = "mkdocs" },
+    { name = "mkdocs-material" },
+    { name = "pre-commit" },
+    { name = "pydantic-evals" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "a2a", "cohere", "zeroentropy"], editable = "haiku_rag_slim" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "datasets", specifier = ">=4.3.0" },
+    { name = "logfire", specifier = ">=4.14.2" },
+    { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-material", specifier = ">=9.6.22" },
+    { name = "pre-commit", specifier = ">=4.3.0" },
+    { name = "pydantic-evals", specifier = ">=1.7.0" },
+    { name = "pyright", specifier = ">=1.1.407" },
+    { name = "pytest", specifier = ">=8.4.2" },
+    { name = "pytest-asyncio", specifier = ">=1.2.0" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "ruff", specifier = ">=0.14.2" },
+]
+
+[[package]]
+name = "haiku-rag-evals"
+version = "0.13.3"
+source = { editable = "evaluations" }
+dependencies = [
+    { name = "datasets" },
+    { name = "haiku-rag-slim" },
+    { name = "logfire" },
+    { name = "pydantic-evals" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "datasets", specifier = ">=4.3.0" },
+    { name = "haiku-rag-slim", editable = "haiku_rag_slim" },
+    { name = "logfire", specifier = ">=4.14.2" },
+    { name = "pydantic-evals", specifier = ">=1.7.0" },
+    { name = "typer", specifier = ">=0.19.2,<0.20.0" },
+]
+
+[[package]]
+name = "haiku-rag-slim"
+version = "0.13.3"
+source = { editable = "haiku_rag_slim" }
+dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "lancedb" },
@@ -1176,6 +1244,9 @@ a2a = [
 cohere = [
     { name = "cohere" },
 ]
+docling = [
+    { name = "docling" },
+]
 mxbai = [
     { name = "mxbai-rerank" },
 ]
@@ -1186,25 +1257,10 @@ zeroentropy = [
     { name = "zeroentropy" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "datasets" },
-    { name = "logfire" },
-    { name = "mkdocs" },
-    { name = "mkdocs-material" },
-    { name = "pre-commit" },
-    { name = "pydantic-evals" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.0.0" },
-    { name = "docling", specifier = ">=2.58.0" },
+    { name = "docling", marker = "extra == 'docling'", specifier = ">=2.58.0" },
     { name = "fasta2a", marker = "extra == 'a2a'", specifier = ">=0.1.0" },
     { name = "fastmcp", specifier = ">=2.13.0.2" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -1223,22 +1279,7 @@ requires-dist = [
     { name = "watchfiles", specifier = ">=1.1.1" },
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a6" },
 ]
-provides-extras = ["voyageai", "mxbai", "a2a", "cohere", "zeroentropy"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "datasets", specifier = ">=4.3.0" },
-    { name = "logfire", specifier = ">=4.14.2" },
-    { name = "mkdocs", specifier = ">=1.6.1" },
-    { name = "mkdocs-material", specifier = ">=9.6.22" },
-    { name = "pre-commit", specifier = ">=4.3.0" },
-    { name = "pydantic-evals", specifier = ">=1.7.0" },
-    { name = "pyright", specifier = ">=1.1.407" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-asyncio", specifier = ">=1.2.0" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "ruff", specifier = ">=0.14.2" },
-]
+provides-extras = ["docling", "voyageai", "mxbai", "a2a", "cohere", "zeroentropy"]
 
 [[package]]
 name = "hf-xet"

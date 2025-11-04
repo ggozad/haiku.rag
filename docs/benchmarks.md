@@ -3,7 +3,7 @@
 We use the [repliqa](https://huggingface.co/datasets/ServiceNow/repliqa) dataset for the evaluation of `haiku.rag`.
 
 You can perform your own evaluations with the Typer CLI in
-`src/evaluations/benchmark.py`, for example `cd src && python -m evaluations.benchmark repliqa`.
+`evaluations/evaluations/benchmark.py`, for example `python -m evaluations.benchmark repliqa`.
 The evaluation flow is orchestrated with
 [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
 which we leverage for dataset management, scoring, and report generation.
@@ -13,7 +13,7 @@ which we leverage for dataset management, scoring, and report generation.
 The benchmark script accepts a `--config` option to specify a custom `haiku.rag.yaml` configuration file:
 
 ```bash
-cd src && python -m evaluations.benchmark repliqa --config /path/to/haiku.rag.yaml
+python -m evaluations.benchmark repliqa --config /path/to/haiku.rag.yaml
 ```
 
 If no config file is specified, the script will search for a config file in the standard locations:
