@@ -1222,6 +1222,7 @@ name = "haiku-rag-slim"
 version = "0.13.3"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
+    { name = "docling-core" },
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "lancedb" },
@@ -1261,6 +1262,7 @@ zeroentropy = [
 requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.0.0" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.58.0" },
+    { name = "docling-core", specifier = ">=2.48.4" },
     { name = "fasta2a", marker = "extra == 'a2a'", specifier = ">=0.1.0" },
     { name = "fastmcp", specifier = ">=2.13.0.2" },
     { name = "httpx", specifier = ">=0.28.1" },

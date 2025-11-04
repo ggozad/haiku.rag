@@ -103,9 +103,16 @@ def text_to_docling_document(text: str, name: str = "content.md"):
     Returns:
         A DoclingDocument created from the text content.
     """
-    # Lazy import docling deps to keep import-time light
-    from docling.document_converter import DocumentConverter  # type: ignore
-    from docling_core.types.io import DocumentStream  # type: ignore
+    try:
+        import docling  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            "Docling is required for document conversion. "
+            "Install with: pip install haiku.rag-slim[docling]"
+        ) from e
+
+    from docling.document_converter import DocumentConverter
+    from docling_core.types.io import DocumentStream
 
     bytes_io = BytesIO(text.encode("utf-8"))
     doc_stream = DocumentStream(name=name, stream=bytes_io)
@@ -168,11 +175,15 @@ def load_callable(path: str):
 def prefetch_models():
     """Prefetch runtime models (Docling + Ollama as configured)."""
     import httpx
-    from docling.utils.model_downloader import download_models
-
     from haiku.rag.config import Config
 
-    download_models()
+    try:
+        from docling.utils.model_downloader import download_models
+
+        download_models()
+    except ImportError:
+        # Docling not installed, skip downloading docling models
+        pass
 
     # Collect Ollama models from config
     required_models: set[str] = set()

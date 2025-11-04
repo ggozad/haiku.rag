@@ -1,10 +1,16 @@
 from pathlib import Path
 from typing import ClassVar
 
-from docling.document_converter import DocumentConverter
 from docling_core.types.doc.document import DoclingDocument
-
 from haiku.rag.utils import text_to_docling_document
+
+# Check if docling is available
+try:
+    import docling  # noqa: F401
+
+    DOCLING_AVAILABLE = True
+except ImportError:
+    DOCLING_AVAILABLE = False
 
 
 class FileReader:
@@ -95,6 +101,13 @@ class FileReader:
 
             if file_extension in FileReader.docling_extensions:
                 # Use docling for complex document formats
+                if not DOCLING_AVAILABLE:
+                    raise ImportError(
+                        "Docling is required for processing this file type. "
+                        "Install with: pip install haiku.rag-slim[docling]"
+                    )
+                from docling.document_converter import DocumentConverter
+
                 converter = DocumentConverter()
                 result = converter.convert(path)
                 return result.document
