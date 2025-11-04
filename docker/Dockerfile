@@ -8,14 +8,18 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Install dependencies into a venv
+# In workspace: root package (haiku.rag) includes all extras via haiku.rag-slim
+# Copy workspace member directories first (needed for workspace resolution)
 COPY pyproject.toml uv.lock ./
+COPY haiku_rag_slim/pyproject.toml haiku_rag_slim/README.md haiku_rag_slim/LICENSE haiku_rag_slim/
+COPY evaluations/pyproject.toml evaluations/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --extra voyageai --extra mxbai --extra a2a
+    uv sync --frozen --no-install-project
 
 # Install the project itself
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --extra voyageai --extra mxbai --extra a2a
+    uv sync --frozen --no-editable
 
 # Final layer
 FROM python:3.13-slim
