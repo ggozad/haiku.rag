@@ -1166,6 +1166,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "datasets" },
+    { name = "haiku-rag-evals" },
     { name = "logfire" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
@@ -1184,6 +1185,7 @@ requires-dist = [{ name = "haiku-rag-slim", extras = ["docling", "voyageai", "mx
 [package.metadata.requires-dev]
 dev = [
     { name = "datasets", specifier = ">=4.3.0" },
+    { name = "haiku-rag-evals", editable = "evaluations" },
     { name = "logfire", specifier = ">=4.14.2" },
     { name = "mkdocs", specifier = ">=1.6.1" },
     { name = "mkdocs-material", specifier = ">=9.6.22" },

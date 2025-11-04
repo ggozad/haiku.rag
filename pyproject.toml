@@ -47,6 +47,7 @@ members = ["haiku_rag_slim", "evaluations"]
 
 [dependency-groups]
 dev = [
+    "haiku.rag-evals",
     "datasets>=4.3.0",
     "logfire>=4.14.2",
     "mkdocs>=1.6.1",
