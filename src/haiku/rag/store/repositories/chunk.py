@@ -374,7 +374,7 @@ class ChunkRepository:
             """Extract scores from DataFrame columns based on search type."""
             if "_distance" in df.columns:
                 # Vector search - convert distance to similarity
-                return [max(0.0, 1.0 / (1.0 + d)) for d in df["_distance"].tolist()]
+                return ((df["_distance"] + 1).rdiv(1)).clip(lower=0.0).tolist()
             elif "_relevance_score" in df.columns:
                 # Hybrid search - relevance score (higher is better)
                 return df["_relevance_score"].tolist()
