@@ -26,18 +26,17 @@ Python usage:
 from haiku.rag.client import HaikuRAG
 from haiku.rag.qa.agent import QuestionAnswerAgent
 
-client = HaikuRAG(path_to_db)
+async with HaikuRAG(path_to_db) as client:
+    # Choose a provider and model (see Configuration for env defaults)
+    agent = QuestionAnswerAgent(
+        client=client,
+        provider="openai",  # or "ollama", "vllm", etc.
+        model="gpt-4o-mini",
+        use_citations=False,  # set True to bias prompt towards citing sources
+    )
 
-# Choose a provider and model (see Configuration for env defaults)
-agent = QuestionAnswerAgent(
-    client=client,
-    provider="openai",  # or "ollama", "vllm", etc.
-    model="gpt-4o-mini",
-    use_citations=False,  # set True to bias prompt towards citing sources
-)
-
-answer = await agent.answer("What is climate change?")
-print(answer)
+    answer = await agent.answer("What is climate change?")
+    print(answer)
 ```
 
 ### Deep QA Agent
@@ -49,19 +48,25 @@ Deep QA is a multi-agent system that decomposes complex questions into sub-quest
 title: Deep QA graph
 ---
 stateDiagram-v2
-  DeepQAPlanNode --> DeepQASearchDispatchNode
-  DeepQASearchDispatchNode --> DeepQADecisionNode
-  DeepQADecisionNode --> DeepQASearchDispatchNode
-  DeepQADecisionNode --> DeepQASynthesizeNode
-  DeepQASynthesizeNode --> [*]
+  [*] --> plan
+  plan --> get_batch
+  get_batch --> search_one: Has questions (map)
+  get_batch --> synthesize: No questions
+  search_one --> collect_answers
+  collect_answers --> decide
+  decide --> get_batch: Continue QA
+  decide --> synthesize: Done with QA
+  synthesize --> [*]
 ```
 
 Key nodes:
 
-- **Plan**: Decomposes the question into focused sub-questions
-- **Search (parallel)**: Answers sub-questions in parallel (respects max_concurrency)
-- **Decision**: Evaluates if we have sufficient information or need another iteration
-- **Synthesize**: Generates the final comprehensive answer
+- **plan**: Decomposes the question into focused sub-questions using a presearch tool
+- **get_batch**: Retrieves remaining sub-questions for the current iteration
+- **search_one**: Answers a single sub-question using the knowledge base (mapped in parallel)
+- **collect_answers**: Aggregates search results from parallel executions
+- **decide**: Evaluates if sufficient information has been gathered or if more iterations are needed
+- **synthesize**: Generates the final comprehensive answer from all gathered information
 
 Key differences from Research:
 
@@ -70,6 +75,11 @@ Key differences from Research:
 - **Question-focused**: Optimized for answering specific questions, not open-ended research
 - **Supports citations**: Can include inline source citations like `[document.md]`
 - **Configurable iterations**: Control max_iterations (default: 2) and max_concurrency (default: 1)
+
+Note on parallel execution:
+- The `search_one` node is mapped over all questions in a batch
+- Parallelism is controlled via `max_concurrency` using asyncio.Semaphore
+- All questions in an iteration are processed before evaluation
 
 CLI usage:
 
@@ -87,11 +97,13 @@ Python usage:
 from haiku.rag.client import HaikuRAG
 from haiku.rag.qa.deep.dependencies import DeepQAContext
 from haiku.rag.qa.deep.graph import build_deep_qa_graph
-from haiku.rag.qa.deep.nodes import DeepQAPlanNode
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 async with HaikuRAG(path_to_db) as client:
-    graph = build_deep_qa_graph()
+    graph = build_deep_qa_graph(
+        provider="openai",
+        model="gpt-4o-mini"
+    )
     context = DeepQAContext(
         original_question="What are the main features of haiku.rag?",
         use_citations=True
@@ -105,13 +117,12 @@ async with HaikuRAG(path_to_db) as client:
     deps = DeepQADeps(client=client)
 
     result = await graph.run(
-        start_node=DeepQAPlanNode(provider="openai", model="gpt-4o-mini"),
         state=state,
         deps=deps
     )
 
-    print(result.output.answer)
-    print(result.output.sources)
+    print(result.answer)
+    print(result.sources)
 ```
 
 ### Research Graph
@@ -123,21 +134,27 @@ The research workflow is implemented as a typed pydantic‑graph. It plans, sear
 title: Research graph
 ---
 stateDiagram-v2
-  PlanNode --> SearchDispatchNode
-  SearchDispatchNode --> AnalyzeInsightsNode
-  AnalyzeInsightsNode --> DecisionNode
-  DecisionNode --> SearchDispatchNode
-  DecisionNode --> SynthesizeNode
-  SynthesizeNode --> [*]
+  [*] --> plan
+  plan --> get_batch
+  get_batch --> search_one: Has questions (map)
+  get_batch --> synthesize: No questions
+  search_one --> collect_answers
+  collect_answers --> analyze_insights
+  analyze_insights --> decide
+  decide --> get_batch: Continue research
+  decide --> synthesize: Done researching
+  synthesize --> [*]
 ```
 
 Key nodes:
 
-- Plan: builds up to 3 standalone sub‑questions (uses an internal presearch tool)
-- Search (batched): answers sub‑questions using the KB with minimal, verbatim context
-- Analyze: aggregates fresh insights, updates gaps, and suggests new sub-questions
-- Decision: checks sufficiency/confidence thresholds and chooses whether to iterate
-- Synthesize: generates a final structured report
+- **plan**: Builds up to 3 standalone sub‑questions (uses an internal presearch tool)
+- **get_batch**: Retrieves remaining sub‑questions for the current iteration
+- **search_one**: Answers a single sub‑question using the KB with minimal, verbatim context (mapped in parallel)
+- **collect_answers**: Aggregates search results from parallel executions
+- **analyze_insights**: Synthesizes fresh insights, updates gaps, and suggests new sub-questions
+- **decide**: Checks sufficiency/confidence thresholds and determines whether to continue research
+- **synthesize**: Generates a final structured research report
 
 Primary models:
 
@@ -146,6 +163,11 @@ Primary models:
 - `InsightAnalysis` — output of the analysis stage (insights, gaps, commentary)
 - `EvaluationResult` — insights, new questions, sufficiency, confidence
 - `ResearchReport` — final report (title, executive summary, findings, conclusions, …)
+
+Note on parallel execution:
+- The `search_one` node is mapped over all questions in a batch
+- Parallelism is controlled via `max_concurrency` using asyncio.Semaphore
+- Analysis and decision nodes process results after each batch completes
 
 CLI usage:
 
@@ -161,16 +183,15 @@ Python usage (blocking result):
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.research import (
-    PlanNode,
-    ResearchContext,
-    ResearchDeps,
-    ResearchState,
-    build_research_graph,
-)
+from haiku.rag.research.dependencies import ResearchContext
+from haiku.rag.research.graph import build_research_graph
+from haiku.rag.research.state import ResearchDeps, ResearchState
 
 async with HaikuRAG(path_to_db) as client:
-    graph = build_research_graph()
+    graph = build_research_graph(
+        provider="openai",
+        model="gpt-4o-mini"
+    )
     question = "What are the main drivers and trends of global temperature anomalies since 1990?"
     state = ResearchState(
         context=ResearchContext(original_question=question),
@@ -181,12 +202,11 @@ async with HaikuRAG(path_to_db) as client:
     deps = ResearchDeps(client=client)
 
     result = await graph.run(
-        PlanNode(provider="openai", model="gpt-4o-mini"),
         state=state,
         deps=deps,
     )
 
-    report = result.output
+    report = result
     print(report.title)
     print(report.executive_summary)
 ```
@@ -195,17 +215,16 @@ Python usage (streamed events):
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.research import (
-    PlanNode,
-    ResearchContext,
-    ResearchDeps,
-    ResearchState,
-    build_research_graph,
-    stream_research_graph,
-)
+from haiku.rag.research.dependencies import ResearchContext
+from haiku.rag.research.graph import build_research_graph
+from haiku.rag.research.state import ResearchDeps, ResearchState
+from haiku.rag.research.stream import stream_research_graph
 
 async with HaikuRAG(path_to_db) as client:
-    graph = build_research_graph()
+    graph = build_research_graph(
+        provider="openai",
+        model="gpt-4o-mini"
+    )
     question = "What are the main drivers and trends of global temperature anomalies since 1990?"
     state = ResearchState(
         context=ResearchContext(original_question=question),
@@ -217,7 +236,6 @@ async with HaikuRAG(path_to_db) as client:
 
     async for event in stream_research_graph(
         graph,
-        PlanNode(provider="openai", model="gpt-4o-mini"),
         state,
         deps,
     ):
