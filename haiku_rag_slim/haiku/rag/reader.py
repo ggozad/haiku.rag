@@ -126,5 +126,7 @@ class FileReader:
                 # Fallback: try to read as text and convert to DoclingDocument
                 content = path.read_text(encoding="utf-8")
                 return text_to_docling_document(content, name=f"{path.stem}.md")
+        except ImportError:
+            raise
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")
