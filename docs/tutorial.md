@@ -1,12 +1,12 @@
 # Tutorial
 
-This tutorial quickstart instructions for getting familiar with `haiku.rag`. This tutorial is intended for people who are familiar with command line and Python, but not different AI ecosystem tools.
+This tutorial provides quickstart instructions for getting familiar with `haiku.rag`. This tutorial is intended for people who are familiar with command line and Python, but not different AI ecosystem tools.
 
 The tutorial covers:
 
 - RAG and embeddings basics
-- Install `haiku.rag` Python package
-- Set up environment variables for running `haiku.rag`
+- Installing `haiku.rag` Python package
+- Configuring `haiku.rag` with YAML
 - Adding and retrieving items
 - Inspecting the database
 
@@ -14,11 +14,9 @@ The tutorial uses OpenAI API service - no local installation needed and will wor
 
 ## Introduction
 
-Embeddings serve as the foundational bridge between unstructured text data and computational efficiency in AI systems, particularly within Retrieval-Augmented Generation (RAG) frameworks that enhance Large Language Models (LLMs). At their core, embeddings are dense vector representations of words, sentences, or documents, created by models like those from OpenAI, which encode semantic and contextual meaning into numerical forms. In a RAG pipeline, these embeddings enable the system to index and store vast amounts of information in a vector database, allowing for rapid similarity searches. When a user query is posed, its embedding is generated and compared against the stored vectors using metrics like cosine similarity to retrieve the most relevant documents or chunks of text. This retrieval step addresses a key limitation of standalone LLMs, which rely on pre-trained knowledge that can be outdated, incomplete, or prone to hallucinations, by providing external, grounded context to inform the model's output.
+Retrieval-Augmented Generation (RAG) lets you give AI models access to your own documents and data. Instead of relying solely on the model's training data, RAG finds relevant information from your documents and includes it in the AI's responses.
 
-You technically can create vector embeddings yourself without relying on pre-built models like OpenAI's, but it's impractical for most users due to the complexity and resources involved in training or implementing from scratch. Generating embeddings requires a neural network architecture (e.g., transformer-based) trained on massive datasets to learn semantic relationships, which demands significant computational power (GPUs/TPUs), expertise in machine learning, and access to billions of text examples for fine-tuning.
-
-`haiku.rag` is a Python library allowing you to set up your own embeddings database, pipeline to feed into it and query it with different LLM providers and related services.
+`haiku.rag` handles the mechanics: it converts your documents into searchable embeddings, stores them locally, and retrieves relevant chunks when you ask questions. You provide the documents and questions, and it coordinates between the embedding service (like OpenAI) and the AI model to give you accurate, grounded answers.
 
 ## Setup
 
@@ -81,16 +79,16 @@ You should get the back the information:
 ```
 haiku.rag database info
   path: /Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb
-  haiku.rag version (db): 0.12.1
+  haiku.rag version (db): 0.13.3
   embeddings: openai/text-embedding-3-small (dim: 1536)
-  documents: 4
-  versions (documents): 9
-  versions (chunks): 10
+  documents: 3
+  versions (documents): 3
+  versions (chunks): 3
 ──────────────────────────────────────────────────────────────────────────────────
 Versions
-  haiku.rag: 0.12.1
+  haiku.rag: 0.13.3
   lancedb: 0.25.2
-  docling: 2.57.0
+  docling: 2.58.0
 ```
 
 ## Asking questions and retrieving information
@@ -167,7 +165,7 @@ According to the document, Python is considered the best programming language in
 
 ## Complex documents
 
-Haiku RAG can also handle types beyond plain text.
+Haiku RAG can also handle types beyond plain text, including PDF, DOCX, HTML, and 40+ other file formats.
 
 Here we add research papers about Python from [arxiv](https://arxiv.org/search/?query=python&searchtype=all&source=header) using URL retriever.
 
@@ -213,14 +211,6 @@ The following people are presenting talks at PyCon Finland 2025:
  3 Andreas Jung - Talk: Guillotina Volto: A New Backend for Volto
  4 Daniel Vahla - Talk: Experiences with AI in Software Projects
  5 Andreas Jung (also presenting another talk) - Talk: Debugging Python
-```
-
-## Reseting the embeddings database
-
-If you change your embeddings provider (OpenAI -> ollama) or its parameters, you need to delete the LanceDB database and add the documents again:
-
-```shell
-rm -rf "/Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb"
 ```
 
 ## Configuration
