@@ -19,4 +19,4 @@ jobs:
       - name: Build haiku.rag-slim
         run: uv build --package haiku.rag-slim
       - name: Publish haiku.rag-slim
-        run: uvx twine upload -u __token__ -p ${{ secrets.PYPI_API_TOKEN }} dist/* --non-interactive
+        run: uvx twine upload -u __token__ -p ${{ secrets.PYPI_API_TOKEN_SLIM }} dist/* --non-interactive
