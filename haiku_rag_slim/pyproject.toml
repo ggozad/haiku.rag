@@ -23,13 +23,11 @@ classifiers = [
 
 dependencies = [
     "docling-core>=2.48.4",
-    "fastmcp>=2.13.0.2",
     "httpx>=0.28.1",
     "lancedb>=0.25.2",
     "pathspec>=0.12.1",
     "pydantic>=2.12.3",
-    "pydantic-ai>=1.7.0",
-    "pydantic-graph>=1.7.0",
+    "pydantic-ai-slim[openai,fastmcp,logfire]>=1.11.0",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.3",
     "rich>=14.2.0",
@@ -39,12 +37,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Document processing
 docling = ["docling>=2.58.0"]
+# Embedding providers
 voyageai = ["voyageai>=0.3.5"]
+# Rerankers
 mxbai = ["mxbai-rerank>=0.1.6"]
-a2a = ["fasta2a>=0.1.0"]
 cohere = ["cohere>=5.0.0"]
 zeroentropy = ["zeroentropy>=0.1.0a6"]
+# Agent protocols
+a2a = [
+    "fasta2a>=0.1.0",
+    "pydantic-ai-slim[a2a]",
+]
+# Model providers (delegated to pydantic-ai-slim)
+anthropic = ["pydantic-ai-slim[anthropic]"]
+groq = ["pydantic-ai-slim[groq]"]
+google = ["pydantic-ai-slim[google]"]
+mistral = ["pydantic-ai-slim[mistral]"]
+bedrock = ["pydantic-ai-slim[bedrock]"]
+vertexai = ["pydantic-ai-slim[vertexai]"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"

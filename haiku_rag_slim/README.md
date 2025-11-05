@@ -16,7 +16,7 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB - Core package wit
 uv pip install haiku.rag-slim
 ```
 
-Basic functionality without document processing (docling). You can still use text input and URLs.
+Core functionality with OpenAI/Ollama support, MCP server, and Logfire observability. Document processing (docling) is optional.
 
 ### With Document Processing
 
@@ -28,16 +28,33 @@ Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
 
 ### Available Extras
 
-- `docling` - Document processing for PDFs, DOCX, HTML, etc.
-- `voyageai` - VoyageAI embedding provider
-- `mxbai` - MixedBread AI reranker
-- `cohere` - Cohere reranker
-- `zeroentropy` - Zero Entropy reranker
-- `a2a` - Agent-to-Agent protocol support
+**Document Processing:**
+- `docling` - PDF, DOCX, HTML, and 40+ file formats
+
+**Embedding Providers:**
+- `voyageai` - VoyageAI embeddings
+
+**Rerankers:**
+- `mxbai` - MixedBread AI
+- `cohere` - Cohere
+- `zeroentropy` - Zero Entropy
+
+**Model Providers:**
+- OpenAI/Ollama - included in core (OpenAI-compatible APIs)
+- `anthropic` - Anthropic Claude
+- `groq` - Groq
+- `google` - Google Gemini
+- `mistral` - Mistral AI
+- `bedrock` - AWS Bedrock
+- `vertexai` - Google Vertex AI
+
+**Agent Protocol:**
+- `a2a` - Agent-to-Agent protocol
 
 ```bash
-# Multiple extras
-uv pip install haiku.rag-slim[docling,voyageai,mxbai]
+# Common combinations
+uv pip install haiku.rag-slim[docling,anthropic,mxbai]
+uv pip install haiku.rag-slim[docling,groq,logfire]
 ```
 
 ## Usage
