@@ -1,7 +1,5 @@
 # Haiku RAG
 
-mcp-name: io.github.ggozad/haiku-rag
-
 Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
 `haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
@@ -203,3 +201,5 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [MCP Server](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
 - [A2A Agent](https://ggozad.github.io/haiku.rag/a2a/) - Agent-to-Agent protocol support
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance Benchmarks
+
+mcp-name: io.github.ggozad/haiku-rag

@@ -1,204 +1,59 @@
-# Haiku RAG - Slim
+# haiku.rag-slim
 
-mcp-name: io.github.ggozad/haiku-rag
+Retrieval-Augmented Generation (RAG) library built on LanceDB - Core package with minimal dependencies.
 
-Retrieval-Augmented Generation (RAG) library built on LanceDB - Minimal dependencies.
+`haiku.rag-slim` is the core package for users who want to install only the dependencies they need. Document processing (docling), rerankers, and A2A support are all optional extras.
 
-`haiku.rag-slim` is the core package with minimal dependencies. Document processing via docling is optional and can be installed separately.
-
-For a batteries-included experience with all extras, see [`haiku.rag`](https://pypi.org/project/haiku.rag/).
+**For most users, we recommend installing [`haiku.rag`](https://pypi.org/project/haiku.rag/) instead**, which includes all features out of the box.
 
 ## Installation
 
+**Python 3.12 or newer required**
+
+### Minimal Installation
+
 ```bash
-# Minimal installation (no docling)
 uv pip install haiku.rag-slim
+```
 
-# With docling support for document processing
+Basic functionality without document processing (docling). You can still use text input and URLs.
+
+### With Document Processing
+
+```bash
 uv pip install haiku.rag-slim[docling]
+```
 
-# With specific extras
+Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
+
+### Available Extras
+
+- `docling` - Document processing for PDFs, DOCX, HTML, etc.
+- `voyageai` - VoyageAI embedding provider
+- `mxbai` - MixedBread AI reranker
+- `cohere` - Cohere reranker
+- `zeroentropy` - Zero Entropy reranker
+- `a2a` - Agent-to-Agent protocol support
+
+```bash
+# Multiple extras
 uv pip install haiku.rag-slim[docling,voyageai,mxbai]
 ```
 
-> **Note**: Configuration now uses YAML files instead of environment variables. If you're upgrading from an older version, run `haiku-rag init-config --from-env` to migrate your `.env` file to `haiku.rag.yaml`. See [Configuration](https://ggozad.github.io/haiku.rag/configuration/) for details.
+## Usage
 
-## Features
-
-- **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
-- **Multiple embedding providers**: Ollama, VoyageAI, OpenAI, vLLM
-- **Multiple QA providers**: Any provider/model supported by Pydantic AI
-- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
-- **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
-- **Reranking**: Default search result reranking with MixedBread AI, Cohere, Zero Entropy, or vLLM
-- **Question answering**: Built-in QA agents on your documents
-- **File monitoring**: Auto-index files when run as server
-- **40+ file formats**: PDF, DOCX, HTML, Markdown, code files, URLs
-- **MCP server**: Expose as tools for AI assistants
-- **A2A agent**: Conversational agent with context and multi-turn dialogue
-- **CLI & Python API**: Use from command line or Python
-
-## Quick Start
-
-```bash
-# Install
-# Python 3.12 or newer required
-uv pip install haiku.rag-slim[docling]
-
-# Add documents
-haiku-rag add "Your content here"
-haiku-rag add "Your content here" --meta author=alice --meta topic=notes
-haiku-rag add-src document.pdf --meta source=manual
-
-# Search
-haiku-rag search "query"
-
-# Search with filters
-haiku-rag search "query" --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
-
-# Ask questions
-haiku-rag ask "Who is the author of haiku.rag?"
-
-# Ask questions with citations
-haiku-rag ask "Who is the author of haiku.rag?" --cite
-
-# Deep QA (multi-agent question decomposition)
-haiku-rag ask "Who is the author of haiku.rag?" --deep --cite
-
-# Deep QA with verbose output
-haiku-rag ask "Who is the author of haiku.rag?" --deep --verbose
-
-# Multi‑agent research (iterative plan/search/evaluate)
-haiku-rag research \
-  "What are the main drivers and trends of global temperature anomalies since 1990?" \
-  --max-iterations 2 \
-  --confidence-threshold 0.8 \
-  --max-concurrency 3 \
-  --verbose
-
-# Rebuild database (re-chunk and re-embed all documents)
-haiku-rag rebuild
-
-# Start server with file monitoring
-haiku-rag serve --monitor
-```
-
-To customize settings, create a `haiku.rag.yaml` config file (see [Configuration](https://ggozad.github.io/haiku.rag/configuration/)).
-
-## Python Usage
-
-```python
-from haiku.rag.client import HaikuRAG
-from haiku.rag.research import (
-    PlanNode,
-    ResearchContext,
-    ResearchDeps,
-    ResearchState,
-    build_research_graph,
-    stream_research_graph,
-)
-
-async with HaikuRAG("database.lancedb") as client:
-    # Add document
-    doc = await client.create_document("Your content")
-
-    # Search (reranking enabled by default)
-    results = await client.search("query")
-    for chunk, score in results:
-        print(f"{score:.3f}: {chunk.content}")
-
-    # Ask questions
-    answer = await client.ask("Who is the author of haiku.rag?")
-    print(answer)
-
-    # Ask questions with citations
-    answer = await client.ask("Who is the author of haiku.rag?", cite=True)
-    print(answer)
-
-    # Multi‑agent research pipeline (Plan → Search → Evaluate → Synthesize)
-    graph = build_research_graph()
-    question = (
-        "What are the main drivers and trends of global temperature "
-        "anomalies since 1990?"
-    )
-    state = ResearchState(
-        context=ResearchContext(original_question=question),
-        max_iterations=2,
-        confidence_threshold=0.8,
-        max_concurrency=2,
-    )
-    deps = ResearchDeps(client=client)
-
-    # Blocking run (final result only)
-    result = await graph.run(
-        PlanNode(provider="openai", model="gpt-4o-mini"),
-        state=state,
-        deps=deps,
-    )
-    print(result.output.title)
-
-    # Streaming progress (log/report/error events)
-    async for event in stream_research_graph(
-        graph,
-        PlanNode(provider="openai", model="gpt-4o-mini"),
-        state,
-        deps,
-    ):
-        if event.type == "log":
-            iteration = event.state.iterations if event.state else state.iterations
-            print(f"[{iteration}] {event.message}")
-        elif event.type == "report":
-            print("\nResearch complete!\n")
-            print(event.report.title)
-            print(event.report.executive_summary)
-```
-
-## MCP Server
-
-Use with AI assistants like Claude Desktop:
-
-```bash
-haiku-rag serve --stdio
-```
-
-Provides tools for document management and search directly in your AI assistant.
-
-## A2A Agent
-
-Run as a conversational agent with the Agent-to-Agent protocol:
-
-```bash
-# Start the A2A server
-haiku-rag serve --a2a
-
-# Connect with the interactive client (in another terminal)
-haiku-rag a2aclient
-```
-
-The A2A agent provides:
-
-- Multi-turn dialogue with context
-- Intelligent multi-search for complex questions
-- Source citations with titles and URIs
-- Full document retrieval on request
-
-## Examples
-
-See the [examples directory](examples/) for working examples:
-
-- **[Interactive Research Assistant](examples/ag-ui-research/)** - Full-stack research assistant with Pydantic AI and AG-UI featuring human-in-the-loop approval and real-time state synchronization
-- **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring, MCP server, and A2A agent
-- **[A2A Security](examples/a2a-security/)** - Authentication examples (API key, OAuth2, GitHub)
+See the main [`haiku.rag`](https://github.com/ggozad/haiku.rag) repository for:
+- Quick start guide
+- CLI examples
+- Python API usage
+- MCP server setup
+- A2A agent configuration
 
 ## Documentation
 
-Full documentation at: https://ggozad.github.io/haiku.rag/
+Full documentation: https://ggozad.github.io/haiku.rag/
 
 - [Installation](https://ggozad.github.io/haiku.rag/installation/) - Provider setup
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA agent and multi-agent research
-- [MCP Server](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
-- [A2A Agent](https://ggozad.github.io/haiku.rag/a2a/) - Agent-to-Agent protocol support
-- [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance Benchmarks
