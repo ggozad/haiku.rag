@@ -1,11 +1,17 @@
 from typing import ClassVar
 
 import tiktoken
-from docling.chunking import HybridChunker  # type: ignore
 from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
 from docling_core.types.doc.document import DoclingDocument
-
 from haiku.rag.config import Config
+
+# Check if docling is available
+try:
+    import docling  # noqa: F401
+
+    DOCLING_AVAILABLE = True
+except ImportError:
+    DOCLING_AVAILABLE = False
 
 
 class Chunker:
@@ -24,6 +30,13 @@ class Chunker:
         self,
         chunk_size: int = Config.processing.chunk_size,
     ):
+        if not DOCLING_AVAILABLE:
+            raise ImportError(
+                "Docling is required for chunking. "
+                "Install with: pip install haiku.rag-slim[docling]"
+            )
+        from docling.chunking import HybridChunker  # type: ignore
+
         self.chunk_size = chunk_size
         tokenizer = OpenAITokenizer(
             tokenizer=tiktoken.encoding_for_model("gpt-4o"), max_tokens=chunk_size

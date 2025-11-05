@@ -60,7 +60,7 @@ tests/
 .pytest_cache/
 .coverage
 htmlcov/
-src/evaluations/
+evaluations/evaluations/data/
 server.json
 # Examples
 examples/

@@ -1,0 +1,66 @@
+[project]
+
+name = "haiku.rag-slim"
+description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB - Minimal dependencies"
+version = "0.14.0"
+authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
+license = { text = "MIT" }
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+keywords = ["RAG", "lancedb", "vector-database", "ml", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "docling-core>=2.50.1",
+    "httpx>=0.28.1",
+    "lancedb>=0.25.2",
+    "pathspec>=0.12.1",
+    "pydantic>=2.12.3",
+    "pydantic-ai-slim[openai,fastmcp,logfire]>=1.11.0",
+    "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
+    "rich>=14.2.0",
+    "tiktoken>=0.12.0",
+    "typer>=0.19.2,<0.20.0",
+    "watchfiles>=1.1.1",
+]
+
+[project.optional-dependencies]
+# Document processing
+docling = ["docling>=2.60.1"]
+# Embedding providers
+voyageai = ["voyageai>=0.3.5"]
+# Rerankers
+mxbai = ["mxbai-rerank>=0.1.6"]
+cohere = ["cohere>=5.0.0"]
+zeroentropy = ["zeroentropy>=0.1.0a6"]
+# Agent protocols
+a2a = ["fasta2a>=0.1.0", "pydantic-ai-slim[a2a]"]
+# Model providers (delegated to pydantic-ai-slim)
+anthropic = ["pydantic-ai-slim[anthropic]"]
+groq = ["pydantic-ai-slim[groq]"]
+google = ["pydantic-ai-slim[google]"]
+mistral = ["pydantic-ai-slim[mistral]"]
+bedrock = ["pydantic-ai-slim[bedrock]"]
+vertexai = ["pydantic-ai-slim[vertexai]"]
+
+[project.scripts]
+haiku-rag = "haiku.rag.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["haiku"]

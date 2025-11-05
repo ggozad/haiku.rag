@@ -1,0 +1,18 @@
+name: Build & publish haiku.rag-slim to pypi
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up uv
+        run: curl -LsSf https://astral.sh/uv/0.3.0/install.sh | sh
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Build haiku.rag-slim
+        run: uv build --package haiku.rag-slim
+      - name: Publish haiku.rag-slim
+        run: uvx twine upload -u __token__ -p ${{ secrets.PYPI_API_TOKEN }} dist/* --non-interactive

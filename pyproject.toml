@@ -2,7 +2,7 @@
 
 name = "haiku.rag"
 description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB"
-version = "0.13.3"
+version = "0.14.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -22,28 +22,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling>=2.58.0",
-    "fastmcp>=2.13.0.2",
-    "httpx>=0.28.1",
-    "lancedb>=0.25.2",
-    "pathspec>=0.12.1",
-    "pydantic>=2.12.3",
-    "pydantic-ai>=1.7.0",
-    "pydantic-graph>=1.7.0",
-    "python-dotenv>=1.2.1",
-    "pyyaml>=6.0.3",
-    "rich>=14.2.0",
-    "tiktoken>=0.12.0",
-    "typer>=0.19.2,<0.20.0",
-    "watchfiles>=1.1.1",
+    "haiku.rag-slim[docling,voyageai,mxbai,a2a,cohere,zeroentropy]",
 ]
-
-[project.optional-dependencies]
-voyageai = ["voyageai>=0.3.5"]
-mxbai = ["mxbai-rerank>=0.1.6"]
-a2a = ["fasta2a>=0.1.0"]
-cohere = ["cohere>=5.0.0"]
-zeroentropy = ["zeroentropy>=0.1.0a6"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
@@ -53,18 +33,24 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-exclude = ["/docs", "/examples", "/tests", "/docker", "/.github"]
+exclude = ["/docs", "/examples", "/tests", "/docker", "/.github", "/haiku_rag_slim", "/evaluations"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/haiku"]
+only-include = ["/README.md"]
+
+[tool.uv.workspace]
+members = ["haiku_rag_slim", "evaluations"]
+
+[tool.uv.sources]
+"haiku.rag-slim" = { workspace = true }
+"haiku.rag-evals" = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "haiku.rag-evals",
     "datasets>=4.3.0",
-    "logfire>=4.14.2",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.22",
-    "pydantic-evals>=1.7.0",
     "pre-commit>=4.3.0",
     "pyright>=1.1.407",
     "pytest>=8.4.2",

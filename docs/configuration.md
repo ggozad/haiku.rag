@@ -238,10 +238,10 @@ If neither is set, it defaults to `http://localhost:11434`.
 
 ### VoyageAI
 
-If you want to use VoyageAI embeddings you will need to install `haiku.rag` with the VoyageAI extras:
+If you installed `haiku.rag` (full package), VoyageAI is already included. If you installed `haiku.rag-slim`, install with VoyageAI extras:
 
 ```bash
-uv pip install haiku.rag[voyageai]
+uv pip install haiku.rag-slim[voyageai]
 ```
 
 ```yaml
@@ -396,10 +396,10 @@ Reranking is **disabled by default** (`provider: ""`) for faster searches. You c
 
 ### MixedBread AI
 
-For MxBAI reranking, install with mxbai extras:
+If you installed `haiku.rag` (full package), MxBAI is already included. If you installed `haiku.rag-slim`, add the mxbai extra:
 
 ```bash
-uv pip install haiku.rag[mxbai]
+uv pip install haiku.rag-slim[mxbai]
 ```
 
 Then configure:
@@ -412,10 +412,10 @@ reranking:
 
 ### Cohere
 
-Install with cohere extras:
+If you installed `haiku.rag` (full package), Cohere is already included. If you installed `haiku.rag-slim`, add the cohere extra:
 
 ```bash
-uv pip install haiku.rag[cohere]
+uv pip install haiku.rag-slim[cohere]
 ```
 
 Then configure:
@@ -434,10 +434,10 @@ export CO_API_KEY=your-api-key
 
 ### Zero Entropy
 
-Install with zeroentropy extras:
+If you installed `haiku.rag` (full package), Zero Entropy is already included. If you installed `haiku.rag-slim`, add the zeroentropy extra:
 
 ```bash
-uv pip install haiku.rag[zeroentropy]
+uv pip install haiku.rag-slim[zeroentropy]
 ```
 
 Then configure:

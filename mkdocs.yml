@@ -61,9 +61,9 @@ nav:
       - Installation: installation.md
       - Configuration: configuration.md
       - CLI: cli.md
-      - Server: server.md
-      - Agents: agents.md
       - Python: python.md
+      - Agents: agents.md
+      - Server: server.md
       - MCP: mcp.md
       - A2A: a2a.md
       - Benchmarks: benchmarks.md

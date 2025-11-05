@@ -1,7 +1,5 @@
 # Haiku RAG
 
-mcp-name: io.github.ggozad/haiku-rag
-
 Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
 `haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
@@ -23,13 +21,29 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **A2A agent**: Conversational agent with context and multi-turn dialogue
 - **CLI & Python API**: Use from command line or Python
 
+## Installation
+
+**Python 3.12 or newer required**
+
+### Full Package (Recommended)
+
+```bash
+uv pip install haiku.rag
+```
+
+Includes all features: document processing, all embedding providers, rerankers, and A2A agent support.
+
+### Slim Package (Minimal Dependencies)
+
+```bash
+uv pip install haiku.rag-slim
+```
+
+Install only the extras you need. See the [Installation](https://ggozad.github.io/haiku.rag/installation/) documentation for available options
+
 ## Quick Start
 
 ```bash
-# Install
-# Python 3.12 or newer required
-uv pip install haiku.rag
-
 # Add documents
 haiku-rag add "Your content here"
 haiku-rag add "Your content here" --meta author=alice --meta topic=notes
@@ -187,3 +201,5 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [MCP Server](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
 - [A2A Agent](https://ggozad.github.io/haiku.rag/a2a/) - Agent-to-Agent protocol support
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance Benchmarks
+
+mcp-name: io.github.ggozad/haiku-rag

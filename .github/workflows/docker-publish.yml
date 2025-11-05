@@ -1,7 +1,7 @@
 name: Build & publish Docker image
 on:
   workflow_run:
-    workflows: ["Build & publish to pypi"]
+    workflows: ["Build & publish haiku.rag to pypi"]
     types:
       - completed
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
       - name: Extract version from pyproject.toml
         id: version
         run: |
-          VERSION=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
+          VERSION=$(grep -oP '^version = "\K[^"]+' haiku_rag_slim/pyproject.toml)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
