@@ -1,11 +1,5 @@
 from typing import Any
 
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.format_prompt import format_as_xml
-from pydantic_ai.output import ToolOutput
-from pydantic_graph.beta import Graph, GraphBuilder, StepContext
-from pydantic_graph.beta.join import reduce_list_append
-
 from haiku.rag.graph_common import get_model, log
 from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
@@ -25,6 +19,11 @@ from haiku.rag.research.prompts import (
     SYNTHESIS_AGENT_PROMPT,
 )
 from haiku.rag.research.state import ResearchDeps, ResearchState
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.format_prompt import format_as_xml
+from pydantic_ai.output import ToolOutput
+from pydantic_graph.beta import Graph, GraphBuilder, StepContext
+from pydantic_graph.beta.join import reduce_list_append
 
 
 def build_research_graph(
@@ -94,6 +93,21 @@ def build_research_graph(
         deps = ctx.deps
         sub_q = ctx.inputs
 
+        # Create semaphore if not already provided
+        if deps.semaphore is None:
+            import asyncio
+
+            deps.semaphore = asyncio.Semaphore(state.max_concurrency)
+
+        # Use semaphore to control concurrency
+        async with deps.semaphore:
+            return await _do_search(state, deps, sub_q)
+
+    async def _do_search(
+        state: ResearchState,
+        deps: ResearchDeps,
+        sub_q: str,
+    ) -> SearchAnswer:
         log(
             deps,
             state,

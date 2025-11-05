@@ -1,11 +1,11 @@
+import asyncio
 from dataclasses import dataclass
-
-from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.models import EvaluationResult, InsightAnalysis
 from haiku.rag.research.stream import ResearchStream
+from rich.console import Console
 
 
 @dataclass
@@ -13,6 +13,7 @@ class ResearchDeps:
     client: HaikuRAG
     console: Console | None = None
     stream: ResearchStream | None = None
+    semaphore: asyncio.Semaphore | None = None
 
     def emit_log(self, message: str, state: "ResearchState | None" = None) -> None:
         if self.console:
@@ -27,5 +28,6 @@ class ResearchState:
     iterations: int = 0
     max_iterations: int = 3
     confidence_threshold: float = 0.8
+    max_concurrency: int = 1
     last_eval: EvaluationResult | None = None
     last_analysis: InsightAnalysis | None = None

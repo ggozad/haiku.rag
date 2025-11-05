@@ -2,11 +2,11 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+from haiku.rag.client import HaikuRAG
+from haiku.rag.research.models import ResearchReport
 from pydantic import BaseModel
 
-from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.research.models import ResearchReport
 
 
 class SearchResult(BaseModel):
@@ -191,10 +191,11 @@ def create_mcp_server(db_path: Path) -> FastMCP:
         try:
             async with HaikuRAG(db_path) as rag:
                 if deep:
-                    from haiku.rag.config import Config
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+
+                    from haiku.rag.config import Config
 
                     graph = build_deep_qa_graph(
                         provider=Config.qa.provider,
@@ -219,6 +220,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
         question: str,
         max_iterations: int = 3,
         confidence_threshold: float = 0.8,
+        max_concurrency: int = 1,
     ) -> ResearchReport | None:
         """Run multi-agent research to investigate a complex question.
 
@@ -229,6 +231,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
             question: The research question to investigate.
             max_iterations: Maximum search/analyze iterations (default: 3).
             confidence_threshold: Minimum confidence score (0-1) to stop early (default: 0.8).
+            max_concurrency: Maximum concurrent sub-questions to process (default: 1).
 
         Returns:
             A research report with findings, or None if an error occurred.
@@ -247,6 +250,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
                     context=ResearchContext(original_question=question),
                     max_iterations=max_iterations,
                     confidence_threshold=confidence_threshold,
+                    max_concurrency=max_concurrency,
                 )
                 deps = ResearchDeps(client=rag)
 
