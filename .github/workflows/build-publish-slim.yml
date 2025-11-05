@@ -8,10 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up uv
-        run: curl -LsSf https://astral.sh/uv/0.3.0/install.sh | sh
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
       - name: Build haiku.rag-slim
         run: uv build --package haiku.rag-slim
       - name: Publish haiku.rag-slim
