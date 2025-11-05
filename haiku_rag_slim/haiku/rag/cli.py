@@ -353,6 +353,7 @@ def init_config(
 ):
     """Generate a YAML configuration file with defaults or from .env."""
     import yaml
+
     from haiku.rag.config.loader import generate_default_config, load_config_from_env
 
     if output.exists():

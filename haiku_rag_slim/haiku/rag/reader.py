@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from docling_core.types.doc.document import DoclingDocument
+
 from haiku.rag.utils import text_to_docling_document
 
 # Check if docling is available

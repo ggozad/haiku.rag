@@ -21,9 +21,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = [
-    "haiku.rag-slim[docling,voyageai,mxbai,a2a,cohere,zeroentropy]",
-]
+dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,a2a,cohere,zeroentropy]"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
@@ -33,7 +31,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-exclude = ["/docs", "/examples", "/tests", "/docker", "/.github", "/haiku_rag_slim", "/evaluations"]
+exclude = [
+    "/docs",
+    "/examples",
+    "/tests",
+    "/docker",
+    "/.github",
+    "/haiku_rag_slim",
+    "/evaluations",
+]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["/README.md"]
@@ -56,11 +62,12 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
-    "ruff>=0.14.2",
+    "ruff>=0.14.3",
 ]
 
 [tool.ruff]
 line-length = 88
+src = ["haiku_rag_slim"]
 # Enable Flake's "E" and "F" codes by default and "I" for sorting imports.
 # Exclude a variety of commonly ignored directories.
 
@@ -75,6 +82,9 @@ ignore = ["E501"]
 per-file-ignores = { "__init__.py" = ["F401", "F403"] }
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.isort]
+known-first-party = ["haiku"]
 
 [tool.ruff.format]
 quote-style = "double"

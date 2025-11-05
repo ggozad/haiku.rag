@@ -175,6 +175,7 @@ def load_callable(path: str):
 def prefetch_models():
     """Prefetch runtime models (Docling + Ollama as configured)."""
     import httpx
+
     from haiku.rag.config import Config
 
     try:

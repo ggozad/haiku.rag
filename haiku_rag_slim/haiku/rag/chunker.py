@@ -3,6 +3,7 @@ from typing import ClassVar
 import tiktoken
 from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
 from docling_core.types.doc.document import DoclingDocument
+
 from haiku.rag.config import Config
 
 # Check if docling is available

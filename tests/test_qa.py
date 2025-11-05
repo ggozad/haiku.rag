@@ -2,8 +2,8 @@ import os
 
 import pytest
 from datasets import Dataset
-
 from evaluations.llm_judge import LLMJudge
+
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.qa.agent import QuestionAnswerAgent

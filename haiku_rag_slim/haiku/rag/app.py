@@ -4,6 +4,10 @@ import logging
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.progress import Progress
+
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.mcp import create_mcp_server
@@ -18,9 +22,6 @@ from haiku.rag.research.graph import (
 from haiku.rag.research.stream import stream_research_graph
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.progress import Progress
 
 logger = logging.getLogger(__name__)
 
@@ -210,11 +211,12 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path) as self.client:
             try:
                 if deep:
+                    from rich.console import Console
+
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.nodes import DeepQAPlanNode
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
-                    from rich.console import Console
 
                     graph = build_deep_qa_graph()
                     context = DeepQAContext(

@@ -5,10 +5,6 @@ from typing import Any, cast
 
 import logfire
 import typer
-from haiku.rag.client import HaikuRAG
-from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
-from haiku.rag.logging import configure_cli_logging
-from haiku.rag.qa import get_qa_agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_evals import Dataset as EvalDataset
@@ -21,6 +17,10 @@ from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.llm_judge import ANSWER_EQUIVALENCE_RUBRIC
 from evaluations.prompts import WIX_SUPPORT_PROMPT
+from haiku.rag.client import HaikuRAG
+from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
+from haiku.rag.logging import configure_cli_logging
+from haiku.rag.qa import get_qa_agent
 
 QA_JUDGE_MODEL = "qwen3"
 

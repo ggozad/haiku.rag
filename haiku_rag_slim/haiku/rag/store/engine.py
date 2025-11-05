@@ -7,10 +7,11 @@ from pathlib import Path
 from uuid import uuid4
 
 import lancedb
-from haiku.rag.config import AppConfig, Config
-from haiku.rag.embeddings import get_embedder
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
+
+from haiku.rag.config import AppConfig, Config
+from haiku.rag.embeddings import get_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +199,9 @@ class Store:
             # to the greater of the installed package version and the
             # highest available upgrade step version in code.
             try:
-                from haiku.rag.store.upgrades import upgrades as _steps
                 from packaging.version import parse as _v
+
+                from haiku.rag.store.upgrades import upgrades as _steps
 
                 highest_step = max((_v(u.version) for u in _steps), default=None)
                 effective_version = (
