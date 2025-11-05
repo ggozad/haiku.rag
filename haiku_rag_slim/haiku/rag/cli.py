@@ -36,7 +36,7 @@ async def check_version():
 
 def version_callback(value: bool):
     if value:
-        v = version("haiku.rag")
+        v = version("haiku.rag-slim")
         typer.echo(f"haiku.rag version {v}")
         raise typer.Exit()
 
@@ -353,7 +353,6 @@ def init_config(
 ):
     """Generate a YAML configuration file with defaults or from .env."""
     import yaml
-
     from haiku.rag.config.loader import generate_default_config, load_config_from_env
 
     if output.exists():

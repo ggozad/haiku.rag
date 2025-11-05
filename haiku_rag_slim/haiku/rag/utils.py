@@ -82,7 +82,7 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
     import httpx
 
     async with httpx.AsyncClient() as client:
-        running_version = parse(metadata.version("haiku.rag"))
+        running_version = parse(metadata.version("haiku.rag-slim"))
         try:
             response = await client.get("https://pypi.org/pypi/haiku.rag/json")
             data = response.json()

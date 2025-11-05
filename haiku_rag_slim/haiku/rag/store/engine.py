@@ -7,11 +7,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import lancedb
-from lancedb.pydantic import LanceModel, Vector
-from pydantic import Field
-
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.embeddings import get_embedder
+from lancedb.pydantic import LanceModel, Vector
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +188,7 @@ class Store:
         try:
             from haiku.rag.store.upgrades import run_pending_upgrades
 
-            current_version = metadata.version("haiku.rag")
+            current_version = metadata.version("haiku.rag-slim")
             db_version = self.get_haiku_version()
 
             if db_version != "0.0.0":
@@ -199,9 +198,8 @@ class Store:
             # to the greater of the installed package version and the
             # highest available upgrade step version in code.
             try:
-                from packaging.version import parse as _v
-
                 from haiku.rag.store.upgrades import upgrades as _steps
+                from packaging.version import parse as _v
 
                 highest_step = max((_v(u.version) for u in _steps), default=None)
                 effective_version = (
@@ -218,7 +216,7 @@ class Store:
             logger.warning(
                 "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
                 self.get_haiku_version(),
-                metadata.version("haiku.rag") if hasattr(metadata, "version") else "",
+                metadata.version("haiku.rag-slim"),
                 e,
             )
 
