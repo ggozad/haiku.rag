@@ -669,7 +669,7 @@ wheels = [
 
 [[package]]
 name = "docling"
-version = "2.58.0"
+version = "2.60.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -701,14 +701,14 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/96/435a8a5da619fe80f04eb33d7c597a971d9da1b197ed3edb0aa886742cf9/docling-2.58.0.tar.gz", hash = "sha256:c1d120d5179807e6fd72947f8709b7c2d716ae024df4b0df44c8abc0bb50476c", size = 231806, upload-time = "2025-10-22T11:32:52.913Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/eb/6db76ba07e5e57ed05aa1cf031d583ec6cd38c14e9f8c2c6395a872a1fb7/docling-2.60.1.tar.gz", hash = "sha256:7205feeea1148ef0d13a7c1184067be29595ef75606f66bc24881343c68fc16b", size = 235217, upload-time = "2025-11-04T11:27:39.795Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/68/5128fa336866f425052816db2c20a777b6060db84ab5a70a85fd01b1c334/docling-2.58.0-py3-none-any.whl", hash = "sha256:bc28a4603a249f7a73d39f23345a096f08801fbf430b803e36c6f350e9e0848e", size = 251396, upload-time = "2025-10-22T11:32:51.446Z" },
+    { url = "https://files.pythonhosted.org/packages/12/9a/55d04f94c8ba446b01c38c1eaa45b12f3d7508525d607ec62d44915af6f8/docling-2.60.1-py3-none-any.whl", hash = "sha256:0562cc45e7227b23ba1f7c82cbd5aa71ebfd38ab43c36cec37b433f4846f8822", size = 253120, upload-time = "2025-11-04T11:27:38.228Z" },
 ]
 
 [[package]]
 name = "docling-core"
-version = "2.48.4"
+version = "2.50.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonref" },
@@ -722,9 +722,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/d8/f0c8034f87d6151eb955e56975b9f2374a54d57af2b56b1682d7c8ff5c71/docling_core-2.48.4.tar.gz", hash = "sha256:d87ce3021cdae3d073ce7572a2396b69be3cde82ebf9a74d4bad1e1cdfdfd524", size = 161377, upload-time = "2025-10-01T09:10:08.614Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/aa/67810ed6f425c597bc5779560c3e550d23ac8cc76f5f62eddae8406cdaf7/docling_core-2.50.1.tar.gz", hash = "sha256:8afae348abb7f7622899d8664195a5e0bef4b2a872f0df0ed40bcd023970a995", size = 168008, upload-time = "2025-11-04T13:20:07.092Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/2a/06e5f9d3083f830de8bef86f91acda994965f88d8b945ce3b257ea83e780/docling_core-2.48.4-py3-none-any.whl", hash = "sha256:367675c1165d0934ae498fa57ca2d27ef0468aad74dc44a5ab061f5d87882ea1", size = 164374, upload-time = "2025-10-01T09:10:06.034Z" },
+    { url = "https://files.pythonhosted.org/packages/39/af/b1dd00c28bedcebef3f54b4e86d427a951f78818dbd7ea854c37a1a971fe/docling_core-2.50.1-py3-none-any.whl", hash = "sha256:92a34b77e02ed4faad451be36a56c37142e8ae240d87a0dcf58e89df41e256ae", size = 169285, upload-time = "2025-11-04T13:20:05.167Z" },
 ]
 
 [package.optional-dependencies]
@@ -1253,8 +1253,8 @@ zeroentropy = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.0.0" },
-    { name = "docling", marker = "extra == 'docling'", specifier = ">=2.58.0" },
-    { name = "docling-core", specifier = ">=2.48.4" },
+    { name = "docling", marker = "extra == 'docling'", specifier = ">=2.60.1" },
+    { name = "docling-core", specifier = ">=2.50.1" },
     { name = "fasta2a", marker = "extra == 'a2a'", specifier = ">=0.1.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lancedb", specifier = ">=0.25.2" },

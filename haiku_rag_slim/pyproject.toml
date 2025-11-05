@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling-core>=2.48.4",
+    "docling-core>=2.50.1",
     "httpx>=0.28.1",
     "lancedb>=0.25.2",
     "pathspec>=0.12.1",
@@ -38,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling>=2.58.0"]
+docling = ["docling>=2.60.1"]
 # Embedding providers
 voyageai = ["voyageai>=0.3.5"]
 # Rerankers
@@ -46,10 +46,7 @@ mxbai = ["mxbai-rerank>=0.1.6"]
 cohere = ["cohere>=5.0.0"]
 zeroentropy = ["zeroentropy>=0.1.0a6"]
 # Agent protocols
-a2a = [
-    "fasta2a>=0.1.0",
-    "pydantic-ai-slim[a2a]",
-]
+a2a = ["fasta2a>=0.1.0", "pydantic-ai-slim[a2a]"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]
