@@ -1,6 +1,19 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Migrated research and deep QA agents to use Pydantic Graph beta API for better graph execution
+- Automatic semaphore-based concurrency control for parallel sub-question processing
+- `max_concurrency` parameter for controlling parallel execution in research and deep QA (default: 1)
+
+### Changed
+
+- **BREAKING**: Research and Deep QA graphs now use `pydantic_graph.beta` instead of the class-based graph implementation
+- Refactored graph common patterns into `graph_common` module
+- Sub-questions now process using `.map()` for true parallel execution
+- Improved graph structure with cleaner node definitions and flow control
+
 ## [0.14.0] - 2024-11-05
 
 ### Added
