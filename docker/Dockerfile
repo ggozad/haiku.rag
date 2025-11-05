@@ -12,14 +12,14 @@ ENV UV_COMPILE_BYTECODE=1 \
 # Copy workspace member directories first (needed for workspace resolution)
 COPY pyproject.toml uv.lock ./
 COPY haiku_rag_slim/pyproject.toml haiku_rag_slim/README.md haiku_rag_slim/LICENSE haiku_rag_slim/
-COPY evaluations/pyproject.toml evaluations/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project
+    uv sync --frozen --no-install-project --no-dev
 
 # Install the project itself
-COPY . .
+COPY haiku_rag_slim haiku_rag_slim/
+COPY README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable
+    uv sync --frozen --no-editable --no-dev
 
 # Final layer
 FROM python:3.13-slim
