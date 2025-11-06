@@ -290,22 +290,6 @@ def research(
     question: str = typer.Argument(
         help="The research question to investigate",
     ),
-    max_iterations: int = typer.Option(
-        3,
-        "--max-iterations",
-        "-n",
-        help="Maximum search/analyze iterations",
-    ),
-    confidence_threshold: float = typer.Option(
-        0.8,
-        "--confidence-threshold",
-        help="Minimum confidence (0-1) to stop",
-    ),
-    max_concurrency: int = typer.Option(
-        1,
-        "--max-concurrency",
-        help="Max concurrent searches per iteration (planned)",
-    ),
     db: Path = typer.Option(
         Config.storage.data_dir / "haiku.rag.lancedb",
         "--db",
@@ -320,15 +304,7 @@ def research(
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=db)
-    asyncio.run(
-        app.research(
-            question=question,
-            max_iterations=max_iterations,
-            confidence_threshold=confidence_threshold,
-            max_concurrency=max_concurrency,
-            verbose=verbose,
-        )
-    )
+    asyncio.run(app.research(question=question, verbose=verbose))
 
 
 @cli.command("settings", help="Display current configuration settings")

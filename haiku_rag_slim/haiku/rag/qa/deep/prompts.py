@@ -1,3 +1,5 @@
+"""Deep QA specific prompts."""
+
 SYNTHESIS_PROMPT = """You are an expert at synthesizing information into clear, concise answers.
 
 Task:

@@ -2,16 +2,23 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.models import SearchAnswer
+from haiku.rag.graph_common.models import SearchAnswer
 from haiku.rag.qa.deep.dependencies import DeepQAContext
 from haiku.rag.qa.deep.graph import build_deep_qa_graph
-from haiku.rag.qa.deep.nodes import DeepQAPlanNode
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 
 @pytest.mark.asyncio
 async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     """Test deep Q&A graph with mocked LLM using TestModel."""
+
+    # Mock get_model to return TestModel which generates valid schema-compliant data
+    def test_model_factory(provider, model):
+        return TestModel()
+
+    monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.qa.deep.graph.get_model", test_model_factory)
+
     graph = build_deep_qa_graph()
 
     state = DeepQAState(
@@ -25,20 +32,12 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     client = HaikuRAG(temp_db_path)
     deps = DeepQADeps(client=client, console=None)
 
-    # Mock get_model to return TestModel which generates valid schema-compliant data
-    def test_model_factory(provider, model):
-        return TestModel()
-
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.qa.deep.nodes.get_model", test_model_factory)
-
-    start = DeepQAPlanNode(provider="test", model="test")
-    result = await graph.run(start_node=start, state=state, deps=deps)
+    result = await graph.run(state=state, deps=deps)
 
     # TestModel will generate valid structured output based on schemas
-    assert result.output.answer is not None
-    assert isinstance(result.output.answer, str)
-    assert isinstance(result.output.sources, list)
+    assert result.answer is not None
+    assert isinstance(result.answer, str)
+    assert isinstance(result.sources, list)
 
     client.close()
 
@@ -46,6 +45,14 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
 @pytest.mark.asyncio
 async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
     """Test deep Q&A with citations enabled using TestModel."""
+
+    # Mock get_model to return TestModel
+    def test_model_factory(provider, model):
+        return TestModel()
+
+    monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.qa.deep.graph.get_model", test_model_factory)
+
     graph = build_deep_qa_graph()
 
     state = DeepQAState(
@@ -57,20 +64,12 @@ async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
     client = HaikuRAG(temp_db_path)
     deps = DeepQADeps(client=client, console=None)
 
-    # Mock get_model to return TestModel
-    def test_model_factory(provider, model):
-        return TestModel()
-
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.qa.deep.nodes.get_model", test_model_factory)
-
-    start = DeepQAPlanNode(provider="test", model="test")
-    result = await graph.run(start_node=start, state=state, deps=deps)
+    result = await graph.run(state=state, deps=deps)
 
     # Verify citations flag was used
     assert state.context.use_citations is True
-    assert result.output.answer is not None
-    assert isinstance(result.output.sources, list)
+    assert result.answer is not None
+    assert isinstance(result.sources, list)
 
     client.close()
 

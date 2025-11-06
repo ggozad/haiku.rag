@@ -6,7 +6,7 @@ import logfire
 from pydantic_ai import Agent, RunContext
 
 from haiku.rag.config import Config
-from haiku.rag.graph.common import get_model
+from haiku.rag.graph_common import get_model
 
 from .context import load_message_history, save_message_history
 from .models import AgentDependencies, SearchResult
@@ -138,7 +138,11 @@ def create_a2a_app(
     if security_schemes or security:
         # Monkey-patch the agent card endpoint to include security
         async def _agent_card_endpoint_with_security(request):
-            from fasta2a.schema import AgentCapabilities, AgentCard, agent_card_ta
+            from fasta2a.schema import (  # type: ignore
+                AgentCapabilities,
+                AgentCard,
+                agent_card_ta,
+            )
             from starlette.responses import Response
 
             if app._agent_card_json_schema is None:

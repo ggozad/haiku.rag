@@ -383,11 +383,9 @@ async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
     from haiku.rag.qa.deep.models import DeepQAAnswer
 
     mock_output = DeepQAAnswer(answer="Deep QA answer", sources=["test.md"])
-    mock_result = MagicMock()
-    mock_result.output = mock_output
 
     mock_graph = AsyncMock()
-    mock_graph.run.return_value = mock_result
+    mock_graph.run.return_value = mock_output
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
@@ -415,11 +413,9 @@ async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
     mock_output = DeepQAAnswer(
         answer="Deep QA answer with citations [test.md]", sources=["test.md"]
     )
-    mock_result = MagicMock()
-    mock_result.output = mock_output
 
     mock_graph = AsyncMock()
-    mock_graph.run.return_value = mock_result
+    mock_graph.run.return_value = mock_output
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
@@ -445,11 +441,9 @@ async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
     from haiku.rag.qa.deep.models import DeepQAAnswer
 
     mock_output = DeepQAAnswer(answer="Deep QA answer", sources=["test.md"])
-    mock_result = MagicMock()
-    mock_result.output = mock_output
 
     mock_graph = AsyncMock()
-    mock_graph.run.return_value = mock_result
+    mock_graph.run.return_value = mock_output
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client

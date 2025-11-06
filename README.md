@@ -88,8 +88,8 @@ To customize settings, create a `haiku.rag.yaml` config file (see [Configuration
 
 ```python
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.research import (
-    PlanNode,
     ResearchContext,
     ResearchDeps,
     ResearchState,
@@ -115,34 +115,22 @@ async with HaikuRAG("database.lancedb") as client:
     print(answer)
 
     # Multi‑agent research pipeline (Plan → Search → Evaluate → Synthesize)
-    graph = build_research_graph()
+    # Graph settings (provider, model, max_iterations, etc.) come from config
+    graph = build_research_graph(config=Config)
     question = (
         "What are the main drivers and trends of global temperature "
         "anomalies since 1990?"
     )
-    state = ResearchState(
-        context=ResearchContext(original_question=question),
-        max_iterations=2,
-        confidence_threshold=0.8,
-        max_concurrency=2,
-    )
+    context = ResearchContext(original_question=question)
+    state = ResearchState.from_config(context=context, config=Config)
     deps = ResearchDeps(client=client)
 
     # Blocking run (final result only)
-    result = await graph.run(
-        PlanNode(provider="openai", model="gpt-4o-mini"),
-        state=state,
-        deps=deps,
-    )
-    print(result.output.title)
+    report = await graph.run(state=state, deps=deps)
+    print(report.title)
 
     # Streaming progress (log/report/error events)
-    async for event in stream_research_graph(
-        graph,
-        PlanNode(provider="openai", model="gpt-4o-mini"),
-        state,
-        deps,
-    ):
+    async for event in stream_research_graph(graph, state, deps):
         if event.type == "log":
             iteration = event.state.iterations if event.state else state.iterations
             print(f"[{iteration}] {event.message}")

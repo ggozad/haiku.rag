@@ -37,11 +37,17 @@ class RerankingConfig(BaseModel):
 class QAConfig(BaseModel):
     provider: str = "ollama"
     model: str = "gpt-oss"
+    max_sub_questions: int = 3
+    max_iterations: int = 2
+    max_concurrency: int = 1
 
 
 class ResearchConfig(BaseModel):
     provider: str = "ollama"
     model: str = "gpt-oss"
+    max_iterations: int = 3
+    confidence_threshold: float = 0.8
+    max_concurrency: int = 1
 
 
 class ProcessingConfig(BaseModel):

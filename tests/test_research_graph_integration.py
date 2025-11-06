@@ -2,20 +2,24 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.nodes.plan import PlanNode
 from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import (
-    ResearchDeps,
-    ResearchState,
-    build_research_graph,
-)
+from haiku.rag.research.graph import build_research_graph
 from haiku.rag.research.models import ResearchReport
+from haiku.rag.research.state import ResearchDeps, ResearchState
 from haiku.rag.research.stream import stream_research_graph
 
 
 @pytest.mark.asyncio
 async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     """Test research graph with mocked LLM using TestModel."""
+
+    # Mock get_model to return TestModel which generates valid schema-compliant data
+    def test_model_factory(provider, model):
+        return TestModel()
+
+    monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.research.graph.get_model", test_model_factory)
+
     graph = build_research_graph()
 
     state = ResearchState(
@@ -29,24 +33,9 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     client = HaikuRAG(temp_db_path)
     deps = ResearchDeps(client=client, console=None)
 
-    # Mock get_model to return TestModel which generates valid schema-compliant data
-    # Need to patch in all modules that import it
-    def test_model_factory(provider, model):
-        return TestModel()
-
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.nodes.plan.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.nodes.search.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.nodes.analysis.get_model", test_model_factory)
-    monkeypatch.setattr(
-        "haiku.rag.graph.nodes.synthesize.get_model", test_model_factory
-    )
-
-    start = PlanNode(provider="test", model="test")
-
     collected = []
     report = None
-    async for event in stream_research_graph(graph, start, state, deps):
+    async for event in stream_research_graph(graph, state, deps):
         collected.append(event)
         if event.type == "report":
             report = event.report
