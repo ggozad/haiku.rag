@@ -20,3 +20,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["evaluations"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["haiku", "evaluations"]
