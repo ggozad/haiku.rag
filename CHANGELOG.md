@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.14.1] - 2025-11-06
+
 ### Added
 
 - Migrated research and deep QA agents to use Pydantic Graph beta API for better graph execution

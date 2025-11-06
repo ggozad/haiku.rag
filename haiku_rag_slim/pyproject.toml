@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB - Minimal dependencies"
-version = "0.14.0"
+version = "0.14.1"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
