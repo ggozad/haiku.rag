@@ -204,23 +204,29 @@ class HaikuRAGApp:
         deep: bool = False,
         verbose: bool = False,
     ):
+        """Ask a question using the RAG system.
+
+        Args:
+            question: The question to ask
+            cite: Include citations in the answer
+            deep: Use deep QA mode (multi-step reasoning)
+            verbose: Show verbose output
+        """
         async with HaikuRAG(db_path=self.db_path) as self.client:
             try:
                 if deep:
                     from rich.console import Console
 
+                    from haiku.rag.config import Config
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
-                    graph = build_deep_qa_graph(
-                        provider=Config.qa.provider,
-                        model=Config.qa.model,
-                    )
+                    graph = build_deep_qa_graph(config=Config)
                     context = DeepQAContext(
                         original_question=question, use_citations=cite
                     )
-                    state = DeepQAState(context=context)
+                    state = DeepQAState.from_config(context=context, config=Config)
                     deps = DeepQADeps(
                         client=self.client, console=Console() if verbose else None
                     )
@@ -240,28 +246,26 @@ class HaikuRAGApp:
     async def research(
         self,
         question: str,
-        max_iterations: int = 3,
-        confidence_threshold: float = 0.8,
         verbose: bool = False,
     ):
-        """Run research via the pydantic-graph pipeline (default)."""
+        """Run research via the pydantic-graph pipeline.
+
+        Args:
+            question: The research question
+            verbose: Show verbose output
+        """
         async with HaikuRAG(db_path=self.db_path) as client:
             try:
+                from haiku.rag.config import Config
+
                 if verbose:
                     self.console.print("[bold cyan]Starting research[/bold cyan]")
                     self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                     self.console.print()
 
-                graph = build_research_graph(
-                    provider=Config.research.provider or Config.qa.provider,
-                    model=Config.research.model or Config.qa.model,
-                )
+                graph = build_research_graph(config=Config)
                 context = ResearchContext(original_question=question)
-                state = ResearchState(
-                    context=context,
-                    max_iterations=max_iterations,
-                    confidence_threshold=confidence_threshold,
-                )
+                state = ResearchState.from_config(context=context, config=Config)
                 deps = ResearchDeps(
                     client=client, console=self.console if verbose else None
                 )

@@ -78,7 +78,7 @@ Key differences from Research:
 
 Note on parallel execution:
 - The `search_one` node is mapped over all questions in a batch
-- Parallelism is controlled via `max_concurrency` using asyncio.Semaphore
+- Parallelism is controlled via `max_concurrency`
 - All questions in an iteration are processed before evaluation
 
 CLI usage:
@@ -95,25 +95,19 @@ Python usage:
 
 ```python
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.qa.deep.dependencies import DeepQAContext
 from haiku.rag.qa.deep.graph import build_deep_qa_graph
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
 async with HaikuRAG(path_to_db) as client:
-    graph = build_deep_qa_graph(
-        provider="openai",
-        model="gpt-4o-mini"
-    )
+    # Use global config (recommended)
+    graph = build_deep_qa_graph(config=Config)
     context = DeepQAContext(
         original_question="What are the main features of haiku.rag?",
         use_citations=True
     )
-    state = DeepQAState(
-        context=context,
-        max_sub_questions=3,
-        max_iterations=2,
-        max_concurrency=1
-    )
+    state = DeepQAState.from_config(context=context, config=Config)
     deps = DeepQADeps(client=client)
 
     result = await graph.run(
@@ -123,6 +117,33 @@ async with HaikuRAG(path_to_db) as client:
 
     print(result.answer)
     print(result.sources)
+```
+
+Alternative usage with custom config:
+
+```python
+# Create a custom config with different settings
+from haiku.rag.config.models import AppConfig, QAConfig
+
+custom_config = AppConfig(
+    qa=QAConfig(
+        provider="openai",
+        model="gpt-4o-mini",
+        max_sub_questions=5,
+        max_iterations=3,
+        max_concurrency=2,
+    )
+)
+
+graph = build_deep_qa_graph(config=custom_config)
+context = DeepQAContext(
+    original_question="What are the main features of haiku.rag?",
+    use_citations=True
+)
+state = DeepQAState.from_config(context=context, config=custom_config)
+deps = DeepQADeps(client=client)
+
+result = await graph.run(state=state, deps=deps)
 ```
 
 ### Research Graph
@@ -166,39 +187,34 @@ Primary models:
 
 Note on parallel execution:
 - The `search_one` node is mapped over all questions in a batch
-- Parallelism is controlled via `max_concurrency` using asyncio.Semaphore
+- Parallelism is controlled via `max_concurrency`
 - Analysis and decision nodes process results after each batch completes
 
 CLI usage:
 
 ```bash
-haiku-rag research "How does haiku.rag organize and query documents?" \
-  --max-iterations 2 \
-  --confidence-threshold 0.8 \
-  --max-concurrency 3 \
-  --verbose
+# Basic usage (uses config from file or defaults)
+haiku-rag research "How does haiku.rag organize and query documents?" --verbose
+
+# With custom config file
+haiku-rag --config my-research-config.yaml research "How does haiku.rag organize and query documents?" --verbose
 ```
 
 Python usage (blocking result):
 
 ```python
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import build_research_graph
 from haiku.rag.research.state import ResearchDeps, ResearchState
 
 async with HaikuRAG(path_to_db) as client:
-    graph = build_research_graph(
-        provider="openai",
-        model="gpt-4o-mini"
-    )
+    # Use global config (recommended)
+    graph = build_research_graph(config=Config)
     question = "What are the main drivers and trends of global temperature anomalies since 1990?"
-    state = ResearchState(
-        context=ResearchContext(original_question=question),
-        max_iterations=2,
-        confidence_threshold=0.8,
-        max_concurrency=2,
-    )
+    context = ResearchContext(original_question=question)
+    state = ResearchState.from_config(context=context, config=Config)
     deps = ResearchDeps(client=client)
 
     result = await graph.run(
@@ -211,27 +227,44 @@ async with HaikuRAG(path_to_db) as client:
     print(report.executive_summary)
 ```
 
+Alternative usage with custom config:
+
+```python
+from haiku.rag.config.models import AppConfig, ResearchConfig
+
+custom_config = AppConfig(
+    research=ResearchConfig(
+        provider="openai",
+        model="gpt-4o-mini",
+        max_iterations=5,
+        confidence_threshold=0.85,
+        max_concurrency=3,
+    )
+)
+
+graph = build_research_graph(config=custom_config)
+context = ResearchContext(original_question=question)
+state = ResearchState.from_config(context=context, config=custom_config)
+deps = ResearchDeps(client=client)
+
+result = await graph.run(state=state, deps=deps)
+```
+
 Python usage (streamed events):
 
 ```python
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import build_research_graph
 from haiku.rag.research.state import ResearchDeps, ResearchState
 from haiku.rag.research.stream import stream_research_graph
 
 async with HaikuRAG(path_to_db) as client:
-    graph = build_research_graph(
-        provider="openai",
-        model="gpt-4o-mini"
-    )
+    graph = build_research_graph(config=Config)
     question = "What are the main drivers and trends of global temperature anomalies since 1990?"
-    state = ResearchState(
-        context=ResearchContext(original_question=question),
-        max_iterations=2,
-        confidence_threshold=0.8,
-        max_concurrency=2,
-    )
+    context = ResearchContext(original_question=question)
+    state = ResearchState.from_config(context=context, config=Config)
     deps = ResearchDeps(client=client)
 
     async for event in stream_research_graph(

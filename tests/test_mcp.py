@@ -309,9 +309,6 @@ async def test_mcp_research_question():
 
             result = await research_tool.fn(  # type: ignore[attr-defined]
                 question="Research question?",
-                max_iterations=1,
-                confidence_threshold=0.5,
-                max_concurrency=1,
             )
 
             assert result is not None

@@ -1,5 +1,13 @@
 from typing import Any
 
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.format_prompt import format_as_xml
+from pydantic_ai.output import ToolOutput
+from pydantic_graph.beta import Graph, GraphBuilder, StepContext
+from pydantic_graph.beta.join import reduce_list_append
+
+from haiku.rag.config import Config
+from haiku.rag.config.models import AppConfig
 from haiku.rag.graph_common import get_model, log
 from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
@@ -19,16 +27,21 @@ from haiku.rag.research.prompts import (
     SYNTHESIS_AGENT_PROMPT,
 )
 from haiku.rag.research.state import ResearchDeps, ResearchState
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.format_prompt import format_as_xml
-from pydantic_ai.output import ToolOutput
-from pydantic_graph.beta import Graph, GraphBuilder, StepContext
-from pydantic_graph.beta.join import reduce_list_append
 
 
 def build_research_graph(
-    provider: str, model: str
+    config: AppConfig = Config,
 ) -> Graph[ResearchState, ResearchDeps, None, ResearchReport]:
+    """Build the Research graph.
+
+    Args:
+        config: AppConfig object (uses config.research for provider, model, and graph parameters)
+
+    Returns:
+        Configured Research graph
+    """
+    provider = config.research.provider
+    model = config.research.model
     g = GraphBuilder(
         state_type=ResearchState,
         deps_type=ResearchDeps,

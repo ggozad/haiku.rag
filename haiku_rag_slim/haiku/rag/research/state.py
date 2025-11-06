@@ -1,11 +1,16 @@
 import asyncio
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.models import EvaluationResult, InsightAnalysis
 from haiku.rag.research.stream import ResearchStream
-from rich.console import Console
+
+if TYPE_CHECKING:
+    from haiku.rag.config.models import AppConfig
 
 
 @dataclass
@@ -31,3 +36,23 @@ class ResearchState:
     max_concurrency: int = 1
     last_eval: EvaluationResult | None = None
     last_analysis: InsightAnalysis | None = None
+
+    @classmethod
+    def from_config(
+        cls, context: ResearchContext, config: "AppConfig"
+    ) -> "ResearchState":
+        """Create a ResearchState from an AppConfig.
+
+        Args:
+            context: The ResearchContext containing the question and settings
+            config: The AppConfig object (uses config.research for state parameters)
+
+        Returns:
+            A configured ResearchState instance
+        """
+        return cls(
+            context=context,
+            max_iterations=config.research.max_iterations,
+            confidence_threshold=config.research.confidence_threshold,
+            max_concurrency=config.research.max_concurrency,
+        )

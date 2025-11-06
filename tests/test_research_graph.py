@@ -6,7 +6,7 @@ from haiku.rag.research.state import ResearchState
 
 
 def test_build_graph_and_state():
-    graph = build_research_graph(provider="openai", model="gpt-4")
+    graph = build_research_graph()
     assert graph is not None
 
     state = ResearchState(

@@ -20,7 +20,7 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.research.graph.get_model", test_model_factory)
 
-    graph = build_research_graph(provider="test", model="test")
+    graph = build_research_graph()
 
     state = ResearchState(
         context=ResearchContext(original_question="What is haiku.rag?"),

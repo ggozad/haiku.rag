@@ -1,5 +1,13 @@
 from typing import Any
 
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.format_prompt import format_as_xml
+from pydantic_ai.output import ToolOutput
+from pydantic_graph.beta import Graph, GraphBuilder, StepContext
+from pydantic_graph.beta.join import reduce_list_append
+
+from haiku.rag.config import Config
+from haiku.rag.config.models import AppConfig
 from haiku.rag.graph_common import get_model, log
 from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
@@ -11,16 +19,21 @@ from haiku.rag.qa.deep.prompts import (
     SYNTHESIS_PROMPT_WITH_CITATIONS,
 )
 from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.format_prompt import format_as_xml
-from pydantic_ai.output import ToolOutput
-from pydantic_graph.beta import Graph, GraphBuilder, StepContext
-from pydantic_graph.beta.join import reduce_list_append
 
 
 def build_deep_qa_graph(
-    provider: str, model: str
+    config: AppConfig = Config,
 ) -> Graph[DeepQAState, DeepQADeps, None, DeepQAAnswer]:
+    """Build the Deep QA graph.
+
+    Args:
+        config: AppConfig object (uses config.qa for provider, model, and graph parameters)
+
+    Returns:
+        Configured Deep QA graph
+    """
+    provider = config.qa.provider
+    model = config.qa.model
     g = GraphBuilder(
         state_type=DeepQAState,
         deps_type=DeepQADeps,

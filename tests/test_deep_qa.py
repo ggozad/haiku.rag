@@ -19,7 +19,7 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.qa.deep.graph.get_model", test_model_factory)
 
-    graph = build_deep_qa_graph(provider="test", model="test")
+    graph = build_deep_qa_graph()
 
     state = DeepQAState(
         context=DeepQAContext(
@@ -53,7 +53,7 @@ async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
     monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.qa.deep.graph.get_model", test_model_factory)
 
-    graph = build_deep_qa_graph(provider="test", model="test")
+    graph = build_deep_qa_graph()
 
     state = DeepQAState(
         context=DeepQAContext(original_question="What is Python?", use_citations=True),
