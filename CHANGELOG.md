@@ -13,6 +13,7 @@
 - Refactored graph common patterns into `graph_common` module
 - Sub-questions now process using `.map()` for true parallel execution
 - Improved graph structure with cleaner node definitions and flow control
+- Pinned critical dependencies: `docling-core`, `lancedb`, `docling`
 
 ## [0.14.0] - 2024-11-05
 
