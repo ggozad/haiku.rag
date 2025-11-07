@@ -1,6 +1,18 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Configuration**: All CLI commands now properly support `--config` parameter for specifying custom configuration files
+- Configuration loading consolidated across CLI, app, and client with consistent resolution order
+- `HaikuRAGApp`, MCP server, and A2A server now accept `config` parameter for programmatic configuration
+- Updated CLI documentation to clarify global vs per-command options
+- **BREAKING**: Standardized configuration filename to `haiku.rag.yaml` in user directories (was incorrectly using `config.yaml`). Users with existing `config.yaml` in their user directory will need to rename it to `haiku.rag.yaml`
+
+### Removed
+
+- **BREAKING**: Removed deprecated `.env`-based configuration system. The `haiku-rag init-config --from-env` command and `load_config_from_env()` function have been removed. All configuration must now be done via YAML files. Environment variables for API keys (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) and service URLs (e.g., `OLLAMA_BASE_URL`) are still supported and can be set via `.env` files.
+
 ## [0.14.1] - 2025-11-06
 
 ### Added

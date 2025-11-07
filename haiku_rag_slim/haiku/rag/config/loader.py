@@ -32,7 +32,8 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     # Use same directory as data storage for config
     from haiku.rag.utils import get_default_data_dir
 
-    user_config = get_default_data_dir() / "config.yaml"
+    data_dir = get_default_data_dir()
+    user_config = data_dir / "haiku.rag.yaml"
     if user_config.exists():
         return user_config
 
@@ -85,59 +86,3 @@ def generate_default_config() -> dict:
         },
         "a2a": {"max_contexts": 1000},
     }
-
-
-def load_config_from_env() -> dict:
-    """Load current config from environment variables (for migration)."""
-    result = {}
-
-    env_mappings = {
-        "ENV": "environment",
-        "DEFAULT_DATA_DIR": ("storage", "data_dir"),
-        "MONITOR_DIRECTORIES": ("monitor", "directories"),
-        "DISABLE_DB_AUTOCREATE": ("storage", "disable_autocreate"),
-        "VACUUM_RETENTION_SECONDS": ("storage", "vacuum_retention_seconds"),
-        "LANCEDB_URI": ("lancedb", "uri"),
-        "LANCEDB_API_KEY": ("lancedb", "api_key"),
-        "LANCEDB_REGION": ("lancedb", "region"),
-        "EMBEDDINGS_PROVIDER": ("embeddings", "provider"),
-        "EMBEDDINGS_MODEL": ("embeddings", "model"),
-        "EMBEDDINGS_VECTOR_DIM": ("embeddings", "vector_dim"),
-        "RERANK_PROVIDER": ("reranking", "provider"),
-        "RERANK_MODEL": ("reranking", "model"),
-        "QA_PROVIDER": ("qa", "provider"),
-        "QA_MODEL": ("qa", "model"),
-        "RESEARCH_PROVIDER": ("research", "provider"),
-        "RESEARCH_MODEL": ("research", "model"),
-        "CHUNK_SIZE": ("processing", "chunk_size"),
-        "CONTEXT_CHUNK_RADIUS": ("processing", "context_chunk_radius"),
-        "MARKDOWN_PREPROCESSOR": ("processing", "markdown_preprocessor"),
-        "OLLAMA_BASE_URL": ("providers", "ollama", "base_url"),
-        "VLLM_EMBEDDINGS_BASE_URL": ("providers", "vllm", "embeddings_base_url"),
-        "VLLM_RERANK_BASE_URL": ("providers", "vllm", "rerank_base_url"),
-        "VLLM_QA_BASE_URL": ("providers", "vllm", "qa_base_url"),
-        "VLLM_RESEARCH_BASE_URL": ("providers", "vllm", "research_base_url"),
-        "A2A_MAX_CONTEXTS": ("a2a", "max_contexts"),
-    }
-
-    for env_var, path in env_mappings.items():
-        value = os.getenv(env_var)
-        if value is not None:
-            # Special handling for MONITOR_DIRECTORIES - parse comma-separated list
-            if env_var == "MONITOR_DIRECTORIES":
-                if value.strip():
-                    value = [p.strip() for p in value.split(",") if p.strip()]
-                else:
-                    value = []
-
-            if isinstance(path, tuple):
-                current = result
-                for key in path[:-1]:
-                    if key not in current:
-                        current[key] = {}
-                    current = current[key]
-                current[path[-1]] = value
-            else:
-                result[path] = value
-
-    return result

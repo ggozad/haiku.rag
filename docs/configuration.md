@@ -15,15 +15,6 @@ haiku-rag init-config
 
 This creates a `haiku.rag.yaml` file in your current directory with all available settings.
 
-!!! warning "Deprecation Notice"
-    Environment variable configuration via `.env` files is deprecated and will be removed in future versions. Please migrate to YAML configuration.
-
-    To migrate from environment variables (`.env` file):
-
-    ```bash
-    haiku-rag init-config --from-env
-    ```
-
 ## Configuration File Locations
 
 `haiku.rag` searches for configuration files in this order:
@@ -31,9 +22,9 @@ This creates a `haiku.rag.yaml` file in your current directory with all availabl
 1. Path specified via `--config` flag: `haiku-rag --config /path/to/config.yaml <command>`
 2. `./haiku.rag.yaml` (current directory)
 3. Platform-specific user directory:
-    - **Linux**: `~/.local/share/haiku.rag/config.yaml`
-    - **macOS**: `~/Library/Application Support/haiku.rag/config.yaml`
-    - **Windows**: `C:/Users/<USER>/AppData/Roaming/haiku.rag/config.yaml`
+    - **Linux**: `~/.local/share/haiku.rag/haiku.rag.yaml`
+    - **macOS**: `~/Library/Application Support/haiku.rag/haiku.rag.yaml`
+    - **Windows**: `C:/Users/<USER>/AppData/Roaming/haiku.rag/haiku.rag.yaml`
 
 ## Minimal Configuration
 
@@ -219,14 +210,7 @@ embeddings:
   vector_dim: 1024
 ```
 
-The Ollama base URL can be configured via environment variable or config file:
-
-```bash
-# Via environment variable (recommended)
-export OLLAMA_BASE_URL=http://localhost:11434
-```
-
-Or in your config file:
+The Ollama base URL can be configured in your config file or via environment variable:
 
 ```yaml
 providers:
@@ -234,7 +218,16 @@ providers:
     base_url: http://localhost:11434
 ```
 
-If neither is set, it defaults to `http://localhost:11434`.
+Or via environment variable:
+
+```bash
+export OLLAMA_BASE_URL=http://localhost:11434
+```
+
+If not configured, it defaults to `http://localhost:11434`.
+
+!!! note
+    You can use a `.env` file in your project directory to set environment variables like `OLLAMA_BASE_URL` and API keys (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). These will be automatically loaded when running `haiku-rag` commands.
 
 ### VoyageAI
 
