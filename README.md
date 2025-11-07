@@ -4,8 +4,6 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
 `haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
 
-> **Note**: Configuration now uses YAML files instead of environment variables. If you're upgrading from an older version, run `haiku-rag init-config --from-env` to migrate your `.env` file to `haiku.rag.yaml`. See [Configuration](https://ggozad.github.io/haiku.rag/configuration/) for details.
-
 ## Features
 
 - **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
