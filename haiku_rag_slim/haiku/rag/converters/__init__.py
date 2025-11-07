@@ -23,9 +23,9 @@ def get_converter(config: AppConfig = Config) -> DocumentConverter:
 
         return DoclingLocalConverter()
 
-    # if config.processing.converter == "docling-serve":
-    #     from haiku.rag.converters.docling_serve import DoclingServeConverter
-    #
-    #     return DoclingServeConverter(config)
+    if config.processing.converter == "docling-serve":
+        from haiku.rag.converters.docling_serve import DoclingServeConverter
+
+        return DoclingServeConverter(config)
 
     raise ValueError(f"Unsupported converter provider: {config.processing.converter}")

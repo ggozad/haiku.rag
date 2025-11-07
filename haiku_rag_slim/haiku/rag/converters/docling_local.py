@@ -1,10 +1,10 @@
 """Local docling converter implementation."""
 
-from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.converters.base import DocumentConverter
+from haiku.rag.converters.text_utils import TextFileHandler
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -39,66 +39,10 @@ class DoclingLocalConverter(DocumentConverter):
         ".webp",
     ]
 
-    # Plain text extensions that we'll read directly
-    text_extensions: ClassVar[list[str]] = [
-        ".astro",
-        ".c",
-        ".cpp",
-        ".css",
-        ".go",
-        ".h",
-        ".hpp",
-        ".java",
-        ".js",
-        ".json",
-        ".kt",
-        ".mdx",
-        ".mjs",
-        ".php",
-        ".py",
-        ".rb",
-        ".rs",
-        ".svelte",
-        ".swift",
-        ".ts",
-        ".tsx",
-        ".txt",
-        ".vue",
-        ".yaml",
-        ".yml",
-    ]
-
-    # Code file extensions with their markdown language identifiers for syntax highlighting
-    code_markdown_identifier: ClassVar[dict[str, str]] = {
-        ".astro": "astro",
-        ".c": "c",
-        ".cpp": "cpp",
-        ".css": "css",
-        ".go": "go",
-        ".h": "c",
-        ".hpp": "cpp",
-        ".java": "java",
-        ".js": "javascript",
-        ".json": "json",
-        ".kt": "kotlin",
-        ".mjs": "javascript",
-        ".php": "php",
-        ".py": "python",
-        ".rb": "ruby",
-        ".rs": "rust",
-        ".svelte": "svelte",
-        ".swift": "swift",
-        ".ts": "typescript",
-        ".tsx": "tsx",
-        ".vue": "vue",
-        ".yaml": "yaml",
-        ".yml": "yaml",
-    }
-
     @property
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
-        return self.docling_extensions + self.text_extensions
+        return self.docling_extensions + TextFileHandler.text_extensions
 
     def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument using local docling.
@@ -122,17 +66,15 @@ class DoclingLocalConverter(DocumentConverter):
                 converter = DoclingDocConverter()
                 result = converter.convert(path)
                 return result.document
-            elif file_extension in self.text_extensions:
+            elif file_extension in TextFileHandler.text_extensions:
                 # Read plain text files directly
                 content = path.read_text(encoding="utf-8")
-
-                # Wrap code files (but not plain txt) in markdown code blocks for better presentation
-                if file_extension in self.code_markdown_identifier:
-                    language = self.code_markdown_identifier[file_extension]
-                    content = f"```{language}\n{content}\n```"
-
+                # Prepare content with code block wrapping if needed
+                prepared_content = TextFileHandler.prepare_text_content(
+                    content, file_extension
+                )
                 # Convert text to DoclingDocument by wrapping as markdown
-                return self.convert_text(content, name=f"{path.stem}.md")
+                return self.convert_text(prepared_content, name=f"{path.stem}.md")
             else:
                 # Fallback: try to read as text and convert to DoclingDocument
                 content = path.read_text(encoding="utf-8")
@@ -153,14 +95,4 @@ class DoclingLocalConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted.
         """
-        from docling.document_converter import DocumentConverter as DoclingDocConverter
-        from docling_core.types.io import DocumentStream
-
-        try:
-            bytes_io = BytesIO(text.encode("utf-8"))
-            doc_stream = DocumentStream(name=name, stream=bytes_io)
-            converter = DoclingDocConverter()
-            result = converter.convert(doc_stream)
-            return result.document
-        except Exception as e:
-            raise ValueError(f"Failed to convert text to DoclingDocument: {e}")
+        return TextFileHandler.text_to_docling_document(text, name)

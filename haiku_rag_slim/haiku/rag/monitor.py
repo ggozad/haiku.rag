@@ -28,10 +28,11 @@ class FileFilter(DefaultFilter):
         if supported_extensions is None:
             # Default to docling-local extensions if not provided
             from haiku.rag.converters.docling_local import DoclingLocalConverter
+            from haiku.rag.converters.text_utils import TextFileHandler
 
             supported_extensions = (
                 DoclingLocalConverter.docling_extensions
-                + DoclingLocalConverter.text_extensions
+                + TextFileHandler.text_extensions
             )
 
         self.extensions = tuple(supported_extensions)
