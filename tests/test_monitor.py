@@ -243,3 +243,200 @@ async def test_file_watcher_with_include_patterns():
         # Should have only called for the .md file
         assert mock_client.create_document_from_source.call_count == 1
         mock_client.create_document_from_source.assert_called_with(str(md_file))
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_skips_unchanged_document():
+    """Test FileWatcher returns existing document when content hasn't changed."""
+    from datetime import datetime
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        test_file = temp_path / "test.txt"
+        test_content = "Test content"
+        test_file.write_text(test_content)
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        # Existing document with a timestamp
+        now = datetime.now()
+        existing_doc = Document(
+            id="1",
+            content=test_content,
+            uri=test_file.as_uri(),
+            created_at=now,
+            updated_at=now,
+        )
+        mock_client.get_document_by_uri.return_value = existing_doc
+        # Client returns same document with same timestamp (unchanged)
+        mock_client.create_document_from_source.return_value = existing_doc
+
+        test_config = AppConfig(monitor=MonitorConfig(directories=[temp_path]))
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        result = await watcher._upsert_document(test_file)
+
+        assert result is not None
+        assert result.id == "1"
+        # Verify timestamp hasn't changed (document wasn't updated)
+        assert result.updated_at == now
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_deletes_orphans():
+    """Test FileWatcher deletes documents whose files no longer exist."""
+    import asyncio
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        existing_file = temp_path / "exists.txt"
+        existing_file.write_text("Existing file")
+
+        # Create a document for a file that doesn't exist
+        orphan_uri = (temp_path / "deleted.txt").as_uri()
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        orphan_doc = Document(id="orphan-1", content="Orphaned content", uri=orphan_uri)
+        existing_doc = Document(
+            id="existing-1", content="Existing content", uri=existing_file.as_uri()
+        )
+
+        # Mock list_documents to return both documents
+        mock_client.list_documents.return_value = [orphan_doc, existing_doc]
+        mock_client.get_document_by_uri.return_value = None
+        mock_client.create_document_from_source.return_value = existing_doc
+
+        test_config = AppConfig(
+            monitor=MonitorConfig(directories=[temp_path], delete_orphans=True)
+        )
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        # Run refresh which should delete orphan and process existing file
+        await watcher.refresh()
+
+        # Give background task time to complete
+        await asyncio.sleep(0.1)
+
+        # Should have deleted the orphan document
+        mock_client.delete_document.assert_called_once_with("orphan-1")
+        # Should have processed the existing file
+        mock_client.create_document_from_source.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_skips_orphan_deletion_when_disabled():
+    """Test FileWatcher does not delete orphans when delete_orphans is False."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create a document for a file that doesn't exist
+        orphan_uri = (temp_path / "deleted.txt").as_uri()
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        orphan_doc = Document(id="orphan-1", content="Orphaned content", uri=orphan_uri)
+
+        # Mock list_documents to return orphan document
+        mock_client.list_documents.return_value = [orphan_doc]
+
+        test_config = AppConfig(
+            monitor=MonitorConfig(directories=[temp_path], delete_orphans=False)
+        )
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        # Run refresh
+        await watcher.refresh()
+
+        # Should NOT have deleted the orphan document
+        mock_client.delete_document.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_orphan_deletion_respects_patterns():
+    """Test orphan deletion respects include/ignore patterns."""
+    import asyncio
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create documents for files that don't exist
+        ignored_orphan_uri = (temp_path / "draft.md").as_uri()
+        excluded_orphan_uri = (temp_path / "file.pdf").as_uri()
+        included_orphan_uri = (temp_path / "readme.md").as_uri()
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+
+        ignored_doc = Document(
+            id="ignored-1", content="Ignored", uri=ignored_orphan_uri
+        )
+        excluded_doc = Document(
+            id="excluded-1", content="Excluded", uri=excluded_orphan_uri
+        )
+        included_doc = Document(
+            id="included-1", content="Included", uri=included_orphan_uri
+        )
+
+        # Mock list_documents to return all orphan documents
+        mock_client.list_documents.return_value = [
+            ignored_doc,
+            excluded_doc,
+            included_doc,
+        ]
+
+        # Config with patterns: only .md files, but exclude draft*
+        test_config = AppConfig(
+            monitor=MonitorConfig(
+                directories=[temp_path],
+                delete_orphans=True,
+                include_patterns=["*.md"],
+                ignore_patterns=["draft*"],
+            )
+        )
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        # Run refresh
+        await watcher.refresh()
+
+        # Give background task time to complete
+        await asyncio.sleep(0.1)
+
+        # Should only delete the included orphan (readme.md)
+        # - draft.md matches ignore pattern -> NOT deleted
+        # - file.pdf doesn't match include pattern -> NOT deleted
+        # - readme.md matches include and not ignored -> DELETED
+        mock_client.delete_document.assert_called_once_with("included-1")
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_orphan_handles_spaces_in_filenames():
+    """Test orphan deletion correctly handles files with spaces in names."""
+    import asyncio
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        # Create a file with spaces that exists
+        existing_file = temp_path / "my file with spaces.txt"
+        existing_file.write_text("Existing file")
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        # Document with URI that has URL-encoded spaces (%20)
+        existing_doc = Document(
+            id="existing-1", content="Existing", uri=existing_file.as_uri()
+        )
+
+        # Mock list_documents to return document with encoded spaces
+        mock_client.list_documents.return_value = [existing_doc]
+        mock_client.get_document_by_uri.return_value = None
+        mock_client.create_document_from_source.return_value = existing_doc
+
+        test_config = AppConfig(
+            monitor=MonitorConfig(directories=[temp_path], delete_orphans=True)
+        )
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        # Run refresh
+        await watcher.refresh()
+
+        # Give background task time to complete
+        await asyncio.sleep(0.1)
+
+        # Should NOT delete the document since file exists
+        mock_client.delete_document.assert_not_called()

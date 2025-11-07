@@ -15,6 +15,7 @@ class MonitorConfig(BaseModel):
     directories: list[Path] = []
     ignore_patterns: list[str] = []
     include_patterns: list[str] = []
+    delete_orphans: bool = False
 
 
 class LanceDBConfig(BaseModel):

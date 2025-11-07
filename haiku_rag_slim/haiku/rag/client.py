@@ -219,9 +219,13 @@ class HaikuRAG:
             if title is not None and title != existing_doc.title:
                 existing_doc.title = title
                 updated = True
-            if metadata:
-                existing_doc.metadata = {**(existing_doc.metadata or {}), **metadata}
+
+            # Check if metadata actually changed (beyond contentType and md5)
+            merged_metadata = {**(existing_doc.metadata or {}), **metadata}
+            if merged_metadata != existing_doc.metadata:
+                existing_doc.metadata = merged_metadata
                 updated = True
+
             if updated:
                 return await self.document_repository.update(existing_doc)
             return existing_doc
@@ -290,13 +294,14 @@ class HaikuRAG:
                 if title is not None and title != existing_doc.title:
                     existing_doc.title = title
                     updated = True
+
                 metadata.update({"contentType": content_type, "md5": md5_hash})
-                if metadata:
-                    existing_doc.metadata = {
-                        **(existing_doc.metadata or {}),
-                        **metadata,
-                    }
+                # Check if metadata actually changed (beyond contentType and md5)
+                merged_metadata = {**(existing_doc.metadata or {}), **metadata}
+                if merged_metadata != existing_doc.metadata:
+                    existing_doc.metadata = merged_metadata
                     updated = True
+
                 if updated:
                     return await self.document_repository.update(existing_doc)
                 return existing_doc
