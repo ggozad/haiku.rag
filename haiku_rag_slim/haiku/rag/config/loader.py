@@ -32,7 +32,8 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     # Use same directory as data storage for config
     from haiku.rag.utils import get_default_data_dir
 
-    user_config = get_default_data_dir() / "config.yaml"
+    data_dir = get_default_data_dir()
+    user_config = data_dir / "haiku.rag.yaml"
     if user_config.exists():
         return user_config
 

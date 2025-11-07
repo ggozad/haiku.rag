@@ -31,9 +31,9 @@ This creates a `haiku.rag.yaml` file in your current directory with all availabl
 1. Path specified via `--config` flag: `haiku-rag --config /path/to/config.yaml <command>`
 2. `./haiku.rag.yaml` (current directory)
 3. Platform-specific user directory:
-    - **Linux**: `~/.local/share/haiku.rag/config.yaml`
-    - **macOS**: `~/Library/Application Support/haiku.rag/config.yaml`
-    - **Windows**: `C:/Users/<USER>/AppData/Roaming/haiku.rag/config.yaml`
+    - **Linux**: `~/.local/share/haiku.rag/haiku.rag.yaml`
+    - **macOS**: `~/Library/Application Support/haiku.rag/haiku.rag.yaml`
+    - **Windows**: `C:/Users/<USER>/AppData/Roaming/haiku.rag/haiku.rag.yaml`
 
 ## Minimal Configuration
 

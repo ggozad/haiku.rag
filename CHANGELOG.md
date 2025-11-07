@@ -7,6 +7,7 @@
 - Configuration loading consolidated across CLI, app, and client with consistent resolution order
 - `HaikuRAGApp`, MCP server, and A2A server now accept `config` parameter for programmatic configuration
 - Updated CLI documentation to clarify global vs per-command options
+- **BREAKING**: Standardized configuration filename to `haiku.rag.yaml` in user directories (was incorrectly using `config.yaml`). Users with existing `config.yaml` in their user directory will need to rename it to `haiku.rag.yaml`
 
 ## [0.14.1] - 2025-11-06
 
