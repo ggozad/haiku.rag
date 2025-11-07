@@ -14,7 +14,6 @@ The full package includes **all features and extras**:
 - **Document processing** (Docling) - PDF, DOCX, PPTX, images, and 40+ file formats
 - **All embedding providers** - VoyageAI
 - **All rerankers** - MixedBread AI, Cohere, Zero Entropy
-- **A2A agent** - Agent-to-Agent protocol support
 
 This is the easiest way to get started with all features enabled.
 
@@ -36,7 +35,6 @@ The slim package has minimal dependencies and lets you install only what you nee
 - `docling` - PDF, DOCX, PPTX, images, and other document formats
 - `voyageai` - VoyageAI embeddings
 - `mxbai` - MixedBread AI reranking
-- `a2a` - Agent-to-Agent protocol support
 - `cohere` - Cohere reranking
 - `zeroentropy` - Zero Entropy reranking
 
@@ -74,4 +72,4 @@ Run the container with all services:
 docker run -p 8000:8000 -p 8001:8001 -v $(pwd)/data:/data ghcr.io/ggozad/haiku.rag:latest
 ```
 
-This starts the MCP server on port 8001 and A2A server on port 8000, with data persisted to `./data`.
+This starts the MCP server on port 8001, with data persisted to `./data`.

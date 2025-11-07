@@ -22,11 +22,10 @@ Usage:
 import os
 from pathlib import Path
 
+from haiku_rag_a2a.a2a import create_a2a_app
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
-
-from haiku.rag.a2a import create_a2a_app
 
 # API Key Configuration - In production, use environment variables or a secure key store
 API_KEY_NAME = "X-API-Key"

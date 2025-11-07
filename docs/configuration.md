@@ -98,9 +98,6 @@ providers:
     rerank_base_url: ""
     qa_base_url: ""
     research_base_url: ""
-
-a2a:
-  max_contexts: 1000
 ```
 
 ## Programmatic Configuration

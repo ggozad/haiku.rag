@@ -16,7 +16,6 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **File monitoring**: Auto-index files when run as server
 - **40+ file formats**: PDF, DOCX, HTML, Markdown, code files, URLs
 - **MCP server**: Expose as tools for AI assistants
-- **A2A agent**: Conversational agent with context and multi-turn dialogue
 - **CLI & Python API**: Use from command line or Python
 
 ## Installation
@@ -29,7 +28,7 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 uv pip install haiku.rag
 ```
 
-Includes all features: document processing, all embedding providers, rerankers, and A2A agent support.
+Includes all features: document processing, all embedding providers, and rerankers.
 
 ### Slim Package (Minimal Dependencies)
 
@@ -148,32 +147,13 @@ haiku-rag serve --stdio
 
 Provides tools for document management and search directly in your AI assistant.
 
-## A2A Agent
-
-Run as a conversational agent with the Agent-to-Agent protocol:
-
-```bash
-# Start the A2A server
-haiku-rag serve --a2a
-
-# Connect with the interactive client (in another terminal)
-haiku-rag a2aclient
-```
-
-The A2A agent provides:
-
-- Multi-turn dialogue with context
-- Intelligent multi-search for complex questions
-- Source citations with titles and URIs
-- Full document retrieval on request
-
 ## Examples
 
 See the [examples directory](examples/) for working examples:
 
 - **[Interactive Research Assistant](examples/ag-ui-research/)** - Full-stack research assistant with Pydantic AI and AG-UI featuring human-in-the-loop approval and real-time state synchronization
-- **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring, MCP server, and A2A agent
-- **[A2A Security](examples/a2a-security/)** - Authentication examples (API key, OAuth2, GitHub)
+- **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring and MCP server
+- **[A2A Server](examples/a2a-server/)** - Self-contained A2A protocol server package with conversational agent interface
 
 ## Documentation
 
@@ -185,7 +165,6 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA agent and multi-agent research
 - [MCP Server](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
-- [A2A Agent](https://ggozad.github.io/haiku.rag/a2a/) - Agent-to-Agent protocol support
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance Benchmarks
 
 mcp-name: io.github.ggozad/haiku-rag

@@ -6,7 +6,6 @@ from haiku.rag.config.loader import (
     load_yaml_config,
 )
 from haiku.rag.config.models import (
-    A2AConfig,
     AppConfig,
     EmbeddingsConfig,
     LanceDBConfig,
@@ -35,7 +34,6 @@ __all__ = [
     "OllamaConfig",
     "VLLMConfig",
     "ProvidersConfig",
-    "A2AConfig",
     "find_config_file",
     "load_yaml_config",
     "generate_default_config",

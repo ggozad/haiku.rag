@@ -33,8 +33,8 @@ ENV DEFAULT_DATA_DIR=/data
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Expose ports for MCP and A2A
-EXPOSE 8000 8001
+# Expose port for MCP server
+EXPOSE 8001
 
-# Run all services (monitoring, MCP, A2A)
-CMD ["python", "-m", "haiku.rag.cli", "serve", "--monitor", "--mcp", "--mcp-port", "8001", "--a2a", "--a2a-host", "0.0.0.0", "--a2a-port", "8000", "--db", "/data/haiku.rag.lancedb"]
+# Run all services (monitoring, MCP)
+CMD ["python", "-m", "haiku.rag.cli", "serve", "--monitor", "--mcp", "--mcp-port", "8001", "--db", "/data/haiku.rag.lancedb"]

@@ -3,6 +3,14 @@ from pydantic import BaseModel, Field
 from haiku.rag.client import HaikuRAG
 
 
+class A2AConfig(BaseModel):
+    """Configuration for A2A (Agent-to-Agent) protocol server."""
+
+    max_contexts: int = Field(
+        default=1000, description="Maximum number of conversations to keep in memory"
+    )
+
+
 class SearchResult(BaseModel):
     """Search result with both title and URI for A2A agent."""
 

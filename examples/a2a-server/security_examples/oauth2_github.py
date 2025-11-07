@@ -24,11 +24,10 @@ import os
 from pathlib import Path
 
 import httpx
+from haiku_rag_a2a.a2a import create_a2a_app
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
-
-from haiku.rag.a2a import create_a2a_app
 
 # Configuration
 GITHUB_API_URL = "https://api.github.com"

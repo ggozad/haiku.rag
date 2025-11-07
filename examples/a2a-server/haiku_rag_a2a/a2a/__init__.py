@@ -9,7 +9,7 @@ from haiku.rag.config import AppConfig, Config
 from haiku.rag.graph_common import get_model
 
 from .context import load_message_history, save_message_history
-from .models import AgentDependencies, SearchResult
+from .models import A2AConfig, AgentDependencies, SearchResult
 from .prompts import A2A_SYSTEM_PROMPT
 from .skills import extract_question_from_task, get_agent_skills
 from .storage import LRUMemoryStorage
@@ -37,12 +37,14 @@ __all__ = [
     "extract_question_from_task",
     "get_agent_skills",
     "LRUMemoryStorage",
+    "A2AConfig",
 ]
 
 
 def create_a2a_app(
     db_path: Path,
     config: AppConfig = Config,
+    max_contexts: int = 1000,
     security_schemes: dict | None = None,
     security: list[dict[str, list[str]]] | None = None,
 ):
@@ -51,6 +53,7 @@ def create_a2a_app(
     Args:
         db_path: Path to the LanceDB database
         config: App configuration
+        max_contexts: Maximum number of conversations to keep in memory
         security_schemes: Optional security scheme definitions for the AgentCard
         security: Optional security requirements for the AgentCard
 
@@ -58,9 +61,7 @@ def create_a2a_app(
         A FastA2A ASGI application
     """
     base_storage = InMemoryStorage()
-    storage = LRUMemoryStorage(
-        storage=base_storage, max_contexts=config.a2a.max_contexts
-    )
+    storage = LRUMemoryStorage(storage=base_storage, max_contexts=max_contexts)
     broker = InMemoryBroker()
 
     # Create the agent with native search tool
@@ -123,7 +124,7 @@ def create_a2a_app(
     # Create FastA2A app with custom worker lifecycle
     @asynccontextmanager
     async def lifespan(app):
-        logger.info(f"Started A2A server (max contexts: {config.a2a.max_contexts})")
+        logger.info(f"Started A2A server (max contexts: {max_contexts})")
         async with app.task_manager:
             async with worker.run():
                 yield

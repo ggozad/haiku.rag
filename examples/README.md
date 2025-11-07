@@ -22,44 +22,25 @@ See `ag-ui-research/README.md` for setup instructions.
 Complete Docker setup for running haiku.rag with all services:
 - File monitoring for automatic document indexing
 - MCP server for AI assistant integration
-- A2A agent for conversational interactions
 
 See `docker/README.md` for setup instructions.
 
-## A2A Security Examples
+## A2A Server
 
-**Directory:** `a2a-security/`
+**Directory:** `a2a-server/`
 
-Three examples showing how to add authentication to haiku.rag's A2A server:
+Self-contained A2A (Agent-to-Agent) protocol server package that provides a conversational agent interface with its own CLI and dependencies.
 
-### API Key Authentication
+Features:
+- Conversational context with multi-turn dialogue support
+- Interactive CLI client for testing
+- Security examples (API key, OAuth2 with GitHub, enterprise OAuth2)
+- Full documentation and installation instructions
 
-**File:** `a2a-security/apikey_example.py`
+See `a2a-server/README.md` for complete setup and usage instructions.
 
-Simple header-based authentication suitable for internal services and development.
-
+Install locally:
 ```bash
-python examples/a2a-security/apikey_example.py /path/to/database.lancedb
+cd a2a-server
+uv sync
 ```
-
-### OAuth2 GitHub Authentication
-
-**File:** `a2a-security/oauth2_github.py`
-
-GitHub Personal Access Token authentication for GitHub-integrated services.
-
-```bash
-python examples/a2a-security/oauth2_github.py /path/to/database.lancedb
-```
-
-### OAuth2 Enterprise Authentication
-
-**File:** `a2a-security/oauth2_example.py`
-
-Full OAuth2 with JWT verification for enterprise environments.
-
-```bash
-python examples/a2a-security/oauth2_example.py /path/to/database.lancedb
-```
-
-See individual files for detailed setup instructions and usage examples.

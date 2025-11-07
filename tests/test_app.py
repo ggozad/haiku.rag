@@ -211,7 +211,6 @@ async def test_serve_mcp_only(app: HaikuRAGApp, monkeypatch, transport):
                 enable_monitor=False,
                 enable_mcp=True,
                 mcp_transport=transport,
-                enable_a2a=False,
             )
         except asyncio.CancelledError:
             pass
@@ -245,7 +244,7 @@ async def test_serve_monitor_only(app: HaikuRAGApp, monkeypatch):
 
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         try:
-            await app.serve(enable_monitor=True, enable_mcp=False, enable_a2a=False)
+            await app.serve(enable_monitor=True, enable_mcp=False)
         except asyncio.CancelledError:
             pass
 
@@ -253,42 +252,8 @@ async def test_serve_monitor_only(app: HaikuRAGApp, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_serve_a2a_only(app: HaikuRAGApp, monkeypatch):
-    """Test the serve method with A2A server only."""
-    pytest.importorskip("fasta2a")
-    created_tasks = []
-    original_create_task = asyncio.create_task
-
-    def track_task(coro):
-        task = original_create_task(coro)
-        created_tasks.append(task)
-        task.cancel()
-        return task
-
-    monkeypatch.setattr("haiku.rag.app.asyncio.create_task", track_task)
-    monkeypatch.setattr(
-        "haiku.rag.app.asyncio.gather", AsyncMock(side_effect=asyncio.CancelledError)
-    )
-
-    mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-
-    mock_a2a_app = MagicMock()
-
-    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        with patch("haiku.rag.a2a.create_a2a_app", return_value=mock_a2a_app):
-            try:
-                await app.serve(enable_monitor=False, enable_mcp=False, enable_a2a=True)
-            except asyncio.CancelledError:
-                pass
-
-    assert len(created_tasks) == 1
-
-
-@pytest.mark.asyncio
 async def test_serve_all_services(app: HaikuRAGApp, monkeypatch):
     """Test the serve method with all services enabled."""
-    pytest.importorskip("fasta2a")
     created_tasks = []
     original_create_task = asyncio.create_task
 
@@ -300,7 +265,6 @@ async def test_serve_all_services(app: HaikuRAGApp, monkeypatch):
 
     mock_server = AsyncMock()
     mock_watcher = AsyncMock()
-    mock_a2a_app = MagicMock()
 
     monkeypatch.setattr(
         "haiku.rag.app.create_mcp_server", MagicMock(return_value=mock_server)
@@ -317,13 +281,12 @@ async def test_serve_all_services(app: HaikuRAGApp, monkeypatch):
     mock_client.__aenter__.return_value = mock_client
 
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        with patch("haiku.rag.a2a.create_a2a_app", return_value=mock_a2a_app):
-            try:
-                await app.serve(enable_monitor=True, enable_mcp=True, enable_a2a=True)
-            except asyncio.CancelledError:
-                pass
+        try:
+            await app.serve(enable_monitor=True, enable_mcp=True)
+        except asyncio.CancelledError:
+            pass
 
-    assert len(created_tasks) == 3
+    assert len(created_tasks) == 2
 
 
 @pytest.mark.asyncio

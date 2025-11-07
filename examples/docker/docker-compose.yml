@@ -5,7 +5,6 @@ services:
       dockerfile: docker/Dockerfile
     container_name: haiku-rag
     ports:
-      - "8000:8000"  # A2A server
       - "8001:8001"  # MCP server
     volumes:
       - ./data:/data  # Persist database
@@ -19,9 +18,3 @@ services:
       - CO_API_KEY=${CO_API_KEY}
 
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s

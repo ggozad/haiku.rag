@@ -5,11 +5,11 @@ from pathlib import Path
 
 from pydantic_ai import Agent
 
-from haiku.rag.a2a.context import load_message_history, save_message_history
-from haiku.rag.a2a.models import AgentDependencies
-from haiku.rag.a2a.skills import extract_question_from_task
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
+from haiku_rag_a2a.a2a.context import load_message_history, save_message_history
+from haiku_rag_a2a.a2a.models import AgentDependencies
+from haiku_rag_a2a.a2a.skills import extract_question_from_task
 
 try:
     from fasta2a import Worker  # type: ignore
