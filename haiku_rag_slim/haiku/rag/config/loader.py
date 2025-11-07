@@ -84,5 +84,4 @@ def generate_default_config() -> dict:
                 "research_base_url": "",
             },
         },
-        "a2a": {"max_contexts": 1000},
     }

@@ -1,6 +1,6 @@
 # haiku.rag Docker Image
 
-Pre-built images are available at `ghcr.io/ggozad/haiku.rag` with all extras (voyageai, mxbai, a2a).
+Pre-built images are available at `ghcr.io/ggozad/haiku.rag` with all extras (voyageai, mxbai).
 
 ## Using Pre-built Image
 
@@ -33,7 +33,7 @@ See [Configuration docs](https://ggozad.github.io/haiku.rag/configuration/) for 
 Mount your config file and data directory:
 
 ```bash
-docker run -p 8000:8000 -p 8001:8001 \
+docker run -p 8001:8001 \
   -v $(pwd)/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v $(pwd)/data:/data \
   ghcr.io/ggozad/haiku.rag:latest
@@ -44,7 +44,7 @@ The container will automatically use the mounted `haiku.rag.yaml` configuration 
 For API keys (OpenAI, Anthropic, etc.), pass them as environment variables:
 
 ```bash
-docker run -p 8000:8000 -p 8001:8001 \
+docker run -p 8001:8001 \
   -v $(pwd)/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v $(pwd)/data:/data \
   -e OPENAI_API_KEY=your-key-here \

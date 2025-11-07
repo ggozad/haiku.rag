@@ -455,9 +455,6 @@ class HaikuRAGApp:
         enable_mcp: bool = True,
         mcp_transport: str | None = None,
         mcp_port: int = 8001,
-        enable_a2a: bool = False,
-        a2a_host: str = "127.0.0.1",
-        a2a_port: int = 8000,
     ):
         """Start the server with selected services."""
         async with HaikuRAG(self.db_path, config=self.config) as client:
@@ -484,33 +481,6 @@ class HaikuRAGApp:
 
                 mcp_task = asyncio.create_task(run_mcp())
                 tasks.append(mcp_task)
-
-            # Start A2A server if enabled
-            if enable_a2a:
-                try:
-                    from haiku.rag.a2a import create_a2a_app
-                except ImportError as e:
-                    logger.error(f"Failed to import A2A: {e}")
-                    return
-
-                import uvicorn
-
-                logger.info(f"Starting A2A server on {a2a_host}:{a2a_port}")
-
-                async def run_a2a():
-                    app = create_a2a_app(db_path=self.db_path, config=self.config)
-                    uvicorn_config = uvicorn.Config(
-                        app,
-                        host=a2a_host,
-                        port=a2a_port,
-                        log_level="warning",
-                        access_log=False,
-                    )
-                    server = uvicorn.Server(uvicorn_config)
-                    await server.serve()
-
-                a2a_task = asyncio.create_task(run_a2a())
-                tasks.append(a2a_task)
 
             if not tasks:
                 logger.warning("No services enabled")

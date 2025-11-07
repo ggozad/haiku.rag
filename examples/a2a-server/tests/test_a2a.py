@@ -5,6 +5,13 @@ import pytest
 pytest.importorskip("fasta2a")
 
 from fasta2a.schema import Message, TextPart  # noqa: E402
+from haiku_rag_a2a.a2a import (
+    extract_question_from_task,
+    get_agent_skills,
+    load_message_history,
+    save_message_history,
+)
+from haiku_rag_a2a.a2a.storage import LRUMemoryStorage
 from pydantic_ai.messages import (  # noqa: E402
     ModelMessage,
     ModelRequest,
@@ -16,13 +23,6 @@ from pydantic_ai.messages import (
     TextPart as AITextPart,
 )
 
-from haiku.rag.a2a import (
-    extract_question_from_task,
-    get_agent_skills,
-    load_message_history,
-    save_message_history,
-)
-from haiku.rag.a2a.storage import LRUMemoryStorage
 from haiku.rag.client import HaikuRAG
 
 
@@ -209,7 +209,7 @@ async def test_lru_memory_storage_access_order():
 @pytest.mark.asyncio
 async def test_a2a_app_creation(temp_db_path):
     """Test that A2A app can be created successfully."""
-    from haiku.rag.a2a import create_a2a_app
+    from haiku_rag_a2a.a2a import create_a2a_app
 
     # Create a test database
     async with HaikuRAG(temp_db_path) as client:
@@ -230,7 +230,7 @@ async def test_a2a_app_creation(temp_db_path):
 @pytest.mark.asyncio
 async def test_a2a_app_has_skills(temp_db_path):
     """Test that A2A app exposes skills describing its capabilities."""
-    from haiku.rag.a2a import create_a2a_app
+    from haiku_rag_a2a.a2a import create_a2a_app
 
     # Create a test database
     async with HaikuRAG(temp_db_path) as client:
@@ -291,14 +291,13 @@ def test_get_agent_skills():
 @pytest.mark.asyncio
 async def test_build_artifacts_for_search():
     """Test that search operations produce structured search artifacts."""
+    from haiku_rag_a2a.a2a.worker import ConversationalWorker
     from pydantic_ai.messages import (
         ModelRequest,
         ModelResponse,
         ToolCallPart,
         ToolReturnPart,
     )
-
-    from haiku.rag.a2a.worker import ConversationalWorker
 
     class MockResult:
         output = "Found 1 relevant results:\n\n1. *Score: 0.9* | **test**\nresult"
@@ -350,14 +349,13 @@ async def test_build_artifacts_for_search():
 @pytest.mark.asyncio
 async def test_build_artifacts_for_retrieve():
     """Test that retrieve operations produce document artifacts."""
+    from haiku_rag_a2a.a2a.worker import ConversationalWorker
     from pydantic_ai.messages import (
         ModelRequest,
         ModelResponse,
         ToolCallPart,
         ToolReturnPart,
     )
-
-    from haiku.rag.a2a.worker import ConversationalWorker
 
     class MockResult:
         output = "Document content"
@@ -407,6 +405,7 @@ async def test_build_artifacts_for_retrieve():
 @pytest.mark.asyncio
 async def test_build_artifacts_for_multiple_searches():
     """Test that multiple searches each get their own artifact with correct results."""
+    from haiku_rag_a2a.a2a.worker import ConversationalWorker
     from pydantic_ai.messages import (
         ModelRequest,
         ModelResponse,
@@ -414,8 +413,6 @@ async def test_build_artifacts_for_multiple_searches():
         ToolReturnPart,
     )
     from pydantic_ai.messages import TextPart as AITextPart
-
-    from haiku.rag.a2a.worker import ConversationalWorker
 
     class MockResult:
         output = "Answer based on multiple searches"
@@ -513,10 +510,9 @@ async def test_build_artifacts_for_multiple_searches():
 @pytest.mark.asyncio
 async def test_qa_artifact_for_conversational_messages():
     """Test that conversational Q&A messages always create qa_result artifacts."""
+    from haiku_rag_a2a.a2a.worker import ConversationalWorker
     from pydantic_ai.messages import ModelResponse
     from pydantic_ai.messages import TextPart as AITextPart
-
-    from haiku.rag.a2a.worker import ConversationalWorker
 
     class MockResult:
         output = "Hello! How can I help you?"
@@ -552,6 +548,7 @@ async def test_qa_artifact_for_conversational_messages():
 @pytest.mark.asyncio
 async def test_build_artifacts_for_qa():
     """Test that Q&A operations produce artifacts for each tool call."""
+    from haiku_rag_a2a.a2a.worker import ConversationalWorker
     from pydantic_ai.messages import (
         ModelRequest,
         ModelResponse,
@@ -559,8 +556,6 @@ async def test_build_artifacts_for_qa():
         ToolReturnPart,
     )
     from pydantic_ai.messages import TextPart as AITextPart
-
-    from haiku.rag.a2a.worker import ConversationalWorker
 
     class MockResult:
         output = "This is the answer"

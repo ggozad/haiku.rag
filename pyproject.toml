@@ -21,7 +21,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,a2a,cohere,zeroentropy]"]
+dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy]"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
@@ -100,6 +100,8 @@ pythonVersion = "3.12"
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "session"
 asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = ["examples", "docs", "evaluations", ".git", ".venv"]
 
 # pyproject.toml
 filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]

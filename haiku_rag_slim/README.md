@@ -2,7 +2,7 @@
 
 Retrieval-Augmented Generation (RAG) library built on LanceDB - Core package with minimal dependencies.
 
-`haiku.rag-slim` is the core package for users who want to install only the dependencies they need. Document processing (docling), rerankers, and A2A support are all optional extras.
+`haiku.rag-slim` is the core package for users who want to install only the dependencies they need. Document processing (docling), and reranker support are all optional extras.
 
 **For most users, we recommend installing [`haiku.rag`](https://pypi.org/project/haiku.rag/) instead**, which includes all features out of the box.
 
@@ -48,8 +48,6 @@ Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
 - `bedrock` - AWS Bedrock
 - `vertexai` - Google Vertex AI
 
-**Agent Protocol:**
-- `a2a` - Agent-to-Agent protocol
 
 ```bash
 # Common combinations
@@ -64,7 +62,6 @@ See the main [`haiku.rag`](https://github.com/ggozad/haiku.rag) repository for:
 - CLI examples
 - Python API usage
 - MCP server setup
-- A2A agent configuration
 
 ## Documentation
 

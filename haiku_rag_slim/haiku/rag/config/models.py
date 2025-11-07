@@ -76,10 +76,6 @@ class ProvidersConfig(BaseModel):
     vllm: VLLMConfig = Field(default_factory=VLLMConfig)
 
 
-class A2AConfig(BaseModel):
-    max_contexts: int = 1000
-
-
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -91,4 +87,3 @@ class AppConfig(BaseModel):
     research: ResearchConfig = Field(default_factory=ResearchConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
-    a2a: A2AConfig = Field(default_factory=A2AConfig)
