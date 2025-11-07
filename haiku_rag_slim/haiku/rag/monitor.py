@@ -113,18 +113,22 @@ class FileWatcher:
         try:
             uri = file.as_uri()
             existing_doc = await self.client.get_document_by_uri(uri)
+
+            result = await self.client.create_document_from_source(str(file))
+            doc = result if isinstance(result, Document) else result[0]
+
             if existing_doc:
-                result = await self.client.create_document_from_source(str(file))
-                # Since we're passing a file (not directory), result should be a single Document
-                doc = result if isinstance(result, Document) else result[0]
-                logger.info(f"Updated document {existing_doc.id} from {file}")
-                return doc
+                # Check if document was actually updated by comparing updated_at timestamps
+                if doc.updated_at > existing_doc.updated_at:
+                    logger.info(f"Updated document {existing_doc.id} from {file}")
+                else:
+                    logger.info(
+                        f"Skipped unchanged document {existing_doc.id} from {file}"
+                    )
             else:
-                result = await self.client.create_document_from_source(str(file))
-                # Since we're passing a file (not directory), result should be a single Document
-                doc = result if isinstance(result, Document) else result[0]
                 logger.info(f"Created new document {doc.id} from {file}")
-                return doc
+
+            return doc
         except Exception as e:
             logger.error(f"Failed to upsert document from {file}: {e}")
             return None

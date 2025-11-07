@@ -486,6 +486,28 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_client_unchanged_file_keeps_timestamp(temp_db_path):
+    """Test that unchanged files don't update the updated_at timestamp."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create a temporary file
+        test_content = "Test content for timestamp check."
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text(test_content)
+
+            # First call - create document
+            doc1 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc1, Document)
+            original_updated_at = doc1.updated_at
+
+            # Second call with same content - should not update timestamp
+            doc2 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc2, Document)
+            assert doc2.id == doc1.id
+            assert doc2.updated_at == original_updated_at  # Timestamp should not change
+
+
+@pytest.mark.asyncio
 async def test_client_url_create_update_no_op_behavior(temp_db_path):
     """Test create/update/no-op behavior for URLs based on MD5 changes."""
     async with HaikuRAG(temp_db_path) as client:

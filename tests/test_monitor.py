@@ -243,3 +243,43 @@ async def test_file_watcher_with_include_patterns():
         # Should have only called for the .md file
         assert mock_client.create_document_from_source.call_count == 1
         mock_client.create_document_from_source.assert_called_with(str(md_file))
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_skips_unchanged_document(caplog):
+    """Test FileWatcher skips document when content hasn't changed."""
+    from datetime import datetime
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        test_file = temp_path / "test.txt"
+        test_content = "Test content"
+        test_file.write_text(test_content)
+
+        mock_client = AsyncMock(spec=HaikuRAG)
+        # Existing document with a timestamp
+        now = datetime.now()
+        existing_doc = Document(
+            id="1",
+            content=test_content,
+            uri=test_file.as_uri(),
+            created_at=now,
+            updated_at=now,
+        )
+        mock_client.get_document_by_uri.return_value = existing_doc
+        # Client returns same document with same timestamp (unchanged)
+        mock_client.create_document_from_source.return_value = existing_doc
+
+        test_config = AppConfig(monitor=MonitorConfig(directories=[temp_path]))
+        watcher = FileWatcher(client=mock_client, config=test_config)
+
+        with caplog.at_level("INFO"):
+            result = await watcher._upsert_document(test_file)
+
+        assert result is not None
+        assert result.id == "1"
+        # Should log that document was skipped, not updated
+        assert any("Skipped" in record.message for record in caplog.records)
+        assert not any(
+            "Updated document" in record.message for record in caplog.records
+        )
