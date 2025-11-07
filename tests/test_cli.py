@@ -8,7 +8,7 @@ runner = CliRunner()
 
 
 def test_list_documents():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.list_documents = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -20,7 +20,7 @@ def test_list_documents():
 
 
 def test_add_document_text():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_text = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -35,7 +35,7 @@ def test_add_document_text():
 
 
 def test_add_document_src():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_source = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -47,7 +47,7 @@ def test_add_document_src():
 
 
 def test_add_document_src_with_title():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_source = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -63,7 +63,7 @@ def test_add_document_src_with_title():
 
 
 def test_add_document_text_with_meta():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_text = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -88,7 +88,7 @@ def test_add_document_text_with_meta():
 
 
 def test_add_document_src_with_meta():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_source = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -113,7 +113,7 @@ def test_add_document_src_with_meta():
 
 
 def test_add_document_text_with_numeric_meta():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_text = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -138,7 +138,7 @@ def test_add_document_text_with_numeric_meta():
 
 
 def test_get_document():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.get_document = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -150,7 +150,7 @@ def test_get_document():
 
 
 def test_delete_document():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.delete_document = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -162,7 +162,7 @@ def test_delete_document():
 
 
 def test_search():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.search = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -184,7 +184,7 @@ def test_serve_no_flags():
 
 def test_serve_mcp_only():
     """Test serve command with MCP only."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -203,7 +203,7 @@ def test_serve_mcp_only():
 
 def test_serve_mcp_stdio():
     """Test serve command with MCP stdio transport."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -218,7 +218,7 @@ def test_serve_mcp_stdio():
 
 def test_serve_monitor_only():
     """Test serve command with monitor only."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -235,7 +235,7 @@ def test_serve_monitor_only():
 
 def test_serve_a2a_only():
     """Test serve command with A2A only."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -254,7 +254,7 @@ def test_serve_a2a_only():
 
 def test_serve_all_services():
     """Test serve command with all services."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -271,7 +271,7 @@ def test_serve_all_services():
 
 def test_serve_custom_ports():
     """Test serve command with custom ports."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.serve = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -295,7 +295,7 @@ def test_serve_stdio_without_mcp():
 
 
 def test_ask():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -309,7 +309,7 @@ def test_ask():
 
 
 def test_ask_with_cite():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -323,7 +323,7 @@ def test_ask_with_cite():
 
 
 def test_ask_with_deep():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -337,7 +337,7 @@ def test_ask_with_deep():
 
 
 def test_ask_with_deep_and_cite():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -351,7 +351,7 @@ def test_ask_with_deep_and_cite():
 
 
 def test_ask_with_deep_and_verbose():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.ask = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -365,7 +365,7 @@ def test_ask_with_deep_and_verbose():
 
 
 def test_info():
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.info = AsyncMock()
         mock_app.return_value = mock_app_instance
@@ -378,7 +378,7 @@ def test_info():
 
 def test_add_document_src_directory(tmp_path):
     """Test adding documents from a directory recursively."""
-    with patch("haiku.rag.app.HaikuRAGApp") as mock_app:
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()
         mock_app_instance.add_document_from_source = AsyncMock()
         mock_app.return_value = mock_app_instance
