@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **File Monitor**: Orphan deletion feature - automatically removes documents from database when source files are deleted (enabled via `monitor.delete_orphans` config option, default: false)
+
 ### Changed
 
 - **Configuration**: All CLI commands now properly support `--config` parameter for specifying custom configuration files
@@ -8,6 +12,10 @@
 - `HaikuRAGApp` and MCP server now accept `config` parameter for programmatic configuration
 - Updated CLI documentation to clarify global vs per-command options
 - **BREAKING**: Standardized configuration filename to `haiku.rag.yaml` in user directories (was incorrectly using `config.yaml`). Users with existing `config.yaml` in their user directory will need to rename it to `haiku.rag.yaml`
+
+### Fixed
+
+- **File Monitor**: Fixed incorrect "Updated document" logging for unchanged files - monitor now properly skips files when MD5 hash hasn't changed
 
 ### Removed
 

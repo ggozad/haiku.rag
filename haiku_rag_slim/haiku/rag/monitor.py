@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -75,6 +76,7 @@ class FileWatcher:
         self.client = client
         self.ignore_patterns = config.monitor.ignore_patterns or None
         self.include_patterns = config.monitor.include_patterns or None
+        self.delete_orphans = config.monitor.delete_orphans
 
     async def observe(self):
         logger.info(f"Watching files in {self.paths}")
@@ -96,6 +98,11 @@ class FileWatcher:
     async def refresh(self):
         # Lazy import to avoid loading docling
         from haiku.rag.reader import FileReader
+
+        # Delete orphaned documents in background if enabled
+        if self.delete_orphans:
+            logger.info("Starting orphan cleanup in background")
+            asyncio.create_task(self._delete_orphans())
 
         # Create filter to apply same logic as observe()
         filter = FileFilter(
@@ -132,6 +139,48 @@ class FileWatcher:
         except Exception as e:
             logger.error(f"Failed to upsert document from {file}: {e}")
             return None
+
+    async def _delete_orphans(self):
+        """Delete documents whose source files no longer exist."""
+        try:
+            from urllib.parse import unquote, urlparse
+
+            # Create filter to apply same include/exclude logic
+            filter = FileFilter(
+                ignore_patterns=self.ignore_patterns,
+                include_patterns=self.include_patterns,
+            )
+
+            all_docs = await self.client.list_documents()
+
+            for doc in all_docs:
+                if not doc.uri or not doc.id:
+                    continue
+
+                # Only check file:// URIs
+                parsed = urlparse(doc.uri)
+                if parsed.scheme != "file":
+                    continue
+
+                # Convert URI to Path, decoding URL-encoded characters (like %20 for spaces)
+                file_path = Path(unquote(parsed.path))
+
+                # Check if file exists
+                if not file_path.exists():
+                    # Check if file is within monitored directories
+                    is_monitored = any(
+                        file_path.is_relative_to(monitored_path)
+                        for monitored_path in self.paths
+                    )
+
+                    # Check if file would have been included by filters
+                    if is_monitored and filter.include_file(str(file_path)):
+                        await self.client.delete_document(doc.id)
+                        logger.info(
+                            f"Deleted orphaned document {doc.id} for {file_path}"
+                        )
+        except Exception as e:
+            logger.error(f"Failed to delete orphaned documents: {e}")
 
     async def _delete_document(self, file: Path):
         try:
