@@ -1,11 +1,8 @@
-import os
-
 import pytest
 
 from haiku.rag.config.loader import (
     find_config_file,
     generate_default_config,
-    load_config_from_env,
     load_yaml_config,
 )
 
@@ -50,7 +47,7 @@ def test_find_config_file_user_config(tmp_path, monkeypatch):
         "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
     )
 
-    config_file = tmp_path / "config.yaml"
+    config_file = tmp_path / "haiku.rag.yaml"
     config_file.write_text("environment: production")
 
     found = find_config_file()
@@ -114,68 +111,29 @@ def test_generate_default_config():
     assert config["embeddings"]["vector_dim"] == 4096
 
 
-def test_load_config_from_env(monkeypatch):
-    """Test loading config from environment variables."""
-    monkeypatch.setenv("ENV", "development")
-    monkeypatch.setenv("EMBEDDINGS_PROVIDER", "openai")
-    monkeypatch.setenv("EMBEDDINGS_MODEL", "text-embedding-3-small")
-    monkeypatch.setenv("EMBEDDINGS_VECTOR_DIM", "1536")
-    monkeypatch.setenv("QA_PROVIDER", "anthropic")
-    monkeypatch.setenv("QA_MODEL", "claude-3-haiku")
-
-    config = load_config_from_env()
-
-    assert config["environment"] == "development"
-    assert config["embeddings"]["provider"] == "openai"
-    assert config["embeddings"]["model"] == "text-embedding-3-small"
-    assert config["embeddings"]["vector_dim"] == "1536"
-    assert config["qa"]["provider"] == "anthropic"
-    assert config["qa"]["model"] == "claude-3-haiku"
-
-
-def test_load_config_from_env_empty():
-    """Test loading from env when no relevant vars set."""
-    # Clear any env vars that might be set
-    env_vars = [
-        "ENV",
-        "EMBEDDINGS_PROVIDER",
-        "QA_PROVIDER",
-        "OPENAI_API_KEY",
-    ]
-    original_values = {}
-    for var in env_vars:
-        original_values[var] = os.environ.get(var)
-        if var in os.environ:
-            del os.environ[var]
-
-    try:
-        config = load_config_from_env()
-        # Should return empty or minimal dict
-        assert isinstance(config, dict)
-    finally:
-        # Restore original values
-        for var, value in original_values.items():
-            if value is not None:
-                os.environ[var] = value
-
-
 def test_config_precedence_cwd_over_user(tmp_path, monkeypatch):
     """Test that cwd config takes precedence over user config."""
-    monkeypatch.chdir(tmp_path)
+    # Create separate directories for cwd and user config
+    cwd_dir = tmp_path / "cwd"
+    cwd_dir.mkdir()
+    user_dir = tmp_path / "user"
+    user_dir.mkdir()
 
-    # Mock get_default_data_dir to return tmp_path
+    monkeypatch.chdir(cwd_dir)
+
+    # Mock get_default_data_dir to return user_dir
     def mock_get_default_data_dir():
-        return tmp_path
+        return user_dir
 
     monkeypatch.setattr(
         "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
     )
 
     # Create both configs
-    cwd_config = tmp_path / "haiku.rag.yaml"
+    cwd_config = cwd_dir / "haiku.rag.yaml"
     cwd_config.write_text("environment: from-cwd")
 
-    user_config = tmp_path / "config.yaml"
+    user_config = user_dir / "haiku.rag.yaml"
     user_config.write_text("environment: from-user")
 
     found = find_config_file()

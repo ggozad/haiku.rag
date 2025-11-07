@@ -3,7 +3,6 @@ import os
 from haiku.rag.config.loader import (
     find_config_file,
     generate_default_config,
-    load_config_from_env,
     load_yaml_config,
 )
 from haiku.rag.config.models import (
@@ -40,7 +39,6 @@ __all__ = [
     "find_config_file",
     "load_yaml_config",
     "generate_default_config",
-    "load_config_from_env",
     "get_config",
     "set_config",
 ]

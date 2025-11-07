@@ -6,14 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
-
-# Load environment variables from .env file before importing Config
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
+from dotenv import load_dotenv
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import (
@@ -25,6 +18,9 @@ from haiku.rag.config import (
 )
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.utils import is_up_to_date
+
+# Load environment variables from .env file for API keys and service URLs
+load_dotenv()
 
 cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
@@ -326,16 +322,11 @@ def init_config(
         Path("haiku.rag.yaml"),
         help="Output path for the config file",
     ),
-    from_env: bool = typer.Option(
-        False,
-        "--from-env",
-        help="Migrate settings from .env file",
-    ),
 ):
-    """Generate a YAML configuration file with defaults or from .env."""
+    """Generate a YAML configuration file with defaults."""
     import yaml
 
-    from haiku.rag.config.loader import generate_default_config, load_config_from_env
+    from haiku.rag.config.loader import generate_default_config
 
     if output.exists():
         typer.echo(
@@ -343,18 +334,7 @@ def init_config(
         )
         raise typer.Exit(1)
 
-    if from_env:
-        # Load from environment variables (including .env if present)
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        config_data = load_config_from_env()
-        if not config_data:
-            typer.echo("Warning: No environment variables found to migrate.")
-            typer.echo("Generating default configuration instead.")
-            config_data = generate_default_config()
-    else:
-        config_data = generate_default_config()
+    config_data = generate_default_config()
 
     # Write YAML with comments
     with open(output, "w") as f:
