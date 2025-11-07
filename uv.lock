@@ -871,20 +871,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fasta2a"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "pydantic" },
-    { name = "starlette" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/d1/7a3ab5d4519141978eb47d3f24dff06bc4fa0b39f31e155c1934de95d8e6/fasta2a-0.6.0.tar.gz", hash = "sha256:8078fad9b9dabf7ee4abb3fcb1ca9e5b43bb55c0262be2425bc48cc69f77e963", size = 1436353, upload-time = "2025-10-07T15:08:09.864Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/14/64899f718727770099f53e8698529fc83ec2a3a4d311270dfb9f6e2bec06/fasta2a-0.6.0-py3-none-any.whl", hash = "sha256:23d49307f6a372e07b9ec9a21187a0864429145e8ded4a41262bd33e2ecaee4c", size = 25403, upload-time = "2025-10-07T15:08:08.196Z" },
-]
-
-[[package]]
 name = "fastavro"
 version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1136,10 +1122,10 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.14.1"
+version = "0.15.0"
 source = { editable = "." }
 dependencies = [
-    { name = "haiku-rag-slim", extra = ["a2a", "cohere", "docling", "mxbai", "voyageai", "zeroentropy"] },
+    { name = "haiku-rag-slim", extra = ["cohere", "docling", "mxbai", "voyageai", "zeroentropy"] },
 ]
 
 [package.dev-dependencies]
@@ -1157,7 +1143,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "a2a", "cohere", "zeroentropy"], editable = "haiku_rag_slim" }]
+requires-dist = [{ name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy"], editable = "haiku_rag_slim" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1175,7 +1161,7 @@ dev = [
 
 [[package]]
 name = "haiku-rag-evals"
-version = "0.14.1"
+version = "0.15.0"
 source = { editable = "evaluations" }
 dependencies = [
     { name = "datasets" },
@@ -1194,7 +1180,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-slim"
-version = "0.14.1"
+version = "0.15.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "docling-core" },
@@ -1212,10 +1198,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-a2a = [
-    { name = "fasta2a" },
-    { name = "pydantic-ai-slim", extra = ["a2a"] },
-]
 anthropic = [
     { name = "pydantic-ai-slim", extra = ["anthropic"] },
 ]
@@ -1255,13 +1237,11 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.0.0" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.61.1" },
     { name = "docling-core", specifier = "==2.50.1" },
-    { name = "fasta2a", marker = "extra == 'a2a'", specifier = ">=0.1.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lancedb", specifier = "==0.25.2" },
     { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
     { name = "pathspec", specifier = ">=0.12.1" },
     { name = "pydantic", specifier = ">=2.12.3" },
-    { name = "pydantic-ai-slim", extras = ["a2a"], marker = "extra == 'a2a'" },
     { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'" },
     { name = "pydantic-ai-slim", extras = ["bedrock"], marker = "extra == 'bedrock'" },
     { name = "pydantic-ai-slim", extras = ["google"], marker = "extra == 'google'" },
@@ -1278,7 +1258,7 @@ requires-dist = [
     { name = "watchfiles", specifier = ">=1.1.1" },
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a6" },
 ]
-provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "a2a", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 
 [[package]]
 name = "hf-xet"
@@ -3039,9 +3019,6 @@ wheels = [
 ]
 
 [package.optional-dependencies]
-a2a = [
-    { name = "fasta2a" },
-]
 anthropic = [
     { name = "anthropic" },
 ]

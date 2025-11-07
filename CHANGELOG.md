@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.15.0] - 2025-11-07
+
 ### Added
 
 - **File Monitor**: Orphan deletion feature - automatically removes documents from database when source files are deleted (enabled via `monitor.delete_orphans` config option, default: false)
