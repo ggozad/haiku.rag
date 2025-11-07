@@ -102,6 +102,9 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 norecursedirs = ["examples", "docs", "evaluations", ".git", ".venv"]
+markers = [
+    "integration: marks tests as integration tests (require external services)",
+]
 
 # pyproject.toml
 filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]
