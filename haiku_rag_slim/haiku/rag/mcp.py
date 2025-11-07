@@ -5,7 +5,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.research.models import ResearchReport
 
 
@@ -25,7 +25,7 @@ class DocumentResult(BaseModel):
     updated_at: str
 
 
-def create_mcp_server(db_path: Path) -> FastMCP:
+def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
     """Create an MCP server with the specified database path."""
     mcp = FastMCP("haiku-rag")
 
@@ -37,7 +37,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
     ) -> str | None:
         """Add a document to the RAG system from a file path."""
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 result = await rag.create_document_from_source(
                     Path(file_path), title=title, metadata=metadata or {}
                 )
@@ -54,7 +54,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
     ) -> str | None:
         """Add a document to the RAG system from a URL."""
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 result = await rag.create_document_from_source(
                     url, title=title, metadata=metadata or {}
                 )
@@ -74,7 +74,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
     ) -> str | None:
         """Add a document to the RAG system from text content."""
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 document = await rag.create_document(
                     content, uri, title=title, metadata=metadata or {}
                 )
@@ -86,7 +86,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
     async def search_documents(query: str, limit: int = 5) -> list[SearchResult]:
         """Search the RAG system for documents using hybrid search (vector similarity + full-text search)."""
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 results = await rag.search(query, limit)
 
                 search_results = []
@@ -110,7 +110,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
     async def get_document(document_id: str) -> DocumentResult | None:
         """Get a document by its ID."""
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 document = await rag.get_document_by_id(document_id)
 
                 if document is None:
@@ -145,7 +145,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
             List of DocumentResult instances matching the criteria.
         """
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 documents = await rag.list_documents(limit, offset, filter)
 
                 return [
@@ -167,7 +167,7 @@ def create_mcp_server(db_path: Path) -> FastMCP:
     async def delete_document(document_id: str) -> bool:
         """Delete a document by its ID."""
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 return await rag.delete_document(document_id)
         except Exception:
             return False
@@ -189,18 +189,17 @@ def create_mcp_server(db_path: Path) -> FastMCP:
             The answer as a string.
         """
         try:
-            async with HaikuRAG(db_path) as rag:
+            async with HaikuRAG(db_path, config=config) as rag:
                 if deep:
-                    from haiku.rag.config import Config
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
-                    graph = build_deep_qa_graph(config=Config)
+                    graph = build_deep_qa_graph(config=config)
                     context = DeepQAContext(
                         original_question=question, use_citations=cite
                     )
-                    state = DeepQAState.from_config(context=context, config=Config)
+                    state = DeepQAState.from_config(context=context, config=config)
                     deps = DeepQADeps(client=rag)
 
                     result = await graph.run(state=state, deps=deps)
@@ -231,10 +230,10 @@ def create_mcp_server(db_path: Path) -> FastMCP:
             from haiku.rag.research.graph import build_research_graph
             from haiku.rag.research.state import ResearchDeps, ResearchState
 
-            async with HaikuRAG(db_path) as rag:
-                graph = build_research_graph(config=Config)
+            async with HaikuRAG(db_path, config=config) as rag:
+                graph = build_research_graph(config=config)
                 context = ResearchContext(original_question=question)
-                state = ResearchState.from_config(context=context, config=Config)
+                state = ResearchState.from_config(context=context, config=config)
                 deps = ResearchDeps(client=rag)
 
                 result = await graph.run(state=state, deps=deps)

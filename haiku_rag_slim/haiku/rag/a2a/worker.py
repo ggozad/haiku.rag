@@ -9,6 +9,7 @@ from haiku.rag.a2a.context import load_message_history, save_message_history
 from haiku.rag.a2a.models import AgentDependencies
 from haiku.rag.a2a.skills import extract_question_from_task
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import AppConfig, Config
 
 try:
     from fasta2a import Worker  # type: ignore
@@ -37,10 +38,12 @@ class ConversationalWorker(Worker[list[Message]]):
         broker,
         db_path: Path,
         agent: "Agent[AgentDependencies, str]",
+        config: AppConfig = Config,
     ):
         super().__init__(storage=storage, broker=broker)
         self.db_path = db_path
         self.agent = agent
+        self.config = config
 
     async def run_task(self, params: TaskSendParams) -> None:
         task = await self.storage.load_task(params["id"])
@@ -62,7 +65,7 @@ class ConversationalWorker(Worker[list[Message]]):
             return
 
         try:
-            async with HaikuRAG(self.db_path) as client:
+            async with HaikuRAG(self.db_path, config=self.config) as client:
                 context = await self.storage.load_context(task["context_id"]) or []
                 message_history = load_message_history(context)
 

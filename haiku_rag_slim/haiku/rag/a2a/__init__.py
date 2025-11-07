@@ -5,7 +5,7 @@ from pathlib import Path
 import logfire
 from pydantic_ai import Agent, RunContext
 
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.graph_common import get_model
 
 from .context import load_message_history, save_message_history
@@ -42,6 +42,7 @@ __all__ = [
 
 def create_a2a_app(
     db_path: Path,
+    config: AppConfig = Config,
     security_schemes: dict | None = None,
     security: list[dict[str, list[str]]] | None = None,
 ):
@@ -49,6 +50,7 @@ def create_a2a_app(
 
     Args:
         db_path: Path to the LanceDB database
+        config: App configuration
         security_schemes: Optional security scheme definitions for the AgentCard
         security: Optional security requirements for the AgentCard
 
@@ -57,12 +59,12 @@ def create_a2a_app(
     """
     base_storage = InMemoryStorage()
     storage = LRUMemoryStorage(
-        storage=base_storage, max_contexts=Config.a2a.max_contexts
+        storage=base_storage, max_contexts=config.a2a.max_contexts
     )
     broker = InMemoryBroker()
 
     # Create the agent with native search tool
-    model = get_model(Config.qa.provider, Config.qa.model)
+    model = get_model(config.qa.provider, config.qa.model)
     agent = Agent(
         model=model,
         deps_type=AgentDependencies,
@@ -115,12 +117,13 @@ def create_a2a_app(
         broker=broker,
         db_path=db_path,
         agent=agent,  # type: ignore
+        config=config,
     )
 
     # Create FastA2A app with custom worker lifecycle
     @asynccontextmanager
     async def lifespan(app):
-        logger.info(f"Started A2A server (max contexts: {Config.a2a.max_contexts})")
+        logger.info(f"Started A2A server (max contexts: {config.a2a.max_contexts})")
         async with app.task_manager:
             async with worker.run():
                 yield

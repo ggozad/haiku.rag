@@ -9,7 +9,7 @@ from rich.markdown import Markdown
 from rich.progress import Progress
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
 from haiku.rag.research.dependencies import ResearchContext
@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class HaikuRAGApp:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, config: AppConfig = Config):
         self.db_path = db_path
+        self.config = config
         self.console = Console()
 
     async def info(self):
@@ -136,13 +137,13 @@ class HaikuRAGApp:
         )
 
     async def list_documents(self, filter: str | None = None):
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
                 self._rich_print_document(doc, truncate=True)
 
     async def add_document_from_text(self, text: str, metadata: dict | None = None):
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             doc = await self.client.create_document(text, metadata=metadata)
             self._rich_print_document(doc, truncate=True)
             self.console.print(
@@ -152,7 +153,7 @@ class HaikuRAGApp:
     async def add_document_from_source(
         self, source: str, title: str | None = None, metadata: dict | None = None
     ):
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             result = await self.client.create_document_from_source(
                 source, title=title, metadata=metadata
             )
@@ -169,7 +170,7 @@ class HaikuRAGApp:
                 )
 
     async def get_document(self, doc_id: str):
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
                 self.console.print(f"[red]Document with id {doc_id} not found.[/red]")
@@ -177,7 +178,7 @@ class HaikuRAGApp:
             self._rich_print_document(doc, truncate=False)
 
     async def delete_document(self, doc_id: str):
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
                 self.console.print(
@@ -189,7 +190,7 @@ class HaikuRAGApp:
                 )
 
     async def search(self, query: str, limit: int = 5, filter: str | None = None):
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             results = await self.client.search(query, limit=limit, filter=filter)
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
@@ -212,21 +213,20 @@ class HaikuRAGApp:
             deep: Use deep QA mode (multi-step reasoning)
             verbose: Show verbose output
         """
-        async with HaikuRAG(db_path=self.db_path) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
                 if deep:
                     from rich.console import Console
 
-                    from haiku.rag.config import Config
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
 
-                    graph = build_deep_qa_graph(config=Config)
+                    graph = build_deep_qa_graph(config=self.config)
                     context = DeepQAContext(
                         original_question=question, use_citations=cite
                     )
-                    state = DeepQAState.from_config(context=context, config=Config)
+                    state = DeepQAState.from_config(context=context, config=self.config)
                     deps = DeepQADeps(
                         client=self.client, console=Console() if verbose else None
                     )
@@ -254,18 +254,16 @@ class HaikuRAGApp:
             question: The research question
             verbose: Show verbose output
         """
-        async with HaikuRAG(db_path=self.db_path) as client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as client:
             try:
-                from haiku.rag.config import Config
-
                 if verbose:
                     self.console.print("[bold cyan]Starting research[/bold cyan]")
                     self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                     self.console.print()
 
-                graph = build_research_graph(config=Config)
+                graph = build_research_graph(config=self.config)
                 context = ResearchContext(original_question=question)
-                state = ResearchState.from_config(context=context, config=Config)
+                state = ResearchState.from_config(context=context, config=self.config)
                 deps = ResearchDeps(
                     client=client, console=self.console if verbose else None
                 )
@@ -341,7 +339,9 @@ class HaikuRAGApp:
                 self.console.print(f"[red]Error during research: {e}[/red]")
 
     async def rebuild(self):
-        async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:
+        async with HaikuRAG(
+            db_path=self.db_path, config=self.config, skip_validation=True
+        ) as client:
             try:
                 documents = await client.list_documents()
                 total_docs = len(documents)
@@ -369,7 +369,9 @@ class HaikuRAGApp:
     async def vacuum(self):
         """Run database maintenance: optimize and cleanup table history."""
         try:
-            async with HaikuRAG(db_path=self.db_path, skip_validation=True) as client:
+            async with HaikuRAG(
+                db_path=self.db_path, config=self.config, skip_validation=True
+            ) as client:
                 await client.vacuum()
             self.console.print(
                 "[bold green]Vacuum completed successfully.[/bold green]"
@@ -383,7 +385,7 @@ class HaikuRAGApp:
         self.console.print()
 
         # Get all config fields dynamically
-        for field_name, field_value in Config.model_dump().items():
+        for field_name, field_value in self.config.model_dump().items():
             # Format the display value
             if isinstance(field_value, str) and (
                 "key" in field_name.lower()
@@ -458,18 +460,18 @@ class HaikuRAGApp:
         a2a_port: int = 8000,
     ):
         """Start the server with selected services."""
-        async with HaikuRAG(self.db_path) as client:
+        async with HaikuRAG(self.db_path, config=self.config) as client:
             tasks = []
 
             # Start file monitor if enabled
             if enable_monitor:
-                monitor = FileWatcher(client=client)
+                monitor = FileWatcher(client=client, config=self.config)
                 monitor_task = asyncio.create_task(monitor.observe())
                 tasks.append(monitor_task)
 
             # Start MCP server if enabled
             if enable_mcp:
-                server = create_mcp_server(self.db_path)
+                server = create_mcp_server(self.db_path, config=self.config)
 
                 async def run_mcp():
                     if mcp_transport == "stdio":
@@ -496,15 +498,15 @@ class HaikuRAGApp:
                 logger.info(f"Starting A2A server on {a2a_host}:{a2a_port}")
 
                 async def run_a2a():
-                    app = create_a2a_app(db_path=self.db_path)
-                    config = uvicorn.Config(
+                    app = create_a2a_app(db_path=self.db_path, config=self.config)
+                    uvicorn_config = uvicorn.Config(
                         app,
                         host=a2a_host,
                         port=a2a_port,
                         log_level="warning",
                         access_log=False,
                     )
-                    server = uvicorn.Server(config)
+                    server = uvicorn.Server(uvicorn_config)
                     await server.serve()
 
                 a2a_task = asyncio.create_task(run_a2a())

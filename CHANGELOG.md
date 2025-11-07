@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Configuration**: All CLI commands now properly support `--config` parameter for specifying custom configuration files
+- Configuration loading consolidated across CLI, app, and client with consistent resolution order
+- `HaikuRAGApp`, MCP server, and A2A server now accept `config` parameter for programmatic configuration
+- Updated CLI documentation to clarify global vs per-command options
+
 ## [0.14.1] - 2025-11-06
 
 ### Added

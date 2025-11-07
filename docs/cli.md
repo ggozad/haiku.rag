@@ -3,14 +3,20 @@
 The `haiku-rag` CLI provides complete document management functionality.
 
 !!! note
-    All commands support:
+    Global options (must be specified before the command):
+
+    - `--config` - Specify custom configuration file
+    - `--version` / `-v` - Show version and exit
+
+    Per-command options:
 
     - `--db` - Specify custom database path
     - `-h` - Show help for specific command
 
     Example:
     ```bash
-    haiku-rag list --db /path/to/custom.db
+    haiku-rag --config /path/to/config.yaml list
+    haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
     haiku-rag add -h
     ```
 

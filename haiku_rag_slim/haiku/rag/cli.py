@@ -15,13 +15,34 @@ try:
 except ImportError:
     pass
 
-from haiku.rag.config import Config
+from haiku.rag.app import HaikuRAGApp
+from haiku.rag.config import (
+    AppConfig,
+    find_config_file,
+    get_config,
+    load_yaml_config,
+    set_config,
+)
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.utils import is_up_to_date
 
 cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
 )
+
+
+def create_app(db: Path | None = None) -> HaikuRAGApp:
+    """Create HaikuRAGApp with loaded config and resolved database path.
+
+    Args:
+        db: Optional database path. If None, uses path from config.
+
+    Returns:
+        HaikuRAGApp instance with proper config and db path.
+    """
+    config = get_config()
+    db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
+    return HaikuRAGApp(db_path=db_path, config=config)
 
 
 async def check_version():
@@ -57,14 +78,15 @@ def main(
     ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    # Store config path in environment for config loader to use
-    if config:
-        import os
-
-        os.environ["HAIKU_RAG_CONFIG_PATH"] = str(config.absolute())
+    # Load config from --config, local folder, or default directory
+    config_path = find_config_file(cli_path=config)
+    if config_path:
+        yaml_data = load_yaml_config(config_path)
+        loaded_config = AppConfig.model_validate(yaml_data)
+        set_config(loaded_config)
 
     # Configure logging minimally for CLI context
-    if Config.environment == "development":
+    if get_config().environment == "development":
         # Lazy import logfire only in development
         try:
             import logfire  # type: ignore
@@ -87,8 +109,8 @@ def main(
 
 @cli.command("list", help="List all stored documents")
 def list_documents(
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -99,9 +121,7 @@ def list_documents(
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.list_documents(filter=filter))
 
 
@@ -140,15 +160,13 @@ def add_document_text(
         help="Metadata entries as KEY=VALUE (repeatable)",
         metavar="KEY=VALUE",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     metadata = _parse_meta_options(meta)
     asyncio.run(app.add_document_from_text(text=text, metadata=metadata or None))
 
@@ -169,15 +187,13 @@ def add_document_src(
         help="Metadata entries as KEY=VALUE (repeatable)",
         metavar="KEY=VALUE",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     metadata = _parse_meta_options(meta)
     asyncio.run(
         app.add_document_from_source(
@@ -191,15 +207,13 @@ def get_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to get",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.get_document(doc_id=doc_id))
 
 
@@ -208,15 +222,13 @@ def delete_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to delete",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.delete_document(doc_id=doc_id))
 
 
@@ -241,15 +253,13 @@ def search(
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.search(query=query, limit=limit, filter=filter))
 
 
@@ -258,8 +268,8 @@ def ask(
     question: str = typer.Argument(
         help="The question to ask",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -279,9 +289,7 @@ def ask(
         help="Show verbose progress output (only with --deep)",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.ask(question=question, cite=cite, deep=deep, verbose=verbose))
 
 
@@ -290,8 +298,8 @@ def research(
     question: str = typer.Argument(
         help="The research question to investigate",
     ),
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -301,17 +309,14 @@ def research(
         help="Show verbose progress output",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.research(question=question, verbose=verbose))
 
 
 @cli.command("settings", help="Display current configuration settings")
 def settings():
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=Path())  # Don't need actual DB for settings
+    config = get_config()
+    app = HaikuRAGApp(db_path=Path(), config=config)
     app.show_settings()
 
 
@@ -368,43 +373,37 @@ def init_config(
     help="Rebuild the database by deleting all chunks and re-indexing all documents",
 )
 def rebuild(
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.rebuild())
 
 
 @cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
 def vacuum(
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.vacuum())
 
 
 @cli.command("info", help="Show read-only database info (no upgrades or writes)")
 def info(
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
 ):
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
     asyncio.run(app.info())
 
 
@@ -425,8 +424,8 @@ def download_models_cmd():
     help="Start haiku.rag server. Use --monitor, --mcp, and/or --a2a to enable services.",
 )
 def serve(
-    db: Path = typer.Option(
-        Config.storage.data_dir / "haiku.rag.lancedb",
+    db: Path | None = typer.Option(
+        None,
         "--db",
         help="Path to the LanceDB database file",
     ),
@@ -478,9 +477,7 @@ def serve(
         typer.echo("Error: --stdio requires --mcp")
         raise typer.Exit(1)
 
-    from haiku.rag.app import HaikuRAGApp
-
-    app = HaikuRAGApp(db_path=db)
+    app = create_app(db)
 
     transport = "stdio" if stdio else None
 
