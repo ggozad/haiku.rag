@@ -3,29 +3,35 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
-from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.models import EvaluationResult, InsightAnalysis
-from haiku.rag.research.stream import ResearchStream
+from haiku.rag.research.models import EvaluationResult, InsightAnalysis, ResearchReport
 
 if TYPE_CHECKING:
+    from haiku.rag.agui.emitter import AGUIEmitter
     from haiku.rag.config.models import AppConfig
 
 
 @dataclass
 class ResearchDeps:
+    """Dependencies for research graph execution."""
+
     client: HaikuRAG
-    console: Console | None = None
-    stream: ResearchStream | None = None
+    agui_emitter: "AGUIEmitter[ResearchState, ResearchReport] | None" = None
     semaphore: asyncio.Semaphore | None = None
 
     def emit_log(self, message: str, state: "ResearchState | None" = None) -> None:
-        if self.console:
-            self.console.print(message)
-        if self.stream:
-            self.stream.log(message, state)
+        """Emit a log message through AG-UI events.
+
+        Args:
+            message: The message to log
+            state: Optional state to include in state update
+        """
+        if self.agui_emitter:
+            self.agui_emitter.log(message)
+            if state:
+                self.agui_emitter.update_state(state)
 
 
 class ResearchState(BaseModel):

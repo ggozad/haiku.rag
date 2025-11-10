@@ -299,14 +299,9 @@ def research(
         "--db",
         help="Path to the LanceDB database file",
     ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        help="Show verbose progress output",
-    ),
 ):
     app = create_app(db)
-    asyncio.run(app.research(question=question, verbose=verbose))
+    asyncio.run(app.research(question=question))
 
 
 @cli.command("settings", help="Display current configuration settings")

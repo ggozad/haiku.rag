@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.progress import Progress
 
+from haiku.rag.agui import AGUIConsoleRenderer, stream_graph
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
@@ -15,7 +16,6 @@ from haiku.rag.monitor import FileWatcher
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import build_research_graph
 from haiku.rag.research.state import ResearchDeps, ResearchState
-from haiku.rag.research.stream import stream_research_graph
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -243,45 +243,35 @@ class HaikuRAGApp:
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
-    async def research(
-        self,
-        question: str,
-        verbose: bool = False,
-    ):
+    async def research(self, question: str):
         """Run research via the pydantic-graph pipeline.
 
         Args:
             question: The research question
-            verbose: Show verbose output
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as client:
             try:
-                if verbose:
-                    self.console.print("[bold cyan]Starting research[/bold cyan]")
-                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                    self.console.print()
+                self.console.print("[bold cyan]Starting research[/bold cyan]")
+                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                self.console.print()
 
                 graph = build_research_graph(config=self.config)
                 context = ResearchContext(original_question=question)
                 state = ResearchState.from_config(context=context, config=self.config)
-                deps = ResearchDeps(
-                    client=client, console=self.console if verbose else None
-                )
+                deps = ResearchDeps(client=client)
 
-                report = None
-                async for event in stream_research_graph(graph, state, deps):
-                    if event.type == "report":
-                        report = event.report
-                        break
-                    if event.type == "error":
-                        self.console.print(
-                            f"[red]Error during research: {event.message}[/red]"
-                        )
-                        return
+                # Use AG-UI renderer to process events
+                renderer = AGUIConsoleRenderer(self.console)
+                report_dict = await renderer.render(stream_graph(graph, state, deps))
 
-                if report is None:
+                if report_dict is None:
                     self.console.print("[red]Research did not produce a report.[/red]")
                     return
+
+                # Convert dict to ResearchReport model
+                from haiku.rag.research.models import ResearchReport
+
+                report = ResearchReport.model_validate(report_dict)
 
                 # Display the report
                 self.console.print("[bold green]Research Report[/bold green]")

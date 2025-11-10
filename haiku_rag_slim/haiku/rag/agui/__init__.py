@@ -1,5 +1,6 @@
 """Generic AG-UI protocol support for haiku.rag graphs."""
 
+from haiku.rag.agui.cli_renderer import AGUIConsoleRenderer
 from haiku.rag.agui.emitter import AGUIEmitter
 from haiku.rag.agui.events import (
     AGUIEvent,
@@ -18,8 +19,10 @@ from haiku.rag.agui.events import (
     emit_text_message_start,
 )
 from haiku.rag.agui.state import compute_state_delta
+from haiku.rag.agui.stream import stream_graph
 
 __all__ = [
+    "AGUIConsoleRenderer",
     "AGUIEmitter",
     "AGUIEvent",
     "compute_state_delta",
@@ -36,4 +39,5 @@ __all__ = [
     "emit_text_message_content",
     "emit_text_message_end",
     "emit_text_message_start",
+    "stream_graph",
 ]

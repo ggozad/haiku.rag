@@ -13,7 +13,6 @@ from haiku.rag.agui.events import (
     emit_run_error,
     emit_run_finished,
     emit_run_started,
-    emit_state_delta,
     emit_state_snapshot,
     emit_step_finished,
     emit_step_started,
@@ -60,18 +59,19 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         """Get the run ID for this emitter."""
         return self._run_id
 
-    def start_run(self, input_data: str, initial_state: StateT) -> None:
+    def start_run(self, initial_state: StateT) -> None:
         """Emit RunStarted and initial StateSnapshot.
 
         Args:
-            input_data: The input that started the run
             initial_state: The initial state of the graph
         """
-        # If thread_id wasn't provided, generate from input hash
+        # If thread_id wasn't provided, generate from state hash
         if not self._thread_id or self._thread_id == str(uuid4()):
-            self._thread_id = self._generate_thread_id(input_data)
+            state_json = initial_state.model_dump_json()
+            self._thread_id = self._generate_thread_id(state_json)
 
-        self._emit(emit_run_started(self._thread_id, self._run_id, input_data))
+        # RunStarted (state snapshot follows immediately with full state)
+        self._emit(emit_run_started(self._thread_id, self._run_id))
         self._emit(emit_state_snapshot(initial_state))
         self._last_state = initial_state
 
@@ -100,21 +100,13 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         self._emit(emit_text_message(message, role))
 
     def update_state(self, new_state: StateT) -> None:
-        """Emit StateDelta for state change, or StateSnapshot if no previous state.
+        """Emit StateSnapshot for state change.
 
         Args:
             new_state: The updated state
         """
-        if self._last_state:
-            # Emit delta if we have a previous state
-            delta_event = emit_state_delta(self._last_state, new_state)
-            # Only emit if there are actual changes
-            if delta_event.get("operations"):
-                self._emit(delta_event)
-        else:
-            # Emit snapshot if this is the first state update
-            self._emit(emit_state_snapshot(new_state))
-
+        # Always emit full snapshot (not delta) for complete state visibility
+        self._emit(emit_state_snapshot(new_state))
         self._last_state = new_state
 
     def update_activity(
@@ -125,9 +117,11 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         Args:
             activity_type: Type of activity (e.g., "planning", "searching")
             content: Description of the activity
-            message_id: Optional message ID to associate activity with
+            message_id: Optional message ID to associate activity with (auto-generated if None)
         """
-        self._emit(emit_activity(activity_type, content, message_id))
+        if message_id is None:
+            message_id = str(uuid4())
+        self._emit(emit_activity(message_id, activity_type, content))
 
     def finish_run(self, result: ResultT) -> None:
         """Emit RunFinished event.

@@ -53,50 +53,51 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        log(deps, state, "\n[bold cyan]📋 Creating research plan...[/bold cyan]")
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("plan")
+            deps.agui_emitter.update_activity("planning", "Creating research plan")
 
-        plan_agent = Agent(
-            model=get_model(provider, model),
-            output_type=ResearchPlan,
-            instructions=(
-                PLAN_PROMPT
-                + "\n\nUse the gather_context tool once on the main question before planning."
-            ),
-            retries=3,
-            deps_type=ResearchDependencies,
-        )
+        try:
+            plan_agent = Agent(
+                model=get_model(provider, model),
+                output_type=ResearchPlan,
+                instructions=(
+                    PLAN_PROMPT
+                    + "\n\nUse the gather_context tool once on the main question before planning."
+                ),
+                retries=3,
+                output_retries=3,
+                deps_type=ResearchDependencies,
+            )
 
-        @plan_agent.tool
-        async def gather_context(
-            ctx2: RunContext[ResearchDependencies], query: str, limit: int = 6
-        ) -> str:
-            results = await ctx2.deps.client.search(query, limit=limit)
-            expanded = await ctx2.deps.client.expand_context(results)
-            return "\n\n".join(chunk.content for chunk, _ in expanded)
+            @plan_agent.tool
+            async def gather_context(
+                ctx2: RunContext[ResearchDependencies], query: str, limit: int = 6
+            ) -> str:
+                results = await ctx2.deps.client.search(query, limit=limit)
+                expanded = await ctx2.deps.client.expand_context(results)
+                return "\n\n".join(chunk.content for chunk, _ in expanded)
 
-        prompt = (
-            "Plan a focused approach for the main question.\n\n"
-            f"Main question: {state.context.original_question}"
-        )
+            prompt = (
+                "Plan a focused approach for the main question.\n\n"
+                f"Main question: {state.context.original_question}"
+            )
 
-        agent_deps = ResearchDependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-            stream=deps.stream,
-        )
-        plan_result = await plan_agent.run(prompt, deps=agent_deps)
-        state.context.sub_questions = list(plan_result.output.sub_questions)
+            agent_deps = ResearchDependencies(
+                client=deps.client,
+                context=state.context,
+            )
+            plan_result = await plan_agent.run(prompt, deps=agent_deps)
+            state.context.sub_questions = list(plan_result.output.sub_questions)
 
-        log(deps, state, "\n[bold green]✅ Plan Created:[/bold green]")
-        log(
-            deps,
-            state,
-            f"   [bold]Main Question:[/bold] {state.context.original_question}",
-        )
-        log(deps, state, "   [bold]Sub-questions:[/bold]")
-        for i, sq in enumerate(state.context.sub_questions, 1):
-            log(deps, state, f"      {i}. {sq}")
+            # Log the plan results
+            log(deps, state, f"Main Question: {state.context.original_question}")
+            log(deps, state, "Sub-questions:")
+            for i, sq in enumerate(state.context.sub_questions, 1):
+                log(deps, state, f"  {i}. {sq}")
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     @g.step
     async def search_one(
@@ -106,26 +107,30 @@ def build_research_graph(
         deps = ctx.deps
         sub_q = ctx.inputs
 
-        # Create semaphore if not already provided
-        if deps.semaphore is None:
-            import asyncio
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("search_one")
 
-            deps.semaphore = asyncio.Semaphore(state.max_concurrency)
+        try:
+            # Create semaphore if not already provided
+            if deps.semaphore is None:
+                import asyncio
 
-        # Use semaphore to control concurrency
-        async with deps.semaphore:
-            return await _do_search(state, deps, sub_q)
+                deps.semaphore = asyncio.Semaphore(state.max_concurrency)
+
+            # Use semaphore to control concurrency
+            async with deps.semaphore:
+                return await _do_search(state, deps, sub_q)
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     async def _do_search(
         state: ResearchState,
         deps: ResearchDeps,
         sub_q: str,
     ) -> SearchAnswer:
-        log(
-            deps,
-            state,
-            f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {sub_q}",
-        )
+        if deps.agui_emitter:
+            deps.agui_emitter.update_activity("searching", f"Searching: {sub_q}")
 
         agent = Agent(
             model=get_model(provider, model),
@@ -160,21 +165,16 @@ def build_research_graph(
         agent_deps = ResearchDependencies(
             client=deps.client,
             context=state.context,
-            console=deps.console,
-            stream=deps.stream,
         )
         try:
             result = await agent.run(sub_q, deps=agent_deps)
             answer = result.output
             if answer:
                 state.context.add_qa_response(answer)
-                preview = answer.answer[:150] + (
-                    "…" if len(answer.answer) > 150 else ""
-                )
-                log(deps, state, f"   [green]✓[/green] {preview}")
+                log(deps, state, f"Answer: {answer.answer}")
             return answer
         except Exception as e:
-            log(deps, state, f"[red]Search failed:[/red] {e}")
+            log(deps, state, f"Search failed: {e}")
             failure_answer = SearchAnswer(
                 query=sub_q,
                 answer=f"Search failed after retries: {str(e)}",
@@ -204,148 +204,139 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        log(
-            deps,
-            state,
-            "\n[bold cyan]🧭 Synthesizing new insights and gap status...[/bold cyan]",
-        )
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("analyze_insights")
+            deps.agui_emitter.update_activity(
+                "analyzing", "Synthesizing insights and gaps"
+            )
 
-        agent = Agent(
-            model=get_model(provider, model),
-            output_type=InsightAnalysis,
-            instructions=INSIGHT_AGENT_PROMPT,
-            retries=3,
-            deps_type=ResearchDependencies,
-        )
+        try:
+            agent = Agent(
+                model=get_model(provider, model),
+                output_type=InsightAnalysis,
+                instructions=INSIGHT_AGENT_PROMPT,
+                retries=3,
+                output_retries=3,
+                deps_type=ResearchDependencies,
+            )
 
-        context_xml = format_context_for_prompt(state.context)
-        prompt = (
-            "Review the latest research context and update the shared ledger of insights, gaps,"
-            " and follow-up questions.\n\n"
-            f"{context_xml}"
-        )
-        agent_deps = ResearchDependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-            stream=deps.stream,
-        )
-        result = await agent.run(prompt, deps=agent_deps)
-        analysis: InsightAnalysis = result.output
+            context_xml = format_context_for_prompt(state.context)
+            prompt = (
+                "Review the latest research context and update the shared ledger of insights, gaps,"
+                " and follow-up questions.\n\n"
+                f"{context_xml}"
+            )
+            agent_deps = ResearchDependencies(
+                client=deps.client,
+                context=state.context,
+            )
+            result = await agent.run(prompt, deps=agent_deps)
+            analysis: InsightAnalysis = result.output
 
-        state.context.integrate_analysis(analysis)
-        state.last_analysis = analysis
+            state.context.integrate_analysis(analysis)
+            state.last_analysis = analysis
 
-        if analysis.commentary:
-            log(deps, state, f"   Summary: {analysis.commentary}")
-        if analysis.highlights:
-            log(deps, state, "   [bold]Updated insights:[/bold]")
-            for insight in analysis.highlights:
-                label = insight.status.value
-                log(
-                    deps,
-                    state,
-                    f"   • ({label}) {insight.summary}",
-                )
-        if analysis.gap_assessments:
-            log(deps, state, "   [bold yellow]Gap updates:[/bold yellow]")
-            for gap in analysis.gap_assessments:
-                status = "resolved" if gap.resolved else "open"
-                severity = gap.severity.value
-                log(
-                    deps,
-                    state,
-                    f"   • ({severity}/{status}) {gap.description}",
-                )
-        if analysis.resolved_gaps:
-            log(deps, state, "   [green]Resolved gaps:[/green]")
-            for resolved in analysis.resolved_gaps:
-                log(deps, state, f"   • {resolved}")
-        if analysis.new_questions:
-            log(deps, state, "   [cyan]Proposed follow-ups:[/cyan]")
-            for question in analysis.new_questions:
-                log(deps, state, f"   • {question}")
+            if analysis.commentary:
+                log(deps, state, f"Summary: {analysis.commentary}")
+            if analysis.highlights:
+                log(deps, state, "Updated insights:")
+                for insight in analysis.highlights:
+                    label = insight.status.value
+                    log(deps, state, f"  • ({label}) {insight.summary}")
+            if analysis.gap_assessments:
+                log(deps, state, "Gap updates:")
+                for gap in analysis.gap_assessments:
+                    status = "resolved" if gap.resolved else "open"
+                    severity = gap.severity.value
+                    log(deps, state, f"  • ({severity}/{status}) {gap.description}")
+            if analysis.resolved_gaps:
+                log(deps, state, "Resolved gaps:")
+                for resolved in analysis.resolved_gaps:
+                    log(deps, state, f"  • {resolved}")
+            if analysis.new_questions:
+                log(deps, state, "Proposed follow-ups:")
+                for question in analysis.new_questions:
+                    log(deps, state, f"  • {question}")
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     @g.step
     async def decide(ctx: StepContext[ResearchState, ResearchDeps, None]) -> bool:
         state = ctx.state
         deps = ctx.deps
 
-        log(
-            deps,
-            state,
-            "\n[bold cyan]📊 Evaluating research sufficiency...[/bold cyan]",
-        )
-
-        agent = Agent(
-            model=get_model(provider, model),
-            output_type=EvaluationResult,
-            instructions=DECISION_AGENT_PROMPT,
-            retries=3,
-            deps_type=ResearchDependencies,
-        )
-
-        context_xml = format_context_for_prompt(state.context)
-        analysis_xml = format_analysis_for_prompt(state.last_analysis)
-        prompt_parts = [
-            "Assess whether the research now answers the original question with adequate confidence.",
-            context_xml,
-            analysis_xml,
-        ]
-        if state.last_eval is not None:
-            prev = state.last_eval
-            prompt_parts.append(
-                "<previous_evaluation>"
-                f"<confidence>{prev.confidence_score:.2f}</confidence>"
-                f"<is_sufficient>{str(prev.is_sufficient).lower()}</is_sufficient>"
-                f"<reasoning>{prev.reasoning}</reasoning>"
-                "</previous_evaluation>"
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("decide")
+            deps.agui_emitter.update_activity(
+                "evaluating", "Evaluating research sufficiency"
             )
-        prompt = "\n\n".join(part for part in prompt_parts if part)
 
-        agent_deps = ResearchDependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-            stream=deps.stream,
-        )
-        decision_result = await agent.run(prompt, deps=agent_deps)
-        output = decision_result.output
+        try:
+            agent = Agent(
+                model=get_model(provider, model),
+                output_type=EvaluationResult,
+                instructions=DECISION_AGENT_PROMPT,
+                retries=3,
+                output_retries=3,
+                deps_type=ResearchDependencies,
+            )
 
-        state.last_eval = output
-        state.iterations += 1
+            context_xml = format_context_for_prompt(state.context)
+            analysis_xml = format_analysis_for_prompt(state.last_analysis)
+            prompt_parts = [
+                "Assess whether the research now answers the original question with adequate confidence.",
+                context_xml,
+                analysis_xml,
+            ]
+            if state.last_eval is not None:
+                prev = state.last_eval
+                prompt_parts.append(
+                    "<previous_evaluation>"
+                    f"<confidence>{prev.confidence_score:.2f}</confidence>"
+                    f"<is_sufficient>{str(prev.is_sufficient).lower()}</is_sufficient>"
+                    f"<reasoning>{prev.reasoning}</reasoning>"
+                    "</previous_evaluation>"
+                )
+            prompt = "\n\n".join(part for part in prompt_parts if part)
 
-        for new_q in output.new_questions:
-            if new_q not in state.context.sub_questions:
-                state.context.sub_questions.append(new_q)
+            agent_deps = ResearchDependencies(
+                client=deps.client,
+                context=state.context,
+            )
+            decision_result = await agent.run(prompt, deps=agent_deps)
+            output = decision_result.output
 
-        if output.key_insights:
-            log(deps, state, "   [bold]Key insights:[/bold]")
-            for insight in output.key_insights:
-                log(deps, state, f"   • {insight}")
+            state.last_eval = output
+            state.iterations += 1
 
-        if output.gaps:
-            log(deps, state, "   [bold yellow]Remaining gaps:[/bold yellow]")
-            for gap in output.gaps:
-                log(deps, state, f"   • {gap}")
+            for new_q in output.new_questions:
+                if new_q not in state.context.sub_questions:
+                    state.context.sub_questions.append(new_q)
 
-        log(
-            deps,
-            state,
-            f"   Confidence: [yellow]{output.confidence_score:.1%}[/yellow]",
-        )
-        status = "[green]Yes[/green]" if output.is_sufficient else "[red]No[/red]"
-        log(deps, state, f"   Sufficient: {status}")
+            if output.key_insights:
+                log(deps, state, "Key insights:")
+                for insight in output.key_insights:
+                    log(deps, state, f"  • {insight}")
 
-        should_continue = (
-            not output.is_sufficient
-            or output.confidence_score < state.confidence_threshold
-        ) and state.iterations < state.max_iterations
+            if output.gaps:
+                log(deps, state, "Remaining gaps:")
+                for gap in output.gaps:
+                    log(deps, state, f"  • {gap}")
 
-        if not should_continue:
-            log(deps, state, "\n[bold green]✅ Stopping research.[/bold green]")
+            log(deps, state, f"Confidence: {output.confidence_score:.1%}")
+            status = "Yes" if output.is_sufficient else "No"
+            log(deps, state, f"Sufficient: {status}")
 
-        return should_continue
+            should_continue = (
+                not output.is_sufficient
+                or output.confidence_score < state.confidence_threshold
+            ) and state.iterations < state.max_iterations
+
+            return should_continue
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     @g.step
     async def synthesize(
@@ -354,36 +345,37 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        log(
-            deps,
-            state,
-            "\n[bold cyan]📝 Generating final research report...[/bold cyan]",
-        )
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("synthesize")
+            deps.agui_emitter.update_activity(
+                "synthesizing", "Generating final research report"
+            )
 
-        agent = Agent(
-            model=get_model(provider, model),
-            output_type=ResearchReport,
-            instructions=SYNTHESIS_AGENT_PROMPT,
-            retries=3,
-            deps_type=ResearchDependencies,
-        )
+        try:
+            agent = Agent(
+                model=get_model(provider, model),
+                output_type=ResearchReport,
+                instructions=SYNTHESIS_AGENT_PROMPT,
+                retries=3,
+                output_retries=3,
+                deps_type=ResearchDependencies,
+            )
 
-        context_xml = format_context_for_prompt(state.context)
-        prompt = (
-            "Generate a comprehensive research report based on all gathered information.\n\n"
-            f"{context_xml}\n\n"
-            "Create a detailed report that synthesizes all findings into a coherent response."
-        )
-        agent_deps = ResearchDependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-            stream=deps.stream,
-        )
-        result = await agent.run(prompt, deps=agent_deps)
-
-        log(deps, state, "[bold green]✅ Research complete![/bold green]")
-        return result.output
+            context_xml = format_context_for_prompt(state.context)
+            prompt = (
+                "Generate a comprehensive research report based on all gathered information.\n\n"
+                f"{context_xml}\n\n"
+                "Create a detailed report that synthesizes all findings into a coherent response."
+            )
+            agent_deps = ResearchDependencies(
+                client=deps.client,
+                context=state.context,
+            )
+            result = await agent.run(prompt, deps=agent_deps)
+            return result.output
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     # Build the graph structure
     collect_answers = g.join(

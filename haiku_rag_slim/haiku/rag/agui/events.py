@@ -11,23 +11,27 @@ from haiku.rag.agui.state import compute_state_delta
 AGUIEvent = dict[str, Any]
 
 
-def emit_run_started(thread_id: str, run_id: str, input_data: str) -> dict[str, Any]:
+def emit_run_started(
+    thread_id: str, run_id: str, input_data: str | None = None
+) -> dict[str, Any]:
     """Create a RunStarted event.
 
     Args:
         thread_id: Unique identifier for the conversation thread
         run_id: Unique identifier for this run
-        input_data: The input that started the run
+        input_data: Optional input that started the run
 
     Returns:
         RunStarted event dict
     """
-    return {
+    event: dict[str, Any] = {
         "type": "RUN_STARTED",
         "threadId": thread_id,
         "runId": run_id,
-        "input": input_data,
     }
+    if input_data:
+        event["input"] = input_data
+    return event
 
 
 def emit_run_finished(thread_id: str, run_id: str, result: Any) -> dict[str, Any]:
@@ -119,7 +123,7 @@ def emit_text_message(content: str, role: str = "assistant") -> dict[str, Any]:
         "type": "TEXT_MESSAGE_CHUNK",
         "messageId": message_id,
         "role": role,
-        "content": content,
+        "delta": content,
     }
 
 
@@ -197,46 +201,47 @@ def emit_state_delta(old_state: BaseModel, new_state: BaseModel) -> dict[str, An
     Returns:
         StateDelta event dict
     """
-    operations = compute_state_delta(old_state, new_state)
+    delta = compute_state_delta(old_state, new_state)
     return {
         "type": "STATE_DELTA",
-        "operations": operations,
+        "delta": delta,
     }
 
 
 def emit_activity(
+    message_id: str,
     activity_type: str,
     content: str,
-    message_id: str | None = None,
 ) -> dict[str, Any]:
     """Create an ActivitySnapshot event.
 
     Args:
+        message_id: Message ID to associate activity with (required)
         activity_type: Type of activity (e.g., "planning", "searching")
         content: Description of the activity
-        message_id: Optional message ID to associate activity with
 
     Returns:
         ActivitySnapshot event dict
     """
-    event: dict[str, Any] = {
+    return {
         "type": "ACTIVITY_SNAPSHOT",
+        "messageId": message_id,
         "activityType": activity_type,
         "content": content,
     }
-    if message_id:
-        event["messageId"] = message_id
-    return event
 
 
 def emit_activity_delta(
-    message_id: str, operations: list[dict[str, Any]]
+    message_id: str,
+    activity_type: str,
+    patch: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Create an ActivityDelta event with JSON Patch operations.
 
     Args:
         message_id: Message ID of the activity being updated
-        operations: JSON Patch operations to apply
+        activity_type: Type of activity being updated
+        patch: JSON Patch operations to apply
 
     Returns:
         ActivityDelta event dict
@@ -244,5 +249,6 @@ def emit_activity_delta(
     return {
         "type": "ACTIVITY_DELTA",
         "messageId": message_id,
-        "operations": operations,
+        "activityType": activity_type,
+        "patch": patch,
     }
