@@ -129,5 +129,7 @@ class FileReader:
                 return text_to_docling_document(content, name=f"{path.stem}.md")
         except ImportError:
             raise
-        except Exception:
-            raise ValueError(f"Failed to parse file: {path}")
+        except Exception as e:
+            raise ValueError(
+                f"Failed to parse file: {path} - {type(e).__name__}: {e}"
+            ) from e

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **FileReader**: Error messages now include both original exception details and file path for easier debugging
+
 ## [0.15.0] - 2025-11-07
 
 ### Added
