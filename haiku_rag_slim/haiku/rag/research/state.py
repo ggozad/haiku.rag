@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel, Field
 from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
@@ -27,15 +28,31 @@ class ResearchDeps:
             self.stream.log(message, state)
 
 
-@dataclass
-class ResearchState:
-    context: ResearchContext
-    iterations: int = 0
-    max_iterations: int = 3
-    confidence_threshold: float = 0.8
-    max_concurrency: int = 1
-    last_eval: EvaluationResult | None = None
-    last_analysis: InsightAnalysis | None = None
+class ResearchState(BaseModel):
+    """Research graph state model.
+
+    Fully JSON-serializable Pydantic model suitable for AG-UI state synchronization.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    context: ResearchContext = Field(
+        description="Shared research context with questions, insights, and gaps"
+    )
+    iterations: int = Field(default=0, description="Current iteration number")
+    max_iterations: int = Field(default=3, description="Maximum allowed iterations")
+    confidence_threshold: float = Field(
+        default=0.8, description="Confidence threshold for completion", ge=0.0, le=1.0
+    )
+    max_concurrency: int = Field(
+        default=1, description="Maximum concurrent search operations", ge=1
+    )
+    last_eval: EvaluationResult | None = Field(
+        default=None, description="Last evaluation result"
+    )
+    last_analysis: InsightAnalysis | None = Field(
+        default=None, description="Last insight analysis"
+    )
 
     @classmethod
     def from_config(
