@@ -250,15 +250,15 @@ deps = ResearchDeps(client=client)
 result = await graph.run(state=state, deps=deps)
 ```
 
-Python usage (streamed events):
+Python usage (streamed AG-UI events):
 
 ```python
+from haiku.rag.agui.stream import stream_graph
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.research.dependencies import ResearchContext
 from haiku.rag.research.graph import build_research_graph
 from haiku.rag.research.state import ResearchDeps, ResearchState
-from haiku.rag.research.stream import stream_research_graph
 
 async with HaikuRAG(path_to_db) as client:
     graph = build_research_graph(config=Config)
@@ -267,16 +267,14 @@ async with HaikuRAG(path_to_db) as client:
     state = ResearchState.from_config(context=context, config=Config)
     deps = ResearchDeps(client=client)
 
-    async for event in stream_research_graph(
-        graph,
-        state,
-        deps,
-    ):
-        if event.type == "log":
-            iteration = event.state.iterations if event.state else state.iterations
-            print(f"[{iteration}] {event.message}")
-        elif event.type == "report":
+    async for event in stream_graph(graph, state, deps):
+        if event["type"] == "STEP_STARTED":
+            print(f"Starting step: {event['stepName']}")
+        elif event["type"] == "ACTIVITY_SNAPSHOT":
+            print(f"  {event['content']}")
+        elif event["type"] == "RUN_FINISHED":
             print("\nResearch complete!\n")
-            print(event.report.title)
-            print(event.report.executive_summary)
+            result = event["result"]
+            print(result["title"])
+            print(result["executive_summary"])
 ```
