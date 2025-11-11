@@ -18,6 +18,12 @@ from haiku.rag.agui.events import (
     emit_text_message_end,
     emit_text_message_start,
 )
+from haiku.rag.agui.server import (
+    RunAgentInput,
+    create_agui_app,
+    create_research_server,
+    format_sse_event,
+)
 from haiku.rag.agui.state import compute_state_delta
 from haiku.rag.agui.stream import stream_graph
 
@@ -25,7 +31,10 @@ __all__ = [
     "AGUIConsoleRenderer",
     "AGUIEmitter",
     "AGUIEvent",
+    "RunAgentInput",
     "compute_state_delta",
+    "create_agui_app",
+    "create_research_server",
     "emit_activity",
     "emit_activity_delta",
     "emit_run_error",
@@ -39,5 +48,6 @@ __all__ = [
     "emit_text_message_content",
     "emit_text_message_end",
     "emit_text_message_start",
+    "format_sse_event",
     "stream_graph",
 ]

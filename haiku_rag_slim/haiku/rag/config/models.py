@@ -77,6 +77,15 @@ class ProvidersConfig(BaseModel):
     vllm: VLLMConfig = Field(default_factory=VLLMConfig)
 
 
+class AGUIConfig(BaseModel):
+    host: str = "0.0.0.0"
+    port: int = 8000
+    cors_origins: list[str] = ["*"]
+    cors_credentials: bool = True
+    cors_methods: list[str] = ["GET", "POST", "OPTIONS"]
+    cors_headers: list[str] = ["*"]
+
+
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -88,3 +97,4 @@ class AppConfig(BaseModel):
     research: ResearchConfig = Field(default_factory=ResearchConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
+    agui: AGUIConfig = Field(default_factory=AGUIConfig)

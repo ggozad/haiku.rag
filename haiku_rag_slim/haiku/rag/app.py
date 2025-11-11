@@ -445,6 +445,7 @@ class HaikuRAGApp:
         enable_mcp: bool = True,
         mcp_transport: str | None = None,
         mcp_port: int = 8001,
+        enable_agui: bool = False,
     ):
         """Start the server with selected services."""
         async with HaikuRAG(self.db_path, config=self.config) as client:
@@ -471,6 +472,30 @@ class HaikuRAGApp:
 
                 mcp_task = asyncio.create_task(run_mcp())
                 tasks.append(mcp_task)
+
+            # Start AG-UI server if enabled
+            if enable_agui:
+
+                async def run_agui():
+                    import uvicorn
+
+                    from haiku.rag.agui import create_research_server
+
+                    logger.info(
+                        f"Starting AG-UI server on {self.config.agui.host}:{self.config.agui.port}"
+                    )
+                    app = create_research_server(self.config, db_path=self.db_path)
+                    config = uvicorn.Config(
+                        app=app,
+                        host=self.config.agui.host,
+                        port=self.config.agui.port,
+                        log_level="info",
+                    )
+                    server = uvicorn.Server(config)
+                    await server.serve()
+
+                agui_task = asyncio.create_task(run_agui())
+                tasks.append(agui_task)
 
             if not tasks:
                 logger.warning("No services enabled")

@@ -6,6 +6,7 @@ from haiku.rag.config.loader import (
     load_yaml_config,
 )
 from haiku.rag.config.models import (
+    AGUIConfig,
     AppConfig,
     EmbeddingsConfig,
     LanceDBConfig,
@@ -22,6 +23,7 @@ from haiku.rag.config.models import (
 
 __all__ = [
     "Config",
+    "AGUIConfig",
     "AppConfig",
     "StorageConfig",
     "MonitorConfig",
