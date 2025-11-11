@@ -3,11 +3,11 @@ import asyncio
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from haiku.rag.agui.stream import stream_graph
 from haiku.rag.client import HaikuRAG
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import build_research_graph
-from haiku.rag.research.state import ResearchDeps, ResearchState
+from haiku.rag.graph.agui.stream import stream_graph
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.graph import build_research_graph
+from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 
 def test_build_graph_and_state():
@@ -39,8 +39,8 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     def test_model_factory(_provider, _model):
         return TestModel()
 
-    monkeypatch.setattr("haiku.rag.graph_common.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.research.graph.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()
 

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from haiku.rag.agui.state import compute_state_delta
+from haiku.rag.graph.agui.state import compute_state_delta
 
 # Type aliases for AG-UI events (actual types from ag_ui.core will be used at runtime)
 AGUIEvent = dict[str, Any]

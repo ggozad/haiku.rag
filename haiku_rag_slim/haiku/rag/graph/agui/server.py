@@ -13,9 +13,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from haiku.rag.agui.events import AGUIEvent
-from haiku.rag.agui.stream import stream_graph
 from haiku.rag.config.models import AGUIConfig
+from haiku.rag.graph.agui.events import AGUIEvent
+from haiku.rag.graph.agui.stream import stream_graph
 
 
 class GraphDeps(Protocol):
@@ -157,12 +157,12 @@ def create_agui_server(config: Any, db_path: Any | None = None) -> Starlette:
         Starlette app with research and deep ask endpoints
     """
     from haiku.rag.client import HaikuRAG
-    from haiku.rag.qa.deep.dependencies import DeepQAContext
-    from haiku.rag.qa.deep.graph import build_deep_qa_graph
-    from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
-    from haiku.rag.research.dependencies import ResearchContext
-    from haiku.rag.research.graph import build_research_graph
-    from haiku.rag.research.state import ResearchDeps, ResearchState
+    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
+    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
+    from haiku.rag.graph.research.dependencies import ResearchContext
+    from haiku.rag.graph.research.graph import build_research_graph
+    from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
     # Store client reference for proper lifecycle management
     _client_cache: dict[str, HaikuRAG] = {}

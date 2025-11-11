@@ -8,25 +8,25 @@ from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph_common import get_model
-from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
-from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
-from haiku.rag.research.common import (
+from haiku.rag.graph.common import get_model
+from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
+from haiku.rag.graph.common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
+from haiku.rag.graph.research.common import (
     format_analysis_for_prompt,
     format_context_for_prompt,
 )
-from haiku.rag.research.dependencies import ResearchDependencies
-from haiku.rag.research.models import (
+from haiku.rag.graph.research.dependencies import ResearchDependencies
+from haiku.rag.graph.research.models import (
     EvaluationResult,
     InsightAnalysis,
     ResearchReport,
 )
-from haiku.rag.research.prompts import (
+from haiku.rag.graph.research.prompts import (
     DECISION_AGENT_PROMPT,
     INSIGHT_AGENT_PROMPT,
     SYNTHESIS_AGENT_PROMPT,
 )
-from haiku.rag.research.state import ResearchDeps, ResearchState
+from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 
 def build_research_graph(

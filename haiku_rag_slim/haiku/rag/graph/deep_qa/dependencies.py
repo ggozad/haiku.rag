@@ -1,8 +1,7 @@
 from pydantic import BaseModel, Field
-from rich.console import Console
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph_common.models import SearchAnswer
+from haiku.rag.graph.common.models import SearchAnswer
 
 
 class DeepQAContext(BaseModel):
@@ -26,4 +25,3 @@ class DeepQADependencies(BaseModel):
 
     client: HaikuRAG = Field(description="RAG client for document operations")
     context: DeepQAContext = Field(description="Shared QA context")
-    console: Console | None = None

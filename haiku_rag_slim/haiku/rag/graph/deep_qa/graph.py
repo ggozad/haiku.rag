@@ -8,17 +8,17 @@ from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph_common import get_model
-from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
-from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
-from haiku.rag.qa.deep.dependencies import DeepQADependencies
-from haiku.rag.qa.deep.models import DeepQAAnswer, DeepQAEvaluation
-from haiku.rag.qa.deep.prompts import (
+from haiku.rag.graph.common import get_model
+from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
+from haiku.rag.graph.common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
+from haiku.rag.graph.deep_qa.dependencies import DeepQADependencies
+from haiku.rag.graph.deep_qa.models import DeepQAAnswer, DeepQAEvaluation
+from haiku.rag.graph.deep_qa.prompts import (
     DECISION_PROMPT,
     SYNTHESIS_PROMPT,
     SYNTHESIS_PROMPT_WITH_CITATIONS,
 )
-from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
 
 def build_deep_qa_graph(
@@ -77,7 +77,6 @@ def build_deep_qa_graph(
             agent_deps = DeepQADependencies(
                 client=deps.client,
                 context=state.context,
-                console=None,
             )
             plan_result = await plan_agent.run(prompt, deps=agent_deps)
             state.context.sub_questions = list(plan_result.output.sub_questions)
@@ -151,7 +150,6 @@ def build_deep_qa_graph(
         agent_deps = DeepQADependencies(
             client=deps.client,
             context=state.context,
-            console=None,
         )
         try:
             result = await agent.run(sub_q, deps=agent_deps)
@@ -228,7 +226,6 @@ def build_deep_qa_graph(
             agent_deps = DeepQADependencies(
                 client=deps.client,
                 context=state.context,
-                console=None,
             )
             result = await agent.run(prompt, deps=agent_deps)
             evaluation = result.output
@@ -302,7 +299,6 @@ def build_deep_qa_graph(
             agent_deps = DeepQADependencies(
                 client=deps.client,
                 context=state.context,
-                console=None,
             )
             result = await agent.run(prompt, deps=agent_deps)
 

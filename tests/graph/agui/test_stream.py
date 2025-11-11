@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import pytest
 from pydantic import BaseModel
 
-from haiku.rag.agui.emitter import AGUIEmitter
-from haiku.rag.agui.stream import stream_graph
+from haiku.rag.graph.agui.emitter import AGUIEmitter
+from haiku.rag.graph.agui.stream import stream_graph
 
 
 class TestState(BaseModel):

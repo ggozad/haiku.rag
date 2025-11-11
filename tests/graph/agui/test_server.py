@@ -4,8 +4,8 @@ import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
-from haiku.rag.agui.server import RunAgentInput, create_agui_app, format_sse_event
 from haiku.rag.config.models import AGUIConfig
+from haiku.rag.graph.agui.server import RunAgentInput, create_agui_app, format_sse_event
 
 
 class SimpleState(BaseModel):

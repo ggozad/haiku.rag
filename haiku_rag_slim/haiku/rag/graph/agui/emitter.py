@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from haiku.rag.agui.events import (
+from haiku.rag.graph.agui.events import (
     AGUIEvent,
     emit_activity,
     emit_run_error,

@@ -5,12 +5,16 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.models import EvaluationResult, InsightAnalysis, ResearchReport
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.models import (
+    EvaluationResult,
+    InsightAnalysis,
+    ResearchReport,
+)
 
 if TYPE_CHECKING:
-    from haiku.rag.agui.emitter import AGUIEmitter
     from haiku.rag.config.models import AppConfig
+    from haiku.rag.graph.agui.emitter import AGUIEmitter
 
 
 @dataclass

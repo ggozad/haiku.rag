@@ -7,8 +7,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel
 
-from haiku.rag.agui.emitter import AGUIEmitter
-from haiku.rag.agui.events import AGUIEvent
+from haiku.rag.graph.agui.emitter import AGUIEmitter
+from haiku.rag.graph.agui.events import AGUIEvent
 
 
 class GraphDeps(Protocol):

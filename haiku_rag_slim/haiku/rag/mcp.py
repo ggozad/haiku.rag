@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.research.models import ResearchReport
+from haiku.rag.graph.research.models import ResearchReport
 
 
 class SearchResult(BaseModel):
@@ -191,9 +191,9 @@ def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
         try:
             async with HaikuRAG(db_path, config=config) as rag:
                 if deep:
-                    from haiku.rag.qa.deep.dependencies import DeepQAContext
-                    from haiku.rag.qa.deep.graph import build_deep_qa_graph
-                    from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+                    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+                    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
+                    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph(config=config)
                     context = DeepQAContext(
@@ -226,9 +226,9 @@ def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
             A research report with findings, or None if an error occurred.
         """
         try:
-            from haiku.rag.research.dependencies import ResearchContext
-            from haiku.rag.research.graph import build_research_graph
-            from haiku.rag.research.state import ResearchDeps, ResearchState
+            from haiku.rag.graph.research.dependencies import ResearchContext
+            from haiku.rag.graph.research.graph import build_research_graph
+            from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
             async with HaikuRAG(db_path, config=config) as rag:
                 graph = build_research_graph(config=config)

@@ -84,10 +84,10 @@ To customize settings, create a `haiku.rag.yaml` config file (see [Configuration
 ## Python Usage
 
 ```python
-from haiku.rag.agui.stream import stream_graph
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.research import (
+from haiku.rag.graph.agui import stream_graph
+from haiku.rag.graph.research import (
     ResearchContext,
     ResearchDeps,
     ResearchState,

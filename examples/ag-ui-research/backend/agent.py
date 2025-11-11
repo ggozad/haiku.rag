@@ -8,7 +8,7 @@ from pydantic_ai.ag_ui import StateDeps
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.graph_common import get_model
+from haiku.rag.graph.common import get_model
 
 
 class ResearchState(BaseModel):

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.deep.dependencies import DeepQAContext
+from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
 
 if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig

@@ -1,7 +1,7 @@
 from pydantic_ai import format_as_xml
 
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.models import InsightAnalysis
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.models import InsightAnalysis
 
 
 def format_context_for_prompt(context: ResearchContext) -> str:

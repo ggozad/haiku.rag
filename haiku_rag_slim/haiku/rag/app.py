@@ -8,14 +8,14 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.progress import Progress
 
-from haiku.rag.agui import AGUIConsoleRenderer, stream_graph
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
+from haiku.rag.graph.agui import AGUIConsoleRenderer, stream_graph
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.graph import build_research_graph
+from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import build_research_graph
-from haiku.rag.research.state import ResearchDeps, ResearchState
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -216,9 +216,9 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
                 if deep:
-                    from haiku.rag.qa.deep.dependencies import DeepQAContext
-                    from haiku.rag.qa.deep.graph import build_deep_qa_graph
-                    from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+                    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+                    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
+                    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph(config=self.config)
                     context = DeepQAContext(
@@ -229,7 +229,7 @@ class HaikuRAGApp:
 
                     if verbose:
                         # Use AG-UI renderer to process and display events
-                        from haiku.rag.agui import AGUIConsoleRenderer
+                        from haiku.rag.graph.agui import AGUIConsoleRenderer
 
                         renderer = AGUIConsoleRenderer(self.console)
                         result_dict = await renderer.render(
@@ -287,7 +287,7 @@ class HaikuRAGApp:
                     return
 
                 # Convert dict to ResearchReport model
-                from haiku.rag.research.models import ResearchReport
+                from haiku.rag.graph.research.models import ResearchReport
 
                 report = ResearchReport.model_validate(report_dict)
 
@@ -497,7 +497,7 @@ class HaikuRAGApp:
                 async def run_agui():
                     import uvicorn
 
-                    from haiku.rag.agui import create_agui_server
+                    from haiku.rag.graph.agui import create_agui_server
 
                     logger.info(
                         f"Starting AG-UI server on {self.config.agui.host}:{self.config.agui.port}"

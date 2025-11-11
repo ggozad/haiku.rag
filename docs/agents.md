@@ -96,9 +96,9 @@ Python usage:
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.qa.deep.dependencies import DeepQAContext
-from haiku.rag.qa.deep.graph import build_deep_qa_graph
-from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
+from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
 async with HaikuRAG(path_to_db) as client:
     # Use global config (recommended)
@@ -205,9 +205,9 @@ Python usage (blocking result):
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import build_research_graph
-from haiku.rag.research.state import ResearchDeps, ResearchState
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.graph import build_research_graph
+from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 async with HaikuRAG(path_to_db) as client:
     # Use global config (recommended)
@@ -253,12 +253,12 @@ result = await graph.run(state=state, deps=deps)
 Python usage (streamed AG-UI events):
 
 ```python
-from haiku.rag.agui.stream import stream_graph
+from haiku.rag.graph.agui import stream_graph
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import build_research_graph
-from haiku.rag.research.state import ResearchDeps, ResearchState
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.graph import build_research_graph
+from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 async with HaikuRAG(path_to_db) as client:
     graph = build_research_graph(config=Config)

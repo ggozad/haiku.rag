@@ -1,18 +1,10 @@
 """Common utilities for all graph implementations."""
 
-from typing import Any, Protocol
-
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import Config
-
-
-class HasEmitLog(Protocol):
-    """Protocol for objects that can emit log messages."""
-
-    def emit_log(self, message: str, state: Any = None) -> None: ...
 
 
 def get_model(provider: str, model: str) -> OpenAIChatModel | str:
@@ -50,15 +42,3 @@ def get_model(provider: str, model: str) -> OpenAIChatModel | str:
             f"Unknown model provider: {provider}. "
             f"Supported providers: ollama, vllm, openai, anthropic, gemini, groq, bedrock"
         )
-
-
-def log(deps: HasEmitLog, state: Any, message: str) -> None:
-    """
-    Emit a log message through the dependencies.
-
-    Args:
-        deps: Dependencies object with emit_log method
-        state: Current state (passed to emit_log)
-        message: The message to log
-    """
-    deps.emit_log(message, state)

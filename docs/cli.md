@@ -162,7 +162,7 @@ Research parameters like `max_iterations`, `confidence_threshold`, and `max_conc
 
 When `--verbose` is set, the CLI consumes the research graph's AG-UI event stream, displaying step events and activity snapshots as agents progress through planning, search, evaluation, and synthesis. Without `--verbose`, only the final research report is displayed.
 
-If you build your own integration, import `stream_graph` from `haiku.rag.agui.stream` to access AG-UI events (`STEP_STARTED`, `ACTIVITY_SNAPSHOT`, `STATE_SNAPSHOT`, `RUN_FINISHED`, etc.) and render them however you like while the graph is running.
+If you build your own integration, import `stream_graph` from `haiku.rag.graph.agui` to access AG-UI events (`STEP_STARTED`, `ACTIVITY_SNAPSHOT`, `STATE_SNAPSHOT`, `RUN_FINISHED`, etc.) and render them however you like while the graph is running.
 
 ## Server
 

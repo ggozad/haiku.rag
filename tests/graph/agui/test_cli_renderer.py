@@ -4,8 +4,8 @@ import pytest
 from pydantic import BaseModel
 from rich.console import Console
 
-from haiku.rag.agui.cli_renderer import AGUIConsoleRenderer
-from haiku.rag.agui.events import (
+from haiku.rag.graph.agui.cli_renderer import AGUIConsoleRenderer
+from haiku.rag.graph.agui.events import (
     emit_activity,
     emit_run_error,
     emit_run_finished,

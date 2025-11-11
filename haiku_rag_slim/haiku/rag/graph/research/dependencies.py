@@ -3,8 +3,8 @@ from collections.abc import Iterable
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph_common.models import SearchAnswer
-from haiku.rag.research.models import (
+from haiku.rag.graph.common.models import SearchAnswer
+from haiku.rag.graph.research.models import (
     GapRecord,
     InsightAnalysis,
     InsightRecord,

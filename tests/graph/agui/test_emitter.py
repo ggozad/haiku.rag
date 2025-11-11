@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from haiku.rag.agui.emitter import AGUIEmitter
+from haiku.rag.graph.agui.emitter import AGUIEmitter
 
 
 class TestState(BaseModel):
