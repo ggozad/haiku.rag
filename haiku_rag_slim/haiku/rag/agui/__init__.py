@@ -21,7 +21,7 @@ from haiku.rag.agui.events import (
 from haiku.rag.agui.server import (
     RunAgentInput,
     create_agui_app,
-    create_research_server,
+    create_agui_server,
     format_sse_event,
 )
 from haiku.rag.agui.state import compute_state_delta
@@ -34,7 +34,7 @@ __all__ = [
     "RunAgentInput",
     "compute_state_delta",
     "create_agui_app",
-    "create_research_server",
+    "create_agui_server",
     "emit_activity",
     "emit_activity_delta",
     "emit_run_error",

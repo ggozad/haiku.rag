@@ -8,7 +8,7 @@ from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph_common import get_model, log
+from haiku.rag.graph_common import get_model
 from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
 from haiku.rag.qa.deep.dependencies import DeepQADependencies
@@ -45,49 +45,52 @@ def build_deep_qa_graph(
         state = ctx.state
         deps = ctx.deps
 
-        log(deps, state, "\n[bold cyan]📋 Planning approach...[/bold cyan]")
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("plan")
+            deps.agui_emitter.update_activity("planning", "Planning approach")
 
-        plan_agent = Agent(
-            model=get_model(provider, model),
-            output_type=ResearchPlan,
-            instructions=(
-                PLAN_PROMPT
-                + "\n\nUse the gather_context tool once on the main question before planning."
-            ),
-            retries=3,
-            deps_type=DeepQADependencies,
-        )
+        try:
+            plan_agent = Agent(
+                model=get_model(provider, model),
+                output_type=ResearchPlan,
+                instructions=(
+                    PLAN_PROMPT
+                    + "\n\nUse the gather_context tool once on the main question before planning."
+                ),
+                retries=3,
+                deps_type=DeepQADependencies,
+            )
 
-        @plan_agent.tool
-        async def gather_context(
-            ctx2: RunContext[DeepQADependencies], query: str, limit: int = 6
-        ) -> str:
-            results = await ctx2.deps.client.search(query, limit=limit)
-            expanded = await ctx2.deps.client.expand_context(results)
-            return "\n\n".join(chunk.content for chunk, _ in expanded)
+            @plan_agent.tool
+            async def gather_context(
+                ctx2: RunContext[DeepQADependencies], query: str, limit: int = 6
+            ) -> str:
+                results = await ctx2.deps.client.search(query, limit=limit)
+                expanded = await ctx2.deps.client.expand_context(results)
+                return "\n\n".join(chunk.content for chunk, _ in expanded)
 
-        prompt = (
-            "Plan a focused approach for the main question.\n\n"
-            f"Main question: {state.context.original_question}"
-        )
+            prompt = (
+                "Plan a focused approach for the main question.\n\n"
+                f"Main question: {state.context.original_question}"
+            )
 
-        agent_deps = DeepQADependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-        )
-        plan_result = await plan_agent.run(prompt, deps=agent_deps)
-        state.context.sub_questions = list(plan_result.output.sub_questions)
+            agent_deps = DeepQADependencies(
+                client=deps.client,
+                context=state.context,
+                console=None,
+            )
+            plan_result = await plan_agent.run(prompt, deps=agent_deps)
+            state.context.sub_questions = list(plan_result.output.sub_questions)
 
-        log(deps, state, "\n[bold green]✅ Plan Created:[/bold green]")
-        log(
-            deps,
-            state,
-            f"   [bold]Main Question:[/bold] {state.context.original_question}",
-        )
-        log(deps, state, "   [bold]Sub-questions:[/bold]")
-        for i, sq in enumerate(state.context.sub_questions, 1):
-            log(deps, state, f"      {i}. {sq}")
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+                count = len(state.context.sub_questions)
+                deps.agui_emitter.update_activity(
+                    "planning", f"Created plan with {count} sub-questions"
+                )
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     @g.step
     async def search_one(
@@ -112,11 +115,8 @@ def build_deep_qa_graph(
         deps: DeepQADeps,
         sub_q: str,
     ) -> SearchAnswer:
-        log(
-            deps,
-            state,
-            f"\n[bold cyan]🔍 Searching & Answering:[/bold cyan] {sub_q}",
-        )
+        if deps.agui_emitter:
+            deps.agui_emitter.update_activity("searching", f"Searching: {sub_q}")
 
         agent = Agent(
             model=get_model(provider, model),
@@ -151,20 +151,18 @@ def build_deep_qa_graph(
         agent_deps = DeepQADependencies(
             client=deps.client,
             context=state.context,
-            console=deps.console,
+            console=None,
         )
         try:
             result = await agent.run(sub_q, deps=agent_deps)
             answer = result.output
             if answer:
                 state.context.add_qa_response(answer)
-                preview = answer.answer[:150] + (
-                    "…" if len(answer.answer) > 150 else ""
-                )
-                log(deps, state, f"   [green]✓[/green] {preview}")
+                if deps.agui_emitter:
+                    deps.agui_emitter.update_state(state)
+                    deps.agui_emitter.update_activity("searching", f"Answered: {sub_q}")
             return answer
         except Exception as e:
-            log(deps, state, f"[red]Search failed:[/red] {e}")
             failure_answer = SearchAnswer(
                 query=sub_q,
                 answer=f"Search failed after retries: {str(e)}",
@@ -194,81 +192,69 @@ def build_deep_qa_graph(
         state = ctx.state
         deps = ctx.deps
 
-        log(
-            deps,
-            state,
-            "\n[bold cyan]📊 Evaluating information sufficiency...[/bold cyan]",
-        )
-
-        agent = Agent(
-            model=get_model(provider, model),
-            output_type=DeepQAEvaluation,
-            instructions=DECISION_PROMPT,
-            retries=3,
-            deps_type=DeepQADependencies,
-        )
-
-        context_data = {
-            "original_question": state.context.original_question,
-            "gathered_answers": [
-                {
-                    "question": qa.query,
-                    "answer": qa.answer,
-                    "sources": qa.sources,
-                }
-                for qa in state.context.qa_responses
-            ],
-        }
-        context_xml = format_as_xml(context_data, root_tag="gathered_information")
-
-        prompt = (
-            "Evaluate whether we have sufficient information to answer the question.\n\n"
-            f"{context_xml}"
-        )
-
-        agent_deps = DeepQADependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-        )
-        result = await agent.run(prompt, deps=agent_deps)
-        evaluation = result.output
-
-        state.iterations += 1
-
-        log(deps, state, f"   [bold]Assessment:[/bold] {evaluation.reasoning}")
-        status = "[green]Yes[/green]" if evaluation.is_sufficient else "[red]No[/red]"
-        log(deps, state, f"   Sufficient: {status}")
-
-        for new_q in evaluation.new_questions:
-            if new_q not in state.context.sub_questions:
-                state.context.sub_questions.append(new_q)
-
-        if evaluation.new_questions:
-            log(deps, state, "   [cyan]New questions:[/cyan]")
-            for question in evaluation.new_questions:
-                log(deps, state, f"   • {question}")
-
-        should_continue = (
-            not evaluation.is_sufficient and state.iterations < state.max_iterations
-        )
-
-        if not should_continue:
-            if state.iterations >= state.max_iterations:
-                log(
-                    deps,
-                    state,
-                    f"\n[bold yellow]⚠️  Reached max iterations ({state.max_iterations})[/bold yellow]",
-                )
-            log(deps, state, "\n[bold green]✅ Moving to synthesis.[/bold green]")
-        else:
-            log(
-                deps,
-                state,
-                f"\n[bold cyan]🔄 Starting iteration {state.iterations + 1}...[/bold cyan]",
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("decide")
+            deps.agui_emitter.update_activity(
+                "evaluating", "Evaluating information sufficiency"
             )
 
-        return should_continue
+        try:
+            agent = Agent(
+                model=get_model(provider, model),
+                output_type=DeepQAEvaluation,
+                instructions=DECISION_PROMPT,
+                retries=3,
+                deps_type=DeepQADependencies,
+            )
+
+            context_data = {
+                "original_question": state.context.original_question,
+                "gathered_answers": [
+                    {
+                        "question": qa.query,
+                        "answer": qa.answer,
+                        "sources": qa.sources,
+                    }
+                    for qa in state.context.qa_responses
+                ],
+            }
+            context_xml = format_as_xml(context_data, root_tag="gathered_information")
+
+            prompt = (
+                "Evaluate whether we have sufficient information to answer the question.\n\n"
+                f"{context_xml}"
+            )
+
+            agent_deps = DeepQADependencies(
+                client=deps.client,
+                context=state.context,
+                console=None,
+            )
+            result = await agent.run(prompt, deps=agent_deps)
+            evaluation = result.output
+
+            state.iterations += 1
+
+            for new_q in evaluation.new_questions:
+                if new_q not in state.context.sub_questions:
+                    state.context.sub_questions.append(new_q)
+
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+                status = "sufficient" if evaluation.is_sufficient else "insufficient"
+                deps.agui_emitter.update_activity(
+                    "evaluating",
+                    f"Information {status} after {state.iterations} iteration(s)",
+                )
+
+            should_continue = (
+                not evaluation.is_sufficient and state.iterations < state.max_iterations
+            )
+
+            return should_continue
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     @g.step
     async def synthesize(
@@ -277,50 +263,56 @@ def build_deep_qa_graph(
         state = ctx.state
         deps = ctx.deps
 
-        log(
-            deps,
-            state,
-            "\n[bold cyan]📝 Synthesizing final answer...[/bold cyan]",
-        )
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("synthesize")
+            deps.agui_emitter.update_activity(
+                "synthesizing", "Synthesizing final answer"
+            )
 
-        prompt_template = (
-            SYNTHESIS_PROMPT_WITH_CITATIONS
-            if state.context.use_citations
-            else SYNTHESIS_PROMPT
-        )
+        try:
+            prompt_template = (
+                SYNTHESIS_PROMPT_WITH_CITATIONS
+                if state.context.use_citations
+                else SYNTHESIS_PROMPT
+            )
 
-        agent = Agent(
-            model=get_model(provider, model),
-            output_type=DeepQAAnswer,
-            instructions=prompt_template,
-            retries=3,
-            deps_type=DeepQADependencies,
-        )
+            agent = Agent(
+                model=get_model(provider, model),
+                output_type=DeepQAAnswer,
+                instructions=prompt_template,
+                retries=3,
+                deps_type=DeepQADependencies,
+            )
 
-        context_data = {
-            "original_question": state.context.original_question,
-            "sub_answers": [
-                {
-                    "question": qa.query,
-                    "answer": qa.answer,
-                    "sources": qa.sources,
-                }
-                for qa in state.context.qa_responses
-            ],
-        }
-        context_xml = format_as_xml(context_data, root_tag="gathered_information")
+            context_data = {
+                "original_question": state.context.original_question,
+                "sub_answers": [
+                    {
+                        "question": qa.query,
+                        "answer": qa.answer,
+                        "sources": qa.sources,
+                    }
+                    for qa in state.context.qa_responses
+                ],
+            }
+            context_xml = format_as_xml(context_data, root_tag="gathered_information")
 
-        prompt = f"Synthesize a comprehensive answer to the original question.\n\n{context_xml}"
+            prompt = f"Synthesize a comprehensive answer to the original question.\n\n{context_xml}"
 
-        agent_deps = DeepQADependencies(
-            client=deps.client,
-            context=state.context,
-            console=deps.console,
-        )
-        result = await agent.run(prompt, deps=agent_deps)
+            agent_deps = DeepQADependencies(
+                client=deps.client,
+                context=state.context,
+                console=None,
+            )
+            result = await agent.run(prompt, deps=agent_deps)
 
-        log(deps, state, "[bold green]✅ Answer complete![/bold green]")
-        return result.output
+            if deps.agui_emitter:
+                deps.agui_emitter.update_activity("synthesizing", "Answer complete")
+
+            return result.output
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     # Build the graph structure
     collect_answers = g.join(

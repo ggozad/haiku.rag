@@ -216,8 +216,6 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
                 if deep:
-                    from rich.console import Console
-
                     from haiku.rag.qa.deep.dependencies import DeepQAContext
                     from haiku.rag.qa.deep.graph import build_deep_qa_graph
                     from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
@@ -227,12 +225,22 @@ class HaikuRAGApp:
                         original_question=question, use_citations=cite
                     )
                     state = DeepQAState.from_config(context=context, config=self.config)
-                    deps = DeepQADeps(
-                        client=self.client, console=Console() if verbose else None
-                    )
+                    deps = DeepQADeps(client=self.client)
 
-                    result = await graph.run(state=state, deps=deps)
-                    answer = result.answer
+                    if verbose:
+                        # Use AG-UI renderer to process and display events
+                        from haiku.rag.agui import AGUIConsoleRenderer
+
+                        renderer = AGUIConsoleRenderer(self.console)
+                        result_dict = await renderer.render(
+                            stream_graph(graph, state, deps)
+                        )
+                        # Result should be a dict with 'answer' key
+                        answer = result_dict.get("answer", "") if result_dict else ""
+                    else:
+                        # Run without rendering events, just get the result
+                        result = await graph.run(state=state, deps=deps)
+                        answer = result.answer
                 else:
                     answer = await self.client.ask(question, cite=cite)
 
@@ -489,12 +497,12 @@ class HaikuRAGApp:
                 async def run_agui():
                     import uvicorn
 
-                    from haiku.rag.agui import create_research_server
+                    from haiku.rag.agui import create_agui_server
 
                     logger.info(
                         f"Starting AG-UI server on {self.config.agui.host}:{self.config.agui.port}"
                     )
-                    app = create_research_server(self.config, db_path=self.db_path)
+                    app = create_agui_server(self.config, db_path=self.db_path)
                     config = uvicorn.Config(
                         app=app,
                         host=self.config.agui.host,

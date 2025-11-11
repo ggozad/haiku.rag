@@ -146,19 +146,20 @@ def format_sse_event(event: AGUIEvent) -> str:
     return f"data: {event_json}\n\n"
 
 
-def create_research_server(config: Any, db_path: Any | None = None) -> Starlette:
-    """Create AG-UI server for research graph.
-
-    This is a convenience function specifically for the research graph.
+def create_agui_server(config: Any, db_path: Any | None = None) -> Starlette:
+    """Create AG-UI server with both research and deep ask endpoints.
 
     Args:
-        config: Application config with research settings
+        config: Application config with research and qa settings
         db_path: Optional database path override
 
     Returns:
-        Starlette app configured for research graph
+        Starlette app with research and deep ask endpoints
     """
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.qa.deep.dependencies import DeepQAContext
+    from haiku.rag.qa.deep.graph import build_deep_qa_graph
+    from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
     from haiku.rag.research.dependencies import ResearchContext
     from haiku.rag.research.graph import build_research_graph
     from haiku.rag.research.state import ResearchDeps, ResearchState
@@ -166,44 +167,139 @@ def create_research_server(config: Any, db_path: Any | None = None) -> Starlette
     # Store client reference for proper lifecycle management
     _client_cache: dict[str, HaikuRAG] = {}
 
-    def graph_factory() -> Graph:
-        """Create research graph instance."""
+    def get_client(effective_db_path: Any) -> HaikuRAG:
+        """Get or create cached client."""
+        path_key = str(effective_db_path)
+        if path_key not in _client_cache:
+            _client_cache[path_key] = HaikuRAG(db_path=effective_db_path, config=config)
+        return _client_cache[path_key]
+
+    # Research graph factories
+    def research_graph_factory() -> Graph:
         return build_research_graph(config)
 
-    def state_factory(input_state: dict[str, Any]) -> ResearchState:
-        """Create research state from input."""
-        # Extract question from input state or messages
+    def research_state_factory(input_state: dict[str, Any]) -> ResearchState:
         question = input_state.get("question", "")
         if not question:
-            # Try to get from first message if available
             messages = input_state.get("messages", [])
             if messages:
                 question = messages[0].get("content", "")
-
-        # Create context and state
         context = ResearchContext(original_question=question)
         return ResearchState.from_config(context=context, config=config)
 
-    def deps_factory(input_config: dict[str, Any]) -> ResearchDeps:
-        """Create research dependencies."""
-        # Use provided db_path or fallback to config
+    def research_deps_factory(input_config: dict[str, Any]) -> ResearchDeps:
         effective_db_path = (
             db_path
             or input_config.get("db_path")
             or config.storage.data_dir / "haiku.rag.lancedb"
         )
+        return ResearchDeps(client=get_client(effective_db_path))
 
-        # Reuse existing client if available
-        path_key = str(effective_db_path)
-        if path_key not in _client_cache:
-            _client_cache[path_key] = HaikuRAG(db_path=effective_db_path, config=config)
+    # Deep ask graph factories
+    def deep_ask_graph_factory() -> Graph:
+        return build_deep_qa_graph(config)
 
-        return ResearchDeps(client=_client_cache[path_key])
+    def deep_ask_state_factory(input_state: dict[str, Any]) -> DeepQAState:
+        question = input_state.get("question", "")
+        if not question:
+            messages = input_state.get("messages", [])
+            if messages:
+                question = messages[0].get("content", "")
+        use_citations = input_state.get("use_citations", False)
+        context = DeepQAContext(original_question=question, use_citations=use_citations)
+        return DeepQAState.from_config(context=context, config=config)
 
-    # Use AG-UI config from app config
-    return create_agui_app(
-        graph_factory=graph_factory,
-        state_factory=state_factory,
-        deps_factory=deps_factory,
-        config=config.agui,
+    def deep_ask_deps_factory(input_config: dict[str, Any]) -> DeepQADeps:
+        effective_db_path = (
+            db_path
+            or input_config.get("db_path")
+            or config.storage.data_dir / "haiku.rag.lancedb"
+        )
+        return DeepQADeps(client=get_client(effective_db_path))
+
+    # Create event stream functions for each graph type
+    async def research_event_stream(
+        input_data: RunAgentInput,
+    ) -> AsyncIterator[str]:
+        """Generate SSE event stream from research graph execution."""
+        graph = research_graph_factory()
+        initial_state = research_state_factory(input_data.state)
+        deps = research_deps_factory(input_data.config)
+
+        async for event in stream_graph(graph, initial_state, deps):
+            event_data = format_sse_event(event)
+            yield event_data
+
+    async def deep_ask_event_stream(
+        input_data: RunAgentInput,
+    ) -> AsyncIterator[str]:
+        """Generate SSE event stream from deep ask graph execution."""
+        graph = deep_ask_graph_factory()
+        initial_state = deep_ask_state_factory(input_data.state)
+        deps = deep_ask_deps_factory(input_data.config)
+
+        async for event in stream_graph(graph, initial_state, deps):
+            event_data = format_sse_event(event)
+            yield event_data
+
+    # Endpoint handlers
+    async def stream_research(request: Request) -> StreamingResponse:
+        """Research graph streaming endpoint."""
+        body = await request.json()
+        input_data = RunAgentInput(**body)
+
+        return StreamingResponse(
+            research_event_stream(input_data),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    async def stream_deep_ask(request: Request) -> StreamingResponse:
+        """Deep ask graph streaming endpoint."""
+        body = await request.json()
+        input_data = RunAgentInput(**body)
+
+        return StreamingResponse(
+            deep_ask_event_stream(input_data),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    async def health_check(_: Request) -> JSONResponse:
+        """Health check endpoint."""
+        return JSONResponse({"status": "healthy"})
+
+    # Define routes
+    routes = [
+        Route("/v1/research/stream", stream_research, methods=["POST"]),
+        Route("/v1/deep-ask/stream", stream_deep_ask, methods=["POST"]),
+        Route("/health", health_check, methods=["GET"]),
+    ]
+
+    # Configure CORS middleware
+    middleware = [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=config.agui.cors_origins,
+            allow_credentials=config.agui.cors_credentials,
+            allow_methods=config.agui.cors_methods,
+            allow_headers=config.agui.cors_headers,
+        )
+    ]
+
+    # Create Starlette app
+    app = Starlette(
+        routes=routes,
+        middleware=middleware,
+        debug=False,
     )
+
+    return app

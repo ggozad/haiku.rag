@@ -96,7 +96,7 @@ URLs are also supported for web content.
 
 ## AG-UI Server
 
-The AG-UI server provides HTTP streaming of research graph execution using Server-Sent Events (SSE).
+The AG-UI server provides HTTP streaming of both research and deep ask graph execution using Server-Sent Events (SSE).
 
 ### Starting the AG-UI Server
 
@@ -107,7 +107,8 @@ haiku-rag serve --agui
 This starts an HTTP server (default: http://0.0.0.0:8000) that exposes:
 
 - `GET /health` - Health check endpoint
-- `POST /v1/agent/stream` - Research graph streaming endpoint
+- `POST /v1/research/stream` - Research graph streaming endpoint
+- `POST /v1/deep-ask/stream` - Deep ask graph streaming endpoint
 
 ### Configuration
 
@@ -123,9 +124,9 @@ agui:
 
 See [Configuration](configuration.md#ag-ui-server-configuration) for all available options.
 
-### Using the Streaming Endpoint
+### Using the Streaming Endpoints
 
-The `/v1/agent/stream` endpoint accepts POST requests with research parameters and streams AG-UI events:
+Both endpoints accept POST requests with the same AG-UI RunAgentInput format and stream AG-UI events.
 
 **Request format:**
 ```json
@@ -133,30 +134,43 @@ The `/v1/agent/stream` endpoint accepts POST requests with research parameters a
   "threadId": "optional-thread-id",
   "runId": "optional-run-id",
   "state": {
-    "context": {
-      "original_question": "What are the key features of haiku.rag?"
-    }
+    "question": "What are the key features of haiku.rag?"
   },
   "messages": [],
   "config": {}
 }
 ```
 
-**Example with curl:**
+**Research endpoint example:**
 ```bash
-curl -X POST http://localhost:8000/v1/agent/stream \
+curl -X POST http://localhost:8000/v1/research/stream \
   -H "Content-Type: application/json" \
   -d '{
     "state": {
-      "context": {
-        "original_question": "What are the key features of haiku.rag?"
-      }
+      "question": "What are the key features of haiku.rag?"
+    }
+  }' \
+  --no-buffer
+```
+
+**Deep ask endpoint example:**
+```bash
+curl -X POST http://localhost:8000/v1/deep-ask/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "state": {
+      "question": "How does haiku.rag handle document chunking?",
+      "use_citations": true
     }
   }' \
   --no-buffer
 ```
 
 The `--no-buffer` flag ensures curl displays events as they arrive instead of buffering them.
+
+**Note:** The `state` object can include:
+- `question`: The question to answer (required)
+- `use_citations`: Enable citations in deep ask responses (optional, deep ask only)
 
 **Response:** Server-Sent Events stream with AG-UI protocol events:
 - `RUN_STARTED` - Graph execution started

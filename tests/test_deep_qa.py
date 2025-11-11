@@ -30,7 +30,7 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
 
     # Use real client but with TestModel for LLM calls
     client = HaikuRAG(temp_db_path)
-    deps = DeepQADeps(client=client, console=None)
+    deps = DeepQADeps(client=client)
 
     result = await graph.run(state=state, deps=deps)
 
@@ -62,7 +62,7 @@ async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
 
     # Use real client but with TestModel for LLM calls
     client = HaikuRAG(temp_db_path)
-    deps = DeepQADeps(client=client, console=None)
+    deps = DeepQADeps(client=client)
 
     result = await graph.run(state=state, deps=deps)
 
