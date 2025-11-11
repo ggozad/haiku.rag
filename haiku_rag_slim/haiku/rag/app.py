@@ -243,11 +243,12 @@ class HaikuRAGApp:
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
-    async def research(self, question: str):
+    async def research(self, question: str, verbose: bool = False):
         """Run research via the pydantic-graph pipeline.
 
         Args:
             question: The research question
+            verbose: Show AG-UI event stream during execution
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as client:
             try:
@@ -260,9 +261,18 @@ class HaikuRAGApp:
                 state = ResearchState.from_config(context=context, config=self.config)
                 deps = ResearchDeps(client=client)
 
-                # Use AG-UI renderer to process events
-                renderer = AGUIConsoleRenderer(self.console)
-                report_dict = await renderer.render(stream_graph(graph, state, deps))
+                if verbose:
+                    # Use AG-UI renderer to process and display events
+                    renderer = AGUIConsoleRenderer(self.console)
+                    report_dict = await renderer.render(
+                        stream_graph(graph, state, deps)
+                    )
+                else:
+                    # Run without rendering events, just get the result
+                    report = await graph.run(state=state, deps=deps)
+                    report_dict = (
+                        report.model_dump() if hasattr(report, "model_dump") else report
+                    )
 
                 if report_dict is None:
                     self.console.print("[red]Research did not produce a report.[/red]")

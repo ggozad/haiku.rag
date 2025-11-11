@@ -299,9 +299,14 @@ def research(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Show planning, searching previews, evaluation summary, and stop reason",
+    ),
 ):
     app = create_app(db)
-    asyncio.run(app.research(question=question))
+    asyncio.run(app.research(question=question, verbose=verbose))
 
 
 @cli.command("settings", help="Display current configuration settings")
