@@ -8,7 +8,7 @@ from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph_common import get_model, log
+from haiku.rag.graph_common import get_model
 from haiku.rag.graph_common.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph_common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
 from haiku.rag.research.common import (
@@ -90,11 +90,13 @@ def build_research_graph(
             plan_result = await plan_agent.run(prompt, deps=agent_deps)
             state.context.sub_questions = list(plan_result.output.sub_questions)
 
-            # Log the plan results
-            log(deps, state, f"Main Question: {state.context.original_question}")
-            log(deps, state, "Sub-questions:")
-            for i, sq in enumerate(state.context.sub_questions, 1):
-                log(deps, state, f"  {i}. {sq}")
+            # State now contains the plan - emit state update and narrate
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+                count = len(state.context.sub_questions)
+                deps.agui_emitter.update_activity(
+                    "planning", f"Created plan with {count} sub-questions"
+                )
         finally:
             if deps.agui_emitter:
                 deps.agui_emitter.finish_step()
@@ -171,10 +173,18 @@ def build_research_graph(
             answer = result.output
             if answer:
                 state.context.add_qa_response(answer)
-                log(deps, state, f"Answer: {answer.answer}")
+                # State updated with new answer - emit state update and narrate
+                if deps.agui_emitter:
+                    deps.agui_emitter.update_state(state)
+                    deps.agui_emitter.update_activity(
+                        "searching",
+                        f"Found answer with {answer.confidence:.0%} confidence",
+                    )
             return answer
         except Exception as e:
-            log(deps, state, f"Search failed: {e}")
+            # Narrate the error
+            if deps.agui_emitter:
+                deps.agui_emitter.update_activity("searching", f"Search failed: {e}")
             failure_answer = SearchAnswer(
                 query=sub_q,
                 answer=f"Search failed after retries: {str(e)}",
@@ -236,27 +246,21 @@ def build_research_graph(
             state.context.integrate_analysis(analysis)
             state.last_analysis = analysis
 
-            if analysis.commentary:
-                log(deps, state, f"Summary: {analysis.commentary}")
-            if analysis.highlights:
-                log(deps, state, "Updated insights:")
-                for insight in analysis.highlights:
-                    label = insight.status.value
-                    log(deps, state, f"  • ({label}) {insight.summary}")
-            if analysis.gap_assessments:
-                log(deps, state, "Gap updates:")
-                for gap in analysis.gap_assessments:
-                    status = "resolved" if gap.resolved else "open"
-                    severity = gap.severity.value
-                    log(deps, state, f"  • ({severity}/{status}) {gap.description}")
-            if analysis.resolved_gaps:
-                log(deps, state, "Resolved gaps:")
-                for resolved in analysis.resolved_gaps:
-                    log(deps, state, f"  • {resolved}")
-            if analysis.new_questions:
-                log(deps, state, "Proposed follow-ups:")
-                for question in analysis.new_questions:
-                    log(deps, state, f"  • {question}")
+            # State updated with insights/gaps - emit state update and narrate
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+                highlights = len(analysis.highlights) if analysis.highlights else 0
+                gaps = len(analysis.gap_assessments) if analysis.gap_assessments else 0
+                resolved = len(analysis.resolved_gaps) if analysis.resolved_gaps else 0
+                parts = []
+                if highlights:
+                    parts.append(f"{highlights} insights")
+                if gaps:
+                    parts.append(f"{gaps} gaps")
+                if resolved:
+                    parts.append(f"{resolved} resolved")
+                summary = ", ".join(parts) if parts else "No updates"
+                deps.agui_emitter.update_activity("analyzing", f"Analysis: {summary}")
         finally:
             if deps.agui_emitter:
                 deps.agui_emitter.finish_step()
@@ -314,19 +318,14 @@ def build_research_graph(
                 if new_q not in state.context.sub_questions:
                     state.context.sub_questions.append(new_q)
 
-            if output.key_insights:
-                log(deps, state, "Key insights:")
-                for insight in output.key_insights:
-                    log(deps, state, f"  • {insight}")
-
-            if output.gaps:
-                log(deps, state, "Remaining gaps:")
-                for gap in output.gaps:
-                    log(deps, state, f"  • {gap}")
-
-            log(deps, state, f"Confidence: {output.confidence_score:.1%}")
-            status = "Yes" if output.is_sufficient else "No"
-            log(deps, state, f"Sufficient: {status}")
+            # State updated with evaluation - emit state update and narrate
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+                sufficient = "Yes" if output.is_sufficient else "No"
+                deps.agui_emitter.update_activity(
+                    "evaluating",
+                    f"Confidence: {output.confidence_score:.0%}, Sufficient: {sufficient}",
+                )
 
             should_continue = (
                 not output.is_sufficient

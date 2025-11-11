@@ -3,7 +3,6 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-from pydantic import BaseModel
 from rich.console import Console
 
 from haiku.rag.agui.events import AGUIEvent
@@ -23,7 +22,7 @@ class AGUIConsoleRenderer:
             console: Optional Rich console instance (creates new one if not provided)
         """
         self.console = console or Console()
-        self._state: BaseModel | None = None
+        self._state: dict | None = None
 
     async def render(self, events: AsyncIterator[AGUIEvent]) -> Any | None:
         """Process events and render to console, return final result.
@@ -59,7 +58,9 @@ class AGUIConsoleRenderer:
             elif event_type == "TEXT_MESSAGE_END":
                 pass  # End of streaming message, no output needed
             elif event_type == "STATE_SNAPSHOT":
-                self._state = event.get("snapshot")
+                new_state = event.get("snapshot")
+                self._render_state_snapshot(new_state)
+                self._state = new_state
             elif event_type == "STATE_DELTA":
                 self._apply_state_delta(event)
             elif event_type == "ACTIVITY_SNAPSHOT":
@@ -69,84 +70,72 @@ class AGUIConsoleRenderer:
 
         return result
 
-    def _render_run_started(self, event: AGUIEvent) -> None:
-        """Render run start event.
-
-        Args:
-            event: RunStarted event
-        """
-        # Currently silent - could render run metadata later
+    def _render_run_started(self, _event: AGUIEvent) -> None:
+        """Render run start event."""
 
     def _render_run_finished(self) -> None:
         """Render run completion."""
-        # Currently silent - the result is rendered separately
 
     def _render_error(self, event: AGUIEvent) -> None:
-        """Render error event.
-
-        Args:
-            event: RunError event
-        """
+        """Render error event."""
         message = event.get("message", "Unknown error")
-        self.console.print(f"[bold red]❌ Error:[/bold red] {message}")
+        self.console.print(f"[bold red][RUN_ERROR][/bold red] {message}")
 
     def _render_step_started(self, event: AGUIEvent) -> None:
-        """Render step start event.
-
-        Args:
-            event: StepStarted event
-        """
+        """Render step start event."""
         step_name = event.get("stepName", "")
         if step_name:
-            # Format step name for display
             display_name = step_name.replace("_", " ").title()
-            self.console.print(f"\n[bold cyan]{display_name}[/bold cyan]")
+            self.console.print(
+                f"\n[bold cyan][STEP_STARTED][/bold cyan] {display_name}"
+            )
 
-    def _render_step_finished(self, event: AGUIEvent) -> None:
-        """Render step finish event.
-
-        Args:
-            event: StepFinished event
-        """
-        # Step completion is implicit from the next step or activity
+    def _render_step_finished(self, _event: AGUIEvent) -> None:
+        """Render step finish event."""
 
     def _render_text_message(self, event: AGUIEvent) -> None:
-        """Render complete text message.
-
-        Args:
-            event: TextMessageChunk event
-        """
+        """Render complete text message."""
         delta = event.get("delta", "")
-        # The delta contains the text content to display
-        self.console.print(delta)
+        self.console.print(f"[magenta][TEXT_MESSAGE][/magenta] {delta}")
 
     def _render_text_content(self, event: AGUIEvent) -> None:
-        """Render streaming text content delta.
-
-        Args:
-            event: TextMessageContent event
-        """
+        """Render streaming text content delta."""
         delta = event.get("delta", "")
-        # Print delta without newline for streaming effect
         self.console.print(delta, end="")
 
     def _render_activity(self, event: AGUIEvent) -> None:
-        """Render activity update.
-
-        Args:
-            event: ActivitySnapshot event
-        """
+        """Render activity update."""
         content = event.get("content", "")
-
-        # Render activity content with emphasis
         if content:
-            self.console.print(f"[dim]{content}[/dim]")
+            self.console.print(f"[yellow][ACTIVITY][/yellow] {content}")
 
-    def _apply_state_delta(self, event: AGUIEvent) -> None:
-        """Apply state delta to current state.
+    def _render_state_snapshot(self, new_state: dict | None) -> None:
+        """Render state snapshot showing only what changed."""
+        if not new_state:
+            return
 
-        Args:
-            event: StateDelta event
-        """
-        # Currently not applying deltas - could implement state patching later
-        # For now, the text messages contain all the information we need to display
+        old_state = self._state or {}
+        diff = self._compute_diff(old_state, new_state)
+
+        if not diff:
+            return
+
+        self.console.print("[blue][STATE_SNAPSHOT][/blue]")
+        self.console.print(diff, style="dim")
+
+    def _compute_diff(self, old: dict, new: dict) -> dict:
+        """Compute difference between old and new state."""
+        diff = {}
+        for key, new_value in new.items():
+            old_value = old.get(key)
+            if old_value != new_value:
+                if isinstance(new_value, dict) and isinstance(old_value, dict):
+                    nested_diff = self._compute_diff(old_value, new_value)
+                    if nested_diff:
+                        diff[key] = nested_diff
+                else:
+                    diff[key] = new_value
+        return diff
+
+    def _apply_state_delta(self, _event: AGUIEvent) -> None:
+        """Apply state delta to current state."""
