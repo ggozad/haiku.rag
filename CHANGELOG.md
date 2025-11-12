@@ -5,10 +5,11 @@
 
 - **AG-UI Protocol Support**: Full AG-UI (Agent-UI) protocol implementation for graph execution with event streaming
   - New `AGUIEmitter` class for emitting AG-UI events from graphs
-  - Support for all AG-UI event types: lifecycle events (`RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`), step events (`STEP_STARTED`, `STEP_FINISHED`), state updates (`STATE_SNAPSHOT`), activity narration (`ACTIVITY_SNAPSHOT`), and text messages (`TEXT_MESSAGE_CHUNK`)
+  - Support for all AG-UI event types: lifecycle events (`RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`), step events (`STEP_STARTED`, `STEP_FINISHED`), state updates (`STATE_SNAPSHOT`, `STATE_DELTA`), activity narration (`ACTIVITY_SNAPSHOT`), and text messages (`TEXT_MESSAGE_CHUNK`)
   - `AGUIConsoleRenderer` for rendering AG-UI event streams to terminal with Rich formatting
   - `stream_graph()` utility function for executing graphs with AG-UI event emission
   - State diff computation for efficient state synchronization
+  - **Delta State Updates**: AG-UI emitter now supports incremental state updates via JSON Patch operations (`STATE_DELTA` events) to reduce bandwidth, configurable via `use_deltas` parameter (enabled by default)
 - **AG-UI Server**: Starlette-based HTTP server for serving graphs via AG-UI protocol
   - Server-Sent Events (SSE) streaming endpoint at `/v1/agent/stream`
   - Health check endpoint at `/health`
@@ -19,6 +20,7 @@
   - Step-by-step execution visibility via AG-UI events
 - **CLI AG-UI Flag**: New `--agui` flag for `serve` command to start AG-UI server
 - **Graph Module**: New unified `haiku.rag.graph` module containing all graph-related functionality
+- **Common Graph Nodes**: New factory functions (`create_plan_node`, `create_search_node`) in `haiku.rag.graph.common.nodes` for reusable graph components
 
 ### Changed
 

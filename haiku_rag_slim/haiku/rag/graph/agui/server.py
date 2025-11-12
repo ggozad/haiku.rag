@@ -2,7 +2,11 @@
 
 import json
 from collections.abc import AsyncIterator, Callable
-from typing import Any, Protocol
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from haiku.rag.config.models import AppConfig
 
 from pydantic import BaseModel, Field
 from pydantic_graph.beta import Graph
@@ -14,6 +18,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.config.models import AGUIConfig
+from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.agui.events import AGUIEvent
 from haiku.rag.graph.agui.stream import stream_graph
 
@@ -21,7 +26,7 @@ from haiku.rag.graph.agui.stream import stream_graph
 class GraphDeps(Protocol):
     """Protocol for graph dependencies that support AG-UI emission."""
 
-    agui_emitter: Any | None
+    agui_emitter: AGUIEmitter[Any, Any] | None
 
 
 class RunAgentInput(BaseModel):
@@ -146,7 +151,7 @@ def format_sse_event(event: AGUIEvent) -> str:
     return f"data: {event_json}\n\n"
 
 
-def create_agui_server(config: Any, db_path: Any | None = None) -> Starlette:
+def create_agui_server(config: "AppConfig", db_path: Path | None = None) -> Starlette:
     """Create AG-UI server with both research and deep ask endpoints.
 
     Args:
@@ -167,7 +172,7 @@ def create_agui_server(config: Any, db_path: Any | None = None) -> Starlette:
     # Store client reference for proper lifecycle management
     _client_cache: dict[str, HaikuRAG] = {}
 
-    def get_client(effective_db_path: Any) -> HaikuRAG:
+    def get_client(effective_db_path: Path) -> HaikuRAG:
         """Get or create cached client."""
         path_key = str(effective_db_path)
         if path_key not in _client_cache:

@@ -3,24 +3,28 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import suppress
-from typing import Any, Protocol
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
+from pydantic_graph.beta import Graph
 
 from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.agui.events import AGUIEvent
 
+StateT = TypeVar("StateT", bound=BaseModel)
+ResultT = TypeVar("ResultT")
 
-class GraphDeps(Protocol):
+
+class GraphDeps[StateT: BaseModel, ResultT](Protocol):
     """Protocol for graph dependencies that support AG-UI emission."""
 
-    agui_emitter: AGUIEmitter[Any, Any] | None
+    agui_emitter: AGUIEmitter[StateT, ResultT] | None
 
 
-async def stream_graph(
-    graph: Any,
-    state: BaseModel,
-    deps: GraphDeps,
+async def stream_graph[StateT: BaseModel, DepsT: GraphDeps, ResultT](
+    graph: Graph[StateT, DepsT, None, ResultT],
+    state: StateT,
+    deps: DepsT,
     use_deltas: bool = True,
 ) -> AsyncIterator[AGUIEvent]:
     """Run a graph and yield AG-UI events as they occur.
@@ -48,8 +52,8 @@ async def stream_graph(
         raise TypeError("deps must have an 'agui_emitter' attribute")
 
     # Create AG-UI emitter
-    emitter: AGUIEmitter[Any, Any] = AGUIEmitter(use_deltas=use_deltas)
-    deps.agui_emitter = emitter
+    emitter: AGUIEmitter[StateT, ResultT] = AGUIEmitter(use_deltas=use_deltas)
+    deps.agui_emitter = emitter  # type: ignore[assignment]
 
     async def _execute() -> None:
         try:

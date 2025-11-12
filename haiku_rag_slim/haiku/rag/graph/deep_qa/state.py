@@ -1,20 +1,22 @@
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+from haiku.rag.graph.deep_qa.models import DeepQAAnswer
 
 if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig
+    from haiku.rag.graph.agui.emitter import AGUIEmitter
 
 
 @dataclass
 class DeepQADeps:
     client: HaikuRAG
-    agui_emitter: Any | None = None
+    agui_emitter: "AGUIEmitter[DeepQAState, DeepQAAnswer] | None" = None
     semaphore: asyncio.Semaphore | None = None
 
 
