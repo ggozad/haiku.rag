@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.common.models import SearchAnswer
@@ -28,26 +28,29 @@ class ResearchContext(BaseModel):
         default_factory=list, description="Identified information gaps"
     )
 
+    # Private dict indexes for O(1) lookups
+    _insights_by_id: dict[str, InsightRecord] = PrivateAttr(default_factory=dict)
+    _gaps_by_id: dict[str, GapRecord] = PrivateAttr(default_factory=dict)
+
+    def model_post_init(self, __context: object) -> None:
+        """Build indexes after initialization."""
+        self._insights_by_id = {ins.id: ins for ins in self.insights}
+        self._gaps_by_id = {gap.id: gap for gap in self.gaps}
+
     def add_qa_response(self, qa: SearchAnswer) -> None:
         """Add a structured QA response (minimal context already included)."""
         self.qa_responses.append(qa)
 
     def upsert_insights(self, records: Iterable[InsightRecord]) -> list[InsightRecord]:
         """Merge one or more insights into the shared context with deduplication."""
-
         merged: list[InsightRecord] = []
+
         for record in records:
             candidate = InsightRecord.model_validate(record)
-            existing = next(
-                (ins for ins in self.insights if ins.id == candidate.id), None
-            )
-            if not existing:
-                existing = next(
-                    (ins for ins in self.insights if ins.summary == candidate.summary),
-                    None,
-                )
+            existing = self._insights_by_id.get(candidate.id)
 
             if existing:
+                # Update existing insight
                 existing.summary = candidate.summary
                 existing.status = candidate.status
                 if candidate.notes:
@@ -60,36 +63,24 @@ class ResearchContext(BaseModel):
                 )
                 merged.append(existing)
             else:
-                candidate = candidate.model_copy(deep=True)
-                if candidate.id is None:  # pragma: no cover - defensive
-                    raise ValueError(
-                        "InsightRecord.id must be populated after validation"
-                    )
-                candidate_id: str = candidate.id
-                candidate.id = self._allocate_insight_id(candidate_id)
-                self.insights.append(candidate)
-                merged.append(candidate)
+                # Add new insight
+                new_insight = candidate.model_copy(deep=True)
+                self.insights.append(new_insight)
+                self._insights_by_id[new_insight.id] = new_insight
+                merged.append(new_insight)
 
         return merged
 
     def upsert_gaps(self, records: Iterable[GapRecord]) -> list[GapRecord]:
         """Merge one or more gap records into the shared context with deduplication."""
-
         merged: list[GapRecord] = []
+
         for record in records:
             candidate = GapRecord.model_validate(record)
-            existing = next((gap for gap in self.gaps if gap.id == candidate.id), None)
-            if not existing:
-                existing = next(
-                    (
-                        gap
-                        for gap in self.gaps
-                        if gap.description == candidate.description
-                    ),
-                    None,
-                )
+            existing = self._gaps_by_id.get(candidate.id)
 
             if existing:
+                # Update existing gap
                 existing.description = candidate.description
                 existing.severity = candidate.severity
                 existing.blocking = candidate.blocking
@@ -104,22 +95,19 @@ class ResearchContext(BaseModel):
                 )
                 merged.append(existing)
             else:
-                candidate = candidate.model_copy(deep=True)
-                if candidate.id is None:  # pragma: no cover - defensive
-                    raise ValueError("GapRecord.id must be populated after validation")
-                candidate_id: str = candidate.id
-                candidate.id = self._allocate_gap_id(candidate_id)
-                self.gaps.append(candidate)
-                merged.append(candidate)
+                # Add new gap
+                new_gap = candidate.model_copy(deep=True)
+                self.gaps.append(new_gap)
+                self._gaps_by_id[new_gap.id] = new_gap
+                merged.append(new_gap)
 
         return merged
 
     def mark_gap_resolved(
         self, identifier: str, resolved_by: Iterable[str] | None = None
     ) -> GapRecord | None:
-        """Mark a gap as resolved by identifier (id or description)."""
-
-        gap = self._find_gap(identifier)
+        """Mark a gap as resolved by identifier."""
+        gap = self._gaps_by_id.get(identifier)
         if gap is None:
             return None
 
@@ -131,7 +119,6 @@ class ResearchContext(BaseModel):
 
     def integrate_analysis(self, analysis: InsightAnalysis) -> None:
         """Apply an analysis result to the shared context."""
-
         merged_insights: list[InsightRecord] = []
         if analysis.highlights:
             merged_insights = self.upsert_insights(analysis.highlights)
@@ -141,38 +128,13 @@ class ResearchContext(BaseModel):
             analysis.gap_assessments = merged_gaps
         if analysis.resolved_gaps:
             resolved_by_list = (
-                [ins.id for ins in merged_insights if ins.id is not None]
-                if merged_insights
-                else None
+                [ins.id for ins in merged_insights] if merged_insights else None
             )
             for resolved in analysis.resolved_gaps:
                 self.mark_gap_resolved(resolved, resolved_by=resolved_by_list)
         for question in analysis.new_questions:
             if question not in self.sub_questions:
                 self.sub_questions.append(question)
-
-    def _allocate_insight_id(self, candidate_id: str) -> str:
-        taken: set[str] = set()
-        for ins in self.insights:
-            if ins.id is not None:
-                taken.add(ins.id)
-        return _allocate_sequential_id(candidate_id, taken)
-
-    def _allocate_gap_id(self, candidate_id: str) -> str:
-        taken: set[str] = set()
-        for gap in self.gaps:
-            if gap.id is not None:
-                taken.add(gap.id)
-        return _allocate_sequential_id(candidate_id, taken)
-
-    def _find_gap(self, identifier: str) -> GapRecord | None:
-        normalized = identifier.lower().strip()
-        for gap in self.gaps:
-            if gap.id is not None and gap.id == normalized:
-                return gap
-            if gap.description.lower().strip() == normalized:
-                return gap
-        return None
 
 
 class ResearchDependencies(BaseModel):
@@ -186,24 +148,4 @@ class ResearchDependencies(BaseModel):
 
 def _merge_unique(existing: list[str], incoming: Iterable[str]) -> list[str]:
     """Merge two iterables preserving order while removing duplicates."""
-
-    merged = list(existing)
-    seen = {item for item in existing if item}
-    for item in incoming:
-        if item and item not in seen:
-            merged.append(item)
-            seen.add(item)
-    return merged
-
-
-def _allocate_sequential_id(candidate: str, taken: set[str]) -> str:
-    slug = candidate
-    if slug not in taken:
-        return slug
-    base = slug
-    counter = 2
-    while True:
-        slug = f"{base}-{counter}"
-        if slug not in taken:
-            return slug
-        counter += 1
+    return [k for k in dict.fromkeys([*existing, *incoming]) if k]

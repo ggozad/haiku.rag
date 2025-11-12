@@ -239,7 +239,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
             if deps.agui_emitter:
                 deps.agui_emitter.update_state(state)
                 # Format the success message
-                if "{confidence}" in success_message_format:
+                if "{confidence" in success_message_format:
                     message = success_message_format.format(
                         sub_q=sub_q, confidence=answer.confidence
                     )
