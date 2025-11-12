@@ -37,9 +37,10 @@ async def test_renderer_basic_flow():
     renderer = AGUIConsoleRenderer(console)
 
     events = [
-        emit_run_started("t1", "r1"),
+        emit_run_started("t1", "r1-test-run-id"),
         emit_state_snapshot(SimpleState(value=1)),
         emit_step_started("plan"),
+        emit_step_finished("plan"),
         emit_activity("m1", "planning", "Planning research"),
         emit_run_finished("t1", "r1", {"status": "complete"}),
     ]
@@ -183,3 +184,21 @@ async def test_renderer_state_delta_without_initial():
 
     result = await renderer.render(async_gen(events))
     assert result == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_renderer_lifecycle_events():
+    """Test that lifecycle events are rendered properly."""
+    renderer = AGUIConsoleRenderer()
+
+    events = [
+        emit_run_started("thread-123", "run-abc-def-ghi"),  # Long run ID
+        emit_step_started("search_one"),
+        emit_step_finished("search_one"),
+        emit_step_started("analyze_insights"),
+        emit_step_finished("analyze_insights"),
+        emit_run_finished("thread-123", "run-abc-def-ghi", {"complete": True}),
+    ]
+
+    result = await renderer.render(async_gen(events))
+    assert result == {"complete": True}

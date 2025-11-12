@@ -67,11 +67,17 @@ class AGUIConsoleRenderer:
 
         return result
 
-    def _render_run_started(self, _event: AGUIEvent) -> None:
+    def _render_run_started(self, event: AGUIEvent) -> None:
         """Render run start event."""
+        run_id = event.get("runId", "")
+        if run_id:
+            # Show shortened run ID (first 8 chars like our UUIDs)
+            short_id = run_id[:8] if len(run_id) > 8 else run_id
+            self.console.print(f"[bold green][RUN_STARTED][/bold green] Run {short_id}")
 
     def _render_run_finished(self) -> None:
         """Render run completion."""
+        self.console.print("[bold green][RUN_FINISHED][/bold green] Completed")
 
     def _render_error(self, event: AGUIEvent) -> None:
         """Render error event."""
@@ -87,8 +93,12 @@ class AGUIConsoleRenderer:
                 f"\n[bold cyan][STEP_STARTED][/bold cyan] {display_name}"
             )
 
-    def _render_step_finished(self, _event: AGUIEvent) -> None:
+    def _render_step_finished(self, event: AGUIEvent) -> None:
         """Render step finish event."""
+        step_name = event.get("stepName", "")
+        if step_name:
+            display_name = step_name.replace("_", " ").title()
+            self.console.print(f"[cyan][STEP_FINISHED][/cyan] {display_name}")
 
     def _render_text_message(self, event: AGUIEvent) -> None:
         """Render complete text message."""
