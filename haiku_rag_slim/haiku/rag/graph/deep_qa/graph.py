@@ -1,16 +1,13 @@
-from typing import Any
-
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from pydantic_ai.format_prompt import format_as_xml
-from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import Graph, GraphBuilder, StepContext
 from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.graph.common import get_model
-from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
-from haiku.rag.graph.common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
+from haiku.rag.graph.common.models import SearchAnswer
+from haiku.rag.graph.common.nodes import create_plan_node, create_search_node
 from haiku.rag.graph.deep_qa.dependencies import DeepQADependencies
 from haiku.rag.graph.deep_qa.models import DeepQAAnswer, DeepQAEvaluation
 from haiku.rag.graph.deep_qa.prompts import (
@@ -40,133 +37,28 @@ def build_deep_qa_graph(
         output_type=DeepQAAnswer,
     )
 
-    @g.step
-    async def plan(ctx: StepContext[DeepQAState, DeepQADeps, None]) -> None:
-        state = ctx.state
-        deps = ctx.deps
-
-        if deps.agui_emitter:
-            deps.agui_emitter.start_step("plan")
-            deps.agui_emitter.update_activity("planning", "Planning approach")
-
-        try:
-            plan_agent = Agent(
-                model=get_model(provider, model),
-                output_type=ResearchPlan,
-                instructions=(
-                    PLAN_PROMPT
-                    + "\n\nUse the gather_context tool once on the main question before planning."
-                ),
-                retries=3,
-                deps_type=DeepQADependencies,
-            )
-
-            @plan_agent.tool
-            async def gather_context(
-                ctx2: RunContext[DeepQADependencies], query: str, limit: int = 6
-            ) -> str:
-                results = await ctx2.deps.client.search(query, limit=limit)
-                expanded = await ctx2.deps.client.expand_context(results)
-                return "\n\n".join(chunk.content for chunk, _ in expanded)
-
-            prompt = (
-                "Plan a focused approach for the main question.\n\n"
-                f"Main question: {state.context.original_question}"
-            )
-
-            agent_deps = DeepQADependencies(
-                client=deps.client,
-                context=state.context,
-            )
-            plan_result = await plan_agent.run(prompt, deps=agent_deps)
-            state.context.sub_questions = list(plan_result.output.sub_questions)
-
-            if deps.agui_emitter:
-                deps.agui_emitter.update_state(state)
-                count = len(state.context.sub_questions)
-                deps.agui_emitter.update_activity(
-                    "planning", f"Created plan with {count} sub-questions"
-                )
-        finally:
-            if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
-
-    @g.step
-    async def search_one(
-        ctx: StepContext[DeepQAState, DeepQADeps, str],
-    ) -> SearchAnswer:
-        state = ctx.state
-        deps = ctx.deps
-        sub_q = ctx.inputs
-
-        # Create semaphore if not already provided
-        if deps.semaphore is None:
-            import asyncio
-
-            deps.semaphore = asyncio.Semaphore(state.max_concurrency)
-
-        # Use semaphore to control concurrency
-        async with deps.semaphore:
-            return await _do_search(state, deps, sub_q)
-
-    async def _do_search(
-        state: DeepQAState,
-        deps: DeepQADeps,
-        sub_q: str,
-    ) -> SearchAnswer:
-        if deps.agui_emitter:
-            deps.agui_emitter.update_activity("searching", f"Searching: {sub_q}")
-
-        agent = Agent(
-            model=get_model(provider, model),
-            output_type=ToolOutput(SearchAnswer, max_retries=3),
-            instructions=SEARCH_AGENT_PROMPT,
-            retries=3,
-            deps_type=DeepQADependencies,
+    # Create and register the plan node using the factory
+    plan = g.step(
+        create_plan_node(
+            provider=provider,
+            model=model,
+            deps_type=DeepQADependencies,  # type: ignore[arg-type]
+            activity_message="Planning approach",
+            output_retries=None,  # Deep QA doesn't use output_retries
         )
+    )  # type: ignore[arg-type]
 
-        @agent.tool
-        async def search_and_answer(
-            ctx2: RunContext[DeepQADependencies], query: str, limit: int = 5
-        ) -> str:
-            search_results = await ctx2.deps.client.search(query, limit=limit)
-            expanded = await ctx2.deps.client.expand_context(search_results)
-
-            entries: list[dict[str, Any]] = [
-                {
-                    "text": chunk.content,
-                    "score": score,
-                    "document_uri": (chunk.document_title or chunk.document_uri or ""),
-                }
-                for chunk, score in expanded
-            ]
-            if not entries:
-                return (
-                    f"No relevant information found in the knowledge base for: {query}"
-                )
-
-            return format_as_xml(entries, root_tag="snippets")
-
-        agent_deps = DeepQADependencies(
-            client=deps.client,
-            context=state.context,
+    # Create and register the search_one node using the factory
+    search_one = g.step(
+        create_search_node(
+            provider=provider,
+            model=model,
+            deps_type=DeepQADependencies,  # type: ignore[arg-type]
+            with_step_wrapper=False,  # Deep QA doesn't wrap with agui_emitter step
+            success_message_format="Answered: {sub_q}",
+            handle_exceptions=True,
         )
-        try:
-            result = await agent.run(sub_q, deps=agent_deps)
-            answer = result.output
-            if answer:
-                state.context.add_qa_response(answer)
-                if deps.agui_emitter:
-                    deps.agui_emitter.update_state(state)
-                    deps.agui_emitter.update_activity("searching", f"Answered: {sub_q}")
-            return answer
-        except Exception as e:
-            failure_answer = SearchAnswer(
-                query=sub_q,
-                answer=f"Search failed after retries: {str(e)}",
-                confidence=0.0,
-            )
-            return failure_answer
+    )  # type: ignore[arg-type]
 
     @g.step
     async def get_batch(
