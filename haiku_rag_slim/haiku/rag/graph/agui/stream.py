@@ -21,6 +21,7 @@ async def stream_graph(
     graph: Any,
     state: BaseModel,
     deps: GraphDeps,
+    use_deltas: bool = True,
 ) -> AsyncIterator[AGUIEvent]:
     """Run a graph and yield AG-UI events as they occur.
 
@@ -34,6 +35,7 @@ async def stream_graph(
         graph: The pydantic-graph Graph to execute
         state: Initial state (Pydantic BaseModel)
         deps: Graph dependencies with agui_emitter support
+        use_deltas: Whether to emit state deltas instead of full snapshots (default: True)
 
     Yields:
         AG-UI event dictionaries
@@ -46,7 +48,7 @@ async def stream_graph(
         raise TypeError("deps must have an 'agui_emitter' attribute")
 
     # Create AG-UI emitter
-    emitter: AGUIEmitter[Any, Any] = AGUIEmitter()
+    emitter: AGUIEmitter[Any, Any] = AGUIEmitter(use_deltas=use_deltas)
     deps.agui_emitter = emitter
 
     async def _execute() -> None:

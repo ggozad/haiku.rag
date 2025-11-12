@@ -10,6 +10,7 @@ from haiku.rag.graph.agui.events import (
     emit_run_error,
     emit_run_finished,
     emit_run_started,
+    emit_state_delta,
     emit_state_snapshot,
     emit_step_finished,
     emit_step_started,
@@ -49,32 +50,18 @@ async def test_renderer_basic_flow():
 
 
 @pytest.mark.asyncio
-async def test_renderer_state_diff():
-    """Test that renderer computes state diffs correctly."""
+async def test_renderer_multiple_snapshots():
+    """Test that renderer handles multiple snapshots without errors."""
     renderer = AGUIConsoleRenderer()
 
-    # First state
-    old_state = {"value": 1, "text": "old", "nested": {"a": 1, "b": 2}}
-    # Second state with changes
-    new_state = {"value": 2, "text": "old", "nested": {"a": 1, "b": 3, "c": 4}}
+    events = [
+        emit_state_snapshot(SimpleState(value=1)),
+        emit_state_snapshot(SimpleState(value=2)),
+    ]
 
-    diff = renderer._compute_diff(old_state, new_state)
-
-    assert diff == {
-        "value": 2,
-        "nested": {"b": 3, "c": 4},  # Only changed/new fields in nested
-    }
-
-
-@pytest.mark.asyncio
-async def test_renderer_state_diff_no_changes():
-    """Test that no diff is computed when states are equal."""
-    renderer = AGUIConsoleRenderer()
-
-    state = {"value": 1, "text": "test"}
-    diff = renderer._compute_diff(state, state)
-
-    assert diff == {}
+    # Should render both snapshots without error
+    result = await renderer.render(async_gen(events))
+    assert result is None  # No run finished event
 
 
 @pytest.mark.asyncio
@@ -99,19 +86,18 @@ async def test_renderer_handles_all_event_types():
 
 
 @pytest.mark.asyncio
-async def test_renderer_initial_state():
-    """Test that initial state is rendered."""
+async def test_renderer_state_snapshots():
+    """Test that state snapshots are rendered."""
     renderer = AGUIConsoleRenderer()
 
     events = [
         emit_state_snapshot(SimpleState(value=1)),
         emit_state_snapshot(SimpleState(value=2)),
+        emit_run_finished("t1", "r1", {"done": True}),
     ]
 
-    await renderer.render(async_gen(events))
-
-    # After processing, internal state should be the last state
-    assert renderer._state == {"value": 2}
+    result = await renderer.render(async_gen(events))
+    assert result == {"done": True}
 
 
 @pytest.mark.asyncio
@@ -129,18 +115,23 @@ async def test_renderer_no_result():
 
 
 @pytest.mark.asyncio
-async def test_renderer_nested_state_diff():
-    """Test nested state diff computation."""
+async def test_renderer_snapshot_then_delta():
+    """Test that renderer handles snapshot followed by deltas."""
     renderer = AGUIConsoleRenderer()
 
-    old = {"level1": {"level2": {"value": 1, "text": "old"}, "other": "same"}}
+    state1 = SimpleState(value=1)
+    state2 = SimpleState(value=2)
+    state3 = SimpleState(value=3)
 
-    new = {"level1": {"level2": {"value": 2, "text": "old"}, "other": "same"}}
+    events = [
+        emit_state_snapshot(state1),  # Initial snapshot
+        emit_state_delta(state1, state2),  # Delta to value=2
+        emit_state_delta(state2, state3),  # Delta to value=3
+        emit_run_finished("t1", "r1", {"complete": True}),
+    ]
 
-    diff = renderer._compute_diff(old, new)
-
-    # Should only show the changed nested value
-    assert diff == {"level1": {"level2": {"value": 2}}}
+    result = await renderer.render(async_gen(events))
+    assert result == {"complete": True}
 
 
 @pytest.mark.asyncio
@@ -156,3 +147,39 @@ async def test_renderer_with_empty_state():
 
     result = await renderer.render(async_gen(events))
     assert result == {"result": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_renderer_state_delta():
+    """Test that renderer renders state deltas."""
+    renderer = AGUIConsoleRenderer()
+
+    state1 = SimpleState(value=1)
+    state2 = SimpleState(value=2)
+
+    events = [
+        emit_state_snapshot(state1),  # Initial state
+        emit_state_delta(state1, state2),  # Delta update
+        emit_run_finished("t1", "r1", None),
+    ]
+
+    result = await renderer.render(async_gen(events))
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_renderer_state_delta_without_initial():
+    """Test that renderer handles delta without initial state gracefully."""
+    renderer = AGUIConsoleRenderer()
+
+    state1 = SimpleState(value=1)
+    state2 = SimpleState(value=2)
+
+    # Send delta without initial snapshot - should still render it
+    events = [
+        emit_state_delta(state1, state2),
+        emit_run_finished("t1", "r1", {"ok": True}),
+    ]
+
+    result = await renderer.render(async_gen(events))
+    assert result == {"ok": True}

@@ -13,6 +13,7 @@ from haiku.rag.graph.agui.events import (
     emit_run_error,
     emit_run_finished,
     emit_run_started,
+    emit_state_delta,
     emit_state_snapshot,
     emit_step_finished,
     emit_step_started,
@@ -35,12 +36,18 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         ResultT: The result type returned by the graph
     """
 
-    def __init__(self, thread_id: str | None = None, run_id: str | None = None):
+    def __init__(
+        self,
+        thread_id: str | None = None,
+        run_id: str | None = None,
+        use_deltas: bool = True,
+    ):
         """Initialize the emitter.
 
         Args:
             thread_id: Optional thread ID (generated from input hash if not provided)
             run_id: Optional run ID (random UUID if not provided)
+            use_deltas: Whether to emit state deltas instead of full snapshots (default: True)
         """
         self._queue: asyncio.Queue[AGUIEvent | None] = asyncio.Queue()
         self._closed = False
@@ -48,6 +55,7 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         self._run_id = run_id or str(uuid4())
         self._last_state: StateT | None = None
         self._current_step: str | None = None
+        self._use_deltas = use_deltas
 
     @property
     def thread_id(self) -> str:
@@ -73,7 +81,8 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         # RunStarted (state snapshot follows immediately with full state)
         self._emit(emit_run_started(self._thread_id, self._run_id))
         self._emit(emit_state_snapshot(initial_state))
-        self._last_state = initial_state
+        # Store a deep copy to detect future changes
+        self._last_state = initial_state.model_copy(deep=True)
 
     def start_step(self, step_name: str) -> None:
         """Emit StepStarted event.
@@ -100,14 +109,19 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         self._emit(emit_text_message(message, role))
 
     def update_state(self, new_state: StateT) -> None:
-        """Emit StateSnapshot for state change.
+        """Emit StateDelta or StateSnapshot for state change.
 
         Args:
             new_state: The updated state
         """
-        # Always emit full snapshot (not delta) for complete state visibility
-        self._emit(emit_state_snapshot(new_state))
-        self._last_state = new_state
+        if self._use_deltas and self._last_state is not None:
+            # Emit delta for incremental updates
+            self._emit(emit_state_delta(self._last_state, new_state))
+        else:
+            # Emit full snapshot for initial state or when deltas disabled
+            self._emit(emit_state_snapshot(new_state))
+        # Store a deep copy to detect future changes
+        self._last_state = new_state.model_copy(deep=True)
 
     def update_activity(
         self, activity_type: str, content: str, message_id: str | None = None

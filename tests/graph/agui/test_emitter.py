@@ -67,8 +67,8 @@ async def test_emitter_step_events():
 
 @pytest.mark.asyncio
 async def test_emitter_state_updates():
-    """Test state update events."""
-    emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter()
+    """Test state update events with snapshots."""
+    emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter(use_deltas=False)
 
     state1 = TestState(value=1, text="first")
     state2 = TestState(value=2, text="second")
@@ -85,6 +85,38 @@ async def test_emitter_state_updates():
     assert len(state_events) == 2
     assert state_events[0]["snapshot"] == {"value": 1, "text": "first"}
     assert state_events[1]["snapshot"] == {"value": 2, "text": "second"}
+
+
+@pytest.mark.asyncio
+async def test_emitter_state_deltas():
+    """Test state update events with deltas."""
+    emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter(use_deltas=True)
+
+    state1 = TestState(value=1, text="first")
+    state2 = TestState(value=2, text="second")
+
+    emitter.update_state(state1)
+    emitter.update_state(state2)
+    await emitter.close()
+
+    events = []
+    async for event in emitter:
+        events.append(event)
+
+    # First update should be a snapshot (no previous state)
+    snapshot_events = [e for e in events if e["type"] == "STATE_SNAPSHOT"]
+    assert len(snapshot_events) == 1
+    assert snapshot_events[0]["snapshot"] == {"value": 1, "text": "first"}
+
+    # Second update should be a delta
+    delta_events = [e for e in events if e["type"] == "STATE_DELTA"]
+    assert len(delta_events) == 1
+    # Delta should contain replace operations for changed fields
+    delta = delta_events[0]["delta"]
+    assert isinstance(delta, list)
+    assert len(delta) == 2  # Two fields changed
+    assert any(op["path"] == "/value" and op["value"] == 2 for op in delta)
+    assert any(op["path"] == "/text" and op["value"] == "second" for op in delta)
 
 
 @pytest.mark.asyncio

@@ -22,7 +22,6 @@ class AGUIConsoleRenderer:
             console: Optional Rich console instance (creates new one if not provided)
         """
         self.console = console or Console()
-        self._state: dict | None = None
 
     async def render(self, events: AsyncIterator[AGUIEvent]) -> Any | None:
         """Process events and render to console, return final result.
@@ -58,11 +57,9 @@ class AGUIConsoleRenderer:
             elif event_type == "TEXT_MESSAGE_END":
                 pass  # End of streaming message, no output needed
             elif event_type == "STATE_SNAPSHOT":
-                new_state = event.get("snapshot")
-                self._render_state_snapshot(new_state)
-                self._state = new_state
+                self._render_state_snapshot(event)
             elif event_type == "STATE_DELTA":
-                self._apply_state_delta(event)
+                self._render_state_delta(event)
             elif event_type == "ACTIVITY_SNAPSHOT":
                 self._render_activity(event)
             elif event_type == "ACTIVITY_DELTA":
@@ -109,33 +106,20 @@ class AGUIConsoleRenderer:
         if content:
             self.console.print(f"[yellow][ACTIVITY][/yellow] {content}")
 
-    def _render_state_snapshot(self, new_state: dict | None) -> None:
-        """Render state snapshot showing only what changed."""
-        if not new_state:
-            return
-
-        old_state = self._state or {}
-        diff = self._compute_diff(old_state, new_state)
-
-        if not diff:
+    def _render_state_snapshot(self, event: AGUIEvent) -> None:
+        """Render full state snapshot."""
+        snapshot = event.get("snapshot")
+        if not snapshot:
             return
 
         self.console.print("[blue][STATE_SNAPSHOT][/blue]")
-        self.console.print(diff, style="dim")
+        self.console.print(snapshot, style="dim")
 
-    def _compute_diff(self, old: dict, new: dict) -> dict:
-        """Compute difference between old and new state."""
-        diff = {}
-        for key, new_value in new.items():
-            old_value = old.get(key)
-            if old_value != new_value:
-                if isinstance(new_value, dict) and isinstance(old_value, dict):
-                    nested_diff = self._compute_diff(old_value, new_value)
-                    if nested_diff:
-                        diff[key] = nested_diff
-                else:
-                    diff[key] = new_value
-        return diff
+    def _render_state_delta(self, event: AGUIEvent) -> None:
+        """Render state delta operations."""
+        delta = event.get("delta", [])
+        if not delta:
+            return
 
-    def _apply_state_delta(self, _event: AGUIEvent) -> None:
-        """Apply state delta to current state."""
+        self.console.print("[blue][STATE_DELTA][/blue]")
+        self.console.print(delta, style="dim")
