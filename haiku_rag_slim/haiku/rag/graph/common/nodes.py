@@ -156,8 +156,11 @@ def create_search_node[AgentDepsT: GraphAgentDeps](
         deps: GraphDeps = ctx.deps  # type: ignore[assignment]
         sub_q = ctx.inputs
 
+        # Create unique step name from question text
+        step_name = f"search: {sub_q}"
+
         if deps.agui_emitter and with_step_wrapper:
-            deps.agui_emitter.start_step("search_one")
+            deps.agui_emitter.start_step(step_name)
 
         try:
             # Create semaphore if not already provided

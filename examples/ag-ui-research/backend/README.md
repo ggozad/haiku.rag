@@ -1,6 +1,6 @@
 # Haiku.rag Research Assistant Backend
 
-FastAPI backend for the haiku.rag interactive research assistant, using Pydantic AI with AG-UI protocol support.
+Starlette backend for the haiku.rag interactive research assistant, using the research graph with AG-UI protocol support.
 
 ## Setup
 
@@ -11,7 +11,17 @@ uv run python main.py
 
 The server starts on `http://localhost:8000` and uses [haiku.rag configuration](https://ggozad.github.io/haiku.rag/configuration/).
 
+## Architecture
+
+The backend uses `create_agui_server()` from `haiku.rag.graph.agui.server` which provides:
+
+- **Research graph execution**: Multi-iteration research workflow with insight/gap tracking
+- **AG-UI protocol**: Server-Sent Events (SSE) streaming for real-time state updates
+- **Delta state updates**: Efficient incremental state synchronization using JSON Patch operations
+- **Both research and deep_qa endpoints**: `/agent/research` and `/agent/deep_qa`
+
 ## Endpoints
 
-- `GET /health` - Health check
-- `POST /agent` - AG-UI protocol endpoint
+- `GET /health` - Health check with configuration info
+- `POST /agent/research/stream` - Research graph streaming endpoint (AG-UI protocol)
+- `POST /agent/deep_qa/stream` - Deep QA graph streaming endpoint (AG-UI protocol)

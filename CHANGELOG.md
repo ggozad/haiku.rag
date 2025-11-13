@@ -21,6 +21,12 @@
 - **CLI AG-UI Flag**: New `--agui` flag for `serve` command to start AG-UI server
 - **Graph Module**: New unified `haiku.rag.graph` module containing all graph-related functionality
 - **Common Graph Nodes**: New factory functions (`create_plan_node`, `create_search_node`) in `haiku.rag.graph.common.nodes` for reusable graph components
+- **AG-UI Research Example**: New full-stack example (`examples/ag-ui-research`) demonstrating agent+graph architecture with CopilotKit frontend
+  - Pydantic AI agent with research tool that invokes the research graph
+  - Custom AG-UI streaming endpoint with anyio memory streams
+  - React/Next.js frontend with split-pane UI showing live research state
+  - Real-time progress tracking of questions, answers, insights, and gaps
+  - Docker Compose setup for easy local development
 
 ### Changed
 

@@ -9,7 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.34.2",
     "pydantic-ai-slim[ag-ui,openai]>=1.1.0",
     "python-dotenv>=1.0.1",
-    "haiku-rag>=0.12.1",
+    "haiku-rag-slim @ file:///Users/ggozad/dev/open-source/haiku.rag-agui/haiku_rag_slim",
 ]
 
 [dependency-groups]
@@ -17,6 +17,9 @@ dev = [
     "pyright>=1.1.406",
     "ruff>=0.13.0",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

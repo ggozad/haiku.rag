@@ -1,20 +1,23 @@
 # haiku.rag configuration for ag-ui-research example
 # Copy to haiku.rag.yaml and customize
 
-qa:
+research:
   provider: ollama
   model: gpt-oss:latest
+  max_iterations: 3
+  confidence_threshold: 0.8
+  max_concurrency: 1
 
 providers:
   ollama:
     base_url: http://host.docker.internal:11434
 
 # For OpenAI:
-# qa:
+# research:
 #   provider: openai
 #   model: gpt-4o-mini
 
 # For Anthropic:
-# qa:
+# research:
 #   provider: anthropic
 #   model: claude-3-5-haiku-20241022

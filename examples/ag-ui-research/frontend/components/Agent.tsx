@@ -1,208 +1,94 @@
 "use client";
 
-import {
-	CopilotKit,
-	useCoAgent,
-	useCoAgentStateRender,
-	useCopilotAction,
-} from "@copilotkit/react-core";
+import { CopilotKit, useCoAgent } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import StateDisplay from "./StateDisplay";
 
-interface SourceRef {
-	chunk_id: string;
-	document_uri: string;
-	document_title: string;
-	chunk_position: number;
+interface InsightRecord {
+	id: string;
+	summary: string;
+	status: string;
+	notes?: string;
+	supporting_sources: string[];
+	originating_questions: string[];
+}
+
+interface GapRecord {
+	id: string;
+	description: string;
+	severity: string;
+	blocking: boolean;
+	resolved: boolean;
+	notes?: string;
+	supporting_sources: string[];
+	resolved_by: string[];
+}
+
+interface SearchAnswer {
+	query: string;
+	answer: string;
+	confidence: number;
+	context: string[];
+	sources: string[];
+}
+
+interface ResearchContext {
+	original_question: string;
+	sub_questions: string[];
+	qa_responses: SearchAnswer[];
+	insights: InsightRecord[];
+	gaps: GapRecord[];
+}
+
+interface EvaluationResult {
+	confidence: number;
+	reasoning: string;
+	should_continue: boolean;
+	gaps_identified: string[];
+	follow_up_questions: string[];
+}
+
+interface ResearchReport {
+	question: string;
+	summary: string;
+	findings: string[];
+	conclusions: string[];
+	insights_used: string[];
+	methodology: string;
 }
 
 interface ResearchState {
-	question: string;
-	phase: string;
-	status: string;
-	plan: Array<{
-		id: number;
-		question: string;
-		status: string;
-		search_results?: {
-			type: string;
-			results: Array<{
-				chunk: string;
-				chunk_id: string;
-				document_uri: string;
-				document_title: string;
-				chunk_position: number;
-				full_chunk_content: string;
-				score: number;
-				expanded: boolean;
-			}>;
-		};
-	}>;
-	current_question_index: number;
-	insights: Array<{
-		summary: string;
-		confidence: number;
-		source_refs: SourceRef[];
-	}>;
-	document_registry: Record<
-		string,
-		{
-			title: string;
-			chunks_referenced: string[];
-		}
-	>;
-	current_document: {
-		uri: string;
-		title: string;
-		content: string;
-		total_chunks: number;
-		metadata?: Record<string, unknown>;
+	context: ResearchContext;
+	iterations: number;
+	max_iterations: number;
+	confidence_threshold: number;
+	max_concurrency: number;
+	last_eval: EvaluationResult | null;
+	last_analysis: {
+		insights_extracted: InsightRecord[];
+		gaps_identified: GapRecord[];
 	} | null;
-	confidence: number;
-	final_report: {
-		title: string;
-		summary: string;
-		findings: string[];
-		conclusions: string[];
-		sources: string[];
-		citations: Array<{
-			document_uri: string;
-			document_title: string;
-			chunk_ids: string[];
-		}>;
-	} | null;
+	result?: ResearchReport;
 }
 
 function AgentContent() {
 	const { state } = useCoAgent<ResearchState>({
 		name: "research_agent",
 		initialState: {
-			question: "",
-			phase: "idle",
-			status: "",
-			plan: [],
-			current_question_index: 0,
-			insights: [],
-			document_registry: {},
-			current_document: null,
-			confidence: 0.0,
-			final_report: null,
-		},
-	});
-
-	useCopilotAction({
-		name: "approve_research_plan",
-		description:
-			"Request user approval for the research plan. Returns 'APPROVED' if approved or 'REVISE' if user wants to revise.",
-		parameters: [],
-		renderAndWaitForResponse: ({ respond, status }) => (
-			<div
-				style={{
-					padding: "1.5rem",
-					background: "white",
-					borderRadius: "8px",
-					border: "2px solid #4299e1",
-					marginBottom: "1rem",
-					boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-				}}
-			>
-				<h3
-					style={{
-						fontSize: "1.25rem",
-						fontWeight: "bold",
-						marginBottom: "1rem",
-						color: "#2d3748",
-					}}
-				>
-					Research Plan Approval
-				</h3>
-				<p
-					style={{
-						fontSize: "0.875rem",
-						color: "#4a5568",
-						marginBottom: "1rem",
-					}}
-				>
-					Please review the research plan in the right pane.
-				</p>
-
-				<div
-					style={{
-						display: "flex",
-						gap: "1rem",
-					}}
-					className={status !== "executing" ? "hidden" : ""}
-				>
-					<button
-						type="button"
-						onClick={() => respond?.("REVISE")}
-						disabled={status !== "executing"}
-						style={{
-							flex: 1,
-							padding: "0.75rem",
-							background: "white",
-							border: "2px solid #e2e8f0",
-							borderRadius: "6px",
-							fontSize: "0.875rem",
-							fontWeight: "600",
-							cursor: status === "executing" ? "pointer" : "not-allowed",
-							opacity: status === "executing" ? 1 : 0.5,
-						}}
-					>
-						Revise Plan
-					</button>
-					<button
-						type="button"
-						onClick={() => respond?.("APPROVED")}
-						disabled={status !== "executing"}
-						style={{
-							flex: 1,
-							padding: "0.75rem",
-							background: "#4299e1",
-							color: "white",
-							border: "none",
-							borderRadius: "6px",
-							fontSize: "0.875rem",
-							fontWeight: "600",
-							cursor: status === "executing" ? "pointer" : "not-allowed",
-							opacity: status === "executing" ? 1 : 0.5,
-						}}
-					>
-						Approve & Start Research
-					</button>
-				</div>
-			</div>
-		),
-	});
-
-	useCoAgentStateRender<ResearchState>({
-		name: "research_agent",
-		render: ({ state: newState }) => {
-			const phaseMessages: Record<string, string> = {
-				planning: "Planning research...",
-				searching: "Searching...",
-				analyzing: "Extracting insights...",
-				evaluating: `Evaluating confidence: ${(newState.confidence * 100).toFixed(0)}%`,
-				synthesizing: "Generating final report...",
-				done: "Research complete!",
-			};
-			const phaseMessage =
-				phaseMessages[newState.phase] || newState.status || "Ready";
-
-			return (
-				<div
-					style={{
-						padding: "1rem",
-						background: "#e6f7ff",
-						borderRadius: "4px",
-						marginBottom: "0.5rem",
-						border: "1px solid #91d5ff",
-					}}
-				>
-					<strong>Research Update:</strong> {phaseMessage}
-				</div>
-			);
+			context: {
+				original_question: "",
+				sub_questions: [],
+				qa_responses: [],
+				insights: [],
+				gaps: [],
+			},
+			iterations: 0,
+			max_iterations: 3,
+			confidence_threshold: 0.8,
+			max_concurrency: 1,
+			last_eval: null,
+			last_analysis: null,
 		},
 	});
 
