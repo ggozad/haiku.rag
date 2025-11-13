@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.16.0] - 2025-11-13
+
 ### Added
 
 - **AG-UI Protocol Support**: Full AG-UI (Agent-UI) protocol implementation for graph execution with event streaming
