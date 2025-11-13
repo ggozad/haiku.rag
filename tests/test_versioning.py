@@ -37,7 +37,7 @@ async def test_version_rollback_on_create_failure(temp_db_path):
     dl_doc = text_to_docling_document(content, name="test.md")
 
     with pytest.raises(RuntimeError):
-        await repo._create_with_docling(doc, dl_doc)
+        await repo._create_and_chunk(doc, dl_doc)
 
     # State should be restored (no documents/chunks)
     docs = await repo.list_all()
@@ -66,7 +66,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     base_content = "Base content"
     base_doc = Document(content=base_content)
     base_dl = text_to_docling_document(base_content, name="base.md")
-    created = await repo._create_with_docling(base_doc, base_dl)
+    created = await repo._create_and_chunk(base_doc, base_dl)
 
     # Force new chunk creation to fail during update after writing
     orig = repo.chunk_repository.create_chunks_for_document
@@ -83,7 +83,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     updated_dl = text_to_docling_document(updated_content, name="updated.md")
 
     with pytest.raises(RuntimeError):
-        await repo._update_with_docling(created, updated_dl)
+        await repo._update_and_rechunk(created, updated_dl)
 
     # Content and chunks should remain the original
     persisted = await repo.get_by_id(created.id)  # type: ignore[arg-type]
@@ -142,12 +142,12 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
     # Create first document
     doc1 = Document(content="First document")
     dl_doc1 = text_to_docling_document("First document", name="doc1.md")
-    await repo._create_with_docling(doc1, dl_doc1)
+    await repo._create_and_chunk(doc1, dl_doc1)
 
     # Create second document
     doc2 = Document(content="Second document")
     dl_doc2 = text_to_docling_document("Second document", name="doc2.md")
-    await repo._create_with_docling(doc2, dl_doc2)
+    await repo._create_and_chunk(doc2, dl_doc2)
 
     # Get initial version counts (should have multiple versions from creates)
     initial_doc_versions = len(list(store.documents_table.list_versions()))
@@ -212,7 +212,7 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
         for i in range(3):
             doc = Document(content=f"Test document {i}")
             dl_doc = text_to_docling_document(f"Test document {i}", name=f"test{i}.md")
-            await client.document_repository._create_with_docling(doc, dl_doc)
+            await client.document_repository._create_and_chunk(doc, dl_doc)
 
     # After context exit, automatic vacuum should have kept versions minimal
     store = Store(temp_db_path)

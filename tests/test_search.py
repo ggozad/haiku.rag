@@ -36,9 +36,7 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
         from haiku.rag.utils import text_to_docling_document
 
         docling_document = text_to_docling_document(document_text, name="test.md")
-        created_document = await doc_repo._create_with_docling(
-            document, docling_document
-        )
+        created_document = await doc_repo._create_and_chunk(document, docling_document)
         documents.append((created_document, doc_data))
 
     # Test with first few unique documents
@@ -86,7 +84,7 @@ async def test_chunks_include_document_info(temp_db_path):
     from haiku.rag.utils import text_to_docling_document
 
     docling_document = text_to_docling_document(document.content, name="test.md")
-    created_document = await doc_repo._create_with_docling(document, docling_document)
+    created_document = await doc_repo._create_and_chunk(document, docling_document)
 
     # Search for chunks
     results = await chunk_repo.search("test document", limit=1, search_type="hybrid")
@@ -124,7 +122,7 @@ async def test_chunks_include_document_title(temp_db_path):
     from haiku.rag.utils import text_to_docling_document
 
     dl = text_to_docling_document(document.content, name="title-test.md")
-    await doc_repo._create_with_docling(document, dl)
+    await doc_repo._create_and_chunk(document, dl)
 
     # Perform a search that should find this document
     results = await chunk_repo.search("custom title", limit=3, search_type="hybrid")
@@ -158,7 +156,7 @@ async def test_search_score_types(temp_db_path):
         from haiku.rag.utils import text_to_docling_document
 
         docling_document = text_to_docling_document(content, name="test.md")
-        await doc_repo._create_with_docling(document, docling_document)
+        await doc_repo._create_and_chunk(document, docling_document)
 
     query = "machine learning"
 

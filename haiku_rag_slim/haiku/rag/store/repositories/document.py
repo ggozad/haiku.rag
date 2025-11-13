@@ -182,10 +182,10 @@ class DocumentRepository:
                 "documents", schema=DocumentRecord
             )
 
-    async def _create_with_docling(
+    async def _create_and_chunk(
         self,
         entity: Document,
-        docling_document: "DoclingDocument",
+        docling_document: "DoclingDocument | None",
         chunks: list["Chunk"] | None = None,
     ) -> Document:
         """Create a document with its chunks and embeddings."""
@@ -199,6 +199,9 @@ class DocumentRepository:
         try:
             # Create chunks if not provided
             if chunks is None:
+                assert docling_document is not None, (
+                    "docling_document is required when chunks are not provided"
+                )
                 assert created_doc.id is not None, (
                     "Document ID should not be None after creation"
                 )
@@ -224,7 +227,7 @@ class DocumentRepository:
             self.store.restore_table_versions(versions)
             raise
 
-    async def _update_with_docling(
+    async def _update_and_rechunk(
         self, entity: Document, docling_document: "DoclingDocument"
     ) -> Document:
         """Update a document and regenerate its chunks."""

@@ -1,7 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+
 ### Fixed
+
+- **Document Creation**: Optimized `create_document` to skip unnecessary DoclingDocument conversion when chunks are pre-provided
 
 - **FileReader**: Error messages now include both original exception details and file path for easier debugging
 
