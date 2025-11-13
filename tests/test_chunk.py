@@ -26,7 +26,7 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
     from haiku.rag.utils import text_to_docling_document
 
     docling_document = text_to_docling_document(document_text, name="test.md")
-    created_document = await doc_repo._create_with_docling(document, docling_document)
+    created_document = await doc_repo._create_and_chunk(document, docling_document)
     assert created_document.id is not None
 
     # Test getting chunks by document ID

@@ -73,7 +73,7 @@ class HaikuRAG:
             title=title,
             metadata=metadata or {},
         )
-        return await self.document_repository._create_with_docling(
+        return await self.document_repository._create_and_chunk(
             document, docling_document, chunks
         )
 
@@ -96,19 +96,24 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
-        # Lazy import to avoid loading docling
-        from haiku.rag.utils import text_to_docling_document
-
-        # Convert content to DoclingDocument for processing
-        docling_document = text_to_docling_document(content)
-
         document = Document(
             content=content,
             uri=uri,
             title=title,
             metadata=metadata or {},
         )
-        return await self.document_repository._create_with_docling(
+
+        # Only create docling_document if we need to generate chunks
+        if chunks is None:
+            # Lazy import to avoid loading docling
+            from haiku.rag.utils import text_to_docling_document
+
+            docling_document = text_to_docling_document(content)
+        else:
+            # Chunks already provided, no conversion needed
+            docling_document = None
+
+        return await self.document_repository._create_and_chunk(
             document, docling_document, chunks
         )
 
@@ -239,7 +244,7 @@ class HaikuRAG:
             existing_doc.metadata = metadata
             if title is not None:
                 existing_doc.title = title
-            return await self.document_repository._update_with_docling(
+            return await self.document_repository._update_and_rechunk(
                 existing_doc, docling_document
             )
         else:
@@ -333,7 +338,7 @@ class HaikuRAG:
                 existing_doc.metadata = metadata
                 if title is not None:
                     existing_doc.title = title
-                return await self.document_repository._update_with_docling(
+                return await self.document_repository._update_and_rechunk(
                     existing_doc, docling_document
                 )
             else:
@@ -405,7 +410,7 @@ class HaikuRAG:
         # Convert content to DoclingDocument
         docling_document = text_to_docling_document(document.content)
 
-        return await self.document_repository._update_with_docling(
+        return await self.document_repository._update_and_rechunk(
             document, docling_document
         )
 
