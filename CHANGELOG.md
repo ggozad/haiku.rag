@@ -30,6 +30,7 @@
 
 ### Changed
 
+- **Vacuum Retention**: Default `vacuum_retention_seconds` increased from 60 seconds to 86400 seconds (1 day) for better version retention in typical workflows
 - **BREAKING**: Major refactoring of graph-related code into unified `haiku.rag.graph` module structure:
   - `haiku.rag.research` → `haiku.rag.graph.research`
   - `haiku.rag.qa.deep` → `haiku.rag.graph.deep_qa`

@@ -8,7 +8,7 @@ from haiku.rag.utils import get_default_data_dir
 class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     disable_autocreate: bool = False
-    vacuum_retention_seconds: int = 60
+    vacuum_retention_seconds: int = 86400
 
 
 class MonitorConfig(BaseModel):

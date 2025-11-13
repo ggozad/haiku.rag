@@ -54,7 +54,7 @@ def generate_default_config() -> dict:
         "storage": {
             "data_dir": "",
             "disable_autocreate": False,
-            "vacuum_retention_seconds": 60,
+            "vacuum_retention_seconds": 86400,
         },
         "monitor": {
             "directories": [],

@@ -231,7 +231,7 @@ Reduce disk usage by optimizing and pruning old table versions across all tables
 haiku-rag vacuum
 ```
 
-**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 60 seconds (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
+**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
 
 ### Rebuild Database
 

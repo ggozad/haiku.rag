@@ -53,7 +53,7 @@ environment: production
 storage:
   data_dir: ""  # Empty = use default platform location
   disable_autocreate: false
-  vacuum_retention_seconds: 60
+  vacuum_retention_seconds: 86400
 
 monitor:
   directories:
@@ -592,9 +592,9 @@ processing:
 storage:
   # Vacuum retention threshold (seconds) for automatic cleanup
   # When documents are added/updated, old table versions older than this are removed
-  # Default: 60 seconds (safe for concurrent connections)
+  # Default: 86400 seconds (1 day, safe for concurrent connections)
   # Set to 0 for aggressive cleanup (removes all old versions immediately)
-  vacuum_retention_seconds: 60
+  vacuum_retention_seconds: 86400
 ```
 
 #### Markdown Preprocessor
