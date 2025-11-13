@@ -53,7 +53,6 @@ def generate_default_config() -> dict:
         "environment": "production",
         "storage": {
             "data_dir": "",
-            "disable_autocreate": False,
             "vacuum_retention_seconds": 86400,
         },
         "monitor": {

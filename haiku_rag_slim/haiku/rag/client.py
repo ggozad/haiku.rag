@@ -28,6 +28,7 @@ class HaikuRAG:
         db_path: Path | None = None,
         config: AppConfig = Config,
         skip_validation: bool = False,
+        allow_create: bool = True,
     ):
         """Initialize the RAG client with a database path.
 
@@ -35,12 +36,17 @@ class HaikuRAG:
             db_path: Path to the database file. If None, uses config.storage.data_dir.
             config: Configuration to use. Defaults to global Config.
             skip_validation: Whether to skip configuration validation on database load.
+            allow_create: Whether to allow database creation. If False, will raise error
+                         if database doesn't exist (for read operations).
         """
         self._config = config
         if db_path is None:
             db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
         self.store = Store(
-            db_path, config=self._config, skip_validation=skip_validation
+            db_path,
+            config=self._config,
+            skip_validation=skip_validation,
+            allow_create=allow_create,
         )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)

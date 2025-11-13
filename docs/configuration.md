@@ -52,7 +52,6 @@ environment: production
 
 storage:
   data_dir: ""  # Empty = use default platform location
-  disable_autocreate: false
   vacuum_retention_seconds: 86400
 
 monitor:
@@ -561,16 +560,14 @@ Authentication is handled through standard cloud provider credentials (AWS CLI, 
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization is still performed locally.
 
-#### Disable database auto-creation
+#### Database Auto-creation
 
-By default, haiku.rag creates the local LanceDB directory and required tables on first use. To prevent accidental database creation and fail fast if a database hasn't been set up yet:
+haiku.rag intelligently handles database creation based on operation type:
 
-```yaml
-storage:
-  disable_autocreate: true
-```
+- **Write operations** (add, add-src, delete, rebuild): Automatically create the database and required tables if they don't exist
+- **Read operations** (list, get, search, ask, research): Fail with a clear error if the database doesn't exist
 
-When enabled, for local paths, haiku.rag errors if the LanceDB directory does not exist, and it will not create parent directories.
+This prevents the common mistake where a search query accidentally creates an empty database. To initialize your database, simply add your first document using `haiku-rag add` or `haiku-rag add-src`.
 
 ### Document Processing
 
