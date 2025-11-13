@@ -50,7 +50,11 @@ class SettingsRecord(LanceModel):
 
 class Store:
     def __init__(
-        self, db_path: Path, config: AppConfig = Config, skip_validation: bool = False
+        self,
+        db_path: Path,
+        config: AppConfig = Config,
+        skip_validation: bool = False,
+        allow_create: bool = True,
     ):
         self.db_path: Path = db_path
         self._config = config
@@ -62,14 +66,14 @@ class Store:
 
         # Local filesystem handling for DB directory
         if not self._has_cloud_config():
-            if self._config.storage.disable_autocreate:
-                # LanceDB uses a directory path for local databases; enforce presence
+            if not allow_create:
+                # Read operations should not create the database
                 if not db_path.exists():
                     raise FileNotFoundError(
-                        f"LanceDB path does not exist: {db_path}. Auto-creation is disabled."
+                        f"Database does not exist: {db_path}. Use a write operation (add, add-src) to create it."
                     )
             else:
-                # Ensure parent directories exist when autocreation allowed
+                # Write operations - ensure parent directories exist
                 if not db_path.parent.exists():
                     Path.mkdir(db_path.parent, parents=True)
 

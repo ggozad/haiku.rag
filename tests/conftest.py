@@ -40,7 +40,6 @@ def temp_yaml_config(tmp_path, monkeypatch):
         "storage": {
             "data_dir": "",
             "monitor_directories": [],
-            "disable_autocreate": False,
             "vacuum_retention_seconds": 60,
         },
         "embeddings": {

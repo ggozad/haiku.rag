@@ -50,9 +50,11 @@
 
 - **Document Creation**: Optimized `create_document` to skip unnecessary DoclingDocument conversion when chunks are pre-provided
 - **FileReader**: Error messages now include both original exception details and file path for easier debugging
+- **Database Auto-creation**: Read operations (search, list, get, ask, research) no longer auto-create empty databases. Write operations (add, add-src, delete, rebuild) still create the database as needed. This prevents the confusing scenario where a search query creates an empty database. Fixes issue #137.
 
 ### Removed
 
+- **BREAKING**: Removed `disable_autocreate` config option - the behavior is now automatic based on operation type
 - **BREAKING**: Removed legacy `ResearchStream` and `ResearchStreamEvent` classes (replaced by AG-UI event protocol)
 
 ## [0.15.0] - 2025-11-07
