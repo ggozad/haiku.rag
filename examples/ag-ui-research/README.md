@@ -1,16 +1,16 @@
 # Interactive Research Assistant
 
-Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), [Pydantic AI](https://ai.pydantic.dev/), and [AG-UI](https://docs.ag-ui.com/). Ask complex questions and watch the research process unfold in real-time.
+Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), [Pydantic Graph](https://ai.pydantic.dev/graph/), and [AG-UI](https://docs.ag-ui.com/). Ask complex questions and watch the research process unfold in real-time.
 
 [Watch demo video](https://vimeo.com/1128874386)
 
 ## Features
 
-- **Multi-step research workflow**: Question decomposition, search, analysis, and synthesis
-- **Human-in-the-loop**: Approve or revise research plans before execution
-- **Live state synchronization**: Real-time updates of research progress between backend and frontend
-- **Context expansion**: Automatically expands top search results for better context
-- **Rich reporting**: Generates structured reports with findings, conclusions, and citations
+- **Multi-iteration research graph**: Automated question decomposition, search, insight extraction, and gap analysis
+- **Intelligent evaluation**: Confidence-based decision making with automatic iteration until sufficient information is gathered
+- **Live state synchronization**: Real-time delta updates of research progress via AG-UI protocol
+- **Insight & gap tracking**: Structured insights with provenance and automatic gap identification
+- **Rich reporting**: Generates comprehensive research reports with findings, conclusions, and sources
 
 ## Quick Start
 
@@ -57,32 +57,67 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
 ## How It Works
 
 1. **Ask a question**: Type your research question in the chat
-2. **Review the plan**: The agent decomposes your question into 3 sub-questions
-3. **Approve or revise**: Choose to approve the plan or request changes
-4. **Watch it work**: The agent automatically:
-   - Searches the knowledge base for each sub-question
-   - Extracts key insights from search results
-   - Evaluates overall confidence in findings
-5. **Get your report**: Receive a structured research report with citations
+2. **Plan phase**: The research graph automatically:
+   - Decomposes your question into targeted sub-questions
+   - Gathers initial context about the topic
+3. **Research iterations**: The graph autonomously:
+   - Searches the knowledge base for each sub-question in parallel
+   - Extracts structured insights with source provenance
+   - Identifies information gaps and assesses confidence
+   - Generates new follow-up questions for gaps
+   - Iterates until confidence threshold is met or max iterations reached
+4. **Synthesis**: Generates a comprehensive research report with:
+   - Executive summary
+   - Main findings with supporting evidence
+   - Conclusions and recommendations
+   - Source citations
 
 ## Architecture
 
-- **Backend** (Python): Pydantic AI agent with haiku.rag integration
-  - Uses published `ghcr.io/ggozad/haiku.rag:latest` Docker image as base
-  - `agent.py`: Research agent with tool definitions
-  - `main.py`: Starlette app serving AG-UI protocol
+### Agent + Graph Pattern
 
-- **Frontend** (Next.js): CopilotKit/AG-UI interface
-  - Real-time state synchronization with backend
-  - Interactive approval workflow
-  - Collapsible research plan and insights display
+This example demonstrates the **agent+graph** architecture pattern:
+
+1. **Conversational Agent** (`agent.py`):
+   - Pydantic AI agent handles user conversations
+   - Decides when to invoke the research tool based on user intent
+   - Responds directly to greetings/casual chat without tools
+   - Formats research results for the user
+
+2. **Research Graph** (haiku.rag):
+   - Multi-step research workflow invoked by the agent's tool
+   - Autonomous execution with plan → search → analyze → decide → synthesize flow
+   - Emits AG-UI events for real-time progress tracking
+
+3. **Shared Event Stream**:
+   - `AGUIEmitter` is shared between agent and graph
+   - Events from both flow through a single stream to the frontend
+   - Custom streaming endpoint (`main.py`) uses anyio memory streams for proper async handling
+
+### Components
+
+- **Backend** (Python):
+  - Uses published `ghcr.io/ggozad/haiku.rag:latest` Docker image as base
+  - `agent.py`: Pydantic AI agent with `run_research` tool
+  - `main.py`: Custom AG-UI streaming endpoint with anyio memory object streams
+  - Real-time event forwarding from emitter to SSE stream
+  - Filters out `ACTIVITY_SNAPSHOT` events (not yet supported by CopilotKit)
+
+- **Frontend** (Next.js/React):
+  - CopilotKit for AG-UI protocol integration
+  - Split-pane UI: chat on left, live research state on right
+  - Real-time state synchronization via Server-Sent Events (SSE)
+  - `StateDisplay` component with collapsible sections for questions, insights, and gaps
 
 ## Configuration
 
 Configuration is done through `haiku.rag.yaml` (see `haiku.rag.yaml.example`):
 
-- `qa.provider`: LLM provider (default: `ollama`)
-- `qa.model`: Model name (default: `gpt-oss:latest`)
+- `research.provider`: LLM provider (default: `ollama`)
+- `research.model`: Model name (default: `gpt-oss:latest`)
+- `research.max_iterations`: Maximum research iterations (default: `3`)
+- `research.confidence_threshold`: Confidence threshold for completion (default: `0.8`)
+- `research.max_concurrency`: Parallel sub-question processing (default: `1`)
 - `providers.ollama.base_url`: Ollama endpoint (default: `http://host.docker.internal:11434`)
 
 Environment variables (see `.env.example`):

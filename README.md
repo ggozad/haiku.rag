@@ -86,12 +86,12 @@ To customize settings, create a `haiku.rag.yaml` config file (see [Configuration
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.research import (
+from haiku.rag.graph.agui import stream_graph
+from haiku.rag.graph.research import (
     ResearchContext,
     ResearchDeps,
     ResearchState,
     build_research_graph,
-    stream_research_graph,
 )
 
 async with HaikuRAG("database.lancedb") as client:
@@ -126,15 +126,17 @@ async with HaikuRAG("database.lancedb") as client:
     report = await graph.run(state=state, deps=deps)
     print(report.title)
 
-    # Streaming progress (log/report/error events)
-    async for event in stream_research_graph(graph, state, deps):
-        if event.type == "log":
-            iteration = event.state.iterations if event.state else state.iterations
-            print(f"[{iteration}] {event.message}")
-        elif event.type == "report":
+    # Streaming progress (AG-UI events)
+    async for event in stream_graph(graph, state, deps):
+        if event["type"] == "STEP_STARTED":
+            print(f"Starting step: {event['stepName']}")
+        elif event["type"] == "ACTIVITY_SNAPSHOT":
+            print(f"  {event['content']}")
+        elif event["type"] == "RUN_FINISHED":
             print("\nResearch complete!\n")
-            print(event.report.title)
-            print(event.report.executive_summary)
+            result = event["result"]
+            print(result["title"])
+            print(result["executive_summary"])
 ```
 
 ## MCP Server

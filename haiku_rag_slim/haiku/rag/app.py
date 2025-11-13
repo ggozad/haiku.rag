@@ -10,12 +10,12 @@ from rich.progress import Progress
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
+from haiku.rag.graph.agui import AGUIConsoleRenderer, stream_graph
+from haiku.rag.graph.research.dependencies import ResearchContext
+from haiku.rag.graph.research.graph import build_research_graph
+from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
-from haiku.rag.research.dependencies import ResearchContext
-from haiku.rag.research.graph import build_research_graph
-from haiku.rag.research.state import ResearchDeps, ResearchState
-from haiku.rag.research.stream import stream_research_graph
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -216,23 +216,31 @@ class HaikuRAGApp:
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
                 if deep:
-                    from rich.console import Console
-
-                    from haiku.rag.qa.deep.dependencies import DeepQAContext
-                    from haiku.rag.qa.deep.graph import build_deep_qa_graph
-                    from haiku.rag.qa.deep.state import DeepQADeps, DeepQAState
+                    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+                    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
+                    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph(config=self.config)
                     context = DeepQAContext(
                         original_question=question, use_citations=cite
                     )
                     state = DeepQAState.from_config(context=context, config=self.config)
-                    deps = DeepQADeps(
-                        client=self.client, console=Console() if verbose else None
-                    )
+                    deps = DeepQADeps(client=self.client)
 
-                    result = await graph.run(state=state, deps=deps)
-                    answer = result.answer
+                    if verbose:
+                        # Use AG-UI renderer to process and display events
+                        from haiku.rag.graph.agui import AGUIConsoleRenderer
+
+                        renderer = AGUIConsoleRenderer(self.console)
+                        result_dict = await renderer.render(
+                            stream_graph(graph, state, deps)
+                        )
+                        # Result should be a dict with 'answer' key
+                        answer = result_dict.get("answer", "") if result_dict else ""
+                    else:
+                        # Run without rendering events, just get the result
+                        result = await graph.run(state=state, deps=deps)
+                        answer = result.answer
                 else:
                     answer = await self.client.ask(question, cite=cite)
 
@@ -243,45 +251,45 @@ class HaikuRAGApp:
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
-    async def research(
-        self,
-        question: str,
-        verbose: bool = False,
-    ):
+    async def research(self, question: str, verbose: bool = False):
         """Run research via the pydantic-graph pipeline.
 
         Args:
             question: The research question
-            verbose: Show verbose output
+            verbose: Show AG-UI event stream during execution
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as client:
             try:
-                if verbose:
-                    self.console.print("[bold cyan]Starting research[/bold cyan]")
-                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                    self.console.print()
+                self.console.print("[bold cyan]Starting research[/bold cyan]")
+                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                self.console.print()
 
                 graph = build_research_graph(config=self.config)
                 context = ResearchContext(original_question=question)
                 state = ResearchState.from_config(context=context, config=self.config)
-                deps = ResearchDeps(
-                    client=client, console=self.console if verbose else None
-                )
+                deps = ResearchDeps(client=client)
 
-                report = None
-                async for event in stream_research_graph(graph, state, deps):
-                    if event.type == "report":
-                        report = event.report
-                        break
-                    if event.type == "error":
-                        self.console.print(
-                            f"[red]Error during research: {event.message}[/red]"
-                        )
-                        return
+                if verbose:
+                    # Use AG-UI renderer to process and display events
+                    renderer = AGUIConsoleRenderer(self.console)
+                    report_dict = await renderer.render(
+                        stream_graph(graph, state, deps)
+                    )
+                else:
+                    # Run without rendering events, just get the result
+                    report = await graph.run(state=state, deps=deps)
+                    report_dict = (
+                        report.model_dump() if hasattr(report, "model_dump") else report
+                    )
 
-                if report is None:
+                if report_dict is None:
                     self.console.print("[red]Research did not produce a report.[/red]")
                     return
+
+                # Convert dict to ResearchReport model
+                from haiku.rag.graph.research.models import ResearchReport
+
+                report = ResearchReport.model_validate(report_dict)
 
                 # Display the report
                 self.console.print("[bold green]Research Report[/bold green]")
@@ -455,6 +463,7 @@ class HaikuRAGApp:
         enable_mcp: bool = True,
         mcp_transport: str | None = None,
         mcp_port: int = 8001,
+        enable_agui: bool = False,
     ):
         """Start the server with selected services."""
         async with HaikuRAG(self.db_path, config=self.config) as client:
@@ -481,6 +490,30 @@ class HaikuRAGApp:
 
                 mcp_task = asyncio.create_task(run_mcp())
                 tasks.append(mcp_task)
+
+            # Start AG-UI server if enabled
+            if enable_agui:
+
+                async def run_agui():
+                    import uvicorn
+
+                    from haiku.rag.graph.agui import create_agui_server
+
+                    logger.info(
+                        f"Starting AG-UI server on {self.config.agui.host}:{self.config.agui.port}"
+                    )
+                    app = create_agui_server(self.config, db_path=self.db_path)
+                    config = uvicorn.Config(
+                        app=app,
+                        host=self.config.agui.host,
+                        port=self.config.agui.port,
+                        log_level="info",
+                    )
+                    server = uvicorn.Server(config)
+                    await server.serve()
+
+                agui_task = asyncio.create_task(run_agui())
+                tasks.append(agui_task)
 
             if not tasks:
                 logger.warning("No services enabled")

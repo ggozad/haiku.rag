@@ -302,7 +302,7 @@ def research(
     verbose: bool = typer.Option(
         False,
         "--verbose",
-        help="Show verbose progress output",
+        help="Show planning, searching previews, evaluation summary, and stop reason",
     ),
 ):
     app = create_app(db)
@@ -401,7 +401,7 @@ def download_models_cmd():
 
 @cli.command(
     "serve",
-    help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",
+    help="Start haiku.rag server. Use --monitor, --mcp, and/or --agui to enable services.",
 )
 def serve(
     db: Path | None = typer.Option(
@@ -429,12 +429,17 @@ def serve(
         "--mcp-port",
         help="Port to bind MCP server to (ignored with --stdio)",
     ),
+    agui: bool = typer.Option(
+        False,
+        "--agui",
+        help="Enable AG-UI HTTP server for graph streaming",
+    ),
 ) -> None:
     """Start the server with selected services."""
     # Require at least one service flag
-    if not (monitor or mcp):
+    if not (monitor or mcp or agui):
         typer.echo(
-            "Error: At least one service flag (--monitor or --mcp) must be specified"
+            "Error: At least one service flag (--monitor, --mcp, or --agui) must be specified"
         )
         raise typer.Exit(1)
 
@@ -452,6 +457,7 @@ def serve(
             enable_mcp=mcp,
             mcp_transport=transport,
             mcp_port=mcp_port,
+            enable_agui=agui,
         )
     )
 

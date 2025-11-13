@@ -13,7 +13,7 @@ const runtime = new CopilotRuntime({
 	agents: {
 		// "research_agent" maps to the agent name used in useCoAgent() on the frontend
 		research_agent: new HttpAgent({
-			url: `${process.env.BACKEND_URL || "http://backend:8000"}/agent`,
+			url: `${process.env.BACKEND_URL || "http://backend:8000"}/v1/research/stream`,
 		}),
 	},
 });

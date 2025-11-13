@@ -83,6 +83,17 @@ qa:
 research:
   provider: ""  # Empty to use qa settings
   model: ""
+  max_iterations: 3
+  confidence_threshold: 0.8
+  max_concurrency: 1
+
+agui:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["*"]
+  cors_credentials: true
+  cors_methods: ["GET", "POST", "OPTIONS"]
+  cors_headers: ["*"]
 
 processing:
   chunk_size: 256
@@ -459,6 +470,52 @@ providers:
 ```
 
 **Note:** vLLM reranking uses the `/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded. Consult the specific model's documentation for proper vLLM serving configuration.
+
+## Research Configuration
+
+Configure the multi-agent research workflow:
+
+```yaml
+research:
+  provider: ""  # Empty to use qa settings
+  model: ""     # Empty to use qa model
+  max_iterations: 3           # Maximum search/evaluate cycles
+  confidence_threshold: 0.8   # Stop when confidence meets/exceeds this
+  max_concurrency: 1          # Sub-questions searched in parallel per iteration
+```
+
+- **provider/model**: LLM provider and model for research. Leave empty to use the same settings as `qa`.
+- **max_iterations**: Maximum number of search/evaluate cycles before stopping (default: 3)
+- **confidence_threshold**: Stop research when evaluation confidence score meets or exceeds this threshold (default: 0.8)
+- **max_concurrency**: Number of sub-questions to search in parallel during each iteration (default: 1)
+
+The research workflow plans sub-questions, searches in parallel batches, evaluates findings, and iterates until reaching the confidence threshold or max iterations.
+
+## AG-UI Server Configuration
+
+Configure the AG-UI HTTP server for streaming graph execution events:
+
+```yaml
+agui:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["*"]
+  cors_credentials: true
+  cors_methods: ["GET", "POST", "OPTIONS"]
+  cors_headers: ["*"]
+```
+
+Start the AG-UI server with:
+
+```bash
+haiku-rag serve --agui
+```
+
+The server exposes:
+- `GET /health` - Health check endpoint
+- `POST /v1/agent/stream` - Research graph streaming endpoint (Server-Sent Events)
+
+See [Server Mode](server.md) for more details.
 
 ## Other Settings
 

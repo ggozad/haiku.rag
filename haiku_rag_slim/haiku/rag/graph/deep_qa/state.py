@@ -2,33 +2,40 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from rich.console import Console
+from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.deep.dependencies import DeepQAContext
+from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
+from haiku.rag.graph.deep_qa.models import DeepQAAnswer
 
 if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig
+    from haiku.rag.graph.agui.emitter import AGUIEmitter
 
 
 @dataclass
 class DeepQADeps:
     client: HaikuRAG
-    console: Console | None = None
+    agui_emitter: "AGUIEmitter[DeepQAState, DeepQAAnswer] | None" = None
     semaphore: asyncio.Semaphore | None = None
 
-    def emit_log(self, message: str, state: "DeepQAState | None" = None) -> None:
-        if self.console:
-            self.console.print(message)
 
+class DeepQAState(BaseModel):
+    """Deep QA state for multi-agent question answering."""
 
-@dataclass
-class DeepQAState:
-    context: DeepQAContext
-    max_sub_questions: int = 3
-    max_iterations: int = 2
-    max_concurrency: int = 1
-    iterations: int = 0
+    model_config = {"arbitrary_types_allowed": True}
+
+    context: DeepQAContext = Field(description="Shared QA context")
+    max_sub_questions: int = Field(
+        default=3, description="Maximum number of sub-questions"
+    )
+    max_iterations: int = Field(
+        default=2, description="Maximum number of QA iterations"
+    )
+    max_concurrency: int = Field(
+        default=1, description="Maximum parallel sub-question searches"
+    )
+    iterations: int = Field(default=0, description="Current iteration number")
 
     @classmethod
     def from_config(cls, context: DeepQAContext, config: "AppConfig") -> "DeepQAState":

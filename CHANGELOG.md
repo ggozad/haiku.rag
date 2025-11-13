@@ -1,14 +1,58 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **AG-UI Protocol Support**: Full AG-UI (Agent-UI) protocol implementation for graph execution with event streaming
+  - New `AGUIEmitter` class for emitting AG-UI events from graphs
+  - Support for all AG-UI event types: lifecycle events (`RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`), step events (`STEP_STARTED`, `STEP_FINISHED`), state updates (`STATE_SNAPSHOT`, `STATE_DELTA`), activity narration (`ACTIVITY_SNAPSHOT`), and text messages (`TEXT_MESSAGE_CHUNK`)
+  - `AGUIConsoleRenderer` for rendering AG-UI event streams to terminal with Rich formatting
+  - `stream_graph()` utility function for executing graphs with AG-UI event emission
+  - State diff computation for efficient state synchronization
+  - **Delta State Updates**: AG-UI emitter now supports incremental state updates via JSON Patch operations (`STATE_DELTA` events) to reduce bandwidth, configurable via `use_deltas` parameter (enabled by default)
+- **AG-UI Server**: Starlette-based HTTP server for serving graphs via AG-UI protocol
+  - Server-Sent Events (SSE) streaming endpoint at `/v1/agent/stream`
+  - Health check endpoint at `/health`
+  - Full CORS support configurable via `agui` config section
+  - `create_agui_server()` function for programmatic server creation
+- **Deep QA AG-UI Support**: Deep QA graph now fully supports AG-UI event streaming
+  - Integration with `AGUIEmitter` for progress tracking
+  - Step-by-step execution visibility via AG-UI events
+- **CLI AG-UI Flag**: New `--agui` flag for `serve` command to start AG-UI server
+- **Graph Module**: New unified `haiku.rag.graph` module containing all graph-related functionality
+- **Common Graph Nodes**: New factory functions (`create_plan_node`, `create_search_node`) in `haiku.rag.graph.common.nodes` for reusable graph components
+- **AG-UI Research Example**: New full-stack example (`examples/ag-ui-research`) demonstrating agent+graph architecture with CopilotKit frontend
+  - Pydantic AI agent with research tool that invokes the research graph
+  - Custom AG-UI streaming endpoint with anyio memory streams
+  - React/Next.js frontend with split-pane UI showing live research state
+  - Real-time progress tracking of questions, answers, insights, and gaps
+  - Docker Compose setup for easy local development
+
 ### Changed
 
+- **BREAKING**: Major refactoring of graph-related code into unified `haiku.rag.graph` module structure:
+  - `haiku.rag.research` → `haiku.rag.graph.research`
+  - `haiku.rag.qa.deep` → `haiku.rag.graph.deep_qa`
+  - `haiku.rag.agui` → `haiku.rag.graph.agui`
+  - `haiku.rag.graph_common` → `haiku.rag.graph.common`
+- **BREAKING**: Research and Deep QA graphs now use AG-UI event protocol instead of direct console logging
+  - Removed `console` and `stream` parameters from graph dependencies
+  - All progress updates now emit through `AGUIEmitter`
+- **BREAKING**: `ResearchState` converted from dataclass to Pydantic `BaseModel` for JSON serialization and AG-UI compatibility
+- Research and Deep QA graphs now emit detailed execution events for better observability
+- CLI research command now uses AG-UI event rendering for `--verbose` output
+- Improved graph execution visibility with step-by-step progress tracking
+- Updated all documentation to reflect new import paths and AG-UI usage
+- Updated examples (ag-ui-research, a2a-server) to use new import paths
 
 ### Fixed
 
 - **Document Creation**: Optimized `create_document` to skip unnecessary DoclingDocument conversion when chunks are pre-provided
-
 - **FileReader**: Error messages now include both original exception details and file path for easier debugging
+
+### Removed
+
+- **BREAKING**: Removed legacy `ResearchStream` and `ResearchStreamEvent` classes (replaced by AG-UI event protocol)
 
 ## [0.15.0] - 2025-11-07
 

@@ -1,19 +1,12 @@
-import re
+import uuid
 from enum import Enum
 
-from pydantic import BaseModel, Field, model_validator
-
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
+from pydantic import BaseModel, Field, field_validator
 
 
-def _make_slug(text: str, prefix: str) -> str:
-    """Generate a lowercase slug with the given prefix as fallback."""
-
-    base = _SLUG_RE.sub("-", text.lower()).strip("-")
-    if not base:
-        base = prefix
-    # Trim overly long slugs but keep enough entropy for readability
-    return base[:48]
+def _deduplicate_list(items: list[str]) -> list[str]:
+    """Remove duplicates while preserving order."""
+    return list(dict.fromkeys(items))
 
 
 class InsightStatus(str, Enum):
@@ -28,48 +21,54 @@ class GapSeverity(str, Enum):
     HIGH = "high"
 
 
-class InsightRecord(BaseModel):
+class TrackedRecord(BaseModel):
+    """Base model for tracked entities with sources and metadata."""
+
+    model_config = {"validate_assignment": True}
+
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4())[:8],
+        description="Unique identifier for the record",
+    )
+    supporting_sources: list[str] = Field(
+        default_factory=list,
+        description="Source identifiers backing this record",
+    )
+    notes: str | None = Field(
+        default=None,
+        description="Optional elaboration or caveats",
+    )
+
+    @field_validator("supporting_sources", mode="before")
+    @classmethod
+    def deduplicate_sources(cls, v: list[str]) -> list[str]:
+        """Ensure supporting_sources has no duplicates."""
+        return _deduplicate_list(v) if v else []
+
+
+class InsightRecord(TrackedRecord):
     """Structured insight with provenance and lifecycle metadata."""
 
-    id: str | None = Field(
-        default=None,
-        description="Stable slug identifier for the insight (auto-generated if omitted)",
-    )
     summary: str = Field(description="Concise description of the insight")
     status: InsightStatus = Field(
         default=InsightStatus.OPEN,
         description="Lifecycle status for the insight",
     )
-    supporting_sources: list[str] = Field(
-        default_factory=list,
-        description="Source identifiers backing the insight",
-    )
     originating_questions: list[str] = Field(
         default_factory=list,
         description="Research sub-questions that produced this insight",
     )
-    notes: str | None = Field(
-        default=None,
-        description="Optional elaboration or caveats for the insight",
-    )
 
-    @model_validator(mode="after")
-    def _set_defaults(self) -> "InsightRecord":
-        if not self.id:
-            self.id = _make_slug(self.summary, "insight")
-        self.id = self.id.lower()
-        self.supporting_sources = list(dict.fromkeys(self.supporting_sources))
-        self.originating_questions = list(dict.fromkeys(self.originating_questions))
-        return self
+    @field_validator("originating_questions", mode="before")
+    @classmethod
+    def deduplicate_questions(cls, v: list[str]) -> list[str]:
+        """Ensure originating_questions has no duplicates."""
+        return _deduplicate_list(v) if v else []
 
 
-class GapRecord(BaseModel):
+class GapRecord(TrackedRecord):
     """Structured representation of an identified research gap."""
 
-    id: str | None = Field(
-        default=None,
-        description="Stable slug identifier for the gap (auto-generated if omitted)",
-    )
     description: str = Field(description="Concrete statement of what is missing")
     severity: GapSeverity = Field(
         default=GapSeverity.MEDIUM,
@@ -87,23 +86,12 @@ class GapRecord(BaseModel):
         default_factory=list,
         description="Insight IDs or notes explaining how the gap was closed",
     )
-    supporting_sources: list[str] = Field(
-        default_factory=list,
-        description="Sources confirming the gap status (e.g., evidence of absence)",
-    )
-    notes: str | None = Field(
-        default=None,
-        description="Optional clarification about the gap or follow-up actions",
-    )
 
-    @model_validator(mode="after")
-    def _set_defaults(self) -> "GapRecord":
-        if not self.id:
-            self.id = _make_slug(self.description, "gap")
-        self.id = self.id.lower()
-        self.resolved_by = list(dict.fromkeys(self.resolved_by))
-        self.supporting_sources = list(dict.fromkeys(self.supporting_sources))
-        return self
+    @field_validator("resolved_by", mode="before")
+    @classmethod
+    def deduplicate_resolved_by(cls, v: list[str]) -> list[str]:
+        """Ensure resolved_by has no duplicates."""
+        return _deduplicate_list(v) if v else []
 
 
 class InsightAnalysis(BaseModel):

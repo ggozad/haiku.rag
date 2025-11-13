@@ -84,4 +84,12 @@ def generate_default_config() -> dict:
                 "research_base_url": "",
             },
         },
+        "agui": {
+            "host": "0.0.0.0",
+            "port": 8000,
+            "cors_origins": ["*"],
+            "cors_credentials": True,
+            "cors_methods": ["GET", "POST", "OPTIONS"],
+            "cors_headers": ["*"],
+        },
     }

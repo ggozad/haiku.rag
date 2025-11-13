@@ -146,20 +146,23 @@ When available, citations use the document title; otherwise they fall back to th
 Run the multi-step research graph:
 
 ```bash
-haiku-rag research "How does haiku.rag organize and query documents?" \
-  --max-iterations 2 \
-  --confidence-threshold 0.8 \
-  --max-concurrency 3 \
-  --verbose
+haiku-rag research "How does haiku.rag organize and query documents?"
+```
+
+With verbose output to see progress:
+
+```bash
+haiku-rag research "How does haiku.rag organize and query documents?" --verbose
 ```
 
 Flags:
-- `--max-iterations, -n`: maximum search/evaluate cycles (default: 3)
-- `--confidence-threshold`: stop once evaluation confidence meets/exceeds this (default: 0.8)
-- `--max-concurrency`: number of sub-questions searched in parallel each iteration (default: 3)
-- `--verbose`: show planning, searching previews, evaluation summary, and stop reason
+- `--verbose`: Show planning, searching previews, evaluation summary, and stop reason
 
-When `--verbose` is set the CLI also consumes the internal research stream, printing every `log` event as agents progress through planning, search, evaluation, and synthesis. If you build your own integration, call `stream_research_graph` to access the same `log`, `report`, and `error` events and render them however you like while the graph is running.
+Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration.md) under the `research` section.
+
+When `--verbose` is set, the CLI consumes the research graph's AG-UI event stream, displaying step events and activity snapshots as agents progress through planning, search, evaluation, and synthesis. Without `--verbose`, only the final research report is displayed.
+
+If you build your own integration, import `stream_graph` from `haiku.rag.graph.agui` to access AG-UI events (`STEP_STARTED`, `ACTIVITY_SNAPSHOT`, `STATE_SNAPSHOT`, `RUN_FINISHED`, etc.) and render them however you like while the graph is running.
 
 ## Server
 
@@ -174,10 +177,18 @@ haiku-rag serve --mcp --stdio
 # File monitoring only
 haiku-rag serve --monitor
 
-# Both services
-haiku-rag serve --monitor --mcp
+# AG-UI server only
+haiku-rag serve --agui
 
-# Custom port
+# Multiple services
+haiku-rag serve --monitor --mcp
+haiku-rag serve --monitor --agui
+haiku-rag serve --mcp --agui
+
+# All services
+haiku-rag serve --monitor --mcp --agui
+
+# Custom MCP port
 haiku-rag serve --mcp --mcp-port 9000
 ```
 
