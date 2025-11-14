@@ -1179,6 +1179,7 @@ dependencies = [
     { name = "datasets" },
     { name = "haiku-rag-slim" },
     { name = "pydantic-ai-slim", extra = ["evals", "logfire"] },
+    { name = "python-dotenv" },
     { name = "typer" },
 ]
 
@@ -1187,6 +1188,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=4.3.0" },
     { name = "haiku-rag-slim", editable = "haiku_rag_slim" },
     { name = "pydantic-ai-slim", extras = ["evals", "logfire"], specifier = ">=1.11.0" },
+    { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "typer", specifier = ">=0.19.2,<0.20.0" },
 ]
 

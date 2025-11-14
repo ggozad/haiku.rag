@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import logfire
 import typer
+from dotenv import load_dotenv
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_evals import Dataset as EvalDataset
@@ -21,6 +22,8 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
+
+load_dotenv()
 
 QA_JUDGE_MODEL = "qwen3"
 
