@@ -56,7 +56,10 @@ class ProcessingConfig(BaseModel):
     markdown_preprocessor: str = ""
     converter: str = "docling-local"
     chunker: str = "docling-local"
+    chunker_type: str = "hybrid"
     chunking_tokenizer: str = "Qwen/Qwen3-Embedding-0.6B"
+    chunking_merge_peers: bool = True
+    chunking_use_markdown_tables: bool = False
 
 
 class OllamaConfig(BaseModel):
