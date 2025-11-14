@@ -1,6 +1,4 @@
-from typing import TYPE_CHECKING, ClassVar
-
-import tiktoken
+from typing import TYPE_CHECKING
 
 from haiku.rag.config import Config
 
@@ -16,21 +14,25 @@ class Chunker:
 
     Args:
         chunk_size: The maximum size of a chunk in tokens.
+        tokenizer_name: HuggingFace model name for tokenization.
     """
-
-    encoder: ClassVar[tiktoken.Encoding] = tiktoken.encoding_for_model("gpt-4o")
 
     def __init__(
         self,
         chunk_size: int = Config.processing.chunk_size,
+        tokenizer_name: str = Config.processing.chunking_tokenizer,
     ):
         from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
-        from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
+        from docling_core.transforms.chunker.tokenizer.huggingface import (
+            HuggingFaceTokenizer,
+        )
+        from transformers import AutoTokenizer
 
         self.chunk_size = chunk_size
-        tokenizer = OpenAITokenizer(
-            tokenizer=tiktoken.encoding_for_model("gpt-4o"), max_tokens=chunk_size
-        )
+        self.tokenizer_name = tokenizer_name
+
+        hf_tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        tokenizer = HuggingFaceTokenizer(tokenizer=hf_tokenizer, max_tokens=chunk_size)
 
         self.chunker = HybridChunker(tokenizer=tokenizer)
 

@@ -5,6 +5,11 @@
 
 ### Changed
 
+- **BREAKING: Chunking Tokenizer**: Switched from tiktoken to HuggingFace tokenizers for consistency with docling-serve
+  - Default tokenizer changed from tiktoken "gpt-4o" to "Qwen/Qwen3-Embedding-0.6B"
+  - New `chunking_tokenizer` config option in `ProcessingConfig` for customization
+  - Removed `tiktoken` dependency
+  - `download-models` CLI command now also downloads the configured HuggingFace tokenizer
 - **Evaluations**: Refactored QA benchmark to run entire dataset as single evaluation for better Logfire experiment tracking
 - **Evaluations**: Added `.env` file loading support via `python-dotenv` dependency
 

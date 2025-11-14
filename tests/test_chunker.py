@@ -1,5 +1,6 @@
 import pytest
 from datasets import Dataset
+from transformers import AutoTokenizer
 
 from haiku.rag.chunker import Chunker
 from haiku.rag.config import Config
@@ -20,10 +21,13 @@ async def test_chunker(qa_corpus: Dataset):
     # Ensure that the text is split into multiple chunks
     assert len(chunks) > 1
 
+    # Load tokenizer for verification
+    tokenizer = AutoTokenizer.from_pretrained(chunker.tokenizer_name)
+
     # Ensure that chunks are reasonably sized (allowing more flexibility for structure-aware chunking)
     total_tokens = 0
     for chunk in chunks:
-        encoded_tokens = Chunker.encoder.encode(chunk, disallowed_special=())
+        encoded_tokens = tokenizer.encode(chunk, add_special_tokens=False)
         token_count = len(encoded_tokens)
         total_tokens += token_count
 
@@ -34,7 +38,7 @@ async def test_chunker(qa_corpus: Dataset):
         assert token_count > 5  # Ensure chunks aren't too small
 
     # Ensure that all chunks together contain roughly the same content as original
-    original_tokens = len(Chunker.encoder.encode(doc_text, disallowed_special=()))
+    original_tokens = len(tokenizer.encode(doc_text, add_special_tokens=False))
 
     # Due to structure-aware chunking, we might have some variation in token count
     # but it should be reasonable
