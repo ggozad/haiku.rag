@@ -37,6 +37,7 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 | Embedding Model                       | Document in top 1 | Document in top 3 | Reranker               |
 |---------------------------------------|-------------------|-------------------|------------------------|
 | Ollama / `qwen3-embedding`            | 0.81              | 0.95              | None                   |
+| Ollama / `qwen3-embedding:0.6b`       | 0.77              | 0.97              | None                   |
 | Ollama / `qwen3-embedding`            | 0.91              | 0.98              | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
 | Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
@@ -50,7 +51,8 @@ determine whether the answer is correct. The obtained accuracy is as follows:
 
 | Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
 |------------------------------------|-----------------------------------|-----------|------------------------|
-| Ollama / `qwen3-embedding. `       | Ollama / `gpt-oss`                | 0.93      | None                   |
+| Ollama / `qwen3-embedding`         | Ollama / `gpt-oss`                | 0.93      | None                   |
+| Ollama / `qwen3-embedding:0.6b`    | Ollama / `gpt-oss`                | 0.89      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.85      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.87      | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
