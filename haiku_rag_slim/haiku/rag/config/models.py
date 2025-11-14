@@ -55,6 +55,7 @@ class ProcessingConfig(BaseModel):
     context_chunk_radius: int = 0
     markdown_preprocessor: str = ""
     converter: str = "docling-local"
+    chunking_tokenizer: str = "Qwen/Qwen3-Embedding-0.6B"
 
 
 class OllamaConfig(BaseModel):
