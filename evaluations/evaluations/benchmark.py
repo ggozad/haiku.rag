@@ -195,62 +195,28 @@ async def run_qa_benchmark(
         ],
     )
 
-    total_processed = 0
-    passing_cases = 0
-    failures: list[ReportCaseFailure[str, str, dict[str, str]]] = []
+    async with HaikuRAG(spec.db_path, config=config) as rag:
+        system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
+        qa = get_qa_agent(rag, system_prompt=system_prompt)
 
-    with Progress(console=console) as progress:
-        qa_task = progress.add_task(
-            "[yellow]Evaluating QA cases...",
-            total=len(evaluation_dataset.cases),
+        async def answer_question(question: str) -> str:
+            return await qa.answer(question)
+
+        report = await evaluation_dataset.evaluate(
+            answer_question,
+            name=f"{spec.key}_qa_evaluation",
+            max_concurrency=1,
+            progress=True,
         )
 
-        async with HaikuRAG(spec.db_path, config=config) as rag:
-            system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
-            qa = get_qa_agent(rag, system_prompt=system_prompt)
-
-            async def answer_question(question: str) -> str:
-                return await qa.answer(question)
-
-            for case in evaluation_dataset.cases:
-                single_case_dataset = EvalDataset[str, str, dict[str, str]](
-                    cases=[case],
-                    evaluators=evaluation_dataset.evaluators,
-                )
-
-                report = await single_case_dataset.evaluate(
-                    answer_question,
-                    name="qa_answer",
-                    max_concurrency=1,
-                    progress=False,
-                )
-
-                total_processed += 1
-
-                if report.cases:
-                    result_case = report.cases[0]
-
-                    equivalence = result_case.assertions.get("answer_equivalent")
-                    if equivalence is not None:
-                        if equivalence.value:
-                            passing_cases += 1
-
-                if report.failures:
-                    failures.extend(report.failures)
-                    failure = report.failures[0]
-                    progress.console.print(
-                        "[red]Failure encountered during case evaluation:[/red]"
-                    )
-                    progress.console.print(f"Error: {failure.error_message}")
-                    progress.console.print("")
-
-                progress.update(
-                    qa_task,
-                    description="[yellow]Evaluating QA cases...[/yellow] "
-                    f"[green]Accuracy: {(passing_cases / total_processed):.2f} "
-                    f"{passing_cases}/{total_processed}[/green]",
-                )
-                progress.advance(qa_task)
+    passing_cases = sum(
+        1
+        for case in report.cases
+        if case.assertions.get("answer_equivalent")
+        and case.assertions["answer_equivalent"].value
+    )
+    total_processed = len(report.cases)
+    failures = report.failures
 
     total_cases = total_processed
     accuracy = passing_cases / total_cases if total_cases > 0 else 0
