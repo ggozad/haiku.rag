@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Evaluations**: Refactored QA benchmark to run entire dataset as single evaluation for better Logfire experiment tracking
+- **Evaluations**: Added `.env` file loading support via `python-dotenv` dependency
+
 ## [0.16.0] - 2025-11-13
 
 ### Added
