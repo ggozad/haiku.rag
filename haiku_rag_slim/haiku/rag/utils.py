@@ -1,51 +1,11 @@
-import asyncio
 import importlib
 import importlib.util
 import sys
-from collections.abc import Callable
-from functools import wraps
 from importlib import metadata
-from io import BytesIO
 from pathlib import Path
 from types import ModuleType
 
 from packaging.version import Version, parse
-
-
-def debounce(wait: float) -> Callable:
-    """
-    A decorator to debounce a function, ensuring it is called only after a specified delay
-    and always executes after the last call.
-
-    Args:
-        wait (float): The debounce delay in seconds.
-
-    Returns:
-        Callable: The decorated function.
-    """
-
-    def decorator(func: Callable) -> Callable:
-        last_call = None
-        task = None
-
-        @wraps(func)
-        async def debounced(*args, **kwargs):
-            nonlocal last_call, task
-            last_call = asyncio.get_event_loop().time()
-
-            if task:
-                task.cancel()
-
-            async def call_func():
-                await asyncio.sleep(wait)
-                if asyncio.get_event_loop().time() - last_call >= wait:  # type: ignore
-                    await func(*args, **kwargs)
-
-            task = asyncio.create_task(call_func())
-
-        return debounced
-
-    return decorator
 
 
 def get_default_data_dir() -> Path:
@@ -91,34 +51,6 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
             # If no network connection, do not raise alarms.
             pypi_version = running_version
     return running_version >= pypi_version, running_version, pypi_version
-
-
-def text_to_docling_document(text: str, name: str = "content.md"):
-    """Convert text content to a DoclingDocument.
-
-    Args:
-        text: The text content to convert.
-        name: The name to use for the document stream (defaults to "content.md").
-
-    Returns:
-        A DoclingDocument created from the text content.
-    """
-    try:
-        import docling  # noqa: F401
-    except ImportError as e:
-        raise ImportError(
-            "Docling is required for document conversion. "
-            "Install with: pip install haiku.rag-slim[docling]"
-        ) from e
-
-    from docling.document_converter import DocumentConverter
-    from docling_core.types.io import DocumentStream
-
-    bytes_io = BytesIO(text.encode("utf-8"))
-    doc_stream = DocumentStream(name=name, stream=bytes_io)
-    converter = DocumentConverter()
-    result = converter.convert(doc_stream)
-    return result.document
 
 
 def load_callable(path: str):
@@ -173,7 +105,7 @@ def load_callable(path: str):
 
 
 def prefetch_models():
-    """Prefetch runtime models (Docling + Ollama as configured)."""
+    """Prefetch runtime models (Docling + Ollama + HuggingFace tokenizer as configured)."""
     import httpx
 
     from haiku.rag.config import Config
@@ -185,6 +117,11 @@ def prefetch_models():
     except ImportError:
         # Docling not installed, skip downloading docling models
         pass
+
+    # Download HuggingFace tokenizer
+    from transformers import AutoTokenizer
+
+    AutoTokenizer.from_pretrained(Config.processing.chunking_tokenizer)
 
     # Collect Ollama models from config
     required_models: set[str] = set()
