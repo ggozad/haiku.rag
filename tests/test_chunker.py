@@ -73,3 +73,67 @@ def test_get_chunker_invalid():
     config.processing.chunker = "invalid-chunker"
     with pytest.raises(ValueError, match="Unsupported chunker"):
         get_chunker(config)
+
+
+@pytest.mark.asyncio
+async def test_local_chunker_hierarchical(qa_corpus: Dataset):
+    """Test DoclingLocalChunker with hierarchical chunking."""
+    config = AppConfig()
+    config.processing.chunker_type = "hierarchical"
+    chunker = DoclingLocalChunker(config)
+
+    doc_text = qa_corpus[0]["document_extracted"]
+    converter = get_converter(Config)
+    doc = converter.convert_text(doc_text, name="test.md")
+
+    chunks = await chunker.chunk(doc)
+
+    # Hierarchical chunker should produce chunks
+    assert len(chunks) > 0
+    # Each chunk should be non-empty
+    for chunk in chunks:
+        assert len(chunk.strip()) > 0
+
+
+def test_local_chunker_invalid_type():
+    """Test DoclingLocalChunker raises error for invalid chunker_type."""
+    config = AppConfig()
+    config.processing.chunker_type = "invalid-type"
+    with pytest.raises(ValueError, match="Unsupported chunker_type"):
+        DoclingLocalChunker(config)
+
+
+@pytest.mark.asyncio
+async def test_local_chunker_markdown_tables():
+    """Test DoclingLocalChunker with markdown table serialization."""
+    markdown_with_table = """# Test Document
+
+| Column 1 | Column 2 |
+|----------|----------|
+| Value A  | Value B  |
+| Value D  | Value E  |
+"""
+
+    converter = get_converter(Config)
+    doc = converter.convert_text(markdown_with_table, name="test.md")
+
+    # Test with markdown tables enabled
+    config_md = AppConfig()
+    config_md.processing.chunking_use_markdown_tables = True
+    chunker_md = DoclingLocalChunker(config_md)
+    chunks_md = await chunker_md.chunk(doc)
+
+    # Should contain markdown table format
+    assert any("|" in chunk for chunk in chunks_md)
+    assert any("Column 1" in chunk for chunk in chunks_md)
+
+    # Test with markdown tables disabled (narrative format)
+    config_narrative = AppConfig()
+    config_narrative.processing.chunking_use_markdown_tables = False
+    chunker_narrative = DoclingLocalChunker(config_narrative)
+    chunks_narrative = await chunker_narrative.chunk(doc)
+
+    # Should contain narrative format (no pipe characters in table)
+    table_content = [chunk for chunk in chunks_narrative if "Value" in chunk][0]
+    # Narrative format uses commas, not pipes for table structure
+    assert "," in table_content and "|" not in table_content
