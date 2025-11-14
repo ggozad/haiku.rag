@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.16.1] - 2025-11-14
+
 ### Changed
 
 - **Evaluations**: Refactored QA benchmark to run entire dataset as single evaluation for better Logfire experiment tracking
