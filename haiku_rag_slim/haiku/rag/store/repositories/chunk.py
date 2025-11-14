@@ -150,8 +150,10 @@ class ChunkRepository:
     ) -> list[Chunk]:
         """Create chunks and embeddings for a document from DoclingDocument."""
         # Lazy imports to avoid loading docling during module import
-        from haiku.rag.chunker import chunker
+        from haiku.rag.chunkers import get_chunker
         from haiku.rag.converters import get_converter
+
+        chunker = get_chunker(self.store._config)
 
         # Optionally preprocess markdown before chunking
         processed_document = document

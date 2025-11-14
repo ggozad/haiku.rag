@@ -2,14 +2,16 @@ import pytest
 from datasets import Dataset
 from transformers import AutoTokenizer
 
-from haiku.rag.chunker import Chunker
-from haiku.rag.config import Config
+from haiku.rag.chunkers import get_chunker
+from haiku.rag.chunkers.docling_local import DoclingLocalChunker
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
 
 
 @pytest.mark.asyncio
-async def test_chunker(qa_corpus: Dataset):
-    chunker = Chunker()
+async def test_local_chunker(qa_corpus: Dataset):
+    """Test DoclingLocalChunker with real document."""
+    chunker = DoclingLocalChunker()
     doc_text = qa_corpus[0]["document_extracted"]
 
     # Convert text to DoclingDocument
@@ -43,3 +45,31 @@ async def test_chunker(qa_corpus: Dataset):
     # Due to structure-aware chunking, we might have some variation in token count
     # but it should be reasonable
     assert abs(total_tokens - original_tokens) <= original_tokens * 0.1
+
+
+@pytest.mark.asyncio
+async def test_local_chunker_custom_config():
+    """Test DoclingLocalChunker with custom configuration."""
+    config = AppConfig()
+    config.processing.chunk_size = 128
+    config.processing.chunking_tokenizer = "Qwen/Qwen3-Embedding-0.6B"
+
+    chunker = DoclingLocalChunker(config)
+    assert chunker.chunk_size == 128
+    assert chunker.tokenizer_name == "Qwen/Qwen3-Embedding-0.6B"
+
+
+def test_get_chunker_docling_local():
+    """Test factory returns DoclingLocalChunker for docling-local."""
+    config = AppConfig()
+    config.processing.chunker = "docling-local"
+    chunker = get_chunker(config)
+    assert isinstance(chunker, DoclingLocalChunker)
+
+
+def test_get_chunker_invalid():
+    """Test factory raises error for invalid chunker."""
+    config = AppConfig()
+    config.processing.chunker = "invalid-chunker"
+    with pytest.raises(ValueError, match="Unsupported chunker"):
+        get_chunker(config)
