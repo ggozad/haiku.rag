@@ -1,4 +1,22 @@
 services:
+  docling-serve:
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: ag-ui-docling-serve
+    ports:
+      - "5001:5001"
+    environment:
+      - DOCLING_SERVE_ENABLE_UI=1
+    networks:
+      - ag-ui-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      start_interval: 5s
+
   backend:
     build:
       context: ./backend
@@ -17,13 +35,13 @@ services:
     volumes:
       - ${DB_PATH}:/app/data/haiku.rag.lancedb
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
-      - ./backend/main.py:/app/main.py
-      - ./backend/agent.py:/app/agent.py
-      - ../../haiku_rag_slim/haiku:/app/.venv/lib/python3.13/site-packages/haiku
     networks:
       - ag-ui-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      docling-serve:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

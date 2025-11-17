@@ -9,14 +9,14 @@ Retrieval-Augmented Generation (RAG) library built on LanceDB.
 - **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
 - **Multiple embedding providers**: Ollama, VoyageAI, OpenAI, vLLM
 - **Multiple QA providers**: Any provider/model supported by Pydantic AI
-- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
 - **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
 - **Reranking**: Default search result reranking with MixedBread AI, Cohere, Zero Entropy, or vLLM
 - **Question answering**: Built-in QA agents on your documents
+- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
 - **File monitoring**: Auto-index files when run as server
-- **40+ file formats**: PDF, DOCX, HTML, Markdown, code files, URLs
-- **MCP server**: Expose as tools for AI assistants
 - **CLI & Python API**: Use from command line or Python
+- **MCP server**: Expose as tools for AI assistants
+- **Flexible document processing**: Local (docling) or remote (docling-serve) processing
 
 ## Installation
 

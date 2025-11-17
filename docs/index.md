@@ -11,6 +11,7 @@
 - **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic
 - **File monitoring**: Automatically index files when run as a server
 - **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, code files and more. Or add a URL!
+- **Flexible document processing**: Local processing with docling or remote with [docling-serve](remote-processing.md)
 - **MCP server**: Exposes functionality as MCP tools
 - **CLI commands**: Access all functionality from your terminal
   - Add sources from text, files, or URLs, optionally with a human‑readable title
@@ -60,6 +61,7 @@ haiku-rag ask "Who is the author of haiku.rag?"
 - [MCP](mcp.md) - Model Context Protocol integration
 - [Python](python.md) - Python API reference
 - [Agents](agents.md) - QA agent and multi-agent research
+- [Remote processing](remote-processing.md) - Remote document processing with docling-serve
 
 ## License
 

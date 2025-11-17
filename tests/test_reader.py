@@ -1,7 +1,8 @@
 import tempfile
 from pathlib import Path
 
-from haiku.rag.reader import FileReader
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 
 
 def test_code_file_wrapped_in_code_block():
@@ -15,7 +16,8 @@ def test_code_file_wrapped_in_code_block():
         f.flush()
         temp_path = Path(f.name)
 
-        document = FileReader.parse_file(temp_path)
+        converter = get_converter(Config)
+        document = converter.convert_file(temp_path)
         result = document.export_to_markdown()
 
         assert result.startswith("```\n")

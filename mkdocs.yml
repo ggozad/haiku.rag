@@ -64,6 +64,7 @@ nav:
       - Python: python.md
       - Agents: agents.md
       - Server: server.md
+      - Remote processing: remote-processing.md
       - MCP: mcp.md
       - Benchmarks: benchmarks.md
 markdown_extensions:

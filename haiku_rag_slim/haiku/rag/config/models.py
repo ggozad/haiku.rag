@@ -54,6 +54,12 @@ class ProcessingConfig(BaseModel):
     chunk_size: int = 256
     context_chunk_radius: int = 0
     markdown_preprocessor: str = ""
+    converter: str = "docling-local"
+    chunker: str = "docling-local"
+    chunker_type: str = "hybrid"
+    chunking_tokenizer: str = "Qwen/Qwen3-Embedding-0.6B"
+    chunking_merge_peers: bool = True
+    chunking_use_markdown_tables: bool = False
 
 
 class OllamaConfig(BaseModel):
@@ -71,9 +77,16 @@ class VLLMConfig(BaseModel):
     research_base_url: str = ""
 
 
+class DoclingServeConfig(BaseModel):
+    base_url: str = "http://localhost:5001"
+    api_key: str = ""
+    timeout: int = 300
+
+
 class ProvidersConfig(BaseModel):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     vllm: VLLMConfig = Field(default_factory=VLLMConfig)
+    docling_serve: DoclingServeConfig = Field(default_factory=DoclingServeConfig)
 
 
 class AGUIConfig(BaseModel):

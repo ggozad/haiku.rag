@@ -1,12 +1,13 @@
 import pytest
 from datasets import Dataset
 
+from haiku.rag.config import Config
+from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
-from haiku.rag.utils import text_to_docling_document
 
 
 @pytest.mark.asyncio
@@ -23,9 +24,8 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
 
     # Create a document first with chunks
     document = Document(content=document_text, metadata={"source": "test"})
-    from haiku.rag.utils import text_to_docling_document
-
-    docling_document = text_to_docling_document(document_text, name="test.md")
+    converter = get_converter(Config)
+    docling_document = converter.convert_text(document_text, name="test.md")
     created_document = await doc_repo._create_and_chunk(document, docling_document)
     assert created_document.id is not None
 
@@ -70,7 +70,8 @@ async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
     assert document_id is not None, "Document ID should not be None"
 
     # Convert text to DoclingDocument
-    docling_document = text_to_docling_document(document_text, name="test.md")
+    converter = get_converter(Config)
+    docling_document = converter.convert_text(document_text, name="test.md")
 
     # Test creating chunks for the document
     chunks = await chunk_repo.create_chunks_for_document(document_id, docling_document)

@@ -98,6 +98,12 @@ processing:
   chunk_size: 256
   context_chunk_radius: 0
   markdown_preprocessor: ""
+  converter: docling-local  # docling-local or docling-serve
+  chunker: docling-local    # docling-local or docling-serve
+  chunker_type: hybrid      # hybrid or hierarchical
+  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
+  chunking_merge_peers: true
+  chunking_use_markdown_tables: false
 
 providers:
   ollama:
@@ -108,6 +114,11 @@ providers:
     rerank_base_url: ""
     qa_base_url: ""
     research_base_url: ""
+
+  docling_serve:
+    base_url: http://localhost:5001
+    api_key: ""
+    timeout: 300
 ```
 
 ## Programmatic Configuration
@@ -199,10 +210,85 @@ monitor:
 ```
 
 Patterns follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format):
+
 - `*` matches anything except `/`
 - `**` matches zero or more directories
 - `?` matches any single character
 - `[abc]` matches any character in the set
+
+## Document Processing
+
+Configure how documents are converted and chunked:
+
+```yaml
+processing:
+  # Chunking configuration
+  chunk_size: 256                            # Maximum tokens per chunk
+  context_chunk_radius: 0                    # Context radius for chunk expansion
+  markdown_preprocessor: ""                  # Optional preprocessor script
+
+  # Converter selection
+  converter: docling-local                   # docling-local or docling-serve
+
+  # Chunker selection and configuration
+  chunker: docling-local                     # docling-local or docling-serve
+  chunker_type: hybrid                       # hybrid or hierarchical
+  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"  # HuggingFace model for tokenization
+  chunking_merge_peers: true                 # Merge undersized successive chunks
+  chunking_use_markdown_tables: false        # Use markdown tables vs narrative format
+```
+
+### Local vs Remote Processing
+
+**Local processing** (default):
+
+- Uses `docling` library locally
+- No external dependencies
+- Good for development and small workloads
+
+**Remote processing** (docling-serve):
+
+- Offloads processing to docling-serve API
+- Better for heavy workloads and production
+- Requires docling-serve instance (see [Remote processing setup](remote-processing.md))
+
+To use remote processing:
+
+```yaml
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+
+providers:
+  docling_serve:
+    base_url: http://localhost:5001
+    api_key: "your-api-key"  # Optional
+    timeout: 300              # Request timeout in seconds
+```
+
+### Chunking Strategies
+
+**Hybrid chunking** (default):
+- Structure-aware chunking
+- Respects document boundaries
+- Best for most use cases
+
+**Hierarchical chunking**:
+- Creates hierarchical chunk structure
+- Preserves document hierarchy
+- Useful for complex documents
+
+### Table Serialization
+
+Control how tables are represented in chunks:
+
+```yaml
+processing:
+  chunking_use_markdown_tables: false  # Default: narrative format
+```
+
+- `false`: Tables as narrative text ("Value A, Column 2 = Value B")
+- `true`: Tables as markdown (preserves table structure)
 
 ## Embedding Providers
 
