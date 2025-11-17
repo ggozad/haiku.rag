@@ -75,14 +75,23 @@ See [Remote processing](remote-processing.md) for setup instructions and [Docume
 
 ## Docker
 
+Two Docker images are available:
+
+### Full Image (Self-contained)
+
+Includes all features and document processing built-in:
+
 ```bash
 docker pull ghcr.io/ggozad/haiku.rag:latest
+docker run -p 8001:8001 -v $(pwd)/data:/data ghcr.io/ggozad/haiku.rag:latest
 ```
 
-Run the container with all services:
+### Slim Image (Minimal)
+
+Minimal dependencies - use with external docling-serve for document processing:
 
 ```bash
-docker run -p 8000:8000 -p 8001:8001 -v $(pwd)/data:/data ghcr.io/ggozad/haiku.rag:latest
+docker pull ghcr.io/ggozad/haiku.rag-slim:latest
 ```
 
-This starts the MCP server on port 8001, with data persisted to `./data`.
+See `examples/docker/docker-compose.yml` for a complete setup with docling-serve.

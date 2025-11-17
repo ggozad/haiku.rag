@@ -5,21 +5,29 @@ environment: production
 
 storage:
   data_dir: /data
-  monitor_directories:
+
+monitor:
+  directories:
     - /docs
 
-embeddings:
-  provider: ollama
-  model: nomic-embed-text
-  vector_dim: 768
-
-qa:
-  provider: ollama
-  model: qwen3
+# Remote document processing with docling-serve
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+  chunk_size: 256
+  chunker_type: hybrid
+  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
+  chunking_merge_peers: true
+  chunking_use_markdown_tables: false
 
 providers:
+  docling_serve:
+    base_url: http://docling-serve:5001
+    api_key: ""
+    timeout: 300
   ollama:
     base_url: http://host.docker.internal:11434
+
 
 # For other providers (OpenAI, Anthropic, VoyageAI, etc.),
 # see: https://ggozad.github.io/haiku.rag/configuration/

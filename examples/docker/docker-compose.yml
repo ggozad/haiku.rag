@@ -1,8 +1,24 @@
 services:
+  docling-serve:
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: docling-serve
+    ports:
+      - "5001:5001"
+    environment:
+      - DOCLING_SERVE_ENABLE_UI=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      start_interval: 5s
+
   haiku-rag:
     build:
       context: ../..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.slim
     container_name: haiku-rag
     ports:
       - "8001:8001"  # MCP server
@@ -16,5 +32,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - CO_API_KEY=${CO_API_KEY}
-
+    depends_on:
+      docling-serve:
+        condition: service_healthy
     restart: unless-stopped
