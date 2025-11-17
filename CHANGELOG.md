@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.17.0] - 2025-11-17
+
 ### Added
 
 - **Remote Processing**: Support for docling-serve as remote document processing and chunking service
