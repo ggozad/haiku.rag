@@ -1,16 +1,27 @@
 # haiku.rag configuration for ag-ui-research example
 # Copy to haiku.rag.yaml and customize
 
+# Document processing with docling-serve
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+  chunk_size: 256
+  chunker_type: hybrid
+
+providers:
+  docling_serve:
+    base_url: http://docling-serve:5001
+    api_key: ""
+    timeout: 300
+  ollama:
+    base_url: http://host.docker.internal:11434
+
 research:
   provider: ollama
   model: gpt-oss:latest
   max_iterations: 3
   confidence_threshold: 0.8
   max_concurrency: 1
-
-providers:
-  ollama:
-    base_url: http://host.docker.internal:11434
 
 # For OpenAI:
 # research:

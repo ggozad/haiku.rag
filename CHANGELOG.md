@@ -18,6 +18,13 @@
   - `true`: Tables preserved as markdown format with structure
 - **Chunking Configuration**: Additional chunking control options
   - New `chunking_merge_peers` config option (default: `true`) to merge undersized successive chunks
+- **Docker Images**: Two Docker images for different deployment scenarios
+  - `haiku.rag`: Full image with all dependencies for self-contained deployments
+  - `haiku.rag-slim`: Minimal image designed for use with external docling-serve
+  - Multi-platform support (linux/amd64, linux/arm64)
+  - Docker Compose examples with docling-serve integration
+  - Automated CI/CD workflows for both images
+  - Build script (`scripts/build-docker-images.sh`) for local multi-platform builds
 
 ### Changed
 
@@ -25,6 +32,10 @@
   - Default tokenizer changed from tiktoken "gpt-4o" to "Qwen/Qwen3-Embedding-0.6B"
   - New `chunking_tokenizer` config option in `ProcessingConfig` for customization
   - `download-models` CLI command now also downloads the configured HuggingFace tokenizer
+- **Docker Examples**: Updated examples to demonstrate remote processing
+  - `examples/docker` now uses slim image with docling-serve
+  - `examples/ag-ui-research` backend uses slim image with docling-serve
+  - Configuration examples include remote processing setup
 
 ## [0.16.1] - 2025-11-14
 

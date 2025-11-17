@@ -23,12 +23,30 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
 ### Setup
 
 1. **Prepare your knowledge base**
+
+   **Option A: Create a new database**
    ```bash
    mkdir -p data
    haiku-rag add "Your documents here" --db data/haiku_rag.lancedb
    # Or add from files
    haiku-rag add-src document.pdf --db data/haiku_rag.lancedb
    ```
+
+   **Option B: Use an existing database**
+
+   Set the `DB_PATH` environment variable to point to your existing haiku.rag database:
+   ```bash
+   # In .env file
+   DB_PATH=/path/to/your/existing/haiku_rag.lancedb
+   ```
+
+   Or export it before running docker compose:
+   ```bash
+   export DB_PATH=/path/to/your/existing/haiku_rag.lancedb
+   docker compose up --build
+   ```
+
+   The database will be mounted as read-write, so the research assistant can access all documents in your existing knowledge base.
 
 2. **Configure haiku.rag**
    ```bash
@@ -41,16 +59,17 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
    ```bash
    cp .env.example .env
    # Edit .env to set your API keys
-   export OPENAI_API_KEY=your-key-here
-   export ANTHROPIC_API_KEY=your-key-here
+   OPENAI_API_KEY=your-key-here
+   ANTHROPIC_API_KEY=your-key-here
+   DB_PATH=/path/to/your/existing/haiku_rag.lancedb # If using an existing db.
    ```
 
-4. **Start the application**
+1. **Start the application**
    ```bash
    docker compose up --build
    ```
 
-5. **Access the interface**
+2. **Access the interface**
    - Frontend: http://localhost:3000
    - Backend health: http://localhost:8000/health
 
