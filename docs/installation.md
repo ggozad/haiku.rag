@@ -58,7 +58,20 @@ You can prefetch all required runtime models before first use:
 haiku-rag download-models
 ```
 
-This will download Docling models and pull any Ollama models referenced by your current configuration.
+This will download:
+- Docling models for document processing
+- HuggingFace tokenizer models for chunking
+- Any Ollama models referenced by your current configuration
+
+## Remote Processing (Optional)
+
+When using `haiku.rag-slim`, you can skip installing the `docling` extra and instead use [docling-serve](https://github.com/docling-project/docling-serve) for remote document processing. This is useful for:
+
+- Keeping dependencies minimal
+- Offloading heavy document processing to a dedicated service
+- Production deployments with separate processing infrastructure
+
+See [Remote processing](remote-processing.md) for setup instructions and [Document Processing](configuration.md#document-processing) for configuration options.
 
 ## Docker
 
