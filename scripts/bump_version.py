@@ -6,6 +6,7 @@ Updates version in all pyproject.toml files and CHANGELOG.md.
 """
 
 import re
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -122,6 +123,16 @@ def main():
 
     # Update CHANGELOG.md
     update_changelog(changelog_file, new_version)
+
+    # Run uv sync to update lock file
+    print()
+    print("Running uv sync...")
+    try:
+        subprocess.run(["uv", "sync"], check=True, cwd=root)
+        print("✓ Lock file updated")
+    except subprocess.CalledProcessError as e:
+        print(f"Error: uv sync failed with exit code {e.returncode}")
+        sys.exit(1)
 
     print()
     print(f"✓ Version bumped from {current_version} to {new_version}")
