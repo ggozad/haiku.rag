@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.17.1] - 2025-11-18
+
 ### Added
 
 - **Conversion Options**: Fine-grained control over document conversion for both local and remote converters
