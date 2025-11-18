@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Updated core dependencies:
+
 ## [0.17.1] - 2025-11-18
 
 ### Added
