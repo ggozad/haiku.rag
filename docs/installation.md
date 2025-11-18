@@ -77,21 +77,23 @@ See [Remote processing](remote-processing.md) for setup instructions and [Docume
 
 Two Docker images are available:
 
-### Full Image (Self-contained)
-
-Includes all features and document processing built-in:
-
-```bash
-docker pull ghcr.io/ggozad/haiku.rag:latest
-docker run -p 8001:8001 -v $(pwd)/data:/data ghcr.io/ggozad/haiku.rag:latest
-```
-
 ### Slim Image (Minimal)
 
-Minimal dependencies - use with external docling-serve for document processing:
+Pre-built slim image with minimal dependencies - use with external docling-serve for document processing:
 
 ```bash
 docker pull ghcr.io/ggozad/haiku.rag-slim:latest
 ```
 
 See `examples/docker/docker-compose.yml` for a complete setup with docling-serve.
+
+### Full Image (Self-contained)
+
+Build locally to include all features and document processing without docling-serve:
+
+```bash
+docker build -f docker/Dockerfile -t haiku-rag .
+docker run -p 8001:8001 -v $(pwd)/data:/data haiku-rag
+```
+
+See `docker/README.md` for complete build and configuration instructions.
