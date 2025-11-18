@@ -8,6 +8,7 @@ from haiku.rag.config.loader import (
 from haiku.rag.config.models import (
     AGUIConfig,
     AppConfig,
+    ConversionOptions,
     EmbeddingsConfig,
     LanceDBConfig,
     MonitorConfig,
@@ -25,6 +26,7 @@ __all__ = [
     "Config",
     "AGUIConfig",
     "AppConfig",
+    "ConversionOptions",
     "StorageConfig",
     "MonitorConfig",
     "LanceDBConfig",

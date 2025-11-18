@@ -118,26 +118,33 @@ class TestConverterFactory:
 class TestDoclingLocalConverter:
     """Tests for DoclingLocalConverter."""
 
-    def test_supported_extensions(self):
+    @pytest.fixture
+    def config(self):
+        """Create test configuration."""
+        return AppConfig()
+
+    @pytest.fixture
+    def converter(self, config):
+        """Create DoclingLocalConverter instance."""
+        return DoclingLocalConverter(config)
+
+    def test_supported_extensions(self, converter):
         """Test that converter reports correct supported extensions."""
-        converter = DoclingLocalConverter()
         extensions = converter.supported_extensions
         assert ".pdf" in extensions
         assert ".docx" in extensions
         assert ".py" in extensions
         assert ".txt" in extensions
 
-    def test_convert_text(self):
+    def test_convert_text(self, converter):
         """Test converting text to DoclingDocument."""
-        converter = DoclingLocalConverter()
         doc = converter.convert_text("# Test\n\nContent here", name="test.md")
         assert isinstance(doc, DoclingDocument)
         assert doc.name == "test"
 
-    def test_convert_code_file(self):
+    def test_convert_code_file(self, converter):
         """Test that code files are wrapped in code blocks."""
         python_code = "def hello():\n    print('Hello')"
-        converter = DoclingLocalConverter()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
             f.write(python_code)
@@ -148,6 +155,17 @@ class TestDoclingLocalConverter:
 
             assert "```" in result
             assert "def hello():" in result
+
+    def test_conversion_options_applied_to_local_converter(self, config):
+        """Test that conversion options are applied to local docling converter."""
+        config.processing.conversion_options.do_ocr = False
+        config.processing.conversion_options.table_mode = "fast"
+        config.processing.conversion_options.images_scale = 3.0
+        converter = DoclingLocalConverter(config)
+
+        assert converter.config.processing.conversion_options.do_ocr is False
+        assert converter.config.processing.conversion_options.table_mode == "fast"
+        assert converter.config.processing.conversion_options.images_scale == 3.0
 
 
 class TestDoclingServeConverter:
@@ -215,6 +233,40 @@ class TestDoclingServeConverter:
         call_kwargs = mock_post.call_args.kwargs
         assert "headers" in call_kwargs
         assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
+
+    @patch("haiku.rag.converters.docling_serve.requests.post")
+    def test_conversion_options_passed_to_api(self, mock_post, config):
+        """Test that conversion options are passed to docling-serve API."""
+        config.processing.conversion_options.do_ocr = False
+        config.processing.conversion_options.force_ocr = True
+        config.processing.conversion_options.ocr_lang = ["en", "fr"]
+        config.processing.conversion_options.table_mode = "fast"
+        config.processing.conversion_options.table_cell_matching = False
+        config.processing.conversion_options.do_table_structure = False
+        config.processing.conversion_options.images_scale = 3.0
+        converter = DoclingServeConverter(config)
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "success",
+            "document": {"json_content": create_mock_docling_document_json("test")},
+        }
+        mock_post.return_value = mock_response
+
+        converter.convert_text("# Test")
+
+        call_kwargs = mock_post.call_args.kwargs
+        assert "data" in call_kwargs
+        data = call_kwargs["data"]
+        assert data["do_ocr"] is False
+        assert data["force_ocr"] is True
+        assert data["ocr_lang"] == ["en", "fr"]
+        assert "pdf_backend" not in data
+        assert data["table_mode"] == "fast"
+        assert data["table_cell_matching"] is False
+        assert data["do_table_structure"] is False
+        assert data["images_scale"] == 3.0
 
     @patch("haiku.rag.converters.docling_serve.requests.post")
     def test_convert_text_connection_error(self, mock_post, converter):

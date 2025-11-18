@@ -21,7 +21,7 @@ def get_converter(config: AppConfig = Config) -> DocumentConverter:
     if config.processing.converter == "docling-local":
         from haiku.rag.converters.docling_local import DoclingLocalConverter
 
-        return DoclingLocalConverter()
+        return DoclingLocalConverter(config)
 
     if config.processing.converter == "docling-serve":
         from haiku.rag.converters.docling_serve import DoclingServeConverter

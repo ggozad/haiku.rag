@@ -78,9 +78,27 @@ class DoclingServeConverter(DocumentConverter):
 
         try:
             url = f"{self.base_url}/v1/convert/file"
-            data = {"to_formats": ["json"]}
-            headers = {}
+            opts = self.config.processing.conversion_options
 
+            # Build data dict with conversion options
+            data = {
+                "to_formats": ["json"],
+                # OCR options
+                "do_ocr": opts.do_ocr,
+                "force_ocr": opts.force_ocr,
+                # Table options
+                "do_table_structure": opts.do_table_structure,
+                "table_mode": opts.table_mode,
+                "table_cell_matching": opts.table_cell_matching,
+                # Image options
+                "images_scale": opts.images_scale,
+            }
+
+            # Add OCR language if specified
+            if opts.ocr_lang:
+                data["ocr_lang"] = opts.ocr_lang
+
+            headers = {}
             if self.api_key:
                 headers["X-Api-Key"] = self.api_key
 

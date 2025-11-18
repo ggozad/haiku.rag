@@ -1,8 +1,9 @@
 """Local docling converter implementation."""
 
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
+from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import DocumentConverter
 from haiku.rag.converters.text_utils import TextFileHandler
 
@@ -39,6 +40,14 @@ class DoclingLocalConverter(DocumentConverter):
         ".webp",
     ]
 
+    def __init__(self, config: AppConfig):
+        """Initialize the converter with configuration.
+
+        Args:
+            config: Application configuration containing conversion options.
+        """
+        self.config = config
+
     @property
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
@@ -56,14 +65,61 @@ class DoclingLocalConverter(DocumentConverter):
         Raises:
             ValueError: If the file cannot be converted.
         """
-        from docling.document_converter import DocumentConverter as DoclingDocConverter
+        from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import (
+            OcrOptions,
+            PdfPipelineOptions,
+            TableFormerMode,
+            TableStructureOptions,
+        )
+        from docling.document_converter import (
+            DocumentConverter as DoclingDocConverter,
+        )
+        from docling.document_converter import (
+            FormatOption,
+            PdfFormatOption,
+        )
 
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
+                # Get conversion options from config
+                opts = self.config.processing.conversion_options
+
+                # Build pipeline options for PDF conversion
+                pipeline_options = PdfPipelineOptions(
+                    do_ocr=opts.do_ocr,
+                    do_table_structure=opts.do_table_structure,
+                    images_scale=opts.images_scale,
+                    table_structure_options=TableStructureOptions(
+                        do_cell_matching=opts.table_cell_matching,
+                        mode=(
+                            TableFormerMode.FAST
+                            if opts.table_mode == "fast"
+                            else TableFormerMode.ACCURATE
+                        ),
+                    ),
+                    ocr_options=OcrOptions(
+                        force_full_page_ocr=opts.force_ocr,
+                        lang=opts.ocr_lang if opts.ocr_lang else [],
+                    ),
+                )
+
+                # Create format options for PDF
+                format_options = cast(
+                    dict[InputFormat, FormatOption],
+                    {
+                        InputFormat.PDF: PdfFormatOption(
+                            pipeline_options=pipeline_options,
+                            backend=DoclingParseDocumentBackend,
+                        )
+                    },
+                )
+
                 # Use docling for complex document formats
-                converter = DoclingDocConverter()
+                converter = DoclingDocConverter(format_options=format_options)
                 result = converter.convert(path)
                 return result.document
             elif file_extension in TextFileHandler.text_extensions:
