@@ -1,7 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
 - Increase reranking candidate retrieval multiplier from 3x to 10x for improved result quality
+- **Docker Images**: Main `haiku.rag` image no longer automatically built and published
 
 ## [0.17.0] - 2025-11-17
 

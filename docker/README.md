@@ -1,12 +1,20 @@
 # haiku.rag Docker Image
 
-Pre-built images are available at `ghcr.io/ggozad/haiku.rag` with all extras (voyageai, mxbai).
+The full haiku.rag Docker image includes all features and extras (docling, voyageai, mxbai). You can build it locally using the provided Dockerfile.
 
-## Using Pre-built Image
+## Building the Image
+
+Build the full image with all features:
 
 ```bash
-docker pull ghcr.io/ggozad/haiku.rag:latest
+docker build -f docker/Dockerfile -t haiku-rag .
 ```
+
+This creates an image with:
+- All document processing capabilities (Docling)
+- VoyageAI embeddings
+- MixedBread AI reranking
+- Full feature set
 
 ## Configuration
 
@@ -36,7 +44,7 @@ Mount your config file and data directory:
 docker run -p 8001:8001 \
   -v $(pwd)/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v $(pwd)/data:/data \
-  ghcr.io/ggozad/haiku.rag:latest
+  haiku-rag
 ```
 
 The container will automatically use the mounted `haiku.rag.yaml` configuration file.
@@ -48,13 +56,7 @@ docker run -p 8001:8001 \
   -v $(pwd)/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v $(pwd)/data:/data \
   -e OPENAI_API_KEY=your-key-here \
-  ghcr.io/ggozad/haiku.rag:latest
-```
-
-## Building Locally
-
-```bash
-docker build -f docker/Dockerfile -t haiku-rag .
+  haiku-rag
 ```
 
 ## Docker Compose

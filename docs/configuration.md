@@ -95,15 +95,15 @@ agui:
   cors_headers: ["*"]
 
 processing:
-  chunk_size: 256
-  context_chunk_radius: 0
-  markdown_preprocessor: ""
   converter: docling-local  # docling-local or docling-serve
   chunker: docling-local    # docling-local or docling-serve
   chunker_type: hybrid      # hybrid or hierarchical
+  chunk_size: 256
+  context_chunk_radius: 0
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
   chunking_use_markdown_tables: false
+  markdown_preprocessor: ""
 
 providers:
   ollama:
