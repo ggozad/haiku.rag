@@ -1,10 +1,20 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Conversion Options**: Fine-grained control over document conversion for both local and remote converters
+  - New `conversion_options` config section in `ProcessingConfig`
+  - OCR settings: `do_ocr`, `force_ocr`, `ocr_lang` for controlling OCR behavior
+  - Table extraction: `do_table_structure`, `table_mode` (fast/accurate), `table_cell_matching`
+  - Image settings: `images_scale` to control image resolution
+  - Options work identically with both `docling-local` and `docling-serve` converters
+
 ### Changed
 
 - Increase reranking candidate retrieval multiplier from 3x to 10x for improved result quality
 - **Docker Images**: Main `haiku.rag` image no longer automatically built and published
+- **Conversion Options**: Removed the legacy `pdf_backend` setting; docling now chooses the optimal backend automatically
 
 ## [0.17.0] - 2025-11-17
 

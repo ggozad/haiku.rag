@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +51,23 @@ class ResearchConfig(BaseModel):
     max_concurrency: int = 1
 
 
+class ConversionOptions(BaseModel):
+    """Options for document conversion."""
+
+    # OCR options
+    do_ocr: bool = True
+    force_ocr: bool = False
+    ocr_lang: list[str] = []
+
+    # Table options
+    do_table_structure: bool = True
+    table_mode: Literal["fast", "accurate"] = "accurate"
+    table_cell_matching: bool = True
+
+    # Image options
+    images_scale: float = 2.0
+
+
 class ProcessingConfig(BaseModel):
     chunk_size: int = 256
     context_chunk_radius: int = 0
@@ -60,6 +78,7 @@ class ProcessingConfig(BaseModel):
     chunking_tokenizer: str = "Qwen/Qwen3-Embedding-0.6B"
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
+    conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
 
 
 class OllamaConfig(BaseModel):

@@ -104,6 +104,14 @@ processing:
   chunking_merge_peers: true
   chunking_use_markdown_tables: false
   markdown_preprocessor: ""
+  conversion_options:
+    do_ocr: true
+    force_ocr: false
+    ocr_lang: []
+    do_table_structure: true
+    table_mode: accurate
+    table_cell_matching: true
+    images_scale: 2.0
 
 providers:
   ollama:
@@ -236,7 +244,63 @@ processing:
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"  # HuggingFace model for tokenization
   chunking_merge_peers: true                 # Merge undersized successive chunks
   chunking_use_markdown_tables: false        # Use markdown tables vs narrative format
+
+  # Conversion options (works with both local and remote converters)
+  conversion_options:
+    # OCR settings
+    do_ocr: true                             # Enable OCR for bitmap content
+    force_ocr: false                         # Replace existing text with OCR
+    ocr_lang: []                             # OCR languages (e.g., ["en", "fr", "de"])
+
+    # Table extraction
+    do_table_structure: true                 # Extract table structure
+    table_mode: accurate                     # fast or accurate
+    table_cell_matching: true                # Match table cells back to PDF cells
+
+    # Image settings
+    images_scale: 2.0                        # Image scale factor
 ```
+
+### Conversion Options
+
+The `conversion_options` section allows fine-grained control over document conversion. These options work with both `docling-local` and `docling-serve` converters.
+
+#### OCR Settings
+
+```yaml
+conversion_options:
+  do_ocr: true          # Enable OCR for bitmap/scanned content
+  force_ocr: false      # Replace all text with OCR output
+  ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
+```
+
+- **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable for faster processing if documents contain only native text.
+- **force_ocr**: When `true`, replaces existing text layers with OCR output. Useful for documents with poor text extraction.
+- **ocr_lang**: List of language codes for OCR. Empty list uses default language detection. Examples: `["en"]`, `["en", "fr", "de"]`.
+
+#### Table Extraction
+
+```yaml
+conversion_options:
+  do_table_structure: true    # Extract structured table data
+  table_mode: accurate        # fast or accurate
+  table_cell_matching: true   # Match cells back to PDF
+```
+
+- **do_table_structure**: When `true`, extracts table structure. Disable for faster processing if tables aren't important.
+- **table_mode**:
+  - `accurate`: Better table structure recognition (slower)
+  - `fast`: Faster processing with simpler table detection
+- **table_cell_matching**: When `true`, matches detected table cells back to PDF cells. Disable if tables have merged cells across columns.
+
+#### Image Settings
+
+```yaml
+conversion_options:
+  images_scale: 2.0  # Image resolution scale factor
+```
+
+- **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 
 ### Local vs Remote Processing
 
@@ -265,6 +329,8 @@ providers:
     api_key: "your-api-key"  # Optional
     timeout: 300              # Request timeout in seconds
 ```
+
+Conversion options work identically for both local and remote processing.
 
 ### Chunking Strategies
 
