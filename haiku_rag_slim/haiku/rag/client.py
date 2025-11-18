@@ -466,8 +466,8 @@ class HaikuRAG:
             # No reranking - return direct search results
             return await self.chunk_repository.search(query, limit, search_type, filter)
 
-        # Get more initial results (3X) for reranking
-        search_limit = limit * 3
+        # Get more initial results (10X) for reranking
+        search_limit = limit * 10
         search_results = await self.chunk_repository.search(
             query, search_limit, search_type, filter
         )
