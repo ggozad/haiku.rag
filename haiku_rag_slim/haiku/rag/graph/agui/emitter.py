@@ -18,6 +18,10 @@ from haiku.rag.graph.agui.events import (
     emit_step_finished,
     emit_step_started,
     emit_text_message,
+    emit_tool_call_args,
+    emit_tool_call_end,
+    emit_tool_call_result,
+    emit_tool_call_start,
 )
 
 
@@ -153,6 +157,44 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             code: Optional error code
         """
         self._emit(emit_run_error(str(error), code))
+
+    def tool_call_start(
+        self, tool_call_id: str, tool_name: str, parent_message_id: str | None = None
+    ) -> None:
+        """Emit ToolCallStart event.
+
+        Args:
+            tool_call_id: Unique identifier for this tool call
+            tool_name: Name of the tool being called
+            parent_message_id: Optional parent message ID
+        """
+        self._emit(emit_tool_call_start(tool_call_id, tool_name, parent_message_id))
+
+    def tool_call_args(self, tool_call_id: str, args_delta: str) -> None:
+        """Emit ToolCallArgs event.
+
+        Args:
+            tool_call_id: Identifier for the tool call
+            args_delta: Incremental JSON chunk of arguments
+        """
+        self._emit(emit_tool_call_args(tool_call_id, args_delta))
+
+    def tool_call_end(self, tool_call_id: str) -> None:
+        """Emit ToolCallEnd event.
+
+        Args:
+            tool_call_id: Identifier for the tool call
+        """
+        self._emit(emit_tool_call_end(tool_call_id))
+
+    def tool_call_result(self, tool_call_id: str, result: str) -> None:
+        """Emit ToolCallResult event.
+
+        Args:
+            tool_call_id: Identifier for the tool call
+            result: The result from the tool execution
+        """
+        self._emit(emit_tool_call_result(tool_call_id, result))
 
     def _emit(self, event: AGUIEvent) -> None:
         """Put event in queue.

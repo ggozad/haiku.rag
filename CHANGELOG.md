@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+- Increase reranking candidate retrieval multiplier from 3x to 10x for improved result quality
+
 ## [0.17.0] - 2025-11-17
 
 ### Added
