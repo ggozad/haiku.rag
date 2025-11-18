@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 from pathlib import Path
@@ -6,11 +5,6 @@ from pathlib import Path
 from agent import AgentDeps, agent
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
-from pydantic_ai import (
-    AgentRunResultEvent,
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
-)
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -117,40 +111,12 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                             continue
                         await send_stream.send(format_sse_event(event))
 
-                # Run agent with streaming and capture tool events
+                # Run agent and event forwarding concurrently
                 async with create_task_group() as tg:
                     tg.start_soon(forward_events)
 
-                    # Use run_stream_events to capture all events including tool calls
-                    async for event in agent.run_stream_events(
-                        user_message, deps=agent_deps
-                    ):
-                        # Emit tool call events to AG-UI
-                        if isinstance(event, FunctionToolCallEvent):
-                            # Tool call started
-                            emitter.tool_call_start(
-                                tool_call_id=event.part.tool_call_id,
-                                tool_name=event.part.tool_name,
-                            )
-                            # Emit args as single delta (they're already complete)
-                            emitter.tool_call_args(
-                                tool_call_id=event.part.tool_call_id,
-                                args_delta=json.dumps(event.part.args),
-                            )
-                            # End the args stream
-                            emitter.tool_call_end(tool_call_id=event.part.tool_call_id)
-
-                        elif isinstance(event, FunctionToolResultEvent):
-                            # Tool call completed with result
-                            emitter.tool_call_result(
-                                tool_call_id=event.tool_call_id,
-                                result=str(event.result.content),
-                            )
-
-                        elif isinstance(event, AgentRunResultEvent):
-                            # Final result from agent
-                            emitter.log(event.result.output)
-
+                    result = await agent.run(user_message, deps=agent_deps)
+                    emitter.log(result.output)
                     await emitter.close()
 
             except Exception as e:
