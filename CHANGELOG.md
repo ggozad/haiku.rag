@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.17.2] - 2025-11-19
+
 ### Added
 
 - **Document Update API**: New `update_document_fields()` method for partial document updates
@@ -12,7 +14,7 @@
 - **Chunk Creation**: `ChunkRepository.create()` now accepts both single chunks and lists for batch insertion
   - Batch insertion reduces LanceDB version creation when adding multiple chunks with custom chunks
   - Batch embedding generation for improved performance with multiple chunks
-- Updated core dependencies:
+- Updated core dependencies
 
 ## [0.17.1] - 2025-11-18
 
