@@ -101,10 +101,52 @@ docs = await client.list_documents(
 
 ### Updating Documents
 
+Update entire document:
 ```python
 doc.content = "Updated content"
 await client.update_document(doc)
 ```
+
+Update specific fields:
+```python
+# Update only content (triggers re-chunking)
+await client.update_document_fields(
+    document_id=doc.id,
+    content="New content"
+)
+
+# Update only metadata (no re-chunking)
+await client.update_document_fields(
+    document_id=doc.id,
+    metadata={"version": "2.0", "updated_by": "admin"}
+)
+
+# Update only title (no re-chunking)
+await client.update_document_fields(
+    document_id=doc.id,
+    title="New Title"
+)
+
+# Update multiple fields at once
+await client.update_document_fields(
+    document_id=doc.id,
+    content="New content",
+    title="Updated Title",
+    metadata={"status": "final"}
+)
+
+# Use custom chunks instead of auto-generation
+custom_chunks = [
+    Chunk(content="Custom chunk 1"),
+    Chunk(content="Custom chunk 2"),
+]
+await client.update_document_fields(
+    document_id=doc.id,
+    chunks=custom_chunks
+)
+```
+
+**Performance Note:** Updates to only `metadata` or `title` skip re-chunking for efficiency. Updates to `content` or `chunks` will regenerate or replace the document's chunks.
 
 ### Deleting Documents
 

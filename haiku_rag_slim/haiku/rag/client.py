@@ -417,6 +417,68 @@ class HaikuRAG:
             document, docling_document
         )
 
+    async def update_document_fields(
+        self,
+        document_id: str,
+        content: str | None = None,
+        metadata: dict | None = None,
+        chunks: list[Chunk] | None = None,
+        title: str | None = None,
+    ) -> Document:
+        """Update specific fields of a document by ID.
+
+        Args:
+            document_id: The ID of the document to update
+            content: New content for the document
+            metadata: New metadata for the document
+            chunks: Custom chunks to use instead of auto-generating
+            title: New title for the document
+
+        Returns:
+            The updated Document instance.
+        """
+        # Fetch the existing document
+        existing_doc = await self.get_document_by_id(document_id)
+        if existing_doc is None:
+            raise ValueError(f"Document with ID {document_id} not found")
+
+        # Update only the provided fields
+        if content is not None:
+            existing_doc.content = content
+        if title is not None:
+            existing_doc.title = title
+        if metadata is not None:
+            existing_doc.metadata = metadata
+
+        # Determine if we need to rechunk
+        if content is not None or chunks is not None:
+            # Content changed or custom chunks provided - need to rechunk
+            if chunks is not None:
+                # Use custom chunks
+                # Delete existing chunks
+                await self.chunk_repository.delete_by_document_id(document_id)
+
+                # Update document metadata
+                await self.document_repository.update(existing_doc)
+
+                # Add new chunks
+                for order, chunk in enumerate(chunks):
+                    chunk.document_id = document_id
+                    chunk.order = order
+                    await self.chunk_repository.create(chunk)
+
+                return existing_doc
+            else:
+                # Auto-generate chunks from content
+                converter = get_converter(self._config)
+                docling_document = converter.convert_text(existing_doc.content)
+                return await self.document_repository._update_and_rechunk(
+                    existing_doc, docling_document
+                )
+        else:
+            # Only metadata/title changed - no rechunking needed
+            return await self.document_repository.update(existing_doc)
+
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""
         return await self.document_repository.delete(document_id)

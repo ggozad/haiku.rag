@@ -79,6 +79,77 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_client_update_document_fields(qa_corpus: Dataset, temp_db_path):
+    """Test updating document with individual parameters."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Get test data
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
+        test_uri = "file:///path/to/test.txt"
+        test_metadata = {"source": "test", "topic": "testing"}
+
+        # Create a document
+        created_doc = await client.create_document(
+            content=document_text,
+            uri=test_uri,
+            title="Original Title",
+            metadata=test_metadata,
+        )
+        assert created_doc.id is not None
+        original_id = created_doc.id
+
+        # Test updating only content
+        updated_doc = await client.update_document_fields(
+            document_id=original_id, content="Updated content only"
+        )
+        assert updated_doc.id == original_id
+        assert updated_doc.content == "Updated content only"
+        assert updated_doc.title == "Original Title"
+        assert updated_doc.uri == test_uri
+
+        # Test updating only metadata
+        new_metadata = {"source": "updated", "version": "2.0"}
+        updated_doc = await client.update_document_fields(
+            document_id=original_id, metadata=new_metadata
+        )
+        assert updated_doc.metadata == new_metadata
+        assert (
+            updated_doc.content == "Updated content only"
+        )  # Should keep previous update
+
+        # Test updating only title
+        updated_doc = await client.update_document_fields(
+            document_id=original_id, title="New Title"
+        )
+        assert updated_doc.title == "New Title"
+        assert updated_doc.content == "Updated content only"
+        assert updated_doc.metadata == new_metadata
+
+        # Test updating multiple fields at once
+        custom_chunks = [
+            Chunk(content="Custom chunk 1", order=0),
+            Chunk(content="Custom chunk 2", order=1),
+        ]
+        updated_doc = await client.update_document_fields(
+            document_id=original_id,
+            content="Content with custom chunks",
+            title="Final Title",
+            metadata={"final": "true"},
+            chunks=custom_chunks,
+        )
+        assert updated_doc.id == original_id
+        assert updated_doc.content == "Content with custom chunks"
+        assert updated_doc.title == "Final Title"
+        assert updated_doc.metadata == {"final": "true"}
+
+        # Verify the custom chunks were created
+        doc_chunks = await client.chunk_repository.get_by_document_id(original_id)
+        assert len(doc_chunks) == 2
+        assert doc_chunks[0].content == "Custom chunk 1"
+        assert doc_chunks[1].content == "Custom chunk 2"
+
+
+@pytest.mark.asyncio
 async def test_client_create_document_from_source(temp_db_path):
     """Test creating a document from a file source."""
     async with HaikuRAG(temp_db_path) as client:
