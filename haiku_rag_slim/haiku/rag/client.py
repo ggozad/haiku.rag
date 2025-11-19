@@ -461,11 +461,12 @@ class HaikuRAG:
                 # Update document metadata
                 await self.document_repository.update(existing_doc)
 
-                # Add new chunks
+                # Set document_id and order for all chunks
                 for order, chunk in enumerate(chunks):
                     chunk.document_id = document_id
                     chunk.order = order
-                    await self.chunk_repository.create(chunk)
+                # Batch create all chunks in a single operation
+                await self.chunk_repository.create(chunks)
 
                 return existing_doc
             else:

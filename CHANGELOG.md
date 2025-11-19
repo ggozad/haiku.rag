@@ -9,6 +9,9 @@
 
 ### Changed
 
+- **Chunk Creation**: `ChunkRepository.create()` now accepts both single chunks and lists for batch insertion
+  - Batch insertion reduces LanceDB version creation when adding multiple chunks with custom chunks
+  - Batch embedding generation for improved performance with multiple chunks
 - Updated core dependencies:
 
 ## [0.17.1] - 2025-11-18
