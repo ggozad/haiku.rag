@@ -10,6 +10,8 @@ from haiku.rag.store.models import Document
 class DocumentList(VerticalScroll):
     """Widget for displaying and browsing documents."""
 
+    can_focus = False
+
     class DocumentSelected(Message):
         """Message sent when a document is selected."""
 

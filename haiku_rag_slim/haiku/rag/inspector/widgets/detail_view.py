@@ -8,6 +8,8 @@ from haiku.rag.store.models import Chunk, Document
 class DetailView(VerticalScroll):
     """Widget for displaying detailed content of documents or chunks."""
 
+    can_focus = False
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.title_widget: Static | None = None
@@ -18,6 +20,7 @@ class DetailView(VerticalScroll):
         self.title_widget = Static("[bold]Detail View[/bold]", classes="title")
         yield self.title_widget
         self.content_widget = Markdown("")
+        self.content_widget.can_focus = True
         yield self.content_widget
 
     async def show_document(self, document: Document) -> None:

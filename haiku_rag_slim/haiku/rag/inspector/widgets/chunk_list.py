@@ -10,6 +10,8 @@ from haiku.rag.store.models import Chunk
 class ChunkList(VerticalScroll):
     """Widget for displaying and browsing chunks."""
 
+    can_focus = False
+
     class ChunkSelected(Message):
         """Message sent when a chunk is selected."""
 

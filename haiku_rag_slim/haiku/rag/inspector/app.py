@@ -64,10 +64,6 @@ class InspectorApp(App):  # type: ignore[misc]
 
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
-        Binding("d", "focus_documents", "Documents", show=True),
-        Binding("c", "focus_chunks", "Chunks", show=True),
-        Binding("v", "focus_detail", "Detail", show=True),
-        Binding("/", "search", "Search", show=True),
     ]
 
     def __init__(self, db_path: Path):
@@ -93,27 +89,14 @@ class InspectorApp(App):  # type: ignore[misc]
         doc_list = self.query_one(DocumentList)
         await doc_list.load_documents(self.client)
 
+        # Focus the document list view
+        if doc_list.list_view:
+            doc_list.list_view.focus()
+
     async def on_unmount(self) -> None:
         """Clean up when unmounting."""
         if self.client:
             await self.client.__aexit__(None, None, None)
-
-    def action_focus_documents(self) -> None:
-        """Focus the documents list."""
-        self.query_one(DocumentList).focus()
-
-    def action_focus_chunks(self) -> None:
-        """Focus the chunks list."""
-        self.query_one(ChunkList).focus()
-
-    def action_focus_detail(self) -> None:
-        """Focus the detail view."""
-        self.query_one(DetailView).focus()
-
-    def action_search(self) -> None:
-        """Open search dialog."""
-        # TODO: Implement search dialog
-        pass
 
     async def on_document_list_document_selected(
         self, message: DocumentList.DocumentSelected
