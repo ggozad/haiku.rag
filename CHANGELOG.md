@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Document Update API**: New `update_document_fields()` method for partial document updates
+  - Update individual fields (content, metadata, title, chunks) without fetching full document
+  - Support for custom chunks or auto-generation from content
+
 ### Changed
 
 - Updated core dependencies:
