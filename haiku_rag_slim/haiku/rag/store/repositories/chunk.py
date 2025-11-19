@@ -37,34 +37,77 @@ class ChunkRepository:
             # Log the error but don't fail - FTS might already exist
             logger.debug(f"FTS index creation skipped: {e}")
 
-    async def create(self, entity: Chunk) -> Chunk:
-        """Create a chunk in the database."""
-        assert entity.document_id, "Chunk must have a document_id to be created"
+    async def create(self, entity: Chunk | list[Chunk]) -> Chunk | list[Chunk]:
+        """Create one or more chunks in the database."""
+        # Handle single chunk
+        if isinstance(entity, Chunk):
+            assert entity.document_id, "Chunk must have a document_id to be created"
 
-        chunk_id = str(uuid4())
+            chunk_id = str(uuid4())
 
-        # Generate embedding if not provided
-        if entity.embedding is not None:
-            embedding = entity.embedding
-        else:
-            embedding = await self.embedder.embed(entity.content)
-        order_val = int(entity.order)
+            # Generate embedding if not provided
+            if entity.embedding is not None:
+                embedding = entity.embedding
+            else:
+                embedding = await self.embedder.embed(entity.content)
+            order_val = int(entity.order)
 
-        chunk_record = self.store.ChunkRecord(
-            id=chunk_id,
-            document_id=entity.document_id,
-            content=entity.content,
-            metadata=json.dumps(
-                {k: v for k, v in entity.metadata.items() if k != "order"}
-            ),
-            order=order_val,
-            vector=embedding,
-        )
+            chunk_record = self.store.ChunkRecord(
+                id=chunk_id,
+                document_id=entity.document_id,
+                content=entity.content,
+                metadata=json.dumps(
+                    {k: v for k, v in entity.metadata.items() if k != "order"}
+                ),
+                order=order_val,
+                vector=embedding,
+            )
 
-        self.store.chunks_table.add([chunk_record])
+            self.store.chunks_table.add([chunk_record])
 
-        entity.id = chunk_id
-        return entity
+            entity.id = chunk_id
+            return entity
+
+        # Handle batch of chunks
+        chunks = entity
+        if not chunks:
+            return []
+
+        # Validate all chunks have document_id
+        for chunk in chunks:
+            assert chunk.document_id, "All chunks must have a document_id to be created"
+
+        # Batch generate embeddings for chunks that need them
+        texts_to_embed = [chunk.content for chunk in chunks if chunk.embedding is None]
+        embeddings = await self.embedder.embed(texts_to_embed) if texts_to_embed else []
+        embedding_iter = iter(embeddings)
+
+        # Prepare all chunk records
+        chunk_records = []
+        for chunk in chunks:
+            chunk_id = str(uuid4())
+            embedding = (
+                chunk.embedding if chunk.embedding is not None else next(embedding_iter)
+            )
+
+            assert chunk.document_id is not None
+            chunk_record = self.store.ChunkRecord(
+                id=chunk_id,
+                document_id=chunk.document_id,
+                content=chunk.content,
+                metadata=json.dumps(
+                    {k: v for k, v in chunk.metadata.items() if k != "order"}
+                ),
+                order=int(chunk.order),
+                vector=embedding,
+            )
+            chunk_records.append(chunk_record)
+            chunk.id = chunk_id
+
+        # Single batch insert for all chunks
+        self.store.chunks_table.add(chunk_records)
+
+        return chunks
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
         """Get a chunk by its ID."""

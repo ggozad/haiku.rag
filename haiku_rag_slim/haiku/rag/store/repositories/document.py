@@ -213,10 +213,12 @@ class DocumentRepository:
                 assert created_doc.id is not None, (
                     "Document ID should not be None after creation"
                 )
+                # Set document_id and order for all chunks
                 for order, chunk in enumerate(chunks):
                     chunk.document_id = created_doc.id
                     chunk.order = order
-                    await self.chunk_repository.create(chunk)
+                # Batch create all chunks in a single operation
+                await self.chunk_repository.create(chunks)
 
             # Vacuum old versions in background (non-blocking)
             asyncio.create_task(self.store.vacuum())
