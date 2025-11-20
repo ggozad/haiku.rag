@@ -90,6 +90,10 @@ class InspectorApp(App):  # type: ignore[misc]
         self.db_path = db_path
         self.client: HaikuRAG | None = None
         self.search_visible = False
+        self.search_active = False
+        # Track current selection for easy restoration
+        self.current_document_id: str | None = None
+        self.current_chunk_id: str | None = None
 
     def compose(self) -> "ComposeResult":
         """Compose the UI layout."""
@@ -111,6 +115,21 @@ class InspectorApp(App):  # type: ignore[misc]
         doc_list = self.query_one(DocumentList)
         await doc_list.load_documents(self.client)
 
+        # Select first document and load its chunks
+        if doc_list.documents and doc_list.list_view:
+            doc_list.list_view.index = 0
+            first_doc = doc_list.documents[0]
+            self.current_document_id = first_doc.id
+
+            if first_doc.id:
+                chunk_list = self.query_one(ChunkList)
+                await chunk_list.load_chunks_for_document(self.client, first_doc.id)
+
+                # Select first chunk
+                if chunk_list.chunks and chunk_list.list_view:
+                    chunk_list.list_view.index = 0
+                    self.current_chunk_id = chunk_list.chunks[0].id
+
         # Focus the document list view
         if doc_list.list_view:
             doc_list.list_view.focus()
@@ -129,11 +148,52 @@ class InspectorApp(App):  # type: ignore[misc]
             search_container.remove_class("visible")
             search_input.value = ""
             self.search_visible = False
+            self.search_active = False
 
-            # Restore full document list
+            # Restore full document list and reload chunks for selected document
             if self.client:
                 doc_list = self.query_one(DocumentList)
+                chunk_list = self.query_one(ChunkList)
+
+                # Reload all documents
                 await doc_list.load_documents(self.client)
+
+                # Restore document and chunk selection
+                if (
+                    self.current_document_id
+                    and doc_list.list_view
+                    and doc_list.documents
+                ):
+                    # Find and select the document
+                    doc_found = False
+                    for idx, doc in enumerate(doc_list.documents):
+                        if doc.id == self.current_document_id:
+                            doc_list.list_view.index = idx
+                            doc_found = True
+                            break
+
+                    # Reload chunks for this document (without scores)
+                    if doc_found:
+                        await chunk_list.load_chunks_for_document(
+                            self.client, self.current_document_id
+                        )
+
+                        # Restore chunk selection and show it in detail view
+                        if (
+                            self.current_chunk_id
+                            and chunk_list.list_view
+                            and chunk_list.chunks
+                        ):
+                            for idx, chunk in enumerate(chunk_list.chunks):
+                                if chunk.id == self.current_chunk_id:
+                                    chunk_list.list_view.index = idx
+                                    # Show the chunk in detail view
+                                    detail_view = self.query_one(DetailView)
+                                    await detail_view.show_chunk(chunk)
+                                    break
+
+                        # Focus back to document list to show selection
+                        doc_list.list_view.focus()
         else:
             search_container.add_class("visible")
             search_input.focus()
@@ -144,6 +204,7 @@ class InspectorApp(App):  # type: ignore[misc]
         if event.input.id == "search-input" and self.client:
             query = event.value.strip()
             if query:
+                self.search_active = True
                 chunk_list = self.query_one(ChunkList)
                 await chunk_list.load_chunks_from_search(self.client, query)
 
@@ -174,8 +235,10 @@ class InspectorApp(App):  # type: ignore[misc]
                             item = ListItem(Static(f"{title}"))
                             await doc_list.list_view.append(item)
 
-                # Focus the chunk list
+                # Select first chunk and focus the chunk list
                 if chunk_list.list_view:
+                    if chunk_list.chunks:
+                        chunk_list.list_view.index = 0
                     chunk_list.list_view.focus()
 
     async def on_document_list_document_selected(
@@ -189,12 +252,15 @@ class InspectorApp(App):  # type: ignore[misc]
         if not self.client:
             return
 
+        # Always track current document (even during search)
+        self.current_document_id = message.document.id
+
         # Show document details
         detail_view = self.query_one(DetailView)
         await detail_view.show_document(message.document)
 
-        # Load chunks for this document
-        if message.document.id:
+        # Load chunks for this document (but not during search - preserve search results)
+        if message.document.id and not self.search_active:
             chunk_list = self.query_one(ChunkList)
             await chunk_list.load_chunks_for_document(self.client, message.document.id)
 
@@ -206,21 +272,16 @@ class InspectorApp(App):  # type: ignore[misc]
         Args:
             message: Message containing selected chunk
         """
+        # Always track current chunk (even during search)
+        self.current_chunk_id = message.chunk.id
+
         # Show chunk details
         detail_view = self.query_one(DetailView)
         await detail_view.show_chunk(message.chunk)
 
-        # If chunk has a document_id, select that document in the document list
-        if message.chunk.document_id and self.client:
-            doc_list = self.query_one(DocumentList)
-
-            # Find the document in the current document list
-            for idx, doc in enumerate(doc_list.documents):
-                if doc.id == message.chunk.document_id:
-                    # Select this document in the list view
-                    if doc_list.list_view:
-                        doc_list.list_view.index = idx
-                    break
+        # Track the document this chunk belongs to
+        if message.chunk.document_id:
+            self.current_document_id = message.chunk.document_id
 
 
 def run_inspector(db_path: Path | None = None) -> None:

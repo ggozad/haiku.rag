@@ -30,20 +30,16 @@ class DocumentList(VerticalScroll):
         self.list_view = ListView()
         yield self.list_view
 
-    async def load_documents(
-        self, client: HaikuRAG, limit: int = 100, offset: int = 0
-    ) -> None:
-        """Load documents from the database.
+    async def load_documents(self, client: HaikuRAG) -> None:
+        """Load all documents from the database.
 
         Args:
             client: HaikuRAG client instance
-            limit: Maximum number of documents to load
-            offset: Offset for pagination
         """
         if self.list_view is None:
             return
 
-        self.documents = await client.list_documents(limit=limit, offset=offset)
+        self.documents = await client.list_documents(limit=None)
 
         # Clear existing items
         await self.list_view.clear()
@@ -54,8 +50,16 @@ class DocumentList(VerticalScroll):
             item = ListItem(Static(f"{title}"))
             await self.list_view.append(item)
 
+    async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        """Handle document navigation (arrow keys)."""
+        if event.list_view == self.list_view and event.item is not None:
+            idx = event.list_view.index
+            if idx is not None and 0 <= idx < len(self.documents):
+                document = self.documents[idx]
+                self.post_message(self.DocumentSelected(document))
+
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle document selection."""
+        """Handle document selection (Enter key)."""
         if event.list_view == self.list_view:
             idx = event.list_view.index
             if idx is not None and 0 <= idx < len(self.documents):

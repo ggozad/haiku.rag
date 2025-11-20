@@ -80,8 +80,16 @@ class ChunkList(VerticalScroll):
             item = ListItem(Static(f"[{score:.2f}] {first_line}"))
             await self.list_view.append(item)
 
+    async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        """Handle chunk navigation (arrow keys)."""
+        if event.list_view == self.list_view and event.item is not None:
+            idx = event.list_view.index
+            if idx is not None and 0 <= idx < len(self.chunks):
+                chunk = self.chunks[idx]
+                self.post_message(self.ChunkSelected(chunk))
+
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle chunk selection."""
+        """Handle chunk selection (Enter key)."""
         if event.list_view == self.list_view:
             idx = event.list_view.index
             if idx is not None and 0 <= idx < len(self.chunks):
