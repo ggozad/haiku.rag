@@ -27,6 +27,8 @@ except ImportError:
 class InspectorApp(App):  # type: ignore[misc]
     """Textual TUI for inspecting LanceDB data."""
 
+    TITLE = "haiku.rag DB Inspector"
+
     CSS = """
     Screen {
         layout: grid;

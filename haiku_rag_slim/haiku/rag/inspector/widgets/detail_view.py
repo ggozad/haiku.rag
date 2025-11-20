@@ -51,8 +51,7 @@ class DetailView(VerticalScroll):
                 content_parts.append(f"**Updated:** {document.updated_at}")
 
             content_parts.append("\n---\n")
-            content_parts.append("**Content:**\n")
-            content_parts.append(f"```\n{document.content}\n```")
+            content_parts.append(document.content)
 
             await self.content_widget.update("\n\n".join(content_parts))
 
@@ -88,7 +87,6 @@ class DetailView(VerticalScroll):
                 )
 
             content_parts.append("\n---\n")
-            content_parts.append("**Content:**\n")
-            content_parts.append(f"```\n{chunk.content}\n```")
+            content_parts.append(chunk.content)
 
             await self.content_widget.update("\n\n".join(content_parts))
