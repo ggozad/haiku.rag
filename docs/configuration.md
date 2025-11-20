@@ -751,7 +751,7 @@ haiku-rag create-index
 
 This command:
 - Checks if you have enough data (minimum 256 chunks)
-- Creates an IVF_PQ index for fast approximate nearest neighbor search
+- Creates an IVF_PQ index for fast approximate nearest neighbor (ANN) search
 - Uses LanceDB's automatic parameter calculation based on your dataset size and vector dimensions
 
 **Re-indexing:**
@@ -762,9 +762,9 @@ Indexes are not automatically updated when you add new documents. After adding a
 haiku-rag create-index  # Rebuilds the index with all data
 ```
 
-Searches still work with stale indexes - LanceDB uses the index for old data and brute-force for new unindexed rows, then combines the results. However, performance degrades as more unindexed data accumulates.
+Searches still work with stale indexes - LanceDB uses the index for old data (fast ANN) and brute-force kNN for new unindexed rows, then combines the results. However, performance degrades as more unindexed data accumulates.
 
-For datasets with fewer than 256 chunks, searches use brute-force scans which are slower but still functional.
+For datasets with fewer than 256 chunks, searches use brute-force kNN scans (exact nearest neighbors, 100% recall) which work well for small datasets but don't scale beyond a few hundred thousand vectors.
 
 ### Document Processing
 
