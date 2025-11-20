@@ -420,7 +420,11 @@ def inspect(
     ),
 ):
     """Launch the inspector TUI for browsing documents and chunks."""
-    from haiku.rag.inspector import run_inspector
+    try:
+        from haiku.rag.inspector import run_inspector
+    except ImportError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
     run_inspector(db_path)

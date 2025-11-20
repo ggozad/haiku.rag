@@ -229,11 +229,6 @@ def run_inspector(db_path: Path | None = None) -> None:
     Args:
         db_path: Path to the LanceDB database. If None, uses default from config.
     """
-    if not TEXTUAL_AVAILABLE:
-        raise ImportError(
-            "Textual is not installed. Install it with: pip install 'haiku.rag-slim[inspector]'"
-        )
-
     config = get_config()
     if db_path is None:
         db_path = config.storage.data_dir / "haiku.rag.lancedb"
