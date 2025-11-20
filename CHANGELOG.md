@@ -10,6 +10,10 @@
   - New `search.vector_refine_factor` config option (default: 10) for accuracy/speed tradeoff
   - Indexes not created automatically during ingestion to avoid performance degradation
   - Manual rebuilding required after adding significant new data
+- **Enhanced Info Command**: `haiku-rag info` now shows storage sizes and vector index statistics
+  - Displays storage size for documents and chunks tables in human-readable format
+  - Shows vector index status (exists/not created)
+  - Shows indexed and unindexed chunk counts for monitoring index staleness
 
 ### Changed
 

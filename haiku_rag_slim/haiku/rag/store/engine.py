@@ -145,6 +145,51 @@ class Store:
             and self._config.lancedb.region
         )
 
+    def get_stats(self) -> dict:
+        """Get comprehensive table statistics.
+
+        Returns:
+            Dictionary with statistics for documents and chunks tables including:
+            - Row counts
+            - Storage sizes
+            - Vector index status and statistics
+        """
+        stats_dict: dict = {
+            "documents": {"exists": False},
+            "chunks": {"exists": False},
+        }
+
+        # Documents table stats
+        doc_stats: dict = self.documents_table.stats()  # type: ignore[assignment]
+        stats_dict["documents"] = {
+            "exists": True,
+            "num_rows": doc_stats.get("num_rows", 0),
+            "total_bytes": doc_stats.get("total_bytes", 0),
+        }
+
+        # Chunks table stats
+        chunk_stats: dict = self.chunks_table.stats()  # type: ignore[assignment]
+        stats_dict["chunks"] = {
+            "exists": True,
+            "num_rows": chunk_stats.get("num_rows", 0),
+            "total_bytes": chunk_stats.get("total_bytes", 0),
+        }
+
+        # Vector index stats
+        indices = self.chunks_table.list_indices()
+        has_vector_index = any("vector" in str(idx).lower() for idx in indices)
+        stats_dict["chunks"]["has_vector_index"] = has_vector_index
+
+        if has_vector_index:
+            index_stats = self.chunks_table.index_stats("vector_idx")
+            if index_stats is not None:
+                stats_dict["chunks"]["num_indexed_rows"] = index_stats.num_indexed_rows
+                stats_dict["chunks"]["num_unindexed_rows"] = (
+                    index_stats.num_unindexed_rows
+                )
+
+        return stats_dict
+
     def _ensure_vector_index(self) -> None:
         """Create or rebuild vector index on chunks table.
 

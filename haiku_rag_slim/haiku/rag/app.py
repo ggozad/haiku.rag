@@ -18,6 +18,7 @@ from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+from haiku.rag.utils import format_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +84,22 @@ class HaikuRAGApp:
                 embed_model = embeddings.get("model")
                 vector_dim = embeddings.get("vector_dim")
 
-        num_docs = 0
-        if "documents" in table_names:
-            docs_tbl = db.open_table("documents")
-            num_docs = int(docs_tbl.count_rows())  # type: ignore[attr-defined]
+        # Get comprehensive table statistics
+        from haiku.rag.store.engine import Store
+
+        store = Store(self.db_path, config=self.config)
+        table_stats = store.get_stats()
+        store.close()
+
+        num_docs = table_stats["documents"].get("num_rows", 0)
+        doc_bytes = table_stats["documents"].get("total_bytes", 0)
+
+        num_chunks = table_stats["chunks"].get("num_rows", 0)
+        chunk_bytes = table_stats["chunks"].get("total_bytes", 0)
+
+        has_vector_index = table_stats["chunks"].get("has_vector_index", False)
+        num_indexed_rows = table_stats["chunks"].get("num_indexed_rows", 0)
+        num_unindexed_rows = table_stats["chunks"].get("num_unindexed_rows", 0)
 
         # Table versions per table (direct API)
         doc_versions = (
@@ -116,8 +129,43 @@ class HaikuRAGApp:
                 "  [repr.attrib_name]embeddings[/repr.attrib_name]: unknown"
             )
         self.console.print(
-            f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs}"
+            f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs} "
+            f"({format_bytes(doc_bytes)})"
         )
+        self.console.print(
+            f"  [repr.attrib_name]chunks[/repr.attrib_name]: {num_chunks} "
+            f"({format_bytes(chunk_bytes)})"
+        )
+
+        # Vector index information
+        if has_vector_index:
+            self.console.print(
+                "  [repr.attrib_name]vector index[/repr.attrib_name]: ✓ exists"
+            )
+            self.console.print(
+                f"  [repr.attrib_name]indexed chunks[/repr.attrib_name]: {num_indexed_rows}"
+            )
+            if num_unindexed_rows > 0:
+                self.console.print(
+                    f"  [repr.attrib_name]unindexed chunks[/repr.attrib_name]: [yellow]{num_unindexed_rows}[/yellow] "
+                    "(consider running: haiku-rag create-index)"
+                )
+            else:
+                self.console.print(
+                    f"  [repr.attrib_name]unindexed chunks[/repr.attrib_name]: {num_unindexed_rows}"
+                )
+        else:
+            if num_chunks >= 256:
+                self.console.print(
+                    "  [repr.attrib_name]vector index[/repr.attrib_name]: [yellow]✗ not created[/yellow] "
+                    "(run: haiku-rag create-index)"
+                )
+            else:
+                self.console.print(
+                    f"  [repr.attrib_name]vector index[/repr.attrib_name]: ✗ not created "
+                    f"(need {256 - num_chunks} more chunks)"
+                )
+
         self.console.print(
             f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: {doc_versions}"
         )
