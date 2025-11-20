@@ -1,12 +1,26 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Manual Vector Indexing**: New `create-index` CLI command for explicit vector index creation
+  - Creates IVF_PQ indexes
+  - Requires minimum 256 chunks (LanceDB training data requirement)
+  - New `search.vector_index_metric` config option: `cosine` (default), `l2`, or `dot`
+  - New `search.vector_refine_factor` config option (default: 10) for accuracy/speed tradeoff
+  - Indexes not created automatically during ingestion to avoid performance degradation
+  - Manual rebuilding required after adding significant new data
+
 ### Changed
 
-- **Evaluations**: Improved evaluation dataset naming and simplified evaluator configuration
+- **Evaluations**: Improved evaluation dataset naming and simplified evaluator 
+- configuration
   - `EvalDataset` now accepts dataset name for better organization in Logfire
   - Added `--name` CLI parameter to override evaluation run names
   - Removed `IsInstance` evaluator, using only `LLMJudge` for QA evaluation
+- **Search Accuracy**: Applied `refine_factor` to vector and hybrid searches for improved accuracy
+  - Retrieves `refine_factor * limit` candidates and re-ranks in memory
+  - Higher values increase accuracy but slow down queries
 
 ### Fixed
 
@@ -15,6 +29,7 @@
   - `build_research_graph()` and `build_deep_qa_graph()` now pass config to all agents and model creation
   - `get_model()` utility function accepts `config` parameter (defaults to global Config)
   - Allows creating multiple graphs with different configurations in the same application
+
 
 ## [0.17.2] - 2025-11-19
 

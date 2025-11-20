@@ -1,12 +1,16 @@
 import inspect
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 if TYPE_CHECKING:
     import pandas as pd
-    from lancedb.query import LanceQueryBuilder
+    from lancedb.query import (
+        LanceHybridQueryBuilder,
+        LanceQueryBuilder,
+        LanceVectorQueryBuilder,
+    )
 
 from lancedb.rerankers import RRFReranker
 
@@ -319,8 +323,14 @@ class ChunkRepository:
         # Prepare search query based on search type
         if search_type == "vector":
             query_embedding = await self.embedder.embed(query)
-            results = self.store.chunks_table.search(
-                query_embedding, query_type="vector", vector_column_name="vector"
+            vector_query = cast(
+                "LanceVectorQueryBuilder",
+                self.store.chunks_table.search(
+                    query_embedding, query_type="vector", vector_column_name="vector"
+                ),
+            )
+            results = vector_query.refine_factor(
+                self.store._config.search.vector_refine_factor
             )
 
         elif search_type == "fts":
@@ -331,12 +341,15 @@ class ChunkRepository:
             # Create RRF reranker
             reranker = RRFReranker()
             # Perform native hybrid search with RRF reranking
-            results = (
+            hybrid_query = cast(
+                "LanceHybridQueryBuilder",
                 self.store.chunks_table.search(query_type="hybrid")
                 .vector(query_embedding)
-                .text(query)
-                .rerank(reranker)
+                .text(query),
             )
+            results = hybrid_query.refine_factor(
+                self.store._config.search.vector_refine_factor
+            ).rerank(reranker)
 
         # Apply filtering if needed (common for all search types)
         if filtered_doc_ids is not None:

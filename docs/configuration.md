@@ -86,6 +86,10 @@ research:
   confidence_threshold: 0.8
   max_concurrency: 1
 
+search:
+  vector_index_metric: cosine  # cosine, l2, or dot
+  vector_refine_factor: 10
+
 agui:
   host: "0.0.0.0"
   port: 8000
@@ -720,6 +724,47 @@ haiku.rag intelligently handles database creation based on operation type:
 - **Read operations** (list, get, search, ask, research): Fail with a clear error if the database doesn't exist
 
 This prevents the common mistake where a search query accidentally creates an empty database. To initialize your database, simply add your first document using `haiku-rag add` or `haiku-rag add-src`.
+
+### Vector Indexing
+
+Configure vector indexing behavior for efficient similarity search:
+
+```yaml
+search:
+  vector_index_metric: cosine  # cosine, l2, or dot
+  vector_refine_factor: 10     # Re-ranking factor for accuracy
+```
+
+- **vector_index_metric**: Distance metric for vector similarity:
+  - `cosine`: Cosine similarity (default, best for most embeddings)
+  - `l2`: Euclidean distance
+  - `dot`: Dot product similarity
+- **vector_refine_factor**: Retrieve `refine_factor * limit` candidates and re-rank in memory for better accuracy. Higher values increase accuracy but slow down queries. Default: 10
+
+**Index creation:**
+
+Vector indexes are **not created automatically** during document ingestion to avoid slowing down the process. After you've added documents (at least 256 chunks required), create the index manually:
+
+```bash
+haiku-rag create-index
+```
+
+This command:
+- Checks if you have enough data (minimum 256 chunks)
+- Creates an IVF_PQ index for fast approximate nearest neighbor search
+- Uses LanceDB's automatic parameter calculation based on your dataset size and vector dimensions
+
+**Re-indexing:**
+
+Indexes are not automatically updated when you add new documents. After adding a significant amount of new data:
+
+```bash
+haiku-rag create-index  # Rebuilds the index with all data
+```
+
+Searches still work with stale indexes - LanceDB uses the index for old data and brute-force for new unindexed rows, then combines the results. However, performance degrades as more unindexed data accumulates.
+
+For datasets with fewer than 256 chunks, searches use brute-force scans which are slower but still functional.
 
 ### Document Processing
 

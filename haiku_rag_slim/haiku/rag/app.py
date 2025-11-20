@@ -397,6 +397,39 @@ class HaikuRAGApp:
         except Exception as e:
             self.console.print(f"[red]Error during vacuum: {e}[/red]")
 
+    async def create_index(self):
+        """Create vector index on the chunks table."""
+        try:
+            async with HaikuRAG(
+                db_path=self.db_path, config=self.config, skip_validation=True
+            ) as client:
+                row_count = client.store.chunks_table.count_rows()
+                self.console.print(f"Chunks in database: {row_count}")
+
+                if row_count < 256:
+                    self.console.print(
+                        f"[yellow]Warning: Need at least 256 chunks to create an index (have {row_count})[/yellow]"
+                    )
+                    return
+
+                # Check if index already exists
+                indices = client.store.chunks_table.list_indices()
+                has_vector_index = any("vector" in str(idx).lower() for idx in indices)
+
+                if has_vector_index:
+                    self.console.print(
+                        "[yellow]Rebuilding existing vector index...[/yellow]"
+                    )
+                else:
+                    self.console.print("[bold]Creating vector index...[/bold]")
+
+                client.store._ensure_vector_index()
+                self.console.print(
+                    "[bold green]Vector index created successfully.[/bold green]"
+                )
+        except Exception as e:
+            self.console.print(f"[red]Error creating index: {e}[/red]")
+
     def show_settings(self):
         """Display current configuration settings."""
         self.console.print("[bold]haiku.rag configuration[/bold]")

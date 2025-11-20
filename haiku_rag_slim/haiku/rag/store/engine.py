@@ -145,6 +145,42 @@ class Store:
             and self._config.lancedb.region
         )
 
+    def _ensure_vector_index(self) -> None:
+        """Create or rebuild vector index on chunks table.
+
+        Cloud deployments auto-create indexes, so we skip for those.
+        For self-hosted, creates an IVF_PQ index. If an index exists,
+        it will be replaced (using replace=True parameter).
+        Note: Index creation requires sufficient training data.
+        """
+        if self._has_cloud_config():
+            return
+
+        try:
+            # Check if table has enough data (indexes require training data)
+            row_count = self.chunks_table.count_rows()
+            if row_count < 256:
+                logger.debug(
+                    f"Skipping vector index creation: need at least 256 rows, have {row_count}"
+                )
+                return
+
+            # Create or replace index (replace=True is the default)
+            logger.info("Creating vector index on chunks table...")
+            self.chunks_table.create_index(
+                metric=self._config.search.vector_index_metric,
+                index_type="IVF_PQ",
+                replace=True,  # Explicit: replace existing index
+            )
+
+            # Wait for index creation to complete
+            # Index name is column_name + "_idx"
+            self.chunks_table.wait_for_index(["vector_idx"], timeout=timedelta(hours=1))
+
+            logger.info("Vector index created successfully")
+        except Exception as e:
+            logger.warning(f"Could not create vector index: {e}")
+
     def _validate_configuration(self) -> None:
         """Validate that the configuration is compatible with the database."""
         from haiku.rag.store.repositories.settings import SettingsRepository

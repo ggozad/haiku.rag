@@ -81,6 +81,11 @@ class ProcessingConfig(BaseModel):
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
 
 
+class SearchConfig(BaseModel):
+    vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
+    vector_refine_factor: int = 10
+
+
 class OllamaConfig(BaseModel):
     base_url: str = Field(
         default_factory=lambda: __import__("os").environ.get(
@@ -127,5 +132,6 @@ class AppConfig(BaseModel):
     qa: QAConfig = Field(default_factory=QAConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     agui: AGUIConfig = Field(default_factory=AGUIConfig)
