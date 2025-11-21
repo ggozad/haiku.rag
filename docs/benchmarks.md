@@ -26,6 +26,7 @@ You can also use command-line options:
 - `--skip-retrieval` - Skip retrieval benchmark
 - `--skip-qa` - Skip QA benchmark
 - `--qa-limit N` - Limit number of QA cases to evaluate
+- `--name NAME` - Override the evaluation name (defaults to `{dataset}_qa_evaluation`)
 
 ## Recall
 

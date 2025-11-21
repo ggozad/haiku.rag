@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Evaluations**: Improved evaluation dataset naming and simplified evaluator configuration
+  - `EvalDataset` now accepts dataset name for better organization in Logfire
+  - Added `--name` CLI parameter to override evaluation run names
+  - Removed `IsInstance` evaluator, using only `LLMJudge` for QA evaluation
+
 ### Fixed
 
 - **AG-UI Activity Events**: Activity events now correctly use structured dict content instead of strings
