@@ -8,7 +8,7 @@ from haiku.rag.store.models import Chunk, Document
 class DetailView(VerticalScroll):
     """Widget for displaying detailed content of documents or chunks."""
 
-    can_focus = False
+    can_focus = True
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)

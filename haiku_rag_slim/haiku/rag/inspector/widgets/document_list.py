@@ -1,3 +1,4 @@
+from textual import on
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.message import Message
@@ -50,16 +51,12 @@ class DocumentList(VerticalScroll):
             item = ListItem(Static(f"{title}"))
             await self.list_view.append(item)
 
-    async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
-        """Handle document navigation (arrow keys)."""
-        if event.list_view == self.list_view and event.item is not None:
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(self.documents):
-                document = self.documents[idx]
-                self.post_message(self.DocumentSelected(document))
-
-    async def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle document selection (Enter key)."""
+    @on(ListView.Highlighted)
+    @on(ListView.Selected)
+    async def handle_document_selection(
+        self, event: ListView.Highlighted | ListView.Selected
+    ) -> None:
+        """Handle document selection (arrow keys or Enter)."""
         if event.list_view == self.list_view:
             idx = event.list_view.index
             if idx is not None and 0 <= idx < len(self.documents):
