@@ -741,6 +741,9 @@ search:
   - `dot`: Dot product similarity
 - **vector_refine_factor**: Retrieve `refine_factor * limit` candidates and re-rank in memory for better accuracy. Higher values increase accuracy but slow down queries. Default: 10
 
+!!! note
+    Vector indexes are only necessary for large datasets with over 100,000 chunks. For smaller datasets, LanceDB's brute-force kNN search provides exact results with good performance. Only create an index if you notice search performance degradation on large datasets.
+
 **Index creation:**
 
 Vector indexes are **not created automatically** during document ingestion to avoid slowing down the process. After you've added documents (at least 256 chunks required), create the index manually:
