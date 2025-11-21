@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.18.0] - 2025-11-21
+
 ### Added
 
 - **Manual Vector Indexing**: New `create-index` CLI command for explicit vector index creation
