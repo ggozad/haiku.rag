@@ -5,15 +5,19 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import Config
+from haiku.rag.config.models import AppConfig
 
 
-def get_model(provider: str, model: str) -> OpenAIChatModel | str:
+def get_model(
+    provider: str, model: str, config: AppConfig = Config
+) -> OpenAIChatModel | str:
     """
     Get a model instance for the specified provider and model name.
 
     Args:
         provider: The model provider ("ollama", "vllm", or other)
         model: The model name
+        config: AppConfig object (defaults to global Config)
 
     Returns:
         A configured model instance
@@ -24,13 +28,13 @@ def get_model(provider: str, model: str) -> OpenAIChatModel | str:
     if provider == "ollama":
         return OpenAIChatModel(
             model_name=model,
-            provider=OllamaProvider(base_url=f"{Config.providers.ollama.base_url}/v1"),
+            provider=OllamaProvider(base_url=f"{config.providers.ollama.base_url}/v1"),
         )
     elif provider == "vllm":
         return OpenAIChatModel(
             model_name=model,
             provider=OpenAIProvider(
-                base_url=f"{Config.providers.vllm.research_base_url or Config.providers.vllm.qa_base_url}/v1",
+                base_url=f"{config.providers.vllm.research_base_url or config.providers.vllm.qa_base_url}/v1",
                 api_key="none",
             ),
         )

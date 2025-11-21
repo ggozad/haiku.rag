@@ -13,7 +13,7 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     """Test deep Q&A graph with mocked LLM using TestModel."""
 
     # Mock get_model to return TestModel which generates valid schema-compliant data
-    def test_model_factory(provider, model):
+    def test_model_factory(provider, model, config=None):
         return TestModel()
 
     monkeypatch.setattr("haiku.rag.graph.common.utils.get_model", test_model_factory)
@@ -47,7 +47,7 @@ async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
     """Test deep Q&A with citations enabled using TestModel."""
 
     # Mock get_model to return TestModel
-    def test_model_factory(provider, model):
+    def test_model_factory(provider, model, config=None):
         return TestModel()
 
     monkeypatch.setattr("haiku.rag.graph.common.utils.get_model", test_model_factory)

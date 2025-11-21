@@ -10,6 +10,8 @@ from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import StepContext
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
+from haiku.rag.config.models import AppConfig
 from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.common import get_model
 from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
@@ -55,6 +57,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
     deps_type: type[AgentDepsT],
     activity_message: str = "Creating plan",
     output_retries: int | None = None,
+    config: AppConfig = Config,
 ) -> Callable[[StepContext[Any, Any, None]], Awaitable[None]]:
     """Create a plan node for any graph.
 
@@ -64,6 +67,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
         deps_type: Type of dependencies for the agent (e.g., ResearchDependencies, DeepQADependencies)
         activity_message: Message to show during planning activity
         output_retries: Number of output retries for the agent (optional)
+        config: AppConfig object (defaults to global Config)
 
     Returns:
         Async function that can be used as a graph step
@@ -80,7 +84,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
         try:
             # Build agent configuration
             agent_config = {
-                "model": get_model(provider, model),
+                "model": get_model(provider, model, config),
                 "output_type": ResearchPlan,
                 "instructions": (
                     PLAN_PROMPT
@@ -136,6 +140,7 @@ def create_search_node[AgentDepsT: GraphAgentDeps](
     with_step_wrapper: bool = True,
     success_message_format: str = "Answered: {sub_q}",
     handle_exceptions: bool = False,
+    config: AppConfig = Config,
 ) -> Callable[[StepContext[Any, Any, str]], Awaitable[SearchAnswer]]:
     """Create a search_one node for any graph.
 
@@ -146,6 +151,7 @@ def create_search_node[AgentDepsT: GraphAgentDeps](
         with_step_wrapper: Whether to wrap with agui_emitter start/finish step
         success_message_format: Format string for success activity message
         handle_exceptions: Whether to handle exceptions with fallback answer
+        config: AppConfig object (defaults to global Config)
 
     Returns:
         Async function that can be used as a graph step
@@ -178,6 +184,7 @@ def create_search_node[AgentDepsT: GraphAgentDeps](
                     deps_type,
                     success_message_format,
                     handle_exceptions,
+                    config,
                 )
         finally:
             if deps.agui_emitter and with_step_wrapper:
@@ -195,6 +202,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
     deps_type: type[AgentDepsT],
     success_message_format: str,
     handle_exceptions: bool,
+    config: AppConfig,
 ) -> SearchAnswer:
     """Internal search implementation."""
     if deps.agui_emitter:
@@ -203,7 +211,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
         )
 
     agent = Agent(
-        model=get_model(provider, model),
+        model=get_model(provider, model, config),
         output_type=ToolOutput(SearchAnswer, max_retries=3),
         instructions=SEARCH_AGENT_PROMPT,
         retries=3,

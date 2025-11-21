@@ -45,6 +45,7 @@ def build_deep_qa_graph(
             deps_type=DeepQADependencies,  # type: ignore[arg-type]
             activity_message="Planning approach",
             output_retries=None,  # Deep QA doesn't use output_retries
+            config=config,
         )
     )  # type: ignore[arg-type]
 
@@ -57,6 +58,7 @@ def build_deep_qa_graph(
             with_step_wrapper=False,  # Deep QA doesn't wrap with agui_emitter step
             success_message_format="Answered: {sub_q}",
             handle_exceptions=True,
+            config=config,
         )
     )  # type: ignore[arg-type]
 
@@ -90,7 +92,7 @@ def build_deep_qa_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model),
+                model=get_model(provider, model, config),
                 output_type=DeepQAEvaluation,
                 instructions=DECISION_PROMPT,
                 retries=3,
@@ -168,7 +170,7 @@ def build_deep_qa_graph(
             )
 
             agent = Agent(
-                model=get_model(provider, model),
+                model=get_model(provider, model, config),
                 output_type=DeepQAAnswer,
                 instructions=prompt_template,
                 retries=3,
