@@ -66,6 +66,7 @@ nav:
       - Server: server.md
       - Remote processing: remote-processing.md
       - MCP: mcp.md
+      - Inspector: inspector.md
       - Benchmarks: benchmarks.md
 markdown_extensions:
   - admonition

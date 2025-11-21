@@ -47,7 +47,7 @@ class DocumentList(VerticalScroll):
 
         # Add document items
         for doc in self.documents:
-            title = doc.title or doc.uri or doc.id or "Untitled"
+            title = doc.title or doc.uri or doc.id
             item = ListItem(Static(f"{title}"))
             await self.list_view.append(item)
 
