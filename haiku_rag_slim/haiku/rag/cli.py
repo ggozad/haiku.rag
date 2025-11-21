@@ -375,6 +375,18 @@ def vacuum(
     asyncio.run(app.vacuum())
 
 
+@cli.command("create-index", help="Create vector index for efficient similarity search")
+def create_index(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.create_index())
+
+
 @cli.command("info", help="Show read-only database info (no upgrades or writes)")
 def info(
     db: Path | None = typer.Option(

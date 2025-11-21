@@ -8,6 +8,16 @@ from types import ModuleType
 from packaging.version import Version, parse
 
 
+def format_bytes(num_bytes: int) -> str:
+    """Format bytes as human-readable string."""
+    size = float(num_bytes)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} PB"
+
+
 def get_default_data_dir() -> Path:
     """Get the user data directory for the current system platform.
 

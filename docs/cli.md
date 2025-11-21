@@ -215,13 +215,37 @@ Shows:
 - path to the database
 - stored haiku.rag version (from settings)
 - embeddings provider/model and vector dimension
-- number of documents
+- number of documents and chunks (with storage sizes)
+- vector index status (exists/not created, indexed/unindexed chunks)
 - table versions per table (documents, chunks)
 
-At the end, a separate “Versions” section lists runtime package versions:
+At the end, a separate "Versions" section lists runtime package versions:
 - haiku.rag
 - lancedb
 - docling
+
+### Create Vector Index
+
+Create a vector index on the chunks table for fast approximate nearest neighbor search:
+
+```bash
+haiku-rag create-index [--db /path/to/your.lancedb]
+```
+
+**Requirements:**
+- Minimum 256 chunks required for index creation (LanceDB training data requirement)
+- Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2/dot)
+
+**When to use:**
+- After ingesting documents (indexes are not created automatically)
+- After adding significant new data to rebuild the index
+- Use `haiku-rag info` to check index status and see how many chunks are indexed/unindexed
+
+**Search behavior:**
+- Without index: Brute-force kNN search (exact nearest neighbors, slower for large datasets)
+- With index: Fast ANN (approximate nearest neighbors) using IVF_PQ
+- With stale index: LanceDB combines indexed results (fast ANN) + brute-force kNN on unindexed rows
+- Performance degrades as more unindexed data accumulates
 
 ### Vacuum (Optimize and Cleanup)
 

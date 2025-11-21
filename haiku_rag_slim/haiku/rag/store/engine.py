@@ -54,19 +54,20 @@ class Store:
         db_path: Path,
         config: AppConfig = Config,
         skip_validation: bool = False,
-        allow_create: bool = True,
+        read_only: bool = False,
     ):
         self.db_path: Path = db_path
         self._config = config
         self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
+        self._read_only = read_only
 
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
         # Local filesystem handling for DB directory
         if not self._has_cloud_config():
-            if not allow_create:
+            if read_only:
                 # Read operations should not create the database
                 if not db_path.exists():
                     raise FileNotFoundError(
@@ -145,6 +146,87 @@ class Store:
             and self._config.lancedb.region
         )
 
+    def get_stats(self) -> dict:
+        """Get comprehensive table statistics.
+
+        Returns:
+            Dictionary with statistics for documents and chunks tables including:
+            - Row counts
+            - Storage sizes
+            - Vector index status and statistics
+        """
+        stats_dict: dict = {
+            "documents": {"exists": False},
+            "chunks": {"exists": False},
+        }
+
+        # Documents table stats
+        doc_stats: dict = self.documents_table.stats()  # type: ignore[assignment]
+        stats_dict["documents"] = {
+            "exists": True,
+            "num_rows": doc_stats.get("num_rows", 0),
+            "total_bytes": doc_stats.get("total_bytes", 0),
+        }
+
+        # Chunks table stats
+        chunk_stats: dict = self.chunks_table.stats()  # type: ignore[assignment]
+        stats_dict["chunks"] = {
+            "exists": True,
+            "num_rows": chunk_stats.get("num_rows", 0),
+            "total_bytes": chunk_stats.get("total_bytes", 0),
+        }
+
+        # Vector index stats
+        indices = self.chunks_table.list_indices()
+        has_vector_index = any("vector" in str(idx).lower() for idx in indices)
+        stats_dict["chunks"]["has_vector_index"] = has_vector_index
+
+        if has_vector_index:
+            index_stats = self.chunks_table.index_stats("vector_idx")
+            if index_stats is not None:
+                stats_dict["chunks"]["num_indexed_rows"] = index_stats.num_indexed_rows
+                stats_dict["chunks"]["num_unindexed_rows"] = (
+                    index_stats.num_unindexed_rows
+                )
+
+        return stats_dict
+
+    def _ensure_vector_index(self) -> None:
+        """Create or rebuild vector index on chunks table.
+
+        Cloud deployments auto-create indexes, so we skip for those.
+        For self-hosted, creates an IVF_PQ index. If an index exists,
+        it will be replaced (using replace=True parameter).
+        Note: Index creation requires sufficient training data.
+        """
+        if self._has_cloud_config():
+            return
+
+        try:
+            # Check if table has enough data (indexes require training data)
+            row_count = self.chunks_table.count_rows()
+            if row_count < 256:
+                logger.debug(
+                    f"Skipping vector index creation: need at least 256 rows, have {row_count}"
+                )
+                return
+
+            # Create or replace index (replace=True is the default)
+            logger.info("Creating vector index on chunks table...")
+            self.chunks_table.create_index(
+                metric=self._config.search.vector_index_metric,
+                index_type="IVF_PQ",
+                replace=True,  # Explicit: replace existing index
+            )
+
+            # Wait for index creation to complete
+            # Index name is column_name + "_idx"
+            self.chunks_table.wait_for_index(["vector_idx"], timeout=timedelta(hours=1))
+
+            logger.info("Vector index created successfully")
+        except Exception as e:
+            logger.warning(f"Could not create vector index: {e}")
+
     def _validate_configuration(self) -> None:
         """Validate that the configuration is compatible with the database."""
         from haiku.rag.store.repositories.settings import SettingsRepository
@@ -190,41 +272,43 @@ class Store:
             )
 
         # Run pending upgrades based on stored version and package version
-        try:
-            from haiku.rag.store.upgrades import run_pending_upgrades
-
-            current_version = metadata.version("haiku.rag-slim")
-            db_version = self.get_haiku_version()
-
-            if db_version != "0.0.0":
-                run_pending_upgrades(self, db_version, current_version)
-
-            # After upgrades complete (or if none), set stored version
-            # to the greater of the installed package version and the
-            # highest available upgrade step version in code.
+        # Skip in read-only mode to avoid modifying the database
+        if not self._read_only:
             try:
-                from packaging.version import parse as _v
+                from haiku.rag.store.upgrades import run_pending_upgrades
 
-                from haiku.rag.store.upgrades import upgrades as _steps
+                current_version = metadata.version("haiku.rag-slim")
+                db_version = self.get_haiku_version()
 
-                highest_step = max((_v(u.version) for u in _steps), default=None)
-                effective_version = (
-                    str(max(_v(current_version), highest_step))
-                    if highest_step is not None
-                    else current_version
+                if db_version != "0.0.0":
+                    run_pending_upgrades(self, db_version, current_version)
+
+                # After upgrades complete (or if none), set stored version
+                # to the greater of the installed package version and the
+                # highest available upgrade step version in code.
+                try:
+                    from packaging.version import parse as _v
+
+                    from haiku.rag.store.upgrades import upgrades as _steps
+
+                    highest_step = max((_v(u.version) for u in _steps), default=None)
+                    effective_version = (
+                        str(max(_v(current_version), highest_step))
+                        if highest_step is not None
+                        else current_version
+                    )
+                except Exception:
+                    effective_version = current_version
+
+                self.set_haiku_version(effective_version)
+            except Exception as e:
+                # Avoid hard failure on initial connection; log and continue so CLI remains usable.
+                logger.warning(
+                    "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
+                    self.get_haiku_version(),
+                    metadata.version("haiku.rag-slim"),
+                    e,
                 )
-            except Exception:
-                effective_version = current_version
-
-            self.set_haiku_version(effective_version)
-        except Exception as e:
-            # Avoid hard failure on initial connection; log and continue so CLI remains usable.
-            logger.warning(
-                "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
-                self.get_haiku_version(),
-                metadata.version("haiku.rag-slim"),
-                e,
-            )
 
     def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""
