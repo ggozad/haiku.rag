@@ -98,4 +98,5 @@ And for QA accuracy,
 | Embedding Model            | QA Model      | Accuracy | Reranker               |
 |----------------------------|---------------|----------|------------------------|
 | `qwen3-embedding:4b`       | `gpt-oss:20b` | 0.79     | None                   |
+| `qwen3-embedding:4b`       | `gpt-oss:20b` | 0.82     | `mxbai-rerank-base-v2` |
 | `qwen3-embedding:8b`       | `gpt-oss:20b` | 0.75     | `mxbai-rerank-base-v2` |
