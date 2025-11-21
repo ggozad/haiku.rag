@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -124,13 +125,16 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         self._last_state = new_state.model_copy(deep=True)
 
     def update_activity(
-        self, activity_type: str, content: str, message_id: str | None = None
+        self,
+        activity_type: str,
+        content: dict[str, Any],
+        message_id: str | None = None,
     ) -> None:
         """Emit ActivitySnapshot event.
 
         Args:
             activity_type: Type of activity (e.g., "planning", "searching")
-            content: Description of the activity
+            content: Structured payload representing the activity state
             message_id: Optional message ID to associate activity with (auto-generated if None)
         """
         if message_id is None:

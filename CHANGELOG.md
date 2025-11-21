@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **AG-UI Activity Events**: Activity events now correctly use structured dict content instead of strings
+
 ## [0.17.2] - 2025-11-19
 
 ### Added

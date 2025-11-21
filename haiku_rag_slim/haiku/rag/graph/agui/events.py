@@ -211,14 +211,14 @@ def emit_state_delta(old_state: BaseModel, new_state: BaseModel) -> dict[str, An
 def emit_activity(
     message_id: str,
     activity_type: str,
-    content: str,
+    content: dict[str, Any],
 ) -> dict[str, Any]:
     """Create an ActivitySnapshot event.
 
     Args:
         message_id: Message ID to associate activity with (required)
         activity_type: Type of activity (e.g., "planning", "searching")
-        content: Description of the activity
+        content: Structured payload representing the activity state
 
     Returns:
         ActivitySnapshot event dict

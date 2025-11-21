@@ -127,12 +127,12 @@ def test_emit_state_snapshot():
 
 def test_emit_activity():
     """Test ACTIVITY_SNAPSHOT event creation."""
-    event = emit_activity("msg-1", "processing", "Working on task")
+    event = emit_activity("msg-1", "processing", {"message": "Working on task"})
 
     assert event["type"] == "ACTIVITY_SNAPSHOT"
     assert event["messageId"] == "msg-1"
     assert event["activityType"] == "processing"
-    assert event["content"] == "Working on task"
+    assert event["content"] == {"message": "Working on task"}
 
 
 def test_event_structure_consistency():
@@ -145,7 +145,7 @@ def test_event_structure_consistency():
         emit_step_finished("step1"),
         emit_text_message("text"),
         emit_state_snapshot(TestState(value=1)),
-        emit_activity("m1", "type", "content"),
+        emit_activity("m1", "type", {"content": "value"}),
     ]
 
     for event in events:

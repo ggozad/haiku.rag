@@ -92,7 +92,7 @@ def build_research_graph(
         if deps.agui_emitter:
             deps.agui_emitter.start_step("analyze_insights")
             deps.agui_emitter.update_activity(
-                "analyzing", "Synthesizing insights and gaps"
+                "analyzing", {"message": "Synthesizing insights and gaps"}
             )
 
         try:
@@ -135,7 +135,9 @@ def build_research_graph(
                 if resolved:
                     parts.append(f"{resolved} resolved")
                 summary = ", ".join(parts) if parts else "No updates"
-                deps.agui_emitter.update_activity("analyzing", f"Analysis: {summary}")
+                deps.agui_emitter.update_activity(
+                    "analyzing", {"message": f"Analysis: {summary}"}
+                )
         finally:
             if deps.agui_emitter:
                 deps.agui_emitter.finish_step()
@@ -148,7 +150,7 @@ def build_research_graph(
         if deps.agui_emitter:
             deps.agui_emitter.start_step("decide")
             deps.agui_emitter.update_activity(
-                "evaluating", "Evaluating research sufficiency"
+                "evaluating", {"message": "Evaluating research sufficiency"}
             )
 
         try:
@@ -199,7 +201,9 @@ def build_research_graph(
                 sufficient = "Yes" if output.is_sufficient else "No"
                 deps.agui_emitter.update_activity(
                     "evaluating",
-                    f"Confidence: {output.confidence_score:.0%}, Sufficient: {sufficient}",
+                    {
+                        "message": f"Confidence: {output.confidence_score:.0%}, Sufficient: {sufficient}"
+                    },
                 )
 
             should_continue = (
@@ -222,7 +226,7 @@ def build_research_graph(
         if deps.agui_emitter:
             deps.agui_emitter.start_step("synthesize")
             deps.agui_emitter.update_activity(
-                "synthesizing", "Generating final research report"
+                "synthesizing", {"message": "Generating final research report"}
             )
 
         try:

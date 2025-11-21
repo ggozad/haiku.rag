@@ -93,7 +93,7 @@ def test_create_agui_app_basic():
     app = create_agui_app(
         graph_factory=graph_factory,  # type: ignore[arg-type]
         state_factory=state_factory,
-        deps_factory=deps_factory,
+        deps_factory=deps_factory,  # type: ignore[arg-type]
         config=config,
     )
 
@@ -124,7 +124,7 @@ def test_server_health_endpoint():
     app = create_agui_app(
         graph_factory=graph_factory,  # type: ignore[arg-type]
         state_factory=state_factory,
-        deps_factory=deps_factory,
+        deps_factory=deps_factory,  # type: ignore[arg-type]
         config=config,
     )
 
@@ -159,7 +159,7 @@ async def test_server_stream_endpoint():
     app = create_agui_app(
         graph_factory=graph_factory,  # type: ignore[arg-type]
         state_factory=state_factory,
-        deps_factory=deps_factory,
+        deps_factory=deps_factory,  # type: ignore[arg-type]
         config=config,
     )
 
@@ -222,7 +222,7 @@ def test_server_cors_headers():
     app = create_agui_app(
         graph_factory=graph_factory,  # type: ignore[arg-type]
         state_factory=state_factory,
-        deps_factory=deps_factory,
+        deps_factory=deps_factory,  # type: ignore[arg-type]
         config=config,
     )
 

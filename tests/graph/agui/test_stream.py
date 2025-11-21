@@ -36,7 +36,7 @@ class MockGraph:
         # Emit some events through the emitter
         if deps.agui_emitter:
             deps.agui_emitter.start_step("mock_step")
-            deps.agui_emitter.update_activity("working", "Doing work")
+            deps.agui_emitter.update_activity("working", {"message": "Doing work"})
             deps.agui_emitter.finish_step()
 
         return self.result
@@ -50,7 +50,7 @@ async def test_stream_graph_basic():
     deps = TestDeps()
 
     events = []
-    async for event in stream_graph(graph, state, deps):
+    async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
         events.append(event)
 
     # Should have collected events
@@ -73,7 +73,7 @@ async def test_stream_graph_emits_initial_state():
     deps = TestDeps()
 
     events = []
-    async for event in stream_graph(graph, state, deps):
+    async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
         events.append(event)
 
     # Should have initial state snapshot
@@ -91,7 +91,7 @@ async def test_stream_graph_emits_step_events():
     deps = TestDeps()
 
     events = []
-    async for event in stream_graph(graph, state, deps):
+    async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
         events.append(event)
 
     # Should have step events from MockGraph
@@ -108,13 +108,13 @@ async def test_stream_graph_emits_activity():
     deps = TestDeps()
 
     events = []
-    async for event in stream_graph(graph, state, deps):
+    async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
         events.append(event)
 
     # Should have activity events from MockGraph
     activities = [e for e in events if e["type"] == "ACTIVITY_SNAPSHOT"]
     assert len(activities) > 0
-    assert activities[0]["content"] == "Doing work"
+    assert activities[0]["content"] == {"message": "Doing work"}
 
 
 @pytest.mark.asyncio
@@ -130,7 +130,7 @@ async def test_stream_graph_handles_error():
     deps = TestDeps()
 
     events = []
-    async for event in stream_graph(graph, state, deps):
+    async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
         events.append(event)
 
     # Should have error event
@@ -154,7 +154,7 @@ async def test_stream_graph_closes_emitter():
 
     events = []
     try:
-        async for event in stream_graph(graph, state, deps):
+        async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
             events.append(event)
     except RuntimeError:
         # Expected - graph didn't return a result
@@ -190,7 +190,7 @@ async def test_stream_graph_result_in_finish_event():
     deps = TestDeps()
 
     events = []
-    async for event in stream_graph(graph, state, deps):
+    async for event in stream_graph(graph, state, deps):  # type: ignore[arg-type]
         events.append(event)
 
     # Find RUN_FINISHED event

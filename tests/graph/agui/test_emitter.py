@@ -124,8 +124,8 @@ async def test_emitter_activity_events():
     """Test activity events."""
     emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter()
 
-    emitter.update_activity("processing", "Processing data")
-    emitter.update_activity("done", "Completed", message_id="msg-1")
+    emitter.update_activity("processing", {"message": "Processing data"})
+    emitter.update_activity("done", {"message": "Completed"}, message_id="msg-1")
     await emitter.close()
 
     events = []
@@ -135,7 +135,7 @@ async def test_emitter_activity_events():
     activity_events = [e for e in events if e["type"] == "ACTIVITY_SNAPSHOT"]
     assert len(activity_events) == 2
     assert activity_events[0]["activityType"] == "processing"
-    assert activity_events[0]["content"] == "Processing data"
+    assert activity_events[0]["content"] == {"message": "Processing data"}
     assert activity_events[1]["messageId"] == "msg-1"
     assert activity_events[1]["activityType"] == "done"
 
