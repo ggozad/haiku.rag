@@ -41,7 +41,7 @@ async def test_renderer_basic_flow():
         emit_state_snapshot(SimpleState(value=1)),
         emit_step_started("plan"),
         emit_step_finished("plan"),
-        emit_activity("m1", "planning", "Planning research"),
+        emit_activity("m1", "planning", {"message": "Planning research"}),
         emit_run_finished("t1", "r1", {"status": "complete"}),
     ]
 
@@ -76,7 +76,7 @@ async def test_renderer_handles_all_event_types():
         emit_step_started("step1"),
         emit_step_finished("step1"),
         emit_text_message("message"),
-        emit_activity("m1", "work", "Working"),
+        emit_activity("m1", "work", {"message": "Working"}),
         emit_run_error("error occurred"),
         emit_run_finished("t1", "r1", {"result": "done"}),
     ]

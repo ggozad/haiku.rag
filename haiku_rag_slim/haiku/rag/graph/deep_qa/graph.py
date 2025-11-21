@@ -85,7 +85,7 @@ def build_deep_qa_graph(
         if deps.agui_emitter:
             deps.agui_emitter.start_step("decide")
             deps.agui_emitter.update_activity(
-                "evaluating", "Evaluating information sufficiency"
+                "evaluating", {"message": "Evaluating information sufficiency"}
             )
 
         try:
@@ -133,7 +133,9 @@ def build_deep_qa_graph(
                 status = "sufficient" if evaluation.is_sufficient else "insufficient"
                 deps.agui_emitter.update_activity(
                     "evaluating",
-                    f"Information {status} after {state.iterations} iteration(s)",
+                    {
+                        "message": f"Information {status} after {state.iterations} iteration(s)"
+                    },
                 )
 
             should_continue = (
@@ -155,7 +157,7 @@ def build_deep_qa_graph(
         if deps.agui_emitter:
             deps.agui_emitter.start_step("synthesize")
             deps.agui_emitter.update_activity(
-                "synthesizing", "Synthesizing final answer"
+                "synthesizing", {"message": "Synthesizing final answer"}
             )
 
         try:
@@ -195,7 +197,9 @@ def build_deep_qa_graph(
             result = await agent.run(prompt, deps=agent_deps)
 
             if deps.agui_emitter:
-                deps.agui_emitter.update_activity("synthesizing", "Answer complete")
+                deps.agui_emitter.update_activity(
+                    "synthesizing", {"message": "Answer complete"}
+                )
 
             return result.output
         finally:

@@ -75,7 +75,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
         if deps.agui_emitter:
             deps.agui_emitter.start_step("plan")
-            deps.agui_emitter.update_activity("planning", activity_message)
+            deps.agui_emitter.update_activity("planning", {"message": activity_message})
 
         try:
             # Build agent configuration
@@ -120,7 +120,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
                 deps.agui_emitter.update_state(state)
                 count = len(state.context.sub_questions)
                 deps.agui_emitter.update_activity(
-                    "planning", f"Created plan with {count} sub-questions"
+                    "planning", {"message": f"Created plan with {count} sub-questions"}
                 )
         finally:
             if deps.agui_emitter:
@@ -198,7 +198,9 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 ) -> SearchAnswer:
     """Internal search implementation."""
     if deps.agui_emitter:
-        deps.agui_emitter.update_activity("searching", f"Searching: {sub_q}")
+        deps.agui_emitter.update_activity(
+            "searching", {"message": f"Searching: {sub_q}"}
+        )
 
     agent = Agent(
         model=get_model(provider, model),
@@ -248,13 +250,15 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
                     )
                 else:
                     message = success_message_format.format(sub_q=sub_q)
-                deps.agui_emitter.update_activity("searching", message)
+                deps.agui_emitter.update_activity("searching", {"message": message})
         return answer
     except Exception as e:
         if handle_exceptions:
             # Narrate the error
             if deps.agui_emitter:
-                deps.agui_emitter.update_activity("searching", f"Search failed: {e}")
+                deps.agui_emitter.update_activity(
+                    "searching", {"message": f"Search failed: {e}"}
+                )
             failure_answer = SearchAnswer(
                 query=sub_q,
                 answer=f"Search failed after retries: {str(e)}",
