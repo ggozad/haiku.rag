@@ -88,7 +88,7 @@ research:
 
 search:
   vector_index_metric: cosine  # cosine, l2, or dot
-  vector_refine_factor: 10
+  vector_refine_factor: 30
 
 agui:
   host: "0.0.0.0"
@@ -732,14 +732,15 @@ Configure vector indexing behavior for efficient similarity search:
 ```yaml
 search:
   vector_index_metric: cosine  # cosine, l2, or dot
-  vector_refine_factor: 10     # Re-ranking factor for accuracy
+  vector_refine_factor: 30     # Re-ranking factor for accuracy
 ```
 
 - **vector_index_metric**: Distance metric for vector similarity:
   - `cosine`: Cosine similarity (default, best for most embeddings)
   - `l2`: Euclidean distance
   - `dot`: Dot product similarity
-- **vector_refine_factor**: Retrieve `refine_factor * limit` candidates and re-rank in memory for better accuracy. Higher values increase accuracy but slow down queries. Default: 10
+- **vector_refine_factor**: Improves accuracy when using a vector index by retrieving `refine_factor * limit` candidates (using approximate search) and re-ranking them with exact distances. Higher values increase accuracy but slow down queries. Default: 30
+  - **Only applies with a vector index** - has no effect on brute-force search, which already returns exact results
 
 !!! note
     Vector indexes are only necessary for large datasets with over 100,000 chunks. For smaller datasets, LanceDB's brute-force kNN search provides exact results with good performance. Only create an index if you notice search performance degradation on large datasets.

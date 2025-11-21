@@ -7,7 +7,7 @@
   - Creates IVF_PQ indexes
   - Requires minimum 256 chunks (LanceDB training data requirement)
   - New `search.vector_index_metric` config option: `cosine` (default), `l2`, or `dot`
-  - New `search.vector_refine_factor` config option (default: 10) for accuracy/speed tradeoff
+  - New `search.vector_refine_factor` config option (default: 30) for accuracy/speed tradeoff
   - Indexes not created automatically during ingestion to avoid performance degradation
   - Manual rebuilding required after adding significant new data
 - **Enhanced Info Command**: `haiku-rag info` now shows storage sizes and vector index statistics
@@ -17,7 +17,7 @@
 
 ### Changed
 
-- **Evaluations**: Improved evaluation dataset naming and simplified evaluator 
+- **Evaluations**: Improved evaluation dataset naming and simplified evaluator
 - configuration
   - `EvalDataset` now accepts dataset name for better organization in Logfire
   - Added `--name` CLI parameter to override evaluation run names

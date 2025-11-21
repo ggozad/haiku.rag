@@ -83,7 +83,7 @@ class ProcessingConfig(BaseModel):
 
 class SearchConfig(BaseModel):
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
-    vector_refine_factor: int = 10
+    vector_refine_factor: int = 30
 
 
 class OllamaConfig(BaseModel):
