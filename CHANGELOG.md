@@ -4,6 +4,10 @@
 ### Fixed
 
 - **AG-UI Activity Events**: Activity events now correctly use structured dict content instead of strings
+- **Graph Configuration**: Graph builder functions now properly accept and use non-global config (#149)
+  - `build_research_graph()` and `build_deep_qa_graph()` now pass config to all agents and model creation
+  - `get_model()` utility function accepts `config` parameter (defaults to global Config)
+  - Allows creating multiple graphs with different configurations in the same application
 
 ## [0.17.2] - 2025-11-19
 

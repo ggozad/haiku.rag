@@ -52,6 +52,7 @@ def build_research_graph(
             deps_type=ResearchDependencies,  # type: ignore[arg-type]
             activity_message="Creating research plan",
             output_retries=3,
+            config=config,
         )
     )  # type: ignore[arg-type]
 
@@ -64,6 +65,7 @@ def build_research_graph(
             with_step_wrapper=True,
             success_message_format="Found answer with {confidence:.0%} confidence",
             handle_exceptions=True,
+            config=config,
         )
     )  # type: ignore[arg-type]
 
@@ -97,7 +99,7 @@ def build_research_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model),
+                model=get_model(provider, model, config),
                 output_type=InsightAnalysis,
                 instructions=INSIGHT_AGENT_PROMPT,
                 retries=3,
@@ -155,7 +157,7 @@ def build_research_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model),
+                model=get_model(provider, model, config),
                 output_type=EvaluationResult,
                 instructions=DECISION_AGENT_PROMPT,
                 retries=3,
@@ -231,7 +233,7 @@ def build_research_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model),
+                model=get_model(provider, model, config),
                 output_type=ResearchReport,
                 instructions=SYNTHESIS_AGENT_PROMPT,
                 retries=3,
