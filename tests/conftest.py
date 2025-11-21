@@ -44,8 +44,8 @@ def temp_yaml_config(tmp_path, monkeypatch):
         },
         "embeddings": {
             "provider": "ollama",
-            "model": "qwen3-embedding",
-            "vector_dim": 4096,
+            "model": "qwen3-embedding:4b",
+            "vector_dim": 2560,
         },
         "qa": {"provider": "ollama", "model": "gpt-oss"},
     }
