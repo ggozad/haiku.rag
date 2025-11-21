@@ -17,8 +17,13 @@
 
 ### Changed
 
-- **Evaluations**: Improved evaluation dataset naming and simplified evaluator
-- configuration
+- **BREAKING: Default Embedding Model**: Changed default embedding model from `qwen3-embedding` to `qwen3-embedding:4b` with vector dimension 2560 (previously 4096)
+  - New installations will use the smaller, more efficient 4B parameter model by default
+  - **Action required**: Existing databases created with the old default will be incompatible. Users must either:
+    - Explicitly set `embeddings.model: "qwen3-embedding"` and `embeddings.vector_dim: 4096` in their config to maintain compatibility with existing databases
+    - Or run `haiku-rag rebuild` to re-embed all documents with the new default
+  - This change provides better performance for most use cases while reducing resource requirements
+- **Evaluations**: Improved evaluation dataset naming and simplified evaluator configuration
   - `EvalDataset` now accepts dataset name for better organization in Logfire
   - Added `--name` CLI parameter to override evaluation run names
   - Removed `IsInstance` evaluator, using only `LLMJudge` for QA evaluation

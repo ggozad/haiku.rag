@@ -36,8 +36,8 @@ environment: production
 
 embeddings:
   provider: ollama
-  model: qwen3-embedding
-  vector_dim: 4096
+  model: qwen3-embedding:4b
+  vector_dim: 2560
 
 qa:
   provider: ollama
@@ -68,8 +68,8 @@ lancedb:
 
 embeddings:
   provider: ollama
-  model: qwen3-embedding
-  vector_dim: 4096
+  model: qwen3-embedding:4b
+  vector_dim: 2560
 
 reranking:
   provider: ""  # Empty to disable, or mxbai, cohere, zeroentropy, vllm
@@ -144,7 +144,7 @@ from haiku.rag.client import HaikuRAG
 # Create custom configuration
 custom_config = AppConfig(
     qa={"provider": "openai", "model": "gpt-4o"},
-    embeddings={"provider": "ollama", "model": "qwen3-embedding"},
+    embeddings={"provider": "ollama", "model": "qwen3-embedding:4b", "vector_dim": 2560},
     processing={"chunk_size": 512}
 )
 

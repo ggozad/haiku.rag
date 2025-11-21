@@ -108,7 +108,7 @@ def test_generate_default_config():
     assert "qa" in config
     assert "providers" in config
     assert config["embeddings"]["provider"] == "ollama"
-    assert config["embeddings"]["vector_dim"] == 4096
+    assert config["embeddings"]["vector_dim"] == 2560
 
 
 def test_config_precedence_cwd_over_user(tmp_path, monkeypatch):

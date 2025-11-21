@@ -63,8 +63,8 @@ def generate_default_config() -> dict:
         "lancedb": {"uri": "", "api_key": "", "region": ""},
         "embeddings": {
             "provider": "ollama",
-            "model": "qwen3-embedding",
-            "vector_dim": 4096,
+            "model": "qwen3-embedding:4b",
+            "vector_dim": 2560,
         },
         "reranking": {"provider": "", "model": ""},
         "qa": {"provider": "ollama", "model": "gpt-oss"},

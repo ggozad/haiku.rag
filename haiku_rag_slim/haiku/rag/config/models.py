@@ -26,8 +26,8 @@ class LanceDBConfig(BaseModel):
 
 class EmbeddingsConfig(BaseModel):
     provider: str = "ollama"
-    model: str = "qwen3-embedding"
-    vector_dim: int = 4096
+    model: str = "qwen3-embedding:4b"
+    vector_dim: int = 2560
 
 
 class RerankingConfig(BaseModel):
