@@ -37,9 +37,9 @@ The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 fo
 
 | Embedding Model                       | Document in top 1 | Document in top 3 | Reranker               |
 |---------------------------------------|-------------------|-------------------|------------------------|
-| Ollama / `qwen3-embedding`            | 0.81              | 0.95              | None                   |
+| Ollama / `qwen3-embedding:8b`         | 0.81              | 0.95              | None                   |
 | Ollama / `qwen3-embedding:0.6b`       | 0.77              | 0.97              | None                   |
-| Ollama / `qwen3-embedding`            | 0.91              | 0.98              | `mxbai-rerank-base-v2` |
+| Ollama / `qwen3-embedding:8b`         | 0.91              | 0.98              | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
 | Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
 | Ollama / `nomic-embed-text-v1.5`      | 0.74              | 0.90              | None                   |
@@ -52,7 +52,7 @@ determine whether the answer is correct. The obtained accuracy is as follows:
 
 | Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
 |------------------------------------|-----------------------------------|-----------|------------------------|
-| Ollama / `qwen3-embedding`         | Ollama / `gpt-oss`                | 0.93      | None                   |
+| Ollama / `qwen3-embedding:8b`      | Ollama / `gpt-oss`                | 0.93      | None                   |
 | Ollama / `qwen3-embedding:0.6b`    | Ollama / `gpt-oss`                | 0.89      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.85      | None                   |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.87      | `mxbai-rerank-base-v2` |
@@ -79,22 +79,23 @@ relevant passage URIs. We track two complementary metrics:
 
 | Embedding Model            | Recall@1 | Recall@3 | Recall@5 | Reranker               |
 |----------------------------|----------|----------|----------|------------------------|
-| `qwen3-embedding`          | 0.31     | 0.48     | 0.54     | None                   |
-| `qwen3-embedding`          | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` |
-| `qwen3-embedding`          | 0.36     | 0.58     | 0.67     | `zeroentropy`          |
+| `qwen3-embedding:8b`       | 0.31     | 0.48     | 0.54     | None                   |
+| `qwen3-embedding:8b`       | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` |
+| `qwen3-embedding:8b`       | 0.36     | 0.58     | 0.67     | `zeroentropy`          |
 
 ### Success@K Results
 
 | Embedding Model            | Success@1 | Success@3 | Success@5 | Reranker               |
 |----------------------------|-----------|-----------|-----------|------------------------|
-| `qwen3-embedding`          | 0.36      | 0.54      | 0.62      | None                   |
-| `qwen3-embedding`          | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` |
-| `qwen3-embedding`          | 0.41      | 0.66      | 0.76      | `zeroentropy`          |
+| `qwen3-embedding:8b`       | 0.36      | 0.54      | 0.62      | None                   |
+| `qwen3-embedding:8b`       | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` |
+| `qwen3-embedding:8b`       | 0.41      | 0.66      | 0.76      | `zeroentropy`          |
 
 ## QA Accuracy
 
 And for QA accuracy,
 
-| Embedding Model            | QA Model  | Accuracy | Reranker               |
-|----------------------------|-----------|----------|------------------------|
-| `qwen3-embedding`          | `gpt-oss` | 0.75     | `mxbai-rerank-base-v2` |
+| Embedding Model            | QA Model      | Accuracy | Reranker               |
+|----------------------------|---------------|----------|------------------------|
+| `qwen3-embedding:4b`       | `gpt-oss:20b` | 0.79     | None                   |
+| `qwen3-embedding:8b`       | `gpt-oss:20b` | 0.75     | `mxbai-rerank-base-v2` |
