@@ -54,19 +54,20 @@ class Store:
         db_path: Path,
         config: AppConfig = Config,
         skip_validation: bool = False,
-        allow_create: bool = True,
+        read_only: bool = False,
     ):
         self.db_path: Path = db_path
         self._config = config
         self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
+        self._read_only = read_only
 
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
         # Local filesystem handling for DB directory
         if not self._has_cloud_config():
-            if not allow_create:
+            if read_only:
                 # Read operations should not create the database
                 if not db_path.exists():
                     raise FileNotFoundError(
@@ -271,41 +272,43 @@ class Store:
             )
 
         # Run pending upgrades based on stored version and package version
-        try:
-            from haiku.rag.store.upgrades import run_pending_upgrades
-
-            current_version = metadata.version("haiku.rag-slim")
-            db_version = self.get_haiku_version()
-
-            if db_version != "0.0.0":
-                run_pending_upgrades(self, db_version, current_version)
-
-            # After upgrades complete (or if none), set stored version
-            # to the greater of the installed package version and the
-            # highest available upgrade step version in code.
+        # Skip in read-only mode to avoid modifying the database
+        if not self._read_only:
             try:
-                from packaging.version import parse as _v
+                from haiku.rag.store.upgrades import run_pending_upgrades
 
-                from haiku.rag.store.upgrades import upgrades as _steps
+                current_version = metadata.version("haiku.rag-slim")
+                db_version = self.get_haiku_version()
 
-                highest_step = max((_v(u.version) for u in _steps), default=None)
-                effective_version = (
-                    str(max(_v(current_version), highest_step))
-                    if highest_step is not None
-                    else current_version
+                if db_version != "0.0.0":
+                    run_pending_upgrades(self, db_version, current_version)
+
+                # After upgrades complete (or if none), set stored version
+                # to the greater of the installed package version and the
+                # highest available upgrade step version in code.
+                try:
+                    from packaging.version import parse as _v
+
+                    from haiku.rag.store.upgrades import upgrades as _steps
+
+                    highest_step = max((_v(u.version) for u in _steps), default=None)
+                    effective_version = (
+                        str(max(_v(current_version), highest_step))
+                        if highest_step is not None
+                        else current_version
+                    )
+                except Exception:
+                    effective_version = current_version
+
+                self.set_haiku_version(effective_version)
+            except Exception as e:
+                # Avoid hard failure on initial connection; log and continue so CLI remains usable.
+                logger.warning(
+                    "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
+                    self.get_haiku_version(),
+                    metadata.version("haiku.rag-slim"),
+                    e,
                 )
-            except Exception:
-                effective_version = current_version
-
-            self.set_haiku_version(effective_version)
-        except Exception as e:
-            # Avoid hard failure on initial connection; log and continue so CLI remains usable.
-            logger.warning(
-                "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
-                self.get_haiku_version(),
-                metadata.version("haiku.rag-slim"),
-                e,
-            )
 
     def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""

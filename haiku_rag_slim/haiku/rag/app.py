@@ -87,7 +87,9 @@ class HaikuRAGApp:
         # Get comprehensive table statistics
         from haiku.rag.store.engine import Store
 
-        store = Store(self.db_path, config=self.config)
+        store = Store(
+            self.db_path, config=self.config, skip_validation=True, read_only=True
+        )
         table_stats = store.get_stats()
         store.close()
 
@@ -186,7 +188,7 @@ class HaikuRAGApp:
 
     async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, allow_create=False
+            db_path=self.db_path, config=self.config, read_only=True
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
@@ -221,7 +223,7 @@ class HaikuRAGApp:
 
     async def get_document(self, doc_id: str):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, allow_create=False
+            db_path=self.db_path, config=self.config, read_only=True
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -243,7 +245,7 @@ class HaikuRAGApp:
 
     async def search(self, query: str, limit: int = 5, filter: str | None = None):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, allow_create=False
+            db_path=self.db_path, config=self.config, read_only=True
         ) as self.client:
             results = await self.client.search(query, limit=limit, filter=filter)
             if not results:
@@ -268,7 +270,7 @@ class HaikuRAGApp:
             verbose: Show verbose output
         """
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, allow_create=False
+            db_path=self.db_path, config=self.config, read_only=True
         ) as self.client:
             try:
                 if deep:
@@ -315,7 +317,7 @@ class HaikuRAGApp:
             verbose: Show AG-UI event stream during execution
         """
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, allow_create=False
+            db_path=self.db_path, config=self.config, read_only=True
         ) as client:
             try:
                 self.console.print("[bold cyan]Starting research[/bold cyan]")
