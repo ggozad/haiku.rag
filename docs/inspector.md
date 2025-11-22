@@ -21,7 +21,7 @@ haiku-rag inspect --db /path/to/database.lancedb
 
 ## Interface
 
-![Inspector with search](img/inspector-search.png)
+![Inspector with search](img/inspector-search.svg)
 
 Three panels display your data:
 
