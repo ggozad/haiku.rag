@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Database Inspector**: New `inspect` CLI command launches interactive TUI for browsing documents and chunks & searching
+
 ## [0.18.0] - 2025-11-21
 
 ### Added
