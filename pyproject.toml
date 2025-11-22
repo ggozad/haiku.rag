@@ -21,10 +21,15 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy]"]
+dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
+
+[project.optional-dependencies]
+inspector = [
+    "textual>=1.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]

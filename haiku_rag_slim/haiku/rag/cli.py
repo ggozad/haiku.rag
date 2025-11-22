@@ -411,6 +411,25 @@ def download_models_cmd():
         raise typer.Exit(1)
 
 
+@cli.command("inspect", help="Launch interactive TUI to inspect database contents")
+def inspect(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    """Launch the inspector TUI for browsing documents and chunks."""
+    try:
+        from haiku.rag.inspector import run_inspector
+    except ImportError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+    run_inspector(db_path)
+
+
 @cli.command(
     "serve",
     help="Start haiku.rag server. Use --monitor, --mcp, and/or --agui to enable services.",

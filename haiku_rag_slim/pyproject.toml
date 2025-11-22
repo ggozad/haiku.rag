@@ -44,6 +44,8 @@ voyageai = ["voyageai>=0.3.5"]
 mxbai = ["mxbai-rerank>=0.1.6"]
 cohere = ["cohere>=5.20.0"]
 zeroentropy = ["zeroentropy>=0.1.0a6"]
+# Inspector TUI
+inspector = ["textual>=1.0.0"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]
