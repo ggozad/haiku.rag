@@ -51,7 +51,7 @@ class QuestionAnswerAgent:
         async def search_documents(
             ctx: RunContext[Dependencies],
             query: str,
-            limit: int = 3,
+            limit: int = 5,
         ) -> list[SearchResult]:
             """Search the knowledge base for relevant documents."""
             search_results = await ctx.deps.client.search(query, limit=limit)
