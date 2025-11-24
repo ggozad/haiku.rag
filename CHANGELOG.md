@@ -4,6 +4,17 @@
 ### Added
 
 - **Database Inspector**: New `inspect` CLI command launches interactive TUI for browsing documents and chunks & searching
+- **Evaluations**: Added comprehensive experiment metadata tracking for better reproducibility
+  - Records dataset name, test case count, and all model configurations
+  - Tracks embedder settings: provider, model, and vector dimensions
+  - Tracks QA model: provider and model name
+  - Tracks judge model: provider and model name for LLM evaluation
+  - Tracks processing parameters: `chunk_size` and `context_chunk_radius`
+  - Tracks retrieval configuration: `retrieval_limit` for number of chunks retrieved
+  - Tracks reranking configuration: `rerank_provider` and `rerank_model`
+  - Enables comparison of evaluation runs with different configurations in Logfire
+
+### Changed
 
 ## [0.18.0] - 2025-11-21
 
