@@ -2,7 +2,7 @@ import os
 
 import pytest
 from datasets import Dataset
-from evaluations.llm_judge import LLMJudge
+from evaluations.evaluators import LLMJudge
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config

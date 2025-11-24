@@ -5,6 +5,7 @@ from typing import Any
 
 from datasets import Dataset
 from pydantic_evals import Case
+from pydantic_evals.evaluators import Evaluator
 
 
 @dataclass
@@ -39,6 +40,7 @@ class DatasetSpec:
     qa_case_builder: CaseBuilder
     retrieval_loader: RetrievalLoader | None = None
     retrieval_mapper: RetrievalMapper | None = None
+    retrieval_evaluator: Evaluator | None = None
     document_limit: int | None = None
 
     @property

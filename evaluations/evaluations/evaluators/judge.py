@@ -5,7 +5,6 @@ from pydantic_ai.providers.ollama import OllamaProvider
 
 from haiku.rag.config import Config
 
-# Shared rubric/prompt for answer equivalence evaluation
 ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether two answers to the same question are semantically equivalent.
 
 EVALUATION CRITERIA:

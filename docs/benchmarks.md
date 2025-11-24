@@ -25,24 +25,33 @@ You can also use command-line options:
 - `--skip-db` - Skip updating the evaluation database
 - `--skip-retrieval` - Skip retrieval benchmark
 - `--skip-qa` - Skip QA benchmark
-- `--qa-limit N` - Limit number of QA cases to evaluate
-- `--name NAME` - Override the evaluation name (defaults to `{dataset}_qa_evaluation`)
+- `--limit N` - Limit number of test cases for both retrieval and QA
+- `--name NAME` - Override the evaluation name (defaults to `{dataset}_retrieval_evaluation` or `{dataset}_qa_evaluation`)
 
-## Recall
+## RepliQA Retrieval
 
-In order to calculate recall, we load the `News Stories` from `repliqa_3` (1035 documents) and index them. Subsequently, we run a search over the `question` field for each row of the dataset and check whether we match the document that answers the question. Questions for which the answer cannot be found in the documents are ignored.
+We use the [RepliQA](https://huggingface.co/datasets/ServiceNow/repliqa) dataset to evaluate retrieval performance. We load the `News Stories` from `repliqa_3` (1035 documents) and index them. Subsequently, we run a search over the `question` field for each row of the dataset and check whether we match the document that answers the question. Questions for which the answer cannot be found in the documents are ignored.
 
+For RepliQA, we use **Mean Reciprocal Rank (MRR)** as the primary metric since each query has exactly one relevant document.
 
-The recall obtained is ~0.79 for matching in the top result, raising to ~0.91 for the top 3 results with the "bare" default settings (Ollama `qwen3`, `mxbai-embed-large` embeddings, no reranking).
+**How MRR is calculated:**
+- For each query, we retrieve the top-K documents and find the rank (position) of the first relevant document
+- The reciprocal rank for that query is `1/rank` (e.g., if the relevant document is at position 3, the score is 1/3 ≈ 0.333)
+- If no relevant document is found in the top-K results, the score is 0
+- MRR is the mean of these reciprocal ranks across all queries
+- Scores range from 0 (never found) to 1 (always found at rank 1)
 
-| Embedding Model                       | Document in top 1 | Document in top 3 | Reranker               |
-|---------------------------------------|-------------------|-------------------|------------------------|
-| Ollama / `qwen3-embedding:8b`         | 0.81              | 0.95              | None                   |
-| Ollama / `qwen3-embedding:0.6b`       | 0.77              | 0.97              | None                   |
-| Ollama / `qwen3-embedding:8b`         | 0.91              | 0.98              | `mxbai-rerank-base-v2` |
-| Ollama / `mxbai-embed-large`          | 0.79              | 0.91              | None                   |
-| Ollama / `mxbai-embed-large`          | 0.90              | 0.95              | `mxbai-rerank-base-v2` |
-| Ollama / `nomic-embed-text-v1.5`      | 0.74              | 0.90              | None                   |
+**Example:** If we run 3 queries and the relevant documents are found at positions 1, 2, and not found:
+- Query 1: 1/1 = 1.0
+- Query 2: 1/2 = 0.5
+- Query 3: 0 (not found)
+- MRR = (1.0 + 0.5 + 0) / 3 = 0.5
+
+### MRR Results
+
+| Embedding Model                       | MRR   | Reranker               |
+|---------------------------------------|-------|------------------------|
+| Ollama / `qwen3-embedding:8b`         | 0.91  | -                      |
 
 ## Question/Answer evaluation
 
@@ -60,7 +69,7 @@ determine whether the answer is correct. The obtained accuracy is as follows:
 
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
 
-## Wix dataset
+## Wix Retrieval
 
 We also track retrieval performance on [WixQA](https://huggingface.co/datasets/Wix/WixQA),
 a dataset of real customer support questions paired with curated answers from
@@ -70,26 +79,30 @@ system handles conversational, product-specific support queries.
 
 For retrieval evaluation, we index the reference answer passages shipped with the dataset and
 run retrieval against each user question. Each sample supplies one or more
-relevant passage URIs. We track two complementary metrics:
+relevant passage URIs.
 
-- **Recall@K**: Fraction of relevant documents retrieved in top K results. Measures coverage.
-- **Success@K**: Fraction of queries with at least one relevant document in top K. Most relevant for RAG, where finding one good document is often sufficient.
+For Wix, we use **Mean Average Precision (MAP)** as the primary metric since each query has multiple relevant documents. MAP accounts for both the presence and ranking of all relevant documents.
 
-### Recall@K Results
+**How MAP is calculated:**
+- For each query, we retrieve the top-K documents and identify which ones are relevant
+- For each relevant document found at position k, we calculate precision@k = (number of relevant docs in top k) / k
+- Average Precision (AP) for that query is the mean of these precision values, divided by the total number of relevant documents
+- MAP is the mean of AP scores across all queries
+- Scores range from 0 (no relevant documents found) to 1 (all relevant documents ranked at the top)
 
-| Embedding Model            | Recall@1 | Recall@3 | Recall@5 | Reranker               |
-|----------------------------|----------|----------|----------|------------------------|
-| `qwen3-embedding:8b`       | 0.31     | 0.48     | 0.54     | None                   |
-| `qwen3-embedding:8b`       | 0.36     | 0.57     | 0.68     | `mxbai-rerank-base-v2` |
-| `qwen3-embedding:8b`       | 0.36     | 0.58     | 0.67     | `zeroentropy`          |
+**Example:** If a query has 2 relevant documents (A and B), and we retrieve 5 documents [A, X, B, Y, Z]:
+- A is at position 1: precision@1 = 1/1 = 1.0 (1 relevant out of top 1)
+- B is at position 3: precision@3 = 2/3 ≈ 0.667 (2 relevant out of top 3)
+- AP = (1.0 + 0.667) / 2 = 0.833
+- If we had another query with AP = 0.5, then MAP = (0.833 + 0.5) / 2 = 0.667
 
-### Success@K Results
+MAP rewards systems that rank relevant documents higher, not just finding them.
 
-| Embedding Model            | Success@1 | Success@3 | Success@5 | Reranker               |
-|----------------------------|-----------|-----------|-----------|------------------------|
-| `qwen3-embedding:8b`       | 0.36      | 0.54      | 0.62      | None                   |
-| `qwen3-embedding:8b`       | 0.42      | 0.66      | 0.76      | `mxbai-rerank-base-v2` |
-| `qwen3-embedding:8b`       | 0.41      | 0.66      | 0.76      | `zeroentropy`          |
+### MAP Results
+
+| Embedding Model            | MAP   | Reranker               |
+|----------------------------|-------|------------------------|
+| -                          | -     | -                      |
 
 ## QA Accuracy
 
