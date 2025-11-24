@@ -8,7 +8,7 @@ import typer
 from dotenv import load_dotenv
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
-from pydantic_evals import Dataset as EvalDataset
+from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
 from rich.console import Console
@@ -16,7 +16,7 @@ from rich.progress import Progress
 
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
-from evaluations.llm_judge import ANSWER_EQUIVALENCE_RUBRIC
+from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
 from evaluations.prompts import WIX_SUPPORT_PROMPT
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
@@ -31,6 +31,30 @@ logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
 console = Console()
+
+
+def build_experiment_metadata(
+    dataset_key: str,
+    test_cases: int,
+    config: AppConfig,
+    judge_model: str,
+) -> dict[str, Any]:
+    """Build experiment metadata for Logfire tracking."""
+    return {
+        "dataset": dataset_key,
+        "test_cases": test_cases,
+        "embedder_provider": config.embeddings.provider,
+        "embedder_model": config.embeddings.model,
+        "embedder_dim": config.embeddings.vector_dim,
+        "chunk_size": config.processing.chunk_size,
+        "context_chunk_radius": config.processing.context_chunk_radius,
+        "rerank_provider": config.reranking.provider,
+        "rerank_model": config.reranking.model,
+        "qa_provider": config.qa.provider,
+        "qa_model": config.qa.model,
+        "judge_provider": "ollama",
+        "judge_model": judge_model,
+    }
 
 
 async def populate_db(spec: DatasetSpec, config: AppConfig) -> None:
@@ -68,108 +92,115 @@ async def populate_db(spec: DatasetSpec, config: AppConfig) -> None:
 
 
 async def run_retrieval_benchmark(
-    spec: DatasetSpec, config: AppConfig
+    spec: DatasetSpec,
+    config: AppConfig,
+    limit: int | None = None,
+    name: str | None = None,
 ) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
         return None
 
     corpus = spec.retrieval_loader()
+    if limit is not None:
+        corpus = corpus.select(range(min(limit, len(corpus))))
 
-    recall_totals = {
-        1: 0.0,
-        3: 0.0,
-        5: 0.0,
-    }
-    success_totals = {
-        1: 0.0,
-        3: 0.0,
-        5: 0.0,
-    }
-    total_queries = 0
-
+    cases = []
     with Progress() as progress:
-        task = progress.add_task(
-            "[blue]Running retrieval benchmark...", total=len(corpus)
-        )
-        async with HaikuRAG(spec.db_path, config=config) as rag:
-            for doc in corpus:
-                doc_mapping = cast(Mapping[str, Any], doc)
-                sample = spec.retrieval_mapper(doc_mapping)
-                if sample is None or sample.skip:
-                    progress.advance(task)
-                    continue
-
-                matches = await rag.search(query=sample.question, limit=5)
-                if not matches:
-                    progress.advance(task)
-                    continue
-
-                total_queries += 1
-
-                retrieved_uris: list[str] = []
-                for chunk, _ in matches:
-                    if chunk.document_id is None:
-                        continue
-                    retrieved_doc = await rag.get_document_by_id(chunk.document_id)
-                    if retrieved_doc and retrieved_doc.uri:
-                        retrieved_uris.append(retrieved_doc.uri)
-
-                # Compute metrics for each cutoff
-                for cutoff in (1, 3, 5):
-                    top_k = set(retrieved_uris[:cutoff])
-                    relevant = set(sample.expected_uris)
-                    if relevant:
-                        matched = len(top_k & relevant)
-                        # Recall: fraction of relevant docs retrieved
-                        recall_totals[cutoff] += matched / len(relevant)
-                        # Success: binary - did we get at least one relevant doc?
-                        success_totals[cutoff] += 1.0 if matched > 0 else 0.0
-
+        task = progress.add_task("[blue]Building retrieval cases...", total=len(corpus))
+        for doc in corpus:
+            doc_mapping = cast(Mapping[str, Any], doc)
+            sample = spec.retrieval_mapper(doc_mapping)
+            if sample is None or sample.skip:
                 progress.advance(task)
+                continue
 
-    if total_queries == 0:
+            case = Case(
+                inputs=sample.question,
+                metadata={"relevant_uris": sample.expected_uris},
+            )
+            cases.append(case)
+            progress.advance(task)
+
+    if not cases:
         console.print("No retrieval cases to evaluate.")
         return None
 
-    recall_at_1 = recall_totals[1] / total_queries
-    recall_at_3 = recall_totals[3] / total_queries
-    recall_at_5 = recall_totals[5] / total_queries
+    if spec.retrieval_evaluator is None:
+        raise ValueError(f"No retrieval evaluator configured for dataset: {spec.key}")
 
-    success_at_1 = success_totals[1] / total_queries
-    success_at_3 = success_totals[3] / total_queries
-    success_at_5 = success_totals[5] / total_queries
+    evaluator = spec.retrieval_evaluator
+    metric_name = evaluator.__class__.__name__.replace("Evaluator", "").upper()
+
+    dataset = EvalDataset(
+        cases=cases,
+        evaluators=[evaluator],
+    )
+
+    async with HaikuRAG(spec.db_path, config=config) as rag:
+
+        async def retrieval_target(question: str) -> list[str]:
+            chunks = await rag.search(query=question, limit=5)
+
+            seen = set()
+            uris = []
+            for chunk, _ in chunks:
+                if chunk.document_id is None:
+                    continue
+                doc = await rag.get_document_by_id(chunk.document_id)
+                if doc and doc.uri and doc.uri not in seen:
+                    uris.append(doc.uri)
+                    seen.add(doc.uri)
+
+            return uris
+
+        eval_name = name if name is not None else f"{spec.key}_retrieval_evaluation"
+
+        experiment_metadata = build_experiment_metadata(
+            dataset_key=spec.key,
+            test_cases=len(cases),
+            config=config,
+            judge_model=QA_JUDGE_MODEL,
+        )
+
+        report = await dataset.evaluate(
+            retrieval_target,
+            name=eval_name,
+            max_concurrency=1,
+            progress=True,
+            metadata=experiment_metadata,
+        )
+
+    total_score = 0.0
+    total_cases = 0
+    for case in report.cases:
+        if case.scores:
+            for score_result in case.scores.values():
+                total_score += score_result.value
+                total_cases += 1
+
+    mean_score = total_score / total_cases if total_cases > 0 else 0.0
 
     console.print("\n=== Retrieval Benchmark Results ===", style="bold cyan")
-    console.print(f"Total queries: {total_queries}")
-    console.print("\nRecall@K (fraction of relevant docs retrieved):")
-    console.print(f"  Recall@1: {recall_at_1:.4f}")
-    console.print(f"  Recall@3: {recall_at_3:.4f}")
-    console.print(f"  Recall@5: {recall_at_5:.4f}")
-    console.print("\nSuccess@K (queries with at least one relevant doc):")
-    console.print(f"  Success@1: {success_at_1:.4f} ({success_at_1 * 100:.1f}%)")
-    console.print(f"  Success@3: {success_at_3:.4f} ({success_at_3 * 100:.1f}%)")
-    console.print(f"  Success@5: {success_at_5:.4f} ({success_at_5 * 100:.1f}%)")
+    console.print(f"Dataset: {spec.key}")
+    console.print(f"Total queries: {len(cases)}")
+    console.print(f"{metric_name}: {mean_score:.4f}")
 
     return {
-        "recall@1": recall_at_1,
-        "recall@3": recall_at_3,
-        "recall@5": recall_at_5,
-        "success@1": success_at_1,
-        "success@3": success_at_3,
-        "success@5": success_at_5,
+        metric_name.lower(): mean_score,
+        "queries": len(cases),
     }
 
 
 async def run_qa_benchmark(
     spec: DatasetSpec,
     config: AppConfig,
-    qa_limit: int | None = None,
+    limit: int | None = None,
     name: str | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
-    if qa_limit is not None:
-        corpus = corpus.select(range(min(qa_limit, len(corpus))))
+    if limit is not None:
+        corpus = corpus.select(range(min(limit, len(corpus))))
 
     cases = [
         spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
@@ -207,22 +238,12 @@ async def run_qa_benchmark(
 
         eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
 
-        experiment_metadata = {
-            "dataset": spec.key,
-            "test_cases": len(cases),
-            "embedder_provider": config.embeddings.provider,
-            "embedder_model": config.embeddings.model,
-            "embedder_dim": config.embeddings.vector_dim,
-            "qa_provider": config.qa.provider,
-            "qa_model": config.qa.model,
-            "judge_provider": "ollama",
-            "judge_model": QA_JUDGE_MODEL,
-            "chunk_size": config.processing.chunk_size,
-            "context_chunk_radius": config.processing.context_chunk_radius,
-            "retrieval_limit": 3,
-            "rerank_provider": config.reranking.provider,
-            "rerank_model": config.reranking.model,
-        }
+        experiment_metadata = build_experiment_metadata(
+            dataset_key=spec.key,
+            test_cases=len(cases),
+            config=config,
+            judge_model=QA_JUDGE_MODEL,
+        )
 
         report = await evaluation_dataset.evaluate(
             answer_question,
@@ -266,7 +287,7 @@ async def evaluate_dataset(
     skip_db: bool,
     skip_retrieval: bool,
     skip_qa: bool,
-    qa_limit: int | None,
+    limit: int | None,
     name: str | None,
 ) -> None:
     if not skip_db:
@@ -275,11 +296,11 @@ async def evaluate_dataset(
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
-        await run_retrieval_benchmark(spec, config)
+        await run_retrieval_benchmark(spec, config, limit=limit, name=name)
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, config, qa_limit=qa_limit, name=name)
+        await run_qa_benchmark(spec, config, limit=limit, name=name)
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -298,8 +319,8 @@ def run(
         False, "--skip-retrieval", help="Skip retrieval benchmark."
     ),
     skip_qa: bool = typer.Option(False, "--skip-qa", help="Skip QA benchmark."),
-    qa_limit: int | None = typer.Option(
-        None, "--qa-limit", help="Limit number of QA cases."
+    limit: int | None = typer.Option(
+        None, "--limit", help="Limit number of test cases for both retrieval and QA."
     ),
     name: str | None = typer.Option(None, "--name", help="Override evaluation name."),
 ) -> None:
@@ -335,7 +356,7 @@ def run(
             skip_db=skip_db,
             skip_retrieval=skip_retrieval,
             skip_qa=skip_qa,
-            qa_limit=qa_limit,
+            limit=limit,
             name=name,
         )
     )

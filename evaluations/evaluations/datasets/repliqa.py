@@ -5,6 +5,7 @@ from datasets import Dataset, DatasetDict, load_dataset
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
+from evaluations.evaluators import MRREvaluator
 
 
 def load_repliqa_corpus() -> Dataset:
@@ -55,4 +56,5 @@ REPLIQ_SPEC = DatasetSpec(
     qa_case_builder=build_repliqa_case,
     retrieval_loader=load_repliqa_corpus,
     retrieval_mapper=map_repliqa_retrieval,
+    retrieval_evaluator=MRREvaluator(),
 )

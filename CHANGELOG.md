@@ -13,8 +13,17 @@
   - Tracks retrieval configuration: `retrieval_limit` for number of chunks retrieved
   - Tracks reranking configuration: `rerank_provider` and `rerank_model`
   - Enables comparison of evaluation runs with different configurations in Logfire
+- **Evaluations**: Refactored retrieval evaluation to use pydantic-ai experiment framework
+  - New `evaluators` module with `MRREvaluator` (Mean Reciprocal Rank) and `MAPEvaluator` (Mean Average Precision)
+  - Retrieval benchmarks now use `Dataset.evaluate()` with full Logfire experiment tracking
+  - Dataset specifications now declare their retrieval evaluator (MRR for RepliQA, MAP for Wix)
+  - Replaced Recall@K and Success@K with industry-standard MRR and MAP metrics
+  - Unified evaluation framework for both retrieval and QA benchmarks
 
 ### Changed
+
+- **Evaluations**: Renamed `--qa-limit` CLI parameter to `--limit`, now applies to both retrieval and QA benchmarks
+- **Evaluations**: Retrieval evaluator selection moved from runtime logic to dataset configuration
 
 ## [0.18.0] - 2025-11-21
 
