@@ -136,7 +136,10 @@ def build_deep_qa_graph(
                 deps.agui_emitter.update_activity(
                     "evaluating",
                     {
-                        "message": f"Information {status} after {state.iterations} iteration(s)"
+                        "stepName": "decide",
+                        "message": f"Information {status} after {state.iterations} iteration(s)",
+                        "is_sufficient": evaluation.is_sufficient,
+                        "iterations": state.iterations,
                     },
                 )
 

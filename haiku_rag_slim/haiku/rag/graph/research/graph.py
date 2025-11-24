@@ -126,9 +126,9 @@ def build_research_graph(
             # State updated with insights/gaps - emit state update and narrate
             if deps.agui_emitter:
                 deps.agui_emitter.update_state(state)
-                highlights = len(analysis.highlights) if analysis.highlights else 0
-                gaps = len(analysis.gap_assessments) if analysis.gap_assessments else 0
-                resolved = len(analysis.resolved_gaps) if analysis.resolved_gaps else 0
+                highlights = len(analysis.highlights)
+                gaps = len(analysis.gap_assessments)
+                resolved = len(analysis.resolved_gaps)
                 parts = []
                 if highlights:
                     parts.append(f"{highlights} insights")
@@ -138,7 +138,18 @@ def build_research_graph(
                     parts.append(f"{resolved} resolved")
                 summary = ", ".join(parts) if parts else "No updates"
                 deps.agui_emitter.update_activity(
-                    "analyzing", {"message": f"Analysis: {summary}"}
+                    "analyzing",
+                    {
+                        "stepName": "analyze_insights",
+                        "message": f"Analysis: {summary}",
+                        "insights": [
+                            h.model_dump(mode="json") for h in analysis.highlights
+                        ],
+                        "gaps": [
+                            g.model_dump(mode="json") for g in analysis.gap_assessments
+                        ],
+                        "resolved_gaps": list(analysis.resolved_gaps),
+                    },
                 )
         finally:
             if deps.agui_emitter:
@@ -204,7 +215,10 @@ def build_research_graph(
                 deps.agui_emitter.update_activity(
                     "evaluating",
                     {
-                        "message": f"Confidence: {output.confidence_score:.0%}, Sufficient: {sufficient}"
+                        "stepName": "decide",
+                        "message": f"Confidence: {output.confidence_score:.0%}, Sufficient: {sufficient}",
+                        "confidence": output.confidence_score,
+                        "is_sufficient": output.is_sufficient,
                     },
                 )
 

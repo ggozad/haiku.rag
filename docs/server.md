@@ -175,9 +175,10 @@ The `--no-buffer` flag ensures curl displays events as they arrive instead of bu
 **Response:** Server-Sent Events stream with AG-UI protocol events:
 - `RUN_STARTED` - Graph execution started
 - `STATE_SNAPSHOT` - Current state snapshot
+- `STATE_DELTA` - Incremental state changes (JSON Patch format)
 - `STEP_STARTED` - Node execution started
 - `STEP_FINISHED` - Node execution completed
-- `ACTIVITY_SNAPSHOT` - Progress update
+- `ACTIVITY_SNAPSHOT` - Progress update with structured data
 - `RUN_FINISHED` - Graph execution completed with result
 - `RUN_ERROR` - Error during execution
 
@@ -189,12 +190,29 @@ data: {"type":"STATE_SNAPSHOT","snapshot":{"context":{"original_question":"What 
 
 data: {"type":"STEP_STARTED","stepName":"plan"}
 
-data: {"type":"ACTIVITY_SNAPSHOT","messageId":"msg-1","activityType":"planning","content":"Creating research plan"}
+data: {"type":"ACTIVITY_SNAPSHOT","messageId":"msg-1","activityType":"planning","stepName":"plan","content":{"message":"Created plan with 3 sub-questions","sub_questions":["What is X?","How does Y work?","Why is Z important?"]}}
 
 data: {"type":"STEP_FINISHED","stepName":"plan"}
 
+data: {"type":"STATE_DELTA","delta":[{"op":"replace","path":"/iterations","value":1}]}
+
+data: {"type":"ACTIVITY_SNAPSHOT","messageId":"msg-2","activityType":"evaluating","stepName":"decide","content":{"message":"Confidence: 85%, Sufficient: Yes","confidence":0.85,"is_sufficient":true}}
+
 data: {"type":"RUN_FINISHED","threadId":"abc123","runId":"xyz789","result":{"title":"Research Report","executive_summary":"..."}}
 ```
+
+**Activity Event Structure:**
+
+`ACTIVITY_SNAPSHOT` events include a `content` object with:
+- `message` - Human-readable progress message (always present)
+- `stepName` - The graph step emitting this activity (when available)
+- Additional structured fields depending on the activity type:
+  - **Planning**: `sub_questions` (list of strings)
+  - **Searching**: `query` (string), `confidence` (float, on completion), `error` (string, on failure)
+  - **Analyzing**: `insights` (list of insight objects), `gaps` (list of gap objects), `resolved_gaps` (list of strings)
+  - **Evaluating**: `confidence` (float), `is_sufficient` (boolean) for research; `is_sufficient` (boolean), `iterations` (int) for deep QA
+
+The `message` field is always present for simple rendering, while structured fields enable richer UI features like displaying lists, charts, and detailed status information.
 
 The endpoint follows the [AG-UI protocol](https://docs.ag-ui.com/concepts/events) for event streaming.
 
