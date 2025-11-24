@@ -206,11 +206,30 @@ async def run_qa_benchmark(
             return await qa.answer(question)
 
         eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
+
+        experiment_metadata = {
+            "dataset": spec.key,
+            "test_cases": len(cases),
+            "embedder_provider": config.embeddings.provider,
+            "embedder_model": config.embeddings.model,
+            "embedder_dim": config.embeddings.vector_dim,
+            "qa_provider": config.qa.provider,
+            "qa_model": config.qa.model,
+            "judge_provider": "ollama",
+            "judge_model": QA_JUDGE_MODEL,
+            "chunk_size": config.processing.chunk_size,
+            "context_chunk_radius": config.processing.context_chunk_radius,
+            "retrieval_limit": 3,
+            "rerank_provider": config.reranking.provider,
+            "rerank_model": config.reranking.model,
+        }
+
         report = await evaluation_dataset.evaluate(
             answer_question,
             name=eval_name,
             max_concurrency=1,
             progress=True,
+            metadata=experiment_metadata,
         )
 
     passing_cases = sum(
