@@ -79,7 +79,9 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
         if deps.agui_emitter:
             deps.agui_emitter.start_step("plan")
-            deps.agui_emitter.update_activity("planning", {"message": activity_message})
+            deps.agui_emitter.update_activity(
+                "planning", {"stepName": "plan", "message": activity_message}
+            )
 
         try:
             # Build agent configuration
@@ -124,7 +126,12 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
                 deps.agui_emitter.update_state(state)
                 count = len(state.context.sub_questions)
                 deps.agui_emitter.update_activity(
-                    "planning", {"message": f"Created plan with {count} sub-questions"}
+                    "planning",
+                    {
+                        "stepName": "plan",
+                        "message": f"Created plan with {count} sub-questions",
+                        "sub_questions": list(state.context.sub_questions),
+                    },
                 )
         finally:
             if deps.agui_emitter:
@@ -207,7 +214,12 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
     """Internal search implementation."""
     if deps.agui_emitter:
         deps.agui_emitter.update_activity(
-            "searching", {"message": f"Searching: {sub_q}"}
+            "searching",
+            {
+                "stepName": "search_one",
+                "message": f"Searching: {sub_q}",
+                "query": sub_q,
+            },
         )
 
     agent = Agent(
@@ -258,14 +270,28 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
                     )
                 else:
                     message = success_message_format.format(sub_q=sub_q)
-                deps.agui_emitter.update_activity("searching", {"message": message})
+                deps.agui_emitter.update_activity(
+                    "searching",
+                    {
+                        "stepName": "search_one",
+                        "message": message,
+                        "query": sub_q,
+                        "confidence": answer.confidence,
+                    },
+                )
         return answer
     except Exception as e:
         if handle_exceptions:
             # Narrate the error
             if deps.agui_emitter:
                 deps.agui_emitter.update_activity(
-                    "searching", {"message": f"Search failed: {e}"}
+                    "searching",
+                    {
+                        "stepName": "search_one",
+                        "message": f"Search failed: {e}",
+                        "query": sub_q,
+                        "error": str(e),
+                    },
                 )
             failure_answer = SearchAnswer(
                 query=sub_q,

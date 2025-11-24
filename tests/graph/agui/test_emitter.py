@@ -124,8 +124,16 @@ async def test_emitter_activity_events():
     """Test activity events."""
     emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter()
 
+    # Activity without a step
     emitter.update_activity("processing", {"message": "Processing data"})
-    emitter.update_activity("done", {"message": "Completed"}, message_id="msg-1")
+
+    # Activity within a step (stepName explicitly included in content)
+    emitter.start_step("analyze")
+    emitter.update_activity(
+        "done", {"stepName": "analyze", "message": "Completed"}, message_id="msg-1"
+    )
+    emitter.finish_step()
+
     await emitter.close()
 
     events = []
@@ -135,9 +143,13 @@ async def test_emitter_activity_events():
     activity_events = [e for e in events if e["type"] == "ACTIVITY_SNAPSHOT"]
     assert len(activity_events) == 2
     assert activity_events[0]["activityType"] == "processing"
-    assert activity_events[0]["content"] == {"message": "Processing data"}
+    assert activity_events[0]["content"]["message"] == "Processing data"
+    assert "stepName" not in activity_events[0]["content"]  # No step context
+
     assert activity_events[1]["messageId"] == "msg-1"
     assert activity_events[1]["activityType"] == "done"
+    assert activity_events[1]["content"]["message"] == "Completed"
+    assert activity_events[1]["content"]["stepName"] == "analyze"  # Has step context
 
 
 @pytest.mark.asyncio

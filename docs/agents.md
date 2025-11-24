@@ -271,7 +271,18 @@ async with HaikuRAG(path_to_db) as client:
         if event["type"] == "STEP_STARTED":
             print(f"Starting step: {event['stepName']}")
         elif event["type"] == "ACTIVITY_SNAPSHOT":
-            print(f"  {event['content']}")
+            # Activity events include structured data alongside messages
+            content = event['content']
+            print(f"  {content['message']}")
+
+            # Different activity types have different structured fields
+            if 'confidence' in content:
+                print(f"    Confidence: {content['confidence']:.0%}")
+            if 'sub_questions' in content:
+                for q in content['sub_questions']:
+                    print(f"    - {q}")
+            if 'insights' in content:
+                print(f"    New insights: {len(content['insights'])}")
         elif event["type"] == "RUN_FINISHED":
             print("\nResearch complete!\n")
             result = event["result"]

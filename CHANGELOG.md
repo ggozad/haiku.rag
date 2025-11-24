@@ -19,6 +19,14 @@
   - Dataset specifications now declare their retrieval evaluator (MRR for RepliQA, MAP for Wix)
   - Replaced Recall@K and Success@K with industry-standard MRR and MAP metrics
   - Unified evaluation framework for both retrieval and QA benchmarks
+- **AG-UI Events**: Enhanced ActivitySnapshot events with richer structured data
+  - Added `stepName` field to identify which graph node emitted each activity
+  - Added structured fields to activity content while preserving backward-compatible `message` field:
+    - **Planning**: `sub_questions` - list of sub-question strings
+    - **Searching**: `query` - the search query, `confidence` - answer confidence (on success), `error` - error message (on failure)
+    - **Analyzing** (research): `insights` - list of insight objects, `gaps` - list of gap objects, `resolved_gaps` - list of resolved gap strings
+    - **Evaluating** (research): `confidence` - confidence score, `is_sufficient` - sufficiency flag
+    - **Evaluating** (deep QA): `is_sufficient` - sufficiency flag, `iterations` - iteration count
 
 ### Changed
 
