@@ -35,9 +35,8 @@ A minimal configuration file with defaults:
 environment: production
 
 embeddings:
-  model:
-    provider: ollama
-    name: qwen3-embedding:4b
+  provider: ollama
+  model: qwen3-embedding:4b
   vector_dim: 2560
 
 qa:
@@ -70,9 +69,8 @@ lancedb:
   region: ""
 
 embeddings:
-  model:
-    provider: ollama
-    name: qwen3-embedding:4b
+  provider: ollama
+  model: qwen3-embedding:4b
   vector_dim: 2560
 
 reranking:

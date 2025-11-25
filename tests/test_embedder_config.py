@@ -7,7 +7,6 @@ from haiku.rag.config import (
     ProvidersConfig,
     VLLMConfig,
 )
-from haiku.rag.config.models import ModelConfig
 from haiku.rag.embeddings import get_embedder
 
 
@@ -15,10 +14,8 @@ def test_embedder_uses_config_from_get_embedder():
     """Test that embedders use the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            model=ModelConfig(
-                provider="ollama",
-                name="custom-model",
-            ),
+            provider="ollama",
+            model="custom-model",
             vector_dim=512,
         ),
         providers=ProvidersConfig(
@@ -36,14 +33,10 @@ def test_embedder_uses_config_from_get_embedder():
 
 def test_vllm_embedder_uses_config():
     """Test that vllm embedder uses the config passed to get_embedder."""
-    from haiku.rag.config.models import ModelConfig
-
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            model=ModelConfig(
-                provider="vllm",
-                name="custom-vllm-model",
-            ),
+            provider="vllm",
+            model="custom-vllm-model",
             vector_dim=768,
         ),
         providers=ProvidersConfig(
@@ -62,14 +55,11 @@ def test_vllm_embedder_uses_config():
 
 def test_openai_embedder_uses_config():
     """Test that openai embedder uses the config passed to get_embedder."""
-    from haiku.rag.config.models import ModelConfig
 
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            model=ModelConfig(
-                provider="openai",
-                name="text-embedding-3-large",
-            ),
+            provider="openai",
+            model="text-embedding-3-large",
             vector_dim=3072,
         ),
     )
@@ -88,10 +78,8 @@ def test_voyageai_embedder_uses_config():
     """Test that voyageai embedder uses the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            model=ModelConfig(
-                provider="voyageai",
-                name="voyage-large-2",
-            ),
+            provider="voyageai",
+            model="voyage-large-2",
             vector_dim=1536,
         ),
     )

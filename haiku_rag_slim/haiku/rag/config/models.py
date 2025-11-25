@@ -44,12 +44,8 @@ class LanceDBConfig(BaseModel):
 
 
 class EmbeddingsConfig(BaseModel):
-    model: ModelConfig = Field(
-        default_factory=lambda: ModelConfig(
-            provider="ollama",
-            name="qwen3-embedding:4b",
-        )
-    )
+    provider: str = "ollama"
+    model: str = "qwen3-embedding:4b"
     vector_dim: int = 2560
 
 

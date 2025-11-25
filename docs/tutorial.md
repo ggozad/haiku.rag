@@ -38,8 +38,9 @@ embeddings:
   vector_dim: 1536
 
 qa:
-  provider: openai
-  model: gpt-4o-mini  # or gpt-4o, gpt-4, etc.
+  model:
+    provider: openai
+    name: gpt-4o-mini  # or gpt-4o, gpt-4, etc.
 ```
 
 Set your OpenAI API key as an environment variable (API keys should not be stored in the YAML file):

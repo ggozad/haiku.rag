@@ -365,8 +365,8 @@ def prefetch_models():
 
     # Collect Ollama models from config
     required_models: set[str] = set()
-    if Config.embeddings.model.provider == "ollama":
-        required_models.add(Config.embeddings.model.name)
+    if Config.embeddings.provider == "ollama":
+        required_models.add(Config.embeddings.model)
     if Config.qa.model.provider == "ollama":
         required_models.add(Config.qa.model.name)
     if Config.research.model.provider == "ollama":
