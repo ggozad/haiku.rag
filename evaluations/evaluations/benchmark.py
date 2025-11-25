@@ -52,8 +52,14 @@ def build_experiment_metadata(
         "rerank_model": config.reranking.model.name if config.reranking.model else None,
         "qa_provider": config.qa.model.provider,
         "qa_model": config.qa.model.name,
+        "qa_temperature": config.qa.model.temperature,
+        "qa_max_tokens": config.qa.model.max_tokens,
+        "qa_enable_thinking": config.qa.model.enable_thinking,
         "judge_provider": judge_config.provider,
         "judge_model": judge_config.name,
+        "judge_temperature": judge_config.temperature,
+        "judge_max_tokens": judge_config.max_tokens,
+        "judge_enable_thinking": judge_config.enable_thinking,
     }
 
 
