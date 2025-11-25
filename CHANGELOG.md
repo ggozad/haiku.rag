@@ -4,6 +4,13 @@
 ### Added
 
 - **Database Inspector**: New `inspect` CLI command launches interactive TUI for browsing documents and chunks & searching
+- **Evaluations**: Added `evaluations` CLI script for running benchmarks (replaces `python -m evaluations.benchmark`)
+- **Evaluations**: Added `--db` option to override evaluation database path
+  - Default database location moved to haiku.rag data directory:
+    - macOS: `~/Library/Application Support/haiku.rag/evaluations/dbs/`
+    - Linux: `~/.local/share/haiku.rag/evaluations/dbs/`
+    - Windows: `C:/Users/<USER>/AppData/Roaming/haiku.rag/evaluations/dbs/`
+  - Previously stored in `evaluations/data/` within the repository
 - **Evaluations**: Added comprehensive experiment metadata tracking for better reproducibility
   - Records dataset name, test case count, and all model configurations
   - Tracks embedder settings: provider, model, and vector dimensions

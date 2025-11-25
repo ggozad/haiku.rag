@@ -57,15 +57,18 @@ def build_experiment_metadata(
     }
 
 
-async def populate_db(spec: DatasetSpec, config: AppConfig) -> None:
-    spec.db_path.parent.mkdir(parents=True, exist_ok=True)
+async def populate_db(
+    spec: DatasetSpec, config: AppConfig, db_path: Path | None = None
+) -> None:
+    db = spec.db_path(db_path)
+    db.parent.mkdir(parents=True, exist_ok=True)
     corpus = spec.document_loader()
     if spec.document_limit is not None:
         corpus = corpus.select(range(min(spec.document_limit, len(corpus))))
 
     with Progress() as progress:
         task = progress.add_task("[green]Populating database...", total=len(corpus))
-        async with HaikuRAG(spec.db_path, config=config) as rag:
+        async with HaikuRAG(db, config=config) as rag:
             for doc in corpus:
                 doc_mapping = cast(Mapping[str, Any], doc)
                 payload = spec.document_mapper(doc_mapping)
@@ -96,6 +99,7 @@ async def run_retrieval_benchmark(
     config: AppConfig,
     limit: int | None = None,
     name: str | None = None,
+    db_path: Path | None = None,
 ) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
@@ -137,7 +141,8 @@ async def run_retrieval_benchmark(
         evaluators=[evaluator],
     )
 
-    async with HaikuRAG(spec.db_path, config=config) as rag:
+    db = spec.db_path(db_path)
+    async with HaikuRAG(db, config=config) as rag:
 
         async def retrieval_target(question: str) -> list[str]:
             chunks = await rag.search(query=question, limit=5)
@@ -197,6 +202,7 @@ async def run_qa_benchmark(
     config: AppConfig,
     limit: int | None = None,
     name: str | None = None,
+    db_path: Path | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if limit is not None:
@@ -229,7 +235,8 @@ async def run_qa_benchmark(
         ],
     )
 
-    async with HaikuRAG(spec.db_path, config=config) as rag:
+    db = spec.db_path(db_path)
+    async with HaikuRAG(db, config=config) as rag:
         system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
         qa = get_qa_agent(rag, system_prompt=system_prompt)
 
@@ -289,18 +296,21 @@ async def evaluate_dataset(
     skip_qa: bool,
     limit: int | None,
     name: str | None,
+    db_path: Path | None,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
-        await populate_db(spec, config)
+        await populate_db(spec, config, db_path=db_path)
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
-        await run_retrieval_benchmark(spec, config, limit=limit, name=name)
+        await run_retrieval_benchmark(
+            spec, config, limit=limit, name=name, db_path=db_path
+        )
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, config, limit=limit, name=name)
+        await run_qa_benchmark(spec, config, limit=limit, name=name, db_path=db_path)
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -312,6 +322,7 @@ def run(
     config: Path | None = typer.Option(
         None, "--config", help="Path to haiku.rag YAML config file."
     ),
+    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
     skip_db: bool = typer.Option(
         False, "--skip-db", help="Skip updateing the evaluation db."
     ),
@@ -358,6 +369,7 @@ def run(
             skip_qa=skip_qa,
             limit=limit,
             name=name,
+            db_path=db,
         )
     )
 

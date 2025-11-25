@@ -15,6 +15,9 @@ dependencies = [
     "python-dotenv>=1.2.1",
 ]
 
+[project.scripts]
+evaluations = "evaluations.benchmark:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
