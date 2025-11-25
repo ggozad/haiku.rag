@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.19.0] - 2025-11-25
+
 ### Added
 
 - **Model Customization**: Added support for per-model configuration settings
