@@ -93,7 +93,7 @@ research:
   model:
     provider: ""  # Empty to use qa settings
     name: ""
-    enable_thinking: true
+    enable_thinking: false
   max_iterations: 3
   confidence_threshold: 0.8
   max_concurrency: 1

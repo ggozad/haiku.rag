@@ -75,7 +75,7 @@ class ResearchConfig(BaseModel):
         default_factory=lambda: ModelConfig(
             provider="ollama",
             name="gpt-oss",
-            enable_thinking=True,
+            enable_thinking=False,
         )
     )
     max_iterations: int = 3
