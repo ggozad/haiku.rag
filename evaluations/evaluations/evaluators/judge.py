@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.ollama import OllamaProvider
 
 from haiku.rag.config import Config
+from haiku.rag.config.models import ModelConfig
+from haiku.rag.utils import get_model
 
 ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether two answers to the same question are semantically equivalent.
 
@@ -37,15 +37,15 @@ class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
     def __init__(self, model: str = "gpt-oss"):
-        # Create Ollama model
-        ollama_model = OpenAIChatModel(
-            model_name=model,
-            provider=OllamaProvider(base_url=f"{Config.providers.ollama.base_url}/v1"),
+        # Create model using get_model with thinking disabled
+        model_config = ModelConfig(
+            provider="ollama", model=model, enable_thinking=False
         )
+        model_obj = get_model(model_config, Config)
 
         # Create Pydantic AI agent
         self._agent = Agent(
-            model=ollama_model,
+            model=model_obj,
             output_type=LLMJudgeResponseSchema,
             system_prompt=ANSWER_EQUIVALENCE_RUBRIC,
             retries=3,

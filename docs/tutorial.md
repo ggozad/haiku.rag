@@ -38,8 +38,9 @@ embeddings:
   vector_dim: 1536
 
 qa:
-  provider: openai
-  model: gpt-4o-mini  # or gpt-4o, gpt-4, etc.
+  model:
+    provider: openai
+    name: gpt-4o-mini  # or gpt-4o, gpt-4, etc.
 ```
 
 Set your OpenAI API key as an environment variable (API keys should not be stored in the YAML file):
@@ -50,7 +51,7 @@ export OPENAI_API_KEY="<your OpenAI API key>"
 
 For the list of available OpenAI models and their vector dimensions, see the [OpenAI documentation](https://platform.openai.com/docs/guides/embeddings).
 
-See [Configuration](configuration.md) for all available options.
+See [Configuration](config-index.md) for all available options.
 
 ## Adding the first documents
 
@@ -215,4 +216,4 @@ The following people are presenting talks at PyCon Finland 2025:
 
 ## Configuration
 
-See [Configuration page](./configuration.md) for complete documentation on YAML configuration and all available options.
+See [Configuration page](./config-index.md) for complete documentation on YAML configuration and all available options.

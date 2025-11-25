@@ -29,8 +29,7 @@ def build_deep_qa_graph(
     Returns:
         Configured Deep QA graph
     """
-    provider = config.qa.provider
-    model = config.qa.model
+    model_config = config.qa.model
     g = GraphBuilder(
         state_type=DeepQAState,
         deps_type=DeepQADeps,
@@ -40,8 +39,7 @@ def build_deep_qa_graph(
     # Create and register the plan node using the factory
     plan = g.step(
         create_plan_node(
-            provider=provider,
-            model=model,
+            model_config=model_config,
             deps_type=DeepQADependencies,  # type: ignore[arg-type]
             activity_message="Planning approach",
             output_retries=None,  # Deep QA doesn't use output_retries
@@ -52,8 +50,7 @@ def build_deep_qa_graph(
     # Create and register the search_one node using the factory
     search_one = g.step(
         create_search_node(
-            provider=provider,
-            model=model,
+            model_config=model_config,
             deps_type=DeepQADependencies,  # type: ignore[arg-type]
             with_step_wrapper=False,  # Deep QA doesn't wrap with agui_emitter step
             success_message_format="Answered: {sub_q}",
@@ -92,7 +89,7 @@ def build_deep_qa_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model, config),
+                model=get_model(model_config, config),
                 output_type=DeepQAEvaluation,
                 instructions=DECISION_PROMPT,
                 retries=3,
@@ -173,7 +170,7 @@ def build_deep_qa_graph(
             )
 
             agent = Agent(
-                model=get_model(provider, model, config),
+                model=get_model(model_config, config),
                 output_type=DeepQAAnswer,
                 instructions=prompt_template,
                 retries=3,

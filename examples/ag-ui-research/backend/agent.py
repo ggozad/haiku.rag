@@ -35,7 +35,7 @@ class AgentDeps:
     agui_emitter: "AGUIEmitter[ResearchState, ResearchReport] | None" = None
 
 
-model = get_model(Config.research.provider, Config.research.model)
+model = get_model(Config.research.model, Config)
 
 agent = Agent(
     model,

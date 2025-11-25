@@ -30,8 +30,9 @@ embeddings:
   vector_dim: 768
 
 qa:
-  provider: ollama
-  model: qwen3
+  model:
+    provider: ollama
+    name: qwen3
 ```
 
 See [Configuration docs](https://ggozad.github.io/haiku.rag/configuration/) for all available options.

@@ -47,7 +47,7 @@ if not db_path.exists():
 
 logger.info(f"Initializing research assistant with database: {db_path}")
 logger.info(
-    f"Research Provider: {Config.research.provider}, Model: {Config.research.model}"
+    f"Research Provider: {Config.research.model.provider}, Model: {Config.research.model.name}"
 )
 
 # Store client reference for proper lifecycle management
@@ -153,8 +153,8 @@ async def health_check(_: Request) -> JSONResponse:
         {
             "status": "healthy",
             "agent_model": str(agent.model),
-            "research_provider": Config.research.provider,
-            "research_model": Config.research.model,
+            "research_provider": Config.research.model.provider,
+            "research_model": Config.research.model.name,
             "db_path": str(db_path),
             "db_exists": db_path.exists(),
         }

@@ -36,8 +36,7 @@ def build_research_graph(
     Returns:
         Configured Research graph
     """
-    provider = config.research.provider
-    model = config.research.model
+    model_config = config.research.model
     g = GraphBuilder(
         state_type=ResearchState,
         deps_type=ResearchDeps,
@@ -47,8 +46,7 @@ def build_research_graph(
     # Create and register the plan node using the factory
     plan = g.step(
         create_plan_node(
-            provider=provider,
-            model=model,
+            model_config=model_config,
             deps_type=ResearchDependencies,  # type: ignore[arg-type]
             activity_message="Creating research plan",
             output_retries=3,
@@ -59,8 +57,7 @@ def build_research_graph(
     # Create and register the search_one node using the factory
     search_one = g.step(
         create_search_node(
-            provider=provider,
-            model=model,
+            model_config=model_config,
             deps_type=ResearchDependencies,  # type: ignore[arg-type]
             with_step_wrapper=True,
             success_message_format="Found answer with {confidence:.0%} confidence",
@@ -99,7 +96,7 @@ def build_research_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model, config),
+                model=get_model(model_config, config),
                 output_type=InsightAnalysis,
                 instructions=INSIGHT_AGENT_PROMPT,
                 retries=3,
@@ -168,7 +165,7 @@ def build_research_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model, config),
+                model=get_model(model_config, config),
                 output_type=EvaluationResult,
                 instructions=DECISION_AGENT_PROMPT,
                 retries=3,
@@ -247,7 +244,7 @@ def build_research_graph(
 
         try:
             agent = Agent(
-                model=get_model(provider, model, config),
+                model=get_model(model_config, config),
                 output_type=ResearchReport,
                 instructions=SYNTHESIS_AGENT_PROMPT,
                 retries=3,

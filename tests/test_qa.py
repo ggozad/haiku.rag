@@ -6,6 +6,7 @@ from evaluations.evaluators import LLMJudge
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.config.models import ModelConfig
 from haiku.rag.qa.agent import QuestionAnswerAgent
 
 OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
@@ -17,7 +18,9 @@ VLLM_QA_AVAILABLE = bool(Config.providers.vllm.qa_base_url)
 async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     """Test Ollama QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
-    qa = QuestionAnswerAgent(client, "ollama", "qwen3")
+    qa = QuestionAnswerAgent(
+        client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
+    )
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -41,7 +44,7 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
 async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
     """Test OpenAI QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
-    qa = QuestionAnswerAgent(client, "openai", "gpt-4o-mini")
+    qa = QuestionAnswerAgent(client, ModelConfig(provider="openai", name="gpt-4o-mini"))
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -65,7 +68,9 @@ async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
 async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
     """Test Anthropic QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
-    qa = QuestionAnswerAgent(client, "anthropic", "claude-3-5-haiku-20241022")
+    qa = QuestionAnswerAgent(
+        client, ModelConfig(provider="anthropic", name="claude-3-5-haiku-20241022")
+    )
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -89,7 +94,7 @@ async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
 async def test_qa_vllm(qa_corpus: Dataset, temp_db_path):
     """Test vLLM QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
-    qa = QuestionAnswerAgent(client, "vllm", "Qwen/Qwen3-4B")
+    qa = QuestionAnswerAgent(client, ModelConfig(provider="vllm", name="Qwen/Qwen3-4B"))
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]

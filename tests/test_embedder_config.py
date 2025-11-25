@@ -55,6 +55,7 @@ def test_vllm_embedder_uses_config():
 
 def test_openai_embedder_uses_config():
     """Test that openai embedder uses the config passed to get_embedder."""
+
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
             provider="openai",

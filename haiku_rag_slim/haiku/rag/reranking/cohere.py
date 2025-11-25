@@ -22,8 +22,9 @@ class CohereReranker(RerankerBase):
 
         documents = [chunk.content for chunk in chunks]
 
+        model_name = self._model or "rerank-v3.5"
         response = self._client.rerank(
-            model=self._model, query=query, documents=documents, top_n=top_n
+            model=model_name, query=query, documents=documents, top_n=top_n
         )
 
         reranked_chunks = []

@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 from pydantic_ai.models.test import TestModel
 
@@ -25,12 +23,6 @@ def test_build_graph_and_state():
     assert state.context.sub_questions == []
 
 
-def test_async_loop_available():
-    # Ensure an event loop can be created in test env
-    loop = asyncio.new_event_loop()
-    loop.close()
-
-
 @pytest.mark.asyncio
 async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     """Test research graph with mocked LLM using AG-UI events."""
@@ -39,7 +31,10 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     def test_model_factory(_provider, _model, _config=None):
         return TestModel()
 
-    monkeypatch.setattr("haiku.rag.graph.common.utils.get_model", test_model_factory)
+    # Patch all locations where get_model is imported
+    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()

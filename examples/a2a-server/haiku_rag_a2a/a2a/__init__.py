@@ -65,7 +65,7 @@ def create_a2a_app(
     broker = InMemoryBroker()
 
     # Create the agent with native search tool
-    model = get_model(config.qa.provider, config.qa.model)
+    model = get_model(config.qa.model, config)
     agent = Agent(
         model=model,
         deps_type=AgentDependencies,

@@ -115,6 +115,7 @@ async def test_chunk_repository_crud(temp_db_path):
     )
 
     created_chunk = await chunk_repo.create(chunk)
+    assert isinstance(created_chunk, Chunk)
     assert created_chunk.id is not None
     assert created_chunk.content == "Test chunk content"
 

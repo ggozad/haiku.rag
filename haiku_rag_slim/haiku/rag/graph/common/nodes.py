@@ -11,7 +11,7 @@ from pydantic_graph.beta import StepContext
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.config.models import AppConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.common import get_model
 from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
@@ -52,8 +52,7 @@ class GraphAgentDeps(Protocol):
 
 
 def create_plan_node[AgentDepsT: GraphAgentDeps](
-    provider: str,
-    model: str,
+    model_config: ModelConfig,
     deps_type: type[AgentDepsT],
     activity_message: str = "Creating plan",
     output_retries: int | None = None,
@@ -62,8 +61,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
     """Create a plan node for any graph.
 
     Args:
-        provider: Model provider (e.g., 'openai', 'anthropic')
-        model: Model name
+        model_config: ModelConfig with provider, model, and settings
         deps_type: Type of dependencies for the agent (e.g., ResearchDependencies, DeepQADependencies)
         activity_message: Message to show during planning activity
         output_retries: Number of output retries for the agent (optional)
@@ -86,7 +84,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
         try:
             # Build agent configuration
             agent_config = {
-                "model": get_model(provider, model, config),
+                "model": get_model(model_config, config),
                 "output_type": ResearchPlan,
                 "instructions": (
                     PLAN_PROMPT
@@ -141,8 +139,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
 
 def create_search_node[AgentDepsT: GraphAgentDeps](
-    provider: str,
-    model: str,
+    model_config: ModelConfig,
     deps_type: type[AgentDepsT],
     with_step_wrapper: bool = True,
     success_message_format: str = "Answered: {sub_q}",
@@ -152,8 +149,7 @@ def create_search_node[AgentDepsT: GraphAgentDeps](
     """Create a search_one node for any graph.
 
     Args:
-        provider: Model provider
-        model: Model name
+        model_config: ModelConfig with provider, model, and settings
         deps_type: Type of dependencies for the agent
         with_step_wrapper: Whether to wrap with agui_emitter start/finish step
         success_message_format: Format string for success activity message
@@ -186,8 +182,7 @@ def create_search_node[AgentDepsT: GraphAgentDeps](
                     state,
                     deps,
                     sub_q,
-                    provider,
-                    model,
+                    model_config,
                     deps_type,
                     success_message_format,
                     handle_exceptions,
@@ -204,8 +199,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
     state: GraphState,
     deps: GraphDeps,
     sub_q: str,
-    provider: str,
-    model: str,
+    model_config: ModelConfig,
     deps_type: type[AgentDepsT],
     success_message_format: str,
     handle_exceptions: bool,
@@ -223,7 +217,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
         )
 
     agent = Agent(
-        model=get_model(provider, model, config),
+        model=get_model(model_config, config),
         output_type=ToolOutput(SearchAnswer, max_retries=3),
         instructions=SEARCH_AGENT_PROMPT,
         retries=3,

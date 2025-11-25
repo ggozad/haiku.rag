@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.ollama import OllamaProvider
-from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.config.models import ModelConfig
+from haiku.rag.graph.common import get_model
 from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT, QA_SYSTEM_PROMPT_WITH_CITATIONS
 
 
@@ -26,8 +25,7 @@ class QuestionAnswerAgent:
     def __init__(
         self,
         client: HaikuRAG,
-        provider: str,
-        model: str,
+        model_config: ModelConfig,
         use_citations: bool = False,
         q: float = 0.0,
         system_prompt: str | None = None,
@@ -38,7 +36,7 @@ class QuestionAnswerAgent:
             system_prompt = (
                 QA_SYSTEM_PROMPT_WITH_CITATIONS if use_citations else QA_SYSTEM_PROMPT
             )
-        model_obj = self._get_model(provider, model)
+        model_obj = get_model(model_config, Config)
 
         self._agent = Agent(
             model=model_obj,
@@ -65,26 +63,6 @@ class QuestionAnswerAgent:
                 )
                 for chunk, score in expanded_results
             ]
-
-    def _get_model(self, provider: str, model: str):
-        """Get the appropriate model object for the provider."""
-        if provider == "ollama":
-            return OpenAIChatModel(
-                model_name=model,
-                provider=OllamaProvider(
-                    base_url=f"{Config.providers.ollama.base_url}/v1"
-                ),
-            )
-        elif provider == "vllm":
-            return OpenAIChatModel(
-                model_name=model,
-                provider=OpenAIProvider(
-                    base_url=f"{Config.providers.vllm.qa_base_url}/v1", api_key="none"
-                ),
-            )
-        else:
-            # For all other providers, use the provider:model format
-            return f"{provider}:{model}"
 
     async def answer(self, question: str) -> str:
         """Answer a question using the RAG system."""

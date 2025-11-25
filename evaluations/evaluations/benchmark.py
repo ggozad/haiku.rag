@@ -6,8 +6,6 @@ from typing import Any, cast
 import logfire
 import typer
 from dotenv import load_dotenv
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
@@ -20,12 +18,12 @@ from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
 from evaluations.prompts import WIX_SUPPORT_PROMPT
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
+from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
+from haiku.rag.utils import get_model
 
 load_dotenv()
-
-QA_JUDGE_MODEL = "qwen3"
 
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
@@ -37,7 +35,7 @@ def build_experiment_metadata(
     dataset_key: str,
     test_cases: int,
     config: AppConfig,
-    judge_model: str,
+    judge_config: ModelConfig,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
     return {
@@ -48,12 +46,20 @@ def build_experiment_metadata(
         "embedder_dim": config.embeddings.vector_dim,
         "chunk_size": config.processing.chunk_size,
         "context_chunk_radius": config.processing.context_chunk_radius,
-        "rerank_provider": config.reranking.provider,
-        "rerank_model": config.reranking.model,
-        "qa_provider": config.qa.provider,
-        "qa_model": config.qa.model,
-        "judge_provider": "ollama",
-        "judge_model": judge_model,
+        "rerank_provider": config.reranking.model.provider
+        if config.reranking.model
+        else None,
+        "rerank_model": config.reranking.model.name if config.reranking.model else None,
+        "qa_provider": config.qa.model.provider,
+        "qa_model": config.qa.model.name,
+        "qa_temperature": config.qa.model.temperature,
+        "qa_max_tokens": config.qa.model.max_tokens,
+        "qa_enable_thinking": config.qa.model.enable_thinking,
+        "judge_provider": judge_config.provider,
+        "judge_model": judge_config.name,
+        "judge_temperature": judge_config.temperature,
+        "judge_max_tokens": judge_config.max_tokens,
+        "judge_enable_thinking": judge_config.enable_thinking,
     }
 
 
@@ -161,11 +167,14 @@ async def run_retrieval_benchmark(
 
         eval_name = name if name is not None else f"{spec.key}_retrieval_evaluation"
 
+        judge_config = ModelConfig(
+            provider="ollama", name="gpt-oss", enable_thinking=False
+        )
         experiment_metadata = build_experiment_metadata(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
-            judge_model=QA_JUDGE_MODEL,
+            judge_config=judge_config,
         )
 
         report = await dataset.evaluate(
@@ -213,10 +222,8 @@ async def run_qa_benchmark(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    judge_model = OpenAIChatModel(
-        model_name=QA_JUDGE_MODEL,
-        provider=OllamaProvider(base_url=f"{config.providers.ollama.base_url}/v1"),
-    )
+    judge_config = ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
+    judge_model = get_model(judge_config, config)
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
         name=spec.key,
@@ -249,7 +256,7 @@ async def run_qa_benchmark(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
-            judge_model=QA_JUDGE_MODEL,
+            judge_config=judge_config,
         )
 
         report = await evaluation_dataset.evaluate(

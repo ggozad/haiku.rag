@@ -122,7 +122,7 @@ agui:
   cors_credentials: true
 ```
 
-See [Configuration](configuration.md#ag-ui-server-configuration) for all available options.
+See [Configuration](qa-research.md#ag-ui-server-configuration) for all available options.
 
 ### Using the Streaming Endpoints
 
