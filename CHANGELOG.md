@@ -3,6 +3,10 @@
 
 ### Added
 
+- **Model Customization**: Added support for per-model configuration settings
+  - New `enable_thinking` parameter to control reasoning behavior (true/false/None)
+  - Support for `temperature` and `max_tokens` settings on QA and research models
+  - All settings apply to any provider that supports them
 - **Database Inspector**: New `inspect` CLI command launches interactive TUI for browsing documents and chunks & searching
 - **Evaluations**: Added `evaluations` CLI script for running benchmarks (replaces `python -m evaluations.benchmark`)
 - **Evaluations**: Added `--db` option to override evaluation database path

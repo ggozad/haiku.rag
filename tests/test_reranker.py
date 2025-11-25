@@ -40,17 +40,19 @@ async def test_reranker_base():
 @pytest.mark.asyncio
 async def test_mxbai_reranker():
     try:
+        from haiku.rag.config.models import ModelConfig
         from haiku.rag.reranking.mxbai import MxBAIReranker
 
-        Config.reranking.model = "mixedbread-ai/mxbai-rerank-base-v2"
+        Config.reranking.model = ModelConfig(
+            provider="mxbai", model="mixedbread-ai/mxbai-rerank-base-v2"
+        )
         reranker = MxBAIReranker()
-        # reranker._model = "mixedbread-ai/mxbai-rerank-base-v2"
         reranked = await reranker.rerank(
             "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
         )
         assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
         assert all(isinstance(score, float) for chunk, score in reranked)
-        Config.reranking.model = ""
+        Config.reranking.model = None
 
     except ImportError:
         pytest.skip("MxBAI package not installed")

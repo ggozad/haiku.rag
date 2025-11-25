@@ -37,8 +37,9 @@ class ZeroEntropyReranker(RerankerBase):
         documents = [chunk.content for chunk in chunks]
 
         # Call Zero Entropy reranking API
+        model_name = self._model or "zerank-1"
         response = self._client.models.rerank(
-            model=self._model,
+            model=model_name,
             query=query,
             documents=documents,
         )

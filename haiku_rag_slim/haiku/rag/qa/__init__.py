@@ -21,13 +21,9 @@ def get_qa_agent(
     Returns:
         A configured QuestionAnswerAgent instance.
     """
-    provider = config.qa.provider
-    model_name = config.qa.model
-
     return QuestionAnswerAgent(
         client=client,
-        provider=provider,
-        model=model_name,
+        model_config=config.qa.model,
         use_citations=use_citations,
         system_prompt=system_prompt,
     )

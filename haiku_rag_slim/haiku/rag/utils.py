@@ -4,8 +4,238 @@ import sys
 from importlib import metadata
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from packaging.version import Version, parse
+
+
+def apply_common_settings(
+    settings: Any | None,
+    settings_class: type[Any],
+    model_config: Any,
+) -> Any | None:
+    """Apply common settings (temperature, max_tokens) to model settings.
+
+    Args:
+        settings: Existing settings instance or None
+        settings_class: Settings class to instantiate if needed
+        model_config: ModelConfig with temperature and max_tokens
+
+    Returns:
+        Updated settings instance or None if no settings to apply
+    """
+    if model_config.temperature is None and model_config.max_tokens is None:
+        return settings
+
+    if settings is None:
+        settings_dict = settings_class()
+    else:
+        settings_dict = settings
+
+    if model_config.temperature is not None:
+        settings_dict["temperature"] = model_config.temperature
+
+    if model_config.max_tokens is not None:
+        settings_dict["max_tokens"] = model_config.max_tokens
+
+    return settings_dict
+
+
+def get_model(
+    model_config: Any,
+    app_config: Any | None = None,
+) -> Any:
+    """
+    Get a model instance for the specified configuration.
+
+    Args:
+        model_config: ModelConfig with provider, model, and settings
+        app_config: AppConfig for provider base URLs (defaults to global Config)
+
+    Returns:
+        A configured model instance
+    """
+    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+    from pydantic_ai.providers.ollama import OllamaProvider
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    if app_config is None:
+        from haiku.rag.config import Config
+
+        app_config = Config
+
+    provider = model_config.provider
+    model = model_config.model
+
+    if provider == "ollama":
+        model_settings = None
+
+        # Apply thinking control for gpt-oss
+        if model == "gpt-oss" and model_config.enable_thinking is not None:
+            if model_config.enable_thinking is False:
+                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
+            else:
+                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
+
+        model_settings = apply_common_settings(
+            model_settings, OpenAIChatModelSettings, model_config
+        )
+
+        return OpenAIChatModel(
+            model_name=model,
+            provider=OllamaProvider(
+                base_url=f"{app_config.providers.ollama.base_url}/v1"
+            ),
+            settings=model_settings,
+        )
+
+    elif provider == "openai":
+        openai_settings: Any = None
+
+        # Apply thinking control
+        if model_config.enable_thinking is not None:
+            if model_config.enable_thinking is False:
+                openai_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
+            else:
+                openai_settings = OpenAIChatModelSettings(
+                    openai_reasoning_effort="high"
+                )
+
+        openai_settings = apply_common_settings(
+            openai_settings, OpenAIChatModelSettings, model_config
+        )
+
+        return OpenAIChatModel(model_name=model, settings=openai_settings)
+
+    elif provider == "anthropic":
+        from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
+
+        anthropic_settings: Any = None
+
+        # Apply thinking control
+        if model_config.enable_thinking is not None:
+            if model_config.enable_thinking:
+                anthropic_settings = AnthropicModelSettings(
+                    anthropic_thinking={"type": "enabled", "budget_tokens": 4096}
+                )
+            else:
+                anthropic_settings = AnthropicModelSettings(
+                    anthropic_thinking={"type": "disabled"}
+                )
+
+        anthropic_settings = apply_common_settings(
+            anthropic_settings, AnthropicModelSettings, model_config
+        )
+
+        return AnthropicModel(model_name=model, settings=anthropic_settings)
+
+    elif provider == "gemini":
+        from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+
+        gemini_settings: Any = None
+
+        # Apply thinking control
+        if model_config.enable_thinking is not None:
+            gemini_settings = GoogleModelSettings(
+                google_thinking_config={
+                    "include_thoughts": model_config.enable_thinking
+                }
+            )
+
+        gemini_settings = apply_common_settings(
+            gemini_settings, GoogleModelSettings, model_config
+        )
+
+        return GoogleModel(model_name=model, settings=gemini_settings)
+
+    elif provider == "groq":
+        from pydantic_ai.models.groq import GroqModel, GroqModelSettings
+
+        groq_settings: Any = None
+
+        # Apply thinking control
+        if model_config.enable_thinking is not None:
+            if model_config.enable_thinking:
+                groq_settings = GroqModelSettings(groq_reasoning_format="parsed")
+            else:
+                groq_settings = GroqModelSettings(groq_reasoning_format="hidden")
+
+        groq_settings = apply_common_settings(
+            groq_settings, GroqModelSettings, model_config
+        )
+
+        return GroqModel(model_name=model, settings=groq_settings)
+
+    elif provider == "bedrock":
+        from pydantic_ai.models.bedrock import (
+            BedrockConverseModel,
+            BedrockModelSettings,
+        )
+
+        bedrock_settings: Any = None
+
+        # Apply thinking control for Claude models
+        if model_config.enable_thinking is not None:
+            additional_fields: dict[str, Any] = {}
+            if model.startswith("anthropic.claude"):
+                if model_config.enable_thinking:
+                    additional_fields = {
+                        "thinking": {"type": "enabled", "budget_tokens": 4096}
+                    }
+                else:
+                    additional_fields = {"thinking": {"type": "disabled"}}
+            elif "gpt" in model or "o1" in model or "o3" in model:
+                # OpenAI models on Bedrock
+                additional_fields = {
+                    "reasoning_effort": "high"
+                    if model_config.enable_thinking
+                    else "low"
+                }
+            elif "qwen" in model:
+                # Qwen models on Bedrock
+                additional_fields = {
+                    "reasoning_config": "high"
+                    if model_config.enable_thinking
+                    else "low"
+                }
+
+            if additional_fields:
+                bedrock_settings = BedrockModelSettings(
+                    bedrock_additional_model_requests_fields=additional_fields
+                )
+
+        bedrock_settings = apply_common_settings(
+            bedrock_settings, BedrockModelSettings, model_config
+        )
+
+        return BedrockConverseModel(model_name=model, settings=bedrock_settings)
+
+    elif provider == "vllm":
+        vllm_settings = None
+
+        # Apply thinking control for gpt-oss
+        if model == "gpt-oss" and model_config.enable_thinking is not None:
+            if model_config.enable_thinking is False:
+                vllm_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
+            else:
+                vllm_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
+
+        vllm_settings = apply_common_settings(
+            vllm_settings, OpenAIChatModelSettings, model_config
+        )
+
+        return OpenAIChatModel(
+            model_name=model,
+            provider=OpenAIProvider(
+                base_url=f"{app_config.providers.vllm.research_base_url or app_config.providers.vllm.qa_base_url}/v1",
+                api_key="none",
+            ),
+            settings=vllm_settings,
+        )
+
+    else:
+        # For any other provider, use string format and let Pydantic AI handle it
+        return f"{provider}:{model}"
 
 
 def format_bytes(num_bytes: int) -> str:
@@ -135,14 +365,14 @@ def prefetch_models():
 
     # Collect Ollama models from config
     required_models: set[str] = set()
-    if Config.embeddings.provider == "ollama":
-        required_models.add(Config.embeddings.model)
-    if Config.qa.provider == "ollama":
-        required_models.add(Config.qa.model)
-    if Config.research.provider == "ollama":
-        required_models.add(Config.research.model)
-    if Config.reranking.provider == "ollama":
-        required_models.add(Config.reranking.model)
+    if Config.embeddings.model.provider == "ollama":
+        required_models.add(Config.embeddings.model.model)
+    if Config.qa.model.provider == "ollama":
+        required_models.add(Config.qa.model.model)
+    if Config.research.model.provider == "ollama":
+        required_models.add(Config.research.model.model)
+    if Config.reranking.model and Config.reranking.model.provider == "ollama":
+        required_models.add(Config.reranking.model.model)
 
     if not required_models:
         return

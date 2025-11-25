@@ -14,12 +14,12 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
         An embedder instance configured according to the config.
     """
 
-    if config.embeddings.provider == "ollama":
+    if config.embeddings.model.provider == "ollama":
         return OllamaEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
+            config.embeddings.model.model, config.embeddings.vector_dim, config
         )
 
-    if config.embeddings.provider == "voyageai":
+    if config.embeddings.model.provider == "voyageai":
         try:
             from haiku.rag.embeddings.voyageai import Embedder as VoyageAIEmbedder
         except ImportError:
@@ -29,21 +29,23 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
                 "uv pip install haiku.rag[voyageai]"
             )
         return VoyageAIEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
+            config.embeddings.model.model, config.embeddings.vector_dim, config
         )
 
-    if config.embeddings.provider == "openai":
+    if config.embeddings.model.provider == "openai":
         from haiku.rag.embeddings.openai import Embedder as OpenAIEmbedder
 
         return OpenAIEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
+            config.embeddings.model.model, config.embeddings.vector_dim, config
         )
 
-    if config.embeddings.provider == "vllm":
+    if config.embeddings.model.provider == "vllm":
         from haiku.rag.embeddings.vllm import Embedder as VllmEmbedder
 
         return VllmEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
+            config.embeddings.model.model, config.embeddings.vector_dim, config
         )
 
-    raise ValueError(f"Unsupported embedding provider: {config.embeddings.provider}")
+    raise ValueError(
+        f"Unsupported embedding provider: {config.embeddings.model.provider}"
+    )

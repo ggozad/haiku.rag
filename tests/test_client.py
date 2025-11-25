@@ -736,9 +736,9 @@ async def test_client_ask_without_cite(monkeypatch, temp_db_path):
     """Test asking questions without citations."""
     from pydantic_ai.models.test import TestModel
 
-    # Mock OpenAIChatModel to return TestModel
+    # Mock get_model to return TestModel
     monkeypatch.setattr(
-        "haiku.rag.qa.agent.OpenAIChatModel", lambda **kwargs: TestModel()
+        "haiku.rag.utils.get_model", lambda *args, **kwargs: TestModel()
     )
 
     async with HaikuRAG(temp_db_path) as client:
@@ -760,9 +760,9 @@ async def test_client_ask_with_cite(monkeypatch, temp_db_path):
     """Test asking questions with citations."""
     from pydantic_ai.models.test import TestModel
 
-    # Mock OpenAIChatModel to return TestModel
+    # Mock get_model to return TestModel
     monkeypatch.setattr(
-        "haiku.rag.qa.agent.OpenAIChatModel", lambda **kwargs: TestModel()
+        "haiku.rag.utils.get_model", lambda *args, **kwargs: TestModel()
     )
 
     async with HaikuRAG(temp_db_path) as client:

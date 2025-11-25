@@ -24,7 +24,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
 
     reranker: RerankerBase | None = None
 
-    if config.reranking.provider == "mxbai":
+    if config.reranking.model and config.reranking.model.provider == "mxbai":
         try:
             from haiku.rag.reranking.mxbai import MxBAIReranker
 
@@ -33,7 +33,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         except ImportError:
             reranker = None
 
-    elif config.reranking.provider == "cohere":
+    elif config.reranking.model and config.reranking.model.provider == "cohere":
         try:
             from haiku.rag.reranking.cohere import CohereReranker
 
@@ -41,20 +41,20 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         except ImportError:
             reranker = None
 
-    elif config.reranking.provider == "vllm":
+    elif config.reranking.model and config.reranking.model.provider == "vllm":
         try:
             from haiku.rag.reranking.vllm import VLLMReranker
 
-            reranker = VLLMReranker(config.reranking.model)
+            reranker = VLLMReranker(config.reranking.model.model)
         except ImportError:
             reranker = None
 
-    elif config.reranking.provider == "zeroentropy":
+    elif config.reranking.model and config.reranking.model.provider == "zeroentropy":
         try:
             from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
 
             # Use configured model or default to zerank-1
-            model = config.reranking.model or "zerank-1"
+            model = config.reranking.model.model or "zerank-1"
             reranker = ZeroEntropyReranker(model)
         except ImportError:
             reranker = None

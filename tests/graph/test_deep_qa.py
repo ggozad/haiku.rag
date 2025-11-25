@@ -16,7 +16,10 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     def test_model_factory(provider, model, config=None):
         return TestModel()
 
-    monkeypatch.setattr("haiku.rag.graph.common.utils.get_model", test_model_factory)
+    # Patch all locations where get_model is imported
+    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.graph.deep_qa.graph.get_model", test_model_factory)
 
     graph = build_deep_qa_graph()
@@ -50,7 +53,10 @@ async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
     def test_model_factory(provider, model, config=None):
         return TestModel()
 
-    monkeypatch.setattr("haiku.rag.graph.common.utils.get_model", test_model_factory)
+    # Patch all locations where get_model is imported
+    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
+    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.graph.deep_qa.graph.get_model", test_model_factory)
 
     graph = build_deep_qa_graph()

@@ -6,6 +6,25 @@ from pydantic import BaseModel, Field
 from haiku.rag.utils import get_default_data_dir
 
 
+class ModelConfig(BaseModel):
+    """Configuration for a language model.
+
+    Attributes:
+        provider: Model provider (ollama, openai, anthropic, etc.)
+        model: Model name/identifier
+        enable_thinking: Control reasoning behavior (true/false/None for default)
+        temperature: Sampling temperature (0.0 to 1.0+)
+        max_tokens: Maximum tokens to generate
+    """
+
+    provider: str = "ollama"
+    model: str = "gpt-oss"
+
+    enable_thinking: bool | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+
 class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     vacuum_retention_seconds: int = 86400
@@ -25,27 +44,40 @@ class LanceDBConfig(BaseModel):
 
 
 class EmbeddingsConfig(BaseModel):
-    provider: str = "ollama"
-    model: str = "qwen3-embedding:4b"
+    model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            model="qwen3-embedding:4b",
+        )
+    )
     vector_dim: int = 2560
 
 
 class RerankingConfig(BaseModel):
-    provider: str = ""
-    model: str = ""
+    model: ModelConfig | None = None
 
 
 class QAConfig(BaseModel):
-    provider: str = "ollama"
-    model: str = "gpt-oss"
+    model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            model="gpt-oss",
+            enable_thinking=False,
+        )
+    )
     max_sub_questions: int = 3
     max_iterations: int = 2
     max_concurrency: int = 1
 
 
 class ResearchConfig(BaseModel):
-    provider: str = "ollama"
-    model: str = "gpt-oss"
+    model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            model="gpt-oss",
+            enable_thinking=True,
+        )
+    )
     max_iterations: int = 3
     confidence_threshold: float = 0.8
     max_concurrency: int = 1
