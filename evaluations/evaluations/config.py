@@ -43,6 +43,19 @@ class DatasetSpec:
     retrieval_evaluator: Evaluator | None = None
     document_limit: int | None = None
 
-    @property
-    def db_path(self) -> Path:
-        return Path(__file__).parent / "data" / self.db_filename
+    def db_path(self, override_path: Path | None = None) -> Path:
+        """Get the database path.
+
+        Args:
+            override_path: Optional path to override the default database location.
+
+        Returns:
+            The database path to use.
+        """
+        if override_path is not None:
+            return override_path
+
+        from haiku.rag.utils import get_default_data_dir
+
+        data_dir = get_default_data_dir()
+        return data_dir / "evaluations" / "dbs" / self.db_filename

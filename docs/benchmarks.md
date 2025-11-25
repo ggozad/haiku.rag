@@ -2,31 +2,37 @@
 
 We use the [repliqa](https://huggingface.co/datasets/ServiceNow/repliqa) dataset for the evaluation of `haiku.rag`.
 
-You can perform your own evaluations with the Typer CLI in
-`evaluations/evaluations/benchmark.py`, for example `python -m evaluations.benchmark repliqa`.
+You can perform your own evaluations with the `evaluations` CLI command:
+
+```bash
+evaluations repliqa
+```
+
 The evaluation flow is orchestrated with
 [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
 which we leverage for dataset management, scoring, and report generation.
 
 ## Configuration
 
-The benchmark script accepts a `--config` option to specify a custom `haiku.rag.yaml` configuration file:
+The benchmark script accepts several options:
 
 ```bash
-python -m evaluations.benchmark repliqa --config /path/to/haiku.rag.yaml
+evaluations repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
 ```
 
-If no config file is specified, the script will search for a config file in the standard locations:
-1. `./haiku.rag.yaml` (current directory)
-2. User config directory
-3. Falls back to default configuration
-
-You can also use command-line options:
+**Configuration options:**
+- `--config PATH` - Specify a custom `haiku.rag.yaml` configuration file
+- `--db PATH` - Override the database path (default: `~/.local/share/haiku.rag/evaluations/dbs/{dataset}.lancedb` on Linux, `~/Library/Application Support/haiku.rag/evaluations/dbs/{dataset}.lancedb` on macOS)
 - `--skip-db` - Skip updating the evaluation database
 - `--skip-retrieval` - Skip retrieval benchmark
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases for both retrieval and QA
 - `--name NAME` - Override the evaluation name (defaults to `{dataset}_retrieval_evaluation` or `{dataset}_qa_evaluation`)
+
+If no config file is specified, the script will search for a config file in the standard locations:
+1. `./haiku.rag.yaml` (current directory)
+2. User config directory
+3. Falls back to default configuration
 
 ## RepliQA Retrieval
 
