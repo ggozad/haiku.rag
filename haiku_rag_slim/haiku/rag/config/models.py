@@ -11,14 +11,14 @@ class ModelConfig(BaseModel):
 
     Attributes:
         provider: Model provider (ollama, openai, anthropic, etc.)
-        model: Model name/identifier
+        name: Model name/identifier
         enable_thinking: Control reasoning behavior (true/false/None for default)
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
     """
 
     provider: str = "ollama"
-    model: str = "gpt-oss"
+    name: str = "gpt-oss"
 
     enable_thinking: bool | None = None
     temperature: float | None = None
@@ -47,7 +47,7 @@ class EmbeddingsConfig(BaseModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
-            model="qwen3-embedding:4b",
+            name="qwen3-embedding:4b",
         )
     )
     vector_dim: int = 2560
@@ -61,7 +61,7 @@ class QAConfig(BaseModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
-            model="gpt-oss",
+            name="gpt-oss",
             enable_thinking=False,
         )
     )
@@ -74,7 +74,7 @@ class ResearchConfig(BaseModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
-            model="gpt-oss",
+            name="gpt-oss",
             enable_thinking=True,
         )
     )

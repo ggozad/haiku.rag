@@ -17,18 +17,21 @@ providers:
     base_url: http://host.docker.internal:11434
 
 research:
-  provider: ollama
-  model: gpt-oss:latest
+  model:
+    provider: ollama
+    name: gpt-oss:latest
   max_iterations: 3
   confidence_threshold: 0.8
   max_concurrency: 1
 
 # For OpenAI:
 # research:
-#   provider: openai
-#   model: gpt-4o-mini
+#   model:
+#     provider: openai
+#     name: gpt-4o-mini
 
 # For Anthropic:
 # research:
-#   provider: anthropic
-#   model: claude-3-5-haiku-20241022
+#   model:
+#     provider: anthropic
+#     name: claude-3-5-haiku-20241022

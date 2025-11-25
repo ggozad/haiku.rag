@@ -44,7 +44,7 @@ async def test_mxbai_reranker():
         from haiku.rag.reranking.mxbai import MxBAIReranker
 
         Config.reranking.model = ModelConfig(
-            provider="mxbai", model="mixedbread-ai/mxbai-rerank-base-v2"
+            provider="mxbai", name="mixedbread-ai/mxbai-rerank-base-v2"
         )
         reranker = MxBAIReranker()
         reranked = await reranker.rerank(

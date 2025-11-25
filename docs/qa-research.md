@@ -8,7 +8,7 @@ Configure the QA workflow:
 qa:
   model:
     provider: ollama
-    model: gpt-oss
+    name: gpt-oss
     enable_thinking: false
   max_sub_questions: 3  # Maximum sub-questions for deep QA
   max_iterations: 2     # Maximum search iterations per sub-question
@@ -30,7 +30,7 @@ Configure the multi-agent research workflow:
 research:
   model:
     provider: ""            # Empty to use qa settings
-    model: ""               # Empty to use qa model
+    name: ""               # Empty to use qa model
     enable_thinking: true
   max_iterations: 3
   confidence_threshold: 0.8

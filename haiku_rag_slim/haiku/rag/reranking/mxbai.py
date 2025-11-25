@@ -8,7 +8,7 @@ from haiku.rag.store.models.chunk import Chunk
 class MxBAIReranker(RerankerBase):
     def __init__(self):
         model_name = (
-            Config.reranking.model.model
+            Config.reranking.model.name
             if Config.reranking.model
             else "mxbai-rerank-base-v2"
         )

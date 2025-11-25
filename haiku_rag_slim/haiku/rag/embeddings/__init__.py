@@ -16,7 +16,7 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
 
     if config.embeddings.model.provider == "ollama":
         return OllamaEmbedder(
-            config.embeddings.model.model, config.embeddings.vector_dim, config
+            config.embeddings.model.name, config.embeddings.vector_dim, config
         )
 
     if config.embeddings.model.provider == "voyageai":
@@ -29,21 +29,21 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
                 "uv pip install haiku.rag[voyageai]"
             )
         return VoyageAIEmbedder(
-            config.embeddings.model.model, config.embeddings.vector_dim, config
+            config.embeddings.model.name, config.embeddings.vector_dim, config
         )
 
     if config.embeddings.model.provider == "openai":
         from haiku.rag.embeddings.openai import Embedder as OpenAIEmbedder
 
         return OpenAIEmbedder(
-            config.embeddings.model.model, config.embeddings.vector_dim, config
+            config.embeddings.model.name, config.embeddings.vector_dim, config
         )
 
     if config.embeddings.model.provider == "vllm":
         from haiku.rag.embeddings.vllm import Embedder as VllmEmbedder
 
         return VllmEmbedder(
-            config.embeddings.model.model, config.embeddings.vector_dim, config
+            config.embeddings.model.name, config.embeddings.vector_dim, config
         )
 
     raise ValueError(

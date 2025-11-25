@@ -136,16 +136,14 @@ Emoji test: 🚀 ✅ 📝"""
 
 def test_get_model_ollama():
     """Test get_model returns OpenAIChatModel for Ollama."""
-    model_config = ModelConfig(provider="ollama", model="llama3")
+    model_config = ModelConfig(provider="ollama", name="llama3")
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
 
 
-def test_get_model_ollama_with_thinking():
+def test_get_model_ollama_without_thinking():
     """Test get_model configures thinking for gpt-oss on Ollama."""
-    model_config = ModelConfig(
-        provider="ollama", model="gpt-oss", enable_thinking=False
-    )
+    model_config = ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
 
@@ -153,7 +151,7 @@ def test_get_model_ollama_with_thinking():
 def test_get_model_ollama_with_settings():
     """Test get_model applies temperature and max_tokens for Ollama."""
     model_config = ModelConfig(
-        provider="ollama", model="llama3", temperature=0.5, max_tokens=100
+        provider="ollama", name="llama3", temperature=0.5, max_tokens=100
     )
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
@@ -161,14 +159,14 @@ def test_get_model_ollama_with_settings():
 
 def test_get_model_openai():
     """Test get_model returns OpenAIChatModel for OpenAI."""
-    model_config = ModelConfig(provider="openai", model="gpt-4o")
+    model_config = ModelConfig(provider="openai", name="gpt-4o")
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
 
 
 def test_get_model_openai_with_thinking():
     """Test get_model configures thinking for OpenAI reasoning models."""
-    model_config = ModelConfig(provider="openai", model="o1", enable_thinking=True)
+    model_config = ModelConfig(provider="openai", name="o1", enable_thinking=True)
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
 
@@ -178,7 +176,7 @@ def test_get_model_anthropic():
     """Test get_model returns AnthropicModel for Anthropic."""
     from pydantic_ai.models.anthropic import AnthropicModel
 
-    model_config = ModelConfig(provider="anthropic", model="claude-3-5-sonnet-20241022")
+    model_config = ModelConfig(provider="anthropic", name="claude-3-5-sonnet-20241022")
     result = get_model(model_config)
     assert isinstance(result, AnthropicModel)
 
@@ -190,7 +188,7 @@ def test_get_model_anthropic_with_thinking():
 
     model_config = ModelConfig(
         provider="anthropic",
-        model="claude-3-5-sonnet-20241022",
+        name="claude-3-5-sonnet-20241022",
         enable_thinking=True,
     )
     result = get_model(model_config)
@@ -202,7 +200,7 @@ def test_get_model_gemini():
     """Test get_model returns GoogleModel for Gemini."""
     from pydantic_ai.models.google import GoogleModel
 
-    model_config = ModelConfig(provider="gemini", model="gemini-2.0-flash-exp")
+    model_config = ModelConfig(provider="gemini", name="gemini-2.0-flash-exp")
     result = get_model(model_config)
     assert isinstance(result, GoogleModel)
 
@@ -213,7 +211,7 @@ def test_get_model_gemini_with_thinking():
     from pydantic_ai.models.google import GoogleModel
 
     model_config = ModelConfig(
-        provider="gemini", model="gemini-2.0-flash-thinking-exp", enable_thinking=True
+        provider="gemini", name="gemini-2.0-flash-thinking-exp", enable_thinking=True
     )
     result = get_model(model_config)
     assert isinstance(result, GoogleModel)
@@ -224,7 +222,7 @@ def test_get_model_groq():
     """Test get_model returns GroqModel for Groq."""
     from pydantic_ai.models.groq import GroqModel
 
-    model_config = ModelConfig(provider="groq", model="llama-3.3-70b-versatile")
+    model_config = ModelConfig(provider="groq", name="llama-3.3-70b-versatile")
     result = get_model(model_config)
     assert isinstance(result, GroqModel)
 
@@ -235,7 +233,7 @@ def test_get_model_groq_with_thinking():
     from pydantic_ai.models.groq import GroqModel
 
     model_config = ModelConfig(
-        provider="groq", model="llama-3.3-70b-versatile", enable_thinking=False
+        provider="groq", name="llama-3.3-70b-versatile", enable_thinking=False
     )
     result = get_model(model_config)
     assert isinstance(result, GroqModel)
@@ -247,7 +245,7 @@ def test_get_model_bedrock():
     from pydantic_ai.models.bedrock import BedrockConverseModel
 
     model_config = ModelConfig(
-        provider="bedrock", model="anthropic.claude-3-5-sonnet-20241022-v2:0"
+        provider="bedrock", name="anthropic.claude-3-5-sonnet-20241022-v2:0"
     )
     result = get_model(model_config)
     assert isinstance(result, BedrockConverseModel)
@@ -260,7 +258,7 @@ def test_get_model_bedrock_with_thinking():
 
     model_config = ModelConfig(
         provider="bedrock",
-        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        name="anthropic.claude-3-5-sonnet-20241022-v2:0",
         enable_thinking=True,
     )
     result = get_model(model_config)
@@ -269,21 +267,21 @@ def test_get_model_bedrock_with_thinking():
 
 def test_get_model_vllm():
     """Test get_model returns OpenAIChatModel for vLLM."""
-    model_config = ModelConfig(provider="vllm", model="Qwen/Qwen3-4B")
+    model_config = ModelConfig(provider="vllm", name="Qwen/Qwen3-4B")
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
 
 
 def test_get_model_vllm_with_thinking():
     """Test get_model configures thinking for gpt-oss on vLLM."""
-    model_config = ModelConfig(provider="vllm", model="gpt-oss", enable_thinking=False)
+    model_config = ModelConfig(provider="vllm", name="gpt-oss", enable_thinking=False)
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
 
 
 def test_get_model_unknown_provider():
     """Test get_model returns string format for unknown providers."""
-    model_config = ModelConfig(provider="mistral", model="mistral-large-latest")
+    model_config = ModelConfig(provider="mistral", name="mistral-large-latest")
     result = get_model(model_config)
     assert isinstance(result, str)
     assert result == "mistral:mistral-large-latest"
@@ -293,7 +291,7 @@ def test_get_model_with_all_settings():
     """Test get_model applies all settings together."""
     model_config = ModelConfig(
         provider="openai",
-        model="gpt-4o",
+        name="gpt-4o",
         enable_thinking=False,
         temperature=0.7,
         max_tokens=500,

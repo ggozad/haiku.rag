@@ -15,7 +15,7 @@ Configure model behavior for `qa` and `research` workflows. These settings apply
 qa:
   model:
     provider: ollama
-    model: gpt-oss
+    name: gpt-oss
     temperature: 0.7
     max_tokens: 500
 ```
@@ -74,7 +74,7 @@ If you use Ollama, you can use any pulled model that supports embeddings.
 embeddings:
   model:
     provider: ollama
-    model: mxbai-embed-large
+    name: mxbai-embed-large
   vector_dim: 1024
 ```
 
@@ -106,7 +106,7 @@ uv pip install haiku.rag-slim[voyageai]
 embeddings:
   model:
     provider: voyageai
-    model: voyage-3.5
+    name: voyage-3.5
   vector_dim: 1024
 ```
 
@@ -124,7 +124,7 @@ OpenAI embeddings are included in the default installation:
 embeddings:
   model:
     provider: openai
-    model: text-embedding-3-small  # or text-embedding-3-large
+    name: text-embedding-3-small  # or text-embedding-3-large
   vector_dim: 1536
 ```
 
@@ -142,7 +142,7 @@ For high-performance local inference, you can use vLLM to serve embedding models
 embeddings:
   model:
     provider: vllm
-    model: mixedbread-ai/mxbai-embed-large-v1
+    name: mixedbread-ai/mxbai-embed-large-v1
   vector_dim: 512
 
 providers:
@@ -162,7 +162,7 @@ Configure which LLM provider to use for question answering. Any provider and mod
 qa:
   model:
     provider: ollama
-    model: gpt-oss
+    name: gpt-oss
 ```
 
 The Ollama base URL can be configured via the `OLLAMA_BASE_URL` environment variable, config file, or defaults to `http://localhost:11434`:
@@ -187,7 +187,7 @@ OpenAI QA is included in the default installation:
 qa:
   model:
     provider: openai
-    model: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
+    name: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
 ```
 
 Set your API key via environment variable:
@@ -204,7 +204,7 @@ Anthropic QA is included in the default installation:
 qa:
   model:
     provider: anthropic
-    model: claude-3-5-haiku-20241022  # or claude-3-5-sonnet-20241022, etc.
+    name: claude-3-5-haiku-20241022  # or claude-3-5-sonnet-20241022, etc.
 ```
 
 Set your API key via environment variable:
@@ -221,7 +221,7 @@ For high-performance local inference:
 qa:
   model:
     provider: vllm
-    model: Qwen/Qwen3-4B  # Any model with tool support in vLLM
+    name: Qwen/Qwen3-4B  # Any model with tool support in vLLM
 
 providers:
   vllm:
@@ -239,19 +239,19 @@ Any provider supported by Pydantic AI can be used. Examples:
 qa:
   model:
     provider: gemini
-    model: gemini-1.5-flash
+    name: gemini-1.5-flash
 
 # Groq
 qa:
   model:
     provider: groq
-    model: llama-3.3-70b-versatile
+    name: llama-3.3-70b-versatile
 
 # Mistral
 qa:
   model:
     provider: mistral
-    model: mistral-small-latest
+    name: mistral-small-latest
 ```
 
 See the [Pydantic AI documentation](https://ai.pydantic.dev/models/) for the complete list of supported providers and models.
@@ -276,7 +276,7 @@ Then configure:
 reranking:
   model:
     provider: mxbai
-    model: mixedbread-ai/mxbai-rerank-base-v2
+    name: mixedbread-ai/mxbai-rerank-base-v2
 ```
 
 ### Cohere
@@ -293,7 +293,7 @@ Then configure:
 reranking:
   model:
     provider: cohere
-    model: rerank-v3.5
+    name: rerank-v3.5
 ```
 
 Set your API key via environment variable:
@@ -316,7 +316,7 @@ Then configure:
 reranking:
   model:
     provider: zeroentropy
-    model: zerank-1  # Currently the only available model
+    name: zerank-1  # Currently the only available model
 ```
 
 Set your API key via environment variable:
@@ -333,7 +333,7 @@ For high-performance local reranking using dedicated reranking models:
 reranking:
   model:
     provider: vllm
-    model: mixedbread-ai/mxbai-rerank-base-v2
+    name: mixedbread-ai/mxbai-rerank-base-v2
 
 providers:
   vllm:

@@ -37,13 +37,13 @@ environment: production
 embeddings:
   model:
     provider: ollama
-    model: qwen3-embedding:4b
+    name: qwen3-embedding:4b
   vector_dim: 2560
 
 qa:
   model:
     provider: ollama
-    model: gpt-oss
+    name: gpt-oss
     enable_thinking: false
 ```
 
@@ -72,18 +72,18 @@ lancedb:
 embeddings:
   model:
     provider: ollama
-    model: qwen3-embedding:4b
+    name: qwen3-embedding:4b
   vector_dim: 2560
 
 reranking:
   model:
     provider: ""  # Empty to disable, or mxbai, cohere, zeroentropy, vllm
-    model: ""
+    name: ""
 
 qa:
   model:
     provider: ollama
-    model: gpt-oss
+    name: gpt-oss
     enable_thinking: false
   max_sub_questions: 3
   max_iterations: 2
@@ -92,7 +92,7 @@ qa:
 research:
   model:
     provider: ""  # Empty to use qa settings
-    model: ""
+    name: ""
     enable_thinking: true
   max_iterations: 3
   confidence_threshold: 0.8

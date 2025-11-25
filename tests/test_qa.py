@@ -19,7 +19,7 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     """Test Ollama QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
     qa = QuestionAnswerAgent(
-        client, ModelConfig(provider="ollama", model="gpt-oss", enable_thinking=False)
+        client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
     )
     llm_judge = LLMJudge()
 
@@ -44,9 +44,7 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
 async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
     """Test OpenAI QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
-    qa = QuestionAnswerAgent(
-        client, ModelConfig(provider="openai", model="gpt-4o-mini")
-    )
+    qa = QuestionAnswerAgent(client, ModelConfig(provider="openai", name="gpt-4o-mini"))
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]
@@ -71,7 +69,7 @@ async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
     """Test Anthropic QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
     qa = QuestionAnswerAgent(
-        client, ModelConfig(provider="anthropic", model="claude-3-5-haiku-20241022")
+        client, ModelConfig(provider="anthropic", name="claude-3-5-haiku-20241022")
     )
     llm_judge = LLMJudge()
 
@@ -96,9 +94,7 @@ async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
 async def test_qa_vllm(qa_corpus: Dataset, temp_db_path):
     """Test vLLM QA with LLM judge."""
     client = HaikuRAG(temp_db_path)
-    qa = QuestionAnswerAgent(
-        client, ModelConfig(provider="vllm", model="Qwen/Qwen3-4B")
-    )
+    qa = QuestionAnswerAgent(client, ModelConfig(provider="vllm", name="Qwen/Qwen3-4B"))
     llm_judge = LLMJudge()
 
     doc = qa_corpus[1]

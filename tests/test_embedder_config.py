@@ -17,7 +17,7 @@ def test_embedder_uses_config_from_get_embedder():
         embeddings=EmbeddingsConfig(
             model=ModelConfig(
                 provider="ollama",
-                model="custom-model",
+                name="custom-model",
             ),
             vector_dim=512,
         ),
@@ -42,7 +42,7 @@ def test_vllm_embedder_uses_config():
         embeddings=EmbeddingsConfig(
             model=ModelConfig(
                 provider="vllm",
-                model="custom-vllm-model",
+                name="custom-vllm-model",
             ),
             vector_dim=768,
         ),
@@ -68,7 +68,7 @@ def test_openai_embedder_uses_config():
         embeddings=EmbeddingsConfig(
             model=ModelConfig(
                 provider="openai",
-                model="text-embedding-3-large",
+                name="text-embedding-3-large",
             ),
             vector_dim=3072,
         ),
@@ -90,7 +90,7 @@ def test_voyageai_embedder_uses_config():
         embeddings=EmbeddingsConfig(
             model=ModelConfig(
                 provider="voyageai",
-                model="voyage-large-2",
+                name="voyage-large-2",
             ),
             vector_dim=1536,
         ),

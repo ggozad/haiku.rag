@@ -44,18 +44,16 @@ def build_experiment_metadata(
         "dataset": dataset_key,
         "test_cases": test_cases,
         "embedder_provider": config.embeddings.model.provider,
-        "embedder_model": config.embeddings.model.model,
+        "embedder_model": config.embeddings.model.name,
         "embedder_dim": config.embeddings.vector_dim,
         "chunk_size": config.processing.chunk_size,
         "context_chunk_radius": config.processing.context_chunk_radius,
         "rerank_provider": config.reranking.model.provider
         if config.reranking.model
         else None,
-        "rerank_model": config.reranking.model.model
-        if config.reranking.model
-        else None,
+        "rerank_model": config.reranking.model.name if config.reranking.model else None,
         "qa_provider": config.qa.model.provider,
-        "qa_model": config.qa.model.model,
+        "qa_model": config.qa.model.name,
         "judge_provider": "ollama",
         "judge_model": judge_model,
     }

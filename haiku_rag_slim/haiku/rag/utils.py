@@ -65,7 +65,7 @@ def get_model(
         app_config = Config
 
     provider = model_config.provider
-    model = model_config.model
+    model = model_config.name
 
     if provider == "ollama":
         model_settings = None
@@ -366,13 +366,13 @@ def prefetch_models():
     # Collect Ollama models from config
     required_models: set[str] = set()
     if Config.embeddings.model.provider == "ollama":
-        required_models.add(Config.embeddings.model.model)
+        required_models.add(Config.embeddings.model.name)
     if Config.qa.model.provider == "ollama":
-        required_models.add(Config.qa.model.model)
+        required_models.add(Config.qa.model.name)
     if Config.research.model.provider == "ollama":
-        required_models.add(Config.research.model.model)
+        required_models.add(Config.research.model.name)
     if Config.reranking.model and Config.reranking.model.provider == "ollama":
-        required_models.add(Config.reranking.model.model)
+        required_models.add(Config.reranking.model.name)
 
     if not required_models:
         return
