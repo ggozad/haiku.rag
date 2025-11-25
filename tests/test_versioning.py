@@ -212,11 +212,8 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     async with HaikuRAG(db_path=temp_db_path) as client:
         # Create multiple documents - each creation triggers automatic vacuum with retention=0
         # This aggressively cleans up old versions between operations
-        converter = get_converter(Config)
         for i in range(3):
-            doc = Document(content=f"Test document {i}")
-            dl_doc = converter.convert_text(f"Test document {i}", name=f"test{i}.md")
-            await client.document_repository._create_and_chunk(doc, dl_doc)
+            await client.create_document(content=f"Test document {i}")
 
     # After context exit, automatic vacuum should have kept versions minimal
     store = Store(temp_db_path)

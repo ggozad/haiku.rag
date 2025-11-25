@@ -1,21 +1,15 @@
 import pytest
 from datasets import Dataset
 
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.converters import get_converter
-from haiku.rag.store.engine import Store
-from haiku.rag.store.models.document import Document
-from haiku.rag.store.repositories.chunk import ChunkRepository
-from haiku.rag.store.repositories.document import DocumentRepository
 
 
 @pytest.mark.asyncio
 async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
-    # Create a store and repositories
-    store = Store(temp_db_path)
-    doc_repo = DocumentRepository(store)
-    chunk_repo = ChunkRepository(store)
+    # Create client
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
 
     # Load unique documents (limited to 10)
     seen_documents = set()
@@ -31,13 +25,8 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
             continue
         seen_documents.add(document_id)
 
-        # Create a Document instance
-        document = Document(content=document_text)
-
         # Create the document with chunks and embeddings
-        converter = get_converter(Config)
-        docling_document = converter.convert_text(document_text, name="test.md")
-        created_document = await doc_repo._create_and_chunk(document, docling_document)
+        created_document = await client.create_document(content=document_text)
         documents.append((created_document, doc_data))
 
     # Test with first few unique documents
@@ -46,48 +35,45 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
         question = doc_data["question"]
 
         # Test vector search
-        vector_results = await chunk_repo.search(
+        vector_results = await client.chunk_repository.search(
             question, limit=5, search_type="vector"
         )
         target_document_ids = {chunk.document_id for chunk, _ in vector_results}
         assert target_document.id in target_document_ids
 
         # Test FTS search
-        fts_results = await chunk_repo.search(question, limit=5, search_type="fts")
+        fts_results = await client.chunk_repository.search(
+            question, limit=5, search_type="fts"
+        )
         target_document_ids = {chunk.document_id for chunk, _ in fts_results}
         assert target_document.id in target_document_ids
 
         # Test hybrid search
-        hybrid_results = await chunk_repo.search(
+        hybrid_results = await client.chunk_repository.search(
             question, limit=5, search_type="hybrid"
         )
         target_document_ids = {chunk.document_id for chunk, _ in hybrid_results}
         assert target_document.id in target_document_ids
 
-    store.close()
+    client.close()
 
 
 @pytest.mark.asyncio
 async def test_chunks_include_document_info(temp_db_path):
     """Test that search results include document URI and metadata."""
-    store = Store(temp_db_path)
-    doc_repo = DocumentRepository(store)
-    chunk_repo = ChunkRepository(store)
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
 
     # Create a document with URI and metadata
-    document = Document(
+    created_document = await client.create_document(
         content="This is a test document with some content for searching.",
         uri="https://example.com/test.html",
         metadata={"title": "Test Document", "author": "Test Author"},
     )
 
-    # Create the document with chunks
-    converter = get_converter(Config)
-    docling_document = converter.convert_text(document.content, name="test.md")
-    created_document = await doc_repo._create_and_chunk(document, docling_document)
-
     # Search for chunks
-    results = await chunk_repo.search("test document", limit=1, search_type="hybrid")
+    results = await client.chunk_repository.search(
+        "test document", limit=1, search_type="hybrid"
+    )
 
     assert len(results) > 0
     chunk, score = results[0]
@@ -101,30 +87,25 @@ async def test_chunks_include_document_info(temp_db_path):
     assert chunk.document_meta == {"title": "Test Document", "author": "Test Author"}
     assert chunk.document_id == created_document.id
 
-    store.close()
+    client.close()
 
 
 @pytest.mark.asyncio
 async def test_chunks_include_document_title(temp_db_path):
     """Test that search results include the parent document title when present."""
-    store = Store(temp_db_path)
-    doc_repo = DocumentRepository(store)
-    chunk_repo = ChunkRepository(store)
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
 
     # Create a document with URI and title
-    document = Document(
+    await client.create_document(
         content="This is a test document with a custom title to verify enrichment.",
         uri="file:///tmp/title-test.md",
         title="My Custom Title",
     )
 
-    # Create the document with chunks
-    converter = get_converter(Config)
-    dl = converter.convert_text(document.content, name="title-test.md")
-    await doc_repo._create_and_chunk(document, dl)
-
     # Perform a search that should find this document
-    results = await chunk_repo.search("custom title", limit=3, search_type="hybrid")
+    results = await client.chunk_repository.search(
+        "custom title", limit=3, search_type="hybrid"
+    )
 
     assert results, "Expected at least one search result"
     for chunk, _ in results:
@@ -132,15 +113,13 @@ async def test_chunks_include_document_title(temp_db_path):
         if chunk.document_uri == "file:///tmp/title-test.md":
             assert chunk.document_title == "My Custom Title"
 
-    store.close()
+    client.close()
 
 
 @pytest.mark.asyncio
 async def test_search_score_types(temp_db_path):
     """Test that different search types return appropriate score ranges."""
-    store = Store(temp_db_path)
-    doc_repo = DocumentRepository(store)
-    chunk_repo = ChunkRepository(store)
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
 
     # Create multiple documents with different content
     documents_content = [
@@ -150,26 +129,29 @@ async def test_search_score_types(temp_db_path):
         "Computer vision systems can interpret and analyze visual information from images.",
     ]
 
-    converter = get_converter(Config)
     for content in documents_content:
-        document = Document(content=content)
-        docling_document = converter.convert_text(content, name="test.md")
-        await doc_repo._create_and_chunk(document, docling_document)
+        await client.create_document(content=content)
 
     query = "machine learning"
 
     # Test vector search scores (should be converted from distances)
-    vector_results = await chunk_repo.search(query, limit=3, search_type="vector")
+    vector_results = await client.chunk_repository.search(
+        query, limit=3, search_type="vector"
+    )
     assert len(vector_results) > 0
     vector_scores = [score for _, score in vector_results]
 
     # Test FTS search scores (should be native LanceDB FTS scores)
-    fts_results = await chunk_repo.search(query, limit=3, search_type="fts")
+    fts_results = await client.chunk_repository.search(
+        query, limit=3, search_type="fts"
+    )
     assert len(fts_results) > 0
     fts_scores = [score for _, score in fts_results]
 
     # Test hybrid search scores (should be native LanceDB relevance scores)
-    hybrid_results = await chunk_repo.search(query, limit=3, search_type="hybrid")
+    hybrid_results = await client.chunk_repository.search(
+        query, limit=3, search_type="hybrid"
+    )
     assert len(hybrid_results) > 0
     hybrid_scores = [score for _, score in hybrid_results]
 
@@ -201,4 +183,4 @@ async def test_search_score_types(temp_db_path):
                 f"{search_type} results should be sorted by score descending"
             )
 
-    store.close()
+    client.close()

@@ -1,8 +1,8 @@
 import pytest
 from datasets import Dataset
 
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -11,36 +11,25 @@ from haiku.rag.store.repositories.document import DocumentRepository
 @pytest.mark.asyncio
 async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
     """Test creating a document with chunks from the qa_corpus using repository."""
-    # Create a store and repository
-    store = Store(temp_db_path)
-    doc_repo = DocumentRepository(store)
+    # Create client
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
 
     # Get the first document from the corpus
     first_doc = qa_corpus[0]
     document_text = first_doc["document_extracted"]
 
-    # Create a Document instance
-    document = Document(
+    # Create the document with chunks in the database
+    created_document = await client.create_document(
         content=document_text,
         metadata={"source": "qa_corpus", "topic": first_doc.get("document_topic", "")},
     )
-
-    # Convert text to DoclingDocument for chunk creation
-    converter = get_converter(Config)
-    docling_document = converter.convert_text(document_text, name="test.md")
-
-    # Create the document with chunks in the database
-    created_document = await doc_repo._create_and_chunk(document, docling_document)
 
     # Verify the document was created
     assert created_document.id is not None
     assert created_document.content == document_text
 
     # Check that chunks were created using repository
-    from haiku.rag.store.repositories.chunk import ChunkRepository
-
-    chunk_repo = ChunkRepository(store)
-    chunks = await chunk_repo.get_by_document_id(created_document.id)
+    chunks = await client.chunk_repository.get_by_document_id(created_document.id)
 
     assert len(chunks) > 0
 
@@ -48,7 +37,7 @@ async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
     for i, chunk in enumerate(chunks):
         assert chunk.order == i
 
-    store.close()
+    client.close()
 
 
 @pytest.mark.asyncio

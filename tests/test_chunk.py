@@ -1,6 +1,7 @@
 import pytest
 from datasets import Dataset
 
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
@@ -13,41 +14,42 @@ from haiku.rag.store.repositories.document import DocumentRepository
 @pytest.mark.asyncio
 async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
     """Test ChunkRepository operations."""
-    # Create a store and repositories
-    store = Store(temp_db_path)
-    doc_repo = DocumentRepository(store)
-    chunk_repo = ChunkRepository(store)
+    # Create client
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
 
     # Get the first document from the corpus
     first_doc = qa_corpus[0]
     document_text = first_doc["document_extracted"]
 
     # Create a document first with chunks
-    document = Document(content=document_text, metadata={"source": "test"})
-    converter = get_converter(Config)
-    docling_document = converter.convert_text(document_text, name="test.md")
-    created_document = await doc_repo._create_and_chunk(document, docling_document)
+    created_document = await client.create_document(
+        content=document_text, metadata={"source": "test"}
+    )
     assert created_document.id is not None
 
     # Test getting chunks by document ID
-    chunks = await chunk_repo.get_by_document_id(created_document.id)
+    chunks = await client.chunk_repository.get_by_document_id(created_document.id)
     assert len(chunks) > 0
     assert all(chunk.document_id == created_document.id for chunk in chunks)
 
     # Test chunk search
-    results = await chunk_repo.search("election", limit=2, search_type="vector")
+    results = await client.chunk_repository.search(
+        "election", limit=2, search_type="vector"
+    )
     assert len(results) <= 2
     assert all(hasattr(chunk, "content") for chunk, _ in results)
 
     # Test deleting chunks by document ID
-    deleted = await chunk_repo.delete_by_document_id(created_document.id)
+    deleted = await client.chunk_repository.delete_by_document_id(created_document.id)
     assert deleted is True
 
     # Verify chunks are gone
-    chunks_after_delete = await chunk_repo.get_by_document_id(created_document.id)
+    chunks_after_delete = await client.chunk_repository.get_by_document_id(
+        created_document.id
+    )
     assert len(chunks_after_delete) == 0
 
-    store.close()
+    client.close()
 
 
 @pytest.mark.asyncio
