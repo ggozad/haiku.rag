@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **LM Studio Provider**: Added support for LM Studio as a provider for embeddings and QA/research models
+  - Configure with `provider: lm_studio` in embeddings, QA, or research model settings
+  - Supports thinking control for reasoning models (gpt-oss, etc.)
+  - Default base URL: `http://localhost:1234`
+
 ### Fixed
 
 - **Configuration**: Fixed `init-config` command generating invalid configuration files (#165)

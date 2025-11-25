@@ -135,9 +135,14 @@ class DoclingServeConfig(BaseModel):
     timeout: int = 300
 
 
+class LMStudioConfig(BaseModel):
+    base_url: str = "http://localhost:1234"
+
+
 class ProvidersConfig(BaseModel):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     vllm: VLLMConfig = Field(default_factory=VLLMConfig)
+    lm_studio: LMStudioConfig = Field(default_factory=LMStudioConfig)
     docling_serve: DoclingServeConfig = Field(default_factory=DoclingServeConfig)
 
 
