@@ -69,7 +69,7 @@ haiku-rag add-src /path/to/documents/
 ```
 
 !!! note
-    When adding a directory, the same content filters configured for [file monitoring](configuration.md#filtering-monitored-files) are applied. This means `ignore_patterns` and `include_patterns` from your configuration will be used to filter which files are added.
+    When adding a directory, the same content filters configured for [file monitoring](processing.md#filtering-monitored-files) are applied. This means `ignore_patterns` and `include_patterns` from your configuration will be used to filter which files are added.
 
 !!! note
     As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
@@ -158,7 +158,7 @@ haiku-rag research "How does haiku.rag organize and query documents?" --verbose
 Flags:
 - `--verbose`: Show planning, searching previews, evaluation summary, and stop reason
 
-Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration.md) under the `research` section.
+Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](config-index.md) under the `research` section.
 
 When `--verbose` is set, the CLI consumes the research graph's AG-UI event stream, displaying step events and activity snapshots as agents progress through planning, search, evaluation, and synthesis. Without `--verbose`, only the final research report is displayed.
 

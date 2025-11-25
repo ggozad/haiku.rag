@@ -55,7 +55,7 @@ haiku-rag ask "Who is the author of haiku.rag?"
 
 - [Getting started](tutorial.md) - Tutorial
 - [Installation](installation.md) - Install haiku.rag with different providers
-- [Configuration](configuration.md) - Environment variables and settings
+- [Configuration](config-index.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
