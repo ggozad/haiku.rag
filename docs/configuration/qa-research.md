@@ -68,4 +68,4 @@ The server exposes:
 - `GET /health` - Health check endpoint
 - `POST /v1/agent/stream` - Research graph streaming endpoint (Server-Sent Events)
 
-See [Server Mode](server.md) for more details.
+See [Server Mode](../server.md) for more details.

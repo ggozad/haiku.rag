@@ -92,7 +92,7 @@ conversion_options:
 
 - Offloads processing to docling-serve API
 - Better for heavy workloads and production
-- Requires docling-serve instance (see [Remote processing setup](remote-processing.md))
+- Requires docling-serve instance (see [Remote processing setup](../remote-processing.md))
 
 To use remote processing:
 

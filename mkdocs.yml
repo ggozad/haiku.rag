@@ -60,11 +60,11 @@ nav:
       - Getting started: tutorial.md
       - Installation: installation.md
       - Configuration:
-          - config-index.md
-          - Providers: providers.md
-          - QA and Research: qa-research.md
-          - Document Processing: processing.md
-          - Storage: storage.md
+          - configuration/index.md
+          - Providers: configuration/providers.md
+          - QA and Research: configuration/qa-research.md
+          - Document Processing: configuration/processing.md
+          - Storage: configuration/storage.md
       - CLI: cli.md
       - Python: python.md
       - Agents: agents.md

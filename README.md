@@ -79,7 +79,7 @@ haiku-rag rebuild
 haiku-rag serve --monitor
 ```
 
-To customize settings, create a `haiku.rag.yaml` config file (see [Configuration](https://ggozad.github.io/haiku.rag/config-index/)).
+To customize settings, create a `haiku.rag.yaml` config file (see [Configuration](https://ggozad.github.io/haiku.rag/configuration/)).
 
 ## Python Usage
 
@@ -162,7 +162,7 @@ See the [examples directory](examples/) for working examples:
 Full documentation at: https://ggozad.github.io/haiku.rag/
 
 - [Installation](https://ggozad.github.io/haiku.rag/installation/) - Provider setup
-- [Configuration](https://ggozad.github.io/haiku.rag/config-index/) - YAML configuration
+- [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA agent and multi-agent research
