@@ -48,47 +48,8 @@ def load_yaml_config(path: Path) -> dict:
 
 
 def generate_default_config() -> dict:
-    """Generate a default YAML config structure with documentation."""
-    return {
-        "environment": "production",
-        "storage": {
-            "data_dir": "",
-            "vacuum_retention_seconds": 86400,
-        },
-        "monitor": {
-            "directories": [],
-            "ignore_patterns": [],
-            "include_patterns": [],
-        },
-        "lancedb": {"uri": "", "api_key": "", "region": ""},
-        "embeddings": {
-            "provider": "ollama",
-            "model": "qwen3-embedding:4b",
-            "vector_dim": 2560,
-        },
-        "reranking": {"provider": "", "model": ""},
-        "qa": {"provider": "ollama", "model": "gpt-oss"},
-        "research": {"provider": "", "model": ""},
-        "processing": {
-            "chunk_size": 256,
-            "context_chunk_radius": 0,
-            "markdown_preprocessor": "",
-        },
-        "providers": {
-            "ollama": {"base_url": "http://localhost:11434"},
-            "vllm": {
-                "embeddings_base_url": "",
-                "rerank_base_url": "",
-                "qa_base_url": "",
-                "research_base_url": "",
-            },
-        },
-        "agui": {
-            "host": "0.0.0.0",
-            "port": 8000,
-            "cors_origins": ["*"],
-            "cors_credentials": True,
-            "cors_methods": ["GET", "POST", "OPTIONS"],
-            "cors_headers": ["*"],
-        },
-    }
+    """Generate a default YAML config structure from AppConfig defaults."""
+    from haiku.rag.config.models import AppConfig
+
+    default_config = AppConfig()
+    return default_config.model_dump(mode="json", exclude_none=False)

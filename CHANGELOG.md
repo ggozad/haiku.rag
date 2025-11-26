@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Configuration**: Fixed `init-config` command generating invalid configuration files (#165)
+  - Refactored `generate_default_config()` to use Pydantic model serialization instead of manual dict construction
+  - Updated `qa`, `research`, and `reranking` sections to use new `ModelConfig` structure
+
 ## [0.19.0] - 2025-11-25
 
 ### Added

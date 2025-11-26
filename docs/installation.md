@@ -43,7 +43,7 @@ The slim package has minimal dependencies and lets you install only what you nee
 - **OpenAI** (GPT models for QA and embeddings)
 - **Anthropic** (Claude models for QA)
 
-See [Configuration](config-index.md) for configuring providers including advanced options like vLLM.
+See [Configuration](configuration/index.md) for configuring providers including advanced options like vLLM.
 
 ## Requirements
 
@@ -71,7 +71,7 @@ When using `haiku.rag-slim`, you can skip installing the `docling` extra and ins
 - Offloading heavy document processing to a dedicated service
 - Production deployments with separate processing infrastructure
 
-See [Remote processing](remote-processing.md) for setup instructions and [Document Processing](processing.md) for configuration options.
+See [Remote processing](remote-processing.md) for setup instructions and [Document Processing](configuration/processing.md) for configuration options.
 
 ## Docker
 

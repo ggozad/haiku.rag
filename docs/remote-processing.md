@@ -44,7 +44,7 @@ docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_UI=1 quay.io/docling-project/doc
 
 ### Configuration
 
-Configure haiku.rag to use docling-serve. See the [Document Processing](processing.md) guide for all available options.
+Configure haiku.rag to use docling-serve. See the [Document Processing](configuration/processing.md) guide for all available options.
 
 ```yaml
 # haiku.rag.yaml

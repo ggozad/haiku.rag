@@ -321,6 +321,6 @@ answer = await client.ask(
 
 The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
 
-The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](config-index.md)).
+The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
 See also: [Agents](agents.md) for details on the QA agent and the multi‑agent research workflow.
