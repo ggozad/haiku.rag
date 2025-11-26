@@ -59,6 +59,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **Bedrock**: Claude, OpenAI, and Qwen models
 - **Ollama**: Models supporting reasoning (gpt-oss, etc.)
 - **vLLM**: Models supporting reasoning (gpt-oss, etc.)
+- **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
 **When to use:**
 - Disable for simple queries, RAG workflows, speed-critical applications
@@ -148,6 +149,23 @@ providers:
 
 **Note:** You need to run a vLLM server separately with an embedding model loaded.
 
+### LM Studio
+
+[LM Studio](https://lmstudio.ai/) provides a local OpenAI-compatible API server for running models:
+
+```yaml
+embeddings:
+  provider: lm_studio
+  model: text-embedding-qwen3-embedding-4b
+  vector_dim: 2560
+
+providers:
+  lm_studio:
+    base_url: http://localhost:1234
+```
+
+**Note:** LM Studio must be running with an embedding model loaded. The default URL is `http://localhost:1234`.
+
 ## Question Answering Providers
 
 Configure which LLM provider to use for question answering. Any provider and model supported by [Pydantic AI](https://ai.pydantic.dev/models/) can be used.
@@ -225,6 +243,29 @@ providers:
 ```
 
 **Note:** You need to run a vLLM server separately with a model that supports tool calling loaded. Consult the specific model's documentation for proper vLLM serving configuration.
+
+### LM Studio
+
+Use LM Studio for local question answering and research:
+
+```yaml
+qa:
+  model:
+    provider: lm_studio
+    name: openai/gpt-oss-20b
+    enable_thinking: false
+
+research:
+  model:
+    provider: lm_studio
+    name: openai/gpt-oss-20b
+
+providers:
+  lm_studio:
+    base_url: http://localhost:1234
+```
+
+**Note:** LM Studio must be running with a chat model that supports tool calling loaded.
 
 ### Other Providers
 

@@ -46,4 +46,11 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
             config.embeddings.model, config.embeddings.vector_dim, config
         )
 
+    if config.embeddings.provider == "lm_studio":
+        from haiku.rag.embeddings.lm_studio import Embedder as LMStudioEmbedder
+
+        return LMStudioEmbedder(
+            config.embeddings.model, config.embeddings.vector_dim, config
+        )
+
     raise ValueError(f"Unsupported embedding provider: {config.embeddings.provider}")

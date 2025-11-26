@@ -233,6 +233,29 @@ def get_model(
             settings=vllm_settings,
         )
 
+    elif provider == "lm_studio":
+        model_settings = None
+
+        # Apply thinking control for gpt-oss
+        if model == "gpt-oss" and model_config.enable_thinking is not None:
+            if model_config.enable_thinking is False:
+                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
+            else:
+                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
+
+        model_settings = apply_common_settings(
+            model_settings, OpenAIChatModelSettings, model_config
+        )
+
+        return OpenAIChatModel(
+            model_name=model,
+            provider=OpenAIProvider(
+                base_url=f"{app_config.providers.lm_studio.base_url}/v1",
+                api_key="dummy",
+            ),
+            settings=model_settings,
+        )
+
     else:
         # For any other provider, use string format and let Pydantic AI handle it
         return f"{provider}:{model}"

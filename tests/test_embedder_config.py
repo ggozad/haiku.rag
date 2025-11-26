@@ -3,6 +3,7 @@ import pytest
 from haiku.rag.config import (
     AppConfig,
     EmbeddingsConfig,
+    LMStudioConfig,
     OllamaConfig,
     ProvidersConfig,
     VLLMConfig,
@@ -69,6 +70,28 @@ def test_openai_embedder_uses_config():
     assert embedder._model == "text-embedding-3-large"
     assert embedder._vector_dim == 3072
     assert embedder._config == custom_config
+
+
+def test_lm_studio_embedder_uses_config():
+    """Test that lm_studio embedder uses the config passed to get_embedder."""
+    custom_config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            provider="lm_studio",
+            model="custom-lm-studio-model",
+            vector_dim=1024,
+        ),
+        providers=ProvidersConfig(
+            lm_studio=LMStudioConfig(base_url="http://custom-lmstudio:5678"),
+        ),
+    )
+
+    embedder = get_embedder(custom_config)
+
+    assert embedder._model == "custom-lm-studio-model"
+    assert embedder._vector_dim == 1024
+    assert (
+        embedder._config.providers.lm_studio.base_url == "http://custom-lmstudio:5678"
+    )
 
 
 @pytest.mark.skipif(
