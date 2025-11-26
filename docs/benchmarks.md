@@ -67,10 +67,10 @@ determine whether the answer is correct. The obtained accuracy is as follows:
 
 | Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
 |------------------------------------|-----------------------------------|-----------|------------------------|
-| Ollama / `qwen3-embedding:8b`      | Ollama / `gpt-oss`                | 0.93      | None                   |
-| Ollama / `qwen3-embedding:0.6b`    | Ollama / `gpt-oss`                | 0.89      | None                   |
-| Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.85      | None                   |
-| Ollama / `mxbai-embed-large`       | Ollama / `qwen3`                  | 0.87      | `mxbai-rerank-base-v2` |
+| Ollama / `qwen3-embedding:4b`      | Ollama / `gpt-oss` - no thinking  | 0.82      | None                   |
+| Ollama / `qwen3-embedding:0.6b`    | Ollama / `gpt-oss` - thinking     | 0.89      | None                   |
+| Ollama / `mxbai-embed-large`       | Ollama / `qwen3` - thinking       | 0.85      | None                   |
+| Ollama / `mxbai-embed-large`       | Ollama / `qwen3` - thinking       | 0.87      | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
 
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
@@ -106,16 +106,19 @@ MAP rewards systems that rank relevant documents higher, not just finding them.
 
 ### MAP Results
 
-| Embedding Model            | MAP   | Reranker               |
-|----------------------------|-------|------------------------|
-| -                          | -     | -                      |
+| Embedding Model            | Chunk size | MAP   | Reranker               |
+|----------------------------|------------|-------|------------------------|
+| `qwen3-embedding:4b`       | 256        | 0.43  | None                   |
+| `qwen3-embedding:4b`       | 512        | 0.45  | None                   |
+
 
 ## QA Accuracy
 
 And for QA accuracy,
 
-| Embedding Model            | QA Model      | Accuracy | Reranker               |
-|----------------------------|---------------|----------|------------------------|
-| `qwen3-embedding:4b`       | `gpt-oss:20b` | 0.79     | None                   |
-| `qwen3-embedding:4b`       | `gpt-oss:20b` | 0.82     | `mxbai-rerank-base-v2` |
-| `qwen3-embedding:8b`       | `gpt-oss:20b` | 0.75     | `mxbai-rerank-base-v2` |
+| Embedding Model            | Chunk size | QA Model                    | Accuracy | Reranker    |
+|----------------------------|------------|-----------------------------|------------------------|
+| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - thinking    | 0.85     | None        |
+| `qwen3-embedding:4b`       | 512        | `gpt-oss:20b` - thinking    | 0.84     | None        |
+| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - no thinking | 0.68     | None        |
+| `qwen3-embedding:4b`       | 512        | `gpt-oss:20b` - no thinking | 0.70     | None        |
