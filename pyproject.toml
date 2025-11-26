@@ -2,7 +2,7 @@
 
 name = "haiku.rag"
 description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB"
-version = "0.19.0"
+version = "0.19.1"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }

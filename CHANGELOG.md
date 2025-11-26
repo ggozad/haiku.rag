@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.19.1] - 2025-11-26
+
 ### Added
 
 - **LM Studio Provider**: Added support for LM Studio as a provider for embeddings and QA/research models
