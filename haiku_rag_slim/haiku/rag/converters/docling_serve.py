@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-import requests
+import httpx
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import DocumentConverter
@@ -62,44 +62,11 @@ class DoclingServeConverter(DocumentConverter):
         """Return list of file extensions supported by this converter."""
         return self.docling_serve_extensions + TextFileHandler.text_extensions
 
-    def _sync_make_request(
-        self, files: dict, name: str, data: dict, headers: dict
-    ) -> "DoclingDocument":
-        """Synchronous HTTP request to docling-serve."""
-        from docling_core.types.doc.document import DoclingDocument
-
-        url = f"{self.base_url}/v1/convert/file"
-        response = requests.post(
-            url,
-            files=files,
-            data=data,
-            headers=headers,
-            timeout=self.timeout,
-        )
-
-        response.raise_for_status()
-
-        result = response.json()
-
-        if result["status"] not in ("success", "partial_success"):
-            errors = result.get("errors", [])
-            raise ValueError(f"Conversion failed: {errors}")
-
-        json_content = result["document"]["json_content"]
-
-        if json_content is None:
-            raise ValueError(
-                f"docling-serve did not return JSON content for {name}. "
-                "This may indicate an unsupported file format."
-            )
-
-        return DoclingDocument.model_validate(json_content)
-
     async def _make_request(self, files: dict, name: str) -> "DoclingDocument":
         """Make a request to docling-serve and return the DoclingDocument.
 
         Args:
-            files: Dictionary with files parameter for requests
+            files: Dictionary with files parameter for httpx
             name: Name of the document being converted (for error messages)
 
         Returns:
@@ -108,17 +75,19 @@ class DoclingServeConverter(DocumentConverter):
         Raises:
             ValueError: If conversion fails or service is unavailable
         """
+        from docling_core.types.doc.document import DoclingDocument
+
         try:
             opts = self.config.processing.conversion_options
 
-            data = {
-                "to_formats": ["json"],
-                "do_ocr": opts.do_ocr,
-                "force_ocr": opts.force_ocr,
-                "do_table_structure": opts.do_table_structure,
+            data: dict[str, str | list[str]] = {
+                "to_formats": "json",
+                "do_ocr": str(opts.do_ocr).lower(),
+                "force_ocr": str(opts.force_ocr).lower(),
+                "do_table_structure": str(opts.do_table_structure).lower(),
                 "table_mode": opts.table_mode,
-                "table_cell_matching": opts.table_cell_matching,
-                "images_scale": opts.images_scale,
+                "table_cell_matching": str(opts.table_cell_matching).lower(),
+                "images_scale": str(opts.images_scale),
             }
 
             if opts.ocr_lang:
@@ -128,26 +97,50 @@ class DoclingServeConverter(DocumentConverter):
             if self.api_key:
                 headers["X-Api-Key"] = self.api_key
 
-            return await asyncio.to_thread(
-                self._sync_make_request, files, name, data, headers
-            )
+            url = f"{self.base_url}/v1/convert/file"
 
-        except requests.exceptions.ConnectionError as e:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    url,
+                    files=files,
+                    data=data,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            if result["status"] not in ("success", "partial_success"):
+                errors = result.get("errors", [])
+                raise ValueError(f"Conversion failed: {errors}")
+
+            json_content = result["document"]["json_content"]
+
+            if json_content is None:
+                raise ValueError(
+                    f"docling-serve did not return JSON content for {name}. "
+                    "This may indicate an unsupported file format."
+                )
+
+            return DoclingDocument.model_validate(json_content)
+
+        except httpx.ConnectError as e:
             raise ValueError(
                 f"Could not connect to docling-serve at {self.base_url}. "
                 f"Ensure the service is running and accessible. Error: {e}"
             )
-        except requests.exceptions.Timeout as e:
+        except httpx.TimeoutException as e:
             raise ValueError(
                 f"Request to docling-serve timed out after {self.timeout}s. "
                 f"Consider increasing the timeout in configuration. Error: {e}"
             )
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ValueError(
                     "Authentication failed. Check your API key configuration."
                 )
             raise ValueError(f"HTTP error from docling-serve: {e}")
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Failed to convert via docling-serve: {e}")
 
@@ -175,11 +168,12 @@ class DoclingServeConverter(DocumentConverter):
             except Exception as e:
                 raise ValueError(f"Failed to read text file {path}: {e}")
 
-        def read_and_prepare_files():
+        def read_file():
             with open(path, "rb") as f:
-                return {"files": (path.name, f.read(), "application/octet-stream")}
+                return f.read()
 
-        files = await asyncio.to_thread(read_and_prepare_files)
+        file_content = await asyncio.to_thread(read_file)
+        files = {"files": (path.name, file_content, "application/octet-stream")}
         return await self._make_request(files, path.name)
 
     async def convert_text(
@@ -199,8 +193,6 @@ class DoclingServeConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted.
         """
-        from io import BytesIO
-
         text_bytes = text.encode("utf-8")
-        files = {"files": (name, BytesIO(text_bytes), "text/markdown")}
+        files = {"files": (name, text_bytes, "text/markdown")}
         return await self._make_request(files, name)
