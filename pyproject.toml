@@ -21,7 +21,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]"]
+dependencies = ["haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]==0.19.1"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"

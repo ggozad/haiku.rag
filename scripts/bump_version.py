@@ -31,6 +31,16 @@ def update_version_in_file(file_path: Path, new_version: str) -> None:
     print(f"✓ Updated {file_path.relative_to(Path.cwd())}")
 
 
+def update_dependency_version(file_path: Path, new_version: str) -> None:
+    """Update haiku.rag-slim dependency version in root pyproject.toml."""
+    content = file_path.read_text()
+    updated = re.sub(
+        r"(haiku\.rag-slim\[.*?\])==[0-9.]+", rf"\1=={new_version}", content
+    )
+    file_path.write_text(updated)
+    print(f"✓ Updated haiku.rag-slim dependency in {file_path.relative_to(Path.cwd())}")
+
+
 def update_changelog(changelog_path: Path, new_version: str) -> None:
     """Update CHANGELOG.md with new version."""
     content = changelog_path.read_text()
@@ -120,6 +130,9 @@ def main():
     # Update all pyproject.toml files
     for file in pyproject_files:
         update_version_in_file(file, new_version)
+
+    # Update haiku.rag-slim dependency version in root pyproject.toml
+    update_dependency_version(pyproject_files[0], new_version)
 
     # Update CHANGELOG.md
     update_changelog(changelog_file, new_version)
