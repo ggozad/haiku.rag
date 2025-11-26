@@ -73,7 +73,7 @@ async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
 
     # Convert text to DoclingDocument
     converter = get_converter(Config)
-    docling_document = converter.convert_text(document_text, name="test.md")
+    docling_document = await converter.convert_text(document_text, name="test.md")
 
     # Test creating chunks for the document
     chunks = await chunk_repo.create_chunks_for_document(document_id, docling_document)

@@ -19,7 +19,7 @@ async def test_local_chunker(qa_corpus: Dataset):
 
     # Convert text to DoclingDocument
     converter = get_converter(Config)
-    doc = converter.convert_text(doc_text, name="test.md")
+    doc = await converter.convert_text(doc_text, name="test.md")
 
     chunks = await chunker.chunk(doc)
 
@@ -87,7 +87,7 @@ async def test_local_chunker_hierarchical(qa_corpus: Dataset):
 
     doc_text = qa_corpus[0]["document_extracted"]
     converter = get_converter(Config)
-    doc = converter.convert_text(doc_text, name="test.md")
+    doc = await converter.convert_text(doc_text, name="test.md")
 
     chunks = await chunker.chunk(doc)
 
@@ -118,7 +118,7 @@ async def test_local_chunker_markdown_tables():
 """
 
     converter = get_converter(Config)
-    doc = converter.convert_text(markdown_with_table, name="test.md")
+    doc = await converter.convert_text(markdown_with_table, name="test.md")
 
     # Test with markdown tables enabled
     config_md = AppConfig()
@@ -185,7 +185,7 @@ class TestDoclingServeChunker:
 
         # Create a simple document
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test\n\nContent", name="test.md")
+        doc = await converter.convert_text("# Test\n\nContent", name="test.md")
 
         chunks = await chunker.chunk(doc)
         assert len(chunks) == 2
@@ -208,7 +208,7 @@ class TestDoclingServeChunker:
         mock_post.return_value = mock_response
 
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test", name="test.md")
+        doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
         call_kwargs = mock_post.call_args.kwargs
@@ -230,7 +230,7 @@ class TestDoclingServeChunker:
         mock_post.return_value = mock_response
 
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test", name="test.md")
+        doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
         call_args = mock_post.call_args
@@ -253,7 +253,7 @@ class TestDoclingServeChunker:
         mock_post.return_value = mock_response
 
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test", name="test.md")
+        doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
         call_kwargs = mock_post.call_args.kwargs
@@ -271,7 +271,7 @@ class TestDoclingServeChunker:
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
 
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test", name="test.md")
+        doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(ValueError, match="Could not connect to docling-serve"):
             await chunker.chunk(doc)
@@ -285,7 +285,7 @@ class TestDoclingServeChunker:
         mock_post.side_effect = requests.exceptions.Timeout("Timeout")
 
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test", name="test.md")
+        doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(ValueError, match="timed out"):
             await chunker.chunk(doc)
@@ -304,7 +304,7 @@ class TestDoclingServeChunker:
         mock_post.return_value = mock_response
 
         converter = get_converter(Config)
-        doc = converter.convert_text("# Test", name="test.md")
+        doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(ValueError, match="Authentication failed"):
             await chunker.chunk(doc)

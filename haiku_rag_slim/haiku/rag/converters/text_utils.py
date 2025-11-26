@@ -1,5 +1,6 @@
 """Shared utilities for text file handling in converters."""
 
+import asyncio
 from io import BytesIO
 from typing import TYPE_CHECKING, ClassVar
 
@@ -89,7 +90,21 @@ class TextFileHandler:
         return content
 
     @staticmethod
-    def text_to_docling_document(
+    def _sync_text_to_docling_document(
+        text: str, name: str = "content.md"
+    ) -> "DoclingDocument":
+        """Synchronous implementation of text to DoclingDocument conversion."""
+        from docling.document_converter import DocumentConverter as DoclingDocConverter
+        from docling_core.types.io import DocumentStream
+
+        bytes_io = BytesIO(text.encode("utf-8"))
+        doc_stream = DocumentStream(name=name, stream=bytes_io)
+        converter = DoclingDocConverter()
+        result = converter.convert(doc_stream)
+        return result.document
+
+    @staticmethod
+    async def text_to_docling_document(
         text: str, name: str = "content.md"
     ) -> "DoclingDocument":
         """Convert text to DoclingDocument using docling's markdown parser.
@@ -104,14 +119,9 @@ class TextFileHandler:
         Raises:
             ValueError: If the conversion fails.
         """
-        from docling.document_converter import DocumentConverter as DoclingDocConverter
-        from docling_core.types.io import DocumentStream
-
         try:
-            bytes_io = BytesIO(text.encode("utf-8"))
-            doc_stream = DocumentStream(name=name, stream=bytes_io)
-            converter = DoclingDocConverter()
-            result = converter.convert(doc_stream)
-            return result.document
+            return await asyncio.to_thread(
+                TextFileHandler._sync_text_to_docling_document, text, name
+            )
         except Exception as e:
             raise ValueError(f"Failed to convert text to DoclingDocument: {e}")

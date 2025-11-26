@@ -26,7 +26,7 @@ class DocumentConverter(ABC):
         pass
 
     @abstractmethod
-    def convert_file(self, path: Path) -> "DoclingDocument":
+    async def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument format.
 
         Args:
@@ -41,7 +41,9 @@ class DocumentConverter(ABC):
         pass
 
     @abstractmethod
-    def convert_text(self, text: str, name: str = "content.md") -> "DoclingDocument":
+    async def convert_text(
+        self, text: str, name: str = "content.md"
+    ) -> "DoclingDocument":
         """Convert text content to DoclingDocument format.
 
         Args:
