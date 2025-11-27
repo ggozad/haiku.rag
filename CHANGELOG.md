@@ -10,6 +10,7 @@
 ### Fixed
 
 - **OCR Options**: Fixed `DoclingLocalConverter` using base `OcrOptions` class which docling's OCR factory doesn't recognize. Now uses `OcrAutoOptions` for automatic OCR engine selection.
+- **Dependencies**: Added `opencv-python-headless` to the `docling` optional dependency for table structure detection.
 
 ## [0.19.2] - 2025-11-27
 
