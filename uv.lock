@@ -1361,6 +1361,7 @@ cohere = [
 ]
 docling = [
     { name = "docling" },
+    { name = "opencv-python-headless" },
 ]
 google = [
     { name = "pydantic-ai-slim", extra = ["google"] },
@@ -1395,6 +1396,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lancedb", specifier = "==0.25.3" },
     { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
+    { name = "opencv-python-headless", marker = "extra == 'docling'", specifier = ">=4.11.0.86" },
     { name = "pathspec", specifier = ">=0.12.1" },
     { name = "pydantic", specifier = ">=2.12.4" },
     { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'" },
@@ -2770,7 +2772,7 @@ name = "opencv-python-headless"
 version = "4.11.0.86"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", marker = "python_full_version >= '3.14' and python_full_version < '4'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/36/2f/5b2b3ba52c864848885ba988f24b7f105052f68da9ab0e693cc7c25b0b30/opencv-python-headless-4.11.0.86.tar.gz", hash = "sha256:996eb282ca4b43ec6a3972414de0e2331f5d9cda2b41091a49739c19fb843798", size = 95177929, upload-time = "2025-01-16T13:53:40.22Z" }
 wheels = [
