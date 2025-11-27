@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Async Chunker**: `DoclingServeChunker` now uses `httpx.AsyncClient` instead of sync `requests`
+
+### Fixed
+
+- **OCR Options**: Fixed `DoclingLocalConverter` using base `OcrOptions` class which docling's OCR factory doesn't recognize. Now uses `OcrAutoOptions` for automatic OCR engine selection.
+
 ## [0.19.2] - 2025-11-27
 
 ### Changed

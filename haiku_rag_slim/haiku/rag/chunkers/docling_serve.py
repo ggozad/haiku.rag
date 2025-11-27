@@ -1,7 +1,7 @@
 from io import BytesIO
 from typing import TYPE_CHECKING
 
-import requests
+import httpx
 
 from haiku.rag.chunkers.base import DocumentChunker
 from haiku.rag.config import AppConfig, Config
@@ -75,33 +75,31 @@ class DoclingServeChunker(DocumentChunker):
             if self.api_key:
                 headers["X-Api-Key"] = self.api_key
 
-            response = requests.post(
-                url,
-                files=files,
-                data=data,
-                headers=headers,
-                timeout=self.timeout,
-            )
-
-            response.raise_for_status()
-
-            result = response.json()
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    url,
+                    files=files,
+                    data=data,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                result = response.json()
 
             # Extract text from chunks
             chunks = result.get("chunks", [])
             return [chunk["text"] for chunk in chunks]
 
-        except requests.exceptions.ConnectionError as e:
+        except httpx.ConnectError as e:
             raise ValueError(
                 f"Could not connect to docling-serve at {self.base_url}. "
                 f"Ensure the service is running and accessible. Error: {e}"
             )
-        except requests.exceptions.Timeout as e:
+        except httpx.TimeoutException as e:
             raise ValueError(
                 f"Request to docling-serve timed out after {self.timeout}s. "
                 f"Consider increasing the timeout in configuration. Error: {e}"
             )
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ValueError(
                     "Authentication failed. Check your API key configuration."
