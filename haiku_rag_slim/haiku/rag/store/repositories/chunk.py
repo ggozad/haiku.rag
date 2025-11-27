@@ -225,22 +225,28 @@ class ChunkRepository:
                 )
                 raise e
 
-        chunk_texts = await chunker.chunk(processed_document)
+        chunks_with_metadata = await chunker.chunk(processed_document)
 
+        chunk_texts = [c.text for c in chunks_with_metadata]
         embeddings = await self.embedder.embed(chunk_texts)
 
         # Prepare all chunk records for batch insertion
         chunk_records = []
         created_chunks = []
 
-        for order, (chunk_text, embedding) in enumerate(zip(chunk_texts, embeddings)):
+        for order, (chunk_with_meta, embedding) in enumerate(
+            zip(chunks_with_metadata, embeddings)
+        ):
             chunk_id = str(uuid4())
+
+            # Convert ChunkMetadata to dict for storage
+            metadata_dict = chunk_with_meta.metadata.model_dump()
 
             chunk_record = self.store.ChunkRecord(
                 id=chunk_id,
                 document_id=document_id,
-                content=chunk_text,
-                metadata=json.dumps({}),
+                content=chunk_with_meta.text,
+                metadata=json.dumps(metadata_dict),
                 order=order,
                 vector=embedding,
             )
@@ -249,8 +255,8 @@ class ChunkRepository:
             chunk = Chunk(
                 id=chunk_id,
                 document_id=document_id,
-                content=chunk_text,
-                metadata={},
+                content=chunk_with_meta.text,
+                metadata=metadata_dict,
                 order=order,
             )
             created_chunks.append(chunk)
