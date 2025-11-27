@@ -64,7 +64,7 @@ def add_marker(text: str) -> str:
         chunk_repo.embedder.embed = fake_embed  # type: ignore[assignment]
 
         converter = get_converter(Config)
-        docling = converter.convert_text(document.content, name="test.md")
+        docling = await converter.convert_text(document.content, name="test.md")
         chunks = await chunk_repo.create_chunks_for_document(created_doc.id, docling)
 
         assert any(marker in c.content for c in chunks)

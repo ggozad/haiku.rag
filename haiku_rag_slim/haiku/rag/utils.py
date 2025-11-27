@@ -367,8 +367,10 @@ def load_callable(path: str):
     return func
 
 
-def prefetch_models():
+async def prefetch_models():
     """Prefetch runtime models (Docling + Ollama + HuggingFace tokenizer as configured)."""
+    import asyncio
+
     import httpx
 
     from haiku.rag.config import Config
@@ -376,7 +378,7 @@ def prefetch_models():
     try:
         from docling.utils.model_downloader import download_models
 
-        download_models()
+        await asyncio.to_thread(download_models)
     except ImportError:
         # Docling not installed, skip downloading docling models
         pass
@@ -384,7 +386,9 @@ def prefetch_models():
     # Download HuggingFace tokenizer
     from transformers import AutoTokenizer
 
-    AutoTokenizer.from_pretrained(Config.processing.chunking_tokenizer)
+    await asyncio.to_thread(
+        AutoTokenizer.from_pretrained, Config.processing.chunking_tokenizer
+    )
 
     # Collect Ollama models from config
     required_models: set[str] = set()
@@ -402,10 +406,10 @@ def prefetch_models():
 
     base_url = Config.providers.ollama.base_url
 
-    with httpx.Client(timeout=None) as client:
+    async with httpx.AsyncClient(timeout=None) as client:
         for model in sorted(required_models):
-            with client.stream(
+            async with client.stream(
                 "POST", f"{base_url}/api/pull", json={"model": model}
             ) as r:
-                for _ in r.iter_lines():
+                async for _ in r.aiter_lines():
                     pass

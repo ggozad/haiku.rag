@@ -2,8 +2,9 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 import requests
 from docling_core.types.doc.document import DoclingDocument
@@ -136,13 +137,15 @@ class TestDoclingLocalConverter:
         assert ".py" in extensions
         assert ".txt" in extensions
 
-    def test_convert_text(self, converter):
+    @pytest.mark.asyncio
+    async def test_convert_text(self, converter):
         """Test converting text to DoclingDocument."""
-        doc = converter.convert_text("# Test\n\nContent here", name="test.md")
+        doc = await converter.convert_text("# Test\n\nContent here", name="test.md")
         assert isinstance(doc, DoclingDocument)
         assert doc.name == "test"
 
-    def test_convert_code_file(self, converter):
+    @pytest.mark.asyncio
+    async def test_convert_code_file(self, converter):
         """Test that code files are wrapped in code blocks."""
         python_code = "def hello():\n    print('Hello')"
 
@@ -150,7 +153,7 @@ class TestDoclingLocalConverter:
             f.write(python_code)
             f.flush()
             temp_path = Path(f.name)
-            doc = converter.convert_file(temp_path)
+            doc = await converter.convert_file(temp_path)
             result = doc.export_to_markdown()
 
             assert "```" in result
@@ -198,8 +201,8 @@ class TestDoclingServeConverter:
         assert ".py" in extensions
         assert ".md" in extensions
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_text_success(self, mock_post, converter):
+    @pytest.mark.asyncio
+    async def test_convert_text_success(self, converter):
         """Test successful text conversion via docling-serve."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -207,15 +210,22 @@ class TestDoclingServeConverter:
             "status": "success",
             "document": {"json_content": create_mock_docling_document_json("test")},
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
 
-        doc = converter.convert_text("# Test", name="test.md")
-        assert isinstance(doc, DoclingDocument)
-        assert doc.version == "1.8.0"
-        mock_post.assert_called_once()
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_text_with_api_key(self, mock_post, config):
+            doc = await converter.convert_text("# Test", name="test.md")
+            assert isinstance(doc, DoclingDocument)
+            assert doc.version == "1.8.0"
+            mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_convert_text_with_api_key(self, config):
         """Test that API key is included in request headers."""
         config.providers.docling_serve.api_key = "test-key"
         converter = DoclingServeConverter(config)
@@ -226,16 +236,23 @@ class TestDoclingServeConverter:
             "status": "success",
             "document": {"json_content": create_mock_docling_document_json("test")},
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
 
-        converter.convert_text("# Test")
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        call_kwargs = mock_post.call_args.kwargs
-        assert "headers" in call_kwargs
-        assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
+            await converter.convert_text("# Test")
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_conversion_options_passed_to_api(self, mock_post, config):
+            call_kwargs = mock_client.post.call_args.kwargs
+            assert "headers" in call_kwargs
+            assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
+
+    @pytest.mark.asyncio
+    async def test_conversion_options_passed_to_api(self, config):
         """Test that conversion options are passed to docling-serve API."""
         config.processing.conversion_options.do_ocr = False
         config.processing.conversion_options.force_ocr = True
@@ -252,59 +269,78 @@ class TestDoclingServeConverter:
             "status": "success",
             "document": {"json_content": create_mock_docling_document_json("test")},
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
 
-        converter.convert_text("# Test")
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        call_kwargs = mock_post.call_args.kwargs
-        assert "data" in call_kwargs
-        data = call_kwargs["data"]
-        assert data["do_ocr"] is False
-        assert data["force_ocr"] is True
-        assert data["ocr_lang"] == ["en", "fr"]
-        assert "pdf_backend" not in data
-        assert data["table_mode"] == "fast"
-        assert data["table_cell_matching"] is False
-        assert data["do_table_structure"] is False
-        assert data["images_scale"] == 3.0
+            await converter.convert_text("# Test")
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_text_connection_error(self, mock_post, converter):
+            call_kwargs = mock_client.post.call_args.kwargs
+            assert "data" in call_kwargs
+            data = call_kwargs["data"]
+            assert data["do_ocr"] == "false"
+            assert data["force_ocr"] == "true"
+            assert data["ocr_lang"] == ["en", "fr"]
+            assert data["table_mode"] == "fast"
+            assert data["table_cell_matching"] == "false"
+            assert data["do_table_structure"] == "false"
+            assert data["images_scale"] == "3.0"
+
+    @pytest.mark.asyncio
+    async def test_convert_text_connection_error(self, converter):
         """Test handling of connection errors."""
-        import requests
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(
+                side_effect=httpx.ConnectError("Connection failed")
+            )
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
+            with pytest.raises(ValueError, match="Could not connect to docling-serve"):
+                await converter.convert_text("# Test")
 
-        with pytest.raises(ValueError, match="Could not connect to docling-serve"):
-            converter.convert_text("# Test")
-
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_text_timeout_error(self, mock_post, converter):
+    @pytest.mark.asyncio
+    async def test_convert_text_timeout_error(self, converter):
         """Test handling of timeout errors."""
-        import requests
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        mock_post.side_effect = requests.exceptions.Timeout("Timeout")
+            with pytest.raises(ValueError, match="timed out"):
+                await converter.convert_text("# Test")
 
-        with pytest.raises(ValueError, match="timed out"):
-            converter.convert_text("# Test")
-
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_text_auth_error(self, mock_post, converter):
+    @pytest.mark.asyncio
+    async def test_convert_text_auth_error(self, converter):
         """Test handling of authentication errors."""
-        import requests
-
         mock_response = Mock()
         mock_response.status_code = 401
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            response=mock_response
-        )
-        mock_post.return_value = mock_response
 
-        with pytest.raises(ValueError, match="Authentication failed"):
-            converter.convert_text("# Test")
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(
+                side_effect=httpx.HTTPStatusError(
+                    "Auth failed", request=Mock(), response=mock_response
+                )
+            )
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_text_no_json_content(self, mock_post, converter):
+            with pytest.raises(ValueError, match="Authentication failed"):
+                await converter.convert_text("# Test")
+
+    @pytest.mark.asyncio
+    async def test_convert_text_no_json_content(self, converter):
         """Test handling when docling-serve returns no JSON content."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -312,13 +348,20 @@ class TestDoclingServeConverter:
             "status": "success",
             "document": {"json_content": None},
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
 
-        with pytest.raises(ValueError, match="did not return JSON content"):
-            converter.convert_text("# Test")
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_file_pdf(self, mock_post, converter):
+            with pytest.raises(ValueError, match="did not return JSON content"):
+                await converter.convert_text("# Test")
+
+    @pytest.mark.asyncio
+    async def test_convert_file_pdf(self, converter):
         """Test converting PDF file via docling-serve."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -326,19 +369,26 @@ class TestDoclingServeConverter:
             "status": "success",
             "document": {"json_content": create_mock_docling_document_json("test")},
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
 
-        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
-            f.write(b"fake pdf content")
-            f.flush()
-            temp_path = Path(f.name)
-            doc = converter.convert_file(temp_path)
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        assert isinstance(doc, DoclingDocument)
-        mock_post.assert_called_once()
+            with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+                f.write(b"fake pdf content")
+                f.flush()
+                temp_path = Path(f.name)
+                doc = await converter.convert_file(temp_path)
 
-    @patch("haiku.rag.converters.docling_serve.requests.post")
-    def test_convert_file_text(self, mock_post, converter):
+            assert isinstance(doc, DoclingDocument)
+            mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_convert_file_text(self, converter):
         """Test converting text file (reads locally, sends to docling-serve)."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -346,20 +396,25 @@ class TestDoclingServeConverter:
             "status": "success",
             "document": {"json_content": create_mock_docling_document_json("test")},
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
-            f.write("def hello():\n    pass")
-            f.flush()
-            temp_path = Path(f.name)
-            doc = converter.convert_file(temp_path)
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        assert isinstance(doc, DoclingDocument)
-        # Should call docling-serve for conversion
-        mock_post.assert_called_once()
-        # Check that code was wrapped in code block
-        call_kwargs = mock_post.call_args.kwargs
-        assert "files" in call_kwargs
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
+                f.write("def hello():\n    pass")
+                f.flush()
+                temp_path = Path(f.name)
+                doc = await converter.convert_file(temp_path)
+
+            assert isinstance(doc, DoclingDocument)
+            mock_client.post.assert_called_once()
+            call_kwargs = mock_client.post.call_args.kwargs
+            assert "files" in call_kwargs
 
 
 @pytest.mark.integration
@@ -382,20 +437,22 @@ class TestDoclingServeConverterIntegration:
         """Create converter for integration tests."""
         return DoclingServeConverter(config)
 
-    def test_convert_text_real_service(self, converter):
+    @pytest.mark.asyncio
+    async def test_convert_text_real_service(self, converter):
         """Test text conversion with real docling-serve (integration)."""
-        doc = converter.convert_text("# Test Document\n\nThis is a test.")
+        doc = await converter.convert_text("# Test Document\n\nThis is a test.")
         assert isinstance(doc, DoclingDocument)
         assert doc.version == "1.8.0"
 
-    def test_convert_code_file_real_service(self, converter):
+    @pytest.mark.asyncio
+    async def test_convert_code_file_real_service(self, converter):
         """Test code file conversion with real docling-serve (integration)."""
         code = "def test():\n    return 42"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
             f.write(code)
             f.flush()
             temp_path = Path(f.name)
-            doc = converter.convert_file(temp_path)
+            doc = await converter.convert_file(temp_path)
 
         assert isinstance(doc, DoclingDocument)
         result = doc.export_to_markdown()

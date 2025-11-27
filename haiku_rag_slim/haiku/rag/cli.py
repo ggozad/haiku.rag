@@ -404,7 +404,7 @@ def download_models_cmd():
     from haiku.rag.utils import prefetch_models
 
     try:
-        prefetch_models()
+        asyncio.run(prefetch_models())
         typer.echo("Models downloaded successfully.")
     except Exception as e:
         typer.echo(f"Error downloading models: {e}")

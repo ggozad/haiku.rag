@@ -114,7 +114,7 @@ class HaikuRAG:
         if chunks is None:
             # Use converter to convert text
             converter = get_converter(self._config)
-            docling_document = converter.convert_text(content)
+            docling_document = await converter.convert_text(content)
         else:
             # Chunks already provided, no conversion needed
             docling_document = None
@@ -241,7 +241,7 @@ class HaikuRAG:
 
         # Parse file only when content changed or new document
         converter = get_converter(self._config)
-        docling_document = converter.convert_file(source_path)
+        docling_document = await converter.convert_file(source_path)
 
         if existing_doc:
             # Update existing document
@@ -333,7 +333,7 @@ class HaikuRAG:
                 temp_path = Path(temp_file.name)
 
                 # Parse the content using converter
-                docling_document = converter.convert_file(temp_path)
+                docling_document = await converter.convert_file(temp_path)
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
@@ -411,7 +411,7 @@ class HaikuRAG:
         """Update an existing document."""
         # Convert content to DoclingDocument
         converter = get_converter(self._config)
-        docling_document = converter.convert_text(document.content)
+        docling_document = await converter.convert_text(document.content)
 
         return await self.document_repository._update_and_rechunk(
             document, docling_document
@@ -472,7 +472,7 @@ class HaikuRAG:
             else:
                 # Auto-generate chunks from content
                 converter = get_converter(self._config)
-                docling_document = converter.convert_text(existing_doc.content)
+                docling_document = await converter.convert_text(existing_doc.content)
                 return await self.document_repository._update_and_rechunk(
                     existing_doc, docling_document
                 )
@@ -762,14 +762,14 @@ class HaikuRAG:
                     logger.warning(
                         "Source missing for %s, re-embedding from content", doc.uri
                     )
-                    docling_document = converter.convert_text(doc.content)
+                    docling_document = await converter.convert_text(doc.content)
                     await self.chunk_repository.create_chunks_for_document(
                         doc.id, docling_document
                     )
                     yield doc.id
             else:
                 # Document without URI - re-create chunks from existing content
-                docling_document = converter.convert_text(doc.content)
+                docling_document = await converter.convert_text(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
                     doc.id, docling_document
                 )

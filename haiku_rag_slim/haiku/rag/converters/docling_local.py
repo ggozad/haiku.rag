@@ -1,5 +1,6 @@
 """Local docling converter implementation."""
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -53,18 +54,8 @@ class DoclingLocalConverter(DocumentConverter):
         """Return list of file extensions supported by this converter."""
         return self.docling_extensions + TextFileHandler.text_extensions
 
-    def convert_file(self, path: Path) -> "DoclingDocument":
-        """Convert a file to DoclingDocument using local docling.
-
-        Args:
-            path: Path to the file to convert.
-
-        Returns:
-            DoclingDocument representation of the file.
-
-        Raises:
-            ValueError: If the file cannot be converted.
-        """
+    def _sync_convert_docling_file(self, path: Path) -> "DoclingDocument":
+        """Synchronous conversion of docling-supported files."""
         from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
@@ -81,64 +72,72 @@ class DoclingLocalConverter(DocumentConverter):
             PdfFormatOption,
         )
 
+        opts = self.config.processing.conversion_options
+
+        pipeline_options = PdfPipelineOptions(
+            do_ocr=opts.do_ocr,
+            do_table_structure=opts.do_table_structure,
+            images_scale=opts.images_scale,
+            table_structure_options=TableStructureOptions(
+                do_cell_matching=opts.table_cell_matching,
+                mode=(
+                    TableFormerMode.FAST
+                    if opts.table_mode == "fast"
+                    else TableFormerMode.ACCURATE
+                ),
+            ),
+            ocr_options=OcrOptions(
+                force_full_page_ocr=opts.force_ocr,
+                lang=opts.ocr_lang if opts.ocr_lang else [],
+            ),
+        )
+
+        format_options = cast(
+            dict[InputFormat, FormatOption],
+            {
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pipeline_options,
+                    backend=DoclingParseDocumentBackend,
+                )
+            },
+        )
+
+        converter = DoclingDocConverter(format_options=format_options)
+        result = converter.convert(path)
+        return result.document
+
+    async def convert_file(self, path: Path) -> "DoclingDocument":
+        """Convert a file to DoclingDocument using local docling.
+
+        Args:
+            path: Path to the file to convert.
+
+        Returns:
+            DoclingDocument representation of the file.
+
+        Raises:
+            ValueError: If the file cannot be converted.
+        """
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
-                # Get conversion options from config
-                opts = self.config.processing.conversion_options
-
-                # Build pipeline options for PDF conversion
-                pipeline_options = PdfPipelineOptions(
-                    do_ocr=opts.do_ocr,
-                    do_table_structure=opts.do_table_structure,
-                    images_scale=opts.images_scale,
-                    table_structure_options=TableStructureOptions(
-                        do_cell_matching=opts.table_cell_matching,
-                        mode=(
-                            TableFormerMode.FAST
-                            if opts.table_mode == "fast"
-                            else TableFormerMode.ACCURATE
-                        ),
-                    ),
-                    ocr_options=OcrOptions(
-                        force_full_page_ocr=opts.force_ocr,
-                        lang=opts.ocr_lang if opts.ocr_lang else [],
-                    ),
-                )
-
-                # Create format options for PDF
-                format_options = cast(
-                    dict[InputFormat, FormatOption],
-                    {
-                        InputFormat.PDF: PdfFormatOption(
-                            pipeline_options=pipeline_options,
-                            backend=DoclingParseDocumentBackend,
-                        )
-                    },
-                )
-
-                # Use docling for complex document formats
-                converter = DoclingDocConverter(format_options=format_options)
-                result = converter.convert(path)
-                return result.document
+                return await asyncio.to_thread(self._sync_convert_docling_file, path)
             elif file_extension in TextFileHandler.text_extensions:
-                # Read plain text files directly
-                content = path.read_text(encoding="utf-8")
-                # Prepare content with code block wrapping if needed
+                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
                 prepared_content = TextFileHandler.prepare_text_content(
                     content, file_extension
                 )
-                # Convert text to DoclingDocument by wrapping as markdown
-                return self.convert_text(prepared_content, name=f"{path.stem}.md")
+                return await self.convert_text(prepared_content, name=f"{path.stem}.md")
             else:
-                # Fallback: try to read as text and convert to DoclingDocument
-                content = path.read_text(encoding="utf-8")
-                return self.convert_text(content, name=f"{path.stem}.md")
+                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                return await self.convert_text(content, name=f"{path.stem}.md")
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")
 
-    def convert_text(self, text: str, name: str = "content.md") -> "DoclingDocument":
+    async def convert_text(
+        self, text: str, name: str = "content.md"
+    ) -> "DoclingDocument":
         """Convert text content to DoclingDocument using local docling.
 
         Args:
@@ -151,4 +150,4 @@ class DoclingLocalConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted.
         """
-        return TextFileHandler.text_to_docling_document(text, name)
+        return await TextFileHandler.text_to_docling_document(text, name)

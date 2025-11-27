@@ -1,6 +1,16 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Async Converters**: Made document converters fully async
+  - `BaseConverter.convert_file()` and `convert_text()` are now async methods
+  - `DoclingLocalConverter` wraps blocking Docling operations with `asyncio.to_thread()`
+  - `DoclingServeConverter` now uses `httpx.AsyncClient` instead of sync `requests`
+- **Async Model Prefetch**: `prefetch_models()` is now async
+  - Uses `httpx.AsyncClient` for Ollama model pulls
+  - Wraps blocking Docling and HuggingFace downloads with `asyncio.to_thread()`
+
 ## [0.19.1] - 2025-11-26
 
 ### Added

@@ -216,7 +216,7 @@ class ChunkRepository:
                 if not isinstance(processed_markdown, str):
                     raise ValueError("Preprocessor must return a markdown string")
                 converter = get_converter(self.store._config)
-                processed_document = converter.convert_text(
+                processed_document = await converter.convert_text(
                     processed_markdown, name="content.md"
                 )
             except Exception as e:

@@ -1,9 +1,10 @@
 """docling-serve remote converter implementation."""
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-import requests
+import httpx
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import DocumentConverter
@@ -61,11 +62,11 @@ class DoclingServeConverter(DocumentConverter):
         """Return list of file extensions supported by this converter."""
         return self.docling_serve_extensions + TextFileHandler.text_extensions
 
-    def _make_request(self, files: dict, name: str) -> "DoclingDocument":
+    async def _make_request(self, files: dict, name: str) -> "DoclingDocument":
         """Make a request to docling-serve and return the DoclingDocument.
 
         Args:
-            files: Dictionary with files parameter for requests
+            files: Dictionary with files parameter for httpx
             name: Name of the document being converted (for error messages)
 
         Returns:
@@ -77,24 +78,18 @@ class DoclingServeConverter(DocumentConverter):
         from docling_core.types.doc.document import DoclingDocument
 
         try:
-            url = f"{self.base_url}/v1/convert/file"
             opts = self.config.processing.conversion_options
 
-            # Build data dict with conversion options
-            data = {
-                "to_formats": ["json"],
-                # OCR options
-                "do_ocr": opts.do_ocr,
-                "force_ocr": opts.force_ocr,
-                # Table options
-                "do_table_structure": opts.do_table_structure,
+            data: dict[str, str | list[str]] = {
+                "to_formats": "json",
+                "do_ocr": str(opts.do_ocr).lower(),
+                "force_ocr": str(opts.force_ocr).lower(),
+                "do_table_structure": str(opts.do_table_structure).lower(),
                 "table_mode": opts.table_mode,
-                "table_cell_matching": opts.table_cell_matching,
-                # Image options
-                "images_scale": opts.images_scale,
+                "table_cell_matching": str(opts.table_cell_matching).lower(),
+                "images_scale": str(opts.images_scale),
             }
 
-            # Add OCR language if specified
             if opts.ocr_lang:
                 data["ocr_lang"] = opts.ocr_lang
 
@@ -102,17 +97,17 @@ class DoclingServeConverter(DocumentConverter):
             if self.api_key:
                 headers["X-Api-Key"] = self.api_key
 
-            response = requests.post(
-                url,
-                files=files,
-                data=data,
-                headers=headers,
-                timeout=self.timeout,
-            )
+            url = f"{self.base_url}/v1/convert/file"
 
-            response.raise_for_status()
-
-            result = response.json()
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    url,
+                    files=files,
+                    data=data,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                result = response.json()
 
             if result["status"] not in ("success", "partial_success"):
                 errors = result.get("errors", [])
@@ -128,26 +123,28 @@ class DoclingServeConverter(DocumentConverter):
 
             return DoclingDocument.model_validate(json_content)
 
-        except requests.exceptions.ConnectionError as e:
+        except httpx.ConnectError as e:
             raise ValueError(
                 f"Could not connect to docling-serve at {self.base_url}. "
                 f"Ensure the service is running and accessible. Error: {e}"
             )
-        except requests.exceptions.Timeout as e:
+        except httpx.TimeoutException as e:
             raise ValueError(
                 f"Request to docling-serve timed out after {self.timeout}s. "
                 f"Consider increasing the timeout in configuration. Error: {e}"
             )
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ValueError(
                     "Authentication failed. Check your API key configuration."
                 )
             raise ValueError(f"HTTP error from docling-serve: {e}")
+        except ValueError:
+            raise
         except Exception as e:
             raise ValueError(f"Failed to convert via docling-serve: {e}")
 
-    def convert_file(self, path: Path) -> "DoclingDocument":
+    async def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument using docling-serve.
 
         Args:
@@ -161,23 +158,27 @@ class DoclingServeConverter(DocumentConverter):
         """
         file_extension = path.suffix.lower()
 
-        # For plain text files, read locally and prepare content
         if file_extension in TextFileHandler.text_extensions:
             try:
-                content = path.read_text(encoding="utf-8")
+                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
                 prepared_content = TextFileHandler.prepare_text_content(
                     content, file_extension
                 )
-                return self.convert_text(prepared_content, name=f"{path.stem}.md")
+                return await self.convert_text(prepared_content, name=f"{path.stem}.md")
             except Exception as e:
                 raise ValueError(f"Failed to read text file {path}: {e}")
 
-        # For complex formats, send file to docling-serve
-        with open(path, "rb") as f:
-            files = {"files": f}
-            return self._make_request(files, path.name)
+        def read_file():
+            with open(path, "rb") as f:
+                return f.read()
 
-    def convert_text(self, text: str, name: str = "content.md") -> "DoclingDocument":
+        file_content = await asyncio.to_thread(read_file)
+        files = {"files": (path.name, file_content, "application/octet-stream")}
+        return await self._make_request(files, path.name)
+
+    async def convert_text(
+        self, text: str, name: str = "content.md"
+    ) -> "DoclingDocument":
         """Convert text content to DoclingDocument via docling-serve.
 
         Sends the text as a markdown file to docling-serve for conversion.
@@ -192,8 +193,6 @@ class DoclingServeConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted.
         """
-        from io import BytesIO
-
         text_bytes = text.encode("utf-8")
-        files = {"files": (name, BytesIO(text_bytes), "text/markdown")}
-        return self._make_request(files, name)
+        files = {"files": (name, text_bytes, "text/markdown")}
+        return await self._make_request(files, name)

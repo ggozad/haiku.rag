@@ -1,11 +1,14 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from haiku.rag.config import Config
 from haiku.rag.converters import get_converter
 
 
-def test_code_file_wrapped_in_code_block():
+@pytest.mark.asyncio
+async def test_code_file_wrapped_in_code_block():
     """Test that code files are wrapped in markdown code blocks."""
     python_code = '''def hello_world():
     print("Hello, World!")
@@ -17,7 +20,7 @@ def test_code_file_wrapped_in_code_block():
         temp_path = Path(f.name)
 
         converter = get_converter(Config)
-        document = converter.convert_file(temp_path)
+        document = await converter.convert_file(temp_path)
         result = document.export_to_markdown()
 
         assert result.startswith("```\n")

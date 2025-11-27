@@ -15,12 +15,13 @@ HAS_GROQ = importlib.util.find_spec("groq") is not None
 HAS_BEDROCK = importlib.util.find_spec("botocore") is not None
 
 
-def test_text_to_docling_document():
+@pytest.mark.asyncio
+async def test_text_to_docling_document():
     """Test text to DoclingDocument conversion."""
     # Test basic text conversion
     simple_text = "This is a simple text document."
     converter = get_converter(Config)
-    doc = converter.convert_text(simple_text)
+    doc = await converter.convert_text(simple_text)
 
     # Verify it returns a DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -32,7 +33,8 @@ def test_text_to_docling_document():
     assert "This is a simple text document." in markdown
 
 
-def test_text_to_docling_document_with_custom_name():
+@pytest.mark.asyncio
+async def test_text_to_docling_document_with_custom_name():
     """Test text to DoclingDocument conversion with custom name parameter."""
     code_text = """# Python Code
 
@@ -43,7 +45,7 @@ def hello():
 ```"""
 
     converter = get_converter(Config)
-    doc = converter.convert_text(code_text, name="hello.md")
+    doc = await converter.convert_text(code_text, name="hello.md")
 
     # Verify it's a valid DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -56,7 +58,8 @@ def hello():
     assert "Hello, World!" in markdown
 
 
-def test_text_to_docling_document_markdown_content():
+@pytest.mark.asyncio
+async def test_text_to_docling_document_markdown_content():
     """Test text to DoclingDocument conversion with markdown content."""
     markdown_text = """# Test Document
 
@@ -75,7 +78,7 @@ def test():
 **Bold text** and *italic text*."""
 
     converter = get_converter(Config)
-    doc = converter.convert_text(markdown_text, name="test.md")
+    doc = await converter.convert_text(markdown_text, name="test.md")
 
     # Verify it's a DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -89,10 +92,11 @@ def test():
     assert "def test():" in result_markdown
 
 
-def test_text_to_docling_document_empty_content():
+@pytest.mark.asyncio
+async def test_text_to_docling_document_empty_content():
     """Test text to DoclingDocument conversion with empty content."""
     converter = get_converter(Config)
-    doc = converter.convert_text("")
+    doc = await converter.convert_text("")
 
     # Should still create a valid DoclingDocument
     from docling_core.types.doc.document import DoclingDocument
@@ -104,7 +108,8 @@ def test_text_to_docling_document_empty_content():
     assert isinstance(markdown, str)
 
 
-def test_text_to_docling_document_unicode_content():
+@pytest.mark.asyncio
+async def test_text_to_docling_document_unicode_content():
     """Test text to DoclingDocument conversion with unicode content."""
     unicode_text = """# 测试文档
 
@@ -120,7 +125,7 @@ function saludar() {
 Emoji test: 🚀 ✅ 📝"""
 
     converter = get_converter(Config)
-    doc = converter.convert_text(unicode_text, name="unicode.md")
+    doc = await converter.convert_text(unicode_text, name="unicode.md")
 
     # Verify it's a DoclingDocument
     from docling_core.types.doc.document import DoclingDocument

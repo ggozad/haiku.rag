@@ -36,7 +36,7 @@ async def test_version_rollback_on_create_failure(temp_db_path):
     content = "Hello, rollback!"
     doc = Document(content=content)
     converter = get_converter(Config)
-    dl_doc = converter.convert_text(content, name="test.md")
+    dl_doc = await converter.convert_text(content, name="test.md")
 
     with pytest.raises(RuntimeError):
         await repo._create_and_chunk(doc, dl_doc)
@@ -68,7 +68,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     base_content = "Base content"
     base_doc = Document(content=base_content)
     converter = get_converter(Config)
-    base_dl = converter.convert_text(base_content, name="base.md")
+    base_dl = await converter.convert_text(base_content, name="base.md")
     created = await repo._create_and_chunk(base_doc, base_dl)
 
     # Force new chunk creation to fail during update after writing
@@ -83,7 +83,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
     # Attempt update
     updated_content = "Updated content"
     created.content = updated_content
-    updated_dl = converter.convert_text(updated_content, name="updated.md")
+    updated_dl = await converter.convert_text(updated_content, name="updated.md")
 
     with pytest.raises(RuntimeError):
         await repo._update_and_rechunk(created, updated_dl)
@@ -145,12 +145,12 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
     # Create first document
     converter = get_converter(Config)
     doc1 = Document(content="First document")
-    dl_doc1 = converter.convert_text("First document", name="doc1.md")
+    dl_doc1 = await converter.convert_text("First document", name="doc1.md")
     await repo._create_and_chunk(doc1, dl_doc1)
 
     # Create second document
     doc2 = Document(content="Second document")
-    dl_doc2 = converter.convert_text("Second document", name="doc2.md")
+    dl_doc2 = await converter.convert_text("Second document", name="doc2.md")
     await repo._create_and_chunk(doc2, dl_doc2)
 
     # Get initial version counts (should have multiple versions from creates)
