@@ -13,5 +13,7 @@ class Document(BaseModel):
     uri: str | None = None
     title: str | None = None
     metadata: dict = {}
+    docling_document_json: str | None = None
+    docling_version: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
