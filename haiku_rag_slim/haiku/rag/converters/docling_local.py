@@ -59,7 +59,7 @@ class DoclingLocalConverter(DocumentConverter):
         from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
-            OcrOptions,
+            OcrAutoOptions,
             PdfPipelineOptions,
             TableFormerMode,
             TableStructureOptions,
@@ -86,7 +86,7 @@ class DoclingLocalConverter(DocumentConverter):
                     else TableFormerMode.ACCURATE
                 ),
             ),
-            ocr_options=OcrOptions(
+            ocr_options=OcrAutoOptions(
                 force_full_page_ocr=opts.force_ocr,
                 lang=opts.ocr_lang if opts.ocr_lang else [],
             ),
