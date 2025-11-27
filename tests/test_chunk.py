@@ -5,7 +5,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
-from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -197,3 +197,37 @@ async def test_adjacent_chunks(temp_db_path):
         assert chunk.document_id == created_document.id
 
     store.close()
+
+
+def test_chunk_metadata_parsing():
+    """Test ChunkMetadata parsing from chunk metadata dict."""
+    metadata_dict = {
+        "doc_item_refs": ["#/texts/0", "#/texts/1", "#/tables/0"],
+        "headings": ["Chapter 1", "Section 1.1"],
+        "labels": ["paragraph", "paragraph", "table"],
+        "page_numbers": [1, 1, 2],
+    }
+
+    chunk = Chunk(
+        content="Test content",
+        metadata=metadata_dict,
+    )
+
+    chunk_meta = chunk.get_chunk_metadata()
+
+    assert isinstance(chunk_meta, ChunkMetadata)
+    assert chunk_meta.doc_item_refs == ["#/texts/0", "#/texts/1", "#/tables/0"]
+    assert chunk_meta.headings == ["Chapter 1", "Section 1.1"]
+    assert chunk_meta.labels == ["paragraph", "paragraph", "table"]
+    assert chunk_meta.page_numbers == [1, 1, 2]
+
+
+def test_chunk_metadata_defaults():
+    """Test ChunkMetadata with empty/default values."""
+    chunk = Chunk(content="Test content", metadata={})
+    chunk_meta = chunk.get_chunk_metadata()
+
+    assert chunk_meta.doc_item_refs == []
+    assert chunk_meta.headings is None
+    assert chunk_meta.labels == []
+    assert chunk_meta.page_numbers == []
