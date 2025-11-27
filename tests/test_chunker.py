@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from datasets import Dataset
@@ -170,8 +170,8 @@ class TestDoclingServeChunker:
         return DoclingServeChunker(config)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_success(self, mock_post, chunker):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_success(self, mock_client_class, chunker):
         """Test successful chunking via docling-serve."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -181,7 +181,11 @@ class TestDoclingServeChunker:
                 {"text": "Chunk 2", "chunk_index": 1},
             ]
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         # Create a simple document
         converter = get_converter(Config)
@@ -191,11 +195,11 @@ class TestDoclingServeChunker:
         assert len(chunks) == 2
         assert chunks[0] == "Chunk 1"
         assert chunks[1] == "Chunk 2"
-        mock_post.assert_called_once()
+        mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_with_api_key(self, mock_post, config):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_with_api_key(self, mock_client_class, config):
         """Test that API key is included in request headers."""
         config.providers.docling_serve.api_key = "test-key"
         chunker = DoclingServeChunker(config)
@@ -205,19 +209,23 @@ class TestDoclingServeChunker:
         mock_response.json.return_value = {
             "chunks": [{"text": "Chunk 1", "chunk_index": 0}]
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
-        call_kwargs = mock_post.call_args.kwargs
+        call_kwargs = mock_client.post.call_args.kwargs
         assert "headers" in call_kwargs
         assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_hierarchical_endpoint(self, mock_post, config):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_hierarchical_endpoint(self, mock_client_class, config):
         """Test that hierarchical chunker uses correct endpoint."""
         config.processing.chunker_type = "hierarchical"
         chunker = DoclingServeChunker(config)
@@ -227,18 +235,22 @@ class TestDoclingServeChunker:
         mock_response.json.return_value = {
             "chunks": [{"text": "Chunk 1", "chunk_index": 0}]
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
-        call_args = mock_post.call_args
+        call_args = mock_client.post.call_args
         assert "/v1/chunk/hierarchical/file" in call_args[0][0]
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_passes_config_parameters(self, mock_post, config):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_passes_config_parameters(self, mock_client_class, config):
         """Test that all config parameters are passed to API."""
         config.processing.chunk_size = 512
         config.processing.chunking_merge_peers = False
@@ -250,25 +262,31 @@ class TestDoclingServeChunker:
         mock_response.json.return_value = {
             "chunks": [{"text": "Chunk 1", "chunk_index": 0}]
         }
-        mock_post.return_value = mock_response
+        mock_response.raise_for_status = Mock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
-        call_kwargs = mock_post.call_args.kwargs
+        call_kwargs = mock_client.post.call_args.kwargs
         data = call_kwargs["data"]
         assert data["chunking_max_tokens"] == "512"
         assert data["chunking_merge_peers"] == "false"
         assert data["chunking_use_markdown_tables"] == "true"
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_connection_error(self, mock_post, chunker):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_connection_error(self, mock_client_class, chunker):
         """Test handling of connection errors."""
-        import requests
+        import httpx
 
-        mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.ConnectError("Connection failed")
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
@@ -277,12 +295,14 @@ class TestDoclingServeChunker:
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_timeout_error(self, mock_post, chunker):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_timeout_error(self, mock_client_class, chunker):
         """Test handling of timeout errors."""
-        import requests
+        import httpx
 
-        mock_post.side_effect = requests.exceptions.Timeout("Timeout")
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.TimeoutException("Timeout")
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
@@ -291,17 +311,21 @@ class TestDoclingServeChunker:
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.requests.post")
-    async def test_chunk_auth_error(self, mock_post, chunker):
+    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_auth_error(self, mock_client_class, chunker):
         """Test handling of authentication errors."""
-        import requests
+        import httpx
 
+        mock_request = Mock()
         mock_response = Mock()
         mock_response.status_code = 401
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            response=mock_response
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "401", request=mock_request, response=mock_response
         )
-        mock_post.return_value = mock_response
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
