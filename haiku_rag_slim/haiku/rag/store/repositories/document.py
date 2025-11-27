@@ -37,6 +37,8 @@ class DocumentRepository:
             uri=record.uri,
             title=record.title,
             metadata=json.loads(record.metadata),
+            docling_document_json=record.docling_document_json,
+            docling_version=record.docling_version,
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
             else datetime.now(),
@@ -60,6 +62,8 @@ class DocumentRepository:
             uri=entity.uri,
             title=entity.title,
             metadata=json.dumps(entity.metadata),
+            docling_document_json=entity.docling_document_json,
+            docling_version=entity.docling_version,
             created_at=now,
             updated_at=now,
         )
@@ -102,6 +106,8 @@ class DocumentRepository:
                 "uri": entity.uri,
                 "title": entity.title,
                 "metadata": json.dumps(entity.metadata),
+                "docling_document_json": entity.docling_document_json,
+                "docling_version": entity.docling_version,
                 "updated_at": now,
             },
         )
