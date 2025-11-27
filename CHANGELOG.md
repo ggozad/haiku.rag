@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.19.3] - 2025-11-27
+
 ### Changed
 
 - **Async Chunker**: `DoclingServeChunker` now uses `httpx.AsyncClient` instead of sync `requests`
