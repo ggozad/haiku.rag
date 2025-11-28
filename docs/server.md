@@ -33,7 +33,7 @@ This will start file monitoring and MCP server on port 8001.
 
 ## File Monitoring
 
-Configure directories to monitor in your `haiku.rag.yaml`:
+Configure directories to monitor in your `haiku.rag.yaml` (see [Document Processing](configuration/processing.md#file-monitoring) for all options):
 
 ```yaml
 monitor:
@@ -83,16 +83,39 @@ monitor:
 
 ### Supported Formats
 
-The server can parse 40+ file formats including:
-- PDF documents
-- Microsoft Office (DOCX, XLSX, PPTX)
-- HTML and Markdown
-- Plain text files
-- Code files (Python, JavaScript, etc.)
-- Images (processed via OCR)
-- And more...
+The file monitor processes documents using [Docling](https://github.com/DS4SD/docling), which supports:
 
-URLs are also supported for web content.
+**Documents:**
+- PDF (`.pdf`) - with OCR support for scanned documents
+- Microsoft Word (`.docx`)
+- Microsoft Excel (`.xlsx`)
+- Microsoft PowerPoint (`.pptx`)
+- HTML (`.html`, `.htm`)
+- Markdown (`.md`)
+- AsciiDoc (`.adoc`, `.asciidoc`)
+
+**Data formats:**
+- CSV (`.csv`)
+- JSON (`.json`)
+- XML (`.xml`)
+
+**Images (via OCR):**
+- PNG (`.png`)
+- JPEG (`.jpg`, `.jpeg`)
+- TIFF (`.tiff`, `.tif`)
+- BMP (`.bmp`)
+
+**Code files:**
+- Python (`.py`)
+- JavaScript (`.js`)
+- TypeScript (`.ts`)
+- And other text-based code files
+
+**Plain text:**
+- Text files (`.txt`)
+- RST (`.rst`)
+
+URLs are also supported - the content is fetched and converted to markdown.
 
 ## AG-UI Server
 

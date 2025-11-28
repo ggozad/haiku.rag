@@ -2,7 +2,7 @@
 
 Retrieval-Augmented Generation (RAG) library built on LanceDB.
 
-`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
+`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama, LM Studio, vLLM) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
 
 ## Features
 
@@ -144,10 +144,23 @@ async with HaikuRAG("database.lancedb") as client:
 Use with AI assistants like Claude Desktop:
 
 ```bash
-haiku-rag serve --stdio
+haiku-rag serve --mcp --stdio
 ```
 
-Provides tools for document management and search directly in your AI assistant.
+Add to your Claude Desktop configuration:
+
+```json
+{
+  "mcpServers": {
+    "haiku-rag": {
+      "command": "haiku-rag",
+      "args": ["serve", "--mcp", "--stdio"]
+    }
+  }
+}
+```
+
+Provides tools for document management, search, QA, and research directly in your AI assistant.
 
 ## Examples
 
@@ -166,7 +179,10 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA agent and multi-agent research
-- [MCP Server](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
-- [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance Benchmarks
+- [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring, MCP, and AG-UI
+- [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
+- [Inspector](https://ggozad.github.io/haiku.rag/inspector/) - Database browser TUI
+- [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance benchmarks
+- [Changelog](https://ggozad.github.io/haiku.rag/changelog/) - Version history
 
 mcp-name: io.github.ggozad/haiku-rag

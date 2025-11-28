@@ -24,7 +24,7 @@ First, [get an OpenAI API key](https://platform.openai.com/api-keys).
 
 Install `haiku.rag` Python package using [uv](https://docs.astral.sh/uv/getting-started/installation/) or your favourite Python package manager:
 
-```shell
+```bash
 # Python 3.12+ needed
 uv pip install haiku.rag
 ```
@@ -57,7 +57,7 @@ See [Configuration](configuration/index.md) for all available options.
 
 Now you can add some pieces of text in the database:
 
-```shell
+```bash
 haiku-rag add "Python is the best programming language in the world, because it is flexible, with robust ecosystem, open source licensing and thousands of contributors"
 haiku-rag add "JavaScript is a popular programming language, but has a lot of warts"
 haiku-rag add "PHP is a bad programming language, because of spotted security history, horrible syntax and declining popularity"
@@ -71,7 +71,7 @@ What will happen
 
 Now you can view your [LanceDB](https://lancedb.com/) database, and the embeddings it is configured for:
 
-```shell
+```bash
 haiku-rag info
 ```
 
@@ -103,7 +103,7 @@ using `OpenAIChatModel.request()`.
 
 The easiest way to do this is `ask` CLI command:
 
-```shell
+```bash
 haiku-rag ask "What is the best programming language in the world"
 ```
 
@@ -120,13 +120,13 @@ You can interact with Haiku RAG from Python in a similar manner as you can from 
 
 First we need to install `ipython`, as built-in Python REPL does not support async blocks.
 
-```shell
+```bash
 uv pip install ipython
 ```
 
 Run IPython:
 
-```shell
+```bash
 ipython
 ```
 
@@ -170,7 +170,7 @@ Haiku RAG can also handle types beyond plain text, including PDF, DOCX, HTML, an
 
 Here we add research papers about Python from [arxiv](https://arxiv.org/search/?query=python&searchtype=all&source=header) using URL retriever.
 
-```shell
+```bash
 # Better Python Programming for all: With the focus on Maintainability
 haiku-rag add-src --meta collection="Interesting Python papers" "https://arxiv.org/pdf/2408.09134"
 
@@ -180,7 +180,7 @@ haiku-rag add-src --meta collection="Interesting Python papers" "https://arxiv.o
 
 Then we can query this:
 
-```shell
+```bash
 haiku-rag ask "Who wrote a paper about OpenTelemetry interoperability, and what was his take"
 ```
 
@@ -193,14 +193,14 @@ David Georg Reichelt from Lancaster University wrote a paper titled "Interoperab
 
 We can also add offline files, like PDFs. Here we add a local file to ensure OpenAI does not cheat - a file we know that should not be very well known in Internet:
 
-```shell
+```bash
 # This static file is supplied in haiku.rag repo
 haiku-rag add-src "examples/samples/PyCon Finland 2025 Schedule.html"
 ```
 
 And then:
 
-```shell
+```bash
 haiku-rag ask "Who were presenting talks in Pycon Finland 2025? Can you give at least five different people."
 ```
 
@@ -214,6 +214,10 @@ The following people are presenting talks at PyCon Finland 2025:
  5 Andreas Jung (also presenting another talk) - Talk: Debugging Python
 ```
 
-## Configuration
+## Next Steps
 
-See [Configuration page](./configuration/index.md) for complete documentation on YAML configuration and all available options.
+- **[CLI Reference](cli.md)** - All available commands and options
+- **[Python API](python.md)** - Use haiku.rag in your Python applications
+- **[Agents](agents.md)** - Deep QA and multi-agent research workflows
+- **[Configuration](configuration/index.md)** - Complete YAML configuration reference
+- **[Server Mode](server.md)** - File monitoring, MCP server, and AG-UI streaming
