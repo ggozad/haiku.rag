@@ -155,10 +155,10 @@ async def run_retrieval_benchmark(
 
             seen = set()
             uris = []
-            for chunk, _ in chunks:
-                if chunk.document_id is None:
+            for result in chunks:
+                if result.document_id is None:
                     continue
-                doc = await rag.get_document_by_id(chunk.document_id)
+                doc = await rag.get_document_by_id(result.document_id)
                 if doc and doc.uri and doc.uri not in seen:
                     uris.append(doc.uri)
                     seen.add(doc.uri)

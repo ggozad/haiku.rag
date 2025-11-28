@@ -89,12 +89,12 @@ def create_a2a_app(
 
         return [
             SearchResult(
-                content=chunk.content,
-                score=score,
-                document_title=chunk.document_title,
-                document_uri=(chunk.document_uri or ""),
+                content=result.content,
+                score=result.score,
+                document_title=result.document_title,
+                document_uri=(result.document_uri or ""),
             )
-            for chunk, score in expanded_results
+            for result in expanded_results
         ]
 
     @agent.tool
