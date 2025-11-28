@@ -6,7 +6,7 @@
 - **Download Models Progress**: `haiku-rag download-models` now shows real-time progress with Rich progress bars for Ollama model downloads
 - **Refactored Download Models**: Moved core download logic to `HaikuRAG.download_models()` async generator that yields `DownloadProgress` events, separating business logic from UI
 
-## [0.19.6] - 2025-12-03
+## [0.20.0] - 2025-11-28
 
 ## [0.19.6] - 2025-12-03
 
