@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Rebuild Modes**: New options for `rebuild` command to control what gets rebuilt
+  - `--embed-only`: Only regenerate embeddings, keeping existing chunks (fastest option when changing embedding model)
+  - `--rechunk`: Re-chunk from existing document content without accessing source files
+  - Default (no flag): Full rebuild with source file re-conversion
+  - Python API: `rebuild_database(mode=RebuildMode.EMBED_ONLY | RECHUNK | FULL)`
+
 ## [0.19.3] - 2025-11-27
 
 ### Changed

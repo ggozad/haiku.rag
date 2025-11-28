@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.progress import Progress
 
-from haiku.rag.client import HaikuRAG
+from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.graph.agui import AGUIConsoleRenderer, stream_graph
 from haiku.rag.graph.research.dependencies import ResearchContext
@@ -406,7 +406,7 @@ class HaikuRAGApp:
             except Exception as e:
                 self.console.print(f"[red]Error during research: {e}[/red]")
 
-    async def rebuild(self):
+    async def rebuild(self, mode: RebuildMode = RebuildMode.FULL):
         async with HaikuRAG(
             db_path=self.db_path, config=self.config, skip_validation=True
         ) as client:
@@ -420,12 +420,18 @@ class HaikuRAGApp:
                     )
                     return
 
+                mode_desc = {
+                    RebuildMode.FULL: "full rebuild",
+                    RebuildMode.RECHUNK: "rechunk",
+                    RebuildMode.EMBED_ONLY: "embed only",
+                }[mode]
+
                 self.console.print(
-                    f"[bold cyan]Rebuilding database with {total_docs} documents...[/bold cyan]"
+                    f"[bold cyan]Rebuilding database ({mode_desc}) with {total_docs} documents...[/bold cyan]"
                 )
                 with Progress() as progress:
                     task = progress.add_task("Rebuilding...", total=total_docs)
-                    async for _ in client.rebuild_database():
+                    async for _ in client.rebuild_database(mode=mode):
                         progress.update(task, advance=1)
 
                 self.console.print(

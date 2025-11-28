@@ -259,12 +259,26 @@ haiku-rag vacuum
 
 ### Rebuild Database
 
-Rebuild the database by deleting all chunks & embeddings and re-indexing all documents. This is useful
-when want to switch embeddings provider or model:
+Rebuild the database by re-indexing documents. Useful when switching embeddings provider/model or changing chunking settings:
 
 ```bash
+# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
 haiku-rag rebuild
+
+# Re-chunk from stored content (no source file access)
+haiku-rag rebuild --rechunk
+
+# Only regenerate embeddings (fastest, keeps existing chunks)
+haiku-rag rebuild --embed-only
 ```
+
+**Rebuild modes:**
+
+| Mode | Flag | Use case |
+|------|------|----------|
+| Full | (default) | Changed converter, source files updated |
+| Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
+| Embed only | `--embed-only` | Changed embedding model or vector dimensions |
 
 ### Download Models
 
