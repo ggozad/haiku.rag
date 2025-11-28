@@ -6,6 +6,16 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
 
 
+class BoundingBox(BaseModel):
+    """Bounding box coordinates for visual grounding."""
+
+    page_no: int
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+
 class ChunkMetadata(BaseModel):
     """
     Structured metadata for a chunk, including DoclingDocument references.
@@ -46,6 +56,37 @@ class ChunkMetadata(BaseModel):
                 continue
         return doc_items
 
+    def resolve_bounding_boxes(
+        self, docling_document: "DoclingDocument"
+    ) -> list[BoundingBox]:
+        """Resolve doc_item_refs to bounding boxes for visual grounding.
+
+        Args:
+            docling_document: The parent DoclingDocument containing the items.
+
+        Returns:
+            List of BoundingBox objects from resolved DocItems' provenance.
+        """
+        bounding_boxes = []
+        for doc_item in self.resolve_doc_items(docling_document):
+            prov = getattr(doc_item, "prov", None)
+            if not prov:
+                continue
+            for prov_item in prov:
+                bbox = getattr(prov_item, "bbox", None)
+                if bbox is None:
+                    continue
+                bounding_boxes.append(
+                    BoundingBox(
+                        page_no=prov_item.page_no,
+                        left=bbox.l,
+                        top=bbox.t,
+                        right=bbox.r,
+                        bottom=bbox.b,
+                    )
+                )
+        return bounding_boxes
+
 
 class Chunk(BaseModel):
     """
@@ -65,3 +106,42 @@ class Chunk(BaseModel):
     def get_chunk_metadata(self) -> ChunkMetadata:
         """Parse metadata dict into structured ChunkMetadata."""
         return ChunkMetadata.model_validate(self.metadata)
+
+
+class SearchResult(BaseModel):
+    """Search result with optional provenance information for citations."""
+
+    content: str
+    score: float
+    chunk_id: str | None = None
+    document_id: str | None = None
+    document_uri: str | None = None
+    document_title: str | None = None
+    doc_item_refs: list[str] = []
+    page_numbers: list[int] = []
+    headings: list[str] | None = None
+    labels: list[str] = []
+    bounding_boxes: list[BoundingBox] | None = None
+
+    @classmethod
+    def from_chunk(
+        cls,
+        chunk: "Chunk",
+        score: float,
+        bounding_boxes: list[BoundingBox] | None = None,
+    ) -> "SearchResult":
+        """Create from a Chunk with optional bounding boxes."""
+        meta = chunk.get_chunk_metadata()
+        return cls(
+            content=chunk.content,
+            score=score,
+            chunk_id=chunk.id,
+            document_id=chunk.document_id,
+            document_uri=chunk.document_uri,
+            document_title=chunk.document_title,
+            doc_item_refs=meta.doc_item_refs,
+            page_numbers=meta.page_numbers,
+            headings=meta.headings,
+            labels=meta.labels,
+            bounding_boxes=bounding_boxes,
+        )
