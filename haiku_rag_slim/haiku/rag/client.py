@@ -13,7 +13,7 @@ from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
-from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -118,26 +118,31 @@ class HaikuRAG:
             # Use converter to convert text
             converter = get_converter(self._config)
             docling_document = await converter.convert_text(content)
-            docling_json = docling_document.model_dump_json()
-            docling_version = docling_document.version
+
+            document = Document(
+                content=content,
+                uri=uri,
+                title=title,
+                metadata=metadata or {},
+                docling_document_json=docling_document.model_dump_json(),
+                docling_version=docling_document.version,
+            )
+
+            return await self.document_repository._create_and_chunk(
+                document, docling_document, chunks
+            )
         else:
             # Chunks already provided, no conversion needed
-            docling_document = None
-            docling_json = None
-            docling_version = None
+            document = Document(
+                content=content,
+                uri=uri,
+                title=title,
+                metadata=metadata or {},
+            )
 
-        document = Document(
-            content=content,
-            uri=uri,
-            title=title,
-            metadata=metadata or {},
-            docling_document_json=docling_json,
-            docling_version=docling_version,
-        )
-
-        return await self.document_repository._create_and_chunk(
-            document, docling_document, chunks
-        )
+            return await self.document_repository._create_and_chunk(
+                document, None, chunks
+            )
 
     async def create_document_from_source(
         self, source: str | Path, title: str | None = None, metadata: dict | None = None
@@ -539,7 +544,8 @@ class HaikuRAG:
         limit: int = 5,
         search_type: str = "hybrid",
         filter: str | None = None,
-    ) -> list[tuple[Chunk, float]]:
+        resolve_bounding_boxes: bool = False,
+    ) -> list[SearchResult]:
         """Search for relevant chunks using the specified search method with optional reranking.
 
         Args:
@@ -547,159 +553,377 @@ class HaikuRAG:
             limit: Maximum number of results to return.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
+            resolve_bounding_boxes: Whether to resolve bounding boxes from DoclingDocument.
 
         Returns:
-            List of (chunk, score) tuples ordered by relevance.
+            List of SearchResult objects ordered by relevance.
         """
-        # Get reranker if available
         reranker = get_reranker(config=self._config)
 
         if reranker is None:
-            # No reranking - return direct search results
-            return await self.chunk_repository.search(query, limit, search_type, filter)
+            chunk_results = await self.chunk_repository.search(
+                query, limit, search_type, filter
+            )
+        else:
+            search_limit = limit * 10
+            raw_results = await self.chunk_repository.search(
+                query, search_limit, search_type, filter
+            )
+            chunks = [chunk for chunk, _ in raw_results]
+            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
 
-        # Get more initial results (10X) for reranking
-        search_limit = limit * 10
-        search_results = await self.chunk_repository.search(
-            query, search_limit, search_type, filter
-        )
+        bounding_boxes_map: dict[str, list] | None = None
+        if resolve_bounding_boxes:
+            bounding_boxes_map = {}
+            doc_cache: dict[str, Document | None] = {}
 
-        # Apply reranking
-        chunks = [chunk for chunk, _ in search_results]
-        reranked_results = await reranker.rerank(query, chunks, top_n=limit)
+            for chunk, _ in chunk_results:
+                if chunk.document_id and chunk.id:
+                    if chunk.document_id not in doc_cache:
+                        doc_cache[chunk.document_id] = await self.get_document_by_id(
+                            chunk.document_id
+                        )
 
-        # Return reranked results with scores from reranker
-        return reranked_results
+                    doc = doc_cache[chunk.document_id]
+                    if doc:
+                        docling_doc = doc.get_docling_document()
+                        if docling_doc:
+                            meta = chunk.get_chunk_metadata()
+                            bounding_boxes_map[chunk.id] = meta.resolve_bounding_boxes(
+                                docling_doc
+                            )
+
+        results = []
+        for chunk, score in chunk_results:
+            bboxes = None
+            if bounding_boxes_map and chunk.id:
+                bboxes = bounding_boxes_map.get(chunk.id)
+            results.append(SearchResult.from_chunk(chunk, score, bboxes))
+        return results
 
     async def expand_context(
         self,
-        search_results: list[tuple[Chunk, float]],
+        search_results: list[SearchResult],
         radius: int | None = None,
-    ) -> list[tuple[Chunk, float]]:
-        """Expand search results with adjacent chunks, merging overlapping chunks.
+    ) -> list[SearchResult]:
+        """Expand search results with adjacent content from the source document.
+
+        When DoclingDocument is available and results have doc_item_refs, expands
+        by finding adjacent DocItems with accurate bounding boxes and metadata.
+        Otherwise, falls back to chunk-based expansion using adjacent chunks.
 
         Args:
-            search_results: List of (chunk, score) tuples from search.
-            radius: Number of adjacent chunks to include before/after each chunk.
+            search_results: List of SearchResult objects from search.
+            radius: Number of adjacent items to include before/after.
                    If None, uses config.processing.context_chunk_radius.
 
         Returns:
-            List of (chunk, score) tuples with expanded and merged context chunks.
+            List of SearchResult objects with expanded content and resolved provenance.
         """
         if radius is None:
             radius = self._config.processing.context_chunk_radius
         if radius == 0:
             return search_results
 
-        # Group chunks by document_id to handle merging within documents
-        document_groups = {}
-        for chunk, score in search_results:
-            doc_id = chunk.document_id
+        # Group by document_id for efficient processing
+        document_groups: dict[str | None, list[SearchResult]] = {}
+        for result in search_results:
+            doc_id = result.document_id
             if doc_id not in document_groups:
                 document_groups[doc_id] = []
-            document_groups[doc_id].append((chunk, score))
+            document_groups[doc_id].append(result)
 
-        results = []
+        expanded_results = []
 
-        for doc_id, doc_chunks in document_groups.items():
-            # Get all expanded ranges for this document
-            expanded_ranges = []
-            for chunk, score in doc_chunks:
-                adjacent_chunks = await self.chunk_repository.get_adjacent_chunks(
-                    chunk, radius
+        for doc_id, doc_results in document_groups.items():
+            if doc_id is None:
+                expanded_results.extend(doc_results)
+                continue
+
+            # Fetch the document to get DoclingDocument
+            doc = await self.get_document_by_id(doc_id)
+            if doc is None:
+                expanded_results.extend(doc_results)
+                continue
+
+            docling_doc = doc.get_docling_document()
+
+            # Check if we can use DoclingDocument-based expansion
+            has_docling = docling_doc is not None
+            has_refs = any(r.doc_item_refs for r in doc_results)
+
+            if has_docling and has_refs:
+                # Use DoclingDocument-based expansion
+                expanded = await self._expand_with_docling(
+                    doc_results, docling_doc, radius
                 )
+                expanded_results.extend(expanded)
+            else:
+                # Fall back to chunk-based expansion
+                expanded = await self._expand_with_chunks(doc_id, doc_results, radius)
+                expanded_results.extend(expanded)
 
-                all_chunks = adjacent_chunks + [chunk]
+        return expanded_results
 
-                # Get the range of orders for this expanded chunk
-                orders = [c.order for c in all_chunks]
-                min_order = min(orders)
-                max_order = max(orders)
+    async def _expand_with_docling(
+        self,
+        results: list[SearchResult],
+        docling_doc,
+        radius: int,
+    ) -> list[SearchResult]:
+        """Expand results using DoclingDocument structure."""
+        from haiku.rag.store.models.chunk import BoundingBox
 
+        # Build index of all DocItems for expansion
+        all_items = list(docling_doc.iterate_items())
+        ref_to_index: dict[str, int] = {}
+
+        # Map refs to indices
+        for i, (_, item) in enumerate(all_items):
+            self_ref = getattr(item, "self_ref", None)
+            if self_ref:
+                ref_to_index[self_ref] = i
+
+        expanded_results = []
+
+        for result in results:
+            if not result.doc_item_refs:
+                expanded_results.append(result)
+                continue
+
+            # Find indices of all refs in this result
+            indices = []
+            for ref in result.doc_item_refs:
+                if ref in ref_to_index:
+                    indices.append(ref_to_index[ref])
+
+            if not indices:
+                expanded_results.append(result)
+                continue
+
+            # Expand range
+            min_idx = max(0, min(indices) - radius)
+            max_idx = min(len(all_items) - 1, max(indices) + radius)
+
+            # Collect expanded DocItems
+            expanded_content_parts = []
+            expanded_refs = []
+            expanded_page_numbers: set[int] = set()
+            expanded_labels: set[str] = set()
+            expanded_bboxes: list[BoundingBox] = []
+
+            for i in range(min_idx, max_idx + 1):
+                _, item = all_items[i]
+
+                # Get content
+                text = getattr(item, "text", None)
+                if text:
+                    expanded_content_parts.append(text)
+
+                # Get self_ref
+                self_ref = getattr(item, "self_ref", None)
+                if self_ref:
+                    expanded_refs.append(self_ref)
+
+                # Get label
+                label = getattr(item, "label", None)
+                if label:
+                    expanded_labels.add(
+                        str(label.value) if hasattr(label, "value") else str(label)
+                    )
+
+                # Get provenance (page numbers and bounding boxes)
+                prov = getattr(item, "prov", None)
+                if prov:
+                    for prov_item in prov:
+                        page_no = getattr(prov_item, "page_no", None)
+                        if page_no is not None:
+                            expanded_page_numbers.add(page_no)
+
+                        bbox = getattr(prov_item, "bbox", None)
+                        if bbox is not None:
+                            expanded_bboxes.append(
+                                BoundingBox(
+                                    page_no=page_no or 0,
+                                    left=bbox.l,
+                                    top=bbox.t,
+                                    right=bbox.r,
+                                    bottom=bbox.b,
+                                )
+                            )
+
+            expanded_results.append(
+                SearchResult(
+                    content="\n\n".join(expanded_content_parts),
+                    score=result.score,
+                    chunk_id=result.chunk_id,
+                    document_id=result.document_id,
+                    document_uri=result.document_uri,
+                    document_title=result.document_title,
+                    doc_item_refs=expanded_refs,
+                    page_numbers=sorted(expanded_page_numbers),
+                    headings=result.headings,
+                    labels=sorted(expanded_labels),
+                    bounding_boxes=expanded_bboxes if expanded_bboxes else None,
+                )
+            )
+
+        return expanded_results
+
+    async def _expand_with_chunks(
+        self,
+        doc_id: str,
+        results: list[SearchResult],
+        radius: int,
+    ) -> list[SearchResult]:
+        """Expand results using chunk-based adjacency."""
+        # Fetch all chunks for this document
+        all_chunks = await self.chunk_repository.get_by_document_id(doc_id)
+        if not all_chunks:
+            return results
+
+        # Build content -> chunk mapping and order -> chunk mapping
+        content_to_chunk = {c.content: c for c in all_chunks}
+        chunk_by_order = {c.order: c for c in all_chunks}
+        max_order = max(chunk_by_order.keys())
+        min_order = min(chunk_by_order.keys())
+
+        # Build expanded ranges for merging
+        expanded_ranges = []
+
+        for result in results:
+            # Find matching chunk by content
+            matching_chunk = content_to_chunk.get(result.content)
+            if matching_chunk is None:
                 expanded_ranges.append(
                     {
-                        "original_chunk": chunk,
-                        "score": score,
-                        "min_order": min_order,
-                        "max_order": max_order,
-                        "all_chunks": sorted(all_chunks, key=lambda c: c.order),
+                        "original_result": result,
+                        "score": result.score,
+                        "min_order": -1,
+                        "max_order": -1,
+                        "chunks": [],
                     }
                 )
+                continue
 
-            # Merge overlapping/adjacent ranges
-            merged_ranges = self._merge_overlapping_ranges(expanded_ranges)
+            # Calculate range
+            start_order = max(min_order, matching_chunk.order - radius)
+            end_order = min(max_order, matching_chunk.order + radius)
 
-            # Create merged chunks
-            for merged_range in merged_ranges:
-                combined_content_parts = [c.content for c in merged_range["all_chunks"]]
+            range_chunks = [
+                chunk_by_order[o]
+                for o in range(start_order, end_order + 1)
+                if o in chunk_by_order
+            ]
 
-                # Use the first original chunk for metadata
-                original_chunk = merged_range["original_chunks"][0]
+            expanded_ranges.append(
+                {
+                    "original_result": result,
+                    "score": result.score,
+                    "min_order": start_order,
+                    "max_order": end_order,
+                    "chunks": range_chunks,
+                }
+            )
 
-                merged_chunk = Chunk(
-                    id=original_chunk.id,
-                    document_id=original_chunk.document_id,
-                    content="".join(combined_content_parts),
-                    metadata=original_chunk.metadata,
-                    document_uri=original_chunk.document_uri,
-                    document_title=original_chunk.document_title,
-                    document_meta=original_chunk.document_meta,
+        # Merge overlapping ranges
+        merged_ranges = self._merge_chunk_ranges(expanded_ranges)
+
+        # Convert to SearchResults
+        expanded_results = []
+        for merged in merged_ranges:
+            if not merged["chunks"]:
+                # No chunks found, return original
+                expanded_results.append(merged["original_results"][0])
+                continue
+
+            combined_content = "".join(c.content for c in merged["chunks"])
+            original = merged["original_results"][0]
+            best_score = max(merged["scores"])
+
+            expanded_results.append(
+                SearchResult(
+                    content=combined_content,
+                    score=best_score,
+                    chunk_id=original.chunk_id,
+                    document_id=original.document_id,
+                    document_uri=original.document_uri,
+                    document_title=original.document_title,
+                    doc_item_refs=original.doc_item_refs,
+                    page_numbers=original.page_numbers,
+                    headings=original.headings,
+                    labels=original.labels,
+                    bounding_boxes=original.bounding_boxes,
                 )
+            )
 
-                # Use the highest score from merged chunks
-                best_score = max(merged_range["scores"])
-                results.append((merged_chunk, best_score))
+        return expanded_results
 
-        return results
+    def _merge_chunk_ranges(self, expanded_ranges: list[dict]) -> list[dict]:
+        """Merge overlapping or adjacent chunk ranges."""
+        # Filter out ranges without chunks
+        valid_ranges = [r for r in expanded_ranges if r["chunks"]]
+        invalid_ranges = [r for r in expanded_ranges if not r["chunks"]]
 
-    def _merge_overlapping_ranges(self, expanded_ranges):
-        """Merge overlapping or adjacent expanded ranges."""
-        if not expanded_ranges:
-            return []
+        if not valid_ranges:
+            return [
+                {
+                    "original_results": [r["original_result"]],
+                    "scores": [r["score"]],
+                    "chunks": [],
+                }
+                for r in invalid_ranges
+            ]
 
         # Sort by min_order
-        sorted_ranges = sorted(expanded_ranges, key=lambda x: x["min_order"])
+        sorted_ranges = sorted(valid_ranges, key=lambda x: x["min_order"])
         merged = []
 
         current = {
             "min_order": sorted_ranges[0]["min_order"],
             "max_order": sorted_ranges[0]["max_order"],
-            "original_chunks": [sorted_ranges[0]["original_chunk"]],
+            "original_results": [sorted_ranges[0]["original_result"]],
             "scores": [sorted_ranges[0]["score"]],
-            "all_chunks": sorted_ranges[0]["all_chunks"],
+            "chunks": sorted_ranges[0]["chunks"],
         }
 
         for range_info in sorted_ranges[1:]:
-            # Check if ranges overlap or are adjacent (max_order + 1 >= min_order)
+            # Check if ranges overlap or are adjacent
             if current["max_order"] >= range_info["min_order"] - 1:
                 # Merge ranges
                 current["max_order"] = max(
                     current["max_order"], range_info["max_order"]
                 )
-                current["original_chunks"].append(range_info["original_chunk"])
+                current["original_results"].append(range_info["original_result"])
                 current["scores"].append(range_info["score"])
 
-                # Merge all_chunks and deduplicate by order
-                all_chunks_dict = {}
-                for chunk in current["all_chunks"] + range_info["all_chunks"]:
-                    order = chunk.order
-                    all_chunks_dict[order] = chunk
-                current["all_chunks"] = [
-                    all_chunks_dict[order] for order in sorted(all_chunks_dict.keys())
-                ]
+                # Merge chunks and deduplicate by order
+                chunks_dict = {c.order: c for c in current["chunks"]}
+                for chunk in range_info["chunks"]:
+                    chunks_dict[chunk.order] = chunk
+                current["chunks"] = [chunks_dict[o] for o in sorted(chunks_dict.keys())]
             else:
-                # No overlap, add current to merged and start new
                 merged.append(current)
                 current = {
                     "min_order": range_info["min_order"],
                     "max_order": range_info["max_order"],
-                    "original_chunks": [range_info["original_chunk"]],
+                    "original_results": [range_info["original_result"]],
                     "scores": [range_info["score"]],
-                    "all_chunks": range_info["all_chunks"],
+                    "chunks": range_info["chunks"],
                 }
 
-        # Add the last range
         merged.append(current)
+
+        # Add back invalid ranges
+        for r in invalid_ranges:
+            merged.append(
+                {
+                    "original_results": [r["original_result"]],
+                    "scores": [r["score"]],
+                    "chunks": [],
+                }
+            )
+
         return merged
 
     async def ask(

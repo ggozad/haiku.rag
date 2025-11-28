@@ -123,11 +123,12 @@ async def test_mcp_search_documents():
         db_path = Path(temp_dir) / "test.lancedb"
         mcp = create_mcp_server(db_path)
 
-        from haiku.rag.store.models.chunk import Chunk
+        from haiku.rag.store.models import SearchResult
 
-        mock_chunk1 = Chunk(content="Result 1", document_id="doc1")
-        mock_chunk2 = Chunk(content="Result 2", document_id="doc2")
-        mock_results = [(mock_chunk1, 0.9), (mock_chunk2, 0.8)]
+        mock_results = [
+            SearchResult(content="Result 1", score=0.9, document_id="doc1"),
+            SearchResult(content="Result 2", score=0.8, document_id="doc2"),
+        ]
 
         with patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class:
             mock_rag = AsyncMock()

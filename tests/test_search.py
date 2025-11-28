@@ -3,6 +3,7 @@ from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.store.models import SearchResult
 
 
 @pytest.mark.asyncio
@@ -182,5 +183,64 @@ async def test_search_score_types(temp_db_path):
             assert scores[i] >= scores[i + 1], (
                 f"{search_type} results should be sorted by score descending"
             )
+
+    client.close()
+
+
+@pytest.mark.asyncio
+async def test_search_returns_search_result(temp_db_path):
+    """Test that client.search() returns SearchResult with provenance info."""
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
+
+    await client.create_document(
+        content="Machine learning models can classify images with high accuracy.",
+        uri="https://example.com/ml.html",
+        title="ML Guide",
+    )
+
+    results = await client.search("machine learning", limit=3)
+
+    assert len(results) > 0
+    result = results[0]
+    assert isinstance(result, SearchResult)
+    assert result.content
+    assert result.score > 0
+    assert result.document_uri == "https://example.com/ml.html"
+    assert result.document_title == "ML Guide"
+    # page_numbers and headings come from chunk metadata
+    assert isinstance(result.page_numbers, list)
+    assert isinstance(result.labels, list)
+
+    client.close()
+
+
+@pytest.mark.asyncio
+async def test_search_graceful_degradation(temp_db_path):
+    """Test search works when docling data is unavailable."""
+    from haiku.rag.store.models import Chunk
+
+    client = HaikuRAG(db_path=temp_db_path, config=Config)
+
+    # Create document with custom chunks (no docling document)
+    custom_chunks = [
+        Chunk(content="Custom chunk without docling metadata", metadata={}),
+    ]
+    await client.create_document(
+        content="Document with custom chunks",
+        uri="https://example.com/custom.html",
+        chunks=custom_chunks,
+    )
+
+    results = await client.search("custom chunk", limit=3)
+
+    assert len(results) > 0
+    result = results[0]
+    assert isinstance(result, SearchResult)
+    assert result.content
+    # Bounding boxes should be None when docling is unavailable
+    assert result.bounding_boxes is None
+    # Metadata defaults should still work
+    assert result.page_numbers == []
+    assert result.labels == []
 
     client.close()

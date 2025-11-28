@@ -24,17 +24,17 @@ async def test_search_with_uri_filter(temp_db_path):
             "tutorial", limit=5, filter="uri LIKE '%example.com%'"
         )
         assert len(results) > 0
-        for chunk, _ in results:
-            assert chunk.document_uri is not None
-            assert "example.com" in chunk.document_uri
+        for result in results:
+            assert result.document_uri is not None
+            assert "example.com" in result.document_uri
 
         # Filter by exact URI
         results = await client.search(
             "tutorial", limit=5, filter="uri = 'https://other.com/java.html'"
         )
         assert len(results) > 0
-        for chunk, _ in results:
-            assert chunk.document_uri == "https://other.com/java.html"
+        for result in results:
+            assert result.document_uri == "https://other.com/java.html"
 
 
 @pytest.mark.asyncio
@@ -58,9 +58,9 @@ async def test_search_with_title_filter(temp_db_path):
             "programming", limit=5, filter="title LIKE '%Python%'"
         )
         assert len(results) > 0
-        for chunk, _ in results:
-            assert chunk.document_title is not None
-            assert "Python" in chunk.document_title
+        for result in results:
+            assert result.document_title is not None
+            assert "Python" in result.document_title
 
 
 @pytest.mark.asyncio
@@ -89,11 +89,11 @@ async def test_search_with_combined_filters(temp_db_path):
             "AI", limit=5, filter="uri LIKE '%arxiv%' AND title LIKE '%Machine%'"
         )
         assert len(results) > 0
-        for chunk, _ in results:
-            assert chunk.document_uri is not None
-            assert chunk.document_title is not None
-            assert "arxiv" in chunk.document_uri
-            assert "Machine" in chunk.document_title
+        for result in results:
+            assert result.document_uri is not None
+            assert result.document_title is not None
+            assert "arxiv" in result.document_uri
+            assert "Machine" in result.document_title
 
         # Filter with OR condition (if supported)
         results = await client.search(
@@ -159,15 +159,15 @@ async def test_search_filter_with_all_search_types(temp_db_path):
             filter="uri LIKE '%ai.example%'",
         )
         assert len(results) > 0
-        for chunk, _ in results:
-            assert chunk.document_uri is not None
-            assert "ai.example" in chunk.document_uri
+        for result in results:
+            assert result.document_uri is not None
+            assert "ai.example" in result.document_uri
 
         # Test FTS search with filter
         results = await client.search(
             "learning", limit=5, search_type="fts", filter="title = 'ML Guide'"
         )
-        assert all(chunk.document_title == "ML Guide" for chunk, _ in results)
+        assert all(r.document_title == "ML Guide" for r in results)
 
         # Test hybrid search with filter (default)
         results = await client.search(
@@ -176,6 +176,6 @@ async def test_search_filter_with_all_search_types(temp_db_path):
             search_type="hybrid",
             filter="uri LIKE '%other.com%'",
         )
-        for chunk, _ in results:
-            assert chunk.document_uri is not None
-            assert "other.com" in chunk.document_uri
+        for result in results:
+            assert result.document_uri is not None
+            assert "other.com" in result.document_uri

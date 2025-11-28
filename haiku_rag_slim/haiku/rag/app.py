@@ -3,6 +3,7 @@ import json
 import logging
 from importlib.metadata import version as pkg_version
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -16,8 +17,10 @@ from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
-from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import format_bytes
 
 logger = logging.getLogger(__name__)
@@ -260,8 +263,8 @@ class HaikuRAGApp:
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
                 return
-            for chunk, score in results:
-                self._rich_print_search_result(chunk, score)
+            for result in results:
+                self._rich_print_search_result(result)
 
     async def ask(
         self,
@@ -541,22 +544,25 @@ class HaikuRAGApp:
         self.console.print(content)
         self.console.rule()
 
-    def _rich_print_search_result(self, chunk: Chunk, score: float):
-        """Format a search result chunk for display."""
-        content = Markdown(chunk.content)
+    def _rich_print_search_result(self, result: "SearchResult"):
+        """Format a search result for display."""
+        content = Markdown(result.content)
         self.console.print(
-            f"[repr.attrib_name]document_id[/repr.attrib_name]: {chunk.document_id} "
-            f"[repr.attrib_name]score[/repr.attrib_name]: {score:.4f}"
+            f"[repr.attrib_name]document_id[/repr.attrib_name]: {result.document_id} "
+            f"[repr.attrib_name]score[/repr.attrib_name]: {result.score:.4f}"
         )
-        if chunk.document_uri:
+        if result.document_uri:
             self.console.print("[repr.attrib_name]document uri[/repr.attrib_name]:")
-            self.console.print(chunk.document_uri)
-        if chunk.document_title:
+            self.console.print(result.document_uri)
+        if result.document_title:
             self.console.print("[repr.attrib_name]document title[/repr.attrib_name]:")
-            self.console.print(chunk.document_title)
-        if chunk.document_meta:
-            self.console.print("[repr.attrib_name]document meta[/repr.attrib_name]:")
-            self.console.print(chunk.document_meta)
+            self.console.print(result.document_title)
+        if result.page_numbers:
+            self.console.print("[repr.attrib_name]pages[/repr.attrib_name]:")
+            self.console.print(", ".join(str(p) for p in result.page_numbers))
+        if result.headings:
+            self.console.print("[repr.attrib_name]headings[/repr.attrib_name]:")
+            self.console.print(" > ".join(result.headings))
         self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
         self.console.print(content)
         self.console.rule()
