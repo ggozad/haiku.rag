@@ -181,3 +181,86 @@ def test_document_get_docling_document_none():
 
     assert document.docling_document_json is None
     assert document.get_docling_document() is None
+
+
+def test_document_get_docling_document_caching():
+    """Test that get_docling_document uses LRU cache keyed by document ID."""
+    from haiku.rag.store.models.document import (
+        _docling_document_cache,
+        invalidate_docling_document_cache,
+    )
+
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "Test text",
+                "orig": "Test text",
+                "label": "paragraph",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+
+    import json
+
+    json_str = json.dumps(doc_json)
+
+    # Clear cache to get clean state
+    _docling_document_cache.clear()
+
+    document = Document(
+        id="test-doc-id", content="Test content", docling_document_json=json_str
+    )
+
+    # First call - not in cache
+    assert "test-doc-id" not in _docling_document_cache
+    doc1 = document.get_docling_document()
+    assert "test-doc-id" in _docling_document_cache
+
+    # Second call - cache hit, same object
+    doc2 = document.get_docling_document()
+    assert doc1 is doc2
+
+    # Invalidation removes from cache
+    invalidate_docling_document_cache("test-doc-id")
+    assert "test-doc-id" not in _docling_document_cache
+
+
+def test_document_get_docling_document_no_id_no_cache():
+    """Test that documents without ID don't use cache."""
+    from haiku.rag.store.models.document import _docling_document_cache
+
+    doc_json = {
+        "name": "test_doc",
+        "texts": [],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+
+    import json
+
+    json_str = json.dumps(doc_json)
+
+    # Clear cache
+    _docling_document_cache.clear()
+
+    # Document without ID
+    document = Document(content="Test content", docling_document_json=json_str)
+
+    doc1 = document.get_docling_document()
+    doc2 = document.get_docling_document()
+
+    # Cache should remain empty (no ID to cache by)
+    assert len(_docling_document_cache) == 0
+
+    # Each call parses fresh (different objects)
+    assert doc1 is not doc2
