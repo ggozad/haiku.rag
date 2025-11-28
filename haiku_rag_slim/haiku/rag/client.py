@@ -101,6 +101,8 @@ class HaikuRAG:
             uri=uri,
             title=title,
             metadata=metadata or {},
+            docling_document_json=docling_document.model_dump_json(),
+            docling_version=docling_document.version,
         )
         return await self.document_repository._create_and_chunk(
             document, docling_document, chunks
@@ -125,21 +127,27 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
-        document = Document(
-            content=content,
-            uri=uri,
-            title=title,
-            metadata=metadata or {},
-        )
-
         # Only create docling_document if we need to generate chunks
         if chunks is None:
             # Use converter to convert text
             converter = get_converter(self._config)
             docling_document = await converter.convert_text(content)
+            docling_json = docling_document.model_dump_json()
+            docling_version = docling_document.version
         else:
             # Chunks already provided, no conversion needed
             docling_document = None
+            docling_json = None
+            docling_version = None
+
+        document = Document(
+            content=content,
+            uri=uri,
+            title=title,
+            metadata=metadata or {},
+            docling_document_json=docling_json,
+            docling_version=docling_version,
+        )
 
         return await self.document_repository._create_and_chunk(
             document, docling_document, chunks
@@ -269,6 +277,8 @@ class HaikuRAG:
             # Update existing document
             existing_doc.content = docling_document.export_to_markdown()
             existing_doc.metadata = metadata
+            existing_doc.docling_document_json = docling_document.model_dump_json()
+            existing_doc.docling_version = docling_document.version
             if title is not None:
                 existing_doc.title = title
             return await self.document_repository._update_and_rechunk(
@@ -363,6 +373,8 @@ class HaikuRAG:
             if existing_doc:
                 existing_doc.content = docling_document.export_to_markdown()
                 existing_doc.metadata = metadata
+                existing_doc.docling_document_json = docling_document.model_dump_json()
+                existing_doc.docling_version = docling_document.version
                 if title is not None:
                     existing_doc.title = title
                 return await self.document_repository._update_and_rechunk(
@@ -435,6 +447,10 @@ class HaikuRAG:
         converter = get_converter(self._config)
         docling_document = await converter.convert_text(document.content)
 
+        # Store DoclingDocument JSON
+        document.docling_document_json = docling_document.model_dump_json()
+        document.docling_version = docling_document.version
+
         return await self.document_repository._update_and_rechunk(
             document, docling_document
         )
@@ -476,7 +492,7 @@ class HaikuRAG:
         if content is not None or chunks is not None:
             # Content changed or custom chunks provided - need to rechunk
             if chunks is not None:
-                # Use custom chunks
+                # Use custom chunks - no docling document to store
                 # Delete existing chunks
                 await self.chunk_repository.delete_by_document_id(document_id)
 
@@ -495,6 +511,11 @@ class HaikuRAG:
                 # Auto-generate chunks from content
                 converter = get_converter(self._config)
                 docling_document = await converter.convert_text(existing_doc.content)
+
+                # Store DoclingDocument JSON
+                existing_doc.docling_document_json = docling_document.model_dump_json()
+                existing_doc.docling_version = docling_document.version
+
                 return await self.document_repository._update_and_rechunk(
                     existing_doc, docling_document
                 )
@@ -843,12 +864,24 @@ class HaikuRAG:
                         "Source missing for %s, re-embedding from content", doc.uri
                     )
                     docling_document = await converter.convert_text(doc.content)
+
+                    # Update document with docling JSON
+                    doc.docling_document_json = docling_document.model_dump_json()
+                    doc.docling_version = docling_document.version
+                    await self.document_repository.update(doc)
+
                     await self.chunk_repository.create_chunks_for_document(
                         doc.id, docling_document
                     )
                     yield doc.id
             else:
                 docling_document = await converter.convert_text(doc.content)
+
+                # Update document with docling JSON
+                doc.docling_document_json = docling_document.model_dump_json()
+                doc.docling_version = docling_document.version
+                await self.document_repository.update(doc)
+
                 await self.chunk_repository.create_chunks_for_document(
                     doc.id, docling_document
                 )
