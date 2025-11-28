@@ -1007,3 +1007,149 @@ async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path
         assert "Chunk 7" in chunk5_expanded.content
         assert "Chunk 0" not in chunk5_expanded.content
         assert score2 == 0.7
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_stores_docling_json(temp_db_path):
+    """Test that create_document stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        doc = await client.create_document(
+            content="Test content for docling storage",
+            uri="test://docling",
+            metadata={"test": "docling_storage"},
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document_json is not None
+        assert doc.docling_version is not None
+
+        # Verify JSON is valid and can be parsed
+        import json
+
+        parsed = json.loads(doc.docling_document_json)
+        assert "version" in parsed
+        assert parsed["version"] == doc.docling_version
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_with_custom_chunks_no_docling_json(temp_db_path):
+    """Test that create_document with custom chunks does not store docling JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+
+        doc = await client.create_document(content="Test content", chunks=custom_chunks)
+
+        assert doc.id is not None
+        # When custom chunks are provided, no conversion happens
+        assert doc.docling_document_json is None
+        assert doc.docling_version is None
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
+    """Test that create_document_from_source stores DoclingDocument JSON for files."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("Test file content")
+
+            doc = await client.create_document_from_source(temp_path)
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert doc.docling_document_json is not None
+            assert doc.docling_version is not None
+
+            # Verify the stored document also has the JSON
+            retrieved = await client.get_document_by_id(doc.id)
+            assert retrieved is not None
+            assert retrieved.docling_document_json == doc.docling_document_json
+            assert retrieved.docling_version == doc.docling_version
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_stores_docling_json(temp_db_path):
+    """Test that update_document stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document_json
+
+        # Update the document
+        doc.content = "Updated content"
+        updated_doc = await client.update_document(doc)
+
+        assert updated_doc.docling_document_json is not None
+        assert updated_doc.docling_version is not None
+        # JSON should be different because content changed
+        assert updated_doc.docling_document_json != original_json
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_fields_stores_docling_json(temp_db_path):
+    """Test that update_document_fields stores DoclingDocument JSON when content changes."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document_json
+
+        # Update content via update_document_fields
+        updated_doc = await client.update_document_fields(
+            document_id=doc.id, content="New content via fields update"
+        )
+
+        assert updated_doc.docling_document_json is not None
+        assert updated_doc.docling_version is not None
+        # JSON should be different because content changed
+        assert updated_doc.docling_document_json != original_json
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
+    temp_db_path,
+):
+    """Test that update_document_fields with custom chunks does not update docling JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document_json
+
+        # Update with custom chunks
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+        updated_doc = await client.update_document_fields(
+            document_id=doc.id, content="New content", chunks=custom_chunks
+        )
+
+        # Docling JSON should remain unchanged (no conversion when custom chunks provided)
+        assert updated_doc.docling_document_json == original_json
+
+
+@pytest.mark.asyncio
+async def test_client_file_update_stores_docling_json(temp_db_path):
+    """Test that updating a file re-stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("Original content")
+
+            # Create initial document
+            doc1 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc1, Document)
+            original_json = doc1.docling_document_json
+            original_version = doc1.docling_version
+
+            # Modify file
+            temp_path.write_text("Modified content")
+
+            # Update document from source
+            doc2 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc2, Document)
+            assert doc2.id == doc1.id  # Same document
+
+            # Docling JSON should be updated
+            assert doc2.docling_document_json is not None
+            assert doc2.docling_document_json != original_json
+            assert doc2.docling_version == original_version  # Version stays same
