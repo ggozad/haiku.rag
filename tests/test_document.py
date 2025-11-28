@@ -138,3 +138,46 @@ async def test_document_list_with_filter(qa_corpus: Dataset, temp_db_path):
     assert {doc.id for doc in example_documents} == {created_doc1.id, created_doc3.id}
 
     store.close()
+
+
+def test_document_get_docling_document():
+    """Test parsing stored DoclingDocument JSON."""
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "Test text",
+                "orig": "Test text",
+                "label": "paragraph",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+
+    import json
+
+    document = Document(
+        content="Test content",
+        docling_document_json=json.dumps(doc_json),
+        docling_version="1.3.0",
+    )
+
+    docling_doc = document.get_docling_document()
+
+    assert docling_doc is not None
+    assert docling_doc.name == "test_doc"
+    assert len(docling_doc.texts) == 1
+    assert docling_doc.texts[0].text == "Test text"
+
+
+def test_document_get_docling_document_none():
+    """Test get_docling_document returns None when not stored."""
+    document = Document(content="Test content")
+
+    assert document.docling_document_json is None
+    assert document.get_docling_document() is None
