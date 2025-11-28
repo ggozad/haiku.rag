@@ -73,6 +73,7 @@ nav:
       - MCP: mcp.md
       - Inspector: inspector.md
       - Benchmarks: benchmarks.md
+      - Changelog: changelog.md
 markdown_extensions:
   - admonition
   - attr_list
@@ -83,7 +84,8 @@ markdown_extensions:
       pygments_lang_class: true
       use_pygments: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ['.']
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

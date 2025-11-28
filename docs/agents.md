@@ -1,4 +1,4 @@
-## Agents
+# Agents
 
 Three agentic flows are provided by haiku.rag:
 
@@ -7,6 +7,8 @@ Three agentic flows are provided by haiku.rag:
 - Research Multi‑Agent — a multi‑step, analyzable research workflow
 
 For an interactive example using Pydantic AI and AG-UI, see the [Interactive Research Assistant](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research) example ([demo video](https://vimeo.com/1128874386)). The demo uses a knowledge base containing haiku.rag's code and documentation.
+
+See [QA and Research Configuration](configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
 
 
 ### Simple QA Agent

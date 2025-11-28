@@ -9,7 +9,7 @@ from pathlib import Path
 from haiku.rag.client import HaikuRAG
 
 # Use as async context manager (recommended)
-async with HaikuRAG("Path(path/to/database.lancedb")) as client:
+async with HaikuRAG("path/to/database.lancedb") as client:
     # Your code here
     pass
 ```

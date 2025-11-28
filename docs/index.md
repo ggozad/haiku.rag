@@ -4,18 +4,18 @@
 
 ## Features
 
-- **Local LanceDB**: No need to run additional servers
-- **Support for various embedding providers**: Ollama, VoyageAI, OpenAI or add your own
-- **Native Hybrid Search**: Vector search combined with full-text search using native LanceDB RRF reranking
-- **Reranking**: Optional result reranking with MixedBread AI or Cohere
-- **Question Answering**: Built-in QA agents using Ollama, OpenAI, or Anthropic
-- **File monitoring**: Automatically index files when run as a server
-- **Extended file format support**: Parse 40+ file formats including PDF, DOCX, HTML, Markdown, code files and more. Or add a URL!
+- **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
+- **Multiple embedding providers**: Ollama, LM Studio, VoyageAI, OpenAI, vLLM
+- **Multiple QA providers**: Any provider/model supported by Pydantic AI (Ollama, LM Studio, OpenAI, Anthropic, etc.)
+- **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
+- **Reranking**: Optional result reranking with MixedBread AI, Cohere, Zero Entropy, or vLLM
+- **Question answering**: Built-in QA agents on your documents
+- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
+- **File monitoring**: Auto-index files when run as server
+- **Extended file format support**: Parse PDF, DOCX, HTML, Markdown, images, code files and more
 - **Flexible document processing**: Local processing with docling or remote with [docling-serve](remote-processing.md)
-- **MCP server**: Exposes functionality as MCP tools
-- **CLI commands**: Access all functionality from your terminal
-  - Add sources from text, files, or URLs, optionally with a human‑readable title
-- **Python client**: Call `haiku.rag` from your own python applications
+- **MCP server**: Expose as tools for AI assistants
+- **CLI & Python API**: Use from command line or Python
 
 ## Quick Start
 
