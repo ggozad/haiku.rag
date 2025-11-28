@@ -231,3 +231,101 @@ def test_chunk_metadata_defaults():
     assert chunk_meta.headings is None
     assert chunk_meta.labels == []
     assert chunk_meta.page_numbers == []
+
+
+def test_chunk_metadata_resolve_doc_items():
+    """Test resolving doc_item_refs to actual DocItem objects."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    # Create a minimal DoclingDocument with some text items
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "First text",
+                "orig": "First text",
+                "label": "paragraph",
+            },
+            {
+                "self_ref": "#/texts/1",
+                "text": "Second text",
+                "orig": "Second text",
+                "label": "title",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    docling_doc = DoclingDocument.model_validate(doc_json)
+
+    # Create chunk metadata with refs
+    chunk_meta = ChunkMetadata(
+        doc_item_refs=["#/texts/0", "#/texts/1"],
+        labels=["paragraph", "title"],
+    )
+
+    # Resolve refs
+    doc_items = chunk_meta.resolve_doc_items(docling_doc)
+
+    assert len(doc_items) == 2
+    assert getattr(doc_items[0], "text") == "First text"
+    assert getattr(doc_items[1], "text") == "Second text"
+
+
+def test_chunk_metadata_resolve_doc_items_graceful_degradation():
+    """Test that invalid refs are skipped gracefully."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "Only text",
+                "orig": "Only text",
+                "label": "paragraph",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    docling_doc = DoclingDocument.model_validate(doc_json)
+
+    # Create chunk metadata with one valid and one invalid ref
+    chunk_meta = ChunkMetadata(
+        doc_item_refs=["#/texts/0", "#/texts/999", "#/invalid/path"],
+    )
+
+    # Resolve refs - invalid ones should be skipped
+    doc_items = chunk_meta.resolve_doc_items(docling_doc)
+
+    assert len(doc_items) == 1
+    assert getattr(doc_items[0], "text") == "Only text"
+
+
+def test_chunk_metadata_resolve_empty_refs():
+    """Test resolving with no refs returns empty list."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    doc_json = {
+        "name": "test_doc",
+        "texts": [],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    docling_doc = DoclingDocument.model_validate(doc_json)
+
+    chunk_meta = ChunkMetadata()
+    doc_items = chunk_meta.resolve_doc_items(docling_doc)
+
+    assert doc_items == []
