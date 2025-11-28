@@ -2,7 +2,7 @@
 
 name = "haiku.rag"
 description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB"
-version = "0.19.3"
+version = "0.19.4"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]==0.19.3",
+    "haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]==0.19.4",
 ]
 
 [project.scripts]

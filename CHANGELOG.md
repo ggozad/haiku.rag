@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.19.4] - 2025-11-28
+
 ### Added
 
 - **Rebuild Modes**: New options for `rebuild` command to control what gets rebuilt
