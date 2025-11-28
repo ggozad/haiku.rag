@@ -6,6 +6,16 @@ from packaging.version import Version, parse
 
 from haiku.rag.store.engine import Store
 
+from .v0_9_3 import upgrade_fts_phrase as upgrade_0_9_3_fts  # noqa: E402
+from .v0_9_3 import upgrade_order as upgrade_0_9_3_order  # noqa: E402
+from .v0_10_1 import upgrade_add_title as upgrade_0_10_1_add_title  # noqa: E402
+from .v0_19_6 import (  # noqa: E402
+    upgrade_embeddings_model_config as upgrade_0_19_6_embeddings,
+)
+from .v0_20_0 import (
+    upgrade_add_docling_document as upgrade_0_20_0_docling,  # noqa: E402
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,14 +63,8 @@ def run_pending_upgrades(store: Store, from_version: str, to_version: str) -> No
         logger.info("Completed upgrade %s", step.version)
 
 
-from .v0_9_3 import upgrade_fts_phrase as upgrade_0_9_3_fts  # noqa: E402
-from .v0_9_3 import upgrade_order as upgrade_0_9_3_order  # noqa: E402
-from .v0_10_1 import upgrade_add_title as upgrade_0_10_1_add_title  # noqa: E402
-from .v0_19_6 import (  # noqa: E402
-    upgrade_embeddings_model_config as upgrade_0_19_6_embeddings,
-)
-
 upgrades.append(upgrade_0_9_3_order)
 upgrades.append(upgrade_0_9_3_fts)
 upgrades.append(upgrade_0_10_1_add_title)
 upgrades.append(upgrade_0_19_6_embeddings)
+upgrades.append(upgrade_0_20_0_docling)
