@@ -27,15 +27,20 @@ Tasks:
 
 Tool usage:
 - Always call search_and_answer before drafting any answer.
-- The tool returns snippets with verbatim `text`, a relevance `score`, and the
-  originating document identifier (document title if available, otherwise URI).
+- The tool returns snippets with:
+  - `text`: verbatim content
+  - `score`: relevance score
+  - `document_uri`: full path to the source document
+  - `document_title`: title if available
+  - `page_numbers`: list of page numbers where content appears (if available)
+  - `headings`: section heading hierarchy (if available)
 - You may call the tool multiple times to refine or broaden context, but do not
   exceed 3 total calls. Favor precision over volume.
 - Use scores to prioritize evidence, but include only the minimal subset of
   snippet texts (verbatim) in SearchAnswer.context (typically 1-4).
-- Set SearchAnswer.sources to the corresponding document identifiers for the
-  snippets you used (title if available, otherwise URI; one per snippet; same
-  order as context). Context must be text-only.
+- Set SearchAnswer.sources to include document_uri, page numbers, and headings
+  for each snippet used. Format: "document_uri (p. X, Section: Y)" or just
+  "document_uri" if no page/heading info. One source per context snippet.
 - If no relevant information is found, clearly say so and return an empty
   context list and sources list.
 

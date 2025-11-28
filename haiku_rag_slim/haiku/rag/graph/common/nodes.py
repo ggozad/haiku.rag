@@ -103,8 +103,8 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
                 ctx2: RunContext[AgentDepsT], query: str, limit: int = 6
             ) -> str:
                 results = await ctx2.deps.client.search(query, limit=limit)
-                expanded = await ctx2.deps.client.expand_context(results)
-                return "\n\n".join(chunk.content for chunk, _ in expanded)
+                results = await ctx2.deps.client.expand_context(results)
+                return "\n\n".join(r.content for r in results)
 
             # Tool is registered via decorator above
             _ = gather_context
@@ -228,17 +228,24 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
     async def search_and_answer(
         ctx2: RunContext[AgentDepsT], query: str, limit: int = 5
     ) -> str:
-        search_results = await ctx2.deps.client.search(query, limit=limit)
-        expanded = await ctx2.deps.client.expand_context(search_results)
+        results = await ctx2.deps.client.search(query, limit=limit)
+        results = await ctx2.deps.client.expand_context(results)
 
-        entries: list[dict[str, Any]] = [
-            {
-                "text": chunk.content,
-                "score": score,
-                "document_uri": (chunk.document_title or chunk.document_uri or ""),
+        entries: list[dict[str, Any]] = []
+        for r in results:
+            entry: dict[str, Any] = {
+                "text": r.content,
+                "score": r.score,
+                "document_uri": (r.document_uri or ""),
             }
-            for chunk, score in expanded
-        ]
+            if r.document_title:
+                entry["document_title"] = r.document_title
+            if r.page_numbers:
+                entry["page_numbers"] = r.page_numbers
+            if r.headings:
+                entry["headings"] = r.headings
+            entries.append(entry)
+
         if not entries:
             return f"No relevant information found in the knowledge base for: {query}"
 
