@@ -358,9 +358,32 @@ def rebuild(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    embed_only: bool = typer.Option(
+        False,
+        "--embed-only",
+        help="Only regenerate embeddings, keep existing chunks",
+    ),
+    rechunk: bool = typer.Option(
+        False,
+        "--rechunk",
+        help="Re-chunk from existing content without accessing source files",
+    ),
 ):
+    from haiku.rag.client import RebuildMode
+
+    if embed_only and rechunk:
+        typer.echo("Error: --embed-only and --rechunk are mutually exclusive")
+        raise typer.Exit(1)
+
+    if embed_only:
+        mode = RebuildMode.EMBED_ONLY
+    elif rechunk:
+        mode = RebuildMode.RECHUNK
+    else:
+        mode = RebuildMode.FULL
+
     app = create_app(db)
-    asyncio.run(app.rebuild())
+    asyncio.run(app.rebuild(mode=mode))
 
 
 @cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")

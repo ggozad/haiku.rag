@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator
+from enum import Enum
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -19,6 +20,14 @@ from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 logger = logging.getLogger(__name__)
+
+
+class RebuildMode(Enum):
+    """Mode for rebuilding the database."""
+
+    FULL = "full"  # Re-convert from source, re-chunk, re-embed
+    RECHUNK = "rechunk"  # Re-chunk from existing content, re-embed
+    EMBED_ONLY = "embed_only"  # Keep chunks, only regenerate embeddings
 
 
 class HaikuRAG:
@@ -693,62 +702,103 @@ class HaikuRAG:
         )
         return await qa_agent.answer(question)
 
-    async def rebuild_database(self) -> AsyncGenerator[str, None]:
-        """Rebuild the database by deleting all chunks and re-indexing all documents.
+    async def rebuild_database(
+        self, mode: RebuildMode = RebuildMode.FULL
+    ) -> AsyncGenerator[str, None]:
+        """Rebuild the database with the specified mode.
 
-        For documents with URIs:
-        - Re-adds from source if source exists
-        - Re-embeds from existing content if source is missing
-
-        For documents without URIs:
-        - Re-creates chunks from existing content
+        Args:
+            mode: The rebuild mode to use:
+                - FULL: Re-convert from source files, re-chunk, re-embed (default)
+                - RECHUNK: Re-chunk from existing content, re-embed (no source access)
+                - EMBED_ONLY: Keep existing chunks, only regenerate embeddings
 
         Yields:
-            int: The ID of the document currently being processed
+            The ID of the document currently being processed.
         """
-        await self.chunk_repository.delete_all()
-        self.store.recreate_embeddings_table()
-
-        converter = get_converter(self._config)
-
         # Update settings to current config
         settings_repo = SettingsRepository(self.store)
         settings_repo.save_current_settings()
 
         documents = await self.list_documents()
 
-        for doc in documents:
-            assert doc.id is not None, "Document ID should not be None"
-            if doc.uri:
-                # Document has a URI - check if source is accessible
-                source_accessible = False
-                parsed_url = urlparse(doc.uri)
+        if mode == RebuildMode.EMBED_ONLY:
+            async for doc_id in self._rebuild_embed_only(documents):
+                yield doc_id
+        elif mode == RebuildMode.RECHUNK:
+            await self.chunk_repository.delete_all()
+            self.store.recreate_embeddings_table()
+            async for doc_id in self._rebuild_rechunk(documents):
+                yield doc_id
+        else:  # FULL
+            await self.chunk_repository.delete_all()
+            self.store.recreate_embeddings_table()
+            async for doc_id in self._rebuild_full(documents):
+                yield doc_id
 
-                try:
-                    if parsed_url.scheme == "file":
-                        # Check if file exists
-                        source_path = Path(parsed_url.path)
-                        source_accessible = source_path.exists()
-                    elif parsed_url.scheme in ("http", "https"):
-                        # For URLs, we'll try to create and catch errors
-                        source_accessible = True
-                    else:
-                        source_accessible = False
-                except Exception:
-                    source_accessible = False
+        # Final maintenance
+        try:
+            await self.store.vacuum()
+        except Exception:
+            pass
+
+    async def _rebuild_embed_only(
+        self, documents: list[Document]
+    ) -> AsyncGenerator[str, None]:
+        """Re-embed all chunks without changing chunk boundaries."""
+        for doc in documents:
+            assert doc.id is not None
+            chunks = await self.chunk_repository.get_by_document_id(doc.id)
+            if not chunks:
+                continue
+
+            # Batch embed all chunk contents
+            contents = [chunk.content for chunk in chunks]
+            embeddings = await self.chunk_repository.embedder.embed(contents)
+
+            # Update each chunk with new embedding
+            for chunk, embedding in zip(chunks, embeddings):
+                assert chunk.id is not None
+                self.store.chunks_table.update(
+                    where=f"id = '{chunk.id}'",
+                    values={"vector": embedding},
+                )
+
+            yield doc.id
+
+    async def _rebuild_rechunk(
+        self, documents: list[Document]
+    ) -> AsyncGenerator[str, None]:
+        """Re-chunk and re-embed from existing document content."""
+        converter = get_converter(self._config)
+
+        for doc in documents:
+            assert doc.id is not None
+            docling_document = await converter.convert_text(doc.content)
+            await self.chunk_repository.create_chunks_for_document(
+                doc.id, docling_document
+            )
+            yield doc.id
+
+    async def _rebuild_full(
+        self, documents: list[Document]
+    ) -> AsyncGenerator[str, None]:
+        """Full rebuild: re-convert from source, re-chunk, re-embed."""
+        converter = get_converter(self._config)
+
+        for doc in documents:
+            assert doc.id is not None
+            if doc.uri:
+                source_accessible = self._check_source_accessible(doc.uri)
 
                 if source_accessible:
-                    # Source exists - delete and recreate from source
                     try:
                         await self.delete_document(doc.id)
                         new_doc = await self.create_document_from_source(
                             source=doc.uri, metadata=doc.metadata or {}
                         )
-                        # URIs always point to single files/URLs, never directories
                         assert isinstance(new_doc, Document)
-                        assert new_doc.id is not None, (
-                            "New document ID should not be None"
-                        )
+                        assert new_doc.id is not None
                         yield new_doc.id
                     except Exception as e:
                         logger.error(
@@ -758,7 +808,6 @@ class HaikuRAG:
                         )
                         continue
                 else:
-                    # Source missing - re-embed from existing content
                     logger.warning(
                         "Source missing for %s, re-embedding from content", doc.uri
                     )
@@ -768,18 +817,23 @@ class HaikuRAG:
                     )
                     yield doc.id
             else:
-                # Document without URI - re-create chunks from existing content
                 docling_document = await converter.convert_text(doc.content)
                 await self.chunk_repository.create_chunks_for_document(
                     doc.id, docling_document
                 )
                 yield doc.id
 
-        # Final maintenance: centralized vacuum to curb disk usage
+    def _check_source_accessible(self, uri: str) -> bool:
+        """Check if a document's source URI is accessible."""
+        parsed_url = urlparse(uri)
         try:
-            await self.store.vacuum()
+            if parsed_url.scheme == "file":
+                return Path(parsed_url.path).exists()
+            elif parsed_url.scheme in ("http", "https"):
+                return True
+            return False
         except Exception:
-            pass
+            return False
 
     async def vacuum(self) -> None:
         """Optimize and clean up old versions across all tables."""

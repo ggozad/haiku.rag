@@ -157,9 +157,26 @@ await client.delete_document(doc.id)
 ### Rebuilding the Database
 
 ```python
+from haiku.rag.client import RebuildMode
+
+# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
 async for doc_id in client.rebuild_database():
     print(f"Processed document {doc_id}")
+
+# Re-chunk from stored content (no source file access)
+async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK):
+    print(f"Processed document {doc_id}")
+
+# Only regenerate embeddings (fastest, keeps existing chunks)
+async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+    print(f"Processed document {doc_id}")
 ```
+
+**Rebuild modes:**
+
+- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default)
+- `RebuildMode.RECHUNK` - Re-chunk from existing document content, re-embed
+- `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 
 ## Maintenance
 
