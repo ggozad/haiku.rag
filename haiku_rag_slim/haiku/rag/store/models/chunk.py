@@ -1,4 +1,9 @@
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DocItem, DoclingDocument
 
 
 class ChunkMetadata(BaseModel):
@@ -18,6 +23,28 @@ class ChunkMetadata(BaseModel):
     headings: list[str] | None = None
     labels: list[str] = []
     page_numbers: list[int] = []
+
+    def resolve_doc_items(self, docling_document: "DoclingDocument") -> list["DocItem"]:
+        """Resolve doc_item_refs to actual DocItem objects.
+
+        Args:
+            docling_document: The parent DoclingDocument containing the items.
+
+        Returns:
+            List of resolved DocItem objects. Items that fail to resolve are skipped.
+        """
+        from docling_core.types.doc.document import RefItem
+
+        doc_items = []
+        for ref in self.doc_item_refs:
+            try:
+                ref_item = RefItem.model_validate({"$ref": ref})
+                doc_item = ref_item.resolve(docling_document)
+                doc_items.append(doc_item)
+            except Exception:
+                # Graceful degradation: skip refs that can't be resolved
+                continue
+        return doc_items
 
 
 class Chunk(BaseModel):
