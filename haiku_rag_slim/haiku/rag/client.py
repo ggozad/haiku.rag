@@ -827,6 +827,12 @@ class HaikuRAG:
         for doc in documents:
             assert doc.id is not None
             docling_document = await converter.convert_text(doc.content)
+
+            # Update document with docling JSON
+            doc.docling_document_json = docling_document.model_dump_json()
+            doc.docling_version = docling_document.version
+            await self.document_repository.update(doc)
+
             await self.chunk_repository.create_chunks_for_document(
                 doc.id, docling_document
             )
