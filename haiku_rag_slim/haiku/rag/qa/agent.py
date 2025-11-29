@@ -8,11 +8,20 @@ from haiku.rag.graph.common import get_model
 from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT, QA_SYSTEM_PROMPT_WITH_CITATIONS
 
 
-class SearchResult(BaseModel):
+class ToolSearchResult(BaseModel):
+    """Search result model exposed to the LLM tool."""
+
     content: str = Field(description="The document text content")
     score: float = Field(description="Relevance score (higher is more relevant)")
-    document_uri: str = Field(
-        description="Source title (if available) or URI/path of the document"
+    document_uri: str = Field(description="The URI/path of the source document")
+    document_title: str | None = Field(
+        default=None, description="The title of the document (if available)"
+    )
+    page_numbers: list[int] = Field(
+        default=[], description="Page numbers where this content appears"
+    )
+    headings: list[str] | None = Field(
+        default=None, description="Section heading hierarchy for this content"
     )
 
 
@@ -50,18 +59,21 @@ class QuestionAnswerAgent:
             ctx: RunContext[Dependencies],
             query: str,
             limit: int = 5,
-        ) -> list[SearchResult]:
+        ) -> list[ToolSearchResult]:
             """Search the knowledge base for relevant documents."""
-            search_results = await ctx.deps.client.search(query, limit=limit)
-            expanded_results = await ctx.deps.client.expand_context(search_results)
+            results = await ctx.deps.client.search(query, limit=limit)
+            results = await ctx.deps.client.expand_context(results)
 
             return [
-                SearchResult(
-                    content=chunk.content,
-                    score=score,
-                    document_uri=(chunk.document_title or chunk.document_uri or ""),
+                ToolSearchResult(
+                    content=r.content,
+                    score=r.score,
+                    document_uri=(r.document_uri or ""),
+                    document_title=r.document_title,
+                    page_numbers=r.page_numbers,
+                    headings=r.headings,
                 )
-                for chunk, score in expanded_results
+                for r in results
             ]
 
     async def answer(self, question: str) -> str:

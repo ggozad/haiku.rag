@@ -37,6 +37,8 @@ class DocumentRepository:
             uri=record.uri,
             title=record.title,
             metadata=json.loads(record.metadata),
+            docling_document_json=record.docling_document_json,
+            docling_version=record.docling_version,
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
             else datetime.now(),
@@ -60,6 +62,8 @@ class DocumentRepository:
             uri=entity.uri,
             title=entity.title,
             metadata=json.dumps(entity.metadata),
+            docling_document_json=entity.docling_document_json,
+            docling_version=entity.docling_version,
             created_at=now,
             updated_at=now,
         )
@@ -88,7 +92,12 @@ class DocumentRepository:
 
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
+        from haiku.rag.store.models.document import invalidate_docling_document_cache
+
         assert entity.id, "Document ID is required for update"
+
+        # Invalidate cache before update
+        invalidate_docling_document_cache(entity.id)
 
         # Update timestamp
         now = datetime.now().isoformat()
@@ -102,6 +111,8 @@ class DocumentRepository:
                 "uri": entity.uri,
                 "title": entity.title,
                 "metadata": json.dumps(entity.metadata),
+                "docling_document_json": entity.docling_document_json,
+                "docling_version": entity.docling_version,
                 "updated_at": now,
             },
         )
@@ -110,10 +121,15 @@ class DocumentRepository:
 
     async def delete(self, entity_id: str) -> bool:
         """Delete a document by its ID."""
+        from haiku.rag.store.models.document import invalidate_docling_document_cache
+
         # Check if document exists
         doc = await self.get_by_id(entity_id)
         if doc is None:
             return False
+
+        # Invalidate cache before delete
+        invalidate_docling_document_cache(entity_id)
 
         # Delete associated chunks first
         await self.chunk_repository.delete_by_document_id(entity_id)

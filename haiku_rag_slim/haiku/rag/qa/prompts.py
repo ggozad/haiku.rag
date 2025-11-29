@@ -44,17 +44,22 @@ Guidelines:
 
 Citation Format:
 After your answer, include a "Citations:" section that lists:
-- The document title (if available) or URI from each search result used
-- A brief excerpt (first 50-100 characters) of the content that supported your answer
-- Format: "Citations:\n- [document title or URI]: [content_excerpt]..."
+- The document URI (from the document_uri field) - always include the full path
+- The document title if available (from the document_title field)
+- Page number(s) if available (from the page_numbers field)
+- Section heading if available (from the headings field)
+- A VERBATIM excerpt (copy-paste exact text, first 50-100 characters) from the content field - do NOT summarize or paraphrase
 
 Example response format:
 [Your answer here]
 
 Citations:
-- /path/to/document1.pdf: "This document explains that AFMAN stands for Air Force Manual..."
-- /path/to/document2.pdf: "The manual provides guidance on military procedures and..."
+
+- **/docs/user-guide.pdf** - "User Manual" (p. 5, Section: Introduction)
+  The system requires Python 3.10 or higher to run properly...
+
+- **/reports/quarterly-analysis.md** (pp. 12-13, Section: Results)
+  Revenue increased by 15% compared to the previous quarter...
 
 Be concise, and always maintain accuracy over completeness. Prefer short, direct answers that are well-supported by the documents.
-/no_think
 """

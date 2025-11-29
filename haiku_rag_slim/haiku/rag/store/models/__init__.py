@@ -1,4 +1,10 @@
-from .chunk import Chunk
+from .chunk import BoundingBox, Chunk, ChunkMetadata, SearchResult
 from .document import Document
 
-__all__ = ["Chunk", "Document"]
+__all__ = [
+    "BoundingBox",
+    "Chunk",
+    "ChunkMetadata",
+    "Document",
+    "SearchResult",
+]

@@ -7,12 +7,7 @@ from pydantic import BaseModel
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.graph.research.models import ResearchReport
-
-
-class SearchResult(BaseModel):
-    document_id: str
-    content: str
-    score: float
+from haiku.rag.store.models import SearchResult
 
 
 class DocumentResult(BaseModel):
@@ -87,22 +82,7 @@ def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
         """Search the RAG system for documents using hybrid search (vector similarity + full-text search)."""
         try:
             async with HaikuRAG(db_path, config=config) as rag:
-                results = await rag.search(query, limit)
-
-                search_results = []
-                for chunk, score in results:
-                    assert chunk.document_id is not None, (
-                        "Chunk document_id should not be None in search results"
-                    )
-                    search_results.append(
-                        SearchResult(
-                            document_id=chunk.document_id,
-                            content=chunk.content,
-                            score=score,
-                        )
-                    )
-
-                return search_results
+                return await rag.search(query, limit)
         except Exception:
             return []
 

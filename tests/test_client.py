@@ -641,19 +641,19 @@ async def test_client_search(temp_db_path):
         results = await client.search("Python programming", limit=3)
 
         assert len(results) > 0
-        assert all(len(result) == 2 for result in results)
-
-        # Verify first result is from the Python document (doc1)
-        first_chunk, _ = results[0]
-        assert first_chunk.document_id == doc1.id
+        # Verify results are SearchResult objects with expected fields
+        first_result = results[0]
+        assert first_result.content
+        assert first_result.score >= 0
+        assert first_result.document_id == doc1.id
 
         # Test search with different query
         ml_results = await client.search("machine learning data", limit=2)
         assert len(ml_results) > 0
 
         # Verify first result is from the machine learning document (doc2)
-        first_ml_chunk, _ = ml_results[0]
-        assert first_ml_chunk.document_id == doc2.id
+        first_ml_result = ml_results[0]
+        assert first_ml_result.document_id == doc2.id
 
         # Test search with limit parameter
         limited_results = await client.search("programming", limit=1)
@@ -782,6 +782,8 @@ async def test_client_ask_with_cite(monkeypatch, temp_db_path):
 @pytest.mark.asyncio
 async def test_client_expand_context(temp_db_path):
     """Test expanding search results with adjacent chunks."""
+    from haiku.rag.store.models import SearchResult
+
     # Mock Config to have CONTEXT_CHUNK_RADIUS = 2
     with patch("haiku.rag.client.Config.processing.context_chunk_radius", 2):
         async with HaikuRAG(temp_db_path) as client:
@@ -808,50 +810,55 @@ async def test_client_expand_context(temp_db_path):
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks) == 5
 
-        # Find the middle chunk (order=2)
+        # Find the middle chunk (order=2) and convert to SearchResult
         middle_chunk = next(c for c in chunks if c.order == 2)
-        search_results = [(middle_chunk, 0.8)]
+        search_results = [SearchResult.from_chunk(middle_chunk, 0.8)]
 
         # Test expand_context with radius=2 and document title preserved
         expanded_results = await client.expand_context(search_results, radius=2)
 
         assert len(expanded_results) == 1
-        expanded_chunk, score = expanded_results[0]
+        expanded = expanded_results[0]
 
-        # Check that the expanded chunk has combined content and preserves title/uri
-        assert expanded_chunk.id == middle_chunk.id
-        assert score == 0.8
-        assert "Chunk 2 content" in expanded_chunk.content
-        assert expanded_chunk.document_title == "test_doc_title"
-        assert expanded_chunk.document_uri == "test_doc.txt"
+        # Check that the expanded result has combined content and preserves title/uri
+        assert expanded.score == 0.8
+        assert "Chunk 2 content" in expanded.content
+        assert expanded.document_title == "test_doc_title"
+        assert expanded.document_uri == "test_doc.txt"
 
         # Should include all chunks (radius=2 from chunk 2 = chunks 0,1,2,3,4)
-        assert "Chunk 0 content" in expanded_chunk.content
-        assert "Chunk 1 content" in expanded_chunk.content
-        assert "Chunk 2 content" in expanded_chunk.content
-        assert "Chunk 3 content" in expanded_chunk.content
-        assert "Chunk 4 content" in expanded_chunk.content
+        assert "Chunk 0 content" in expanded.content
+        assert "Chunk 1 content" in expanded.content
+        assert "Chunk 2 content" in expanded.content
+        assert "Chunk 3 content" in expanded.content
+        assert "Chunk 4 content" in expanded.content
 
 
 @pytest.mark.asyncio
 async def test_client_expand_context_radius_zero(temp_db_path):
     """Test expand_context with radius 0 returns original results."""
+    from haiku.rag.store.models import SearchResult
+
     async with HaikuRAG(temp_db_path) as client:
         # Create a simple document
         doc = await client.create_document(content="Simple test content")
         assert doc.id is not None
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
 
-        search_results = [(chunks[0], 0.9)]
+        search_results = [SearchResult.from_chunk(chunks[0], 0.9)]
         expanded_results = await client.expand_context(search_results, radius=0)
 
         # Should return exactly the same results
-        assert expanded_results == search_results
+        assert len(expanded_results) == 1
+        assert expanded_results[0].content == search_results[0].content
+        assert expanded_results[0].score == search_results[0].score
 
 
 @pytest.mark.asyncio
 async def test_client_expand_context_multiple_chunks(temp_db_path):
     """Test expand_context with multiple search results."""
+    from haiku.rag.store.models import SearchResult
+
     with patch("haiku.rag.client.Config.processing.context_chunk_radius", 1):
         async with HaikuRAG(temp_db_path) as client:
             # Create first document with manual chunks
@@ -882,23 +889,24 @@ async def test_client_expand_context_multiple_chunks(temp_db_path):
         chunk1 = next(c for c in chunks1 if c.order == 1)
         chunk2 = next(c for c in chunks2 if c.order == 0)
 
-        search_results = [(chunk1, 0.8), (chunk2, 0.7)]
+        search_results = [
+            SearchResult.from_chunk(chunk1, 0.8),
+            SearchResult.from_chunk(chunk2, 0.7),
+        ]
         expanded_results = await client.expand_context(search_results, radius=1)
 
         assert len(expanded_results) == 2
 
         # Check first expanded result (should include chunks 0,1,2 from doc1)
-        expanded1, score1 = expanded_results[0]
-        assert expanded1.id == chunk1.id
-        assert score1 == 0.8
+        expanded1 = expanded_results[0]
+        assert expanded1.score == 0.8
         assert "Doc1 Part A" in expanded1.content
         assert "Doc1 Part B" in expanded1.content
         assert "Doc1 Part C" in expanded1.content
 
         # Check second expanded result (should include chunks 0,1 from doc2)
-        expanded2, score2 = expanded_results[1]
-        assert expanded2.id == chunk2.id
-        assert score2 == 0.7
+        expanded2 = expanded_results[1]
+        assert expanded2.score == 0.7
         assert "Doc2 Section X" in expanded2.content
         assert "Doc2 Section Y" in expanded2.content
 
@@ -906,6 +914,8 @@ async def test_client_expand_context_multiple_chunks(temp_db_path):
 @pytest.mark.asyncio
 async def test_client_expand_context_merges_overlapping_chunks(temp_db_path):
     """Test that overlapping expanded chunks are merged into one."""
+    from haiku.rag.store.models import SearchResult
+
     async with HaikuRAG(temp_db_path) as client:
         # Create document with 5 chunks
         manual_chunks = [
@@ -931,28 +941,33 @@ async def test_client_expand_context_merges_overlapping_chunks(temp_db_path):
         # chunk1 expanded would be [0,1,2]
         # chunk2 expanded would be [1,2,3]
         # These should merge into one chunk containing [0,1,2,3]
-        search_results = [(chunk1, 0.8), (chunk2, 0.7)]
+        search_results = [
+            SearchResult.from_chunk(chunk1, 0.8),
+            SearchResult.from_chunk(chunk2, 0.7),
+        ]
         expanded_results = await client.expand_context(search_results, radius=1)
 
         # Should have only 1 merged result instead of 2 overlapping ones
         assert len(expanded_results) == 1
 
-        merged_chunk, score = expanded_results[0]
+        merged = expanded_results[0]
 
         # Should contain all chunks from 0 to 3
-        assert "Chunk 0" in merged_chunk.content
-        assert "Chunk 1" in merged_chunk.content
-        assert "Chunk 2" in merged_chunk.content
-        assert "Chunk 3" in merged_chunk.content
-        assert "Chunk 4" not in merged_chunk.content  # Should not include chunk 4
+        assert "Chunk 0" in merged.content
+        assert "Chunk 1" in merged.content
+        assert "Chunk 2" in merged.content
+        assert "Chunk 3" in merged.content
+        assert "Chunk 4" not in merged.content  # Should not include chunk 4
 
         # Should use the higher score (0.8)
-        assert score == 0.8
+        assert merged.score == 0.8
 
 
 @pytest.mark.asyncio
 async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path):
     """Test that non-overlapping expanded chunks remain separate."""
+    from haiku.rag.store.models import SearchResult
+
     async with HaikuRAG(temp_db_path) as client:
         # Create document with chunks far apart
         manual_chunks = [
@@ -980,17 +995,20 @@ async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path
 
         # chunk0 expanded: [0,1] with radius=1 (orders 0,1)
         # chunk5 expanded: [4,5] with radius=1 (orders 4,5)
-        search_results = [(chunk0, 0.8), (chunk5, 0.7)]
+        search_results = [
+            SearchResult.from_chunk(chunk0, 0.8),
+            SearchResult.from_chunk(chunk5, 0.7),
+        ]
         expanded_results = await client.expand_context(search_results, radius=1)
 
         # Should have 2 separate results
         assert len(expanded_results) == 2
 
         # Sort by score to ensure predictable order
-        expanded_results.sort(key=lambda x: x[1], reverse=True)
+        expanded_results.sort(key=lambda x: x.score, reverse=True)
 
-        chunk0_expanded, score1 = expanded_results[0]
-        chunk5_expanded, score2 = expanded_results[1]
+        chunk0_expanded = expanded_results[0]
+        chunk5_expanded = expanded_results[1]
 
         # First chunk (order=0) expanded should contain orders [0,1]
         # Content should be "Chunk 0" + "Chunk 1"
@@ -999,11 +1017,157 @@ async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path
         assert (
             "Chunk 5" not in chunk0_expanded.content
         )  # Should not have chunk 7 content
-        assert score1 == 0.8
+        assert chunk0_expanded.score == 0.8
 
         # Second chunk (order=5) expanded should contain orders [4,5]
         # Content should be "Chunk 6" (order 4) + "Chunk 7" (order 5)
         assert "Chunk 6" in chunk5_expanded.content
         assert "Chunk 7" in chunk5_expanded.content
         assert "Chunk 0" not in chunk5_expanded.content
-        assert score2 == 0.7
+        assert chunk5_expanded.score == 0.7
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_stores_docling_json(temp_db_path):
+    """Test that create_document stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        doc = await client.create_document(
+            content="Test content for docling storage",
+            uri="test://docling",
+            metadata={"test": "docling_storage"},
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document_json is not None
+        assert doc.docling_version is not None
+
+        # Verify JSON is valid and can be parsed
+        import json
+
+        parsed = json.loads(doc.docling_document_json)
+        assert "version" in parsed
+        assert parsed["version"] == doc.docling_version
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_with_custom_chunks_no_docling_json(temp_db_path):
+    """Test that create_document with custom chunks does not store docling JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+
+        doc = await client.create_document(content="Test content", chunks=custom_chunks)
+
+        assert doc.id is not None
+        # When custom chunks are provided, no conversion happens
+        assert doc.docling_document_json is None
+        assert doc.docling_version is None
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
+    """Test that create_document_from_source stores DoclingDocument JSON for files."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("Test file content")
+
+            doc = await client.create_document_from_source(temp_path)
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert doc.docling_document_json is not None
+            assert doc.docling_version is not None
+
+            # Verify the stored document also has the JSON
+            retrieved = await client.get_document_by_id(doc.id)
+            assert retrieved is not None
+            assert retrieved.docling_document_json == doc.docling_document_json
+            assert retrieved.docling_version == doc.docling_version
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_stores_docling_json(temp_db_path):
+    """Test that update_document stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document_json
+
+        # Update the document
+        doc.content = "Updated content"
+        updated_doc = await client.update_document(doc)
+
+        assert updated_doc.docling_document_json is not None
+        assert updated_doc.docling_version is not None
+        # JSON should be different because content changed
+        assert updated_doc.docling_document_json != original_json
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_fields_stores_docling_json(temp_db_path):
+    """Test that update_document_fields stores DoclingDocument JSON when content changes."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document_json
+
+        # Update content via update_document_fields
+        updated_doc = await client.update_document_fields(
+            document_id=doc.id, content="New content via fields update"
+        )
+
+        assert updated_doc.docling_document_json is not None
+        assert updated_doc.docling_version is not None
+        # JSON should be different because content changed
+        assert updated_doc.docling_document_json != original_json
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
+    temp_db_path,
+):
+    """Test that update_document_fields with custom chunks does not update docling JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document_json
+
+        # Update with custom chunks
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+        updated_doc = await client.update_document_fields(
+            document_id=doc.id, content="New content", chunks=custom_chunks
+        )
+
+        # Docling JSON should remain unchanged (no conversion when custom chunks provided)
+        assert updated_doc.docling_document_json == original_json
+
+
+@pytest.mark.asyncio
+async def test_client_file_update_stores_docling_json(temp_db_path):
+    """Test that updating a file re-stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("Original content")
+
+            # Create initial document
+            doc1 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc1, Document)
+            original_json = doc1.docling_document_json
+            original_version = doc1.docling_version
+
+            # Modify file
+            temp_path.write_text("Modified content")
+
+            # Update document from source
+            doc2 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc2, Document)
+            assert doc2.id == doc1.id  # Same document
+
+            # Docling JSON should be updated
+            assert doc2.docling_document_json is not None
+            assert doc2.docling_document_json != original_json
+            assert doc2.docling_version == original_version  # Version stays same

@@ -22,6 +22,8 @@ class DocumentRecord(LanceModel):
     uri: str | None = None
     title: str | None = None
     metadata: str = Field(default="{}")
+    docling_document_json: str | None = None
+    docling_version: str | None = None
     created_at: str = Field(default_factory=lambda: "")
     updated_at: str = Field(default_factory=lambda: "")
 
