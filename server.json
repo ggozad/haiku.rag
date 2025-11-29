@@ -2,7 +2,7 @@
     "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
     "name": "io.github.ggozad/haiku-rag",
     "version": "{{VERSION}}",
-    "description": "Agentic Retrieval Augmented Generation (RAG) with LanceDB",
+    "description": "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling",
     "repository": {
         "url": "https://github.com/ggozad/haiku.rag",
         "source": "github"

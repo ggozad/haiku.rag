@@ -1,6 +1,6 @@
 # haiku.rag
 
-`haiku.rag` is a Retrieval-Augmented Generation (RAG) library built to work with LanceDB as a local vector database. It uses LanceDB for storing embeddings and performs semantic (vector) search as well as full-text search combined through native hybrid search with Reciprocal Rank Fusion. Both open-source (Ollama, MixedBread AI) as well as commercial (OpenAI, VoyageAI) embedding providers are supported.
+`haiku.rag` is an opinionated agentic RAG system that uses LanceDB for vector storage, Pydantic AI for multi-agent workflows, and Docling for document processing. It supports hybrid search (vector + full-text) with Reciprocal Rank Fusion, multiple embedding providers (Ollama, LM Studio, vLLM, OpenAI, VoyageAI), and includes research agents that plan, search, evaluate, and synthesize answers.
 
 ## Features
 

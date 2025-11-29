@@ -1,7 +1,7 @@
 [project]
 
 name = "haiku.rag-slim"
-description = "Agentic Retrieval Augmented Generation (RAG) with LanceDB - Minimal dependencies"
+description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Minimal dependencies"
 version = "0.19.4"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }

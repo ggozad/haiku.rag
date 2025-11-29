@@ -1,5 +1,5 @@
 site_name: haiku.rag
-site_description: Retrieval-Augmented Generation (RAG) library on LanceDB.
+site_description: Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling.
 site_url: https://ggozad.github.io/haiku.rag/
 theme:
   name: material

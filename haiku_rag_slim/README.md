@@ -1,6 +1,6 @@
 # haiku.rag-slim
 
-Retrieval-Augmented Generation (RAG) library built on LanceDB - Core package with minimal dependencies.
+Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Core package with minimal dependencies.
 
 `haiku.rag-slim` is the core package for users who want to install only the dependencies they need. Document processing (docling), and reranker support are all optional extras.
 
