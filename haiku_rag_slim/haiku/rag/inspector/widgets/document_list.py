@@ -23,33 +23,20 @@ class DocumentList(VerticalScroll):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.documents: list[Document] = []
-        self.list_view: ListView | None = None
+        self.list_view = ListView()
 
     def compose(self) -> ComposeResult:
         """Compose the document list."""
         yield Static("[bold]Documents[/bold]", classes="title")
-        self.list_view = ListView()
         yield self.list_view
 
     async def load_documents(self, client: HaikuRAG) -> None:
-        """Load all documents from the database.
-
-        Args:
-            client: HaikuRAG client instance
-        """
-        if self.list_view is None:
-            return
-
+        """Load all documents from the database."""
         self.documents = await client.list_documents(limit=None)
-
-        # Clear existing items
         await self.list_view.clear()
-
-        # Add document items
         for doc in self.documents:
             title = doc.title or doc.uri or doc.id
-            item = ListItem(Static(f"{title}"))
-            await self.list_view.append(item)
+            await self.list_view.append(ListItem(Static(f"{title}")))
 
     @on(ListView.Highlighted)
     @on(ListView.Selected)
@@ -57,8 +44,8 @@ class DocumentList(VerticalScroll):
         self, event: ListView.Highlighted | ListView.Selected
     ) -> None:
         """Handle document selection (arrow keys or Enter)."""
-        if event.list_view == self.list_view:
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(self.documents):
-                document = self.documents[idx]
-                self.post_message(self.DocumentSelected(document))
+        if event.list_view != self.list_view:
+            return
+        idx = event.list_view.index
+        if idx is not None and 0 <= idx < len(self.documents):
+            self.post_message(self.DocumentSelected(self.documents[idx]))
