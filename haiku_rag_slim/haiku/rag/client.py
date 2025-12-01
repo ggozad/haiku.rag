@@ -748,21 +748,39 @@ class HaikuRAG:
         """Re-embed all chunks without changing chunk boundaries."""
         for doc in documents:
             assert doc.id is not None
-            chunks = await self.chunk_repository.get_by_document_id(doc.id)
-            if not chunks:
+
+            # Get raw chunk records directly from LanceDB
+            chunk_records = list(
+                self.store.chunks_table.search()
+                .where(f"document_id = '{doc.id}'")
+                .to_pydantic(self.store.ChunkRecord)
+            )
+            if not chunk_records:
                 continue
 
             # Batch embed all chunk contents
-            contents = [chunk.content for chunk in chunks]
+            contents = [rec.content for rec in chunk_records]
             embeddings = await self.chunk_repository.embedder.embed(contents)
 
-            # Update each chunk with new embedding
-            for chunk, embedding in zip(chunks, embeddings):
-                assert chunk.id is not None
-                self.store.chunks_table.update(
-                    where=f"id = '{chunk.id}'",
-                    values={"vector": embedding},
+            # Build updated records only for chunks with changed embeddings
+            updated_records = [
+                self.store.ChunkRecord(
+                    id=rec.id,
+                    document_id=rec.document_id,
+                    content=rec.content,
+                    metadata=rec.metadata,
+                    order=rec.order,
+                    vector=embedding,
                 )
+                for rec, embedding in zip(chunk_records, embeddings)
+                if rec.vector != embedding
+            ]
+
+            # Batch update chunks with changed embeddings
+            if updated_records:
+                self.store.chunks_table.merge_insert(
+                    "id"
+                ).when_matched_update_all().execute(updated_records)
 
             yield doc.id
 

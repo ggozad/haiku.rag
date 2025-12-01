@@ -58,6 +58,42 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_path):
+    """Test embed-only rebuild skips chunks with unchanged embeddings."""
+    async with HaikuRAG(temp_db_path) as client:
+        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        assert doc.id is not None
+
+        # Get embeddings before rebuild
+        records_before = list(
+            client.store.chunks_table.search()
+            .where(f"document_id = '{doc.id}'")
+            .to_pydantic(client.store.ChunkRecord)
+        )
+        embeddings_before = {rec.id: rec.vector for rec in records_before}
+
+        # Run embed-only rebuild with same embedder - embeddings should be identical
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+        assert doc.id in processed_ids
+
+        # Get embeddings after rebuild
+        records_after = list(
+            client.store.chunks_table.search()
+            .where(f"document_id = '{doc.id}'")
+            .to_pydantic(client.store.ChunkRecord)
+        )
+        embeddings_after = {rec.id: rec.vector for rec in records_after}
+
+        # Embeddings should be identical (same content, same embedder)
+        assert embeddings_before.keys() == embeddings_after.keys()
+        for chunk_id in embeddings_before:
+            assert embeddings_before[chunk_id] == embeddings_after[chunk_id]
+
+
+@pytest.mark.asyncio
 async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
     """Test rechunk rebuild: re-chunks from content without accessing source files."""
     async with HaikuRAG(temp_db_path) as client:
