@@ -68,6 +68,7 @@ class InspectorApp(App):  # type: ignore[misc]
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
         Binding("/", "search", "Search", show=True),
+        Binding("v", "show_visual", "Visual", show=True),
     ]
 
     def __init__(self, db_path: Path):
@@ -93,9 +94,7 @@ class InspectorApp(App):  # type: ignore[misc]
         doc_list = self.query_one(DocumentList)
         await doc_list.load_documents(self.client)
 
-        # Focus the document list view
-        if doc_list.list_view:
-            doc_list.list_view.focus()
+        doc_list.list_view.focus()
 
     async def on_unmount(self) -> None:
         """Clean up when unmounting."""
@@ -106,9 +105,8 @@ class InspectorApp(App):  # type: ignore[misc]
         """Helper to select a chunk after refresh."""
         for idx, c in enumerate(chunk_list.chunks):
             if c.id == chunk_id:
-                if chunk_list.list_view:
-                    chunk_list.list_view.index = idx
-                    chunk_list.list_view.focus()
+                chunk_list.list_view.index = idx
+                chunk_list.list_view.focus()
                 break
 
     async def action_search(self) -> None:
@@ -135,8 +133,7 @@ class InspectorApp(App):  # type: ignore[misc]
                 # Find and select the document
                 for idx, d in enumerate(doc_list.documents):
                     if d.id == chunk.document_id:
-                        if doc_list.list_view:
-                            doc_list.list_view.index = idx
+                        doc_list.list_view.index = idx
                         break
 
                 # Load chunks for this document
@@ -178,6 +175,43 @@ class InspectorApp(App):  # type: ignore[misc]
         # Show chunk details
         detail_view = self.query_one(DetailView)
         await detail_view.show_chunk(message.chunk)
+
+    async def action_show_visual(self) -> None:
+        """Show visual grounding for the currently selected chunk."""
+        if not self.client:
+            return
+
+        chunk_list = self.query_one(ChunkList)
+        idx = chunk_list.list_view.index
+        if idx is None or idx >= len(chunk_list.chunks):
+            return
+
+        chunk = chunk_list.chunks[idx]
+        if not chunk.document_id:
+            return
+
+        document = await self.client.get_document_by_id(chunk.document_id)
+        if not document:
+            return
+
+        docling_doc = document.get_docling_document()
+        if not docling_doc:
+            self.notify("No DoclingDocument available", severity="warning")
+            return
+
+        meta = chunk.get_chunk_metadata()
+        bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
+
+        from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
+
+        await self.push_screen(
+            VisualGroundingModal(
+                docling_document=docling_doc,
+                bounding_boxes=bounding_boxes,
+                page_numbers=meta.page_numbers,
+                document_uri=chunk.document_uri,
+            )
+        )
 
 
 def run_inspector(db_path: Path | None = None) -> None:

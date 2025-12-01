@@ -1,6 +1,45 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **DoclingDocument Storage**: Full DoclingDocument JSON is now stored with each document, enabling rich context and visual grounding
+  - Documents store the complete DoclingDocument structure (JSON) and schema version
+  - Chunks store metadata with JSON pointer references (`doc_item_refs`), semantic labels, section headings, and page numbers
+  - New `ChunkMetadata` model for structured chunk provenance: `doc_item_refs`, `headings`, `labels`, `page_numbers`
+  - `Document.get_docling_document()` method to parse stored DoclingDocument
+  - `ChunkMetadata.resolve_doc_items()` to resolve JSON pointer refs to actual DocItem objects
+  - `ChunkMetadata.resolve_bounding_boxes()` for visual grounding with page coordinates
+  - LRU cache (100 documents) for parsed DoclingDocument objects to avoid repeated JSON parsing
+- **Enhanced Search Results**: `search()` and `expand_context()` now return full provenance information
+  - `SearchResult` includes `page_numbers`, `headings`, `labels`, and `doc_item_refs`
+  - QA and research agents use provenance for better citations (page numbers, section headings)
+- **Inspector Visual Grounding**: New visual grounding modal in the database inspector
+  - View page images with highlighted bounding boxes for chunks
+  - Keyboard navigation between pages (←/→ arrows)
+  - Access from both main detail view and search results
+  - Requires `textual-image` dependency
+
+### Changed
+
+- **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[ChunkWithMetadata]` instead of `list[str]`
+  - `ChunkWithMetadata` combines chunk text with `ChunkMetadata` (refs, labels, headings, page_numbers)
+  - All chunker implementations updated: `DoclingLocalChunker`, `DoclingServeChunker`
+- **Page Image Generation**: `generate_page_images=True` is now the default for local docling converter
+  - Required for visual grounding features
+  - docling-serve already generates page images by default
+- **QA Prompts**: Updated to use page numbers and section headings in citations when available
+
+### Migration
+
+This release requires a database rebuild to populate the new DoclingDocument fields:
+
+```bash
+haiku-rag rebuild
+```
+
+Existing documents without DoclingDocument data will work but won't have provenance information. The `rebuild` command re-processes all documents to populate the new fields.
+
 ## [0.20.0] - 2025-11-28
 
 ## [0.19.6] - 2025-12-03

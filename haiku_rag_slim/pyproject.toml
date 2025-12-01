@@ -45,7 +45,7 @@ mxbai = ["mxbai-rerank>=0.1.6"]
 cohere = ["cohere>=5.20.0"]
 zeroentropy = ["zeroentropy>=0.1.0a6"]
 # Inspector TUI
-inspector = ["textual>=1.0.0"]
+inspector = ["textual>=1.0.0", "textual-image>=0.8.1"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]

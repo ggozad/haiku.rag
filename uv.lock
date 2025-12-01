@@ -1371,6 +1371,7 @@ groq = [
 ]
 inspector = [
     { name = "textual" },
+    { name = "textual-image" },
 ]
 mistral = [
     { name = "pydantic-ai-slim", extra = ["mistral"] },
@@ -1410,6 +1411,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "textual", marker = "extra == 'inspector'", specifier = ">=1.0.0" },
+    { name = "textual-image", marker = "extra == 'inspector'", specifier = ">=0.8.1" },
     { name = "typer", specifier = ">=0.19.2,<0.20.0" },
     { name = "voyageai", marker = "extra == 'voyageai'", specifier = ">=0.3.5" },
     { name = "watchfiles", specifier = ">=1.1.1" },
@@ -4669,6 +4671,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f6/2f/f0b408f227edca21d1996c1cd0b65309f0cbff44264aa40aded3ff9ce2e1/textual-6.6.0.tar.gz", hash = "sha256:53345166d6b0f9fd028ed0217d73b8f47c3a26679a18ba3b67616dcacb470eec", size = 1579327, upload-time = "2025-11-10T17:50:00.038Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/53/b3/95ab646b0c908823d71e49ab8b5949ec9f33346cee3897d1af6be28a8d91/textual-6.6.0-py3-none-any.whl", hash = "sha256:5a9484bd15ee8a6fd8ac4ed4849fb25ee56bed2cecc7b8a83c4cd7d5f19515e5", size = 712606, upload-time = "2025-11-10T17:49:58.391Z" },
+]
+
+[[package]]
+name = "textual-image"
+version = "0.8.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f7/3e/807c5a449e9d99ba3b860acf5b83cf1da7ac46477bfe0e9e4d0149b8ed90/textual_image-0.8.4.tar.gz", hash = "sha256:d13f960da07659cfac9d9e417ca7057b3ac0c17a7827ae8e47c3b164d43776fc", size = 109056, upload-time = "2025-09-02T19:09:11.895Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/0e/2c3c2972ee810595089d85a51107f45e41c0642f645c24675951c69fd648/textual_image-0.8.4-py3-none-any.whl", hash = "sha256:0f0256993348f5af619c930a4839ea190525a22a56e8d69e1cf0f8e32d59fa3b", size = 109608, upload-time = "2025-09-02T19:09:10.707Z" },
 ]
 
 [[package]]

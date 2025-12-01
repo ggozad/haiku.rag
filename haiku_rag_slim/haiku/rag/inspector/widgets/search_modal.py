@@ -8,7 +8,7 @@ from textual.widgets import Input, ListItem, ListView, Static
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.inspector.widgets.detail_view import DetailView
-from haiku.rag.store.models import Chunk
+from haiku.rag.store.models import Chunk, SearchResult
 
 
 class SearchModal(Screen):
@@ -16,6 +16,7 @@ class SearchModal(Screen):
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=True),
+        Binding("v", "show_visual", "Visual", show=True),
     ]
 
     CSS = """
@@ -65,6 +66,7 @@ class SearchModal(Screen):
         super().__init__()
         self.client = client
         self.chunks: list[Chunk] = []
+        self.search_results: list[SearchResult] = []
 
     def compose(self) -> ComposeResult:
         """Compose the search screen."""
@@ -99,29 +101,42 @@ class SearchModal(Screen):
         status_label.update("Searching...")
 
         try:
-            # Perform search
-            results = await self.client.chunk_repository.search(
-                query=query, limit=50, search_type="hybrid"
-            )
+            # Perform search using client API
+            self.search_results = await self.client.search(query=query, limit=50)
 
-            self.chunks = [chunk for chunk, _score in results]
+            # Get chunks for the results
+            self.chunks = []
+            for result in self.search_results:
+                if result.chunk_id:
+                    chunk = await self.client.chunk_repository.get_by_id(
+                        result.chunk_id
+                    )
+                    if chunk:
+                        self.chunks.append(chunk)
 
             # Clear and populate results
             await list_view.clear()
-            for chunk, score in results:
-                first_line = chunk.content.split("\n")[0]
-                score_str = f"{score:.2f}" if score else "N/A"
-                item = ListItem(Static(f"[{score_str}] {first_line}"))
+            for result in self.search_results:
+                first_line = result.content.split("\n")[0][:60]
+                score_str = f"{result.score:.2f}"
+                # Add page info if available
+                page_info = ""
+                if result.page_numbers:
+                    pages = ", ".join(str(p) for p in result.page_numbers[:3])
+                    page_info = f" (p.{pages})"
+                item = ListItem(Static(f"[{score_str}]{page_info} {first_line}"))
                 await list_view.append(item)
 
             # Update status
             status_label.update(f"Found {len(self.chunks)} results")
 
             # Select first result, show in detail view, and focus list
-            if self.chunks:
+            if self.chunks and self.search_results:
                 list_view.index = 0
                 detail_view = self.query_one("#search-detail", DetailView)
-                await detail_view.show_chunk(self.chunks[0])
+                await detail_view.show_search_result(
+                    self.chunks[0], self.search_results[0]
+                )
                 list_view.focus()
         except Exception as e:
             status_label.update(f"Error: {str(e)}")
@@ -129,23 +144,61 @@ class SearchModal(Screen):
     async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         """Handle chunk navigation (arrow keys)."""
         list_view = self.query_one("#search-results", ListView)
-        if event.list_view == list_view and event.item is not None:
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(self.chunks):
-                chunk = self.chunks[idx]
-                detail_view = self.query_one("#search-detail", DetailView)
-                await detail_view.show_chunk(chunk)
+        if event.list_view != list_view or event.item is None:
+            return
+        idx = event.list_view.index
+        detail_view = self.query_one("#search-detail", DetailView)
+        await detail_view.show_search_result(self.chunks[idx], self.search_results[idx])  # type: ignore[index]
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle chunk selection (Enter key)."""
         list_view = self.query_one("#search-results", ListView)
-        if event.list_view == list_view:
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(self.chunks):
-                chunk = self.chunks[idx]
-                self.post_message(self.ChunkSelected(chunk))
-                self.app.pop_screen()
+        if event.list_view != list_view:
+            return
+        idx = event.list_view.index
+        self.post_message(self.ChunkSelected(self.chunks[idx]))  # type: ignore[index]
+        self.app.pop_screen()
 
     async def action_dismiss(self, result=None) -> None:
-        """Close the search screen."""
         self.app.pop_screen()
+
+    async def action_show_visual(self) -> None:
+        """Show visual grounding for the current chunk."""
+        list_view = self.query_one("#search-results", ListView)
+        idx = list_view.index
+        if idx is None or not self.search_results:
+            return
+
+        search_result = self.search_results[idx]
+        if not search_result.document_id or not search_result.chunk_id:
+            return
+
+        status_label = self.query_one("#status-label", Static)
+
+        document = await self.client.get_document_by_id(search_result.document_id)
+        if not document:
+            status_label.update("[yellow]Document not found[/yellow]")
+            return
+
+        docling_doc = document.get_docling_document()
+        if not docling_doc:
+            status_label.update(
+                "[yellow]No DoclingDocument available for visual[/yellow]"
+            )
+            return
+
+        chunk = await self.client.chunk_repository.get_by_id(search_result.chunk_id)
+        bounding_boxes = []
+        if chunk:
+            meta = chunk.get_chunk_metadata()
+            bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
+
+        from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
+
+        modal = VisualGroundingModal(
+            docling_document=docling_doc,
+            bounding_boxes=bounding_boxes,
+            page_numbers=search_result.page_numbers,
+            document_uri=search_result.document_uri,
+        )
+        await self.app.push_screen(modal)
