@@ -117,7 +117,9 @@ class DoclingLocalChunker(DocumentChunker):
         result: list[ChunkWithMetadata] = []
 
         for chunk in raw_chunks:
-            text = self.chunker.contextualize(chunk)
+            # Use raw chunk text - headings are stored separately in metadata
+            # and prepended at embedding time for better semantic search
+            text = chunk.text
 
             # Extract metadata from DocChunk.meta (cast to DocMeta for type safety)
             doc_item_refs: list[str] = []

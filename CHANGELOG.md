@@ -32,9 +32,14 @@
 - **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[ChunkWithMetadata]` instead of `list[str]`
   - `ChunkWithMetadata` combines chunk text with `ChunkMetadata` (refs, labels, headings, page_numbers)
   - All chunker implementations updated: `DoclingLocalChunker`, `DoclingServeChunker`
-- **Page Image Generation**: `generate_page_images=True` is now the default for local docling converter
+- **Page Image Generation**: `generate_page_images=True` is now always enabled for local docling converter
   - Required for visual grounding features
-  - docling-serve already generates page images by default
+  - Removed `generate_page_images` config option (docling-serve already generates page images by default)
+- **Chunk Text Storage**: Chunks now store raw text without heading contextualization
+  - Section headings are prepended only at embedding time for better semantic search
+  - Stored chunk content stays clean without duplicate heading prefixes
+  - Headings remain available in `ChunkMetadata` for display and citations
+  - Local and serve chunkers now produce identical output
 - **QA Prompts**: Updated to use page numbers and section headings in citations when available
 
 ### Migration
