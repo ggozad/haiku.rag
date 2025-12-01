@@ -227,8 +227,16 @@ class ChunkRepository:
 
         chunks_with_metadata = await chunker.chunk(processed_document)
 
-        chunk_texts = [c.text for c in chunks_with_metadata]
-        embeddings = await self.embedder.embed(chunk_texts)
+        # Build embedding texts with headings prepended for better semantic search
+        # The stored content stays raw, but embeddings capture section context
+        embedding_texts = []
+        for c in chunks_with_metadata:
+            if c.metadata.headings:
+                embedding_text = "\n".join(c.metadata.headings) + "\n" + c.text
+            else:
+                embedding_text = c.text
+            embedding_texts.append(embedding_text)
+        embeddings = await self.embedder.embed(embedding_texts)
 
         # Prepare all chunk records for batch insertion
         chunk_records = []
