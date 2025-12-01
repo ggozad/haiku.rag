@@ -63,7 +63,6 @@ class QuestionAnswerAgent:
             """Search the knowledge base for relevant documents."""
             results = await ctx.deps.client.search(query, limit=limit)
             results = await ctx.deps.client.expand_context(results)
-
             return [
                 ToolSearchResult(
                     content=r.content,

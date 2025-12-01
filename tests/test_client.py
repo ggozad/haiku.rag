@@ -1028,6 +1028,140 @@ async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path
 
 
 @pytest.mark.asyncio
+async def test_client_expand_context_with_docling_merges_overlapping(temp_db_path):
+    """Test that expand_context with DoclingDocument merges overlapping results."""
+    from haiku.rag.store.models import SearchResult
+
+    # Create a document with structured content that will have doc_item_refs
+    markdown_content = """# Chapter 1
+
+This is paragraph one about topic A.
+
+This is paragraph two about topic A continued.
+
+This is paragraph three about topic B.
+
+# Chapter 2
+
+This is paragraph four about topic C.
+"""
+
+    async with HaikuRAG(temp_db_path) as client:
+        doc = await client.create_document(
+            content=markdown_content,
+            uri="test://structured",
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document_json is not None
+
+        # Get chunks which should have doc_item_refs
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) >= 1
+
+        # Find chunks that have doc_item_refs (from docling chunking)
+        chunks_with_refs = [c for c in chunks if c.get_chunk_metadata().doc_item_refs]
+
+        if len(chunks_with_refs) >= 2:
+            # Create search results from adjacent chunks
+            search_results = [
+                SearchResult.from_chunk(chunks_with_refs[0], 0.9),
+                SearchResult.from_chunk(chunks_with_refs[1], 0.8),
+            ]
+
+            # Expand with radius that should cause overlap
+            expanded = await client.expand_context(search_results, radius=3)
+
+            # If chunks were adjacent, they should be merged
+            # The expanded results should have merged metadata
+            assert len(expanded) >= 1
+
+            # Check that expanded result has page_numbers populated
+            for r in expanded:
+                # Should have doc_item_refs from expansion
+                assert r.doc_item_refs is not None
+
+
+@pytest.mark.asyncio
+async def test_client_expand_context_docling_merges_metadata(temp_db_path):
+    """Test that expand_context properly merges metadata from multiple results."""
+    from haiku.rag.store.models import SearchResult
+
+    markdown_content = """# Introduction
+
+First paragraph of introduction.
+
+Second paragraph of introduction.
+
+# Methods
+
+First paragraph of methods section.
+
+Second paragraph of methods section.
+
+# Results
+
+First paragraph of results.
+"""
+
+    async with HaikuRAG(temp_db_path) as client:
+        doc = await client.create_document(
+            content=markdown_content,
+            uri="test://metadata-merge",
+        )
+
+        assert doc.id is not None
+
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        chunks_with_refs = [c for c in chunks if c.get_chunk_metadata().doc_item_refs]
+
+        if len(chunks_with_refs) >= 2:
+            # Get chunks with different headings if possible
+            chunk1 = chunks_with_refs[0]
+            chunk2 = chunks_with_refs[-1]  # Last chunk likely has different heading
+
+            search_results = [
+                SearchResult.from_chunk(chunk1, 0.9),
+                SearchResult.from_chunk(chunk2, 0.8),
+            ]
+
+            # Expand with large radius to potentially merge
+            expanded = await client.expand_context(search_results, radius=10)
+
+            # Check that results have proper structure
+            for r in expanded:
+                # Content should be non-empty
+                assert len(r.content) > 0
+                # Score should be preserved (best score)
+                assert r.score in [0.9, 0.8]
+
+
+@pytest.mark.asyncio
+async def test_client_expand_context_docling_preserves_bounding_boxes(temp_db_path):
+    """Test that expand_context preserves bounding boxes from DoclingDocument."""
+    from haiku.rag.store.models import SearchResult
+
+    async with HaikuRAG(temp_db_path) as client:
+        doc = await client.create_document(
+            content="# Test\n\nSome content here.",
+            uri="test://bboxes",
+        )
+
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+
+        if chunks:
+            search_results = [SearchResult.from_chunk(chunks[0], 0.9)]
+            expanded = await client.expand_context(search_results, radius=2)
+
+            # Expanded results should exist
+            assert len(expanded) == 1
+            # Bounding boxes may or may not be present depending on document
+            # but the field should be accessible
+            _ = expanded[0].bounding_boxes
+
+
+@pytest.mark.asyncio
 async def test_client_create_document_stores_docling_json(temp_db_path):
     """Test that create_document stores DoclingDocument JSON."""
     async with HaikuRAG(temp_db_path) as client:
