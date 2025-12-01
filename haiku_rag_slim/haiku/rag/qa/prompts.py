@@ -48,7 +48,7 @@ After your answer, include a "Citations:" section that lists:
 - The document title if available (from the document_title field)
 - Page number(s) if available (from the page_numbers field)
 - Section heading if available (from the headings field)
-- A VERBATIM excerpt (copy-paste exact text, first 50-100 characters) from the content field - do NOT summarize or paraphrase
+- A VERBATIM excerpt (100-200 characters, copy-paste exact text) from the content field - do NOT summarize, truncate, or paraphrase
 
 Example response format:
 [Your answer here]
