@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Rebuild Performance**: Optimized `rebuild --embed-only` to use batch updates via LanceDB's `merge_insert` instead of individual chunk updates, and skip chunks with unchanged embeddings
+
 ## [0.19.4] - 2025-11-28
 
 ### Added
