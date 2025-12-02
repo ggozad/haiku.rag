@@ -80,9 +80,10 @@ class HaikuRAGApp:
                 data = json.loads(raw) if isinstance(raw, str) else (raw or {})
                 stored_version = str(data.get("version", stored_version))
                 embeddings = data.get("embeddings", {})
-                embed_provider = embeddings.get("provider")
-                embed_model = embeddings.get("model")
-                vector_dim = embeddings.get("vector_dim")
+                embed_model_obj = embeddings.get("model", {})
+                embed_provider = embed_model_obj.get("provider")
+                embed_model = embed_model_obj.get("name")
+                vector_dim = embed_model_obj.get("vector_dim")
 
         # Get comprehensive table statistics
         from haiku.rag.store.engine import Store

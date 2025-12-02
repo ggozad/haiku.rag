@@ -15,16 +15,17 @@ def test_load_yaml_config(tmp_path):
     config_file.write_text("""
 environment: production
 embeddings:
-  provider: ollama
-  model: test-model
-  vector_dim: 1024
+  model:
+    provider: ollama
+    name: test-model
+    vector_dim: 1024
 """)
 
     config = load_yaml_config(config_file)
     assert config["environment"] == "production"
-    assert config["embeddings"]["provider"] == "ollama"
-    assert config["embeddings"]["model"] == "test-model"
-    assert config["embeddings"]["vector_dim"] == 1024
+    assert config["embeddings"]["model"]["provider"] == "ollama"
+    assert config["embeddings"]["model"]["name"] == "test-model"
+    assert config["embeddings"]["model"]["vector_dim"] == 1024
 
 
 def test_find_config_file_cwd(tmp_path, monkeypatch):
@@ -179,7 +180,7 @@ def test_generate_default_config_completeness():
 
     # Verify config validates successfully
     assert config.environment == "production"
-    assert config.embeddings.provider == "ollama"
+    assert config.embeddings.model.provider == "ollama"
     assert config.qa.model.provider == "ollama"
     assert config.research.model.provider == "ollama"
     assert config.reranking.model is None

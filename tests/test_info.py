@@ -125,7 +125,7 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
         [
             SettingsRecord(
                 id="settings",
-                settings='{"version": "1.0.0", "embeddings": {"provider": "ollama", "model": "test", "vector_dim": 3}}',
+                settings='{"version": "1.0.0", "embeddings": {"model": {"provider": "ollama", "name": "test", "vector_dim": 3}}}',
             )
         ]
     )

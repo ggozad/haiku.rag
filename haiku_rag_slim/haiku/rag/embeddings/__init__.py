@@ -13,13 +13,12 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
     Returns:
         An embedder instance configured according to the config.
     """
+    embedding_model = config.embeddings.model
 
-    if config.embeddings.provider == "ollama":
-        return OllamaEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
-        )
+    if embedding_model.provider == "ollama":
+        return OllamaEmbedder(embedding_model.name, embedding_model.vector_dim, config)
 
-    if config.embeddings.provider == "voyageai":
+    if embedding_model.provider == "voyageai":
         try:
             from haiku.rag.embeddings.voyageai import Embedder as VoyageAIEmbedder
         except ImportError:
@@ -29,28 +28,24 @@ def get_embedder(config: AppConfig = Config) -> EmbedderBase:
                 "uv pip install haiku.rag[voyageai]"
             )
         return VoyageAIEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
+            embedding_model.name, embedding_model.vector_dim, config
         )
 
-    if config.embeddings.provider == "openai":
+    if embedding_model.provider == "openai":
         from haiku.rag.embeddings.openai import Embedder as OpenAIEmbedder
 
-        return OpenAIEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
-        )
+        return OpenAIEmbedder(embedding_model.name, embedding_model.vector_dim, config)
 
-    if config.embeddings.provider == "vllm":
+    if embedding_model.provider == "vllm":
         from haiku.rag.embeddings.vllm import Embedder as VllmEmbedder
 
-        return VllmEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
-        )
+        return VllmEmbedder(embedding_model.name, embedding_model.vector_dim, config)
 
-    if config.embeddings.provider == "lm_studio":
+    if embedding_model.provider == "lm_studio":
         from haiku.rag.embeddings.lm_studio import Embedder as LMStudioEmbedder
 
         return LMStudioEmbedder(
-            config.embeddings.model, config.embeddings.vector_dim, config
+            embedding_model.name, embedding_model.vector_dim, config
         )
 
-    raise ValueError(f"Unsupported embedding provider: {config.embeddings.provider}")
+    raise ValueError(f"Unsupported embedding provider: {embedding_model.provider}")

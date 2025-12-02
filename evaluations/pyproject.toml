@@ -2,7 +2,7 @@
 
 name = "haiku.rag-evals"
 description = "Benchmarking and evaluation scripts for haiku.rag"
-version = "0.19.5"
+version = "0.19.6"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 requires-python = ">=3.12"

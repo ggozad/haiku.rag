@@ -699,7 +699,7 @@ async def test_client_create_document_with_custom_chunks(temp_db_path):
             Chunk(
                 content="This is the second chunk",
                 metadata={"custom": "metadata2"},
-                embedding=[0.1] * Config.embeddings.vector_dim,
+                embedding=[0.1] * Config.embeddings.model.vector_dim,
                 order=1,
             ),  # With embedding
             Chunk(

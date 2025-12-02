@@ -2,6 +2,7 @@ import pytest
 
 from haiku.rag.config import (
     AppConfig,
+    EmbeddingModelConfig,
     EmbeddingsConfig,
     LMStudioConfig,
     OllamaConfig,
@@ -15,9 +16,9 @@ def test_embedder_uses_config_from_get_embedder():
     """Test that embedders use the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            provider="ollama",
-            model="custom-model",
-            vector_dim=512,
+            model=EmbeddingModelConfig(
+                provider="ollama", name="custom-model", vector_dim=512
+            ),
         ),
         providers=ProvidersConfig(
             ollama=OllamaConfig(base_url="http://custom-ollama:8080"),
@@ -36,9 +37,9 @@ def test_vllm_embedder_uses_config():
     """Test that vllm embedder uses the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            provider="vllm",
-            model="custom-vllm-model",
-            vector_dim=768,
+            model=EmbeddingModelConfig(
+                provider="vllm", name="custom-vllm-model", vector_dim=768
+            ),
         ),
         providers=ProvidersConfig(
             vllm=VLLMConfig(embeddings_base_url="http://custom-vllm:9001"),
@@ -56,12 +57,11 @@ def test_vllm_embedder_uses_config():
 
 def test_openai_embedder_uses_config():
     """Test that openai embedder uses the config passed to get_embedder."""
-
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            provider="openai",
-            model="text-embedding-3-large",
-            vector_dim=3072,
+            model=EmbeddingModelConfig(
+                provider="openai", name="text-embedding-3-large", vector_dim=3072
+            ),
         ),
     )
 
@@ -76,9 +76,9 @@ def test_lm_studio_embedder_uses_config():
     """Test that lm_studio embedder uses the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            provider="lm_studio",
-            model="custom-lm-studio-model",
-            vector_dim=1024,
+            model=EmbeddingModelConfig(
+                provider="lm_studio", name="custom-lm-studio-model", vector_dim=1024
+            ),
         ),
         providers=ProvidersConfig(
             lm_studio=LMStudioConfig(base_url="http://custom-lmstudio:5678"),
@@ -101,9 +101,9 @@ def test_voyageai_embedder_uses_config():
     """Test that voyageai embedder uses the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
-            provider="voyageai",
-            model="voyage-large-2",
-            vector_dim=1536,
+            model=EmbeddingModelConfig(
+                provider="voyageai", name="voyage-large-2", vector_dim=1536
+            ),
         ),
     )
 

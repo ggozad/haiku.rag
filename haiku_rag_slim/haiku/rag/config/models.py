@@ -25,6 +25,20 @@ class ModelConfig(BaseModel):
     max_tokens: int | None = None
 
 
+class EmbeddingModelConfig(BaseModel):
+    """Configuration for an embedding model.
+
+    Attributes:
+        provider: Model provider (ollama, openai, voyageai, vllm, lm_studio)
+        name: Model name/identifier
+        vector_dim: Vector dimensions produced by the model
+    """
+
+    provider: str = "ollama"
+    name: str = "qwen3-embedding:4b"
+    vector_dim: int = 2560
+
+
 class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     vacuum_retention_seconds: int = 86400
@@ -44,9 +58,7 @@ class LanceDBConfig(BaseModel):
 
 
 class EmbeddingsConfig(BaseModel):
-    provider: str = "ollama"
-    model: str = "qwen3-embedding:4b"
-    vector_dim: int = 2560
+    model: EmbeddingModelConfig = Field(default_factory=EmbeddingModelConfig)
 
 
 class RerankingConfig(BaseModel):
