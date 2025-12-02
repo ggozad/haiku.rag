@@ -47,7 +47,7 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     )
 
     # Use real client but with TestModel for LLM calls
-    client = HaikuRAG(temp_db_path)
+    client = HaikuRAG(temp_db_path, create=True)
     deps = ResearchDeps(client=client)
 
     events = []

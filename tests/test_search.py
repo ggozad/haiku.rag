@@ -9,7 +9,7 @@ from haiku.rag.config import Config
 async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
     # Create client
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Load unique documents (limited to 10)
     seen_documents = set()
@@ -61,7 +61,7 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
 @pytest.mark.asyncio
 async def test_chunks_include_document_info(temp_db_path):
     """Test that search results include document URI and metadata."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Create a document with URI and metadata
     created_document = await client.create_document(
@@ -93,7 +93,7 @@ async def test_chunks_include_document_info(temp_db_path):
 @pytest.mark.asyncio
 async def test_chunks_include_document_title(temp_db_path):
     """Test that search results include the parent document title when present."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Create a document with URI and title
     await client.create_document(
@@ -119,7 +119,7 @@ async def test_chunks_include_document_title(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_score_types(temp_db_path):
     """Test that different search types return appropriate score ranges."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Create multiple documents with different content
     documents_content = [

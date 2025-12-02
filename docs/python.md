@@ -8,11 +8,19 @@ Use `haiku.rag` directly in your Python applications.
 from pathlib import Path
 from haiku.rag.client import HaikuRAG
 
-# Use as async context manager (recommended)
+# Create a new database
+async with HaikuRAG("path/to/database.lancedb", create=True) as client:
+    # Your code here
+    pass
+
+# Open an existing database (will fail if database doesn't exist)
 async with HaikuRAG("path/to/database.lancedb") as client:
     # Your code here
     pass
 ```
+
+!!! note
+    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Operations on non-existent databases will raise `FileNotFoundError`.
 
 ## Document Management
 

@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 import uuid
 
 import pytest
@@ -212,7 +213,7 @@ async def test_a2a_app_creation(temp_db_path):
     from haiku_rag_a2a.a2a import create_a2a_app
 
     # Create a test database
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         await client.create_document(
             content="Python is a high-level programming language known for its simplicity.",
             uri="python_doc",
@@ -233,7 +234,7 @@ async def test_a2a_app_has_skills(temp_db_path):
     from haiku_rag_a2a.a2a import create_a2a_app
 
     # Create a test database
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         await client.create_document(content="Test document", uri="test_doc")
 
     # Create A2A app

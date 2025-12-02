@@ -86,7 +86,7 @@ class InspectorApp(App):  # type: ignore[misc]
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
         config = get_config()
-        self.client = HaikuRAG(db_path=self.db_path, config=config, read_only=True)
+        self.client = HaikuRAG(db_path=self.db_path, config=config)
         await self.client.__aenter__()
 
         # Load initial documents

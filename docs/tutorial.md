@@ -54,6 +54,16 @@ For the list of available OpenAI models and their vector dimensions, see the [Op
 
 See [Configuration](configuration/index.md) for all available options.
 
+## Initialize the database
+
+Before adding documents, initialize the database:
+
+```bash
+haiku-rag init
+```
+
+This creates an empty database with the configured settings.
+
 ## Adding the first documents
 
 Now you can add some pieces of text in the database:
@@ -150,6 +160,7 @@ logger.setLevel(logging.DEBUG)
 logger.debug("AGI here we come")
 
 # Uses LanceDB database from default storage location
+# (database must be initialized first with 'haiku-rag init' or create=True)
 async with HaikuRAG() as client:
     answer = await client.ask("What is the best programming language in the world?")
     print(answer)

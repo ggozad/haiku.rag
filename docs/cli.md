@@ -201,11 +201,21 @@ View current configuration settings:
 haiku-rag settings
 ```
 
-## Maintenance
+## Database Management
 
-### Info (Read-only)
+### Initialize Database
 
-Display database metadata without upgrading or modifying it:
+Create a new database:
+
+```bash
+haiku-rag init [--db /path/to/your.lancedb]
+```
+
+This creates the database with the configured settings. **All other commands require an existing database** - they will fail with an informative error if the database doesn't exist.
+
+### Info
+
+Display database metadata:
 
 ```bash
 haiku-rag info [--db /path/to/your.lancedb]

@@ -7,7 +7,7 @@ from haiku.rag.client import HaikuRAG, RebuildMode
 @pytest.mark.asyncio
 async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
     """Test full rebuild: converts, chunks, and embeds all documents."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
 
@@ -30,7 +30,7 @@ async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
 @pytest.mark.asyncio
 async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
     """Test embed-only rebuild: keeps chunks, only regenerates embeddings."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
 
@@ -60,7 +60,7 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
 @pytest.mark.asyncio
 async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_path):
     """Test embed-only rebuild skips chunks with unchanged embeddings."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
 
@@ -96,7 +96,7 @@ async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_pa
 @pytest.mark.asyncio
 async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
     """Test rechunk rebuild: re-chunks from content without accessing source files."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
 

@@ -12,7 +12,7 @@ def test_settings_table_populated_on_store_init(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository
 
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     settings_repo = SettingsRepository(store)
 
     db_settings = settings_repo.get_current_settings()
@@ -32,7 +32,7 @@ def test_settings_save_and_retrieve(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository
 
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     settings_repo = SettingsRepository(store)
 
     original_chunk_size = Config.processing.chunk_size
@@ -53,7 +53,7 @@ async def test_config_validation_on_db_load(temp_db_path):
     from haiku.rag.store.repositories.settings import SettingsRepository
 
     # Create store and save settings
-    store1 = Store(temp_db_path)
+    store1 = Store(temp_db_path, create=True)
     store1.close()
 
     # Change config
@@ -63,18 +63,20 @@ async def test_config_validation_on_db_load(temp_db_path):
     try:
         # Loading the database should raise ConfigMismatchError
         with pytest.raises(ConfigMismatchError) as exc_info:
-            Store(temp_db_path)
+            Store(temp_db_path, create=True)
 
         assert "chunk_size" in str(exc_info.value)
         assert "rebuild" in str(exc_info.value).lower()
 
         # Rebuild
-        async with HaikuRAG(db_path=temp_db_path, skip_validation=True) as client:
+        async with HaikuRAG(
+            db_path=temp_db_path, skip_validation=True, create=True
+        ) as client:
             async for _ in client.rebuild_database():
                 pass  # Process all documents
 
         # Verify we can now load the database without exception (settings were updated)
-        store2 = Store(temp_db_path)
+        store2 = Store(temp_db_path, create=True)
         settings_repo2 = SettingsRepository(store2)
         db_settings = settings_repo2.get_current_settings()
         assert db_settings["processing"]["chunk_size"] == 999

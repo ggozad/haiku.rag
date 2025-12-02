@@ -10,7 +10,7 @@ from haiku.rag.store.repositories.document import DocumentRepository
 
 @pytest.mark.asyncio
 async def test_version_rollback_on_create_failure(temp_db_path):
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     repo = DocumentRepository(store)
 
     # Ensure chunk repository is instantiated and stub embeddings to avoid network
@@ -51,7 +51,7 @@ async def test_version_rollback_on_create_failure(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_version_rollback_on_update_failure(temp_db_path):
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     repo = DocumentRepository(store)
 
     # Stub embeddings to avoid network
@@ -106,11 +106,11 @@ def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
         fail_if_called,
     )
 
-    Store(temp_db_path)
+    Store(temp_db_path, create=True)
 
 
 def test_existing_database_runs_upgrades(monkeypatch, temp_db_path):
-    Store(temp_db_path)
+    Store(temp_db_path, create=True)
 
     called = {"value": False}
 
@@ -122,6 +122,7 @@ def test_existing_database_runs_upgrades(monkeypatch, temp_db_path):
         mark_called,
     )
 
+    # Opening an existing database should trigger upgrades
     Store(temp_db_path)
 
     assert called["value"]
@@ -129,7 +130,7 @@ def test_existing_database_runs_upgrades(monkeypatch, temp_db_path):
 
 @pytest.mark.asyncio
 async def test_vacuum_with_retention_threshold(temp_db_path):
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     repo = DocumentRepository(store)
 
     # Stub embeddings to avoid network
@@ -209,14 +210,14 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     # Set aggressive vacuum retention for this test
     monkeypatch.setattr(Config.storage, "vacuum_retention_seconds", 0)
 
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create multiple documents - each creation triggers automatic vacuum with retention=0
         # This aggressively cleans up old versions between operations
         for i in range(3):
             await client.create_document(content=f"Test document {i}")
 
     # After context exit, automatic vacuum should have kept versions minimal
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     final_versions = len(list(store.documents_table.list_versions()))
 
     # With retention_seconds=0, vacuum aggressively cleans up between operations

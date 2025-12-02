@@ -54,35 +54,41 @@ class Store:
         db_path: Path,
         config: AppConfig = Config,
         skip_validation: bool = False,
-        read_only: bool = False,
+        create: bool = False,
     ):
         self.db_path: Path = db_path
         self._config = config
         self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
-        self._read_only = read_only
 
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
-        # Local filesystem handling for DB directory
+        # Check if database exists (for local filesystem only)
+        is_new_db = False
         if not self._has_cloud_config():
-            if read_only:
-                # Read operations should not create the database
-                if not db_path.exists():
+            if not db_path.exists():
+                if not create:
                     raise FileNotFoundError(
-                        f"Database does not exist: {db_path}. Use a write operation (add, add-src) to create it."
+                        f"Database does not exist at {db_path}. "
+                        "Use 'haiku-rag init' to create a new database."
                     )
-            else:
-                # Write operations - ensure parent directories exist
+                is_new_db = True
+                # Ensure parent directories exist for new databases
                 if not db_path.parent.exists():
                     Path.mkdir(db_path.parent, parents=True)
 
         # Connect to LanceDB
         self.db = self._connect_to_lancedb(db_path)
 
-        # Initialize tables
-        self.create_or_update_db()
+        # Initialize tables (creates them if they don't exist)
+        self._init_tables()
+
+        # Run upgrades only on existing databases, set version for new ones
+        if is_new_db:
+            self._set_initial_version()
+        else:
+            self._run_upgrades()
 
         # Validate config compatibility after connection is established
         if not skip_validation:
@@ -234,9 +240,8 @@ class Store:
         settings_repo = SettingsRepository(self)
         settings_repo.validate_config_compatibility()
 
-    def create_or_update_db(self):
-        """Create the database tables."""
-
+    def _init_tables(self):
+        """Initialize database tables (create if they don't exist)."""
         # Get list of existing tables
         existing_tables = self.db.table_names()
 
@@ -271,44 +276,29 @@ class Store:
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )
 
-        # Run pending upgrades based on stored version and package version
-        # Skip in read-only mode to avoid modifying the database
-        if not self._read_only:
-            try:
-                from haiku.rag.store.upgrades import run_pending_upgrades
+    def _set_initial_version(self):
+        """Set the initial version for a new database."""
+        self.set_haiku_version(metadata.version("haiku.rag-slim"))
 
-                current_version = metadata.version("haiku.rag-slim")
-                db_version = self.get_haiku_version()
+    def _run_upgrades(self):
+        """Run pending database upgrades."""
+        try:
+            from haiku.rag.store.upgrades import run_pending_upgrades
 
-                if db_version != "0.0.0":
-                    run_pending_upgrades(self, db_version, current_version)
+            current_version = metadata.version("haiku.rag-slim")
+            db_version = self.get_haiku_version()
 
-                # After upgrades complete (or if none), set stored version
-                # to the greater of the installed package version and the
-                # highest available upgrade step version in code.
-                try:
-                    from packaging.version import parse as _v
+            run_pending_upgrades(self, db_version, current_version)
 
-                    from haiku.rag.store.upgrades import upgrades as _steps
-
-                    highest_step = max((_v(u.version) for u in _steps), default=None)
-                    effective_version = (
-                        str(max(_v(current_version), highest_step))
-                        if highest_step is not None
-                        else current_version
-                    )
-                except Exception:
-                    effective_version = current_version
-
-                self.set_haiku_version(effective_version)
-            except Exception as e:
-                # Avoid hard failure on initial connection; log and continue so CLI remains usable.
-                logger.warning(
-                    "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
-                    self.get_haiku_version(),
-                    metadata.version("haiku.rag-slim"),
-                    e,
-                )
+            self.set_haiku_version(current_version)
+        except Exception as e:
+            # Avoid hard failure on initial connection; log and continue so CLI remains usable.
+            logger.warning(
+                "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
+                self.get_haiku_version(),
+                metadata.version("haiku.rag-slim"),
+                e,
+            )
 
     def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""
