@@ -35,9 +35,10 @@ A minimal configuration file with defaults:
 environment: production
 
 embeddings:
-  provider: ollama
-  model: qwen3-embedding:4b
-  vector_dim: 2560
+  model:
+    provider: ollama
+    name: qwen3-embedding:4b
+    vector_dim: 2560
 
 qa:
   model:
@@ -69,9 +70,10 @@ lancedb:
   region: ""
 
 embeddings:
-  provider: ollama
-  model: qwen3-embedding:4b
-  vector_dim: 2560
+  model:
+    provider: ollama
+    name: qwen3-embedding:4b
+    vector_dim: 2560
 
 reranking:
   model:
@@ -149,7 +151,7 @@ When using haiku.rag as a Python library, you can pass configuration directly to
 
 ```python
 from haiku.rag.config import AppConfig
-from haiku.rag.config.models import ModelConfig, QAConfig, EmbeddingsConfig
+from haiku.rag.config.models import EmbeddingModelConfig, ModelConfig, QAConfig, EmbeddingsConfig
 from haiku.rag.client import HaikuRAG
 
 # Create custom configuration
@@ -157,16 +159,16 @@ custom_config = AppConfig(
     qa=QAConfig(
         model=ModelConfig(
             provider="openai",
-            model="gpt-4o",
+            name="gpt-4o",
             temperature=0.7
         )
     ),
     embeddings=EmbeddingsConfig(
-        model=ModelConfig(
+        model=EmbeddingModelConfig(
             provider="ollama",
-            model="qwen3-embedding:4b"
-        ),
-        vector_dim=2560
+            name="qwen3-embedding:4b",
+            vector_dim=2560
+        )
     ),
     processing={"chunk_size": 512}
 )

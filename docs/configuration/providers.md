@@ -73,9 +73,10 @@ If you use Ollama, you can use any pulled model that supports embeddings.
 
 ```yaml
 embeddings:
-  provider: ollama
-  model: mxbai-embed-large
-  vector_dim: 1024
+  model:
+    provider: ollama
+    name: mxbai-embed-large
+    vector_dim: 1024
 ```
 
 The Ollama base URL can be configured in your config file or via environment variable:
@@ -104,9 +105,10 @@ uv pip install haiku.rag-slim[voyageai]
 
 ```yaml
 embeddings:
-  provider: voyageai
-  model: voyage-3.5
-  vector_dim: 1024
+  model:
+    provider: voyageai
+    name: voyage-3.5
+    vector_dim: 1024
 ```
 
 Set your API key via environment variable:
@@ -121,9 +123,10 @@ OpenAI embeddings are included in the default installation:
 
 ```yaml
 embeddings:
-  provider: openai
-  model: text-embedding-3-small  # or text-embedding-3-large
-  vector_dim: 1536
+  model:
+    provider: openai
+    name: text-embedding-3-small  # or text-embedding-3-large
+    vector_dim: 1536
 ```
 
 Set your API key via environment variable:
@@ -138,9 +141,10 @@ For high-performance local inference, you can use vLLM to serve embedding models
 
 ```yaml
 embeddings:
-  provider: vllm
-  model: mixedbread-ai/mxbai-embed-large-v1
-  vector_dim: 512
+  model:
+    provider: vllm
+    name: mixedbread-ai/mxbai-embed-large-v1
+    vector_dim: 512
 
 providers:
   vllm:
@@ -155,9 +159,10 @@ providers:
 
 ```yaml
 embeddings:
-  provider: lm_studio
-  model: text-embedding-qwen3-embedding-4b
-  vector_dim: 2560
+  model:
+    provider: lm_studio
+    name: text-embedding-qwen3-embedding-4b
+    vector_dim: 2560
 
 providers:
   lm_studio:

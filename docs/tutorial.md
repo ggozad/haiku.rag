@@ -33,9 +33,10 @@ Configure haiku.rag to use OpenAI. Create a `haiku.rag.yaml` file:
 
 ```yaml
 embeddings:
-  provider: openai
-  model: text-embedding-3-small  # or text-embedding-3-large
-  vector_dim: 1536
+  model:
+    provider: openai
+    name: text-embedding-3-small  # or text-embedding-3-large
+    vector_dim: 1536
 
 qa:
   model:

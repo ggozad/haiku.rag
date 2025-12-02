@@ -25,9 +25,10 @@ Create a configuration file `haiku.rag.yaml`:
 environment: production
 
 embeddings:
-  provider: ollama
-  model: nomic-embed-text
-  vector_dim: 768
+  model:
+    provider: ollama
+    name: nomic-embed-text
+    vector_dim: 768
 
 qa:
   model:
