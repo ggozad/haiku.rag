@@ -6,16 +6,13 @@ from haiku.rag.qa.agent import QuestionAnswerAgent
 def get_qa_agent(
     client: HaikuRAG,
     config: AppConfig = Config,
-    use_citations: bool = False,
     system_prompt: str | None = None,
 ) -> QuestionAnswerAgent:
-    """
-    Factory function to get a QA agent based on the configuration.
+    """Factory function to get a QA agent based on the configuration.
 
     Args:
         client: HaikuRAG client instance.
         config: Configuration to use. Defaults to global Config.
-        use_citations: Whether to include citations in responses.
         system_prompt: Optional custom system prompt.
 
     Returns:
@@ -24,6 +21,5 @@ def get_qa_agent(
     return QuestionAnswerAgent(
         client=client,
         model_config=config.qa.model,
-        use_citations=use_citations,
         system_prompt=system_prompt,
     )

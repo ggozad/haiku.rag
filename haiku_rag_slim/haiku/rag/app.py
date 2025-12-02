@@ -21,7 +21,7 @@ from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
-from haiku.rag.utils import format_bytes
+from haiku.rag.utils import format_bytes, format_citations
 
 logger = logging.getLogger(__name__)
 
@@ -283,39 +283,49 @@ class HaikuRAGApp:
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
+                citations = []
                 if deep:
                     from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
                     from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
                     from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph(config=self.config)
-                    context = DeepQAContext(
-                        original_question=question, use_citations=cite
-                    )
+                    context = DeepQAContext(original_question=question)
                     state = DeepQAState.from_config(context=context, config=self.config)
                     deps = DeepQADeps(client=self.client)
 
                     if verbose:
                         # Use AG-UI renderer to process and display events
-                        from haiku.rag.graph.agui import AGUIConsoleRenderer
+                        from haiku.rag.graph.common.models import Citation
 
                         renderer = AGUIConsoleRenderer(self.console)
                         result_dict = await renderer.render(
                             stream_graph(graph, state, deps)
                         )
-                        # Result should be a dict with 'answer' key
+                        # Result should be a dict with 'answer' and 'citations' keys
                         answer = result_dict.get("answer", "") if result_dict else ""
+                        if cite and result_dict:
+                            # Convert dicts to Citation objects
+                            raw_citations = result_dict.get("citations", [])
+                            citations = [
+                                Citation(**c) if isinstance(c, dict) else c
+                                for c in raw_citations
+                            ]
                     else:
                         # Run without rendering events, just get the result
                         result = await graph.run(state=state, deps=deps)
                         answer = result.answer
+                        if cite:
+                            citations = result.citations
                 else:
-                    answer = await self.client.ask(question, cite=cite)
+                    answer, citations = await self.client.ask(question)
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
                 self.console.print("[bold green]Answer:[/bold green]")
                 self.console.print(Markdown(answer))
+                if cite and citations:
+                    self.console.print(Markdown(format_citations(citations)))
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 

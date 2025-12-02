@@ -8,6 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.graph.research.models import ResearchReport
 from haiku.rag.store.models import SearchResult
+from haiku.rag.utils import format_citations
 
 
 class DocumentResult(BaseModel):
@@ -176,16 +177,17 @@ def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
                     from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph(config=config)
-                    context = DeepQAContext(
-                        original_question=question, use_citations=cite
-                    )
+                    context = DeepQAContext(original_question=question)
                     state = DeepQAState.from_config(context=context, config=config)
                     deps = DeepQADeps(client=rag)
 
                     result = await graph.run(state=state, deps=deps)
                     answer = result.answer
+                    citations = result.citations
                 else:
-                    answer = await rag.ask(question, cite=cite)
+                    answer, citations = await rag.ask(question)
+                if cite and citations:
+                    answer += "\n\n" + format_citations(citations)
                 return answer
         except Exception as e:
             return f"Error answering question: {e!s}"

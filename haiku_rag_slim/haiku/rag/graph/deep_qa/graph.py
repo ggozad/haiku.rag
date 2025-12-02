@@ -6,16 +6,13 @@ from pydantic_graph.beta.join import reduce_list_append
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.graph.common import get_model
-from haiku.rag.graph.common.models import SearchAnswer
+from haiku.rag.graph.common.models import SearchAnswer, resolve_citations
 from haiku.rag.graph.common.nodes import create_plan_node, create_search_node
 from haiku.rag.graph.deep_qa.dependencies import DeepQADependencies
 from haiku.rag.graph.deep_qa.models import DeepQAAnswer, DeepQAEvaluation
-from haiku.rag.graph.deep_qa.prompts import (
-    DECISION_PROMPT,
-    SYNTHESIS_PROMPT,
-    SYNTHESIS_PROMPT_WITH_CITATIONS,
-)
+from haiku.rag.graph.deep_qa.prompts import DECISION_PROMPT, SYNTHESIS_PROMPT
 from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
+from haiku.rag.store.models import SearchResult
 
 
 def build_deep_qa_graph(
@@ -102,7 +99,7 @@ def build_deep_qa_graph(
                     {
                         "question": qa.query,
                         "answer": qa.answer,
-                        "sources": qa.sources,
+                        "confidence": qa.confidence,
                     }
                     for qa in state.context.qa_responses
                 ],
@@ -163,16 +160,10 @@ def build_deep_qa_graph(
             )
 
         try:
-            prompt_template = (
-                SYNTHESIS_PROMPT_WITH_CITATIONS
-                if state.context.use_citations
-                else SYNTHESIS_PROMPT
-            )
-
             agent = Agent(
                 model=get_model(model_config, config),
-                output_type=DeepQAAnswer,
-                instructions=prompt_template,
+                output_type=SearchAnswer,
+                instructions=SYNTHESIS_PROMPT,
                 retries=3,
                 deps_type=DeepQADependencies,
             )
@@ -183,7 +174,8 @@ def build_deep_qa_graph(
                     {
                         "question": qa.query,
                         "answer": qa.answer,
-                        "sources": qa.sources,
+                        "confidence": qa.confidence,
+                        "cited_chunks": qa.cited_chunks,
                     }
                     for qa in state.context.qa_responses
                 ],
@@ -197,13 +189,22 @@ def build_deep_qa_graph(
                 context=state.context,
             )
             result = await agent.run(prompt, deps=agent_deps)
+            llm_answer = result.output
+
+            # Resolve citations by fetching chunks by ID
+            search_results = []
+            for chunk_id in llm_answer.cited_chunks:
+                chunk = await deps.client.chunk_repository.get_by_id(chunk_id)
+                if chunk:
+                    search_results.append(SearchResult.from_chunk(chunk, score=1.0))
+            citations = resolve_citations(llm_answer.cited_chunks, search_results)
 
             if deps.agui_emitter:
                 deps.agui_emitter.update_activity(
                     "synthesizing", {"message": "Answer complete"}
                 )
 
-            return result.output
+            return DeepQAAnswer(answer=llm_answer.answer, citations=citations)
         finally:
             if deps.agui_emitter:
                 deps.agui_emitter.finish_step()

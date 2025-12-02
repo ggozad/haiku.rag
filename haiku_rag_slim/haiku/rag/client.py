@@ -5,6 +5,7 @@ import tempfile
 from collections.abc import AsyncGenerator
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
@@ -18,6 +19,9 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
+
+if TYPE_CHECKING:
+    from haiku.rag.graph.common.models import Citation
 
 logger = logging.getLogger(__name__)
 
@@ -836,23 +840,20 @@ class HaikuRAG:
         return final_results + passthrough
 
     async def ask(
-        self, question: str, cite: bool = False, system_prompt: str | None = None
-    ) -> str:
+        self, question: str, system_prompt: str | None = None
+    ) -> "tuple[str, list[Citation]]":
         """Ask a question using the configured QA agent.
 
         Args:
             question: The question to ask.
-            cite: Whether to include citations in the response.
             system_prompt: Optional custom system prompt for the QA agent.
 
         Returns:
-            The generated answer as a string.
+            Tuple of (answer text, list of resolved citations).
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(
-            self, config=self._config, use_citations=cite, system_prompt=system_prompt
-        )
+        qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question)
 
     async def rebuild_database(

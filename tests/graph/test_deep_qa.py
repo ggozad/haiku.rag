@@ -25,9 +25,7 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     graph = build_deep_qa_graph()
 
     state = DeepQAState(
-        context=DeepQAContext(
-            original_question="What is haiku.rag?", use_citations=False
-        ),
+        context=DeepQAContext(original_question="What is haiku.rag?"),
         max_sub_questions=3,
     )
 
@@ -40,42 +38,6 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     # TestModel will generate valid structured output based on schemas
     assert result.answer is not None
     assert isinstance(result.answer, str)
-    assert isinstance(result.sources, list)
-
-    client.close()
-
-
-@pytest.mark.asyncio
-async def test_deep_qa_with_citations(monkeypatch, temp_db_path):
-    """Test deep Q&A with citations enabled using TestModel."""
-
-    # Mock get_model to return TestModel
-    def test_model_factory(provider, model, config=None):
-        return TestModel()
-
-    # Patch all locations where get_model is imported
-    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.deep_qa.graph.get_model", test_model_factory)
-
-    graph = build_deep_qa_graph()
-
-    state = DeepQAState(
-        context=DeepQAContext(original_question="What is Python?", use_citations=True),
-        max_sub_questions=2,
-    )
-
-    # Use real client but with TestModel for LLM calls
-    client = HaikuRAG(temp_db_path, create=True)
-    deps = DeepQADeps(client=client)
-
-    result = await graph.run(state=state, deps=deps)
-
-    # Verify citations flag was used
-    assert state.context.use_citations is True
-    assert result.answer is not None
-    assert isinstance(result.sources, list)
 
     client.close()
 
@@ -87,7 +49,6 @@ async def test_deep_qa_context_operations():
     assert context.original_question == "Test question?"
     assert context.sub_questions == []
     assert context.qa_responses == []
-    assert context.use_citations is False
 
     context.sub_questions = ["Sub Q1", "Sub Q2"]
     assert len(context.sub_questions) == 2
@@ -95,10 +56,10 @@ async def test_deep_qa_context_operations():
     qa = SearchAnswer(
         query="Sub Q1",
         answer="Answer 1",
-        context=["Context 1"],
-        sources=["source1.md"],
+        cited_chunks=["chunk_1", "chunk_2"],
+        confidence=0.9,
     )
-    context.add_qa_response(qa)
+    context.add_qa_response(qa, search_results=[])
     assert len(context.qa_responses) == 1
     assert context.qa_responses[0].query == "Sub Q1"
 

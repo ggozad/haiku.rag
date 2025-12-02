@@ -45,7 +45,7 @@ async def test_mcp_ask_question():
 
         with patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class:
             mock_rag = AsyncMock()
-            mock_rag.ask = AsyncMock(return_value="This is the answer")
+            mock_rag.ask = AsyncMock(return_value=("This is the answer", []))
             mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_rag)
             mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -57,7 +57,7 @@ async def test_mcp_ask_question():
             )
 
             assert result == "This is the answer"
-            mock_rag.ask.assert_called_once_with("What is this?", cite=False)
+            mock_rag.ask.assert_called_once_with("What is this?")
 
 
 @pytest.mark.asyncio
@@ -261,14 +261,16 @@ async def test_mcp_ask_question_deep():
             mock_graph = AsyncMock()
             mock_result = AsyncMock()
             mock_result.answer = "Deep answer"
+            mock_result.citations = []
             mock_graph.run = AsyncMock(return_value=mock_result)
             mock_graph_builder.return_value = mock_graph
 
             tools = await mcp.get_tools()
             ask_tool = next(t for t in tools.values() if t.name == "ask_question")
 
+            # cite=False to avoid citation formatting in output
             result = await ask_tool.fn(  # type: ignore[attr-defined]
-                question="Deep question?", cite=True, deep=True
+                question="Deep question?", cite=False, deep=True
             )
 
             assert result == "Deep answer"

@@ -210,8 +210,7 @@ def create_agui_server(config: "AppConfig", db_path: Path | None = None) -> Star
             messages = input_state.get("messages", [])
             if messages:
                 question = messages[0].get("content", "")
-        use_citations = input_state.get("use_citations", False)
-        context = DeepQAContext(original_question=question, use_citations=use_citations)
+        context = DeepQAContext(original_question=question)
         return DeepQAState.from_config(context=context, config=config)
 
     def deep_ask_deps_factory(input_config: dict[str, Any]) -> DeepQADeps:

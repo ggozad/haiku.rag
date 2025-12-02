@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.format_prompt import format_as_xml
 from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import StepContext
 
@@ -16,6 +15,7 @@ from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.common import get_model
 from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
 from haiku.rag.graph.common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
+from haiku.rag.store.models import SearchResult
 
 
 class GraphContext(Protocol):
@@ -24,7 +24,9 @@ class GraphContext(Protocol):
     original_question: str
     sub_questions: list[str]
 
-    def add_qa_response(self, qa: SearchAnswer) -> None:
+    def add_qa_response(
+        self, qa: SearchAnswer, search_results: list[SearchResult]
+    ) -> None:
         """Add a QA response to context."""
         ...
 
@@ -49,6 +51,7 @@ class GraphAgentDeps(Protocol):
 
     client: HaikuRAG
     context: GraphContext
+    search_results: list[SearchResult]
 
 
 def create_plan_node[AgentDepsT: GraphAgentDeps](
@@ -228,28 +231,24 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
     async def search_and_answer(
         ctx2: RunContext[AgentDepsT], query: str, limit: int = 5
     ) -> str:
+        """Search the knowledge base for relevant documents.
+
+        Returns results with chunk IDs and relevance scores.
+        Reference results by their chunk_id in cited_chunks.
+        """
         results = await ctx2.deps.client.search(query, limit=limit)
         results = await ctx2.deps.client.expand_context(results)
+        # Store results for citation resolution
+        ctx2.deps.search_results = results
 
-        entries: list[dict[str, Any]] = []
+        parts = []
         for r in results:
-            entry: dict[str, Any] = {
-                "text": r.content,
-                "score": r.score,
-                "document_uri": (r.document_uri or ""),
-            }
-            if r.document_title:
-                entry["document_title"] = r.document_title
-            if r.page_numbers:
-                entry["page_numbers"] = r.page_numbers
-            if r.headings:
-                entry["headings"] = r.headings
-            entries.append(entry)
+            parts.append(f"[{r.chunk_id}] (score: {r.score:.2f}) {r.content}")
 
-        if not entries:
+        if not parts:
             return f"No relevant information found in the knowledge base for: {query}"
 
-        return format_as_xml(entries, root_tag="snippets")
+        return "\n\n".join(parts)
 
     # Tool is registered via decorator above
     _ = search_and_answer
@@ -260,7 +259,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
         result = await agent.run(sub_q, deps=agent_deps)
         answer = result.output
         if answer:
-            state.context.add_qa_response(answer)
+            state.context.add_qa_response(answer, agent_deps.search_results)
             # State updated with new answer - emit state update and narrate
             if deps.agui_emitter:
                 deps.agui_emitter.update_state(state)

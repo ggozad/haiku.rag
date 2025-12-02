@@ -4,9 +4,12 @@ import sys
 from importlib import metadata
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.version import Version, parse
+
+if TYPE_CHECKING:
+    from haiku.rag.graph.common.models import Citation
 
 
 def apply_common_settings(
@@ -269,6 +272,34 @@ def format_bytes(num_bytes: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024.0
     return f"{size:.1f} PB"
+
+
+def format_citations(citations: "list[Citation]") -> str:
+    """Format citations as markdown string."""
+    if not citations:
+        return ""
+    lines = ["## Citations\n"]
+    for c in citations:
+        # Build citation header
+        parts = [f"- **{c.document_uri}**"]
+        if c.document_title:
+            parts.append(f' - "{c.document_title}"')
+        location_parts = []
+        if c.page_numbers:
+            if len(c.page_numbers) == 1:
+                location_parts.append(f"p. {c.page_numbers[0]}")
+            else:
+                location_parts.append(f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}")
+        if c.headings:
+            location_parts.append(f"Section: {c.headings[-1]}")
+        if location_parts:
+            parts.append(f" ({', '.join(location_parts)})")
+        lines.append("".join(parts))
+        # Add truncated content excerpt
+        excerpt = c.content[:500] + "…" if len(c.content) > 500 else c.content
+        excerpt = excerpt.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        lines.append(f"\n  {excerpt}\n")
+    return "\n".join(lines)
 
 
 def get_default_data_dir() -> Path:
