@@ -1,6 +1,13 @@
 """Common models used across different graph implementations."""
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, Field, field_validator
+
+from haiku.rag.store.models import BoundingBox
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models import SearchResult
 
 
 class ResearchPlan(BaseModel):
@@ -21,18 +28,25 @@ class ResearchPlan(BaseModel):
         return v
 
 
+class Citation(BaseModel):
+    """Resolved citation with full metadata for display/visual grounding."""
+
+    document_uri: str
+    document_title: str | None = None
+    page_numbers: list[int] = Field(default_factory=list)
+    headings: list[str] | None = None
+    content: str
+    bounding_boxes: list[BoundingBox] | None = None
+
+
 class SearchAnswer(BaseModel):
-    """Answer from a search operation with sources."""
+    """Structured answer from a search operation."""
 
     query: str = Field(..., description="The question that was answered")
-    answer: str = Field(..., description="The comprehensive answer to the question")
-    context: list[str] = Field(
+    answer: str = Field(..., description="The answer to the question")
+    cited_chunks: list[str] = Field(
         default_factory=list,
-        description="Relevant snippets that directly support the answer",
-    )
-    sources: list[str] = Field(
-        default_factory=list,
-        description="Source URIs or titles that contributed to this answer",
+        description="IDs of chunks used to form the answer",
     )
     confidence: float = Field(
         default=1.0,
@@ -40,3 +54,29 @@ class SearchAnswer(BaseModel):
         ge=0.0,
         le=1.0,
     )
+
+
+def resolve_citations(
+    cited_chunk_ids: list[str],
+    search_results: "list[SearchResult]",
+) -> list[Citation]:
+    """Resolve chunk IDs to full Citation objects with metadata."""
+    # Build lookup by chunk_id
+    by_id = {r.chunk_id: r for r in search_results if r.chunk_id}
+
+    citations = []
+    for chunk_id in cited_chunk_ids:
+        r = by_id.get(chunk_id)
+        if not r:
+            continue
+        citations.append(
+            Citation(
+                document_uri=r.document_uri or "",
+                document_title=r.document_title,
+                page_numbers=r.page_numbers,
+                headings=r.headings,
+                content=r.content,
+                bounding_boxes=r.bounding_boxes,
+            )
+        )
+    return citations

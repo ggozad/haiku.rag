@@ -732,8 +732,8 @@ async def test_client_create_document_with_custom_chunks(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_ask_without_cite(monkeypatch, temp_db_path):
-    """Test asking questions without citations."""
+async def test_client_ask(monkeypatch, temp_db_path):
+    """Test asking questions returns answer and citations."""
     from pydantic_ai.models.test import TestModel
 
     # Mock get_model to return TestModel
@@ -748,35 +748,12 @@ async def test_client_ask_without_cite(monkeypatch, temp_db_path):
         )
 
         # Use real QA agent with TestModel
-        answer = await client.ask("What is Python?")
+        answer, citations = await client.ask("What is Python?")
 
         # TestModel will generate a valid string response
         assert answer is not None
         assert isinstance(answer, str)
-
-
-@pytest.mark.asyncio
-async def test_client_ask_with_cite(monkeypatch, temp_db_path):
-    """Test asking questions with citations."""
-    from pydantic_ai.models.test import TestModel
-
-    # Mock get_model to return TestModel
-    monkeypatch.setattr(
-        "haiku.rag.utils.get_model", lambda *args, **kwargs: TestModel()
-    )
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create a test document
-        await client.create_document(
-            content="Python is a high-level programming language.", uri="test.txt"
-        )
-
-        # Use real QA agent with TestModel
-        answer = await client.ask("What is Python?", cite=True)
-
-        # TestModel will generate a valid string response
-        assert answer is not None
-        assert isinstance(answer, str)
+        assert isinstance(citations, list)
 
 
 @pytest.mark.asyncio

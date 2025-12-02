@@ -248,7 +248,8 @@ async def run_qa_benchmark(
         qa = get_qa_agent(rag, system_prompt=system_prompt)
 
         async def answer_question(question: str) -> str:
-            return await qa.answer(question)
+            answer, _ = await qa.answer(question)
+            return answer
 
         eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
 

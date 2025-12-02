@@ -9,6 +9,7 @@ from haiku.rag.graph.research.models import (
     InsightAnalysis,
     InsightRecord,
 )
+from haiku.rag.store.models import SearchResult
 
 
 class ResearchContext(BaseModel):
@@ -37,8 +38,12 @@ class ResearchContext(BaseModel):
         self._insights_by_id = {ins.id: ins for ins in self.insights}
         self._gaps_by_id = {gap.id: gap for gap in self.gaps}
 
-    def add_qa_response(self, qa: SearchAnswer) -> None:
-        """Add a structured QA response (minimal context already included)."""
+    def add_qa_response(
+        self, qa: SearchAnswer, search_results: list[SearchResult]
+    ) -> None:
+        """Add a structured QA response."""
+        # Research doesn't accumulate search_results for citation resolution
+        del search_results
         self.qa_responses.append(qa)
 
     def upsert_insights(self, records: Iterable[InsightRecord]) -> list[InsightRecord]:
@@ -144,6 +149,9 @@ class ResearchDependencies(BaseModel):
 
     client: HaikuRAG = Field(description="RAG client for document operations")
     context: ResearchContext = Field(description="Shared research context")
+    search_results: list[SearchResult] = Field(
+        default_factory=list, description="Search results for citation resolution"
+    )
 
 
 def _merge_unique(existing: list[str], incoming: Iterable[str]) -> list[str]:

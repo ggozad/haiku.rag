@@ -14,8 +14,7 @@ def format_context_for_prompt(context: ResearchContext) -> str:
             {
                 "question": qa.query,
                 "answer": qa.answer,
-                "context_snippets": qa.context,
-                "sources": qa.sources,  # pyright: ignore[reportAttributeAccessIssue]
+                "confidence": qa.confidence,
             }
             for qa in context.qa_responses
         ],
