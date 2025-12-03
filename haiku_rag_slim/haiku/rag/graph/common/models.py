@@ -31,6 +31,8 @@ class ResearchPlan(BaseModel):
 class Citation(BaseModel):
     """Resolved citation with full metadata for display/visual grounding."""
 
+    document_id: str
+    chunk_id: str
     document_uri: str
     document_title: str | None = None
     page_numbers: list[int] = Field(default_factory=list)
@@ -75,6 +77,8 @@ def resolve_citations(
             continue
         citations.append(
             Citation(
+                document_id=r.document_id or "",
+                chunk_id=chunk_id,
                 document_uri=r.document_uri or "",
                 document_title=r.document_title,
                 page_numbers=r.page_numbers,

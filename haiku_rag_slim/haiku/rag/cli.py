@@ -261,6 +261,21 @@ def search(
     asyncio.run(app.search(query=query, limit=limit, filter=filter))
 
 
+@cli.command("visualize", help="Show visual grounding for a chunk")
+def visualize(
+    chunk_id: str = typer.Argument(
+        help="The ID of the chunk to visualize",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.visualize_chunk(chunk_id=chunk_id))
+
+
 @cli.command("ask", help="Ask a question using the QA agent")
 def ask(
     question: str = typer.Argument(
