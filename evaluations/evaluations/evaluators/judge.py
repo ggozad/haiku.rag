@@ -26,7 +26,7 @@ GUIDELINES:
 - Consider both answers correct if they convey the same essential information
 - Be tolerant of different levels of detail if the core answer is preserved
 - Evaluate based on what a person asking this question would need to know
-/no_think"""
+"""
 
 
 class LLMJudgeResponseSchema(BaseModel):
