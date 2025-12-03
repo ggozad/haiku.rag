@@ -81,7 +81,9 @@ def main(
         loaded_config = AppConfig.model_validate(yaml_data)
         set_config(loaded_config)
 
-    # Configure logging minimally for CLI context
+    # Configure logging for CLI context
+    configure_cli_logging()
+
     if get_config().environment == "development":
         # Lazy import logfire only in development
         try:
@@ -92,7 +94,7 @@ def main(
         except Exception:
             pass
     else:
-        configure_cli_logging()
+        # Suppress warnings in production
         warnings.filterwarnings("ignore")
 
     # Run version check before any command
