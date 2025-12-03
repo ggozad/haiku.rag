@@ -31,7 +31,7 @@ def _apply_embeddings_model_config(store: Store) -> None:
     old_model = embeddings.get("model", "qwen3-embedding:4b")
     old_vector_dim = embeddings.get("vector_dim", 2560)
 
-    logger.warning(
+    logger.info(
         "Migrating embeddings config to new nested structure: "
         "embeddings.{provider,model,vector_dim} -> embeddings.model.{provider,name,vector_dim}"
     )
@@ -50,7 +50,7 @@ def _apply_embeddings_model_config(store: Store) -> None:
         values={"settings": json.dumps(settings)},
     )
 
-    logger.warning(
+    logger.info(
         "Embeddings config migrated: provider=%s, name=%s, vector_dim=%d",
         old_provider,
         old_model,

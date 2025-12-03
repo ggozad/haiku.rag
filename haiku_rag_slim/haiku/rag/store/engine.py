@@ -70,7 +70,7 @@ class Store:
             if not db_path.exists():
                 if not create:
                     raise FileNotFoundError(
-                        f"Database does not exist at {db_path}. "
+                        f"Database does not exist at {self.db_path.absolute()}. "
                         "Use 'haiku-rag init' to create a new database."
                     )
                 is_new_db = True
