@@ -13,7 +13,7 @@ from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.common import get_model
-from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
+from haiku.rag.graph.common.models import RawSearchAnswer, ResearchPlan, SearchAnswer
 from haiku.rag.graph.common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
 from haiku.rag.store.models import SearchResult
 
@@ -24,9 +24,7 @@ class GraphContext(Protocol):
     original_question: str
     sub_questions: list[str]
 
-    def add_qa_response(
-        self, qa: SearchAnswer, search_results: list[SearchResult]
-    ) -> None:
+    def add_qa_response(self, qa: SearchAnswer) -> None:
         """Add a QA response to context."""
         ...
 
@@ -221,7 +219,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 
     agent = Agent(
         model=get_model(model_config, config),
-        output_type=ToolOutput(SearchAnswer, max_retries=3),
+        output_type=ToolOutput(RawSearchAnswer, max_retries=3),
         instructions=SEARCH_AGENT_PROMPT,
         retries=3,
         deps_type=deps_type,
@@ -257,9 +255,11 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 
     try:
         result = await agent.run(sub_q, deps=agent_deps)
-        answer = result.output
-        if answer:
-            state.context.add_qa_response(answer, agent_deps.search_results)
+        raw_answer = result.output
+        if raw_answer:
+            # Convert RawSearchAnswer to SearchAnswer with resolved citations
+            answer = SearchAnswer.from_raw(raw_answer, agent_deps.search_results)
+            state.context.add_qa_response(answer)
             # State updated with new answer - emit state update and narrate
             if deps.agui_emitter:
                 deps.agui_emitter.update_state(state)
@@ -279,7 +279,9 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
                         "confidence": answer.confidence,
                     },
                 )
-        return answer
+            return answer
+        # Return empty SearchAnswer if no result
+        return SearchAnswer(query=sub_q, answer="", confidence=0.0)
     except Exception as e:
         if handle_exceptions:
             # Narrate the error
