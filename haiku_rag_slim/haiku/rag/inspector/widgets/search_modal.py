@@ -166,39 +166,17 @@ class SearchModal(Screen):
         """Show visual grounding for the current chunk."""
         list_view = self.query_one("#search-results", ListView)
         idx = list_view.index
-        if idx is None or not self.search_results:
+        if idx is None or not self.chunks:
             return
 
-        search_result = self.search_results[idx]
-        if not search_result.document_id or not search_result.chunk_id:
-            return
-
-        status_label = self.query_one("#status-label", Static)
-
-        document = await self.client.get_document_by_id(search_result.document_id)
-        if not document:
-            status_label.update("[yellow]Document not found[/yellow]")
-            return
-
-        docling_doc = document.get_docling_document()
-        if not docling_doc:
-            status_label.update(
-                "[yellow]No DoclingDocument available for visual[/yellow]"
-            )
-            return
-
-        chunk = await self.client.chunk_repository.get_by_id(search_result.chunk_id)
-        bounding_boxes = []
-        if chunk:
-            meta = chunk.get_chunk_metadata()
-            bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
+        chunk = self.chunks[idx]
 
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
-        modal = VisualGroundingModal(
-            docling_document=docling_doc,
-            bounding_boxes=bounding_boxes,
-            page_numbers=search_result.page_numbers,
-            document_uri=search_result.document_uri,
+        await self.app.push_screen(
+            VisualGroundingModal(
+                chunk=chunk,
+                client=self.client,
+                document_uri=chunk.document_uri,
+            )
         )
-        await self.app.push_screen(modal)

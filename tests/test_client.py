@@ -1282,3 +1282,116 @@ async def test_client_file_update_stores_docling_json(temp_db_path):
             assert doc2.docling_document_json is not None
             assert doc2.docling_document_json != original_json
             assert doc2.docling_version == original_version  # Version stays same
+
+
+@pytest.mark.asyncio
+async def test_client_visualize_chunk_no_document(temp_db_path):
+    """Test visualize_chunk returns empty list when chunk has no document_id."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        chunk = Chunk(content="Orphan chunk", order=0)
+        images = await client.visualize_chunk(chunk)
+        assert images == []
+
+
+@pytest.mark.asyncio
+async def test_client_visualize_chunk_no_docling_document(temp_db_path):
+    """Test visualize_chunk returns empty list when document has no DoclingDocument."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create document with custom chunks (no DoclingDocument)
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+        doc = await client.create_document(content="Test content", chunks=custom_chunks)
+
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) == 1
+
+        images = await client.visualize_chunk(chunks[0])
+        assert images == []
+
+
+@pytest.mark.asyncio
+async def test_client_visualize_chunk_no_bounding_boxes(temp_db_path):
+    """Test visualize_chunk returns empty list when chunk has no bounding boxes."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create document from text (will have DoclingDocument but no page images)
+        doc = await client.create_document(
+            content="Simple text content without structure",
+            uri="test://simple",
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document_json is not None
+
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) >= 1
+
+        # Text documents converted via markdown won't have page images
+        # so visualize_chunk should return empty list
+        images = await client.visualize_chunk(chunks[0])
+        assert images == []
+
+
+@pytest.mark.asyncio
+async def test_client_visualize_chunk_returns_list(temp_db_path):
+    """Test visualize_chunk returns a list (empty or with images)."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a structured document
+        markdown_content = """# Chapter 1
+
+This is paragraph one about topic A.
+
+This is paragraph two about topic A continued.
+
+# Chapter 2
+
+This is paragraph four about topic C.
+"""
+        doc = await client.create_document(
+            content=markdown_content,
+            uri="test://structured",
+        )
+
+        assert doc.id is not None
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+
+        # Find a chunk with doc_item_refs
+        chunks_with_refs = [c for c in chunks if c.get_chunk_metadata().doc_item_refs]
+
+        if chunks_with_refs:
+            # visualize_chunk should return a list (possibly empty if no page images)
+            images = await client.visualize_chunk(chunks_with_refs[0])
+            assert isinstance(images, list)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_client_visualize_chunk_with_pdf(temp_db_path):
+    """Test visualize_chunk returns images with bounding boxes for PDF documents."""
+    from PIL.Image import Image as PILImage
+
+    pdf_path = Path("tests/data/doclaynet.pdf")
+    if not pdf_path.exists():
+        pytest.skip("doclaynet.pdf not found")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(pdf_path)
+        assert isinstance(doc, Document)
+        assert doc.id is not None
+        assert doc.docling_document_json is not None
+
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) > 0
+
+        # Find a chunk with doc_item_refs (bounding box info)
+        chunks_with_refs = [c for c in chunks if c.get_chunk_metadata().doc_item_refs]
+        assert len(chunks_with_refs) > 0, "PDF should have chunks with doc_item_refs"
+
+        # Visualize a chunk - should return images with bounding boxes drawn
+        images = await client.visualize_chunk(chunks_with_refs[0])
+
+        assert isinstance(images, list)
+        assert len(images) > 0, "PDF with page images should return visualizations"
+
+        # Verify returned objects are PIL Images
+        for img in images:
+            assert isinstance(img, PILImage)
