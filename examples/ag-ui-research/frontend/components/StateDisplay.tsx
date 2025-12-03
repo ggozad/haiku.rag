@@ -23,11 +23,29 @@ interface GapRecord {
 	resolved_by: string[];
 }
 
+interface BoundingBox {
+	page_no: number;
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+}
+
+interface Citation {
+	document_uri: string;
+	document_title?: string;
+	page_numbers: number[];
+	headings?: string[];
+	content: string;
+	bounding_boxes?: BoundingBox[];
+}
+
 interface SearchAnswer {
-	sub_question: string;
+	query: string;
 	answer: string;
 	confidence: number;
-	chunks_used: number;
+	cited_chunks: string[];
+	citations: Citation[];
 }
 
 interface ResearchContext {
@@ -508,6 +526,125 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 														<Markdown content={qaResponse.answer} />
 													</div>
 												</div>
+
+												{/* Citations with visual grounding info */}
+												{qaResponse.citations &&
+													qaResponse.citations.length > 0 && (
+														<div style={{ marginTop: "1rem" }}>
+															<div
+																style={{
+																	fontSize: "0.75rem",
+																	color: "#718096",
+																	marginBottom: "0.5rem",
+																	fontWeight: "600",
+																}}
+															>
+																Citations ({qaResponse.citations.length})
+															</div>
+															{qaResponse.citations.map((citation, citIdx) => (
+																<div
+																	key={citIdx}
+																	style={{
+																		padding: "0.75rem",
+																		background: "white",
+																		borderRadius: "4px",
+																		border: "1px solid #e2e8f0",
+																		marginBottom: "0.5rem",
+																	}}
+																>
+																	<div
+																		style={{
+																			display: "flex",
+																			justifyContent: "space-between",
+																			alignItems: "flex-start",
+																			marginBottom: "0.5rem",
+																		}}
+																	>
+																		<div
+																			style={{
+																				fontSize: "0.75rem",
+																				fontWeight: "600",
+																				color: "#2d3748",
+																			}}
+																		>
+																			{citation.document_title ||
+																				citation.document_uri}
+																		</div>
+																		{citation.page_numbers &&
+																			citation.page_numbers.length > 0 && (
+																				<div
+																					style={{
+																						fontSize: "0.7rem",
+																						color: "#718096",
+																						background: "#edf2f7",
+																						padding: "0.125rem 0.375rem",
+																						borderRadius: "4px",
+																					}}
+																				>
+																					{citation.page_numbers.length === 1
+																						? `p. ${citation.page_numbers[0]}`
+																						: `pp. ${citation.page_numbers[0]}-${citation.page_numbers[citation.page_numbers.length - 1]}`}
+																				</div>
+																			)}
+																	</div>
+																	{citation.headings &&
+																		citation.headings.length > 0 && (
+																			<div
+																				style={{
+																					fontSize: "0.7rem",
+																					color: "#718096",
+																					marginBottom: "0.375rem",
+																				}}
+																			>
+																				{citation.headings.join(" › ")}
+																			</div>
+																		)}
+																	<div
+																		style={{
+																			fontSize: "0.8rem",
+																			color: "#4a5568",
+																			lineHeight: "1.4",
+																			maxHeight: "4.5rem",
+																			overflow: "hidden",
+																			textOverflow: "ellipsis",
+																		}}
+																	>
+																		{citation.content.slice(0, 200)}
+																		{citation.content.length > 200 && "…"}
+																	</div>
+																	{citation.bounding_boxes &&
+																		citation.bounding_boxes.length > 0 && (
+																			<div
+																				style={{
+																					fontSize: "0.65rem",
+																					color: "#a0aec0",
+																					marginTop: "0.375rem",
+																					display: "flex",
+																					gap: "0.25rem",
+																					flexWrap: "wrap",
+																				}}
+																			>
+																				{citation.bounding_boxes.map(
+																					(bbox, bboxIdx) => (
+																						<span
+																							key={bboxIdx}
+																							style={{
+																								background: "#f7fafc",
+																								padding: "0.125rem 0.25rem",
+																								borderRadius: "2px",
+																								border: "1px solid #e2e8f0",
+																							}}
+																						>
+																							📍 p.{bbox.page_no} ({bbox.left.toFixed(0)},{bbox.top.toFixed(0)})
+																						</span>
+																					),
+																				)}
+																			</div>
+																		)}
+																</div>
+															))}
+														</div>
+													)}
 											</div>
 										)}
 									</div>
