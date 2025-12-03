@@ -1,7 +1,15 @@
 "use client";
 
 import { Markdown } from "@copilotkit/react-ui";
-import { useState } from "react";
+import { useState, useCallback } from "react";
+
+interface VisualGroundingState {
+	isOpen: boolean;
+	chunkId: string | null;
+	images: string[];
+	loading: boolean;
+	error: string | null;
+}
 
 interface InsightRecord {
 	id: string;
@@ -97,6 +105,58 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 	const [expandedQuestions, setExpandedQuestions] = useState<
 		Record<string, boolean>
 	>({});
+
+	const [visualGrounding, setVisualGrounding] = useState<VisualGroundingState>({
+		isOpen: false,
+		chunkId: null,
+		images: [],
+		loading: false,
+		error: null,
+	});
+
+	const fetchVisualGrounding = useCallback(async (chunkId: string) => {
+		setVisualGrounding({
+			isOpen: true,
+			chunkId,
+			images: [],
+			loading: true,
+			error: null,
+		});
+
+		try {
+			const response = await fetch(
+				`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/visualize/${chunkId}`
+			);
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || "Failed to fetch visual grounding");
+			}
+
+			setVisualGrounding((prev) => ({
+				...prev,
+				images: data.images || [],
+				loading: false,
+				error: data.images?.length === 0 ? data.message : null,
+			}));
+		} catch (err) {
+			setVisualGrounding((prev) => ({
+				...prev,
+				loading: false,
+				error: err instanceof Error ? err.message : "Unknown error",
+			}));
+		}
+	}, []);
+
+	const closeVisualGrounding = useCallback(() => {
+		setVisualGrounding({
+			isOpen: false,
+			chunkId: null,
+			images: [],
+			loading: false,
+			error: null,
+		});
+	}, []);
 
 	const toggleSection = (section: string) => {
 		setExpandedSections((prev) => ({
@@ -605,6 +665,22 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 																		{citation.content.slice(0, 200)}
 																		{citation.content.length > 200 && "…"}
 																	</div>
+																	<button
+																		type="button"
+																		onClick={() => fetchVisualGrounding(citation.chunk_id)}
+																		style={{
+																			marginTop: "0.5rem",
+																			padding: "0.25rem 0.5rem",
+																			fontSize: "0.7rem",
+																			background: "#4299e1",
+																			color: "white",
+																			border: "none",
+																			borderRadius: "4px",
+																			cursor: "pointer",
+																		}}
+																	>
+																		📍 View in Document
+																	</button>
 																</div>
 															))}
 														</div>
@@ -1128,6 +1204,124 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 							</div>
 						</div>
 					)}
+				</div>
+			)}
+
+			{/* Visual Grounding Modal */}
+			{visualGrounding.isOpen && (
+				<div
+					style={{
+						position: "fixed",
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						background: "rgba(0, 0, 0, 0.75)",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						zIndex: 1000,
+					}}
+					onClick={closeVisualGrounding}
+				>
+					<div
+						style={{
+							background: "white",
+							borderRadius: "8px",
+							padding: "1.5rem",
+							maxWidth: "90vw",
+							maxHeight: "90vh",
+							overflow: "auto",
+							position: "relative",
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							type="button"
+							onClick={closeVisualGrounding}
+							style={{
+								position: "absolute",
+								top: "0.5rem",
+								right: "0.5rem",
+								background: "#e53e3e",
+								color: "white",
+								border: "none",
+								borderRadius: "50%",
+								width: "2rem",
+								height: "2rem",
+								cursor: "pointer",
+								fontSize: "1rem",
+							}}
+						>
+							✕
+						</button>
+						<h3
+							style={{
+								margin: "0 0 1rem 0",
+								fontSize: "1.125rem",
+								color: "#2d3748",
+							}}
+						>
+							Visual Grounding
+						</h3>
+						{visualGrounding.loading && (
+							<div
+								style={{
+									padding: "2rem",
+									textAlign: "center",
+									color: "#718096",
+								}}
+							>
+								Loading...
+							</div>
+						)}
+						{visualGrounding.error && (
+							<div
+								style={{
+									padding: "1rem",
+									background: "#fed7d7",
+									color: "#c53030",
+									borderRadius: "4px",
+								}}
+							>
+								{visualGrounding.error}
+							</div>
+						)}
+						{!visualGrounding.loading &&
+							!visualGrounding.error &&
+							visualGrounding.images.length > 0 && (
+								<div
+									style={{
+										display: "flex",
+										flexDirection: "column",
+										gap: "1rem",
+									}}
+								>
+									{visualGrounding.images.map((img, idx) => (
+										<div key={idx}>
+											<div
+												style={{
+													fontSize: "0.75rem",
+													color: "#718096",
+													marginBottom: "0.5rem",
+												}}
+											>
+												Page {idx + 1} of {visualGrounding.images.length}
+											</div>
+											<img
+												src={`data:image/png;base64,${img}`}
+												alt={`Page ${idx + 1}`}
+												style={{
+													maxWidth: "100%",
+													border: "1px solid #e2e8f0",
+													borderRadius: "4px",
+												}}
+											/>
+										</div>
+									))}
+								</div>
+							)}
+					</div>
 				</div>
 			)}
 		</div>
