@@ -190,7 +190,7 @@ async def test_search_score_types(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_returns_search_result(temp_db_path):
     """Test that client.search() returns SearchResult with provenance info."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     await client.create_document(
         content="Machine learning models can classify images with high accuracy.",
@@ -219,7 +219,7 @@ async def test_search_graceful_degradation(temp_db_path):
     """Test search works when docling data is unavailable."""
     from haiku.rag.store.models import Chunk
 
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Create document with custom chunks (no docling document)
     custom_chunks = [

@@ -30,11 +30,7 @@ classifiers = [
 ]
 
 dependencies = [
-<<<<<<< HEAD
-    "haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]==0.19.6",
-=======
     "haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,inspector]==0.20.0",
->>>>>>> 4dba94cc93ba (DB migration)
 ]
 
 [project.scripts]
