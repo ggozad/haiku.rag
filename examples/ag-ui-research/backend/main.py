@@ -106,6 +106,8 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                 # Forward emitter events to stream
                 async def forward_events():
                     async for event in emitter:
+                        # Log events for debugging
+                        logger.info(f"AG-UI Event: {event}")
                         # Filter out ACTIVITY_SNAPSHOT - not supported by CopilotKit
                         if event.get("type") == "ACTIVITY_SNAPSHOT":
                             continue
@@ -161,10 +163,46 @@ async def health_check(_: Request) -> JSONResponse:
     )
 
 
+async def visualize_chunk(request: Request) -> JSONResponse:
+    """Return visual grounding images for a chunk as base64."""
+    import base64
+    from io import BytesIO
+
+    chunk_id = request.path_params["chunk_id"]
+    client = get_client(db_path)
+
+    # Get the chunk
+    chunk = await client.chunk_repository.get_by_id(chunk_id)
+    if not chunk:
+        return JSONResponse({"error": "Chunk not found"}, status_code=404)
+
+    # Get visualization images
+    images = await client.visualize_chunk(chunk)
+    if not images:
+        return JSONResponse({"images": [], "message": "No visual grounding available"})
+
+    # Convert PIL images to base64
+    base64_images = []
+    for img in images:
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        base64_images.append(base64.b64encode(buffer.read()).decode("utf-8"))
+
+    return JSONResponse(
+        {
+            "images": base64_images,
+            "chunk_id": chunk_id,
+            "document_uri": chunk.document_uri,
+        }
+    )
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
         Route("/v1/research/stream", stream_research_agent, methods=["POST"]),
+        Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),
     ],
     middleware=[
