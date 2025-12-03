@@ -280,8 +280,11 @@ def format_citations(citations: "list[Citation]") -> str:
         return ""
     lines = ["## Citations\n"]
     for c in citations:
-        # Build citation header
-        parts = [f"- **{c.document_uri}**"]
+        # Build citation header with document_id and chunk_id
+        parts = [
+            f"- document_id: `{c.document_id}` chunk_id: `{c.chunk_id}` "
+            f"uri: **{c.document_uri}**"
+        ]
         if c.document_title:
             parts.append(f' - "{c.document_title}"')
         location_parts = []

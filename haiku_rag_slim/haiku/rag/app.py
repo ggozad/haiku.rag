@@ -266,6 +266,38 @@ class HaikuRAGApp:
             for result in results:
                 self._rich_print_search_result(result)
 
+    async def visualize_chunk(self, chunk_id: str):
+        """Display visual grounding images for a chunk."""
+        from textual_image.renderable import Image as RichImage
+
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
+            chunk = await self.client.chunk_repository.get_by_id(chunk_id)
+            if not chunk:
+                self.console.print(f"[red]Chunk with id {chunk_id} not found.[/red]")
+                return
+
+            images = await self.client.visualize_chunk(chunk)
+            if not images:
+                self.console.print(
+                    "[yellow]No visual grounding available for this chunk.[/yellow]"
+                )
+                self.console.print(
+                    "This may be because the document was converted without page images."
+                )
+                return
+
+            self.console.print(f"[bold]Visual grounding for chunk {chunk_id}[/bold]")
+            if chunk.document_uri:
+                self.console.print(
+                    f"[repr.attrib_name]document[/repr.attrib_name]: {chunk.document_uri}"
+                )
+
+            for i, img in enumerate(images):
+                self.console.print(
+                    f"\n[bold cyan]Page {i + 1}/{len(images)}[/bold cyan]"
+                )
+                self.console.print(RichImage(img))
+
     async def ask(
         self,
         question: str,
@@ -559,11 +591,13 @@ class HaikuRAGApp:
         content = Markdown(result.content)
         self.console.print(
             f"[repr.attrib_name]document_id[/repr.attrib_name]: {result.document_id} "
+            f"[repr.attrib_name]chunk_id[/repr.attrib_name]: {result.chunk_id} "
             f"[repr.attrib_name]score[/repr.attrib_name]: {result.score:.4f}"
         )
         if result.document_uri:
-            self.console.print("[repr.attrib_name]document uri[/repr.attrib_name]:")
-            self.console.print(result.document_uri)
+            self.console.print(
+                f"[repr.attrib_name]document uri[/repr.attrib_name]: {result.document_uri}"
+            )
         if result.document_title:
             self.console.print("[repr.attrib_name]document title[/repr.attrib_name]:")
             self.console.print(result.document_title)
