@@ -187,31 +187,10 @@ class InspectorApp(App):  # type: ignore[misc]
             return
 
         chunk = chunk_list.chunks[idx]
-        if not chunk.document_id:
-            return
-
-        document = await self.client.get_document_by_id(chunk.document_id)
-        if not document:
-            return
-
-        docling_doc = document.get_docling_document()
-        if not docling_doc:
-            self.notify("No DoclingDocument available", severity="warning")
-            return
-
-        meta = chunk.get_chunk_metadata()
-        bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
 
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
-        await self.push_screen(
-            VisualGroundingModal(
-                docling_document=docling_doc,
-                bounding_boxes=bounding_boxes,
-                page_numbers=meta.page_numbers,
-                document_uri=chunk.document_uri,
-            )
-        )
+        await self.push_screen(VisualGroundingModal(chunk=chunk, client=self.client))
 
 
 def run_inspector(db_path: Path | None = None) -> None:

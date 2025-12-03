@@ -45,8 +45,6 @@ haiku-rag rebuild
 
 Existing documents without DoclingDocument data will work but won't have provenance information. The `rebuild` command re-processes all documents to populate the new fields.
 
-## [0.20.0] - 2025-11-28
-
 ## [0.19.6] - 2025-12-03
 
 ### Changed

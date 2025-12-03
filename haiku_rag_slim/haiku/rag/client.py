@@ -856,6 +856,94 @@ class HaikuRAG:
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question)
 
+    async def visualize_chunk(self, chunk: Chunk) -> list:
+        """Render page images with bounding box highlights for a chunk.
+
+        Gets the DoclingDocument from the chunk's document, resolves bounding boxes
+        from chunk metadata, and renders all pages that contain bounding boxes with
+        yellow/orange highlight overlays.
+
+        Args:
+            chunk: The chunk to visualize.
+
+        Returns:
+            List of PIL Image objects, one per page with bounding boxes.
+            Empty list if no bounding boxes or page images available.
+        """
+        from copy import deepcopy
+
+        from PIL import ImageDraw
+
+        # Get the document
+        if not chunk.document_id:
+            return []
+
+        doc = await self.document_repository.get_by_id(chunk.document_id)
+        if not doc:
+            return []
+
+        # Get DoclingDocument
+        docling_doc = doc.get_docling_document()
+        if not docling_doc:
+            return []
+
+        # Resolve bounding boxes from chunk metadata
+        chunk_meta = chunk.get_chunk_metadata()
+        bounding_boxes = chunk_meta.resolve_bounding_boxes(docling_doc)
+        if not bounding_boxes:
+            return []
+
+        # Group bounding boxes by page
+        boxes_by_page: dict[int, list] = {}
+        for bbox in bounding_boxes:
+            if bbox.page_no not in boxes_by_page:
+                boxes_by_page[bbox.page_no] = []
+            boxes_by_page[bbox.page_no].append(bbox)
+
+        # Render each page with its bounding boxes
+        images = []
+        for page_no in sorted(boxes_by_page.keys()):
+            if page_no not in docling_doc.pages:
+                continue
+
+            page = docling_doc.pages[page_no]
+            if page.image is None or page.image.pil_image is None:
+                continue
+
+            pil_image = page.image.pil_image
+            page_height = page.size.height
+
+            # Calculate scale factor (image pixels vs document coordinates)
+            scale_x = pil_image.width / page.size.width
+            scale_y = pil_image.height / page.size.height
+
+            # Draw bounding boxes
+            image = deepcopy(pil_image)
+            draw = ImageDraw.Draw(image, "RGBA")
+
+            for bbox in boxes_by_page[page_no]:
+                # Convert from document coordinates to image coordinates
+                # Document coords are bottom-left origin, PIL uses top-left
+                x0 = bbox.left * scale_x
+                y0 = (page_height - bbox.top) * scale_y
+                x1 = bbox.right * scale_x
+                y1 = (page_height - bbox.bottom) * scale_y
+
+                # Ensure proper ordering (y0 should be less than y1 for PIL)
+                if y0 > y1:
+                    y0, y1 = y1, y0
+
+                # Draw filled rectangle with transparency
+                fill_color = (255, 255, 0, 80)  # Yellow with transparency
+                outline_color = (255, 165, 0, 255)  # Orange outline
+
+                draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
+                draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=3)
+
+            images.append(image)
+
+        return images
+
     async def rebuild_database(
         self, mode: RebuildMode = RebuildMode.FULL
     ) -> AsyncGenerator[str, None]:
