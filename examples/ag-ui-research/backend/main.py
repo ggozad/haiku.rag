@@ -108,9 +108,35 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     async for event in emitter:
                         # Log events for debugging
                         logger.info(f"AG-UI Event: {event}")
-                        # Filter out ACTIVITY_SNAPSHOT - not supported by CopilotKit
-                        if event.get("type") == "ACTIVITY_SNAPSHOT":
+                        event_type = event.get("type")
+
+                        # Convert ACTIVITY_SNAPSHOT to STATE_DELTA for CopilotKit
+                        # As CopilotKit does not handle ACTIVITY_SNAPSHOT events
+                        if event_type == "ACTIVITY_SNAPSHOT":
+                            activity_type = event.get("activityType", "")
+                            content = event.get("content", {})
+                            message = content.get("message", "")
+
+                            # Emit STATE_DELTA to patch activity info into state
+                            # Use "add" op which creates or replaces the value
+                            delta_event = {
+                                "type": "STATE_DELTA",
+                                "delta": [
+                                    {
+                                        "op": "add",
+                                        "path": "/current_activity",
+                                        "value": activity_type,
+                                    },
+                                    {
+                                        "op": "add",
+                                        "path": "/current_activity_message",
+                                        "value": message,
+                                    },
+                                ],
+                            }
+                            await send_stream.send(format_sse_event(delta_event))
                             continue
+
                         await send_stream.send(format_sse_event(event))
 
                 # Run agent and event forwarding concurrently

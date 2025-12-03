@@ -86,6 +86,8 @@ interface ResearchState {
 		gaps_identified: GapRecord[];
 	} | null;
 	result?: ResearchReport;
+	current_activity?: string;
+	current_activity_message?: string;
 }
 
 interface StateDisplayProps {
@@ -187,112 +189,6 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 				gap: "1rem",
 			}}
 		>
-			{/* Current Status */}
-			<div
-				style={{
-					background: "white",
-					borderRadius: "8px",
-					padding: "1.5rem",
-					boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-				}}
-			>
-				<div
-					style={{
-						fontSize: "0.875rem",
-						color: "#718096",
-						marginBottom: "0.5rem",
-					}}
-				>
-					Research Progress
-				</div>
-				<div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-					<div
-						style={{
-							padding: "0.5rem 1rem",
-							background:
-								state.iterations === 0
-									? "#e2e8f0"
-									: state.result
-										? "#d1fae5"
-										: "#dbeafe",
-							color:
-								state.iterations === 0
-									? "#718096"
-									: state.result
-										? "#065f46"
-										: "#1e40af",
-							borderRadius: "6px",
-							fontSize: "1rem",
-							fontWeight: "700",
-						}}
-					>
-						{state.iterations === 0
-							? "Ready"
-							: state.result
-								? "Complete"
-								: "Researching"}
-					</div>
-					{state.iterations > 0 && (
-						<div
-							style={{
-								fontSize: "0.875rem",
-								color: "#4a5568",
-							}}
-						>
-							Iteration {state.iterations} of {state.max_iterations}
-						</div>
-					)}
-				</div>
-				{/* Research Progress Bar */}
-				{state.iterations > 0 && (
-					<div style={{ marginTop: "1rem" }}>
-						<div
-							style={{
-								display: "flex",
-								justifyContent: "space-between",
-								alignItems: "center",
-								marginBottom: "0.5rem",
-							}}
-						>
-							<span
-								style={{
-									fontSize: "0.75rem",
-									color: "#718096",
-								}}
-							>
-								Iterations
-							</span>
-							<span
-								style={{
-									fontSize: "0.75rem",
-									fontWeight: "600",
-									color: "#2d3748",
-								}}
-							>
-								{state.iterations}/{state.max_iterations}
-							</span>
-						</div>
-						<div
-							style={{
-								height: "0.5rem",
-								background: "#e2e8f0",
-								borderRadius: "4px",
-								overflow: "hidden",
-							}}
-						>
-							<div
-								style={{
-									width: `${researchProgress}%`,
-									height: "100%",
-									background: "#48bb78",
-									transition: "width 0.3s ease",
-								}}
-							/>
-						</div>
-					</div>
-				)}
-			</div>
-
 			{/* Question */}
 			{state.context.original_question && (
 				<div
@@ -321,6 +217,91 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 					>
 						{state.context.original_question}
 					</div>
+				</div>
+			)}
+
+			{/* Research Progress - only show when research has started */}
+			{(state.iterations > 0 || (state.current_activity && !state.result)) && (
+				<div
+					style={{
+						background: "white",
+						borderRadius: "8px",
+						padding: "1.5rem",
+						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+					}}
+				>
+					{/* Current Activity - hide when complete */}
+					{state.current_activity && !state.result && (
+						<div
+							style={{
+								padding: "0.75rem",
+								background: "#ebf8ff",
+								borderRadius: "6px",
+								border: "1px solid #90cdf4",
+								marginBottom: state.iterations > 0 ? "1rem" : 0,
+							}}
+						>
+							<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+								<span>⏳</span>
+								<span style={{ fontWeight: "600", color: "#2b6cb0" }}>
+									{state.current_activity.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+								</span>
+							</div>
+							{state.current_activity_message && (
+								<div style={{ fontSize: "0.875rem", color: "#4299e1", marginTop: "0.25rem", marginLeft: "1.5rem" }}>
+									{state.current_activity_message}
+								</div>
+							)}
+						</div>
+					)}
+					{/* Iteration Progress Bar */}
+					{state.iterations > 0 && (
+						<div>
+							<div
+								style={{
+									display: "flex",
+									justifyContent: "space-between",
+									alignItems: "center",
+									marginBottom: "0.5rem",
+								}}
+							>
+								<span
+									style={{
+										fontSize: "0.75rem",
+										color: "#718096",
+									}}
+								>
+									Iterations
+								</span>
+								<span
+									style={{
+										fontSize: "0.75rem",
+										fontWeight: "600",
+										color: "#2d3748",
+									}}
+								>
+									{state.iterations}/{state.max_iterations}
+								</span>
+							</div>
+							<div
+								style={{
+									height: "0.5rem",
+									background: "#e2e8f0",
+									borderRadius: "4px",
+									overflow: "hidden",
+								}}
+							>
+								<div
+									style={{
+										width: `${researchProgress}%`,
+										height: "100%",
+										background: state.result ? "#48bb78" : "#4299e1",
+										transition: "width 0.3s ease",
+									}}
+								/>
+							</div>
+						</div>
+					)}
 				</div>
 			)}
 

@@ -70,6 +70,8 @@ interface ResearchState {
 		gaps_identified: GapRecord[];
 	} | null;
 	result?: ResearchReport;
+	current_activity?: string;
+	current_activity_message?: string;
 }
 
 function AgentContent() {
