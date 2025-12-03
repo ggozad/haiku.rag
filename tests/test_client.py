@@ -1023,7 +1023,7 @@ This is paragraph three about topic B.
 This is paragraph four about topic C.
 """
 
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(
             content=markdown_content,
             uri="test://structured",
@@ -1081,7 +1081,7 @@ Second paragraph of methods section.
 First paragraph of results.
 """
 
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(
             content=markdown_content,
             uri="test://metadata-merge",
@@ -1118,7 +1118,7 @@ async def test_client_expand_context_docling_preserves_bounding_boxes(temp_db_pa
     """Test that expand_context preserves bounding boxes from DoclingDocument."""
     from haiku.rag.store.models import SearchResult
 
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(
             content="# Test\n\nSome content here.",
             uri="test://bboxes",
@@ -1141,7 +1141,7 @@ async def test_client_expand_context_docling_preserves_bounding_boxes(temp_db_pa
 @pytest.mark.asyncio
 async def test_client_create_document_stores_docling_json(temp_db_path):
     """Test that create_document stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(
             content="Test content for docling storage",
             uri="test://docling",
@@ -1163,7 +1163,7 @@ async def test_client_create_document_stores_docling_json(temp_db_path):
 @pytest.mark.asyncio
 async def test_client_create_document_with_custom_chunks_no_docling_json(temp_db_path):
     """Test that create_document with custom chunks does not store docling JSON."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         custom_chunks = [Chunk(content="Custom chunk", order=0)]
 
         doc = await client.create_document(content="Test content", chunks=custom_chunks)
@@ -1177,7 +1177,7 @@ async def test_client_create_document_with_custom_chunks_no_docling_json(temp_db
 @pytest.mark.asyncio
 async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
     """Test that create_document_from_source stores DoclingDocument JSON for files."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir) / "test.txt"
             temp_path.write_text("Test file content")
@@ -1199,7 +1199,7 @@ async def test_client_create_document_from_file_stores_docling_json(temp_db_path
 @pytest.mark.asyncio
 async def test_client_update_document_stores_docling_json(temp_db_path):
     """Test that update_document stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
@@ -1218,7 +1218,7 @@ async def test_client_update_document_stores_docling_json(temp_db_path):
 @pytest.mark.asyncio
 async def test_client_update_document_fields_stores_docling_json(temp_db_path):
     """Test that update_document_fields stores DoclingDocument JSON when content changes."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
@@ -1240,7 +1240,7 @@ async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
     temp_db_path,
 ):
     """Test that update_document_fields with custom chunks does not update docling JSON."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
@@ -1259,7 +1259,7 @@ async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
 @pytest.mark.asyncio
 async def test_client_file_update_stores_docling_json(temp_db_path):
     """Test that updating a file re-stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path) as client:
+    async with HaikuRAG(temp_db_path, create=True) as client:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir) / "test.txt"
             temp_path.write_text("Original content")
