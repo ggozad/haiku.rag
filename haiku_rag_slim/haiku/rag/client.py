@@ -38,7 +38,7 @@ class HaikuRAG:
         db_path: Path | None = None,
         config: AppConfig = Config,
         skip_validation: bool = False,
-        read_only: bool = False,
+        create: bool = False,
     ):
         """Initialize the RAG client with a database path.
 
@@ -46,8 +46,7 @@ class HaikuRAG:
             db_path: Path to the database file. If None, uses config.storage.data_dir.
             config: Configuration to use. Defaults to global Config.
             skip_validation: Whether to skip configuration validation on database load.
-            read_only: Whether to open in read-only mode. If True, will raise error
-                      if database doesn't exist and will skip upgrades.
+            create: Whether to create the database if it doesn't exist.
         """
         self._config = config
         if db_path is None:
@@ -56,7 +55,7 @@ class HaikuRAG:
             db_path,
             config=self._config,
             skip_validation=skip_validation,
-            read_only=read_only,
+            create=create,
         )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)

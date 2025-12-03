@@ -410,7 +410,19 @@ def create_index(
     asyncio.run(app.create_index())
 
 
-@cli.command("info", help="Show read-only database info (no upgrades or writes)")
+@cli.command("init", help="Initialize a new database")
+def init_db(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.init())
+
+
+@cli.command("info", help="Show database info")
 def info(
     db: Path | None = typer.Option(
         None,

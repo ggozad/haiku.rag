@@ -22,7 +22,10 @@ def qa_corpus() -> Dataset:
 
 @pytest.fixture
 def temp_db_path():
-    """Create a temporary database path for testing."""
+    """Create a temporary database path for testing.
+
+    Note: Tests that need a database should use HaikuRAG with create=True.
+    """
     with tempfile.TemporaryDirectory() as temp_dir:
         yield Path(temp_dir) / "test.lancedb"
 
@@ -43,11 +46,13 @@ def temp_yaml_config(tmp_path, monkeypatch):
             "vacuum_retention_seconds": 60,
         },
         "embeddings": {
-            "provider": "ollama",
-            "model": "qwen3-embedding:4b",
-            "vector_dim": 2560,
+            "model": {
+                "provider": "ollama",
+                "name": "qwen3-embedding:4b",
+                "vector_dim": 2560,
+            }
         },
-        "qa": {"provider": "ollama", "model": "gpt-oss"},
+        "qa": {"model": {"provider": "ollama", "name": "gpt-oss"}},
     }
 
     with open(config_file, "w") as f:

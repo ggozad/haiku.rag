@@ -118,25 +118,21 @@ class SettingsRepository:
         current_config = self.store._config.model_dump(mode="json")
 
         # Check if embedding provider or model has changed
-        # Support both old flat structure and new nested structure for backward compatibility
+        # Both stored and current use nested structure: embeddings.model.{provider,name,vector_dim}
         stored_embeddings = stored_settings.get("embeddings", {})
         current_embeddings = current_config.get("embeddings", {})
 
-        # Try nested structure first, fall back to flat for old databases
-        stored_provider = stored_embeddings.get("provider") or stored_settings.get(
-            "EMBEDDINGS_PROVIDER"
-        )
-        current_provider = current_embeddings.get("provider")
+        stored_model_obj = stored_embeddings.get("model", {})
+        current_model_obj = current_embeddings.get("model", {})
 
-        stored_model = stored_embeddings.get("model") or stored_settings.get(
-            "EMBEDDINGS_MODEL"
-        )
-        current_model = current_embeddings.get("model")
+        stored_provider = stored_model_obj.get("provider")
+        current_provider = current_model_obj.get("provider")
 
-        stored_vector_dim = stored_embeddings.get("vector_dim") or stored_settings.get(
-            "EMBEDDINGS_VECTOR_DIM"
-        )
-        current_vector_dim = current_embeddings.get("vector_dim")
+        stored_model = stored_model_obj.get("name")
+        current_model = current_model_obj.get("name")
+
+        stored_vector_dim = stored_model_obj.get("vector_dim")
+        current_vector_dim = current_model_obj.get("vector_dim")
 
         # Check for incompatible changes
         incompatible_changes = []

@@ -6,7 +6,7 @@ from haiku.rag.client import HaikuRAG
 @pytest.mark.asyncio
 async def test_search_with_uri_filter(temp_db_path):
     """Test filtering by document URI."""
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Add multiple test documents
         await client.create_document(
             content="Python tutorial content",
@@ -40,7 +40,7 @@ async def test_search_with_uri_filter(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_with_title_filter(temp_db_path):
     """Test filtering by document title."""
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Add test documents
         await client.create_document(
             content="Programming content",
@@ -66,7 +66,7 @@ async def test_search_with_title_filter(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_with_combined_filters(temp_db_path):
     """Test filtering with AND/OR conditions."""
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Add test documents
         await client.create_document(
             content="Content about AI",
@@ -105,7 +105,7 @@ async def test_search_with_combined_filters(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_with_no_matching_filter(temp_db_path):
     """Test that search returns empty results when filter matches no documents."""
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Add a test document
         await client.create_document(
             content="Test content",
@@ -123,7 +123,7 @@ async def test_search_with_no_matching_filter(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_with_invalid_filter(temp_db_path):
     """Test that invalid filter syntax raises an appropriate error."""
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Add a test document
         await client.create_document(
             content="Test content",
@@ -139,7 +139,7 @@ async def test_search_with_invalid_filter(temp_db_path):
 @pytest.mark.asyncio
 async def test_search_filter_with_all_search_types(temp_db_path):
     """Test that filtering works with all search types (vector, fts, hybrid)."""
-    async with HaikuRAG(db_path=temp_db_path) as client:
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         await client.create_document(
             content="Machine learning is a subset of artificial intelligence",
             uri="https://ai.example.com/ml.html",

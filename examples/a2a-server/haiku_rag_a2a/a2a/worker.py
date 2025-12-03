@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 import json
 import logging
 import uuid
@@ -12,8 +13,8 @@ from haiku_rag_a2a.a2a.models import AgentDependencies
 from haiku_rag_a2a.a2a.skills import extract_question_from_task
 
 try:
-    from fasta2a import Worker  # type: ignore
-    from fasta2a.schema import (  # type: ignore
+    from fasta2a import Worker
+    from fasta2a.schema import (
         Artifact,
         Message,
         TaskIdParams,

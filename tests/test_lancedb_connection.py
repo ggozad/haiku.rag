@@ -10,7 +10,7 @@ from haiku.rag.store.engine import Store
 async def test_lancedb_cloud_skips_optimization(temp_db_path):
     """Test that vacuum is skipped when using LanceDB Cloud (db:// URI)."""
     # Create a store
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
 
     # Mock all cloud config to simulate LanceDB Cloud usage
     with (
@@ -33,7 +33,7 @@ async def test_lancedb_cloud_skips_optimization(temp_db_path):
 async def test_local_storage_calls_optimization(temp_db_path):
     """Test that vacuum calls optimization for local storage."""
     # Create a store
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
 
     # Ensure uri is empty (local storage)
     with patch.object(Config.lancedb, "uri", ""):

@@ -33,9 +33,10 @@ Configure haiku.rag to use OpenAI. Create a `haiku.rag.yaml` file:
 
 ```yaml
 embeddings:
-  provider: openai
-  model: text-embedding-3-small  # or text-embedding-3-large
-  vector_dim: 1536
+  model:
+    provider: openai
+    name: text-embedding-3-small  # or text-embedding-3-large
+    vector_dim: 1536
 
 qa:
   model:
@@ -52,6 +53,16 @@ export OPENAI_API_KEY="<your OpenAI API key>"
 For the list of available OpenAI models and their vector dimensions, see the [OpenAI documentation](https://platform.openai.com/docs/guides/embeddings).
 
 See [Configuration](configuration/index.md) for all available options.
+
+## Initialize the database
+
+Before adding documents, initialize the database:
+
+```bash
+haiku-rag init
+```
+
+This creates an empty database with the configured settings.
 
 ## Adding the first documents
 
@@ -149,6 +160,7 @@ logger.setLevel(logging.DEBUG)
 logger.debug("AGI here we come")
 
 # Uses LanceDB database from default storage location
+# (database must be initialized first with 'haiku-rag init' or create=True)
 async with HaikuRAG() as client:
     answer = await client.ask("What is the best programming language in the world?")
     print(answer)

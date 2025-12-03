@@ -1,6 +1,19 @@
 # Changelog
 ## [Unreleased]
 
+## [0.19.6] - 2025-12-02
+
+### Changed
+
+- **BREAKING: Explicit Database Creation**: Databases must now be explicitly created before use
+  - New `haiku-rag init` command creates a new empty database
+  - Python API: `HaikuRAG(path, create=True)` to create database programmatically
+  - Operations on non-existent databases raise `FileNotFoundError`
+- **BREAKING: Embeddings Configuration**: Restructured to nested `EmbeddingModelConfig`
+  - Config path changed from `embeddings.{provider, model, vector_dim}` to `embeddings.model.{provider, name, vector_dim}`
+  - Automatic migration upgrades existing databases to new format
+- **Database Migrations**: Always run when opening an existing database
+
 ## [0.19.5] - 2025-12-01
 
 ### Changed

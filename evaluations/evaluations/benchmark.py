@@ -41,9 +41,9 @@ def build_experiment_metadata(
     return {
         "dataset": dataset_key,
         "test_cases": test_cases,
-        "embedder_provider": config.embeddings.provider,
-        "embedder_model": config.embeddings.model,
-        "embedder_dim": config.embeddings.vector_dim,
+        "embedder_provider": config.embeddings.model.provider,
+        "embedder_model": config.embeddings.model.name,
+        "embedder_dim": config.embeddings.model.vector_dim,
         "chunk_size": config.processing.chunk_size,
         "context_chunk_radius": config.processing.context_chunk_radius,
         "rerank_provider": config.reranking.model.provider

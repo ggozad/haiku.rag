@@ -45,7 +45,7 @@ def add_marker(text: str) -> str:
     try:
         Config.processing.markdown_preprocessor = f"{pre_file}:add_marker"
 
-        store = Store(temp_db_path)
+        store = Store(temp_db_path, create=True)
         chunk_repo = ChunkRepository(store)
         doc_repo = DocumentRepository(store)
 

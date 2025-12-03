@@ -29,6 +29,21 @@ class HaikuRAGApp:
         self.config = config
         self.console = Console()
 
+    async def init(self):
+        """Initialize a new database."""
+        if self.db_path.exists():
+            self.console.print(
+                f"[yellow]Database already exists at {self.db_path}[/yellow]"
+            )
+            return
+
+        # Create the database
+        client = HaikuRAG(db_path=self.db_path, config=self.config, create=True)
+        client.close()
+        self.console.print(
+            f"[bold green]Database initialized at {self.db_path}[/bold green]"
+        )
+
     async def info(self):
         """Display read-only information about the database without modifying it."""
 
@@ -65,7 +80,13 @@ class HaikuRAGApp:
         except Exception:
             docling_version = "unknown"
 
-        # Read settings (if present) to find stored haiku.rag version and embedding config
+        # Get comprehensive table statistics (this also runs migrations)
+        from haiku.rag.store.engine import Store
+
+        store = Store(self.db_path, config=self.config, skip_validation=True)
+        table_stats = store.get_stats()
+
+        # Read settings after Store init (migrations have run)
         stored_version = "unknown"
         embed_provider: str | None = None
         embed_model: str | None = None
@@ -80,17 +101,11 @@ class HaikuRAGApp:
                 data = json.loads(raw) if isinstance(raw, str) else (raw or {})
                 stored_version = str(data.get("version", stored_version))
                 embeddings = data.get("embeddings", {})
-                embed_provider = embeddings.get("provider")
-                embed_model = embeddings.get("model")
-                vector_dim = embeddings.get("vector_dim")
+                embed_model_obj = embeddings.get("model", {})
+                embed_provider = embed_model_obj.get("provider")
+                embed_model = embed_model_obj.get("name")
+                vector_dim = embed_model_obj.get("vector_dim")
 
-        # Get comprehensive table statistics
-        from haiku.rag.store.engine import Store
-
-        store = Store(
-            self.db_path, config=self.config, skip_validation=True, read_only=True
-        )
-        table_stats = store.get_stats()
         store.close()
 
         num_docs = table_stats["documents"].get("num_rows", 0)
@@ -187,9 +202,7 @@ class HaikuRAGApp:
         )
 
     async def list_documents(self, filter: str | None = None):
-        async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=True
-        ) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
                 self._rich_print_document(doc, truncate=True)
@@ -222,9 +235,7 @@ class HaikuRAGApp:
                 )
 
     async def get_document(self, doc_id: str):
-        async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=True
-        ) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
                 self.console.print(f"[red]Document with id {doc_id} not found.[/red]")
@@ -244,9 +255,7 @@ class HaikuRAGApp:
                 )
 
     async def search(self, query: str, limit: int = 5, filter: str | None = None):
-        async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=True
-        ) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             results = await self.client.search(query, limit=limit, filter=filter)
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
@@ -269,9 +278,7 @@ class HaikuRAGApp:
             deep: Use deep QA mode (multi-step reasoning)
             verbose: Show verbose output
         """
-        async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=True
-        ) as self.client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
                 if deep:
                     from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
@@ -316,9 +323,7 @@ class HaikuRAGApp:
             question: The research question
             verbose: Show AG-UI event stream during execution
         """
-        async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=True
-        ) as client:
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as client:
             try:
                 self.console.print("[bold cyan]Starting research[/bold cyan]")
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")

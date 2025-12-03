@@ -339,6 +339,18 @@ def test_ask_with_deep_and_verbose():
         )
 
 
+def test_init():
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.init = AsyncMock()
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["init"])
+
+        assert result.exit_code == 0
+        mock_app_instance.init.assert_called_once()
+
+
 def test_info():
     with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
         mock_app_instance = MagicMock()

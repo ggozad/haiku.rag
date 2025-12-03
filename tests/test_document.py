@@ -12,7 +12,7 @@ from haiku.rag.store.repositories.document import DocumentRepository
 async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
     """Test creating a document with chunks from the qa_corpus using repository."""
     # Create client
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Get the first document from the corpus
     first_doc = qa_corpus[0]
@@ -44,7 +44,7 @@ async def test_create_document_with_chunks(qa_corpus: Dataset, temp_db_path):
 async def test_document_repository_crud(qa_corpus: Dataset, temp_db_path):
     """Test CRUD operations in DocumentRepository."""
     # Create a store and repository
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     doc_repo = DocumentRepository(store)
 
     # Get the first document from the corpus
@@ -100,7 +100,7 @@ async def test_document_repository_crud(qa_corpus: Dataset, temp_db_path):
 @pytest.mark.asyncio
 async def test_document_list_with_filter(qa_corpus: Dataset, temp_db_path):
     """Test listing documents with filter clause."""
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     doc_repo = DocumentRepository(store)
 
     first_doc = qa_corpus[0]

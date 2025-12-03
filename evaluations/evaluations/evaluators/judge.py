@@ -38,9 +38,7 @@ class LLMJudge:
 
     def __init__(self, model: str = "gpt-oss"):
         # Create model using get_model with thinking disabled
-        model_config = ModelConfig(
-            provider="ollama", model=model, enable_thinking=False
-        )
+        model_config = ModelConfig(provider="ollama", name=model, enable_thinking=False)
         model_obj = get_model(model_config, Config)
 
         # Create Pydantic AI agent

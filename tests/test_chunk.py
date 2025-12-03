@@ -15,7 +15,7 @@ from haiku.rag.store.repositories.document import DocumentRepository
 async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
     """Test ChunkRepository operations."""
     # Create client
-    client = HaikuRAG(db_path=temp_db_path, config=Config)
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
     # Get the first document from the corpus
     first_doc = qa_corpus[0]
@@ -56,7 +56,7 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
 async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
     """Test creating chunks for a document."""
     # Create a store and repositories
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     chunk_repo = ChunkRepository(store)
     doc_repo = DocumentRepository(store)
 
@@ -98,7 +98,7 @@ async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
 async def test_chunk_repository_crud(temp_db_path):
     """Test basic CRUD operations in ChunkRepository."""
     # Create a store
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     chunk_repo = ChunkRepository(store)
     doc_repo = DocumentRepository(store)
 
@@ -151,7 +151,7 @@ async def test_chunk_repository_crud(temp_db_path):
 @pytest.mark.asyncio
 async def test_adjacent_chunks(temp_db_path):
     """Test the get_adjacent_chunks repository method."""
-    store = Store(temp_db_path)
+    store = Store(temp_db_path, create=True)
     doc_repo = DocumentRepository(store)
     chunk_repo = ChunkRepository(store)
 
