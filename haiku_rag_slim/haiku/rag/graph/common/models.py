@@ -29,17 +29,17 @@ class ResearchPlan(BaseModel):
 class Citation(BaseModel):
     """Resolved citation with full metadata for display/visual grounding."""
 
-    document_id: str = ""
-    chunk_id: str = ""
-    document_uri: str = ""
+    document_id: str
+    chunk_id: str
+    document_uri: str
     document_title: str | None = None
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
-    content: str = ""
+    content: str
 
 
-class SearchAnswer(BaseModel):
-    """Structured answer from a search operation."""
+class RawSearchAnswer(BaseModel):
+    """Answer to a search query with chunk references."""
 
     query: str = Field(..., description="The question that was answered")
     answer: str = Field(..., description="The answer to the question")
@@ -53,10 +53,31 @@ class SearchAnswer(BaseModel):
         ge=0.0,
         le=1.0,
     )
+
+
+class SearchAnswer(RawSearchAnswer):
+    """Answer to a search query with resolved citations."""
+
     citations: list[Citation] = Field(
         default_factory=list,
-        description="Resolved citations with full metadata (populated after search)",
+        description="Resolved citations with full metadata",
     )
+
+    @classmethod
+    def from_raw(
+        cls,
+        raw: RawSearchAnswer,
+        search_results: "list[SearchResult]",
+    ) -> "SearchAnswer":
+        """Create SearchAnswer from RawSearchAnswer with resolved citations."""
+        citations = resolve_citations(raw.cited_chunks, search_results)
+        return cls(
+            query=raw.query,
+            answer=raw.answer,
+            cited_chunks=raw.cited_chunks,
+            confidence=raw.confidence,
+            citations=citations,
+        )
 
 
 def resolve_citations(

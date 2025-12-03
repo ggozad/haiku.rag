@@ -6,11 +6,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.graph.common import get_model
-from haiku.rag.graph.common.models import (
-    Citation,
-    SearchAnswer,
-    resolve_citations,
-)
+from haiku.rag.graph.common.models import Citation, RawSearchAnswer, resolve_citations
 from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.store.models import SearchResult
 
@@ -34,7 +30,7 @@ class QuestionAnswerAgent:
         self._agent = Agent(
             model=model_obj,
             deps_type=Dependencies,
-            output_type=ToolOutput(SearchAnswer, max_retries=3),
+            output_type=ToolOutput(RawSearchAnswer, max_retries=3),
             instructions=system_prompt or QA_SYSTEM_PROMPT,
             retries=3,
         )

@@ -59,7 +59,7 @@ async def test_deep_qa_context_operations():
         cited_chunks=["chunk_1", "chunk_2"],
         confidence=0.9,
     )
-    context.add_qa_response(qa, search_results=[])
+    context.add_qa_response(qa)
     assert len(context.qa_responses) == 1
     assert context.qa_responses[0].query == "Sub Q1"
 
