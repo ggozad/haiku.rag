@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.common.models import SearchAnswer
+from haiku.rag.graph.common.models import SearchAnswer, resolve_citations
 from haiku.rag.store.models import SearchResult
 
 
@@ -17,8 +17,8 @@ class DeepQAContext(BaseModel):
     def add_qa_response(
         self, qa: SearchAnswer, search_results: list[SearchResult]
     ) -> None:
-        """Add a QA response."""
-        del search_results  # Not needed with chunk ID-based citations
+        """Add a QA response with resolved citations."""
+        qa.citations = resolve_citations(qa.cited_chunks, search_results)
         self.qa_responses.append(qa)
 
 

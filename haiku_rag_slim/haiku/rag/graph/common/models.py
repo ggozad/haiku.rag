@@ -54,6 +54,10 @@ class SearchAnswer(BaseModel):
         ge=0.0,
         le=1.0,
     )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="Resolved citations with full metadata (populated after search)",
+    )
 
 
 def resolve_citations(

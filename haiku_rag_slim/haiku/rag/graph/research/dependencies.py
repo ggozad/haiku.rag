@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from pydantic import BaseModel, Field, PrivateAttr
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.common.models import SearchAnswer
+from haiku.rag.graph.common.models import SearchAnswer, resolve_citations
 from haiku.rag.graph.research.models import (
     GapRecord,
     InsightAnalysis,
@@ -41,9 +41,8 @@ class ResearchContext(BaseModel):
     def add_qa_response(
         self, qa: SearchAnswer, search_results: list[SearchResult]
     ) -> None:
-        """Add a structured QA response."""
-        # Research doesn't accumulate search_results for citation resolution
-        del search_results
+        """Add a structured QA response with resolved citations."""
+        qa.citations = resolve_citations(qa.cited_chunks, search_results)
         self.qa_responses.append(qa)
 
     def upsert_insights(self, records: Iterable[InsightRecord]) -> list[InsightRecord]:
