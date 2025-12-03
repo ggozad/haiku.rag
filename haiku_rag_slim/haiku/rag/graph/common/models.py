@@ -4,8 +4,6 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
-from haiku.rag.store.models import BoundingBox
-
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
 
@@ -38,7 +36,6 @@ class Citation(BaseModel):
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
     content: str
-    bounding_boxes: list[BoundingBox] | None = None
 
 
 class SearchAnswer(BaseModel):
@@ -84,7 +81,6 @@ def resolve_citations(
                 page_numbers=r.page_numbers,
                 headings=r.headings,
                 content=r.content,
-                bounding_boxes=r.bounding_boxes,
             )
         )
     return citations

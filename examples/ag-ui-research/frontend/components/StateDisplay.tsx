@@ -23,21 +23,14 @@ interface GapRecord {
 	resolved_by: string[];
 }
 
-interface BoundingBox {
-	page_no: number;
-	left: number;
-	top: number;
-	right: number;
-	bottom: number;
-}
-
 interface Citation {
+	document_id: string;
+	chunk_id: string;
 	document_uri: string;
 	document_title?: string;
 	page_numbers: number[];
 	headings?: string[];
 	content: string;
-	bounding_boxes?: BoundingBox[];
 }
 
 interface SearchAnswer {
@@ -612,35 +605,6 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 																		{citation.content.slice(0, 200)}
 																		{citation.content.length > 200 && "…"}
 																	</div>
-																	{citation.bounding_boxes &&
-																		citation.bounding_boxes.length > 0 && (
-																			<div
-																				style={{
-																					fontSize: "0.65rem",
-																					color: "#a0aec0",
-																					marginTop: "0.375rem",
-																					display: "flex",
-																					gap: "0.25rem",
-																					flexWrap: "wrap",
-																				}}
-																			>
-																				{citation.bounding_boxes.map(
-																					(bbox, bboxIdx) => (
-																						<span
-																							key={bboxIdx}
-																							style={{
-																								background: "#f7fafc",
-																								padding: "0.125rem 0.25rem",
-																								borderRadius: "2px",
-																								border: "1px solid #e2e8f0",
-																							}}
-																						>
-																							📍 p.{bbox.page_no} ({bbox.left.toFixed(0)},{bbox.top.toFixed(0)})
-																						</span>
-																					),
-																				)}
-																			</div>
-																		)}
 																</div>
 															))}
 														</div>
