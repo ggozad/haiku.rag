@@ -29,13 +29,13 @@ class ResearchPlan(BaseModel):
 class Citation(BaseModel):
     """Resolved citation with full metadata for display/visual grounding."""
 
-    document_id: str
-    chunk_id: str
-    document_uri: str
+    document_id: str = ""
+    chunk_id: str = ""
+    document_uri: str = ""
     document_title: str | None = None
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
-    content: str
+    content: str = ""
 
 
 class SearchAnswer(BaseModel):

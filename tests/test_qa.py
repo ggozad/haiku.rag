@@ -19,7 +19,7 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     """Test Ollama QA with LLM judge."""
     client = HaikuRAG(temp_db_path, create=True)
     qa = QuestionAnswerAgent(
-        client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
+        client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=True)
     )
     llm_judge = LLMJudge()
 

@@ -315,6 +315,8 @@ async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
     mock_answer = "Test answer with citations"
     mock_citations = [
         Citation(
+            document_id="doc-123",
+            chunk_id="chunk-456",
             document_uri="test.md",
             document_title="Test Document",
             page_numbers=[1],
