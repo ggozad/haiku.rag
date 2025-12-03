@@ -105,6 +105,8 @@ class HaikuRAG:
         title: str | None = None,
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
+        docling_document_json: str | None = None,
+        docling_version: str | None = None,
     ) -> Document:
         """Create a new document with optional URI and metadata.
 
@@ -142,6 +144,8 @@ class HaikuRAG:
                 uri=uri,
                 title=title,
                 metadata=metadata or {},
+                docling_document_json=docling_document_json,
+                docling_version=docling_version,
             )
 
             return await self.document_repository._create_and_chunk(
@@ -457,6 +461,8 @@ class HaikuRAG:
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
         title: str | None = None,
+        docling_document_json: str | None = None,
+        docling_version: str | None = None,
     ) -> Document:
         """Update specific fields of a document by ID.
 
@@ -482,6 +488,10 @@ class HaikuRAG:
             existing_doc.title = title
         if metadata is not None:
             existing_doc.metadata = metadata
+        if docling_document_json is not None:
+            existing_doc.docling_document_json = docling_document_json
+        if docling_version is not None:
+            existing_doc.docling_version = docling_version
 
         # Determine if we need to rechunk
         if content is not None or chunks is not None:
