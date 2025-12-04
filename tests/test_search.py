@@ -221,14 +221,14 @@ async def test_search_graceful_degradation(temp_db_path):
 
     client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
-    # Create document with custom chunks (no docling document)
+    # Import document with custom chunks (no docling document)
     custom_chunks = [
         Chunk(content="Custom chunk without docling metadata", metadata={}),
     ]
-    await client.create_document(
+    await client.import_document(
         content="Document with custom chunks",
-        uri="https://example.com/custom.html",
         chunks=custom_chunks,
+        uri="https://example.com/custom.html",
     )
 
     results = await client.search("custom chunk", limit=3)
