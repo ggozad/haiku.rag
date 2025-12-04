@@ -31,8 +31,8 @@
   - Requires terminal with image support (iTerm2, Kitty, etc.)
 - **New `import_document()` Method**: Import pre-processed documents with custom chunks
   - Use when document conversion, chunking, and embedding were done externally
-  - Accepts `content`, `chunks` (required), and optional `docling_document_json`/`docling_version`
-  - Validates that if docling parameters are provided, both must be present
+  - `chunks` required; `content` optional if `docling_document_json` is provided
+  - When `docling_document_json` is provided without `content`, content is extracted from the DoclingDocument
   - Validates docling JSON parses correctly if provided
 - **`update_document_fields()` DoclingDocument Support**: Added `docling_document_json` and `docling_version` parameters
   - When `docling_document_json` is provided without `chunks`, content is extracted and document is rechunked

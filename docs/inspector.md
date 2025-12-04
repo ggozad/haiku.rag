@@ -62,4 +62,4 @@ Press `v` while viewing a chunk to open the visual grounding modal:
 - Press `Esc` to close the modal
 
 !!! note
-    Visual grounding requires documents processed with docling that have page images stored. Text-only documents or documents imported without DoclingDocument won't have visual grounding available.
+    Visual grounding requires documents with a stored DoclingDocument that includes page images. Text-only documents or documents imported without DoclingDocument won't have visual grounding available.
