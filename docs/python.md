@@ -174,9 +174,28 @@ await client.update_document_fields(
     document_id=doc.id,
     chunks=custom_chunks
 )
+
+# Update with DoclingDocument (extracts content and rechunks)
+await client.update_document_fields(
+    document_id=doc.id,
+    docling_document_json=docling_doc.model_dump_json(),
+    docling_version=docling_doc.version,
+)
+
+# Update with DoclingDocument and custom chunks (stores both, uses chunks as-is)
+await client.update_document_fields(
+    document_id=doc.id,
+    chunks=custom_chunks,
+    docling_document_json=docling_doc.model_dump_json(),
+    docling_version=docling_doc.version,
+)
 ```
 
-**Performance Note:** Updates to only `metadata` or `title` skip re-chunking for efficiency. Updates to `content` or `chunks` will regenerate or replace the document's chunks.
+**Notes:**
+
+- Updates to only `metadata` or `title` skip re-chunking for efficiency
+- Updates to `content`, `chunks`, or `docling_document_json` will regenerate or replace chunks
+- `content` and `docling_document_json` are mutually exclusive - provide one or the other
 
 ### Deleting Documents
 

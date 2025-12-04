@@ -1290,6 +1290,111 @@ async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
 
 
 @pytest.mark.asyncio
+async def test_client_update_document_fields_content_docling_mutually_exclusive(
+    temp_db_path,
+):
+    """Test that content and docling_document_json cannot both be provided."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+
+        # Create a docling document
+        from docling_core.types.doc.labels import DocItemLabel
+
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Some text")
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            await client.update_document_fields(
+                document_id=doc.id,
+                content="New content",
+                docling_document_json=docling_doc.model_dump_json(),
+                docling_version=docling_doc.version,
+            )
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_fields_with_docling_rechunks(temp_db_path):
+    """Test that providing docling_document_json without chunks triggers rechunk."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+
+        # Create a new docling document with different content
+        from docling_core.types.doc.labels import DocItemLabel
+
+        docling_doc = DoclingDocument(name="updated")
+        docling_doc.add_text(
+            label=DocItemLabel.TEXT,
+            text="Completely different text from docling document",
+        )
+
+        # Update with docling document only - should rechunk from it
+        updated_doc = await client.update_document_fields(
+            document_id=doc.id,
+            docling_document_json=docling_doc.model_dump_json(),
+            docling_version=docling_doc.version,
+        )
+
+        # Content should be extracted from docling document
+        assert "Completely different text" in updated_doc.content
+        assert updated_doc.docling_document_json == docling_doc.model_dump_json()
+        assert updated_doc.docling_version == docling_doc.version
+
+        # Chunks should be regenerated
+        new_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(new_chunks) > 0
+        # Content should differ from original
+        assert new_chunks[0].content != original_chunks[0].content
+
+
+@pytest.mark.asyncio
+async def test_client_update_document_fields_docling_with_chunks(temp_db_path):
+    """Test that providing both docling_document_json and chunks stores both."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+
+        # Create a docling document
+        from docling_core.types.doc.labels import DocItemLabel
+
+        docling_doc = DoclingDocument(name="custom")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Text from docling")
+
+        # Provide both docling and custom chunks
+        custom_chunks = [
+            Chunk(content="Custom chunk 1", order=0),
+            Chunk(content="Custom chunk 2", order=1),
+        ]
+
+        updated_doc = await client.update_document_fields(
+            document_id=doc.id,
+            chunks=custom_chunks,
+            docling_document_json=docling_doc.model_dump_json(),
+            docling_version=docling_doc.version,
+        )
+
+        # Content should be extracted from docling (since content wasn't provided)
+        assert "Text from docling" in updated_doc.content
+        assert updated_doc.docling_document_json == docling_doc.model_dump_json()
+
+        # Custom chunks should be used (not rechunked from docling)
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) == 2
+        assert chunks[0].content == "Custom chunk 1"
+        assert chunks[1].content == "Custom chunk 2"
+
+
+@pytest.mark.asyncio
 async def test_client_file_update_stores_docling_json(temp_db_path):
     """Test that updating a file re-stores DoclingDocument JSON."""
     async with HaikuRAG(temp_db_path, create=True) as client:
