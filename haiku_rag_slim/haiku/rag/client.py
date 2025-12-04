@@ -514,66 +514,113 @@ class HaikuRAG:
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
         title: str | None = None,
+        docling_document_json: str | None = None,
+        docling_version: str | None = None,
     ) -> Document:
         """Update specific fields of a document by ID.
 
         Args:
             document_id: The ID of the document to update
-            content: New content for the document
+            content: New content for the document (mutually exclusive with docling_document_json)
             metadata: New metadata for the document
             chunks: Custom chunks to use instead of auto-generating
             title: New title for the document
+            docling_document_json: Serialized DoclingDocument JSON (mutually exclusive with content)
+            docling_version: DoclingDocument schema version (required with docling_document_json)
 
         Returns:
             The updated Document instance.
+
+        Raises:
+            ValueError: If both content and docling_document_json are provided,
+                if docling_document_json is provided without docling_version,
+                or if the JSON is invalid.
         """
+        from docling_core.types.doc.document import DoclingDocument
+
+        # Validate: content and docling_document_json are mutually exclusive
+        if content is not None and docling_document_json is not None:
+            raise ValueError(
+                "content and docling_document_json are mutually exclusive. "
+                "Provide one or the other, not both."
+            )
+
+        # Validate docling parameters must be provided together
+        if (docling_document_json is None) != (docling_version is None):
+            raise ValueError(
+                "docling_document_json and docling_version must both be provided or both be None"
+            )
+
+        # Parse and validate docling JSON if provided
+        docling_document: DoclingDocument | None = None
+        if docling_document_json is not None:
+            try:
+                docling_document = DoclingDocument.model_validate_json(
+                    docling_document_json
+                )
+            except Exception as e:
+                raise ValueError(f"Invalid docling_document_json: {e}") from e
+
         # Fetch the existing document
         existing_doc = await self.get_document_by_id(document_id)
         if existing_doc is None:
             raise ValueError(f"Document with ID {document_id} not found")
 
-        # Update only the provided fields
-        if content is not None:
-            existing_doc.content = content
+        # Update metadata/title fields
         if title is not None:
             existing_doc.title = title
         if metadata is not None:
             existing_doc.metadata = metadata
 
-        # Determine if we need to rechunk
-        if content is not None or chunks is not None:
-            # Content changed or custom chunks provided - need to rechunk
-            if chunks is not None:
-                # Use custom chunks - no docling document to store
-                # Delete existing chunks
-                await self.chunk_repository.delete_by_document_id(document_id)
-
-                # Update document metadata
-                await self.document_repository.update(existing_doc)
-
-                # Set document_id and order for all chunks
-                for order, chunk in enumerate(chunks):
-                    chunk.document_id = document_id
-                    chunk.order = order
-                # Batch create all chunks in a single operation
-                await self.chunk_repository.create(chunks)
-
-                return existing_doc
-            else:
-                # Auto-generate chunks from content
-                converter = get_converter(self._config)
-                docling_document = await converter.convert_text(existing_doc.content)
-
-                # Store DoclingDocument JSON
-                existing_doc.docling_document_json = docling_document.model_dump_json()
-                existing_doc.docling_version = docling_document.version
-
-                return await self.document_repository._update_and_rechunk(
-                    existing_doc, docling_document
-                )
-        else:
-            # Only metadata/title changed - no rechunking needed
+        # Only metadata/title update - no rechunking needed
+        if content is None and chunks is None and docling_document is None:
             return await self.document_repository.update(existing_doc)
+
+        # Custom chunks provided - use them as-is
+        if chunks is not None:
+            # Update content field if provided
+            if content is not None:
+                existing_doc.content = content
+
+            # Store docling data if provided
+            if docling_document is not None:
+                existing_doc.docling_document_json = docling_document_json
+                existing_doc.docling_version = docling_version
+                # Extract content from docling if not explicitly provided
+                if content is None:
+                    existing_doc.content = docling_document.export_to_markdown()
+
+            # Delete existing chunks and use custom ones
+            await self.chunk_repository.delete_by_document_id(document_id)
+            await self.document_repository.update(existing_doc)
+
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = document_id
+                chunk.order = order
+            await self.chunk_repository.create(chunks)
+
+            return existing_doc
+
+        # DoclingDocument provided without chunks - extract content and rechunk
+        if docling_document is not None:
+            existing_doc.content = docling_document.export_to_markdown()
+            existing_doc.docling_document_json = docling_document_json
+            existing_doc.docling_version = docling_version
+
+            return await self.document_repository._update_and_rechunk(
+                existing_doc, docling_document
+            )
+
+        # Content provided without chunks - convert and rechunk
+        existing_doc.content = content  # type: ignore[assignment]
+        converter = get_converter(self._config)
+        converted_docling = await converter.convert_text(existing_doc.content)
+        existing_doc.docling_document_json = converted_docling.model_dump_json()
+        existing_doc.docling_version = converted_docling.version
+
+        return await self.document_repository._update_and_rechunk(
+            existing_doc, converted_docling
+        )
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""

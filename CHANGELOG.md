@@ -34,6 +34,10 @@
   - Accepts `content`, `chunks` (required), and optional `docling_document_json`/`docling_version`
   - Validates that if docling parameters are provided, both must be present
   - Validates docling JSON parses correctly if provided
+- **`update_document_fields()` DoclingDocument Support**: Added `docling_document_json` and `docling_version` parameters
+  - When `docling_document_json` is provided without `chunks`, content is extracted and document is rechunked
+  - When `docling_document_json` is provided with `chunks`, both are stored (chunks used as-is)
+  - `content` and `docling_document_json` are mutually exclusive to avoid ambiguity
 
 ### Changed
 
