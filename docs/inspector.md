@@ -52,3 +52,14 @@ Press `/` to open the full-screen search modal:
 - Press `Esc` to close search without selecting
 
 Search uses hybrid (vector + full-text) search across all chunks. Content is rendered as markdown with syntax highlighting.
+
+## Visual Grounding
+
+Press `v` while viewing a chunk to open the visual grounding modal:
+
+- Shows page images from the source document with the chunk's location highlighted in yellow/orange
+- Use `←` / `→` arrow keys to navigate between pages (when chunk spans multiple pages)
+- Press `Esc` to close the modal
+
+!!! note
+    Visual grounding requires documents processed with docling that have page images stored. Text-only documents or documents imported without DoclingDocument won't have visual grounding available.
