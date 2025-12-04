@@ -26,6 +26,9 @@
   - Keyboard navigation between pages (←/→ arrows)
   - Access from both main detail view and search results
   - Requires `textual-image` dependency
+- **Visual Grounding CLI**: New `haiku-rag visualize <chunk_id>` command
+  - Displays page images with highlighted bounding boxes for a chunk
+  - Requires terminal with image support (iTerm2, Kitty, etc.)
 
 ### Changed
 
@@ -41,6 +44,9 @@
   - Headings remain available in `ChunkMetadata` for display and citations
   - Local and serve chunkers now produce identical output
 - **QA Prompts**: Updated to use page numbers and section headings in citations when available
+- **Citation Models**: Introduced `RawSearchAnswer` for LLM output, `SearchAnswer` extends it with resolved citations
+  - Cleaner separation: LLM outputs chunk IDs, citations resolved programmatically
+  - `Citation` fields are now required (no defaults) for type safety
 
 ### Migration
 
