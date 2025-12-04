@@ -136,8 +136,8 @@ class HaikuRAG:
 
     async def import_document(
         self,
-        content: str,
         chunks: list[Chunk],
+        content: str | None = None,
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
@@ -150,38 +150,51 @@ class HaikuRAG:
         externally and you want to store the results in haiku.rag.
 
         Args:
-            content: The document content.
-            chunks: Pre-created chunks (must include embeddings).
+            chunks: Pre-created chunks.
+            content: The document content. Optional if docling_document_json is provided.
             uri: Optional URI identifier for the document.
             title: Optional title for the document.
             metadata: Optional metadata dictionary.
-            docling_document_json: Optional serialized DoclingDocument JSON.
-            docling_version: Optional DoclingDocument schema version.
+            docling_document_json: Serialized DoclingDocument JSON. If provided without
+                content, content is extracted from the DoclingDocument.
+            docling_version: DoclingDocument schema version (required with docling_document_json).
 
         Returns:
             The created Document instance.
 
         Raises:
-            ValueError: If docling_document_json is provided without docling_version
-                or vice versa, or if the JSON is invalid.
+            ValueError: If neither content nor docling_document_json is provided,
+                if docling_document_json is provided without docling_version,
+                or if the JSON is invalid.
         """
-        # Validate docling parameters
+        from docling_core.types.doc.document import DoclingDocument
+
+        # Validate docling parameters must be provided together
         if (docling_document_json is None) != (docling_version is None):
             raise ValueError(
                 "docling_document_json and docling_version must both be provided or both be None"
             )
 
-        # Validate docling JSON parses if provided
+        # Validate that we have at least one content source
+        if content is None and docling_document_json is None:
+            raise ValueError("Either content or docling_document_json must be provided")
+
+        # Parse and validate docling JSON if provided
+        docling_document: DoclingDocument | None = None
         if docling_document_json is not None:
             try:
-                from docling_core.types.doc.document import DoclingDocument
-
-                DoclingDocument.model_validate_json(docling_document_json)
+                docling_document = DoclingDocument.model_validate_json(
+                    docling_document_json
+                )
             except Exception as e:
                 raise ValueError(f"Invalid docling_document_json: {e}") from e
 
+        # Extract content from docling if not explicitly provided
+        if content is None and docling_document is not None:
+            content = docling_document.export_to_markdown()
+
         document = Document(
-            content=content,
+            content=content,  # type: ignore[arg-type]
             uri=uri,
             title=title,
             metadata=metadata or {},

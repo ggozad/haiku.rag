@@ -82,20 +82,27 @@ doc = await client.import_document(
 )
 ```
 
-If you also have a DoclingDocument from your processing pipeline, include it for visual grounding support:
+If you also have a DoclingDocument from your processing pipeline, include it for rich metadata support (visual grounding, page numbers, section headings). When providing a DoclingDocument, you can omit `content` - it will be extracted automatically:
 
 ```python
+# With explicit content
 doc = await client.import_document(
-    content="Full document content",
     chunks=chunks,
-    uri="doc://custom",
+    content="Full document content",
+    docling_document_json=docling_doc.model_dump_json(),
+    docling_version=docling_doc.version,
+)
+
+# Or let content be extracted from DoclingDocument
+doc = await client.import_document(
+    chunks=chunks,
     docling_document_json=docling_doc.model_dump_json(),
     docling_version=docling_doc.version,
 )
 ```
 
 !!! note
-    When providing `docling_document_json`, you must also provide `docling_version`. The JSON is validated to ensure it's a valid DoclingDocument.
+    Either `content` or `docling_document_json` must be provided. When `docling_document_json` is provided without `content`, the content is extracted from the DoclingDocument.
 
 ### Retrieving Documents
 
@@ -175,7 +182,7 @@ await client.update_document_fields(
     chunks=custom_chunks
 )
 
-# Update with DoclingDocument (extracts content and rechunks)
+# Update with DoclingDocument for rich metadata (extracts content and rechunks)
 await client.update_document_fields(
     document_id=doc.id,
     docling_document_json=docling_doc.model_dump_json(),

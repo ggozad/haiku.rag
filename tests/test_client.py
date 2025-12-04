@@ -1206,6 +1206,37 @@ async def test_client_import_document_validates_docling_params(temp_db_path):
                 docling_version="1.0.0",
             )
 
+        # Should fail if neither content nor docling_document_json provided
+        with pytest.raises(ValueError, match="Either content or docling_document_json"):
+            await client.import_document(chunks=custom_chunks)
+
+
+@pytest.mark.asyncio
+async def test_client_import_document_extracts_content_from_docling(temp_db_path):
+    """Test that import_document extracts content from DoclingDocument when not provided."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a docling document with some content
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(
+            label=DocItemLabel.TEXT, text="Content from docling document"
+        )
+
+        custom_chunks = [Chunk(content="Chunk content", order=0)]
+
+        # Import without content - should extract from docling
+        doc = await client.import_document(
+            chunks=custom_chunks,
+            docling_document_json=docling_doc.model_dump_json(),
+            docling_version=docling_doc.version,
+        )
+
+        assert doc.id is not None
+        assert "Content from docling document" in doc.content
+        assert doc.docling_document_json == docling_doc.model_dump_json()
+
 
 @pytest.mark.asyncio
 async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
