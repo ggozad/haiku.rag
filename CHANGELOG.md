@@ -29,9 +29,17 @@
 - **Visual Grounding CLI**: New `haiku-rag visualize <chunk_id>` command
   - Displays page images with highlighted bounding boxes for a chunk
   - Requires terminal with image support (iTerm2, Kitty, etc.)
+- **New `import_document()` Method**: Import pre-processed documents with custom chunks
+  - Use when document conversion, chunking, and embedding were done externally
+  - Accepts `content`, `chunks` (required), and optional `docling_document_json`/`docling_version`
+  - Validates that if docling parameters are provided, both must be present
+  - Validates docling JSON parses correctly if provided
 
 ### Changed
 
+- **BREAKING: `create_document()` API**: Removed `chunks` parameter
+  - `create_document()` now always processes content (converts, chunks, embeds)
+  - Use new `import_document()` for pre-processed documents with custom chunks
 - **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[ChunkWithMetadata]` instead of `list[str]`
   - `ChunkWithMetadata` combines chunk text with `ChunkMetadata` (refs, labels, headings, page_numbers)
   - All chunker implementations updated: `DoclingLocalChunker`, `DoclingServeChunker`

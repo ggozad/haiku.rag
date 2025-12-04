@@ -118,49 +118,92 @@ class HaikuRAG:
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
-        chunks: list[Chunk] | None = None,
     ) -> Document:
-        """Create a new document with optional URI and metadata.
+        """Create a new document from text content.
+
+        Converts the content, chunks it, and generates embeddings.
 
         Args:
             content: The text content of the document.
             uri: Optional URI identifier for the document.
+            title: Optional title for the document.
             metadata: Optional metadata dictionary.
-            chunks: Optional list of pre-created chunks to use instead of generating new ones.
 
         Returns:
             The created Document instance.
         """
-        # Only create docling_document if we need to generate chunks
-        if chunks is None:
-            # Use converter to convert text
-            converter = get_converter(self._config)
-            docling_document = await converter.convert_text(content)
+        converter = get_converter(self._config)
+        docling_document = await converter.convert_text(content)
 
-            document = Document(
-                content=content,
-                uri=uri,
-                title=title,
-                metadata=metadata or {},
-                docling_document_json=docling_document.model_dump_json(),
-                docling_version=docling_document.version,
+        document = Document(
+            content=content,
+            uri=uri,
+            title=title,
+            metadata=metadata or {},
+            docling_document_json=docling_document.model_dump_json(),
+            docling_version=docling_document.version,
+        )
+
+        return await self.document_repository._create_and_chunk(
+            document, docling_document, None
+        )
+
+    async def import_document(
+        self,
+        content: str,
+        chunks: list[Chunk],
+        uri: str | None = None,
+        title: str | None = None,
+        metadata: dict | None = None,
+        docling_document_json: str | None = None,
+        docling_version: str | None = None,
+    ) -> Document:
+        """Import a pre-processed document with chunks.
+
+        Use this when document conversion, chunking, and embedding were done
+        externally and you want to store the results in haiku.rag.
+
+        Args:
+            content: The document content.
+            chunks: Pre-created chunks (must include embeddings).
+            uri: Optional URI identifier for the document.
+            title: Optional title for the document.
+            metadata: Optional metadata dictionary.
+            docling_document_json: Optional serialized DoclingDocument JSON.
+            docling_version: Optional DoclingDocument schema version.
+
+        Returns:
+            The created Document instance.
+
+        Raises:
+            ValueError: If docling_document_json is provided without docling_version
+                or vice versa, or if the JSON is invalid.
+        """
+        # Validate docling parameters
+        if (docling_document_json is None) != (docling_version is None):
+            raise ValueError(
+                "docling_document_json and docling_version must both be provided or both be None"
             )
 
-            return await self.document_repository._create_and_chunk(
-                document, docling_document, chunks
-            )
-        else:
-            # Chunks already provided, no conversion needed
-            document = Document(
-                content=content,
-                uri=uri,
-                title=title,
-                metadata=metadata or {},
-            )
+        # Validate docling JSON parses if provided
+        if docling_document_json is not None:
+            try:
+                from docling_core.types.doc.document import DoclingDocument
 
-            return await self.document_repository._create_and_chunk(
-                document, None, chunks
-            )
+                DoclingDocument.model_validate_json(docling_document_json)
+            except Exception as e:
+                raise ValueError(f"Invalid docling_document_json: {e}") from e
+
+        document = Document(
+            content=content,
+            uri=uri,
+            title=title,
+            metadata=metadata or {},
+            docling_document_json=docling_document_json,
+            docling_version=docling_version,
+        )
+
+        return await self.document_repository._create_and_chunk(document, None, chunks)
 
     async def create_document_from_source(
         self, source: str | Path, title: str | None = None, metadata: dict | None = None

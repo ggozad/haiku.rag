@@ -686,8 +686,8 @@ async def test_client_async_context_manager(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_with_custom_chunks(temp_db_path):
-    """Test creating a document with pre-created chunks."""
+async def test_client_import_document_with_custom_chunks(temp_db_path):
+    """Test importing a document with pre-created chunks."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create some custom chunks with and without embeddings
         chunks = [
@@ -709,8 +709,8 @@ async def test_client_create_document_with_custom_chunks(temp_db_path):
             ),
         ]
 
-        # Create document with custom chunks
-        document = await client.create_document(
+        # Import document with custom chunks
+        document = await client.import_document(
             content="Full document content", chunks=chunks
         )
 
@@ -775,11 +775,11 @@ async def test_client_expand_context(temp_db_path):
                 Chunk(content="Chunk 4 content", order=4, embedding=z),
             ]
 
-        doc = await client.create_document(
+        doc = await client.import_document(
             content="Full document content",
+            chunks=manual_chunks,
             uri="test_doc.txt",
             title="test_doc_title",
-            chunks=manual_chunks,
         )
 
         # Get all chunks for the document
@@ -844,8 +844,8 @@ async def test_client_expand_context_multiple_chunks(temp_db_path):
                 Chunk(content="Doc1 Part B", order=1),
                 Chunk(content="Doc1 Part C", order=2),
             ]
-            doc1 = await client.create_document(
-                content="Doc1 content", uri="doc1.txt", chunks=doc1_chunks
+            doc1 = await client.import_document(
+                content="Doc1 content", chunks=doc1_chunks, uri="doc1.txt"
             )
 
             # Create second document with manual chunks
@@ -853,8 +853,8 @@ async def test_client_expand_context_multiple_chunks(temp_db_path):
                 Chunk(content="Doc2 Section X", order=0),
                 Chunk(content="Doc2 Section Y", order=1),
             ]
-            doc2 = await client.create_document(
-                content="Doc2 content", uri="doc2.txt", chunks=doc2_chunks
+            doc2 = await client.import_document(
+                content="Doc2 content", chunks=doc2_chunks, uri="doc2.txt"
             )
 
         assert doc1.id is not None
@@ -903,7 +903,7 @@ async def test_client_expand_context_merges_overlapping_chunks(temp_db_path):
             Chunk(content="Chunk 4", order=4),
         ]
 
-        doc = await client.create_document(
+        doc = await client.import_document(
             content="Full document content", chunks=manual_chunks
         )
 
@@ -956,7 +956,7 @@ async def test_client_expand_context_keeps_separate_non_overlapping(temp_db_path
             Chunk(content="Chunk 7", order=7),
         ]
 
-        doc = await client.create_document(
+        doc = await client.import_document(
             content="Full document content", chunks=manual_chunks
         )
 
@@ -1161,17 +1161,50 @@ async def test_client_create_document_stores_docling_json(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_create_document_with_custom_chunks_no_docling_json(temp_db_path):
-    """Test that create_document with custom chunks does not store docling JSON."""
+async def test_client_import_document_without_docling(temp_db_path):
+    """Test that import_document without docling params does not store docling JSON."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         custom_chunks = [Chunk(content="Custom chunk", order=0)]
 
-        doc = await client.create_document(content="Test content", chunks=custom_chunks)
+        doc = await client.import_document(content="Test content", chunks=custom_chunks)
 
         assert doc.id is not None
-        # When custom chunks are provided, no conversion happens
+        # When no docling params provided, they remain None
         assert doc.docling_document_json is None
         assert doc.docling_version is None
+
+
+@pytest.mark.asyncio
+async def test_client_import_document_validates_docling_params(temp_db_path):
+    """Test that import_document validates docling parameters."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+
+        # Should fail if only one docling param is provided
+        with pytest.raises(ValueError, match="must both be provided"):
+            await client.import_document(
+                content="Test content",
+                chunks=custom_chunks,
+                docling_document_json='{"some": "json"}',
+                # Missing docling_version
+            )
+
+        with pytest.raises(ValueError, match="must both be provided"):
+            await client.import_document(
+                content="Test content",
+                chunks=custom_chunks,
+                docling_version="1.0.0",
+                # Missing docling_document_json
+            )
+
+        # Should fail with invalid JSON
+        with pytest.raises(ValueError, match="Invalid docling_document_json"):
+            await client.import_document(
+                content="Test content",
+                chunks=custom_chunks,
+                docling_document_json='{"invalid": "not a docling document"}',
+                docling_version="1.0.0",
+            )
 
 
 @pytest.mark.asyncio
@@ -1297,9 +1330,9 @@ async def test_client_visualize_chunk_no_document(temp_db_path):
 async def test_client_visualize_chunk_no_docling_document(temp_db_path):
     """Test visualize_chunk returns empty list when document has no DoclingDocument."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create document with custom chunks (no DoclingDocument)
+        # Import document with custom chunks (no DoclingDocument)
         custom_chunks = [Chunk(content="Custom chunk", order=0)]
-        doc = await client.create_document(content="Test content", chunks=custom_chunks)
+        doc = await client.import_document(content="Test content", chunks=custom_chunks)
 
         assert doc.id is not None
         chunks = await client.chunk_repository.get_by_document_id(doc.id)

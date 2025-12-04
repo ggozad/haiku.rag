@@ -36,31 +36,6 @@ doc = await client.create_document(
 )
 ```
 
-With custom externally generated chunks:
-```python
-from haiku.rag.store.models.chunk import Chunk
-
-# Create custom chunks with optional embeddings
-chunks = [
-    Chunk(
-        content="This is the first chunk",
-        metadata={"section": "intro"}
-    ),
-    Chunk(
-        content="This is the second chunk",
-        metadata={"section": "body"},
-        embedding=[0.1] * 1024  # Optional pre-computed embedding
-    ),
-]
-
-doc = await client.create_document(
-    content="Full document content",
-    uri="doc://custom",
-    metadata={"source": "manual"},
-    chunks=chunks  # Use provided chunks instead of auto-generating
-)
-```
-
 From file:
 ```python
 doc = await client.create_document_from_source(
@@ -74,6 +49,53 @@ doc = await client.create_document_from_source(
     "https://example.com/article.html", title="Example Article"
 )
 ```
+
+### Importing Pre-Processed Documents
+
+If you process documents externally (conversion, chunking, embedding), use `import_document()` to store them:
+
+```python
+from haiku.rag.store.models.chunk import Chunk
+
+# Create chunks with optional embeddings
+chunks = [
+    Chunk(
+        content="This is the first chunk",
+        metadata={"section": "intro"},
+        order=0,
+    ),
+    Chunk(
+        content="This is the second chunk",
+        metadata={"section": "body"},
+        embedding=[0.1] * 1024,  # Pre-computed embedding
+        order=1,
+    ),
+]
+
+# Import document with custom chunks
+doc = await client.import_document(
+    content="Full document content",
+    chunks=chunks,
+    uri="doc://custom",
+    title="Custom Document",
+    metadata={"source": "external-pipeline"},
+)
+```
+
+If you also have a DoclingDocument from your processing pipeline, include it for visual grounding support:
+
+```python
+doc = await client.import_document(
+    content="Full document content",
+    chunks=chunks,
+    uri="doc://custom",
+    docling_document_json=docling_doc.model_dump_json(),
+    docling_version=docling_doc.version,
+)
+```
+
+!!! note
+    When providing `docling_document_json`, you must also provide `docling_version`. The JSON is validated to ensure it's a valid DoclingDocument.
 
 ### Retrieving Documents
 
