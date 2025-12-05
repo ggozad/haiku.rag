@@ -193,6 +193,37 @@ class HaikuRAG:
 
         return chunks
 
+    async def _ensure_chunks_embedded(self, chunks: list[Chunk]) -> list[Chunk]:
+        """Ensure all chunks have embeddings, embedding any that don't.
+
+        Args:
+            chunks: List of chunks, some may have embeddings already.
+
+        Returns:
+            List of chunks with all embeddings populated.
+        """
+        from haiku.rag.embeddings import embed_chunks
+
+        # Find chunks that need embedding
+        chunks_to_embed = [c for c in chunks if c.embedding is None]
+
+        if not chunks_to_embed:
+            return chunks
+
+        # Embed chunks that don't have embeddings (returns new Chunk objects)
+        embedded = await embed_chunks(chunks_to_embed, self._config)
+
+        # Build result maintaining original order
+        embedded_map = {(c.content, c.order): c for c in embedded}
+        result = []
+        for chunk in chunks:
+            if chunk.embedding is not None:
+                result.append(chunk)
+            else:
+                result.append(embedded_map[(chunk.content, chunk.order)])
+
+        return result
+
     async def _store_document_with_chunks(
         self,
         document: Document,
@@ -210,6 +241,9 @@ class HaikuRAG:
             The created Document instance with ID set.
         """
         import asyncio
+
+        # Ensure all chunks have embeddings before storing
+        chunks = await self._ensure_chunks_embedded(chunks)
 
         # Snapshot table versions for versioned rollback (if supported)
         versions = self.store.current_table_versions()
@@ -257,6 +291,9 @@ class HaikuRAG:
         import asyncio
 
         assert document.id is not None, "Document ID is required for update"
+
+        # Ensure all chunks have embeddings before storing
+        chunks = await self._ensure_chunks_embedded(chunks)
 
         # Snapshot table versions for versioned rollback
         versions = self.store.current_table_versions()
