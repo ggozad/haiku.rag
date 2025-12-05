@@ -172,6 +172,99 @@ class HaikuRAG:
         chunker = get_chunker(self._config)
         return await chunker.chunk(docling_document)
 
+    async def _store_document_with_chunks(
+        self,
+        document: Document,
+        chunks: list[Chunk],
+    ) -> Document:
+        """Store a document with its pre-embedded chunks.
+
+        Handles versioning/rollback on failure.
+
+        Args:
+            document: The document to store (will be created).
+            chunks: Pre-embedded chunks to store with the document.
+
+        Returns:
+            The created Document instance with ID set.
+        """
+        import asyncio
+
+        # Snapshot table versions for versioned rollback (if supported)
+        versions = self.store.current_table_versions()
+
+        # Create the document
+        created_doc = await self.document_repository.create(document)
+
+        try:
+            assert created_doc.id is not None, (
+                "Document ID should not be None after creation"
+            )
+            # Set document_id and order for all chunks
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = created_doc.id
+                chunk.order = order
+
+            # Batch create all chunks in a single operation
+            await self.chunk_repository.create(chunks)
+
+            # Vacuum old versions in background (non-blocking)
+            asyncio.create_task(self.store.vacuum())
+
+            return created_doc
+        except Exception:
+            # Roll back to the captured versions and re-raise
+            self.store.restore_table_versions(versions)
+            raise
+
+    async def _update_document_and_rechunk(
+        self,
+        document: Document,
+        chunks: list[Chunk],
+    ) -> Document:
+        """Update a document and replace its chunks with pre-embedded chunks.
+
+        Handles versioning/rollback on failure.
+
+        Args:
+            document: The document to update (must have ID set).
+            chunks: Pre-embedded chunks to replace existing chunks.
+
+        Returns:
+            The updated Document instance.
+        """
+        import asyncio
+
+        assert document.id is not None, "Document ID is required for update"
+
+        # Snapshot table versions for versioned rollback
+        versions = self.store.current_table_versions()
+
+        # Delete existing chunks before writing new ones
+        await self.chunk_repository.delete_by_document_id(document.id)
+
+        try:
+            # Update the document
+            updated_doc = await self.document_repository.update(document)
+
+            # Set document_id and order for all chunks
+            assert updated_doc.id is not None
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = updated_doc.id
+                chunk.order = order
+
+            # Batch create all chunks in a single operation
+            await self.chunk_repository.create(chunks)
+
+            # Vacuum old versions in background (non-blocking)
+            asyncio.create_task(self.store.vacuum())
+
+            return updated_doc
+        except Exception:
+            # Roll back to the captured versions and re-raise
+            self.store.restore_table_versions(versions)
+            raise
+
     async def _create_document_with_docling(
         self,
         docling_document,
@@ -214,9 +307,14 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
-        converter = get_converter(self._config)
-        docling_document = await converter.convert_text(content)
+        from haiku.rag.embeddings import embed_chunks
 
+        # Convert → Chunk → Embed using primitives
+        docling_document = await self.convert(content)
+        chunks = await self.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks, self._config)
+
+        # Create document model
         document = Document(
             content=content,
             uri=uri,
@@ -226,9 +324,8 @@ class HaikuRAG:
             docling_version=docling_document.version,
         )
 
-        return await self.document_repository._create_and_chunk(
-            document, docling_document, None
-        )
+        # Store document and chunks
+        return await self._store_document_with_chunks(document, embedded_chunks)
 
     async def import_document(
         self,
@@ -378,6 +475,8 @@ class HaikuRAG:
         Raises:
             ValueError: If the file cannot be parsed or doesn't exist
         """
+        from haiku.rag.embeddings import embed_chunks
+
         metadata = metadata or {}
 
         converter = get_converter(self._config)
@@ -416,29 +515,33 @@ class HaikuRAG:
                 return await self.document_repository.update(existing_doc)
             return existing_doc
 
-        # Parse file only when content changed or new document
-        converter = get_converter(self._config)
-        docling_document = await converter.convert_file(source_path)
+        # Convert → Chunk → Embed using primitives
+        docling_document = await self.convert(source_path)
+        chunks = await self.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks, self._config)
 
         if existing_doc:
-            # Update existing document
+            # Update existing document and rechunk
             existing_doc.content = docling_document.export_to_markdown()
             existing_doc.metadata = metadata
             existing_doc.docling_document_json = docling_document.model_dump_json()
             existing_doc.docling_version = docling_document.version
             if title is not None:
                 existing_doc.title = title
-            return await self.document_repository._update_and_rechunk(
-                existing_doc, docling_document
+            return await self._update_document_and_rechunk(
+                existing_doc, embedded_chunks
             )
         else:
-            # Create new document using DoclingDocument
-            return await self._create_document_with_docling(
-                docling_document=docling_document,
+            # Create new document
+            document = Document(
+                content=docling_document.export_to_markdown(),
                 uri=uri,
                 title=title,
                 metadata=metadata,
+                docling_document_json=docling_document.model_dump_json(),
+                docling_version=docling_document.version,
             )
+            return await self._store_document_with_chunks(document, embedded_chunks)
 
     async def _create_or_update_document_from_url(
         self, url: str, title: str | None = None, metadata: dict | None = None
@@ -461,6 +564,8 @@ class HaikuRAG:
             ValueError: If the content cannot be parsed
             httpx.RequestError: If URL request fails
         """
+        from haiku.rag.embeddings import embed_chunks
+
         metadata = metadata or {}
 
         converter = get_converter(self._config)
@@ -505,35 +610,45 @@ class HaikuRAG:
 
             # Create a temporary file with the appropriate extension
             with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=file_extension
+                mode="wb", suffix=file_extension, delete=False
             ) as temp_file:
                 temp_file.write(response.content)
-                temp_file.flush()  # Ensure content is written to disk
+                temp_file.flush()
                 temp_path = Path(temp_file.name)
 
-                # Parse the content using converter
-                docling_document = await converter.convert_file(temp_path)
+            try:
+                # Convert → Chunk → Embed using primitives
+                docling_document = await self.convert(temp_path)
+                chunks = await self.chunk(docling_document)
+                embedded_chunks = await embed_chunks(chunks, self._config)
+            finally:
+                temp_path.unlink(missing_ok=True)
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
 
             if existing_doc:
+                # Update existing document and rechunk
                 existing_doc.content = docling_document.export_to_markdown()
                 existing_doc.metadata = metadata
                 existing_doc.docling_document_json = docling_document.model_dump_json()
                 existing_doc.docling_version = docling_document.version
                 if title is not None:
                     existing_doc.title = title
-                return await self.document_repository._update_and_rechunk(
-                    existing_doc, docling_document
+                return await self._update_document_and_rechunk(
+                    existing_doc, embedded_chunks
                 )
             else:
-                return await self._create_document_with_docling(
-                    docling_document=docling_document,
+                # Create new document
+                document = Document(
+                    content=docling_document.export_to_markdown(),
                     uri=url,
                     title=title,
                     metadata=metadata,
+                    docling_document_json=docling_document.model_dump_json(),
+                    docling_version=docling_document.version,
                 )
+                return await self._store_document_with_chunks(document, embedded_chunks)
 
     def _get_extension_from_content_type_or_url(
         self, url: str, content_type: str
