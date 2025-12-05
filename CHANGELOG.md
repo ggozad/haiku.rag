@@ -31,6 +31,11 @@
   - When `docling_document_json` is provided without `chunks`, content is extracted and document is rechunked
   - When `docling_document_json` is provided with `chunks`, both are stored (chunks used as-is)
   - `content` and `docling_document_json` are mutually exclusive to avoid ambiguity
+- **New `convert()` Method**: Convert files, URLs, or text to DoclingDocument
+  - `client.convert(Path(...))` - convert local file
+  - `client.convert("https://...")` - download and convert URL
+  - `client.convert("text content")` - convert plain text
+  - Supports `file://` URIs
 
 ### Changed
 

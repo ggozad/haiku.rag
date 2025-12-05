@@ -5,7 +5,7 @@ import tempfile
 from collections.abc import AsyncGenerator
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 from urllib.parse import urlparse
 
 import httpx
@@ -21,6 +21,8 @@ from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
+
     from haiku.rag.graph.common.models import Citation
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,86 @@ class HaikuRAG:
             pass
         self.close()
         return False
+
+    # =========================================================================
+    # Processing Primitives
+    # =========================================================================
+
+    @overload
+    async def convert(self, source: Path) -> "DoclingDocument": ...
+
+    @overload
+    async def convert(self, source: str) -> "DoclingDocument": ...
+
+    async def convert(self, source: Path | str) -> "DoclingDocument":
+        """Convert a file, URL, or text to DoclingDocument.
+
+        Args:
+            source: One of:
+                - Path: Local file path to convert
+                - str (URL): HTTP/HTTPS URL to download and convert
+                - str (text): Raw text content to convert
+
+        Returns:
+            DoclingDocument from the converted source.
+
+        Raises:
+            ValueError: If the file doesn't exist or has unsupported extension.
+            httpx.RequestError: If URL download fails.
+        """
+        converter = get_converter(self._config)
+
+        # Path object - convert file directly
+        if isinstance(source, Path):
+            if not source.exists():
+                raise ValueError(f"File does not exist: {source}")
+            if source.suffix.lower() not in converter.supported_extensions:
+                raise ValueError(f"Unsupported file extension: {source.suffix}")
+            return await converter.convert_file(source)
+
+        # String - check if URL or text
+        parsed = urlparse(source)
+
+        if parsed.scheme in ("http", "https"):
+            # URL - download and convert
+            async with httpx.AsyncClient() as http:
+                response = await http.get(source)
+                response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "").lower()
+                file_extension = self._get_extension_from_content_type_or_url(
+                    source, content_type
+                )
+
+                if file_extension not in converter.supported_extensions:
+                    raise ValueError(
+                        f"Unsupported content type/extension: {content_type}/{file_extension}"
+                    )
+
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", suffix=file_extension, delete=False
+                ) as temp_file:
+                    temp_file.write(response.content)
+                    temp_file.flush()
+                    temp_path = Path(temp_file.name)
+
+                try:
+                    return await converter.convert_file(temp_path)
+                finally:
+                    temp_path.unlink(missing_ok=True)
+
+        elif parsed.scheme == "file":
+            # file:// URI
+            file_path = Path(parsed.path)
+            if not file_path.exists():
+                raise ValueError(f"File does not exist: {file_path}")
+            if file_path.suffix.lower() not in converter.supported_extensions:
+                raise ValueError(f"Unsupported file extension: {file_path.suffix}")
+            return await converter.convert_file(file_path)
+
+        else:
+            # Treat as text content
+            return await converter.convert_text(source)
 
     async def _create_document_with_docling(
         self,
