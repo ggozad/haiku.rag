@@ -32,7 +32,7 @@ async def test_local_chunker(qa_corpus: Dataset):
     # Ensure that chunks are reasonably sized (allowing more flexibility for structure-aware chunking)
     total_tokens = 0
     for chunk in chunks:
-        encoded_tokens = tokenizer.encode(chunk.text, add_special_tokens=False)
+        encoded_tokens = tokenizer.encode(chunk.content, add_special_tokens=False)
         token_count = len(encoded_tokens)
         total_tokens += token_count
 
@@ -95,7 +95,7 @@ async def test_local_chunker_hierarchical(qa_corpus: Dataset):
     assert len(chunks) > 0
     # Each chunk should be non-empty
     for chunk in chunks:
-        assert len(chunk.text.strip()) > 0
+        assert len(chunk.content.strip()) > 0
 
 
 def test_local_chunker_invalid_type():
@@ -127,8 +127,8 @@ async def test_local_chunker_markdown_tables():
     chunks_md = await chunker_md.chunk(doc)
 
     # Should contain markdown table format
-    assert any("|" in chunk.text for chunk in chunks_md)
-    assert any("Column 1" in chunk.text for chunk in chunks_md)
+    assert any("|" in chunk.content for chunk in chunks_md)
+    assert any("Column 1" in chunk.content for chunk in chunks_md)
 
     # Test with markdown tables disabled (narrative format)
     config_narrative = AppConfig()
@@ -137,9 +137,9 @@ async def test_local_chunker_markdown_tables():
     chunks_narrative = await chunker_narrative.chunk(doc)
 
     # Should contain narrative format (no pipe characters in table)
-    table_content = [chunk.text for chunk in chunks_narrative if "Value" in chunk.text][
-        0
-    ]
+    table_content = [
+        chunk.content for chunk in chunks_narrative if "Value" in chunk.content
+    ][0]
     # Narrative format uses commas, not pipes for table structure
     assert "," in table_content and "|" not in table_content
 
@@ -172,10 +172,11 @@ Here is some background information.
     all_labels = []
     all_headings = []
     for chunk in chunks:
-        all_refs.extend(chunk.metadata.doc_item_refs)
-        all_labels.extend(chunk.metadata.labels)
-        if chunk.metadata.headings:
-            all_headings.extend(chunk.metadata.headings)
+        meta = chunk.get_chunk_metadata()
+        all_refs.extend(meta.doc_item_refs)
+        all_labels.extend(meta.labels)
+        if meta.headings:
+            all_headings.extend(meta.headings)
 
     # Should have JSON pointer refs like #/texts/0, #/tables/0
     assert len(all_refs) > 0
@@ -241,8 +242,8 @@ class TestDoclingServeChunker:
 
         chunks = await chunker.chunk(doc)
         assert len(chunks) == 2
-        assert chunks[0].text == "Chunk 1"
-        assert chunks[1].text == "Chunk 2"
+        assert chunks[0].content == "Chunk 1"
+        assert chunks[1].content == "Chunk 2"
         mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
@@ -434,19 +435,21 @@ This is content.
         assert len(chunks) == 2
 
         # First chunk - labels resolved from document
-        assert chunks[0].text == "Chapter 1\nThis is content."
-        assert chunks[0].metadata.doc_item_refs == ["#/texts/0", "#/texts/1"]
+        assert chunks[0].content == "Chapter 1\nThis is content."
+        meta0 = chunks[0].get_chunk_metadata()
+        assert meta0.doc_item_refs == ["#/texts/0", "#/texts/1"]
         # texts[0] is title (# heading), texts[1] is text (paragraph)
-        assert chunks[0].metadata.labels == ["title", "text"]
-        assert chunks[0].metadata.headings == ["Chapter 1"]
-        assert chunks[0].metadata.page_numbers == [1]
+        assert meta0.labels == ["title", "text"]
+        assert meta0.headings == ["Chapter 1"]
+        assert meta0.page_numbers == [1]
 
         # Second chunk - label resolved from document
-        assert chunks[1].text == "Table content here."
-        assert chunks[1].metadata.doc_item_refs == ["#/tables/0"]
-        assert chunks[1].metadata.labels == ["table"]
-        assert chunks[1].metadata.headings == ["Chapter 1", "Section 1.1"]
-        assert chunks[1].metadata.page_numbers == [1, 2]
+        assert chunks[1].content == "Table content here."
+        meta1 = chunks[1].get_chunk_metadata()
+        assert meta1.doc_item_refs == ["#/tables/0"]
+        assert meta1.labels == ["table"]
+        assert meta1.headings == ["Chapter 1", "Section 1.1"]
+        assert meta1.page_numbers == [1, 2]
 
 
 def is_docling_serve_available(base_url: str = "http://localhost:5001") -> bool:
@@ -508,28 +511,31 @@ async def test_local_and_serve_chunkers_produce_same_output():
     # Compare each chunk
     for i, (local, serve) in enumerate(zip(local_chunks, serve_chunks)):
         # Text should match
-        assert local.text == serve.text, f"Chunk {i} text mismatch"
+        assert local.content == serve.content, f"Chunk {i} content mismatch"
+
+        local_meta = local.get_chunk_metadata()
+        serve_meta = serve.get_chunk_metadata()
 
         # doc_item_refs should match
-        assert local.metadata.doc_item_refs == serve.metadata.doc_item_refs, (
+        assert local_meta.doc_item_refs == serve_meta.doc_item_refs, (
             f"Chunk {i} doc_item_refs mismatch: "
-            f"local={local.metadata.doc_item_refs}, serve={serve.metadata.doc_item_refs}"
+            f"local={local_meta.doc_item_refs}, serve={serve_meta.doc_item_refs}"
         )
 
         # Labels should match (now that serve resolves from document)
-        assert local.metadata.labels == serve.metadata.labels, (
+        assert local_meta.labels == serve_meta.labels, (
             f"Chunk {i} labels mismatch: "
-            f"local={local.metadata.labels}, serve={serve.metadata.labels}"
+            f"local={local_meta.labels}, serve={serve_meta.labels}"
         )
 
         # Headings should match
-        assert local.metadata.headings == serve.metadata.headings, (
+        assert local_meta.headings == serve_meta.headings, (
             f"Chunk {i} headings mismatch: "
-            f"local={local.metadata.headings}, serve={serve.metadata.headings}"
+            f"local={local_meta.headings}, serve={serve_meta.headings}"
         )
 
         # Page numbers should match
-        assert local.metadata.page_numbers == serve.metadata.page_numbers, (
+        assert local_meta.page_numbers == serve_meta.page_numbers, (
             f"Chunk {i} page_numbers mismatch: "
-            f"local={local.metadata.page_numbers}, serve={serve.metadata.page_numbers}"
+            f"local={local_meta.page_numbers}, serve={serve_meta.page_numbers}"
         )

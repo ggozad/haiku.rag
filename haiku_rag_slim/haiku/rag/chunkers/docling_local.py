@@ -1,8 +1,8 @@
 from typing import TYPE_CHECKING, cast
 
-from haiku.rag.chunkers.base import ChunkWithMetadata, DocumentChunker
+from haiku.rag.chunkers.base import DocumentChunker
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.store.models.chunk import ChunkMetadata
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
 if TYPE_CHECKING:
     from docling_core.transforms.chunker.doc_chunk import DocMeta
@@ -95,7 +95,7 @@ class DoclingLocalChunker(DocumentChunker):
                 "Must be 'hybrid' or 'hierarchical'."
             )
 
-    async def chunk(self, document: "DoclingDocument") -> list[ChunkWithMetadata]:
+    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
         """Split the document into chunks with metadata.
 
         Extracts structured metadata from each DocChunk including:
@@ -108,13 +108,13 @@ class DoclingLocalChunker(DocumentChunker):
             document: The DoclingDocument to be split into chunks.
 
         Returns:
-            List of ChunkWithMetadata containing text and structured metadata.
+            List of Chunk containing content and structured metadata.
         """
         if document is None:
             return []
 
         raw_chunks = list(self.chunker.chunk(document))
-        result: list[ChunkWithMetadata] = []
+        result: list[Chunk] = []
 
         for chunk in raw_chunks:
             # Use raw chunk text - headings are stored separately in metadata
@@ -149,12 +149,12 @@ class DoclingLocalChunker(DocumentChunker):
             if meta and meta.headings:
                 headings = list(meta.headings)
 
-            metadata = ChunkMetadata(
+            chunk_metadata = ChunkMetadata(
                 doc_item_refs=doc_item_refs,
                 headings=headings,
                 labels=labels,
                 page_numbers=sorted(page_numbers),
             )
-            result.append(ChunkWithMetadata(text=text, metadata=metadata))
+            result.append(Chunk(content=text, metadata=chunk_metadata.model_dump()))
 
         return result

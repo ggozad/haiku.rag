@@ -37,8 +37,8 @@
 - **BREAKING: `create_document()` API**: Removed `chunks` parameter
   - `create_document()` now always processes content (converts, chunks, embeds)
   - Use new `import_document()` for pre-processed documents with custom chunks
-- **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[ChunkWithMetadata]` instead of `list[str]`
-  - `ChunkWithMetadata` combines chunk text with `ChunkMetadata` (refs, labels, headings, page_numbers)
+- **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[Chunk]` instead of `list[str]`
+  - Chunks include structured metadata (doc_item_refs, labels, headings, page_numbers) in the `metadata` dict
   - All chunker implementations updated: `DoclingLocalChunker`, `DoclingServeChunker`
 - **Page Image Generation**: `generate_page_images=True` is now always enabled for local docling converter
   - Required for visual grounding features

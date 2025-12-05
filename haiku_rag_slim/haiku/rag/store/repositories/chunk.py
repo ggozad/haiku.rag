@@ -225,16 +225,17 @@ class ChunkRepository:
                 )
                 raise e
 
-        chunks_with_metadata = await chunker.chunk(processed_document)
+        chunks = await chunker.chunk(processed_document)
 
         # Build embedding texts with headings prepended for better semantic search
         # The stored content stays raw, but embeddings capture section context
         embedding_texts = []
-        for c in chunks_with_metadata:
-            if c.metadata.headings:
-                embedding_text = "\n".join(c.metadata.headings) + "\n" + c.text
+        for chunk in chunks:
+            chunk_meta = chunk.get_chunk_metadata()
+            if chunk_meta.headings:
+                embedding_text = "\n".join(chunk_meta.headings) + "\n" + chunk.content
             else:
-                embedding_text = c.text
+                embedding_text = chunk.content
             embedding_texts.append(embedding_text)
         embeddings = await self.embedder.embed(embedding_texts)
 
@@ -242,31 +243,22 @@ class ChunkRepository:
         chunk_records = []
         created_chunks = []
 
-        for order, (chunk_with_meta, embedding) in enumerate(
-            zip(chunks_with_metadata, embeddings)
-        ):
+        for order, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
             chunk_id = str(uuid4())
-
-            # Convert ChunkMetadata to dict for storage
-            metadata_dict = chunk_with_meta.metadata.model_dump()
 
             chunk_record = self.store.ChunkRecord(
                 id=chunk_id,
                 document_id=document_id,
-                content=chunk_with_meta.text,
-                metadata=json.dumps(metadata_dict),
+                content=chunk.content,
+                metadata=json.dumps(chunk.metadata),
                 order=order,
                 vector=embedding,
             )
             chunk_records.append(chunk_record)
 
-            chunk = Chunk(
-                id=chunk_id,
-                document_id=document_id,
-                content=chunk_with_meta.text,
-                metadata=metadata_dict,
-                order=order,
-            )
+            chunk.id = chunk_id
+            chunk.document_id = document_id
+            chunk.order = order
             created_chunks.append(chunk)
 
         # Batch insert all chunks at once
