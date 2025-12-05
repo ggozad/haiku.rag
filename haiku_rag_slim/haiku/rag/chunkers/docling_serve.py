@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from haiku.rag.chunkers.base import ChunkWithMetadata, DocumentChunker
+from haiku.rag.chunkers.base import DocumentChunker
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.store.models.chunk import ChunkMetadata
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -133,7 +133,7 @@ class DoclingServeChunker(DocumentChunker):
         except Exception as e:
             raise ValueError(f"Failed to chunk via docling-serve: {e}")
 
-    async def chunk(self, document: "DoclingDocument") -> list[ChunkWithMetadata]:
+    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
         """Split the document into chunks with metadata via docling-serve.
 
         Extracts structured metadata from the API response including:
@@ -146,7 +146,7 @@ class DoclingServeChunker(DocumentChunker):
             document: The DoclingDocument to be split into chunks.
 
         Returns:
-            List of ChunkWithMetadata containing text and structured metadata.
+            List of Chunk containing content and structured metadata.
 
         Raises:
             ValueError: If chunking fails or service is unavailable.
@@ -155,7 +155,7 @@ class DoclingServeChunker(DocumentChunker):
             return []
 
         raw_chunks = await self._call_chunk_api(document)
-        result: list[ChunkWithMetadata] = []
+        result: list[Chunk] = []
 
         for chunk in raw_chunks:
             text = chunk.get("text", "")
@@ -186,12 +186,12 @@ class DoclingServeChunker(DocumentChunker):
             # Get page numbers directly from chunk
             page_numbers = chunk.get("page_numbers", [])
 
-            metadata = ChunkMetadata(
+            chunk_metadata = ChunkMetadata(
                 doc_item_refs=doc_item_refs,
                 headings=headings,
                 labels=labels,
                 page_numbers=sorted(page_numbers) if page_numbers else [],
             )
-            result.append(ChunkWithMetadata(text=text, metadata=metadata))
+            result.append(Chunk(content=text, metadata=chunk_metadata.model_dump()))
 
         return result
