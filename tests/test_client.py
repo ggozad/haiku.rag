@@ -1639,3 +1639,72 @@ async def test_client_convert_file_uri(temp_db_path):
             assert isinstance(docling_doc, DoclingDocument)
             markdown = docling_doc.export_to_markdown()
             assert "URI file content" in markdown
+
+
+# =============================================================================
+# chunk() method tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_client_chunk_basic(temp_db_path):
+    """Test chunk() produces Chunk objects from DoclingDocument."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # First convert some text
+        docling_doc = await client.convert("This is test content for chunking.")
+
+        # Then chunk it
+        chunks = await client.chunk(docling_doc)
+
+        assert isinstance(chunks, list)
+        assert len(chunks) > 0
+        assert all(isinstance(c, Chunk) for c in chunks)
+        # Chunks should have content but no embedding yet
+        assert all(c.content for c in chunks)
+        assert all(c.embedding is None for c in chunks)
+        # Chunks should not have document_id yet (not stored)
+        assert all(c.document_id is None for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_client_chunk_preserves_metadata(temp_db_path):
+    """Test chunk() preserves structured metadata from DoclingDocument."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Convert structured markdown
+        markdown = """# Chapter 1
+
+This is the first paragraph.
+
+## Section 1.1
+
+This is a subsection.
+"""
+        docling_doc = await client.convert(markdown)
+        chunks = await client.chunk(docling_doc)
+
+        assert len(chunks) > 0
+
+        # Check that at least some chunks have metadata
+        has_metadata = False
+        for chunk in chunks:
+            meta = chunk.get_chunk_metadata()
+            if meta.doc_item_refs or meta.headings:
+                has_metadata = True
+                break
+
+        assert has_metadata, "Chunks should have structured metadata"
+
+
+@pytest.mark.asyncio
+async def test_client_chunk_empty_document(temp_db_path):
+    """Test chunk() with empty DoclingDocument."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create an empty DoclingDocument
+        empty_doc = DoclingDocument(name="empty")
+
+        chunks = await client.chunk(empty_doc)
+
+        assert isinstance(chunks, list)
+        assert len(chunks) == 0
