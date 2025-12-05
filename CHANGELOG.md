@@ -43,6 +43,8 @@
   - `client.convert("https://...")` - download and convert URL
   - `client.convert("text content")` - convert plain text
   - Supports `file://` URIs
+- **New `chunk()` Method**: Chunk a DoclingDocument into Chunk objects
+  - `client.chunk(docling_doc)` - returns `list[Chunk]` without embeddings
 
 ### Changed
 

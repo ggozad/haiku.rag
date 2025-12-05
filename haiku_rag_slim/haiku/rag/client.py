@@ -172,6 +172,20 @@ class HaikuRAG:
             # Treat as text content
             return await converter.convert_text(source)
 
+    async def chunk(self, docling_document: "DoclingDocument") -> list[Chunk]:
+        """Chunk a DoclingDocument into Chunks.
+
+        Args:
+            docling_document: The DoclingDocument to chunk.
+
+        Returns:
+            List of Chunk objects (without embeddings, without document_id).
+        """
+        from haiku.rag.chunkers import get_chunker
+
+        chunker = get_chunker(self._config)
+        return await chunker.chunk(docling_document)
+
     async def _create_document_with_docling(
         self,
         docling_document,
