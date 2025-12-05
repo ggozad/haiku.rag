@@ -1,16 +1,9 @@
-import asyncio
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.document import Document
-
-if TYPE_CHECKING:
-    from docling_core.types.doc.document import DoclingDocument
-
-    from haiku.rag.store.models.chunk import Chunk
 
 
 class DocumentRepository:
@@ -197,83 +190,3 @@ class DocumentRepository:
             self.store.documents_table = self.store.db.create_table(
                 "documents", schema=DocumentRecord
             )
-
-    async def _create_and_chunk(
-        self,
-        entity: Document,
-        docling_document: "DoclingDocument | None",
-        chunks: list["Chunk"] | None = None,
-    ) -> Document:
-        """Create a document with its chunks and embeddings."""
-        # Snapshot table versions for versioned rollback (if supported)
-        versions = self.store.current_table_versions()
-
-        # Create the document
-        created_doc = await self.create(entity)
-
-        # Attempt to create chunks; on failure, prefer version rollback
-        try:
-            # Create chunks if not provided
-            if chunks is None:
-                assert docling_document is not None, (
-                    "docling_document is required when chunks are not provided"
-                )
-                assert created_doc.id is not None, (
-                    "Document ID should not be None after creation"
-                )
-                await self.chunk_repository.create_chunks_for_document(
-                    created_doc.id, docling_document
-                )
-            else:
-                # Use provided chunks, set order from list position
-                assert created_doc.id is not None, (
-                    "Document ID should not be None after creation"
-                )
-                # Set document_id and order for all chunks
-                for order, chunk in enumerate(chunks):
-                    chunk.document_id = created_doc.id
-                    chunk.order = order
-                # Batch create all chunks in a single operation
-                await self.chunk_repository.create(chunks)
-
-            # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
-
-            return created_doc
-        except Exception:
-            # Roll back to the captured versions and re-raise
-            self.store.restore_table_versions(versions)
-            raise
-
-    async def _update_and_rechunk(
-        self, entity: Document, docling_document: "DoclingDocument"
-    ) -> Document:
-        """Update a document and regenerate its chunks."""
-        assert entity.id is not None, "Document ID is required for update"
-
-        # Snapshot table versions for versioned rollback
-        versions = self.store.current_table_versions()
-
-        # Delete existing chunks before writing new ones
-        await self.chunk_repository.delete_by_document_id(entity.id)
-
-        try:
-            # Update the document
-            updated_doc = await self.update(entity)
-
-            # Create new chunks
-            assert updated_doc.id is not None, (
-                "Document ID should not be None after update"
-            )
-            await self.chunk_repository.create_chunks_for_document(
-                updated_doc.id, docling_document
-            )
-
-            # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
-
-            return updated_doc
-        except Exception:
-            # Roll back to the captured versions and re-raise
-            self.store.restore_table_versions(versions)
-            raise

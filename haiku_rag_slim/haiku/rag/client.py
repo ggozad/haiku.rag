@@ -217,7 +217,7 @@ class HaikuRAG:
             self.store.restore_table_versions(versions)
             raise
 
-    async def _update_document_and_rechunk(
+    async def _update_document_with_chunks(
         self,
         document: Document,
         chunks: list[Chunk],
@@ -264,28 +264,6 @@ class HaikuRAG:
             # Roll back to the captured versions and re-raise
             self.store.restore_table_versions(versions)
             raise
-
-    async def _create_document_with_docling(
-        self,
-        docling_document,
-        uri: str | None = None,
-        title: str | None = None,
-        metadata: dict | None = None,
-        chunks: list[Chunk] | None = None,
-    ) -> Document:
-        """Create a new document from DoclingDocument."""
-        content = docling_document.export_to_markdown()
-        document = Document(
-            content=content,
-            uri=uri,
-            title=title,
-            metadata=metadata or {},
-            docling_document_json=docling_document.model_dump_json(),
-            docling_version=docling_document.version,
-        )
-        return await self.document_repository._create_and_chunk(
-            document, docling_document, chunks
-        )
 
     async def create_document(
         self,
@@ -395,7 +373,7 @@ class HaikuRAG:
             docling_version=docling_version,
         )
 
-        return await self.document_repository._create_and_chunk(document, None, chunks)
+        return await self._store_document_with_chunks(document, chunks)
 
     async def create_document_from_source(
         self, source: str | Path, title: str | None = None, metadata: dict | None = None
@@ -528,7 +506,7 @@ class HaikuRAG:
             existing_doc.docling_version = docling_document.version
             if title is not None:
                 existing_doc.title = title
-            return await self._update_document_and_rechunk(
+            return await self._update_document_with_chunks(
                 existing_doc, embedded_chunks
             )
         else:
@@ -635,7 +613,7 @@ class HaikuRAG:
                 existing_doc.docling_version = docling_document.version
                 if title is not None:
                     existing_doc.title = title
-                return await self._update_document_and_rechunk(
+                return await self._update_document_with_chunks(
                     existing_doc, embedded_chunks
                 )
             else:
@@ -704,18 +682,28 @@ class HaikuRAG:
         return await self.document_repository.get_by_uri(uri)
 
     async def update_document(self, document: Document) -> Document:
-        """Update an existing document."""
-        # Convert content to DoclingDocument
-        converter = get_converter(self._config)
-        docling_document = await converter.convert_text(document.content)
+        """Update an existing document.
+
+        Reconverts content, rechunks, and regenerates embeddings.
+
+        Args:
+            document: The document to update (must have ID set).
+
+        Returns:
+            The updated Document instance.
+        """
+        from haiku.rag.embeddings import embed_chunks
+
+        # Convert → Chunk → Embed using primitives
+        docling_document = await self.convert(document.content)
+        chunks = await self.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks, self._config)
 
         # Store DoclingDocument JSON
         document.docling_document_json = docling_document.model_dump_json()
         document.docling_version = docling_document.version
 
-        return await self.document_repository._update_and_rechunk(
-            document, docling_document
-        )
+        return await self._update_document_with_chunks(document, embedded_chunks)
 
     async def update_document_fields(
         self,
@@ -747,6 +735,8 @@ class HaikuRAG:
                 or if the JSON is invalid.
         """
         from docling_core.types.doc.document import DoclingDocument
+
+        from haiku.rag.embeddings import embed_chunks
 
         # Validate: content and docling_document_json are mutually exclusive
         if content is not None and docling_document_json is not None:
@@ -786,7 +776,7 @@ class HaikuRAG:
         if content is None and chunks is None and docling_document is None:
             return await self.document_repository.update(existing_doc)
 
-        # Custom chunks provided - use them as-is
+        # Custom chunks provided - use them as-is (pre-embedded)
         if chunks is not None:
             # Update content field if provided
             if content is not None:
@@ -800,37 +790,29 @@ class HaikuRAG:
                 if content is None:
                     existing_doc.content = docling_document.export_to_markdown()
 
-            # Delete existing chunks and use custom ones
-            await self.chunk_repository.delete_by_document_id(document_id)
-            await self.document_repository.update(existing_doc)
+            return await self._update_document_with_chunks(existing_doc, chunks)
 
-            for order, chunk in enumerate(chunks):
-                chunk.document_id = document_id
-                chunk.order = order
-            await self.chunk_repository.create(chunks)
-
-            return existing_doc
-
-        # DoclingDocument provided without chunks - extract content and rechunk
+        # DoclingDocument provided without chunks - chunk and embed using primitives
         if docling_document is not None:
             existing_doc.content = docling_document.export_to_markdown()
             existing_doc.docling_document_json = docling_document_json
             existing_doc.docling_version = docling_version
 
-            return await self.document_repository._update_and_rechunk(
-                existing_doc, docling_document
+            new_chunks = await self.chunk(docling_document)
+            embedded_chunks = await embed_chunks(new_chunks, self._config)
+            return await self._update_document_with_chunks(
+                existing_doc, embedded_chunks
             )
 
-        # Content provided without chunks - convert and rechunk
+        # Content provided without chunks - convert, chunk, and embed using primitives
         existing_doc.content = content  # type: ignore[assignment]
-        converter = get_converter(self._config)
-        converted_docling = await converter.convert_text(existing_doc.content)
+        converted_docling = await self.convert(existing_doc.content)
         existing_doc.docling_document_json = converted_docling.model_dump_json()
         existing_doc.docling_version = converted_docling.version
 
-        return await self.document_repository._update_and_rechunk(
-            existing_doc, converted_docling
-        )
+        new_chunks = await self.chunk(converted_docling)
+        embedded_chunks = await embed_chunks(new_chunks, self._config)
+        return await self._update_document_with_chunks(existing_doc, embedded_chunks)
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""
