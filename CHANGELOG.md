@@ -38,6 +38,9 @@
   - Supports `file://` URIs
 - **New `chunk()` Method**: Chunk a DoclingDocument into Chunk objects
   - `client.chunk(docling_doc)` - returns `list[Chunk]` without embeddings
+- **New `contextualize()` and `embed_chunks()` Utilities**: Standalone embedding utilities in `haiku.rag.embeddings`
+  - `contextualize(chunks)` - prepend section headings to chunk content for better semantic search
+  - `embed_chunks(chunks)` - generate embeddings for chunks, returns new Chunk objects with embeddings set
 
 ### Changed
 
