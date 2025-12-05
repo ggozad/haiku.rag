@@ -52,12 +52,12 @@ doc = await client.create_document_from_source(
 
 ### Importing Pre-Processed Documents
 
-If you process documents externally (conversion, chunking, embedding), use `import_document()` to store them:
+If you process documents externally or need custom processing, use `import_document()`:
 
 ```python
 from haiku.rag.store.models.chunk import Chunk
 
-# Create chunks with optional embeddings
+# Create chunks (embeddings optional - will be generated if missing)
 chunks = [
     Chunk(
         content="This is the first chunk",
@@ -67,7 +67,7 @@ chunks = [
     Chunk(
         content="This is the second chunk",
         metadata={"section": "body"},
-        embedding=[0.1] * 1024,  # Pre-computed embedding
+        embedding=[0.1] * 1024,  # Optional: pre-computed embedding
         order=1,
     ),
 ]
@@ -82,18 +82,9 @@ doc = await client.import_document(
 )
 ```
 
-If you also have a DoclingDocument from your processing pipeline, include it for rich metadata support (visual grounding, page numbers, section headings). When providing a DoclingDocument, you can omit `content` - it will be extracted automatically:
+With a DoclingDocument for rich metadata (visual grounding, page numbers):
 
 ```python
-# With explicit content
-doc = await client.import_document(
-    chunks=chunks,
-    content="Full document content",
-    docling_document_json=docling_doc.model_dump_json(),
-    docling_version=docling_doc.version,
-)
-
-# Or let content be extracted from DoclingDocument
 doc = await client.import_document(
     chunks=chunks,
     docling_document_json=docling_doc.model_dump_json(),
@@ -102,7 +93,9 @@ doc = await client.import_document(
 ```
 
 !!! note
-    Either `content` or `docling_document_json` must be provided. When `docling_document_json` is provided without `content`, the content is extracted from the DoclingDocument.
+    Either `content` or `docling_document_json` must be provided. When `docling_document_json` is provided without `content`, the content is extracted automatically.
+
+See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
 
 ### Retrieving Documents
 
@@ -138,71 +131,40 @@ docs = await client.list_documents(
 
 ### Updating Documents
 
-Update entire document:
 ```python
-doc.content = "Updated content"
-await client.update_document(doc)
-```
+# Update content (triggers re-chunking)
+await client.update_document(document_id=doc.id, content="New content")
 
-Update specific fields:
-```python
-# Update only content (triggers re-chunking)
-await client.update_document_fields(
-    document_id=doc.id,
-    content="New content"
-)
-
-# Update only metadata (no re-chunking)
-await client.update_document_fields(
+# Update metadata only (no re-chunking)
+await client.update_document(
     document_id=doc.id,
     metadata={"version": "2.0", "updated_by": "admin"}
 )
 
-# Update only title (no re-chunking)
-await client.update_document_fields(
-    document_id=doc.id,
-    title="New Title"
-)
+# Update title only (no re-chunking)
+await client.update_document(document_id=doc.id, title="New Title")
 
 # Update multiple fields at once
-await client.update_document_fields(
+await client.update_document(
     document_id=doc.id,
     content="New content",
     title="Updated Title",
     metadata={"status": "final"}
 )
 
-# Use custom chunks instead of auto-generation
+# Use custom chunks (embeddings optional - will be generated if missing)
 custom_chunks = [
     Chunk(content="Custom chunk 1"),
-    Chunk(content="Custom chunk 2"),
+    Chunk(content="Custom chunk 2", embedding=[...]),  # Pre-computed embedding
 ]
-await client.update_document_fields(
-    document_id=doc.id,
-    chunks=custom_chunks
-)
-
-# Update with DoclingDocument for rich metadata (extracts content and rechunks)
-await client.update_document_fields(
-    document_id=doc.id,
-    docling_document_json=docling_doc.model_dump_json(),
-    docling_version=docling_doc.version,
-)
-
-# Update with DoclingDocument and custom chunks (stores both, uses chunks as-is)
-await client.update_document_fields(
-    document_id=doc.id,
-    chunks=custom_chunks,
-    docling_document_json=docling_doc.model_dump_json(),
-    docling_version=docling_doc.version,
-)
+await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```
 
 **Notes:**
 
-- Updates to only `metadata` or `title` skip re-chunking for efficiency
-- Updates to `content`, `chunks`, or `docling_document_json` will regenerate or replace chunks
-- `content` and `docling_document_json` are mutually exclusive - provide one or the other
+- Updates to only `metadata` or `title` skip re-chunking
+- Updates to `content` trigger re-chunking and re-embedding
+- Custom `chunks` with embeddings are stored as-is; missing embeddings are generated automatically
 
 ### Deleting Documents
 
@@ -259,10 +221,10 @@ The search method performs native hybrid search (vector + full-text) using Lance
 Basic hybrid search (default):
 ```python
 results = await client.search("machine learning algorithms", limit=5)
-for chunk, score in results:
-    print(f"Score: {score:.3f}")
-    print(f"Content: {chunk.content}")
-    print(f"Document ID: {chunk.document_id}")
+for result in results:
+    print(f"Score: {result.score:.3f}")
+    print(f"Content: {result.content}")
+    print(f"Document ID: {result.document_id}")
 ```
 
 Search with different search types:
@@ -289,13 +251,12 @@ results = await client.search(
 )
 
 # Process results
-for chunk, relevance_score in results:
-    print(f"Relevance: {relevance_score:.3f}")
-    print(f"Content: {chunk.content}")
-    print(f"From document: {chunk.document_id}")
-    print(f"Document URI: {chunk.document_uri}")
-    print(f"Document Title: {chunk.document_title}")  # when available
-    print(f"Document metadata: {chunk.document_meta}")
+for result in results:
+    print(f"Relevance: {result.score:.3f}")
+    print(f"Content: {result.content}")
+    print(f"From document: {result.document_id}")
+    print(f"Document URI: {result.document_uri}")
+    print(f"Document Title: {result.document_title}")  # when available
 ```
 
 ### Filtering Search Results
@@ -355,8 +316,8 @@ expanded_results = await client.expand_context(search_results)
 expanded_results = await client.expand_context(search_results, radius=2)
 
 # The expanded results contain chunks with combined content from adjacent chunks
-for chunk, score in expanded_results:
-    print(f"Expanded content: {chunk.content}")  # Now includes before/after chunks
+for result in expanded_results:
+    print(f"Expanded content: {result.content}")  # Now includes before/after chunks
 ```
 
 **Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
