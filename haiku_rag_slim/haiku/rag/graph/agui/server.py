@@ -151,7 +151,9 @@ def format_sse_event(event: AGUIEvent) -> str:
     return f"data: {event_json}\n\n"
 
 
-def create_agui_server(config: "AppConfig", db_path: Path | None = None) -> Starlette:
+def create_agui_server(  # pragma: no cover
+    config: "AppConfig", db_path: Path | None = None
+) -> Starlette:
     """Create AG-UI server with both research and deep ask endpoints.
 
     Args:

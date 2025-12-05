@@ -8,7 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import Document
 
 
-class DocumentList(VerticalScroll):
+class DocumentList(VerticalScroll):  # pragma: no cover
     """Widget for displaying and browsing documents."""
 
     can_focus = False

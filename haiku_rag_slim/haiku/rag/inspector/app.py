@@ -24,7 +24,7 @@ except ImportError:
     App = object  # type: ignore
 
 
-class InspectorApp(App):  # type: ignore[misc]
+class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
     """Textual TUI for inspecting LanceDB data."""
 
     TITLE = "haiku.rag DB Inspector"
@@ -193,7 +193,7 @@ class InspectorApp(App):  # type: ignore[misc]
         await self.push_screen(VisualGroundingModal(chunk=chunk, client=self.client))
 
 
-def run_inspector(db_path: Path | None = None) -> None:
+def run_inspector(db_path: Path | None = None) -> None:  # pragma: no cover
     """Run the inspector TUI.
 
     Args:

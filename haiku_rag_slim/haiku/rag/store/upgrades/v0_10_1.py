@@ -7,7 +7,7 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 
 
-def _apply_add_document_title(store: Store) -> None:
+def _apply_add_document_title(store: Store) -> None:  # pragma: no cover
     """Add a nullable 'title' column to the documents table."""
 
     # Read existing rows using Arrow for schema-agnostic access

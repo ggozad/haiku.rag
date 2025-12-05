@@ -5,7 +5,7 @@ from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
 
-class VLLMReranker(RerankerBase):
+class VLLMReranker(RerankerBase):  # pragma: no cover
     def __init__(self, model: str):
         self._model = model
         self._base_url = Config.providers.vllm.rerank_base_url

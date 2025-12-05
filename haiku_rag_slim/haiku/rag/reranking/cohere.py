@@ -9,7 +9,7 @@ except ImportError as e:
     ) from e
 
 
-class CohereReranker(RerankerBase):
+class CohereReranker(RerankerBase):  # pragma: no cover
     def __init__(self):
         # Cohere SDK reads CO_API_KEY from environment by default
         self._client = cohere.ClientV2()

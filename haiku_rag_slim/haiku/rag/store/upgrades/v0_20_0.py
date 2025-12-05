@@ -7,7 +7,7 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 
 
-def _apply_add_docling_document_columns(store: Store) -> None:
+def _apply_add_docling_document_columns(store: Store) -> None:  # pragma: no cover
     """Add 'docling_document_json' and 'docling_version' columns to documents table."""
 
     # Read existing rows using Arrow for schema-agnostic access
