@@ -50,11 +50,11 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
         assert non_existent is None
 
         # Test update_document
-        retrieved_doc.content = "Updated content"
-        retrieved_doc.uri = "file:///updated/path.txt"
-        updated_doc = await client.update_document(retrieved_doc)
+        updated_doc = await client.update_document(
+            document_id=retrieved_doc.id,  # type: ignore[arg-type]
+            content="Updated content",
+        )
         assert updated_doc.content == "Updated content"
-        assert updated_doc.uri == "file:///updated/path.txt"
 
         # Test list_documents
         all_docs = await client.list_documents()
@@ -79,7 +79,7 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_update_document_fields(qa_corpus: Dataset, temp_db_path):
+async def test_client_update_document(qa_corpus: Dataset, temp_db_path):
     """Test updating document with individual parameters."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Get test data
@@ -99,7 +99,7 @@ async def test_client_update_document_fields(qa_corpus: Dataset, temp_db_path):
         original_id = created_doc.id
 
         # Test updating only content
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=original_id, content="Updated content only"
         )
         assert updated_doc.id == original_id
@@ -109,7 +109,7 @@ async def test_client_update_document_fields(qa_corpus: Dataset, temp_db_path):
 
         # Test updating only metadata
         new_metadata = {"source": "updated", "version": "2.0"}
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=original_id, metadata=new_metadata
         )
         assert updated_doc.metadata == new_metadata
@@ -118,7 +118,7 @@ async def test_client_update_document_fields(qa_corpus: Dataset, temp_db_path):
         )  # Should keep previous update
 
         # Test updating only title
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=original_id, title="New Title"
         )
         assert updated_doc.title == "New Title"
@@ -130,7 +130,7 @@ async def test_client_update_document_fields(qa_corpus: Dataset, temp_db_path):
             Chunk(content="Custom chunk 1", order=0),
             Chunk(content="Custom chunk 2", order=1),
         ]
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=original_id,
             content="Content with custom chunks",
             title="Final Title",
@@ -1262,34 +1262,15 @@ async def test_client_create_document_from_file_stores_docling_json(temp_db_path
 
 @pytest.mark.asyncio
 async def test_client_update_document_stores_docling_json(temp_db_path):
-    """Test that update_document stores DoclingDocument JSON."""
+    """Test that update_document stores DoclingDocument JSON when content changes."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
         original_json = doc.docling_document_json
 
-        # Update the document
-        doc.content = "Updated content"
-        updated_doc = await client.update_document(doc)
-
-        assert updated_doc.docling_document_json is not None
-        assert updated_doc.docling_version is not None
-        # JSON should be different because content changed
-        assert updated_doc.docling_document_json != original_json
-
-
-@pytest.mark.asyncio
-async def test_client_update_document_fields_stores_docling_json(temp_db_path):
-    """Test that update_document_fields stores DoclingDocument JSON when content changes."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create initial document
-        doc = await client.create_document(content="Initial content")
-        assert doc.id is not None
-        original_json = doc.docling_document_json
-
-        # Update content via update_document_fields
-        updated_doc = await client.update_document_fields(
+        # Update content via update_document
+        updated_doc = await client.update_document(
             document_id=doc.id, content="New content via fields update"
         )
 
@@ -1300,10 +1281,10 @@ async def test_client_update_document_fields_stores_docling_json(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
+async def test_client_update_document_with_custom_chunks_no_docling_json(
     temp_db_path,
 ):
-    """Test that update_document_fields with custom chunks does not update docling JSON."""
+    """Test that update_document with custom chunks does not update docling JSON."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
         doc = await client.create_document(content="Initial content")
@@ -1312,7 +1293,7 @@ async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
 
         # Update with custom chunks
         custom_chunks = [Chunk(content="Custom chunk", order=0)]
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=doc.id, content="New content", chunks=custom_chunks
         )
 
@@ -1321,7 +1302,7 @@ async def test_client_update_document_fields_with_custom_chunks_no_docling_json(
 
 
 @pytest.mark.asyncio
-async def test_client_update_document_fields_content_docling_mutually_exclusive(
+async def test_client_update_document_content_docling_mutually_exclusive(
     temp_db_path,
 ):
     """Test that content and docling_document_json cannot both be provided."""
@@ -1338,7 +1319,7 @@ async def test_client_update_document_fields_content_docling_mutually_exclusive(
         docling_doc.add_text(label=DocItemLabel.TEXT, text="Some text")
 
         with pytest.raises(ValueError, match="mutually exclusive"):
-            await client.update_document_fields(
+            await client.update_document(
                 document_id=doc.id,
                 content="New content",
                 docling_document_json=docling_doc.model_dump_json(),
@@ -1347,7 +1328,7 @@ async def test_client_update_document_fields_content_docling_mutually_exclusive(
 
 
 @pytest.mark.asyncio
-async def test_client_update_document_fields_with_docling_rechunks(temp_db_path):
+async def test_client_update_document_with_docling_rechunks(temp_db_path):
     """Test that providing docling_document_json without chunks triggers rechunk."""
     from docling_core.types.doc.document import DoclingDocument
 
@@ -1367,7 +1348,7 @@ async def test_client_update_document_fields_with_docling_rechunks(temp_db_path)
         )
 
         # Update with docling document only - should rechunk from it
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=doc.id,
             docling_document_json=docling_doc.model_dump_json(),
             docling_version=docling_doc.version,
@@ -1386,7 +1367,7 @@ async def test_client_update_document_fields_with_docling_rechunks(temp_db_path)
 
 
 @pytest.mark.asyncio
-async def test_client_update_document_fields_docling_with_chunks(temp_db_path):
+async def test_client_update_document_docling_with_chunks(temp_db_path):
     """Test that providing both docling_document_json and chunks stores both."""
     from docling_core.types.doc.document import DoclingDocument
 
@@ -1407,7 +1388,7 @@ async def test_client_update_document_fields_docling_with_chunks(temp_db_path):
             Chunk(content="Custom chunk 2", order=1),
         ]
 
-        updated_doc = await client.update_document_fields(
+        updated_doc = await client.update_document(
             document_id=doc.id,
             chunks=custom_chunks,
             docling_document_json=docling_doc.model_dump_json(),
@@ -1708,3 +1689,59 @@ async def test_client_chunk_empty_document(temp_db_path):
 
         assert isinstance(chunks, list)
         assert len(chunks) == 0
+
+
+@pytest.mark.asyncio
+async def test_import_document_embeds_chunks_without_embeddings(temp_db_path):
+    """Test that import_document embeds chunks that don't have embeddings."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create chunks without embeddings
+        chunks = [
+            Chunk(content="First chunk without embedding", order=0),
+            Chunk(content="Second chunk without embedding", order=1),
+        ]
+
+        # Import document with chunks that have no embeddings
+        doc = await client.import_document(
+            content="Document with unembedded chunks",
+            chunks=chunks,
+        )
+        assert doc.id is not None
+
+        # Verify chunks were stored
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 2
+
+        # Verify vector search works (proves embeddings were generated)
+        results = await client.search("First chunk", search_type="vector")
+        assert len(results) > 0
+        assert results[0].content == "First chunk without embedding"
+
+
+@pytest.mark.asyncio
+async def test_update_document_embeds_chunks_without_embeddings(temp_db_path):
+    """Test that update_document embeds chunks that don't have embeddings."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+
+        # Update with chunks that have no embeddings
+        new_chunks = [
+            Chunk(content="Updated chunk without embedding", order=0),
+        ]
+        await client.update_document(
+            document_id=doc.id,
+            content="Updated content",
+            chunks=new_chunks,
+        )
+
+        # Verify chunks were stored
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 1
+        assert stored_chunks[0].content == "Updated chunk without embedding"
+
+        # Verify vector search works (proves embeddings were generated)
+        results = await client.search("Updated chunk", search_type="vector")
+        assert len(results) > 0
+        assert results[0].content == "Updated chunk without embedding"

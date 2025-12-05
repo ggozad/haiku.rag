@@ -198,13 +198,13 @@ class HaikuRAG:
         document: Document,
         chunks: list[Chunk],
     ) -> Document:
-        """Store a document with its pre-embedded chunks.
+        """Store a document with chunks, embedding any that lack embeddings.
 
         Handles versioning/rollback on failure.
 
         Args:
             document: The document to store (will be created).
-            chunks: Pre-embedded chunks to store with the document.
+            chunks: Chunks to store (will be embedded if lacking embeddings).
 
         Returns:
             The created Document instance with ID set.
@@ -243,13 +243,13 @@ class HaikuRAG:
         document: Document,
         chunks: list[Chunk],
     ) -> Document:
-        """Update a document and replace its chunks with pre-embedded chunks.
+        """Update a document and replace its chunks, embedding any that lack embeddings.
 
         Handles versioning/rollback on failure.
 
         Args:
             document: The document to update (must have ID set).
-            chunks: Pre-embedded chunks to replace existing chunks.
+            chunks: Chunks to replace existing (will be embedded if lacking embeddings).
 
         Returns:
             The updated Document instance.
@@ -702,31 +702,7 @@ class HaikuRAG:
         """
         return await self.document_repository.get_by_uri(uri)
 
-    async def update_document(self, document: Document) -> Document:
-        """Update an existing document.
-
-        Reconverts content, rechunks, and regenerates embeddings.
-
-        Args:
-            document: The document to update (must have ID set).
-
-        Returns:
-            The updated Document instance.
-        """
-        from haiku.rag.embeddings import embed_chunks
-
-        # Convert → Chunk → Embed using primitives
-        docling_document = await self.convert(document.content)
-        chunks = await self.chunk(docling_document)
-        embedded_chunks = await embed_chunks(chunks, self._config)
-
-        # Store DoclingDocument JSON
-        document.docling_document_json = docling_document.model_dump_json()
-        document.docling_version = docling_document.version
-
-        return await self._update_document_with_chunks(document, embedded_chunks)
-
-    async def update_document_fields(
+    async def update_document(
         self,
         document_id: str,
         content: str | None = None,
@@ -736,24 +712,27 @@ class HaikuRAG:
         docling_document_json: str | None = None,
         docling_version: str | None = None,
     ) -> Document:
-        """Update specific fields of a document by ID.
+        """Update a document by ID.
+
+        Updates specified fields. When content or docling_document_json is provided,
+        the document is rechunked and re-embedded. Updates to only metadata or title
+        skip rechunking for efficiency.
 
         Args:
-            document_id: The ID of the document to update
-            content: New content for the document (mutually exclusive with docling_document_json)
-            metadata: New metadata for the document
-            chunks: Custom chunks to use instead of auto-generating
-            title: New title for the document
-            docling_document_json: Serialized DoclingDocument JSON (mutually exclusive with content)
-            docling_version: DoclingDocument schema version (required with docling_document_json)
+            document_id: The ID of the document to update.
+            content: New content (mutually exclusive with docling_document_json).
+            metadata: New metadata dict.
+            chunks: Custom pre-embedded chunks (skips auto-chunking).
+            title: New title.
+            docling_document_json: Serialized DoclingDocument JSON (mutually exclusive with content).
+            docling_version: DoclingDocument schema version (required with docling_document_json).
 
         Returns:
             The updated Document instance.
 
         Raises:
-            ValueError: If both content and docling_document_json are provided,
-                if docling_document_json is provided without docling_version,
-                or if the JSON is invalid.
+            ValueError: If document not found, if both content and docling_document_json
+                are provided, or if docling_document_json is provided without docling_version.
         """
         from docling_core.types.doc.document import DoclingDocument
 
