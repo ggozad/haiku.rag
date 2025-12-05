@@ -46,10 +46,11 @@ async def test_version_rollback_on_update_failure(temp_db_path):
         client.chunk_repository.create = succeed_then_fail  # type: ignore[method-assign]
 
         # Attempt update
-        created.content = "Updated content"
-
         with pytest.raises(RuntimeError):
-            await client.update_document(created)
+            await client.update_document(
+                document_id=created.id,  # type: ignore[arg-type]
+                content="Updated content",
+            )
 
         # Content and chunks should remain the original
         persisted = await client.get_document_by_id(created.id)  # type: ignore[arg-type]
