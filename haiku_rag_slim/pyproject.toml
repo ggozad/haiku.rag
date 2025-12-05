@@ -22,12 +22,12 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling-core==2.51.1",
+    "docling-core==2.54.0",
     "httpx>=0.28.1",
     "lancedb==0.25.3",
     "pathspec>=0.12.1",
-    "pydantic>=2.12.4",
-    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]==1.19.0",
+    "pydantic>=2.12.5",
+    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]==1.27.0",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.3",
     "rich>=14.2.0",
@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling==2.62.0", "opencv-python-headless>=4.11.0.86"]
+docling = ["docling==2.64.0", "opencv-python-headless>=4.11.0.86"]
 # Embedding providers
 voyageai = ["voyageai>=0.3.5"]
 # Rerankers
