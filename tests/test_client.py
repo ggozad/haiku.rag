@@ -1564,3 +1564,78 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path):
         # Verify returned objects are PIL Images
         for img in images:
             assert isinstance(img, PILImage)
+
+
+# =============================================================================
+# convert() method tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_client_convert_text(temp_db_path):
+    """Test convert() with plain text content."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        text = "This is some test content for conversion."
+        docling_doc = await client.convert(text)
+
+        assert isinstance(docling_doc, DoclingDocument)
+        # Check the content is preserved in markdown export
+        markdown = docling_doc.export_to_markdown()
+        assert "test content" in markdown
+
+
+@pytest.mark.asyncio
+async def test_client_convert_file(temp_db_path):
+    """Test convert() with a file path."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("File content for conversion test.")
+
+            docling_doc = await client.convert(temp_path)
+
+            assert isinstance(docling_doc, DoclingDocument)
+            markdown = docling_doc.export_to_markdown()
+            assert "File content" in markdown
+
+
+@pytest.mark.asyncio
+async def test_client_convert_file_not_found(temp_db_path):
+    """Test convert() raises ValueError for non-existent file."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="File does not exist"):
+            await client.convert(Path("/nonexistent/path/file.txt"))
+
+
+@pytest.mark.asyncio
+async def test_client_convert_unsupported_extension(temp_db_path):
+    """Test convert() raises ValueError for unsupported file extension."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.xyz"
+            temp_path.write_text("content")
+
+            with pytest.raises(ValueError, match="Unsupported file extension"):
+                await client.convert(temp_path)
+
+
+@pytest.mark.asyncio
+async def test_client_convert_file_uri(temp_db_path):
+    """Test convert() with a file:// URI string."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("URI file content.")
+            file_uri = temp_path.as_uri()
+
+            docling_doc = await client.convert(file_uri)
+
+            assert isinstance(docling_doc, DoclingDocument)
+            markdown = docling_doc.export_to_markdown()
+            assert "URI file content" in markdown
