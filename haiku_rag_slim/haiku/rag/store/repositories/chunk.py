@@ -16,9 +16,6 @@ from lancedb.rerankers import RRFReranker
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
 
-if TYPE_CHECKING:
-    from docling_core.types.doc.document import DoclingDocument
-
 logger = logging.getLogger(__name__)
 
 
@@ -189,55 +186,6 @@ class ChunkRepository:
                 )
             )
         return chunks
-
-    async def create_chunks_for_document(
-        self, document_id: str, document: "DoclingDocument"
-    ) -> list[Chunk]:
-        """Create chunks and embeddings for a document from DoclingDocument."""
-        from haiku.rag.chunkers import get_chunker
-
-        chunker = get_chunker(self.store._config)
-        chunks = await chunker.chunk(document)
-
-        # Build embedding texts with headings prepended for better semantic search
-        # The stored content stays raw, but embeddings capture section context
-        embedding_texts = []
-        for chunk in chunks:
-            chunk_meta = chunk.get_chunk_metadata()
-            if chunk_meta.headings:
-                embedding_text = "\n".join(chunk_meta.headings) + "\n" + chunk.content
-            else:
-                embedding_text = chunk.content
-            embedding_texts.append(embedding_text)
-        embeddings = await self.embedder.embed(embedding_texts)
-
-        # Prepare all chunk records for batch insertion
-        chunk_records = []
-        created_chunks = []
-
-        for order, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            chunk_id = str(uuid4())
-
-            chunk_record = self.store.ChunkRecord(
-                id=chunk_id,
-                document_id=document_id,
-                content=chunk.content,
-                metadata=json.dumps(chunk.metadata),
-                order=order,
-                vector=embedding,
-            )
-            chunk_records.append(chunk_record)
-
-            chunk.id = chunk_id
-            chunk.document_id = document_id
-            chunk.order = order
-            created_chunks.append(chunk)
-
-        # Batch insert all chunks at once
-        if chunk_records:
-            self.store.chunks_table.add(chunk_records)
-
-        return created_chunks
 
     async def delete_all(self) -> None:
         """Delete all chunks from the database."""

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import mimetypes
 import tempfile
@@ -166,11 +167,18 @@ class HaikuRAG:
 
         Returns:
             List of Chunk objects (without embeddings, without document_id).
+            Each chunk has its `order` field set to its position in the list.
         """
         from haiku.rag.chunkers import get_chunker
 
         chunker = get_chunker(self._config)
-        return await chunker.chunk(docling_document)
+        chunks = await chunker.chunk(docling_document)
+
+        # Set order for each chunk
+        for i, chunk in enumerate(chunks):
+            chunk.order = i
+
+        return chunks
 
     async def _store_document_with_chunks(
         self,
@@ -1284,37 +1292,34 @@ class HaikuRAG:
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Re-embed all chunks without changing chunk boundaries."""
+        from haiku.rag.embeddings import contextualize
+
         for doc in documents:
             assert doc.id is not None
 
-            # Get raw chunk records directly from LanceDB
-            chunk_records = list(
-                self.store.chunks_table.search()
-                .where(f"document_id = '{doc.id}'")
-                .to_pydantic(self.store.ChunkRecord)
-            )
-            if not chunk_records:
+            # Get existing chunks
+            chunks = await self.chunk_repository.get_by_document_id(doc.id)
+            if not chunks:
                 continue
 
-            # Batch embed all chunk contents
-            contents = [rec.content for rec in chunk_records]
-            embeddings = await self.chunk_repository.embedder.embed(contents)
+            # Generate new embeddings using contextualize for consistency
+            texts = contextualize(chunks)
+            embeddings = await self.chunk_repository.embedder.embed(texts)
 
-            # Build updated records only for chunks with changed embeddings
+            # Build updated records
             updated_records = [
                 self.store.ChunkRecord(
-                    id=rec.id,
-                    document_id=rec.document_id,
-                    content=rec.content,
-                    metadata=rec.metadata,
-                    order=rec.order,
+                    id=chunk.id,  # type: ignore[arg-type]
+                    document_id=chunk.document_id,  # type: ignore[arg-type]
+                    content=chunk.content,
+                    metadata=json.dumps(chunk.metadata),
+                    order=chunk.order,
                     vector=embedding,
                 )
-                for rec, embedding in zip(chunk_records, embeddings)
-                if rec.vector != embedding
+                for chunk, embedding in zip(chunks, embeddings)
             ]
 
-            # Batch update chunks with changed embeddings
+            # Batch update all chunks
             if updated_records:
                 self.store.chunks_table.merge_insert(
                     "id"
@@ -1326,76 +1331,68 @@ class HaikuRAG:
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Re-chunk and re-embed from existing document content."""
-        converter = get_converter(self._config)
+        from haiku.rag.embeddings import embed_chunks
 
         for doc in documents:
             assert doc.id is not None
-            docling_document = await converter.convert_text(doc.content)
 
-            # Update document with docling JSON
+            # Convert content to DoclingDocument
+            docling_document = await self.convert(doc.content)
+
+            # Chunk and embed
+            chunks = await self.chunk(docling_document)
+            embedded_chunks = await embed_chunks(chunks, self._config)
+
+            # Update document with docling JSON and store new chunks
             doc.docling_document_json = docling_document.model_dump_json()
             doc.docling_version = docling_document.version
-            await self.document_repository.update(doc)
+            await self._update_document_with_chunks(doc, embedded_chunks)
 
-            await self.chunk_repository.create_chunks_for_document(
-                doc.id, docling_document
-            )
             yield doc.id
 
     async def _rebuild_full(
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Full rebuild: re-convert from source, re-chunk, re-embed."""
-        converter = get_converter(self._config)
+        from haiku.rag.embeddings import embed_chunks
 
         for doc in documents:
             assert doc.id is not None
+
+            # Try to rebuild from source if available
+            if doc.uri and self._check_source_accessible(doc.uri):
+                try:
+                    await self.delete_document(doc.id)
+                    new_doc = await self.create_document_from_source(
+                        source=doc.uri, metadata=doc.metadata or {}
+                    )
+                    assert isinstance(new_doc, Document)
+                    assert new_doc.id is not None
+                    yield new_doc.id
+                    continue
+                except Exception as e:
+                    logger.error(
+                        "Error recreating document from source %s: %s",
+                        doc.uri,
+                        e,
+                    )
+                    continue
+
+            # Fallback: rebuild from stored content
             if doc.uri:
-                source_accessible = self._check_source_accessible(doc.uri)
-
-                if source_accessible:
-                    try:
-                        await self.delete_document(doc.id)
-                        new_doc = await self.create_document_from_source(
-                            source=doc.uri, metadata=doc.metadata or {}
-                        )
-                        assert isinstance(new_doc, Document)
-                        assert new_doc.id is not None
-                        yield new_doc.id
-                    except Exception as e:
-                        logger.error(
-                            "Error recreating document from source %s: %s",
-                            doc.uri,
-                            e,
-                        )
-                        continue
-                else:
-                    logger.warning(
-                        "Source missing for %s, re-embedding from content", doc.uri
-                    )
-                    docling_document = await converter.convert_text(doc.content)
-
-                    # Update document with docling JSON
-                    doc.docling_document_json = docling_document.model_dump_json()
-                    doc.docling_version = docling_document.version
-                    await self.document_repository.update(doc)
-
-                    await self.chunk_repository.create_chunks_for_document(
-                        doc.id, docling_document
-                    )
-                    yield doc.id
-            else:
-                docling_document = await converter.convert_text(doc.content)
-
-                # Update document with docling JSON
-                doc.docling_document_json = docling_document.model_dump_json()
-                doc.docling_version = docling_document.version
-                await self.document_repository.update(doc)
-
-                await self.chunk_repository.create_chunks_for_document(
-                    doc.id, docling_document
+                logger.warning(
+                    "Source missing for %s, re-embedding from content", doc.uri
                 )
-                yield doc.id
+
+            docling_document = await self.convert(doc.content)
+            chunks = await self.chunk(docling_document)
+            embedded_chunks = await embed_chunks(chunks, self._config)
+
+            doc.docling_document_json = docling_document.model_dump_json()
+            doc.docling_version = docling_document.version
+            await self._update_document_with_chunks(doc, embedded_chunks)
+
+            yield doc.id
 
     def _check_source_accessible(self, uri: str) -> bool:
         """Check if a document's source URI is accessible."""

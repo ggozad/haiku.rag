@@ -3,7 +3,6 @@ from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 from haiku.rag.store.models.document import Document
@@ -53,45 +52,29 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
-    """Test creating chunks for a document."""
-    # Create a store and repositories
-    store = Store(temp_db_path, create=True)
-    chunk_repo = ChunkRepository(store)
-    doc_repo = DocumentRepository(store)
+async def test_chunking_pipeline(qa_corpus: Dataset, temp_db_path):
+    """Test document chunking using client primitives."""
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.embeddings import embed_chunks
 
-    # Get the first document from the corpus
-    first_doc = qa_corpus[0]
-    document_text = first_doc["document_extracted"]
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        # Get the first document from the corpus
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
 
-    # Create a document first (without chunks)
-    document = Document(content=document_text, metadata={"source": "test"})
-    created_document = await doc_repo.create(document)
-    document_id = created_document.id
+        # Use client primitives: convert → chunk → embed
+        docling_document = await client.convert(document_text)
+        chunks = await client.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks)
 
-    assert document_id is not None, "Document ID should not be None"
+        # Verify chunks were created with embeddings
+        assert len(chunks) > 0
+        assert all(chunk.embedding is None for chunk in chunks)  # Before embedding
+        assert all(chunk.embedding is not None for chunk in embedded_chunks)  # After
 
-    # Convert text to DoclingDocument
-    converter = get_converter(Config)
-    docling_document = await converter.convert_text(document_text, name="test.md")
-
-    # Test creating chunks for the document
-    chunks = await chunk_repo.create_chunks_for_document(document_id, docling_document)
-
-    # Verify chunks were created
-    assert len(chunks) > 0
-    assert all(chunk.document_id == document_id for chunk in chunks)
-    assert all(chunk.id is not None for chunk in chunks)
-
-    # Verify chunk order
-    for i, chunk in enumerate(chunks):
-        assert chunk.order == i
-
-    # Verify chunks exist in database
-    db_chunks = await chunk_repo.get_by_document_id(document_id)
-    assert len(db_chunks) == len(chunks)
-
-    store.close()
+        # Verify chunk order
+        for i, chunk in enumerate(chunks):
+            assert chunk.order == i
 
 
 @pytest.mark.asyncio
