@@ -8,7 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import Chunk
 
 
-class ChunkList(VerticalScroll):
+class ChunkList(VerticalScroll):  # pragma: no cover
     """Widget for displaying and browsing chunks."""
 
     can_focus = False

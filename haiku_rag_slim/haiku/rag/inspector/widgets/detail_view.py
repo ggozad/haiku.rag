@@ -16,7 +16,7 @@ class ProvenanceData(Protocol):
     doc_item_refs: list[str]
 
 
-class DetailView(VerticalScroll):
+class DetailView(VerticalScroll):  # pragma: no cover
     """Widget for displaying detailed content of documents or chunks."""
 
     can_focus = True

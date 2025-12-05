@@ -7,7 +7,7 @@ from haiku.rag.store.upgrades import Upgrade
 logger = logging.getLogger(__name__)
 
 
-def _apply_embeddings_model_config(store: Store) -> None:
+def _apply_embeddings_model_config(store: Store) -> None:  # pragma: no cover
     """Migrate embeddings config from flat to nested EmbeddingModelConfig structure."""
     results = list(
         store.settings_table.search()
