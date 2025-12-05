@@ -1,4 +1,3 @@
-import inspect
 import json
 import logging
 from typing import TYPE_CHECKING, cast
@@ -16,7 +15,6 @@ from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import load_callable
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -196,36 +194,10 @@ class ChunkRepository:
         self, document_id: str, document: "DoclingDocument"
     ) -> list[Chunk]:
         """Create chunks and embeddings for a document from DoclingDocument."""
-        # Lazy imports to avoid loading docling during module import
         from haiku.rag.chunkers import get_chunker
-        from haiku.rag.converters import get_converter
 
         chunker = get_chunker(self.store._config)
-
-        # Optionally preprocess markdown before chunking
-        processed_document = document
-        preprocessor_path = self.store._config.processing.markdown_preprocessor
-        if preprocessor_path:
-            try:
-                pre_fn = load_callable(preprocessor_path)
-                markdown = document.export_to_markdown()
-                result = pre_fn(markdown)
-                if inspect.isawaitable(result):
-                    result = await result  # type: ignore[assignment]
-                processed_markdown = result
-                if not isinstance(processed_markdown, str):
-                    raise ValueError("Preprocessor must return a markdown string")
-                converter = get_converter(self.store._config)
-                processed_document = await converter.convert_text(
-                    processed_markdown, name="content.md"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to apply MARKDOWN_PREPROCESSOR '{preprocessor_path}': {e}. Proceeding without preprocessing."
-                )
-                raise e
-
-        chunks = await chunker.chunk(processed_document)
+        chunks = await chunker.chunk(document)
 
         # Build embedding texts with headings prepended for better semantic search
         # The stored content stays raw, but embeddings capture section context

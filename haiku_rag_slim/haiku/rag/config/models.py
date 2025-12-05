@@ -111,7 +111,6 @@ class ConversionOptions(BaseModel):
 class ProcessingConfig(BaseModel):
     chunk_size: int = 256
     context_chunk_radius: int = 0
-    markdown_preprocessor: str = ""
     converter: str = "docling-local"
     chunker: str = "docling-local"
     chunker_type: str = "hybrid"

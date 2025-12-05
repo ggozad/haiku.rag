@@ -11,7 +11,6 @@ processing:
   # Chunking configuration
   chunk_size: 256                            # Maximum tokens per chunk
   context_chunk_radius: 0                    # Context radius for chunk expansion
-  markdown_preprocessor: ""                  # Optional preprocessor script
 
   # Converter selection
   converter: docling-local                   # docling-local or docling-serve
@@ -146,39 +145,6 @@ processing:
   # When expanded chunks overlap or are adjacent, they are automatically merged
   # into single chunks with continuous content to eliminate duplication
   context_chunk_radius: 0
-```
-
-### Markdown Preprocessor
-
-Optionally preprocess Markdown before chunking by pointing to a callable that receives and returns Markdown text. This is useful for normalizing content, stripping boilerplate, or applying custom transformations before chunk boundaries are computed.
-
-```yaml
-processing:
-  # A callable path in one of these formats:
-  # - package.module:func
-  # - package.module.func
-  # - /abs/or/relative/path/to/file.py:func
-  markdown_preprocessor: my_pkg.preprocess:clean_md
-```
-
-!!! note
-    - The function signature should be `def clean_md(text: str) -> str` or `async def clean_md(text: str) -> str`.
-    - If the function raises or returns a non-string, haiku.rag logs a warning and proceeds without preprocessing.
-    - The preprocessor affects only the chunking pipeline. The stored document content remains unchanged.
-
-Example implementation:
-
-```python
-# my_pkg/preprocess.py
-def clean_md(text: str) -> str:
-    # strip HTML comments and collapse multiple blank lines
-    lines = [line for line in text.splitlines() if not line.strip().startswith("<!--")]
-    out = []
-    for line in lines:
-        if line.strip() == "" and (out and out[-1] == ""):
-            continue
-        out.append(line)
-    return "\n".join(out)
 ```
 
 ## File Monitoring

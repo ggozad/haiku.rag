@@ -63,6 +63,12 @@
   - Cleaner separation: LLM outputs chunk IDs, citations resolved programmatically
   - `Citation` fields are now required (no defaults) for type safety
 
+### Removed
+
+- **BREAKING: `markdown_preprocessor` Config Option**: Removed the `processing.markdown_preprocessor` configuration option
+  - Use `convert()`, `chunk()`, and `embed_chunks()` primitives for custom processing pipelines
+  - Transform content at any stage before calling `import_document()`
+
 ### Migration
 
 This release requires a database rebuild to populate the new DoclingDocument fields:

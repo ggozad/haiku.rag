@@ -119,7 +119,6 @@ processing:
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
   chunking_use_markdown_tables: false
-  markdown_preprocessor: ""
   conversion_options:
     do_ocr: true
     force_ocr: false
