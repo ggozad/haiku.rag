@@ -57,10 +57,11 @@ haiku-rag ask "Who is the author of haiku.rag?"
 - [Installation](installation.md) - Install haiku.rag with different providers
 - [Configuration](configuration/index.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
+- [Python](python.md) - Python API reference
+- [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
+- [Agents](agents.md) - QA agent and multi-agent research
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
-- [Python](python.md) - Python API reference
-- [Agents](agents.md) - QA agent and multi-agent research
 - [Remote processing](remote-processing.md) - Remote document processing with docling-serve
 
 ## License

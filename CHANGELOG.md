@@ -21,60 +21,47 @@
 - **Enhanced Search Results**: `search()` and `expand_context()` now return full provenance information
   - `SearchResult` includes `page_numbers`, `headings`, `labels`, and `doc_item_refs`
   - QA and research agents use provenance for better citations (page numbers, section headings)
-- **Inspector Visual Grounding**: New visual grounding modal in the database inspector
-  - View page images with highlighted bounding boxes for chunks
-  - Keyboard navigation between pages (←/→ arrows)
-  - Access from both main detail view and search results
-  - Requires `textual-image` dependency
-- **Visual Grounding CLI**: New `haiku-rag visualize <chunk_id>` command
-  - Displays page images with highlighted bounding boxes for a chunk
-  - Requires terminal with image support (iTerm2, Kitty, etc.)
+- **Processing Primitives**: New methods for custom document processing pipelines
+  - `convert()` - Convert files, URLs, or text to DoclingDocument
+  - `chunk()` - Chunk a DoclingDocument into Chunk objects
+  - `contextualize()` - Prepend section headings to chunk content for embedding
+  - `embed_chunks()` - Generate embeddings for chunks
 - **New `import_document()` Method**: Import pre-processed documents with custom chunks
-  - Use when document conversion, chunking, and embedding were done externally
-  - `chunks` required; `content` optional if `docling_document_json` is provided
-  - When `docling_document_json` is provided without `content`, content is extracted from the DoclingDocument
-  - Validates docling JSON parses correctly if provided
-- **`update_document_fields()` DoclingDocument Support**: Added `docling_document_json` and `docling_version` parameters
-  - When `docling_document_json` is provided without `chunks`, content is extracted and document is rechunked
-  - When `docling_document_json` is provided with `chunks`, both are stored (chunks used as-is)
-  - `content` and `docling_document_json` are mutually exclusive to avoid ambiguity
-- **New `convert()` Method**: Convert files, URLs, or text to DoclingDocument
-  - `client.convert(Path(...))` - convert local file
-  - `client.convert("https://...")` - download and convert URL
-  - `client.convert("text content")` - convert plain text
-  - Supports `file://` URIs
-- **New `chunk()` Method**: Chunk a DoclingDocument into Chunk objects
-  - `client.chunk(docling_doc)` - returns `list[Chunk]` without embeddings
-- **New `contextualize()` and `embed_chunks()` Utilities**: Standalone embedding utilities in `haiku.rag.embeddings`
-  - `contextualize(chunks)` - prepend section headings to chunk content for better semantic search
-  - `embed_chunks(chunks)` - generate embeddings for chunks, returns new Chunk objects with embeddings set
+  - Use when document conversion, chunking, or embedding were done externally
+  - Chunks without embeddings are automatically embedded
+  - Supports `docling_document_json` for rich metadata (visual grounding, page numbers)
+- **Automatic Chunk Embedding**: `import_document()` and `update_document()` automatically embed chunks that don't have embeddings
+  - Pass chunks with or without embeddings - missing embeddings are generated
+  - Chunks with pre-computed embeddings are stored as-is
+- **Visual Grounding**: View page images with highlighted bounding boxes for chunks
+  - Inspector modal with keyboard navigation between pages
+  - CLI command: `haiku-rag visualize <chunk_id>`
+  - Requires `textual-image` dependency and terminal with image support
 
 ### Changed
 
 - **BREAKING: `create_document()` API**: Removed `chunks` parameter
   - `create_document()` now always processes content (converts, chunks, embeds)
-  - Use new `import_document()` for pre-processed documents with custom chunks
+  - Use `import_document()` for pre-processed documents with custom chunks
+- **BREAKING: `update_document()` API**: Unified with `update_document_fields()`
+  - Old: `update_document(document)` - pass modified Document object
+  - New: `update_document(document_id, content=, metadata=, chunks=, title=, docling_document_json=, docling_version=)`
+  - `content` and `docling_document_json` are mutually exclusive
 - **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[Chunk]` instead of `list[str]`
-  - Chunks include structured metadata (doc_item_refs, labels, headings, page_numbers) in the `metadata` dict
-  - All chunker implementations updated: `DoclingLocalChunker`, `DoclingServeChunker`
-- **Page Image Generation**: `generate_page_images=True` is now always enabled for local docling converter
-  - Required for visual grounding features
-  - Removed `generate_page_images` config option (docling-serve already generates page images by default)
-- **Chunk Text Storage**: Chunks now store raw text without heading contextualization
-  - Section headings are prepended only at embedding time for better semantic search
+  - Chunks include structured metadata (doc_item_refs, labels, headings, page_numbers)
+- **Chunk Text Storage**: Chunks store raw text; headings prepended only at embedding time
   - Stored chunk content stays clean without duplicate heading prefixes
-  - Headings remain available in `ChunkMetadata` for display and citations
   - Local and serve chunkers now produce identical output
-- **QA Prompts**: Updated to use page numbers and section headings in citations when available
-- **Citation Models**: Introduced `RawSearchAnswer` for LLM output, `SearchAnswer` extends it with resolved citations
-  - Cleaner separation: LLM outputs chunk IDs, citations resolved programmatically
-  - `Citation` fields are now required (no defaults) for type safety
+- **Embedding Architecture**: Moved embedding generation from `ChunkRepository` to client layer
+  - Repository is now a pure persistence layer
+  - Client handles embedding via `_ensure_chunks_embedded()`
+- **Citation Models**: Introduced `RawSearchAnswer` for LLM output, `SearchAnswer` with resolved citations
+- **Page Image Generation**: Always enabled for local docling converter (required for visual grounding)
 
 ### Removed
 
-- **BREAKING: `markdown_preprocessor` Config Option**: Removed the `processing.markdown_preprocessor` configuration option
-  - Use `convert()`, `chunk()`, and `embed_chunks()` primitives for custom processing pipelines
-  - Transform content at any stage before calling `import_document()`
+- **BREAKING: `markdown_preprocessor` Config Option**: Use processing primitives (`convert()`, `chunk()`, `embed_chunks()`) for custom pipelines
+- **`update_document_fields()`**: Merged into `update_document()`
 
 ### Migration
 
@@ -84,7 +71,7 @@ This release requires a database rebuild to populate the new DoclingDocument fie
 haiku-rag rebuild
 ```
 
-Existing documents without DoclingDocument data will work but won't have provenance information. The `rebuild` command re-processes all documents to populate the new fields.
+Existing documents without DoclingDocument data will work but won't have provenance information.
 
 ## [0.19.6] - 2025-12-03
 

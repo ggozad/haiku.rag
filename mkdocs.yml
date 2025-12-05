@@ -67,6 +67,7 @@ nav:
           - Storage: configuration/storage.md
       - CLI: cli.md
       - Python: python.md
+      - Custom Pipelines: custom-pipelines.md
       - Agents: agents.md
       - Server: server.md
       - Remote processing: remote-processing.md
