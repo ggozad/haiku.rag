@@ -37,19 +37,17 @@ class ChunkRepository:
             logger.debug(f"FTS index creation skipped: {e}")
 
     async def create(self, entity: Chunk | list[Chunk]) -> Chunk | list[Chunk]:
-        """Create one or more chunks in the database."""
+        """Create one or more chunks in the database.
+
+        Chunks must have embeddings set before calling this method.
+        Use client._ensure_chunks_embedded() to embed chunks if needed.
+        """
         # Handle single chunk
         if isinstance(entity, Chunk):
             assert entity.document_id, "Chunk must have a document_id to be created"
+            assert entity.embedding is not None, "Chunk must have an embedding"
 
             chunk_id = str(uuid4())
-
-            # Generate embedding if not provided
-            if entity.embedding is not None:
-                embedding = entity.embedding
-            else:
-                embedding = await self.embedder.embed(entity.content)
-            order_val = int(entity.order)
 
             chunk_record = self.store.ChunkRecord(
                 id=chunk_id,
@@ -58,8 +56,8 @@ class ChunkRepository:
                 metadata=json.dumps(
                     {k: v for k, v in entity.metadata.items() if k != "order"}
                 ),
-                order=order_val,
-                vector=embedding,
+                order=int(entity.order),
+                vector=entity.embedding,
             )
 
             self.store.chunks_table.add([chunk_record])
@@ -72,22 +70,15 @@ class ChunkRepository:
         if not chunks:
             return []
 
-        # Validate all chunks have document_id
+        # Validate all chunks have document_id and embedding
         for chunk in chunks:
             assert chunk.document_id, "All chunks must have a document_id to be created"
-
-        # Batch generate embeddings for chunks that need them
-        texts_to_embed = [chunk.content for chunk in chunks if chunk.embedding is None]
-        embeddings = await self.embedder.embed(texts_to_embed) if texts_to_embed else []
-        embedding_iter = iter(embeddings)
+            assert chunk.embedding is not None, "All chunks must have embeddings"
 
         # Prepare all chunk records
         chunk_records = []
         for chunk in chunks:
             chunk_id = str(uuid4())
-            embedding = (
-                chunk.embedding if chunk.embedding is not None else next(embedding_iter)
-            )
 
             assert chunk.document_id is not None
             chunk_record = self.store.ChunkRecord(
@@ -98,7 +89,7 @@ class ChunkRepository:
                     {k: v for k, v in chunk.metadata.items() if k != "order"}
                 ),
                 order=int(chunk.order),
-                vector=embedding,
+                vector=chunk.embedding,
             )
             chunk_records.append(chunk_record)
             chunk.id = chunk_id
@@ -131,11 +122,12 @@ class ChunkRepository:
         )
 
     async def update(self, entity: Chunk) -> Chunk:
-        """Update an existing chunk."""
-        assert entity.id, "Chunk ID is required for update"
+        """Update an existing chunk.
 
-        embedding = await self.embedder.embed(entity.content)
-        order_val = int(entity.order)
+        Chunk must have embedding set before calling this method.
+        """
+        assert entity.id, "Chunk ID is required for update"
+        assert entity.embedding is not None, "Chunk must have an embedding"
 
         self.store.chunks_table.update(
             where=f"id = '{entity.id}'",
@@ -145,8 +137,8 @@ class ChunkRepository:
                 "metadata": json.dumps(
                     {k: v for k, v in entity.metadata.items() if k != "order"}
                 ),
-                "order": order_val,
-                "vector": embedding,
+                "order": int(entity.order),
+                "vector": entity.embedding,
             },
         )
         return entity
