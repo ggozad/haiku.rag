@@ -689,7 +689,14 @@ async def test_client_async_context_manager(temp_db_path):
 @pytest.mark.asyncio
 async def test_client_import_document_with_custom_chunks(temp_db_path):
     """Test importing a document with pre-created chunks."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
     async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a DoclingDocument
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full document content")
+
         # Create some custom chunks with and without embeddings
         chunks = [
             Chunk(
@@ -712,11 +719,11 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
 
         # Import document with custom chunks
         document = await client.import_document(
-            content="Full document content", chunks=chunks
+            docling_document=docling_doc, chunks=chunks
         )
 
         assert document.id is not None
-        assert document.content == "Full document content"
+        assert "Full document content" in document.content
 
         # Verify the chunks were created correctly
         doc_chunks = await client.chunk_repository.get_by_document_id(document.id)
@@ -797,59 +804,8 @@ async def test_client_create_document_stores_docling_json(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_client_import_document_without_docling(temp_db_path):
-    """Test that import_document without docling params does not store docling JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        custom_chunks = [Chunk(content="Custom chunk", order=0)]
-
-        doc = await client.import_document(content="Test content", chunks=custom_chunks)
-
-        assert doc.id is not None
-        # When no docling params provided, they remain None
-        assert doc.docling_document_json is None
-        assert doc.docling_version is None
-
-
-@pytest.mark.asyncio
-async def test_client_import_document_validates_docling_params(temp_db_path):
-    """Test that import_document validates docling parameters."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        custom_chunks = [Chunk(content="Custom chunk", order=0)]
-
-        # Should fail if only one docling param is provided
-        with pytest.raises(ValueError, match="must both be provided"):
-            await client.import_document(
-                content="Test content",
-                chunks=custom_chunks,
-                docling_document_json='{"some": "json"}',
-                # Missing docling_version
-            )
-
-        with pytest.raises(ValueError, match="must both be provided"):
-            await client.import_document(
-                content="Test content",
-                chunks=custom_chunks,
-                docling_version="1.0.0",
-                # Missing docling_document_json
-            )
-
-        # Should fail with invalid JSON
-        with pytest.raises(ValueError, match="Invalid docling_document_json"):
-            await client.import_document(
-                content="Test content",
-                chunks=custom_chunks,
-                docling_document_json='{"invalid": "not a docling document"}',
-                docling_version="1.0.0",
-            )
-
-        # Should fail if neither content nor docling_document_json provided
-        with pytest.raises(ValueError, match="Either content or docling_document_json"):
-            await client.import_document(chunks=custom_chunks)
-
-
-@pytest.mark.asyncio
-async def test_client_import_document_extracts_content_from_docling(temp_db_path):
-    """Test that import_document extracts content from DoclingDocument when not provided."""
+async def test_client_import_document_stores_docling_data(temp_db_path):
+    """Test that import_document stores DoclingDocument data correctly."""
     from docling_core.types.doc.document import DoclingDocument
     from docling_core.types.doc.labels import DocItemLabel
 
@@ -862,16 +818,16 @@ async def test_client_import_document_extracts_content_from_docling(temp_db_path
 
         custom_chunks = [Chunk(content="Chunk content", order=0)]
 
-        # Import without content - should extract from docling
+        # Import with DoclingDocument
         doc = await client.import_document(
+            docling_document=docling_doc,
             chunks=custom_chunks,
-            docling_document_json=docling_doc.model_dump_json(),
-            docling_version=docling_doc.version,
         )
 
         assert doc.id is not None
         assert "Content from docling document" in doc.content
         assert doc.docling_document_json == docling_doc.model_dump_json()
+        assert doc.docling_version == docling_doc.version
 
 
 @pytest.mark.asyncio
@@ -941,16 +897,15 @@ async def test_client_update_document_with_custom_chunks_no_docling_json(
 async def test_client_update_document_content_docling_mutually_exclusive(
     temp_db_path,
 ):
-    """Test that content and docling_document_json cannot both be provided."""
+    """Test that content and docling_document cannot both be provided."""
     from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
 
         # Create a docling document
-        from docling_core.types.doc.labels import DocItemLabel
-
         docling_doc = DoclingDocument(name="test")
         docling_doc.add_text(label=DocItemLabel.TEXT, text="Some text")
 
@@ -958,15 +913,15 @@ async def test_client_update_document_content_docling_mutually_exclusive(
             await client.update_document(
                 document_id=doc.id,
                 content="New content",
-                docling_document_json=docling_doc.model_dump_json(),
-                docling_version=docling_doc.version,
+                docling_document=docling_doc,
             )
 
 
 @pytest.mark.asyncio
 async def test_client_update_document_with_docling_rechunks(temp_db_path):
-    """Test that providing docling_document_json without chunks triggers rechunk."""
+    """Test that providing docling_document without chunks triggers rechunk."""
     from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
@@ -975,8 +930,6 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
         original_chunks = await client.chunk_repository.get_by_document_id(doc.id)
 
         # Create a new docling document with different content
-        from docling_core.types.doc.labels import DocItemLabel
-
         docling_doc = DoclingDocument(name="updated")
         docling_doc.add_text(
             label=DocItemLabel.TEXT,
@@ -986,8 +939,7 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
         # Update with docling document only - should rechunk from it
         updated_doc = await client.update_document(
             document_id=doc.id,
-            docling_document_json=docling_doc.model_dump_json(),
-            docling_version=docling_doc.version,
+            docling_document=docling_doc,
         )
 
         # Content should be extracted from docling document
@@ -1004,8 +956,9 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_client_update_document_docling_with_chunks(temp_db_path):
-    """Test that providing both docling_document_json and chunks stores both."""
+    """Test that providing both docling_document and chunks stores both."""
     from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create initial document
@@ -1013,8 +966,6 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         assert doc.id is not None
 
         # Create a docling document
-        from docling_core.types.doc.labels import DocItemLabel
-
         docling_doc = DoclingDocument(name="custom")
         docling_doc.add_text(label=DocItemLabel.TEXT, text="Text from docling")
 
@@ -1027,8 +978,7 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         updated_doc = await client.update_document(
             document_id=doc.id,
             chunks=custom_chunks,
-            docling_document_json=docling_doc.model_dump_json(),
-            docling_version=docling_doc.version,
+            docling_document=docling_doc,
         )
 
         # Content should be extracted from docling (since content wasn't provided)
@@ -1076,22 +1026,6 @@ async def test_client_visualize_chunk_no_document(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         chunk = Chunk(content="Orphan chunk", order=0)
         images = await client.visualize_chunk(chunk)
-        assert images == []
-
-
-@pytest.mark.asyncio
-async def test_client_visualize_chunk_no_docling_document(temp_db_path):
-    """Test visualize_chunk returns empty list when document has no DoclingDocument."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Import document with custom chunks (no DoclingDocument)
-        custom_chunks = [Chunk(content="Custom chunk", order=0)]
-        doc = await client.import_document(content="Test content", chunks=custom_chunks)
-
-        assert doc.id is not None
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-        assert len(chunks) == 1
-
-        images = await client.visualize_chunk(chunks[0])
         assert images == []
 
 
@@ -1330,7 +1264,16 @@ async def test_client_chunk_empty_document(temp_db_path):
 @pytest.mark.asyncio
 async def test_import_document_embeds_chunks_without_embeddings(temp_db_path):
     """Test that import_document embeds chunks that don't have embeddings."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
     async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a DoclingDocument
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(
+            label=DocItemLabel.TEXT, text="Document with unembedded chunks"
+        )
+
         # Create chunks without embeddings
         chunks = [
             Chunk(content="First chunk without embedding", order=0),
@@ -1339,7 +1282,7 @@ async def test_import_document_embeds_chunks_without_embeddings(temp_db_path):
 
         # Import document with chunks that have no embeddings
         doc = await client.import_document(
-            content="Document with unembedded chunks",
+            docling_document=docling_doc,
             chunks=chunks,
         )
         assert doc.id is not None

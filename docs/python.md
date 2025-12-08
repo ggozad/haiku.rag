@@ -75,6 +75,9 @@ If you process documents externally or need custom processing, use `import_docum
 ```python
 from haiku.rag.store.models.chunk import Chunk
 
+# Convert your source to a DoclingDocument
+docling_doc = await client.convert("path/to/document.pdf")
+
 # Create chunks (embeddings optional - will be generated if missing)
 chunks = [
     Chunk(
@@ -92,7 +95,7 @@ chunks = [
 
 # Import document with custom chunks
 doc = await client.import_document(
-    content="Full document content",
+    docling_document=docling_doc,
     chunks=chunks,
     uri="doc://custom",
     title="Custom Document",
@@ -100,18 +103,7 @@ doc = await client.import_document(
 )
 ```
 
-With a DoclingDocument for rich metadata (visual grounding, page numbers):
-
-```python
-doc = await client.import_document(
-    chunks=chunks,
-    docling_document_json=docling_doc.model_dump_json(),
-    docling_version=docling_doc.version,
-)
-```
-
-!!! note
-    Either `content` or `docling_document_json` must be provided. When `docling_document_json` is provided without `content`, the content is extracted automatically.
+The `docling_document` provides rich metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
 
 See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
 

@@ -29,9 +29,9 @@
   - `contextualize()` - Prepend section headings to chunk content for embedding
   - `embed_chunks()` - Generate embeddings for chunks
 - **New `import_document()` Method**: Import pre-processed documents with custom chunks
+  - Accepts `DoclingDocument` directly for rich metadata (visual grounding, page numbers)
   - Use when document conversion, chunking, or embedding were done externally
   - Chunks without embeddings are automatically embedded
-  - Supports `docling_document_json` for rich metadata (visual grounding, page numbers)
 - **Automatic Chunk Embedding**: `import_document()` and `update_document()` automatically embed chunks that don't have embeddings
   - Pass chunks with or without embeddings - missing embeddings are generated
   - Chunks with pre-computed embeddings are stored as-is
@@ -48,8 +48,8 @@
   - Use `import_document()` for pre-processed documents with custom chunks
 - **BREAKING: `update_document()` API**: Unified with `update_document_fields()`
   - Old: `update_document(document)` - pass modified Document object
-  - New: `update_document(document_id, content=, metadata=, chunks=, title=, docling_document_json=, docling_version=)`
-  - `content` and `docling_document_json` are mutually exclusive
+  - New: `update_document(document_id, content=, metadata=, chunks=, title=, docling_document=)`
+  - `content` and `docling_document` are mutually exclusive
 - **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[Chunk]` instead of `list[str]`
   - Chunks include structured metadata (doc_item_refs, labels, headings, page_numbers)
 - **BREAKING: Config Renamed**: `context_chunk_radius` renamed to `text_context_radius`

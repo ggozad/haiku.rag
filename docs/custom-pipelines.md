@@ -33,9 +33,8 @@ async with HaikuRAG("database.lancedb", create=True) as client:
 
     # 4. Store the document with chunks
     doc = await client.import_document(
+        docling_document=docling_doc,
         chunks=embedded_chunks,
-        docling_document_json=docling_doc.model_dump_json(),
-        docling_version=docling_doc.version,
         uri="file:///path/to/document.pdf",
         title="My Document",
     )
@@ -181,9 +180,8 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     embedded_chunks = await embed_chunks(filtered)
 
     await client.import_document(
+        docling_document=docling_doc,
         chunks=embedded_chunks,
-        docling_document_json=docling_doc.model_dump_json(),
-        docling_version=docling_doc.version,
     )
 ```
 
@@ -221,9 +219,8 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     ]
 
     await client.import_document(
+        docling_document=docling_doc,
         chunks=embedded_chunks,
-        docling_document_json=docling_doc.model_dump_json(),
-        docling_version=docling_doc.version,
     )
 ```
 

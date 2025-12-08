@@ -15,10 +15,9 @@ async def create_document_with_docling(
     chunks = await client.chunk(docling_doc)
     embedded_chunks = await client._ensure_chunks_embedded(chunks)
     return await client.import_document(
+        docling_document=docling_doc,
         chunks=embedded_chunks,
         title=title,
-        docling_document_json=docling_doc.model_dump_json(),
-        docling_version=docling_doc.version,
     )
 
 
@@ -415,22 +414,26 @@ async def test_expand_context_multiple_documents(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         # Create first document with manual chunks
+        docling_doc1 = DoclingDocument(name="doc1")
+        docling_doc1.add_text(label=DocItemLabel.TEXT, text="Doc1 content")
         doc1_chunks = [
             Chunk(content="Doc1 Part A", order=0),
             Chunk(content="Doc1 Part B", order=1),
             Chunk(content="Doc1 Part C", order=2),
         ]
         doc1 = await client.import_document(
-            content="Doc1 content", chunks=doc1_chunks, uri="doc1.txt"
+            docling_document=docling_doc1, chunks=doc1_chunks, uri="doc1.txt"
         )
 
         # Create second document with manual chunks
+        docling_doc2 = DoclingDocument(name="doc2")
+        docling_doc2.add_text(label=DocItemLabel.TEXT, text="Doc2 content")
         doc2_chunks = [
             Chunk(content="Doc2 Section X", order=0),
             Chunk(content="Doc2 Section Y", order=1),
         ]
         doc2 = await client.import_document(
-            content="Doc2 content", chunks=doc2_chunks, uri="doc2.txt"
+            docling_document=docling_doc2, chunks=doc2_chunks, uri="doc2.txt"
         )
 
         assert doc1.id is not None
@@ -472,6 +475,8 @@ async def test_expand_context_merges_overlapping_chunks(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         # Create document with 5 chunks
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full document content")
         manual_chunks = [
             Chunk(content="Chunk 0", order=0),
             Chunk(content="Chunk 1", order=1),
@@ -481,7 +486,7 @@ async def test_expand_context_merges_overlapping_chunks(temp_db_path):
         ]
 
         doc = await client.import_document(
-            content="Full document content", chunks=manual_chunks
+            docling_document=docling_doc, chunks=manual_chunks
         )
 
         assert doc.id is not None
@@ -525,6 +530,8 @@ async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         # Create document with chunks far apart
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full document content")
         manual_chunks = [
             Chunk(content="Chunk 0", order=0),
             Chunk(content="Chunk 1", order=1),
@@ -535,7 +542,7 @@ async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
         ]
 
         doc = await client.import_document(
-            content="Full document content", chunks=manual_chunks
+            docling_document=docling_doc, chunks=manual_chunks
         )
 
         assert doc.id is not None

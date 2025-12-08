@@ -380,13 +380,11 @@ class HaikuRAG:
 
     async def import_document(
         self,
+        docling_document: "DoclingDocument",
         chunks: list[Chunk],
-        content: str | None = None,
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
-        docling_document_json: str | None = None,
-        docling_version: str | None = None,
     ) -> Document:
         """Import a pre-processed document with chunks.
 
@@ -394,56 +392,23 @@ class HaikuRAG:
         externally and you want to store the results in haiku.rag.
 
         Args:
-            chunks: Pre-created chunks.
-            content: The document content. Optional if docling_document_json is provided.
+            docling_document: The DoclingDocument to import.
+            chunks: Pre-created chunks. Chunks without embeddings will be
+                automatically embedded.
             uri: Optional URI identifier for the document.
             title: Optional title for the document.
             metadata: Optional metadata dictionary.
-            docling_document_json: Serialized DoclingDocument JSON. If provided without
-                content, content is extracted from the DoclingDocument.
-            docling_version: DoclingDocument schema version (required with docling_document_json).
 
         Returns:
             The created Document instance.
-
-        Raises:
-            ValueError: If neither content nor docling_document_json is provided,
-                if docling_document_json is provided without docling_version,
-                or if the JSON is invalid.
         """
-        from docling_core.types.doc.document import DoclingDocument
-
-        # Validate docling parameters must be provided together
-        if (docling_document_json is None) != (docling_version is None):
-            raise ValueError(
-                "docling_document_json and docling_version must both be provided or both be None"
-            )
-
-        # Validate that we have at least one content source
-        if content is None and docling_document_json is None:
-            raise ValueError("Either content or docling_document_json must be provided")
-
-        # Parse and validate docling JSON if provided
-        docling_document: DoclingDocument | None = None
-        if docling_document_json is not None:
-            try:
-                docling_document = DoclingDocument.model_validate_json(
-                    docling_document_json
-                )
-            except Exception as e:
-                raise ValueError(f"Invalid docling_document_json: {e}") from e
-
-        # Extract content from docling if not explicitly provided
-        if content is None and docling_document is not None:
-            content = docling_document.export_to_markdown()
-
         document = Document(
-            content=content,  # type: ignore[arg-type]
+            content=docling_document.export_to_markdown(),
             uri=uri,
             title=title,
             metadata=metadata or {},
-            docling_document_json=docling_document_json,
-            docling_version=docling_version,
+            docling_document_json=docling_document.model_dump_json(),
+            docling_version=docling_document.version,
         )
 
         return await self._store_document_with_chunks(document, chunks)
@@ -761,57 +726,37 @@ class HaikuRAG:
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
         title: str | None = None,
-        docling_document_json: str | None = None,
-        docling_version: str | None = None,
+        docling_document: "DoclingDocument | None" = None,
     ) -> Document:
         """Update a document by ID.
 
-        Updates specified fields. When content or docling_document_json is provided,
+        Updates specified fields. When content or docling_document is provided,
         the document is rechunked and re-embedded. Updates to only metadata or title
         skip rechunking for efficiency.
 
         Args:
             document_id: The ID of the document to update.
-            content: New content (mutually exclusive with docling_document_json).
+            content: New content (mutually exclusive with docling_document).
             metadata: New metadata dict.
-            chunks: Custom pre-embedded chunks (skips auto-chunking).
+            chunks: Custom chunks (will be embedded if missing embeddings).
             title: New title.
-            docling_document_json: Serialized DoclingDocument JSON (mutually exclusive with content).
-            docling_version: DoclingDocument schema version (required with docling_document_json).
+            docling_document: DoclingDocument to replace content (mutually exclusive with content).
 
         Returns:
             The updated Document instance.
 
         Raises:
-            ValueError: If document not found, if both content and docling_document_json
-                are provided, or if docling_document_json is provided without docling_version.
+            ValueError: If document not found, or if both content and docling_document
+                are provided.
         """
-        from docling_core.types.doc.document import DoclingDocument
-
         from haiku.rag.embeddings import embed_chunks
 
-        # Validate: content and docling_document_json are mutually exclusive
-        if content is not None and docling_document_json is not None:
+        # Validate: content and docling_document are mutually exclusive
+        if content is not None and docling_document is not None:
             raise ValueError(
-                "content and docling_document_json are mutually exclusive. "
+                "content and docling_document are mutually exclusive. "
                 "Provide one or the other, not both."
             )
-
-        # Validate docling parameters must be provided together
-        if (docling_document_json is None) != (docling_version is None):
-            raise ValueError(
-                "docling_document_json and docling_version must both be provided or both be None"
-            )
-
-        # Parse and validate docling JSON if provided
-        docling_document: DoclingDocument | None = None
-        if docling_document_json is not None:
-            try:
-                docling_document = DoclingDocument.model_validate_json(
-                    docling_document_json
-                )
-            except Exception as e:
-                raise ValueError(f"Invalid docling_document_json: {e}") from e
 
         # Fetch the existing document
         existing_doc = await self.get_document_by_id(document_id)
@@ -828,27 +773,23 @@ class HaikuRAG:
         if content is None and chunks is None and docling_document is None:
             return await self.document_repository.update(existing_doc)
 
-        # Custom chunks provided - use them as-is (pre-embedded)
+        # Custom chunks provided - use them as-is
         if chunks is not None:
-            # Update content field if provided
-            if content is not None:
-                existing_doc.content = content
-
             # Store docling data if provided
             if docling_document is not None:
-                existing_doc.docling_document_json = docling_document_json
-                existing_doc.docling_version = docling_version
-                # Extract content from docling if not explicitly provided
-                if content is None:
-                    existing_doc.content = docling_document.export_to_markdown()
+                existing_doc.content = docling_document.export_to_markdown()
+                existing_doc.docling_document_json = docling_document.model_dump_json()
+                existing_doc.docling_version = docling_document.version
+            elif content is not None:
+                existing_doc.content = content
 
             return await self._update_document_with_chunks(existing_doc, chunks)
 
         # DoclingDocument provided without chunks - chunk and embed using primitives
         if docling_document is not None:
             existing_doc.content = docling_document.export_to_markdown()
-            existing_doc.docling_document_json = docling_document_json
-            existing_doc.docling_version = docling_version
+            existing_doc.docling_document_json = docling_document.model_dump_json()
+            existing_doc.docling_version = docling_document.version
 
             new_chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(new_chunks, self._config)
