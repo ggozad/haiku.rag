@@ -28,7 +28,8 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
         )
 
         assert created_doc.id is not None
-        assert created_doc.content == document_text
+        # Content is stored as markdown export, check key text is preserved
+        assert "Jakarta" in created_doc.content
         assert created_doc.uri == test_uri
         assert created_doc.metadata == test_metadata
 
@@ -36,14 +37,14 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
         retrieved_doc = await client.get_document_by_id(created_doc.id)
         assert retrieved_doc is not None
         assert retrieved_doc.id == created_doc.id
-        assert retrieved_doc.content == document_text
+        assert "Jakarta" in retrieved_doc.content
         assert retrieved_doc.uri == test_uri
 
         # Test get_document_by_uri
         retrieved_by_uri = await client.get_document_by_uri(test_uri)
         assert retrieved_by_uri is not None
         assert retrieved_by_uri.id == created_doc.id
-        assert retrieved_by_uri.content == document_text
+        assert "Jakarta" in retrieved_by_uri.content
 
         # Test get_document_by_uri with non-existent URI
         non_existent = await client.get_document_by_uri("file:///non/existent.txt")
@@ -1380,3 +1381,52 @@ async def test_update_document_embeds_chunks_without_embeddings(temp_db_path):
         results = await client.search("Updated chunk", search_type="vector")
         assert len(results) > 0
         assert results[0].content == "Updated chunk without embedding"
+
+
+@pytest.mark.asyncio
+async def test_client_create_document_with_html_format(temp_db_path):
+    """Test create_document with HTML format preserves document structure."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        html_content = """
+        <h1>Main Title</h1>
+        <p>Introduction paragraph.</p>
+        <h2>Section Header</h2>
+        <ul>
+            <li>Item 1</li>
+            <li>Item 2</li>
+        </ul>
+        """
+
+        doc = await client.create_document(
+            content=html_content,
+            uri="test://html-doc",
+            format="html",
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document_json is not None
+
+        # Verify the DoclingDocument has proper structure
+        docling_doc = doc.get_docling_document()
+        assert docling_doc is not None
+
+        items = list(docling_doc.iterate_items())
+        labels = [str(getattr(item, "label", "")) for item, _ in items]
+
+        # HTML format should preserve headers and list items
+        assert "title" in labels or "section_header" in labels
+        assert "list_item" in labels
+
+
+@pytest.mark.asyncio
+async def test_client_convert_with_html_format(temp_db_path):
+    """Test convert with HTML format."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        html_content = "<h1>Title</h1><p>Text</p>"
+
+        docling_doc = await client.convert(html_content, format="html")
+
+        items = list(docling_doc.iterate_items())
+        labels = [str(getattr(item, "label", "")) for item, _ in items]
+
+        assert "title" in labels

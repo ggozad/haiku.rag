@@ -100,9 +100,13 @@ class HaikuRAG:
     async def convert(self, source: Path) -> "DoclingDocument": ...
 
     @overload
-    async def convert(self, source: str) -> "DoclingDocument": ...
+    async def convert(
+        self, source: str, *, format: str = "md"
+    ) -> "DoclingDocument": ...
 
-    async def convert(self, source: Path | str) -> "DoclingDocument":
+    async def convert(
+        self, source: Path | str, *, format: str = "md"
+    ) -> "DoclingDocument":
         """Convert a file, URL, or text to DoclingDocument.
 
         Args:
@@ -110,6 +114,9 @@ class HaikuRAG:
                 - Path: Local file path to convert
                 - str (URL): HTTP/HTTPS URL to download and convert
                 - str (text): Raw text content to convert
+            format: The format of text content ("md" or "html"). Defaults to "md".
+                Only used when source is raw text (not a file path or URL).
+                Files and URLs determine format from extension/content-type.
 
         Returns:
             DoclingDocument from the converted source.
@@ -170,7 +177,7 @@ class HaikuRAG:
 
         else:
             # Treat as text content
-            return await converter.convert_text(source)
+            return await converter.convert_text(source, format=format)
 
     async def chunk(self, docling_document: "DoclingDocument") -> list[Chunk]:
         """Chunk a DoclingDocument into Chunks.
@@ -329,6 +336,7 @@ class HaikuRAG:
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
+        format: str = "md",
     ) -> Document:
         """Create a new document from text content.
 
@@ -339,6 +347,8 @@ class HaikuRAG:
             uri: Optional URI identifier for the document.
             title: Optional title for the document.
             metadata: Optional metadata dictionary.
+            format: The format of the content ("md" or "html"). Defaults to "md".
+                This determines which parser is used to interpret the content structure.
 
         Returns:
             The created Document instance.
@@ -346,13 +356,17 @@ class HaikuRAG:
         from haiku.rag.embeddings import embed_chunks
 
         # Convert → Chunk → Embed using primitives
-        docling_document = await self.convert(content)
+        docling_document = await self.convert(content, format=format)
         chunks = await self.chunk(docling_document)
         embedded_chunks = await embed_chunks(chunks, self._config)
 
+        # Store markdown export as content for better display/readability
+        # The original content is preserved in docling_document_json
+        stored_content = docling_document.export_to_markdown()
+
         # Create document model
         document = Document(
-            content=content,
+            content=stored_content,
             uri=uri,
             title=title,
             metadata=metadata or {},

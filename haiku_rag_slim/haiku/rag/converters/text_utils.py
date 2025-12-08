@@ -89,39 +89,52 @@ class TextFileHandler:
             return f"```{language}\n{content}\n```"
         return content
 
+    SUPPORTED_FORMATS = ("md", "html")
+
     @staticmethod
     def _sync_text_to_docling_document(
-        text: str, name: str = "content.md"
+        text: str, name: str = "content.md", format: str = "md"
     ) -> "DoclingDocument":
         """Synchronous implementation of text to DoclingDocument conversion."""
         from docling.document_converter import DocumentConverter as DoclingDocConverter
         from docling_core.types.io import DocumentStream
 
+        if format not in TextFileHandler.SUPPORTED_FORMATS:
+            raise ValueError(
+                f"Unsupported format: {format}. "
+                f"Supported formats: {', '.join(TextFileHandler.SUPPORTED_FORMATS)}"
+            )
+
+        # Derive document name from format to tell docling which parser to use
+        doc_name = f"content.{format}" if name == "content.md" else name
+
         bytes_io = BytesIO(text.encode("utf-8"))
-        doc_stream = DocumentStream(name=name, stream=bytes_io)
+        doc_stream = DocumentStream(name=doc_name, stream=bytes_io)
         converter = DoclingDocConverter()
         result = converter.convert(doc_stream)
         return result.document
 
     @staticmethod
     async def text_to_docling_document(
-        text: str, name: str = "content.md"
+        text: str, name: str = "content.md", format: str = "md"
     ) -> "DoclingDocument":
-        """Convert text to DoclingDocument using docling's markdown parser.
+        """Convert text to DoclingDocument using docling's parser.
 
         Args:
             text: The text content to convert.
             name: The name to use for the document.
+            format: The format of the text content ("md" or "html"). Defaults to "md".
+                This determines which parser docling uses to interpret the content.
 
         Returns:
             DoclingDocument representation of the text.
 
         Raises:
-            ValueError: If the conversion fails.
+            ValueError: If the conversion fails or format is unsupported.
         """
         try:
             return await asyncio.to_thread(
-                TextFileHandler._sync_text_to_docling_document, text, name
+                TextFileHandler._sync_text_to_docling_document, text, name, format
             )
         except Exception as e:
             raise ValueError(f"Failed to convert text to DoclingDocument: {e}")

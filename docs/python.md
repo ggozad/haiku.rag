@@ -36,6 +36,24 @@ doc = await client.create_document(
 )
 ```
 
+From HTML content (preserves document structure):
+```python
+html_content = "<h1>Title</h1><p>Paragraph</p><ul><li>Item 1</li></ul>"
+doc = await client.create_document(
+    content=html_content,
+    uri="doc://html-example",
+    format="html"  # parse as HTML instead of markdown
+)
+```
+
+The `format` parameter controls how text content is parsed:
+
+- `"md"` (default) - Parse as Markdown
+- `"html"` - Parse as HTML, preserving semantic structure (headings, lists, tables)
+
+!!! note
+    The document's `content` field stores the markdown export of the parsed document for consistent display. The original input is preserved in the `docling_document_json` field.
+
 From file:
 ```python
 doc = await client.create_document_from_source(

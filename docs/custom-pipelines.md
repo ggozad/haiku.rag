@@ -53,12 +53,24 @@ docling_doc = await client.convert(Path("/absolute/path/to/file.docx"))
 # From URL (downloads and converts)
 docling_doc = await client.convert("https://example.com/paper.pdf")
 
-# From plain text
-docling_doc = await client.convert("Your text content here")
+# From plain text (parsed as markdown by default)
+docling_doc = await client.convert("# Title\n\nYour text content here")
+
+# From HTML text (use format parameter to preserve structure)
+html_content = "<h1>Title</h1><p>Paragraph</p><ul><li>Item</li></ul>"
+docling_doc = await client.convert(html_content, format="html")
 
 # From file:// URI
 docling_doc = await client.convert("file:///path/to/document.md")
 ```
+
+The `format` parameter controls how text content is parsed:
+
+- `"md"` (default) - Parse as Markdown
+- `"html"` - Parse as HTML, preserving semantic structure (headings, lists, tables)
+
+!!! note
+    The `format` parameter only applies to text content. Files and URLs determine their format from the file extension or content-type header.
 
 Supported formats depend on your converter configuration (docling-local or docling-serve). Common formats include PDF, DOCX, HTML, Markdown, and images.
 

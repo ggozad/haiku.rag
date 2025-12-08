@@ -10,6 +10,12 @@
 
 ### Added
 
+- **Format Parameter for Text Conversion**: New `format` parameter for `convert()` and `create_document()` to specify content type
+  - Supports `"md"` (default) for markdown and `"html"` for HTML content
+  - HTML format preserves document structure (headings, lists, sections) in DoclingDocument
+  - Enables proper parsing of HTML content that was previously treated as plain text
+  - Document content is stored as markdown export for consistent display (original preserved in `docling_document_json`)
+  - Wix evaluation dataset now uses `html_content` with `format="html"` for better document structure
 - **DoclingDocument Storage**: Full DoclingDocument JSON is now stored with each document, enabling rich context and visual grounding
   - Documents store the complete DoclingDocument structure (JSON) and schema version
   - Chunks store metadata with JSON pointer references (`doc_item_refs`), semantic labels, section headings, and page numbers
