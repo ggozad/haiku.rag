@@ -69,6 +69,7 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         Binding("q", "quit", "Quit", show=True),
         Binding("/", "search", "Search", show=True),
         Binding("v", "show_visual", "Visual", show=True),
+        Binding("c", "show_context", "Context", show=True),
     ]
 
     def __init__(self, db_path: Path):
@@ -191,6 +192,22 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
         await self.push_screen(VisualGroundingModal(chunk=chunk, client=self.client))
+
+    async def action_show_context(self) -> None:
+        """Show how the currently selected chunk would be formatted for agents."""
+        if not self.client:
+            return
+
+        chunk_list = self.query_one(ChunkList)
+        idx = chunk_list.list_view.index
+        if idx is None or idx >= len(chunk_list.chunks):
+            return
+
+        chunk = chunk_list.chunks[idx]
+
+        from haiku.rag.inspector.widgets.context_modal import ContextModal
+
+        await self.push_screen(ContextModal(chunk=chunk, client=self.client))
 
 
 def run_inspector(db_path: Path | None = None) -> None:  # pragma: no cover

@@ -115,7 +115,9 @@ processing:
   chunker: docling-local    # docling-local or docling-serve
   chunker_type: hybrid      # hybrid or hierarchical
   chunk_size: 256
-  context_chunk_radius: 0
+  text_context_radius: 0
+  max_context_items: 25
+  max_context_chars: 10000
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
   chunking_use_markdown_tables: false

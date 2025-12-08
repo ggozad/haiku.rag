@@ -3,7 +3,7 @@ from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata, SearchResult
 
 
 @pytest.mark.asyncio
@@ -203,3 +203,93 @@ def test_chunk_metadata_resolve_empty_refs():
     doc_items = chunk_meta.resolve_doc_items(docling_doc)
 
     assert doc_items == []
+
+
+def test_search_result_format_for_agent_full():
+    """Test format_for_agent with all metadata present."""
+    result = SearchResult(
+        content="This is the chunk content about elections.",
+        score=0.85,
+        chunk_id="chunk-123",
+        document_id="doc-456",
+        document_uri="file:///docs/report.pdf",
+        document_title="Annual Report 2024",
+        headings=["Chapter 1", "Section 1.1", "Elections"],
+        labels=["paragraph", "table"],
+        page_numbers=[1, 2],
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "[chunk-123]" in formatted
+    assert "(score: 0.85)" in formatted
+    assert (
+        'Source: "Annual Report 2024" > Chapter 1 > Section 1.1 > Elections'
+        in formatted
+    )
+    assert "Type: table" in formatted  # table has higher priority than paragraph
+    assert "Content:\nThis is the chunk content about elections." in formatted
+
+
+def test_search_result_format_for_agent_minimal():
+    """Test format_for_agent with minimal metadata."""
+    result = SearchResult(
+        content="Some content here.",
+        score=0.72,
+        chunk_id="chunk-abc",
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "[chunk-abc]" in formatted
+    assert "(score: 0.72)" in formatted
+    assert "Source:" not in formatted  # No title or headings
+    assert "Type:" not in formatted  # No labels
+    assert "Content:\nSome content here." in formatted
+
+
+def test_search_result_format_for_agent_title_only():
+    """Test format_for_agent with only document title."""
+    result = SearchResult(
+        content="Content text.",
+        score=0.60,
+        chunk_id="chunk-xyz",
+        document_title="My Document",
+    )
+
+    formatted = result.format_for_agent()
+
+    assert 'Source: "My Document"' in formatted
+
+
+def test_search_result_format_for_agent_headings_only():
+    """Test format_for_agent with only headings (no title)."""
+    result = SearchResult(
+        content="Content text.",
+        score=0.60,
+        chunk_id="chunk-xyz",
+        headings=["Introduction", "Background"],
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "Source: Introduction > Background" in formatted
+
+
+def test_search_result_get_primary_label():
+    """Test _get_primary_label prioritization."""
+    # Table takes priority over text labels
+    result = SearchResult(content="x", score=0.5, labels=["paragraph", "table", "text"])
+    assert result._get_primary_label() == "table"
+
+    # Code takes priority over list_item
+    result = SearchResult(content="x", score=0.5, labels=["list_item", "code"])
+    assert result._get_primary_label() == "code"
+
+    # Text labels fall through to first
+    result = SearchResult(content="x", score=0.5, labels=["paragraph", "text"])
+    assert result._get_primary_label() == "paragraph"
+
+    # Empty labels
+    result = SearchResult(content="x", score=0.5, labels=[])
+    assert result._get_primary_label() is None

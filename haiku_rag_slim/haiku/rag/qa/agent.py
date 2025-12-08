@@ -50,10 +50,8 @@ class QuestionAnswerAgent:
             results = await ctx.deps.client.expand_context(results)
             # Store results for citation resolution
             ctx.deps.search_results = results
-            # Format with chunk IDs
-            parts = []
-            for r in results:
-                parts.append(f"[{r.chunk_id}] (score: {r.score:.2f}) {r.content}")
+            # Format with metadata for agent context
+            parts = [r.format_for_agent() for r in results]
             return "\n\n".join(parts) if parts else "No results found."
 
     async def answer(self, question: str) -> tuple[str, list[Citation]]:
