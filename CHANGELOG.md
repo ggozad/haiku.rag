@@ -1,21 +1,8 @@
 # Changelog
 ## [Unreleased]
 
-### Changed
-
-- **Download Models Progress**: `haiku-rag download-models` now shows real-time progress with Rich progress bars for Ollama model downloads
-- **Refactored Download Models**: Moved core download logic to `HaikuRAG.download_models()` async generator that yields `DownloadProgress` events, separating business logic from UI
-
-## [0.20.0] - 2025-11-28
-
 ### Added
 
-- **Format Parameter for Text Conversion**: New `format` parameter for `convert()` and `create_document()` to specify content type
-  - Supports `"md"` (default) for markdown and `"html"` for HTML content
-  - HTML format preserves document structure (headings, lists, sections) in DoclingDocument
-  - Enables proper parsing of HTML content that was previously treated as plain text
-  - Document content is stored as markdown export for consistent display (original preserved in `docling_document_json`)
-  - Wix evaluation dataset now uses `html_content` with `format="html"` for better document structure
 - **DoclingDocument Storage**: Full DoclingDocument JSON is now stored with each document, enabling rich context and visual grounding
   - Documents store the complete DoclingDocument structure (JSON) and schema version
   - Chunks store metadata with JSON pointer references (`doc_item_refs`), semantic labels, section headings, and page numbers
@@ -27,6 +14,15 @@
 - **Enhanced Search Results**: `search()` and `expand_context()` now return full provenance information
   - `SearchResult` includes `page_numbers`, `headings`, `labels`, and `doc_item_refs`
   - QA and research agents use provenance for better citations (page numbers, section headings)
+- **Type-Aware Context Expansion**: `expand_context()` now uses document structure for intelligent expansion
+  - Structural content (tables, code blocks, lists) expands to complete structures regardless of chunking
+  - Text content uses radius-based expansion via `text_context_radius` setting
+  - `max_context_items` and `max_context_chars` settings control expansion limits
+  - `SearchResult.format_for_agent()` method formats expanded results with metadata for LLM consumption
+- **Visual Grounding**: View page images with highlighted bounding boxes for chunks
+  - Inspector modal with keyboard navigation between pages
+  - CLI command: `haiku-rag visualize <chunk_id>`
+  - Requires `textual-image` dependency and terminal with image support
 - **Processing Primitives**: New methods for custom document processing pipelines
   - `convert()` - Convert files, URLs, or text to DoclingDocument
   - `chunk()` - Chunk a DoclingDocument into Chunk objects
@@ -39,25 +35,13 @@
 - **Automatic Chunk Embedding**: `import_document()` and `update_document()` automatically embed chunks that don't have embeddings
   - Pass chunks with or without embeddings - missing embeddings are generated
   - Chunks with pre-computed embeddings are stored as-is
-- **Visual Grounding**: View page images with highlighted bounding boxes for chunks
-  - Inspector modal with keyboard navigation between pages
-  - CLI command: `haiku-rag visualize <chunk_id>`
-  - Requires `textual-image` dependency and terminal with image support
-- **Type-Aware Context Expansion**: `expand_context()` now uses document structure for intelligent expansion
-  - Structural content (tables, code blocks, lists) expands to complete structures regardless of chunking
-  - Text content uses radius-based expansion via `text_context_radius` setting
-  - `max_context_items` and `max_context_chars` settings control expansion limits
-  - `SearchResult.format_for_agent()` method formats expanded results with metadata for LLM consumption
+- **Format Parameter for Text Conversion**: New `format` parameter for `convert()` and `create_document()` to specify content type
+  - Supports `"md"` (default) for markdown and `"html"` for HTML content
+  - HTML format preserves document structure (headings, lists, sections) in DoclingDocument
+  - Enables proper parsing of HTML content that was previously treated as plain text
 - **Inspector Context Modal**: Press `c` in the inspector to view expanded context for the selected chunk
 
 ### Changed
-
-- **Rebuild Performance**: Batched database writes during `rebuild` command reduce LanceDB versions by ~98%
-  - All rebuild modes (FULL, RECHUNK, EMBED_ONLY) now batch writes across documents
-  - Eliminates redundant per-document chunk deletions and vacuum calls
-  - Significantly reduces storage overhead and improves rebuild speed for large databases
-
-- **BREAKING: Config Renamed**: `context_chunk_radius` renamed to `text_context_radius`
 
 - **BREAKING: `create_document()` API**: Removed `chunks` parameter
   - `create_document()` now always processes content (converts, chunks, embeds)
@@ -68,14 +52,20 @@
   - `content` and `docling_document_json` are mutually exclusive
 - **BREAKING: Chunker Interface**: `DocumentChunker.chunk()` now returns `list[Chunk]` instead of `list[str]`
   - Chunks include structured metadata (doc_item_refs, labels, headings, page_numbers)
-- **Chunk Text Storage**: Chunks store raw text; headings prepended only at embedding time
-  - Stored chunk content stays clean without duplicate heading prefixes
-  - Local and serve chunkers now produce identical output
+- **BREAKING: Config Renamed**: `context_chunk_radius` renamed to `text_context_radius`
+- **Rebuild Performance**: Batched database writes during `rebuild` command reduce LanceDB versions by ~98%
+  - All rebuild modes (FULL, RECHUNK, EMBED_ONLY) now batch writes across documents
+  - Eliminates redundant per-document chunk deletions and vacuum calls
+  - Significantly reduces storage overhead and improves rebuild speed for large databases
 - **Embedding Architecture**: Moved embedding generation from `ChunkRepository` to client layer
   - Repository is now a pure persistence layer
   - Client handles embedding via `_ensure_chunks_embedded()`
+- **Chunk Text Storage**: Chunks store raw text; headings prepended only at embedding time
+  - Stored chunk content stays clean without duplicate heading prefixes
+  - Local and serve chunkers now produce identical output
 - **Citation Models**: Introduced `RawSearchAnswer` for LLM output, `SearchAnswer` with resolved citations
 - **Page Image Generation**: Always enabled for local docling converter (required for visual grounding)
+- **Download Models Progress**: `haiku-rag download-models` now shows real-time progress with Rich progress bars for Ollama model downloads
 
 ### Removed
 

@@ -118,7 +118,4 @@ And for QA accuracy,
 
 | Embedding Model            | Chunk size | QA Model                    | Accuracy | Reranker    |
 |----------------------------|------------|-----------------------------|----------|-------------|
-| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - thinking    | 0.85     | None        |
-| `qwen3-embedding:4b`       | 512        | `gpt-oss:20b` - thinking    | 0.84     | None        |
-| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - no thinking | 0.68     | None        |
-| `qwen3-embedding:4b`       | 512        | `gpt-oss:20b` - no thinking | 0.70     | None        |
+| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - no thinking | 0.74     | None        |
