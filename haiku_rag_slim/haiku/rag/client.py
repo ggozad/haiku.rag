@@ -4,6 +4,7 @@ import logging
 import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
@@ -1419,12 +1420,17 @@ class HaikuRAG:
         """Re-embed all chunks without changing chunk boundaries."""
         from haiku.rag.embeddings import contextualize
 
+        batch_size = 50
+        pending_records: list = []
+        pending_doc_ids: list[str] = []
+
         for doc in documents:
             assert doc.id is not None
 
             # Get existing chunks
             chunks = await self.chunk_repository.get_by_document_id(doc.id)
             if not chunks:
+                yield doc.id
                 continue
 
             # Generate new embeddings using contextualize for consistency
@@ -1432,31 +1438,94 @@ class HaikuRAG:
             embeddings = await self.chunk_repository.embedder.embed(texts)
 
             # Build updated records
-            updated_records = [
-                self.store.ChunkRecord(
-                    id=chunk.id,  # type: ignore[arg-type]
-                    document_id=chunk.document_id,  # type: ignore[arg-type]
-                    content=chunk.content,
-                    metadata=json.dumps(chunk.metadata),
-                    order=chunk.order,
-                    vector=embedding,
+            for chunk, embedding in zip(chunks, embeddings):
+                pending_records.append(
+                    self.store.ChunkRecord(
+                        id=chunk.id,  # type: ignore[arg-type]
+                        document_id=chunk.document_id,  # type: ignore[arg-type]
+                        content=chunk.content,
+                        metadata=json.dumps(chunk.metadata),
+                        order=chunk.order,
+                        vector=embedding,
+                    )
                 )
-                for chunk, embedding in zip(chunks, embeddings)
-            ]
 
-            # Batch update all chunks
-            if updated_records:
-                self.store.chunks_table.merge_insert(
-                    "id"
-                ).when_matched_update_all().execute(updated_records)
+            pending_doc_ids.append(doc.id)
 
-            yield doc.id
+            # Flush batch when size reached
+            if len(pending_doc_ids) >= batch_size:
+                if pending_records:
+                    self.store.chunks_table.merge_insert(
+                        "id"
+                    ).when_matched_update_all().execute(pending_records)
+                for doc_id in pending_doc_ids:
+                    yield doc_id
+                pending_records = []
+                pending_doc_ids = []
+
+        # Flush remaining
+        if pending_records:
+            self.store.chunks_table.merge_insert(
+                "id"
+            ).when_matched_update_all().execute(pending_records)
+        for doc_id in pending_doc_ids:
+            yield doc_id
+
+    async def _flush_rebuild_batch(
+        self, documents: list[Document], chunks: list[Chunk]
+    ) -> None:
+        """Batch write documents and chunks during rebuild.
+
+        This performs two writes: one for all document updates, one for all chunks.
+        Used by RECHUNK and FULL modes after the chunks table has been cleared.
+        """
+        from haiku.rag.store.engine import DocumentRecord
+        from haiku.rag.store.models.document import invalidate_docling_document_cache
+
+        if not documents:
+            return
+
+        now = datetime.now().isoformat()
+
+        # Invalidate cache for all documents being updated
+        for doc in documents:
+            if doc.id:
+                invalidate_docling_document_cache(doc.id)
+
+        # Batch update documents using merge_insert (single LanceDB version)
+        doc_records = [
+            DocumentRecord(
+                id=doc.id,  # type: ignore[arg-type]
+                content=doc.content,
+                uri=doc.uri,
+                title=doc.title,
+                metadata=json.dumps(doc.metadata),
+                docling_document_json=doc.docling_document_json,
+                docling_version=doc.docling_version,
+                created_at=doc.created_at.isoformat() if doc.created_at else now,
+                updated_at=now,
+            )
+            for doc in documents
+        ]
+
+        self.store.documents_table.merge_insert("id").when_matched_update_all().execute(
+            doc_records
+        )
+
+        # Batch create all chunks (single LanceDB version)
+        if chunks:
+            await self.chunk_repository.create(chunks)
 
     async def _rebuild_rechunk(
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Re-chunk and re-embed from existing document content."""
         from haiku.rag.embeddings import embed_chunks
+
+        batch_size = 50
+        pending_chunks: list[Chunk] = []
+        pending_docs: list[Document] = []
+        pending_doc_ids: list[str] = []
 
         for doc in documents:
             assert doc.id is not None
@@ -1468,12 +1537,33 @@ class HaikuRAG:
             chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(chunks, self._config)
 
-            # Update document with docling JSON and store new chunks
+            # Update document fields
             doc.docling_document_json = docling_document.model_dump_json()
             doc.docling_version = docling_document.version
-            await self._update_document_with_chunks(doc, embedded_chunks)
 
-            yield doc.id
+            # Prepare chunks with document_id and order
+            for order, chunk in enumerate(embedded_chunks):
+                chunk.document_id = doc.id
+                chunk.order = order
+
+            pending_chunks.extend(embedded_chunks)
+            pending_docs.append(doc)
+            pending_doc_ids.append(doc.id)
+
+            # Flush batch when size reached
+            if len(pending_docs) >= batch_size:
+                await self._flush_rebuild_batch(pending_docs, pending_chunks)
+                for doc_id in pending_doc_ids:
+                    yield doc_id
+                pending_chunks = []
+                pending_docs = []
+                pending_doc_ids = []
+
+        # Flush remaining
+        if pending_docs:
+            await self._flush_rebuild_batch(pending_docs, pending_chunks)
+            for doc_id in pending_doc_ids:
+                yield doc_id
 
     async def _rebuild_full(
         self, documents: list[Document]
@@ -1481,12 +1571,26 @@ class HaikuRAG:
         """Full rebuild: re-convert from source, re-chunk, re-embed."""
         from haiku.rag.embeddings import embed_chunks
 
+        batch_size = 50
+        pending_chunks: list[Chunk] = []
+        pending_docs: list[Document] = []
+        pending_doc_ids: list[str] = []
+
         for doc in documents:
             assert doc.id is not None
 
             # Try to rebuild from source if available
             if doc.uri and self._check_source_accessible(doc.uri):
                 try:
+                    # Flush pending batch before source rebuild (creates new doc)
+                    if pending_docs:
+                        await self._flush_rebuild_batch(pending_docs, pending_chunks)
+                        for doc_id in pending_doc_ids:
+                            yield doc_id
+                        pending_chunks = []
+                        pending_docs = []
+                        pending_doc_ids = []
+
                     await self.delete_document(doc.id)
                     new_doc = await self.create_document_from_source(
                         source=doc.uri, metadata=doc.metadata or {}
@@ -1515,9 +1619,30 @@ class HaikuRAG:
 
             doc.docling_document_json = docling_document.model_dump_json()
             doc.docling_version = docling_document.version
-            await self._update_document_with_chunks(doc, embedded_chunks)
 
-            yield doc.id
+            # Prepare chunks with document_id and order
+            for order, chunk in enumerate(embedded_chunks):
+                chunk.document_id = doc.id
+                chunk.order = order
+
+            pending_chunks.extend(embedded_chunks)
+            pending_docs.append(doc)
+            pending_doc_ids.append(doc.id)
+
+            # Flush batch when size reached
+            if len(pending_docs) >= batch_size:
+                await self._flush_rebuild_batch(pending_docs, pending_chunks)
+                for doc_id in pending_doc_ids:
+                    yield doc_id
+                pending_chunks = []
+                pending_docs = []
+                pending_doc_ids = []
+
+        # Flush remaining
+        if pending_docs:
+            await self._flush_rebuild_batch(pending_docs, pending_chunks)
+            for doc_id in pending_doc_ids:
+                yield doc_id
 
     def _check_source_accessible(self, uri: str) -> bool:
         """Check if a document's source URI is accessible."""
