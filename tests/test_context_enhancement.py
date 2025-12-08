@@ -688,29 +688,3 @@ First paragraph of results.
                 assert len(r.content) > 0
                 # Score should be preserved (best score)
                 assert r.score in [0.9, 0.8]
-
-
-@pytest.mark.asyncio
-async def test_expand_context_docling_preserves_bounding_boxes(temp_db_path):
-    """Test that expand_context preserves bounding boxes from DoclingDocument."""
-    config = AppConfig()
-    config.processing.text_context_radius = 2
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        doc = await client.create_document(
-            content="# Test\n\nSome content here.",
-            uri="test://bboxes",
-        )
-
-        assert doc.id is not None
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-
-        if chunks:
-            search_results = [SearchResult.from_chunk(chunks[0], 0.9)]
-            expanded = await client.expand_context(search_results)
-
-            # Expanded results should exist
-            assert len(expanded) == 1
-            # Bounding boxes may or may not be present depending on document
-            # but the field should be accessible
-            _ = expanded[0].bounding_boxes

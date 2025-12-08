@@ -237,8 +237,6 @@ async def test_search_graceful_degradation(temp_db_path):
     result = results[0]
     assert isinstance(result, SearchResult)
     assert result.content
-    # Bounding boxes should be None when docling is unavailable
-    assert result.bounding_boxes is None
     # Metadata defaults should still work
     assert result.page_numbers == []
     assert result.labels == []

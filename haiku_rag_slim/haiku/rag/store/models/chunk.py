@@ -121,16 +121,14 @@ class SearchResult(BaseModel):
     page_numbers: list[int] = []
     headings: list[str] | None = None
     labels: list[str] = []
-    bounding_boxes: list[BoundingBox] | None = None
 
     @classmethod
     def from_chunk(
         cls,
         chunk: "Chunk",
         score: float,
-        bounding_boxes: list[BoundingBox] | None = None,
     ) -> "SearchResult":
-        """Create from a Chunk with optional bounding boxes."""
+        """Create from a Chunk."""
         meta = chunk.get_chunk_metadata()
         return cls(
             content=chunk.content,
@@ -143,7 +141,6 @@ class SearchResult(BaseModel):
             page_numbers=meta.page_numbers,
             headings=meta.headings,
             labels=meta.labels,
-            bounding_boxes=bounding_boxes,
         )
 
     def format_for_agent(self) -> str:
