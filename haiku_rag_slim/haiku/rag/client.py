@@ -881,7 +881,6 @@ class HaikuRAG:
         limit: int = 5,
         search_type: str = "hybrid",
         filter: str | None = None,
-        resolve_bounding_boxes: bool = False,
     ) -> list[SearchResult]:
         """Search for relevant chunks using the specified search method with optional reranking.
 
@@ -890,7 +889,6 @@ class HaikuRAG:
             limit: Maximum number of results to return.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
-            resolve_bounding_boxes: Whether to resolve bounding boxes from DoclingDocument.
 
         Returns:
             List of SearchResult objects ordered by relevance.
@@ -909,34 +907,7 @@ class HaikuRAG:
             chunks = [chunk for chunk, _ in raw_results]
             chunk_results = await reranker.rerank(query, chunks, top_n=limit)
 
-        bounding_boxes_map: dict[str, list] | None = None
-        if resolve_bounding_boxes:
-            bounding_boxes_map = {}
-            doc_cache: dict[str, Document | None] = {}
-
-            for chunk, _ in chunk_results:
-                if chunk.document_id and chunk.id:
-                    if chunk.document_id not in doc_cache:
-                        doc_cache[chunk.document_id] = await self.get_document_by_id(
-                            chunk.document_id
-                        )
-
-                    doc = doc_cache[chunk.document_id]
-                    if doc:
-                        docling_doc = doc.get_docling_document()
-                        if docling_doc:
-                            meta = chunk.get_chunk_metadata()
-                            bounding_boxes_map[chunk.id] = meta.resolve_bounding_boxes(
-                                docling_doc
-                            )
-
-        results = []
-        for chunk, score in chunk_results:
-            bboxes = None
-            if bounding_boxes_map and chunk.id:
-                bboxes = bounding_boxes_map.get(chunk.id)
-            results.append(SearchResult.from_chunk(chunk, score, bboxes))
-        return results
+        return [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
 
     async def expand_context(
         self,
@@ -1165,8 +1136,6 @@ class HaikuRAG:
         Structural content (tables, code, lists) expands to complete structures.
         Text content uses radius-based expansion.
         """
-        from haiku.rag.store.models.chunk import BoundingBox
-
         all_items = list(docling_doc.iterate_items())
         ref_to_index = {
             getattr(item, "self_ref", None): i
@@ -1197,7 +1166,10 @@ class HaikuRAG:
 
         final_results: list[SearchResult] = []
         for min_idx, max_idx, original_results in merged:
-            content_parts, refs, pages, labels, bboxes = [], [], set(), set(), []
+            content_parts: list[str] = []
+            refs: list[str] = []
+            pages: set[int] = set()
+            labels: set[str] = set()
 
             for i in range(min_idx, max_idx + 1):
                 item, _ = all_items[i]
@@ -1215,16 +1187,6 @@ class HaikuRAG:
                     for p in prov:
                         if (page_no := getattr(p, "page_no", None)) is not None:
                             pages.add(page_no)
-                        if bbox := getattr(p, "bbox", None):
-                            bboxes.append(
-                                BoundingBox(
-                                    page_no=page_no or 0,
-                                    left=bbox.l,
-                                    top=bbox.t,
-                                    right=bbox.r,
-                                    bottom=bbox.b,
-                                )
-                            )
 
             # Merge headings preserving order
             all_headings: list[str] = []
@@ -1245,7 +1207,6 @@ class HaikuRAG:
                     page_numbers=sorted(pages),
                     headings=all_headings or None,
                     labels=sorted(labels),
-                    bounding_boxes=bboxes or None,
                 )
             )
 
@@ -1301,7 +1262,6 @@ class HaikuRAG:
                     page_numbers=first.page_numbers,
                     headings=first.headings,
                     labels=first.labels,
-                    bounding_boxes=first.bounding_boxes,
                 )
             )
 
