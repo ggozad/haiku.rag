@@ -6,7 +6,15 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.progress import Progress
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TransferSpeedColumn,
+)
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
@@ -490,6 +498,63 @@ class HaikuRAGApp:
                 )
         except Exception as e:
             self.console.print(f"[red]Error creating index: {e}[/red]")
+
+    async def download_models(self):
+        """Download Docling, HuggingFace tokenizer, and Ollama models per config."""
+        from haiku.rag.client import HaikuRAG
+
+        client = HaikuRAG(db_path=None, config=self.config)
+
+        progress: Progress | None = None
+        task_id: TaskID | None = None
+        current_model = ""
+        current_digest = ""
+
+        async for event in client.download_models():
+            if event.status == "start":
+                self.console.print(
+                    f"[bold blue]Downloading {event.model}...[/bold blue]"
+                )
+            elif event.status == "done":
+                if progress:
+                    progress.stop()
+                    progress = None
+                    task_id = None
+                self.console.print(f"[green]✓[/green] {event.model}")
+                current_model = ""
+                current_digest = ""
+            elif event.status == "pulling":
+                self.console.print(f"[bold blue]Pulling {event.model}...[/bold blue]")
+                current_model = event.model
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    DownloadColumn(),
+                    TransferSpeedColumn(),
+                    console=self.console,
+                    transient=True,
+                    auto_refresh=False,
+                )
+                progress.start()
+                task_id = progress.add_task(event.model, total=None)
+            elif event.status == "downloading" and progress and task_id is not None:
+                if event.digest != current_digest:
+                    current_digest = event.digest
+                    short_digest = event.digest[:19] if event.digest else ""
+                    progress.update(
+                        task_id,
+                        description=f"{current_model} ({short_digest})",
+                        total=event.total,
+                        completed=0,
+                    )
+                progress.update(task_id, completed=event.completed, refresh=True)
+            elif progress and task_id is not None:
+                progress.update(
+                    task_id,
+                    description=f"{current_model}: {event.status}",
+                    refresh=True,
+                )
 
     def show_settings(self):
         """Display current configuration settings."""

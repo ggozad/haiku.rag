@@ -298,6 +298,10 @@ Download required runtime models:
 haiku-rag download-models
 ```
 
-This command:
-- Downloads Docling OCR/conversion models (no-op if already present).
-- Pulls Ollama models referenced in your configuration (embeddings, QA, research, rerank).
+This command downloads:
+
+- Docling OCR/conversion models
+- HuggingFace tokenizer (for chunking)
+- Ollama models referenced in your configuration (embeddings, QA, research, rerank)
+
+Progress is displayed in real-time with download status and progress bars for Ollama model pulls.

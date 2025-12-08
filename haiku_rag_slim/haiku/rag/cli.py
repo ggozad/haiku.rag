@@ -436,11 +436,9 @@ def info(
 
 @cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():
-    from haiku.rag.utils import prefetch_models
-
+    app = HaikuRAGApp(db_path=Path(), config=get_config())
     try:
-        asyncio.run(prefetch_models())
-        typer.echo("Models downloaded successfully.")
+        asyncio.run(app.download_models())
     except Exception as e:
         typer.echo(f"Error downloading models: {e}")
         raise typer.Exit(1)
