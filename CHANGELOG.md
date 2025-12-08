@@ -37,8 +37,16 @@
   - Inspector modal with keyboard navigation between pages
   - CLI command: `haiku-rag visualize <chunk_id>`
   - Requires `textual-image` dependency and terminal with image support
+- **Type-Aware Context Expansion**: `expand_context()` now uses document structure for intelligent expansion
+  - Structural content (tables, code blocks, lists) expands to complete structures regardless of chunking
+  - Text content uses radius-based expansion via `text_context_radius` setting
+  - `max_context_items` and `max_context_chars` settings control expansion limits
+  - `SearchResult.format_for_agent()` method formats expanded results with metadata for LLM consumption
+- **Inspector Context Modal**: Press `c` in the inspector to view expanded context for the selected chunk
 
 ### Changed
+
+- **BREAKING: Config Renamed**: `context_chunk_radius` renamed to `text_context_radius`
 
 - **BREAKING: `create_document()` API**: Removed `chunks` parameter
   - `create_document()` now always processes content (converts, chunks, embeds)

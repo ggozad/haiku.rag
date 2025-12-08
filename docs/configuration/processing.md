@@ -10,7 +10,11 @@ Configure how documents are converted and chunked:
 processing:
   # Chunking configuration
   chunk_size: 256                            # Maximum tokens per chunk
-  context_chunk_radius: 0                    # Context radius for chunk expansion
+
+  # Context expansion for search results
+  text_context_radius: 0                     # Radius for text chunk expansion
+  max_context_items: 25                      # Maximum items in expanded context
+  max_context_chars: 10000                   # Maximum characters in expanded context
 
   # Converter selection
   converter: docling-local                   # docling-local or docling-serve
@@ -133,19 +137,27 @@ processing:
 - `false`: Tables as narrative text ("Value A, Column 2 = Value B")
 - `true`: Tables as markdown (preserves table structure)
 
-### Chunk Size and Context
+### Chunk Size and Context Expansion
 
 ```yaml
 processing:
   # Chunk size for document processing
   chunk_size: 256
 
-  # Number of adjacent chunks to include before/after retrieved chunks for context
-  # 0 = no expansion (default), 1 = include 1 chunk before and after, etc.
-  # When expanded chunks overlap or are adjacent, they are automatically merged
-  # into single chunks with continuous content to eliminate duplication
-  context_chunk_radius: 0
+  # Context expansion settings
+  # Controls how search results are expanded with surrounding content
+  text_context_radius: 0     # Chunks before/after to include for text content
+  max_context_items: 25      # Maximum doc items to include in expansion
+  max_context_chars: 10000   # Maximum characters in expanded content
 ```
+
+Context expansion enriches search results with surrounding content from the source document:
+
+- **text_context_radius**: For text content (paragraphs), includes N chunks before and after. Set to 0 to disable expansion (default).
+- **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context.
+- **max_context_chars**: Hard limit on total characters in expanded content.
+
+Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked. For example, if a table was split across multiple chunks, expansion retrieves the complete table.
 
 ## File Monitoring
 

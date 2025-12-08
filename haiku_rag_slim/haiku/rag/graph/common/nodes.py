@@ -239,9 +239,8 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
         # Store results for citation resolution
         ctx2.deps.search_results = results
 
-        parts = []
-        for r in results:
-            parts.append(f"[{r.chunk_id}] (score: {r.score:.2f}) {r.content}")
+        # Format with metadata for agent context
+        parts = [r.format_for_agent() for r in results]
 
         if not parts:
             return f"No relevant information found in the knowledge base for: {query}"

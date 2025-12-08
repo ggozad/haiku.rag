@@ -244,3 +244,31 @@ async def test_search_graceful_degradation(temp_db_path):
     assert result.labels == []
 
     client.close()
+
+
+@pytest.mark.asyncio
+async def test_search_result_format_includes_metadata(temp_db_path):
+    """Test that formatted search results include document metadata."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content="Important information about machine learning algorithms.",
+            title="ML Guide",
+            uri="https://example.com/ml-guide",
+        )
+
+        results = await client.search("machine learning", limit=1)
+        assert len(results) > 0
+
+        formatted = results[0].format_for_agent()
+
+        # Should include chunk ID and score
+        assert "[" in formatted and "]" in formatted
+        assert "score:" in formatted
+
+        # Should include document title in Source
+        assert "ML Guide" in formatted
+        assert "Source:" in formatted
+
+        # Should include content
+        assert "Content:" in formatted
+        assert "machine learning" in formatted.lower()

@@ -145,3 +145,66 @@ class SearchResult(BaseModel):
             labels=meta.labels,
             bounding_boxes=bounding_boxes,
         )
+
+    def format_for_agent(self) -> str:
+        """Format this search result for inclusion in agent context.
+
+        Produces a structured format with metadata that helps LLMs understand
+        the source and nature of the content.
+        """
+        parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
+
+        # Document source info
+        source_parts = []
+        if self.document_title:
+            source_parts.append(f'"{self.document_title}"')
+        if self.headings:
+            source_parts.append(" > ".join(self.headings))
+        if source_parts:
+            parts.append(f"Source: {' > '.join(source_parts)}")
+
+        # Content type (use primary label if available)
+        if self.labels:
+            primary_label = self._get_primary_label()
+            if primary_label:
+                parts.append(f"Type: {primary_label}")
+
+        # The actual content
+        parts.append(f"Content:\n{self.content}")
+
+        return "\n".join(parts)
+
+    def _get_primary_label(self) -> str | None:
+        """Get the most significant label for display.
+
+        Prioritizes structural labels over text labels.
+        """
+        if not self.labels:
+            return None
+
+        # Priority order: structural > contextual > text
+        priority = {
+            "table": 1,
+            "code": 2,
+            "form": 3,
+            "key_value_region": 4,
+            "list_item": 5,
+            "formula": 6,
+            "chart": 7,
+            "picture": 8,
+            "caption": 9,
+            "footnote": 10,
+            "section_header": 11,
+            "title": 12,
+        }
+
+        # Find highest priority label
+        best_label = None
+        best_priority = float("inf")
+        for label in self.labels:
+            if label in priority and priority[label] < best_priority:
+                best_label = label
+                best_priority = priority[label]
+
+        # Return best structural/special label, or first label if all are text
+        return best_label if best_label else self.labels[0]
