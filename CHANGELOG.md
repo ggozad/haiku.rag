@@ -52,6 +52,11 @@
 
 ### Changed
 
+- **Rebuild Performance**: Batched database writes during `rebuild` command reduce LanceDB versions by ~98%
+  - All rebuild modes (FULL, RECHUNK, EMBED_ONLY) now batch writes across documents
+  - Eliminates redundant per-document chunk deletions and vacuum calls
+  - Significantly reduces storage overhead and improves rebuild speed for large databases
+
 - **BREAKING: Config Renamed**: `context_chunk_radius` renamed to `text_context_radius`
 
 - **BREAKING: `create_document()` API**: Removed `chunks` parameter
