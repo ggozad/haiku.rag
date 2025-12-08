@@ -14,6 +14,7 @@ class DocumentPayload:
     content: str
     title: str | None = None
     metadata: dict[str, Any] | None = None
+    format: str = "md"
 
 
 @dataclass

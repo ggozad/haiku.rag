@@ -98,6 +98,7 @@ async def populate_db(
                     uri=payload.uri,
                     title=payload.title,
                     metadata=payload.metadata,
+                    format=payload.format,
                 )
                 progress.advance(task)
 

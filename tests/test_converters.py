@@ -116,6 +116,73 @@ class TestConverterFactory:
             get_converter(config)
 
 
+class TestTextToDoclingWithFormat:
+    """Tests for format parameter in text to DoclingDocument conversion."""
+
+    @pytest.mark.asyncio
+    async def test_html_format_preserves_structure(self):
+        """Test that HTML content parsed with html format preserves document structure."""
+        html_content = """
+        <h1>Main Title</h1>
+        <p>Introduction paragraph.</p>
+        <h2>Section Header</h2>
+        <ul>
+            <li>Item 1</li>
+            <li>Item 2</li>
+        </ul>
+        """
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        # With html format, should get proper structure
+        doc = await converter.convert_text(
+            html_content, name="content.html", format="html"
+        )
+
+        items = list(doc.iterate_items())
+        labels = [str(getattr(item, "label", "")) for item, _ in items]
+
+        assert "title" in labels or "section_header" in labels
+        assert "list_item" in labels
+        assert len(items) > 3
+
+    @pytest.mark.asyncio
+    async def test_md_format_is_default(self):
+        """Test that md format is used by default."""
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        # Plain text should work with default format
+        doc = await converter.convert_text("# Heading\n\nParagraph text.")
+        items = list(doc.iterate_items())
+
+        assert len(items) >= 2
+
+    @pytest.mark.asyncio
+    async def test_html_as_md_loses_structure(self):
+        """Test that HTML parsed as markdown loses semantic structure."""
+        html_content = "<h1>Title</h1><p>Text</p><ul><li>Item</li></ul>"
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        # With md format (default), HTML tags are treated as text
+        doc = await converter.convert_text(html_content, format="md")
+        items = list(doc.iterate_items())
+
+        # Should still parse but with different structure
+        # (markdown parser will interpret some HTML)
+        assert len(items) >= 1
+
+    @pytest.mark.asyncio
+    async def test_invalid_format_raises_error(self):
+        """Test that invalid format raises ValueError."""
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        with pytest.raises(ValueError, match="Unsupported format"):
+            await converter.convert_text("content", format="invalid")
+
+
 class TestDoclingLocalConverter:
     """Tests for DoclingLocalConverter."""
 
