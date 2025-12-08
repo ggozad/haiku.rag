@@ -928,7 +928,6 @@ class HaikuRAG:
     async def expand_context(
         self,
         search_results: list[SearchResult],
-        radius: int | None = None,
     ) -> list[SearchResult]:
         """Expand search results with adjacent content from the source document.
 
@@ -936,18 +935,20 @@ class HaikuRAG:
         by finding adjacent DocItems with accurate bounding boxes and metadata.
         Otherwise, falls back to chunk-based expansion using adjacent chunks.
 
+        Expansion is type-aware based on content:
+        - Tables, code blocks, and lists expand to include complete structures
+        - Text content uses the configured radius (text_context_radius)
+        - Expansion is limited by max_context_items and max_context_chars
+
         Args:
             search_results: List of SearchResult objects from search.
-            radius: Number of adjacent items to include before/after.
-                   If None, uses config.processing.context_chunk_radius.
 
         Returns:
             List of SearchResult objects with expanded content and resolved provenance.
         """
-        if radius is None:
-            radius = self._config.processing.context_chunk_radius
-        if radius == 0:
-            return search_results
+        radius = self._config.processing.text_context_radius
+        max_items = self._config.processing.max_context_items
+        max_chars = self._config.processing.max_context_chars
 
         # Group by document_id for efficient processing
         document_groups: dict[str | None, list[SearchResult]] = {}
@@ -979,13 +980,22 @@ class HaikuRAG:
             if has_docling and has_refs:
                 # Use DoclingDocument-based expansion
                 expanded = await self._expand_with_docling(
-                    doc_results, docling_doc, radius
+                    doc_results,
+                    docling_doc,
+                    radius,
+                    max_items,
+                    max_chars,
                 )
                 expanded_results.extend(expanded)
             else:
-                # Fall back to chunk-based expansion
-                expanded = await self._expand_with_chunks(doc_id, doc_results, radius)
-                expanded_results.extend(expanded)
+                # Fall back to chunk-based expansion (always uses fixed radius)
+                if radius > 0:
+                    expanded = await self._expand_with_chunks(
+                        doc_id, doc_results, radius
+                    )
+                    expanded_results.extend(expanded)
+                else:
+                    expanded_results.extend(doc_results)
 
         return expanded_results
 
@@ -1015,13 +1025,133 @@ class HaikuRAG:
         merged.append((cur_min, cur_max, cur_results))
         return merged
 
+    # Label groups for type-aware expansion
+    _STRUCTURAL_LABELS = {"table", "code", "list_item", "form", "key_value_region"}
+
+    def _extract_item_text(self, item, docling_doc) -> str | None:
+        """Extract text content from a DocItem.
+
+        Handles different item types:
+        - TextItem, SectionHeaderItem, etc.: Use .text attribute
+        - TableItem: Use export_to_markdown() for table content
+        - PictureItem: Use caption if available
+        """
+        # Try simple text attribute first (works for most items)
+        if text := getattr(item, "text", None):
+            return text
+
+        # For tables, export as markdown
+        if hasattr(item, "export_to_markdown"):
+            try:
+                return item.export_to_markdown(docling_doc)
+            except Exception:
+                pass
+
+        # For pictures/charts, try to get caption
+        if caption := getattr(item, "caption", None):
+            if hasattr(caption, "text"):
+                return caption.text
+
+        return None
+
+    def _get_item_label(self, item) -> str | None:
+        """Extract label string from a DocItem."""
+        label = getattr(item, "label", None)
+        if label is None:
+            return None
+        return str(label.value) if hasattr(label, "value") else str(label)
+
+    def _compute_type_aware_range(
+        self,
+        all_items: list,
+        indices: list[int],
+        radius: int,
+        max_items: int,
+        max_chars: int,
+    ) -> tuple[int, int]:
+        """Compute expansion range based on content type with limits.
+
+        For structural content (tables, code, lists), expands to include complete
+        structures. For text, uses the configured radius. Applies hybrid limits.
+        """
+        if not indices:
+            return (0, 0)
+
+        min_idx = min(indices)
+        max_idx = max(indices)
+
+        # Determine the primary label type from matched items
+        labels_in_chunk = set()
+        for idx in indices:
+            item, _ = all_items[idx]
+            if label := self._get_item_label(item):
+                labels_in_chunk.add(label)
+
+        # Check if we have structural content
+        is_structural = bool(labels_in_chunk & self._STRUCTURAL_LABELS)
+
+        if is_structural:
+            # Expand to complete structure boundaries
+            # Expand backwards to find structure start
+            while min_idx > 0:
+                prev_item, _ = all_items[min_idx - 1]
+                prev_label = self._get_item_label(prev_item)
+                if prev_label in labels_in_chunk & self._STRUCTURAL_LABELS:
+                    min_idx -= 1
+                else:
+                    break
+
+            # Expand forwards to find structure end
+            while max_idx < len(all_items) - 1:
+                next_item, _ = all_items[max_idx + 1]
+                next_label = self._get_item_label(next_item)
+                if next_label in labels_in_chunk & self._STRUCTURAL_LABELS:
+                    max_idx += 1
+                else:
+                    break
+        else:
+            # Text content: use radius-based expansion
+            min_idx = max(0, min_idx - radius)
+            max_idx = min(len(all_items) - 1, max_idx + radius)
+
+        # Apply hybrid limits
+        # First check item count hard limit
+        if max_idx - min_idx + 1 > max_items:
+            # Center the window around original indices
+            original_center = (min(indices) + max(indices)) // 2
+            half_items = max_items // 2
+            min_idx = max(0, original_center - half_items)
+            max_idx = min(len(all_items) - 1, min_idx + max_items - 1)
+
+        # Then check character soft limit (but keep at least original items)
+        char_count = 0
+        effective_max = min_idx
+        for i in range(min_idx, max_idx + 1):
+            item, _ = all_items[i]
+            text = getattr(item, "text", "") or ""
+            char_count += len(text)
+            effective_max = i
+            # Once we've included original items, check char limit
+            if i >= max(indices) and char_count > max_chars:
+                break
+
+        max_idx = effective_max
+
+        return (min_idx, max_idx)
+
     async def _expand_with_docling(
         self,
         results: list[SearchResult],
         docling_doc,
         radius: int,
+        max_items: int,
+        max_chars: int,
     ) -> list[SearchResult]:
-        """Expand results using DoclingDocument structure."""
+        """Expand results using DoclingDocument structure.
+
+        Structural content (tables, code, lists) expands to complete structures.
+        Text content uses radius-based expansion.
+        """
         from haiku.rag.store.models.chunk import BoundingBox
 
         all_items = list(docling_doc.iterate_items())
@@ -1042,8 +1172,11 @@ class HaikuRAG:
             if not indices:
                 passthrough.append(result)
                 continue
-            min_idx = max(0, min(indices) - radius)
-            max_idx = min(len(all_items) - 1, max(indices) + radius)
+
+            min_idx, max_idx = self._compute_type_aware_range(
+                all_items, indices, radius, max_items, max_chars
+            )
+
             ranges.append((min_idx, max_idx, result))
 
         # Merge overlapping ranges
@@ -1055,7 +1188,9 @@ class HaikuRAG:
 
             for i in range(min_idx, max_idx + 1):
                 item, _ = all_items[i]
-                if text := getattr(item, "text", None):
+                # Extract text content - handle different item types
+                text = self._extract_item_text(item, docling_doc)
+                if text:
                     content_parts.append(text)
                 if self_ref := getattr(item, "self_ref", None):
                     refs.append(self_ref)

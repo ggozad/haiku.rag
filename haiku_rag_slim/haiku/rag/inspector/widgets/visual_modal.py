@@ -20,6 +20,7 @@ class VisualGroundingModal(Screen):  # pragma: no cover
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close", show=True),
+        Binding("v", "dismiss", "Close", show=True),
         Binding("left", "prev_page", "Previous Page"),
         Binding("right", "next_page", "Next Page"),
     ]

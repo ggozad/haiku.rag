@@ -309,20 +309,23 @@ Expand search results with adjacent chunks for more complete context:
 # Get initial search results
 search_results = await client.search("machine learning", limit=3)
 
-# Expand with adjacent chunks using config setting
+# Expand search results with adjacent content from the source document
 expanded_results = await client.expand_context(search_results)
 
-# Or specify a custom radius
-expanded_results = await client.expand_context(search_results, radius=2)
-
-# The expanded results contain chunks with combined content from adjacent chunks
+# The expanded results contain chunks with combined content
 for result in expanded_results:
-    print(f"Expanded content: {result.content}")  # Now includes before/after chunks
+    print(f"Expanded content: {result.content}")
 ```
 
-**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
+Context expansion uses your configuration settings:
 
-This is automatically used by the QA system when `processing.context_chunk_radius > 0` (configured in `haiku.rag.yaml`) to provide better answers with more complete context.
+- **text_context_radius**: For text content (paragraphs), includes N chunks before and after
+- **max_context_items**: Limits how many document items can be included
+- **max_context_chars**: Hard limit on total characters
+
+**Type-aware expansion**: Structural content (tables, code blocks, lists) automatically expands to include the complete structure, regardless of how it was split during chunking.
+
+**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
 
 ## Question Answering
 

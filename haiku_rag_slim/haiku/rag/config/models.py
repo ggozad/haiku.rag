@@ -110,7 +110,9 @@ class ConversionOptions(BaseModel):
 
 class ProcessingConfig(BaseModel):
     chunk_size: int = 256
-    context_chunk_radius: int = 0
+    text_context_radius: int = 0
+    max_context_items: int = 25
+    max_context_chars: int = 10000
     converter: str = "docling-local"
     chunker: str = "docling-local"
     chunker_type: str = "hybrid"
