@@ -463,14 +463,14 @@ wheels = [
 
 [[package]]
 name = "click"
-version = "8.3.1"
+version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5dfa22e22ed02566950fbfbcdc20311993483657a5c0/click-8.3.1.tar.gz", hash = "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a", size = 295065, upload-time = "2025-11-15T20:45:42.706Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593, upload-time = "2024-12-21T18:38:44.339Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/98/78/01c019cdb5d6498122777c1a43056ebb3ebfeef2076d9d026bfe15583b2b/click-8.3.1-py3-none-any.whl", hash = "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6", size = 108274, upload-time = "2025-11-15T20:45:41.139Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl", hash = "sha256:63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2", size = 98188, upload-time = "2024-12-21T18:38:41.666Z" },
 ]
 
 [[package]]
@@ -1279,10 +1279,10 @@ dev = [
     { name = "haiku-rag-evals", editable = "evaluations" },
     { name = "mkdocs", specifier = ">=1.6.1" },
     { name = "mkdocs-material", specifier = ">=9.7.0" },
-    { name = "pre-commit", specifier = ">=4.4.0" },
+    { name = "pre-commit", specifier = ">=4.5.0" },
     { name = "pyright", specifier = ">=1.1.407" },
-    { name = "pytest", specifier = ">=9.0.1" },
-    { name = "pytest-asyncio", specifier = ">=1.1.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.14.8" },
 ]
@@ -1387,12 +1387,12 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.2.0" },
-    { name = "textual", marker = "extra == 'inspector'", specifier = ">=1.0.0" },
-    { name = "textual-image", marker = "extra == 'inspector'", specifier = ">=0.8.1" },
+    { name = "textual", marker = "extra == 'inspector'", specifier = ">=6.0.0" },
+    { name = "textual-image", marker = "extra == 'inspector'", specifier = ">=0.8.4" },
     { name = "typer", specifier = ">=0.19.2,<0.20.0" },
     { name = "voyageai", marker = "extra == 'voyageai'", specifier = ">=0.3.5" },
     { name = "watchfiles", specifier = ">=1.1.1" },
-    { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a6" },
+    { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a7" },
 ]
 provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "inspector", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 
@@ -3090,7 +3090,7 @@ wheels = [
 
 [[package]]
 name = "pre-commit"
-version = "4.4.0"
+version = "4.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cfgv" },
@@ -3099,9 +3099,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "virtualenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/49/7845c2d7bf6474efd8e27905b51b11e6ce411708c91e829b93f324de9929/pre_commit-4.4.0.tar.gz", hash = "sha256:f0233ebab440e9f17cabbb558706eb173d19ace965c68cdce2c081042b4fab15", size = 197501, upload-time = "2025-11-08T21:12:11.607Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/9b/6a4ffb4ed980519da959e1cf3122fc6cb41211daa58dbae1c73c0e519a37/pre_commit-4.5.0.tar.gz", hash = "sha256:dc5a065e932b19fc1d4c653c6939068fe54325af8e741e74e88db4d28a4dd66b", size = 198428, upload-time = "2025-11-22T21:02:42.304Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/11/574fe7d13acf30bfd0a8dd7fa1647040f2b8064f13f43e8c963b1e65093b/pre_commit-4.4.0-py2.py3-none-any.whl", hash = "sha256:b35ea52957cbf83dcc5d8ee636cbead8624e3a15fbfa61a370e42158ac8a5813", size = 226049, upload-time = "2025-11-08T21:12:10.228Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/c4/b2d28e9d2edf4f1713eb3c29307f1a63f3d67cf09bdda29715a36a68921a/pre_commit-4.5.0-py2.py3-none-any.whl", hash = "sha256:25e2ce09595174d9c97860a95609f9f852c0614ba602de3561e267547f2335e1", size = 226429, upload-time = "2025-11-22T21:02:40.836Z" },
 ]
 
 [[package]]
@@ -3739,7 +3739,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "9.0.1"
+version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -3748,9 +3748,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/07/56/f013048ac4bc4c1d9be45afd4ab209ea62822fb1598f40687e6bf45dcea4/pytest-9.0.1.tar.gz", hash = "sha256:3e9c069ea73583e255c3b21cf46b8d3c56f6e3a1a8f6da94ccb0fcf57b9d73c8", size = 1564125, upload-time = "2025-11-12T13:05:09.333Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901, upload-time = "2025-12-06T21:30:51.014Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/8b/6300fb80f858cda1c51ffa17075df5d846757081d11ab4aa35cef9e6258b/pytest-9.0.1-py3-none-any.whl", hash = "sha256:67be0030d194df2dfa7b556f2e56fb3c3315bd5c8822c6951162b92b32ce7dad", size = 373668, upload-time = "2025-11-12T13:05:07.379Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801, upload-time = "2025-12-06T21:30:49.154Z" },
 ]
 
 [[package]]
@@ -5283,7 +5283,7 @@ wheels = [
 
 [[package]]
 name = "zeroentropy"
-version = "0.1.0a6"
+version = "0.1.0a7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -5293,9 +5293,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/14/05c8caaa25ae64008c2f5b021cefd30276f00845d99bab4763be300da93a/zeroentropy-0.1.0a6.tar.gz", hash = "sha256:04f38e7b40f39cfdd4bb16df0ab0b18d8f33d516c1e9a39e0494a5fb7fba358d", size = 112726, upload-time = "2025-07-08T01:51:42.796Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/39/808159a0f96c38fc9bea57daf0e9f7851dee3d425fbe098805baf755fe41/zeroentropy-0.1.0a7.tar.gz", hash = "sha256:27ad41684aa1469404230fa189d8ed5756fab15bfe0b51475bc5d71f4ae7ca59", size = 119392, upload-time = "2025-11-24T23:36:35.413Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/7e/594e9ec5cda6d8f4dc249c5ca0c6b31b19886eafedcea6c41a2400a2a7b9/zeroentropy-0.1.0a6-py3-none-any.whl", hash = "sha256:0caa6c4a450af80892d42848036eea0b766e3fe0bf6a097a613ab9403fdf5ad6", size = 101501, upload-time = "2025-07-08T01:51:41.527Z" },
+    { url = "https://files.pythonhosted.org/packages/55/ee/b5d8a88b9262c7d5d7958b80988c02ff309471d8be9caa390b7e67fdcc7d/zeroentropy-0.1.0a7-py3-none-any.whl", hash = "sha256:5bfe9d94914f5b5999f68f842eea1b78f66b6f8cda7f224f5fe237515b9841e0", size = 106209, upload-time = "2025-11-24T23:36:33.889Z" },
 ]
 
 [[package]]

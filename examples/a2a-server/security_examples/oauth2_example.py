@@ -36,7 +36,7 @@ import os
 from pathlib import Path
 
 from haiku_rag_a2a.a2a import create_a2a_app
-from jose import JWTError, jwt
+from jose import JWTError, jwt  # pyright: ignore[reportMissingModuleSource]
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.status import (
