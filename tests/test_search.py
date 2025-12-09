@@ -225,8 +225,9 @@ async def test_search_graceful_degradation(temp_db_path):
     custom_chunks = [
         Chunk(content="Custom chunk without docling metadata", metadata={}),
     ]
+    docling_doc = await client.convert("Document with custom chunks")
     await client.import_document(
-        content="Document with custom chunks",
+        docling_document=docling_doc,
         chunks=custom_chunks,
         uri="https://example.com/custom.html",
     )

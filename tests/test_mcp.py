@@ -148,7 +148,7 @@ async def test_mcp_search_documents():
             assert result[0].content == "Result 1"
             assert result[0].score == 0.9
             assert result[1].document_id == "doc2"
-            mock_rag.search.assert_called_once_with("test query", 5)
+            mock_rag.search.assert_called_once_with("test query", limit=5)
 
 
 @pytest.mark.asyncio

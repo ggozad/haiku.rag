@@ -239,11 +239,11 @@ def search(
     query: str = typer.Argument(
         help="The search query to use",
     ),
-    limit: int = typer.Option(
-        5,
+    limit: int | None = typer.Option(
+        None,
         "--limit",
         "-l",
-        help="Maximum number of results to return",
+        help="Maximum number of results to return (default: config search.default_limit)",
     ),
     filter: str | None = typer.Option(
         None,

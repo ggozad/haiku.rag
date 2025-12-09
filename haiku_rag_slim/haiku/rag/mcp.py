@@ -79,11 +79,13 @@ def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
             return None
 
     @mcp.tool()
-    async def search_documents(query: str, limit: int = 5) -> list[SearchResult]:
+    async def search_documents(
+        query: str, limit: int | None = None
+    ) -> list[SearchResult]:
         """Search the RAG system for documents using hybrid search (vector similarity + full-text search)."""
         try:
             async with HaikuRAG(db_path, config=config) as rag:
-                return await rag.search(query, limit)
+                return await rag.search(query, limit=limit)
         except Exception:
             return []
 

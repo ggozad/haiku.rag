@@ -834,7 +834,7 @@ class HaikuRAG:
     async def search(
         self,
         query: str,
-        limit: int = 5,
+        limit: int | None = None,
         search_type: str = "hybrid",
         filter: str | None = None,
     ) -> list[SearchResult]:
@@ -842,13 +842,16 @@ class HaikuRAG:
 
         Args:
             query: The search query string.
-            limit: Maximum number of results to return.
+            limit: Maximum number of results to return. Defaults to config.search.default_limit.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
 
         Returns:
             List of SearchResult objects ordered by relevance.
         """
+        if limit is None:
+            limit = self._config.search.limit
+
         reranker = get_reranker(config=self._config)
 
         if reranker is None:

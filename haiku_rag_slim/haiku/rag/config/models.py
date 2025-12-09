@@ -123,6 +123,7 @@ class ProcessingConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
+    limit: int = 5
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
     vector_refine_factor: int = 30
 

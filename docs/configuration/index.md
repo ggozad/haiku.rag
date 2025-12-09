@@ -99,6 +99,7 @@ research:
   max_concurrency: 1
 
 search:
+  limit: 5                     # Default number of results to return
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
 

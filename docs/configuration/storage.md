@@ -57,16 +57,18 @@ haiku.rag intelligently handles database creation based on operation type:
 
 This prevents the common mistake where a search query accidentally creates an empty database. To initialize your database, simply add your first document using `haiku-rag add` or `haiku-rag add-src`.
 
-## Vector Indexing
+## Search Settings
 
-Configure vector indexing behavior for efficient similarity search:
+Configure search behavior:
 
 ```yaml
 search:
+  limit: 5                     # Default number of results to return
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30     # Re-ranking factor for accuracy
 ```
 
+- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and API. Default: 5
 - **vector_index_metric**: Distance metric for vector similarity:
   - `cosine`: Cosine similarity (default, best for most embeddings)
   - `l2`: Euclidean distance

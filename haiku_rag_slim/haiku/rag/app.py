@@ -265,7 +265,9 @@ class HaikuRAGApp:
                     f"[yellow]Document with id {doc_id} not found.[/yellow]"
                 )
 
-    async def search(self, query: str, limit: int = 5, filter: str | None = None):
+    async def search(
+        self, query: str, limit: int | None = None, filter: str | None = None
+    ):
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             results = await self.client.search(query, limit=limit, filter=filter)
             if not results:

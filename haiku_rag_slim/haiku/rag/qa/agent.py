@@ -39,7 +39,7 @@ class QuestionAnswerAgent:
         async def search_documents(
             ctx: RunContext[Dependencies],
             query: str,
-            limit: int = 5,
+            limit: int | None = None,
         ) -> str:
             """Search the knowledge base for relevant documents.
 

@@ -171,7 +171,7 @@ def test_search():
 
         assert result.exit_code == 0
         mock_app_instance.search.assert_called_once_with(
-            query="query", limit=5, filter=None
+            query="query", limit=None, filter=None
         )
 
 

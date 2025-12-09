@@ -101,7 +101,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
             @plan_agent.tool
             async def gather_context(
-                ctx2: RunContext[AgentDepsT], query: str, limit: int = 6
+                ctx2: RunContext[AgentDepsT], query: str, limit: int | None = None
             ) -> str:
                 results = await ctx2.deps.client.search(query, limit=limit)
                 results = await ctx2.deps.client.expand_context(results)
@@ -227,7 +227,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 
     @agent.tool
     async def search_and_answer(
-        ctx2: RunContext[AgentDepsT], query: str, limit: int = 5
+        ctx2: RunContext[AgentDepsT], query: str, limit: int | None = None
     ) -> str:
         """Search the knowledge base for relevant documents.
 
