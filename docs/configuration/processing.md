@@ -11,11 +11,6 @@ processing:
   # Chunking configuration
   chunk_size: 256                            # Maximum tokens per chunk
 
-  # Context expansion for search results
-  text_context_radius: 0                     # Radius for text chunk expansion
-  max_context_items: 25                      # Maximum items in expanded context
-  max_context_chars: 10000                   # Maximum characters in expanded context
-
   # Converter selection
   converter: docling-local                   # docling-local or docling-serve
 
@@ -137,27 +132,14 @@ processing:
 - `false`: Tables as narrative text ("Value A, Column 2 = Value B")
 - `true`: Tables as markdown (preserves table structure)
 
-### Chunk Size and Context Expansion
+### Chunk Size
 
 ```yaml
 processing:
-  # Chunk size for document processing
-  chunk_size: 256
-
-  # Context expansion settings
-  # Controls how search results are expanded with surrounding content
-  text_context_radius: 0     # Chunks before/after to include for text content
-  max_context_items: 25      # Maximum doc items to include in expansion
-  max_context_chars: 10000   # Maximum characters in expanded content
+  chunk_size: 256  # Maximum tokens per chunk
 ```
 
-Context expansion enriches search results with surrounding content from the source document:
-
-- **text_context_radius**: For text content (paragraphs), includes N chunks before and after. Set to 0 to disable expansion (default).
-- **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context.
-- **max_context_chars**: Hard limit on total characters in expanded content.
-
-Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked. For example, if a table was split across multiple chunks, expansion retrieves the complete table.
+Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](storage.md#search-settings).
 
 ## File Monitoring
 

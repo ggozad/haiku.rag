@@ -100,6 +100,9 @@ research:
 
 search:
   limit: 5                     # Default number of results to return
+  context_radius: 0            # DocItems before/after to include for text content
+  max_context_items: 25        # Maximum items in expanded context
+  max_context_chars: 10000     # Maximum characters in expanded context
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
 
@@ -116,9 +119,6 @@ processing:
   chunker: docling-local    # docling-local or docling-serve
   chunker_type: hybrid      # hybrid or hierarchical
   chunk_size: 256
-  text_context_radius: 0
-  max_context_items: 25
-  max_context_chars: 10000
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
   chunking_use_markdown_tables: false

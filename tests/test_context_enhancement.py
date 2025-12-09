@@ -81,8 +81,8 @@ def small_chunk_config() -> AppConfig:
     """Config with small chunk size to force splitting."""
     config = AppConfig()
     config.processing.chunk_size = 32
-    config.processing.max_context_items = 25
-    config.processing.max_context_chars = 10000
+    config.search.max_context_items = 25
+    config.search.max_context_chars = 10000
     return config
 
 
@@ -228,7 +228,7 @@ async def test_text_expansion_uses_radius(temp_db_path):
     """Text content expansion should use radius, not structural boundaries."""
     config = AppConfig()
     config.processing.chunk_size = 32
-    config.processing.text_context_radius = 1  # Small radius
+    config.search.context_radius = 1  # Small radius
 
     # Create a document with longer paragraphs that will split
     doc = DoclingDocument(name="text_test")
@@ -312,7 +312,7 @@ async def test_max_items_limit_caps_expansion(temp_db_path):
     """Expansion should respect max_context_items limit."""
     config = AppConfig()
     config.processing.chunk_size = 32
-    config.processing.max_context_items = 2  # Very restrictive
+    config.search.max_context_items = 2  # Very restrictive
 
     docling_doc = create_list_document()
 
@@ -410,7 +410,7 @@ async def test_expand_context_radius_zero(temp_db_path):
 async def test_expand_context_multiple_documents(temp_db_path):
     """Test expand_context with results from multiple documents."""
     config = AppConfig()
-    config.processing.text_context_radius = 1
+    config.search.context_radius = 1
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         # Create first document with manual chunks
@@ -471,7 +471,7 @@ async def test_expand_context_multiple_documents(temp_db_path):
 async def test_expand_context_merges_overlapping_chunks(temp_db_path):
     """Test that overlapping expanded chunks are merged into one."""
     config = AppConfig()
-    config.processing.text_context_radius = 1
+    config.search.context_radius = 1
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         # Create document with 5 chunks
@@ -526,7 +526,7 @@ async def test_expand_context_merges_overlapping_chunks(temp_db_path):
 async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
     """Test that non-overlapping expanded chunks remain separate."""
     config = AppConfig()
-    config.processing.text_context_radius = 1
+    config.search.context_radius = 1
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         # Create document with chunks far apart
@@ -591,7 +591,7 @@ async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
 async def test_expand_context_with_docling_merges_overlapping(temp_db_path):
     """Test that expand_context with DoclingDocument merges overlapping results."""
     config = AppConfig()
-    config.processing.text_context_radius = 3
+    config.search.context_radius = 3
 
     markdown_content = """# Chapter 1
 
@@ -646,7 +646,7 @@ This is paragraph four about topic C.
 async def test_expand_context_docling_merges_metadata(temp_db_path):
     """Test that expand_context properly merges metadata from multiple results."""
     config = AppConfig()
-    config.processing.text_context_radius = 10
+    config.search.context_radius = 10
 
     markdown_content = """# Introduction
 

@@ -59,16 +59,32 @@ This prevents the common mistake where a search query accidentally creates an em
 
 ## Search Settings
 
-Configure search behavior:
+Configure search behavior and context expansion:
 
 ```yaml
 search:
   limit: 5                     # Default number of results to return
+  context_radius: 0            # DocItems before/after to include for text content
+  max_context_items: 25        # Maximum items in expanded context
+  max_context_chars: 10000     # Maximum characters in expanded context
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30     # Re-ranking factor for accuracy
 ```
 
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and API. Default: 5
+
+### Context Expansion
+
+Context expansion enriches search results with surrounding content from the source document:
+
+- **context_radius**: For text content (paragraphs), includes N DocItems before and after. Set to 0 to disable expansion (default).
+- **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context.
+- **max_context_chars**: Hard limit on total characters in expanded content.
+
+Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked. For example, if a table was split across multiple chunks, expansion retrieves the complete table.
+
+### Vector Indexing
+
 - **vector_index_metric**: Distance metric for vector similarity:
   - `cosine`: Cosine similarity (default, best for most embeddings)
   - `l2`: Euclidean distance

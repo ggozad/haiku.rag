@@ -880,8 +880,8 @@ class HaikuRAG:
 
         Expansion is type-aware based on content:
         - Tables, code blocks, and lists expand to include complete structures
-        - Text content uses the configured radius (text_context_radius)
-        - Expansion is limited by max_context_items and max_context_chars
+        - Text content uses the configured radius (search.context_radius)
+        - Expansion is limited by search.max_context_items and search.max_context_chars
 
         Args:
             search_results: List of SearchResult objects from search.
@@ -889,9 +889,9 @@ class HaikuRAG:
         Returns:
             List of SearchResult objects with expanded content and resolved provenance.
         """
-        radius = self._config.processing.text_context_radius
-        max_items = self._config.processing.max_context_items
-        max_chars = self._config.processing.max_context_chars
+        radius = self._config.search.context_radius
+        max_items = self._config.search.max_context_items
+        max_chars = self._config.search.max_context_chars
 
         # Group by document_id for efficient processing
         document_groups: dict[str | None, list[SearchResult]] = {}

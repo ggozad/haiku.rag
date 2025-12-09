@@ -45,9 +45,10 @@ def build_experiment_metadata(
         "embedder_model": config.embeddings.model.name,
         "embedder_dim": config.embeddings.model.vector_dim,
         "chunk_size": config.processing.chunk_size,
-        "text_context_radius": config.processing.text_context_radius,
-        "max_context_items": config.processing.max_context_items,
-        "max_context_chars": config.processing.max_context_chars,
+        "search_limit": config.search.limit,
+        "context_radius": config.search.context_radius,
+        "max_context_items": config.search.max_context_items,
+        "max_context_chars": config.search.max_context_chars,
         "rerank_provider": config.reranking.model.provider
         if config.reranking.model
         else None,

@@ -110,9 +110,6 @@ class ConversionOptions(BaseModel):
 
 class ProcessingConfig(BaseModel):
     chunk_size: int = 256
-    text_context_radius: int = 0
-    max_context_items: int = 25
-    max_context_chars: int = 10000
     converter: str = "docling-local"
     chunker: str = "docling-local"
     chunker_type: str = "hybrid"
@@ -124,6 +121,9 @@ class ProcessingConfig(BaseModel):
 
 class SearchConfig(BaseModel):
     limit: int = 5
+    context_radius: int = 0
+    max_context_items: int = 25
+    max_context_chars: int = 10000
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
     vector_refine_factor: int = 30
 
