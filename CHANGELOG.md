@@ -55,7 +55,7 @@
 - **Search Config**: New settings in `search` section for search behavior and context expansion
   - `search.limit` - Default number of search results (default: 5). Used by CLI, MCP server, and API when no limit specified
   - `search.context_radius` - DocItems before/after to include for text content expansion (default: 0)
-  - `search.max_context_items` - Maximum items in expanded context (default: 25)
+  - `search.max_context_items` - Maximum items in expanded context (default: 10)
   - `search.max_context_chars` - Maximum characters in expanded context (default: 10000)
 - **Rebuild Performance**: Batched database writes during `rebuild` command reduce LanceDB versions by ~98%
   - All rebuild modes (FULL, RECHUNK, EMBED_ONLY) now batch writes across documents
