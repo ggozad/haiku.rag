@@ -1,4 +1,26 @@
-# QA and Research Configuration
+# Search and Question Answering
+
+## Search Settings
+
+Configure search behavior and context expansion:
+
+```yaml
+search:
+  limit: 5                     # Default number of results to return
+  context_radius: 0            # DocItems before/after to include for text content
+  max_context_items: 10        # Maximum items in expanded context
+  max_context_chars: 10000     # Maximum characters in expanded context
+```
+
+- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 5
+- **context_radius**: For text content (paragraphs), includes N DocItems before and after. Set to 0 to disable expansion (default).
+- **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context. Default: 10.
+- **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
+
+Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked.
+
+!!! note "Reranking behavior"
+    When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.
 
 ## Question Answering Configuration
 
@@ -43,29 +65,3 @@ research:
 - **max_concurrency**: Sub-questions searched in parallel per iteration (default: 1)
 
 The research workflow plans sub-questions, searches in parallel batches, evaluates findings, and iterates until reaching the confidence threshold or max iterations.
-
-## AG-UI Server Configuration
-
-Configure the AG-UI HTTP server for streaming graph execution events:
-
-```yaml
-agui:
-  host: "0.0.0.0"
-  port: 8000
-  cors_origins: ["*"]
-  cors_credentials: true
-  cors_methods: ["GET", "POST", "OPTIONS"]
-  cors_headers: ["*"]
-```
-
-Start the AG-UI server with:
-
-```bash
-haiku-rag serve --agui
-```
-
-The server exposes:
-- `GET /health` - Health check endpoint
-- `POST /v1/agent/stream` - Research graph streaming endpoint (Server-Sent Events)
-
-See [Server Mode](../server.md) for more details.

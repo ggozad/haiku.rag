@@ -101,7 +101,7 @@ research:
 search:
   limit: 5                     # Default number of results to return
   context_radius: 0            # DocItems before/after to include for text content
-  max_context_items: 25        # Maximum items in expanded context
+  max_context_items: 10        # Maximum items in expanded context
   max_context_chars: 10000     # Maximum characters in expanded context
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
@@ -191,7 +191,7 @@ This is useful for:
 
 For detailed configuration of specific topics, see:
 
-- **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, QA, reranking)
-- **[QA and Research](qa-research.md)** - Question answering and research workflow configuration
-- **[Storage](storage.md)** - Database, remote storage, and vector indexing
+- **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, reranking)
+- **[Search and Question Answering](qa-research.md)** - Search settings, question answering, and research workflows
 - **[Document Processing](processing.md)** - Document conversion, chunking, and file monitoring
+- **[Storage](storage.md)** - Database, remote storage, and vector indexing

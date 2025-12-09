@@ -62,12 +62,13 @@ nav:
       - Configuration:
           - configuration/index.md
           - Providers: configuration/providers.md
-          - QA and Research: configuration/qa-research.md
+          - Search and Question Answering: configuration/qa-research.md
           - Document Processing: configuration/processing.md
           - Storage: configuration/storage.md
       - CLI: cli.md
       - Python: python.md
       - Custom Pipelines: custom-pipelines.md
+      - Tuning: tuning.md
       - Agents: agents.md
       - Server: server.md
       - Remote processing: remote-processing.md

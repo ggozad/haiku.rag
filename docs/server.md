@@ -143,9 +143,16 @@ agui:
   port: 8000
   cors_origins: ["*"]
   cors_credentials: true
+  cors_methods: ["GET", "POST", "OPTIONS"]
+  cors_headers: ["*"]
 ```
 
-See [Configuration](configuration/qa-research.md#ag-ui-server-configuration) for all available options.
+- **host**: Bind address (default: `0.0.0.0`)
+- **port**: Server port (default: `8000`)
+- **cors_origins**: Allowed CORS origins (default: `["*"]`)
+- **cors_credentials**: Allow credentials in CORS requests (default: `true`)
+- **cors_methods**: Allowed HTTP methods (default: `["GET", "POST", "OPTIONS"]`)
+- **cors_headers**: Allowed headers (default: `["*"]`)
 
 ### Using the Streaming Endpoints
 
