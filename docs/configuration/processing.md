@@ -35,6 +35,7 @@ processing:
 
     # Image settings
     images_scale: 2.0                        # Image scale factor
+    generate_picture_images: false           # Include embedded images in output
 ```
 
 ### Conversion Options
@@ -73,10 +74,12 @@ conversion_options:
 
 ```yaml
 conversion_options:
-  images_scale: 2.0  # Image resolution scale factor
+  images_scale: 2.0               # Image resolution scale factor
+  generate_picture_images: false  # Include embedded images in output
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
+- **generate_picture_images**: When `true`, embedded images (figures, diagrams) are included as base64-encoded data in the document. When `false` (default), images are excluded to reduce chunk size and avoid context bloat.
 
 ### Local vs Remote Processing
 

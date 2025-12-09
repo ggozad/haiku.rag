@@ -79,6 +79,7 @@ class DoclingLocalConverter(DocumentConverter):
             do_table_structure=opts.do_table_structure,
             images_scale=opts.images_scale,
             generate_page_images=True,
+            generate_picture_images=opts.generate_picture_images,
             table_structure_options=TableStructureOptions(
                 do_cell_matching=opts.table_cell_matching,
                 mode=(

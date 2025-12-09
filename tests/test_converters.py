@@ -237,6 +237,45 @@ class TestDoclingLocalConverter:
         assert converter.config.processing.conversion_options.table_mode == "fast"
         assert converter.config.processing.conversion_options.images_scale == 3.0
 
+    @pytest.mark.asyncio
+    async def test_convert_pdf_without_picture_images(self, config):
+        """Test PDF conversion excludes embedded images by default."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_picture_images = False
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that pictures don't have image data
+        for picture in doc.pictures:
+            assert picture.image is None, (
+                "Pictures should not have image data when generate_picture_images=False"
+            )
+
+    @pytest.mark.asyncio
+    async def test_convert_pdf_with_picture_images(self, config):
+        """Test PDF conversion includes embedded images when enabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_picture_images = True
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that at least some pictures have image data
+        pictures_with_images = [p for p in doc.pictures if p.image is not None]
+        if doc.pictures:
+            assert len(pictures_with_images) > 0, (
+                "Pictures should have image data when generate_picture_images=True"
+            )
+
 
 class TestDoclingServeConverter:
     """Tests for DoclingServeConverter (mocked)."""

@@ -88,6 +88,7 @@ class DoclingServeConverter(DocumentConverter):
                 "table_mode": opts.table_mode,
                 "table_cell_matching": str(opts.table_cell_matching).lower(),
                 "images_scale": str(opts.images_scale),
+                "generate_picture_images": str(opts.generate_picture_images).lower(),
             }
 
             if opts.ocr_lang:

@@ -106,6 +106,7 @@ class ConversionOptions(BaseModel):
 
     # Image options
     images_scale: float = 2.0
+    generate_picture_images: bool = False
 
 
 class ProcessingConfig(BaseModel):
