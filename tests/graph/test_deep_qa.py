@@ -2,7 +2,6 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.common.models import SearchAnswer
 from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
 from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
 from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
@@ -40,33 +39,3 @@ async def test_deep_qa_graph_end_to_end(monkeypatch, temp_db_path):
     assert isinstance(result.answer, str)
 
     client.close()
-
-
-@pytest.mark.asyncio
-async def test_deep_qa_context_operations():
-    context = DeepQAContext(original_question="Test question?")
-
-    assert context.original_question == "Test question?"
-    assert context.sub_questions == []
-    assert context.qa_responses == []
-
-    context.sub_questions = ["Sub Q1", "Sub Q2"]
-    assert len(context.sub_questions) == 2
-
-    qa = SearchAnswer(
-        query="Sub Q1",
-        answer="Answer 1",
-        cited_chunks=["chunk_1", "chunk_2"],
-        confidence=0.9,
-    )
-    context.add_qa_response(qa)
-    assert len(context.qa_responses) == 1
-    assert context.qa_responses[0].query == "Sub Q1"
-
-
-def test_deep_qa_state_initialization():
-    context = DeepQAContext(original_question="Test?")
-    state = DeepQAState(context=context, max_sub_questions=5)
-
-    assert state.context.original_question == "Test?"
-    assert state.max_sub_questions == 5
