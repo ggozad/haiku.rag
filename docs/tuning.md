@@ -164,7 +164,7 @@ Reranking retrieves more candidates than needed, then uses a cross-encoder to re
 reranking:
   model:
     provider: mxbai  # or cohere, zeroentropy, vllm
-    name: mxbai-rerank-base-v1
+    name: mixedbread-ai/mxbai-rerank-base-v2
 ```
 
 **When to use reranking:**
@@ -291,7 +291,7 @@ search:
 reranking:
   model:
     provider: mxbai
-    name: mxbai-rerank-base-v1
+    name: mixedbread-ai/mxbai-rerank-base-v2
 ```
 
 ### Long-Form Content (Articles, Reports)
