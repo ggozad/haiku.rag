@@ -61,7 +61,7 @@ Press `c` while viewing a chunk to open the context expansion modal:
 
 - Shows the expanded context that would be provided to the QA agent
 - Type-aware expansion: tables, code blocks, and lists expand to their complete structures
-- Text content expands based on `text_context_radius` setting
+- Text content expands based on `search.context_radius` setting
 - Includes metadata like source document, content type, and relevance score
 - Press `Esc` to close the modal
 

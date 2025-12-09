@@ -329,9 +329,9 @@ for result in expanded_results:
 
 Context expansion uses your configuration settings:
 
-- **text_context_radius**: For text content (paragraphs), includes N chunks before and after
-- **max_context_items**: Limits how many document items can be included
-- **max_context_chars**: Hard limit on total characters
+- **search.context_radius**: For text content (paragraphs), includes N DocItems before and after
+- **search.max_context_items**: Limits how many document items can be included
+- **search.max_context_chars**: Hard limit on total characters
 
 **Type-aware expansion**: Structural content (tables, code blocks, lists) automatically expands to include the complete structure, regardless of how it was split during chunking.
 

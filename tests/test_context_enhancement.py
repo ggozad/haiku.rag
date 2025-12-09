@@ -391,7 +391,7 @@ async def test_search_result_get_primary_label():
 @pytest.mark.asyncio
 async def test_expand_context_radius_zero(temp_db_path):
     """Test expand_context with radius 0 returns original results."""
-    # Default config has text_context_radius=0
+    # Default config has context_radius=0
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content="Simple test content")
         assert doc.id is not None
