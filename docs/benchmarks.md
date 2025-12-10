@@ -104,18 +104,25 @@ For Wix, we use **Mean Average Precision (MAP)** as the primary metric since eac
 
 MAP rewards systems that rank relevant documents higher, not just finding them.
 
+In the following results the benchmarks have been run using both the plain text version of the Wix dataset (which has HTML tags stripped and no document structure) as well as the HTML version.
+Since the chunks in the HTML version are very small (typically a phrase) we use `chunk_radius=2` to tune the retrieval.
+
 ### MAP Results
 
-| Embedding Model            | Chunk size | MAP   | Reranker               |
-|----------------------------|------------|-------|------------------------|
-| `qwen3-embedding:4b`       | 256        | 0.43  | None                   |
-| `qwen3-embedding:4b`       | 512        | 0.45  | None                   |
+| Embedding Model            | Chunk size | MAP   | Reranker               | Notes                                                  |
+|----------------------------|------------|-------|------------------------|--------------------------------------------------------|
+| `qwen3-embedding:4b`       | 256        | 0.34  | None                   | html, `chunk-radius=2`                                 |
+| `qwen3-embedding:4b`       | 256        | 0.39  | None                   | html, `chunk-radius=2`, reranker=`mxbai-rerank-base-v2`|
+| `qwen3-embedding:4b`       | 256        | 0.43  | None                   | plain text, `chunk-radius=0`                           |
+| `qwen3-embedding:4b`       | 512        | 0.45  | None                   | plain text, `chunk-radius=0`                           |
 
 
 ## QA Accuracy
 
 And for QA accuracy,
 
-| Embedding Model            | Chunk size | QA Model                    | Accuracy | Reranker    |
-|----------------------------|------------|-----------------------------|----------|-------------|
-| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - no thinking | 0.74     | None        |
+| Embedding Model            | Chunk size | QA Model                    | Accuracy | Notes                                                   |
+|----------------------------|------------|-----------------------------|----------|---------------------------------------------------------|
+| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - no thinking | 0.74     | plain text, `chunk-radius=0`                            |
+| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - thinking    | 0.79     | html, `chunk-radius=2`                                  |
+| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - thinking    | 0.80     | html, `chunk-radius=2`, reranker=`mxbai-rerank-base-v2` |
