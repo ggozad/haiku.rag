@@ -1,42 +1,44 @@
 {
-    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
-    "name": "io.github.ggozad/haiku-rag",
-    "version": "{{VERSION}}",
-    "description": "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling",
-    "repository": {
-        "url": "https://github.com/ggozad/haiku.rag",
-        "source": "github"
-    },
-    "license": "MIT",
-    "keywords": [
-        "rag",
-        "lancedb",
-        "vector-database",
-        "embeddings",
-        "search",
-        "qa",
-        "research"
-    ],
-    "packages": [
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.ggozad/haiku-rag",
+  "version": "{{VERSION}}",
+  "description": "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling",
+  "repository": {
+    "url": "https://github.com/ggozad/haiku.rag",
+    "source": "github"
+  },
+  "license": "MIT",
+  "keywords": [
+    "rag",
+    "lancedb",
+    "vector-database",
+    "embeddings",
+    "search",
+    "qa",
+    "research",
+    "docling",
+    "pydantic-ai"
+  ],
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "haiku-rag",
+      "version": "{{VERSION}}",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
         {
-            "registryType": "pypi",
-            "registryBaseUrl": "https://pypi.org",
-            "identifier": "haiku-rag",
-            "version": "{{VERSION}}",
-            "runtimeHint": "uvx",
-            "runtimeArguments": [
-                {
-                    "type": "positional",
-                    "value": "serve"
-                },
-                {
-                    "type": "named",
-                    "name": "--mcp"
-                }
-            ],
-            "transport": {
-                "type": "stdio"
-            }
+          "type": "positional",
+          "value": "serve"
+        },
+        {
+          "type": "named",
+          "name": "--mcp"
         }
-    ]
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
 }
