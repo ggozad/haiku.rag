@@ -7,11 +7,16 @@ By default, `haiku.rag` uses a local LanceDB database:
 ```yaml
 storage:
   data_dir: /path/to/data  # Empty = use default platform location
+  auto_vacuum: true  # Enable automatic vacuuming after operations
   vacuum_retention_seconds: 86400  # Cleanup threshold in seconds
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
-- **vacuum_retention_seconds**: When documents are added/updated, old table versions older than this are removed. Default: 86400 seconds (1 day, safe for concurrent connections). Set to 0 for aggressive cleanup (removes all old versions immediately)
+- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update operations and database rebuilds. Set to `false` to disable automatic vacuuming and rely on manual `haiku-rag vacuum` commands only. Disabling can help avoid potential crashes in high-concurrency scenarios
+- **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
+
+!!! warning "Vacuum Retention Threshold"
+    The `vacuum_retention_seconds` value should be larger than the typical time it takes to process and write a document. If a concurrent operation is in progress while vacuum runs, setting this value too low can cause race conditions where vacuum removes table versions that an in-flight operation still needs. The default of 86400 seconds (1 day) is conservative and safe for most use cases.
 
 ## Remote Storage
 

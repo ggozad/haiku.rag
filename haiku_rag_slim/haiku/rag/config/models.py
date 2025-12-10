@@ -41,6 +41,7 @@ class EmbeddingModelConfig(BaseModel):
 
 class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
+    auto_vacuum: bool = True
     vacuum_retention_seconds: int = 86400
 
 

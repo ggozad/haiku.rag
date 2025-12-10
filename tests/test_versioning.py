@@ -174,3 +174,54 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     )
     assert final_versions >= 1, "Should have at least one version remaining"
     store.close()
+
+
+@pytest.mark.asyncio
+async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
+    """Test that auto_vacuum=False prevents automatic vacuum after operations."""
+    from haiku.rag.config import Config
+
+    # Disable auto-vacuum
+    monkeypatch.setattr(Config.storage, "auto_vacuum", False)
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        # Create multiple documents
+        for i in range(3):
+            await client.create_document(content=f"Test document {i}")
+
+        # Count versions - should accumulate without vacuum
+        doc_versions = len(list(client.store.documents_table.list_versions()))
+        chunk_versions = len(list(client.store.chunks_table.list_versions()))
+
+        # Without auto-vacuum, versions should accumulate (more than 3 from creates)
+        assert doc_versions >= 3, (
+            f"Without auto-vacuum, should have accumulated versions, got {doc_versions}"
+        )
+        assert chunk_versions >= 3, (
+            f"Without auto-vacuum, should have accumulated versions, got {chunk_versions}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
+    """Test that auto_vacuum=True (default) triggers vacuum after operations."""
+    from haiku.rag.config import Config
+
+    # Enable auto-vacuum with aggressive retention
+    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+    monkeypatch.setattr(Config.storage, "vacuum_retention_seconds", 0)
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        # Create multiple documents
+        for i in range(3):
+            await client.create_document(content=f"Test document {i}")
+
+    # After context exit, vacuum should have cleaned up
+    store = Store(temp_db_path, create=True)
+    final_versions = len(list(store.documents_table.list_versions()))
+
+    # With auto_vacuum=True and retention=0, should have minimal versions
+    assert final_versions <= 2, (
+        f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
+    )
+    store.close()

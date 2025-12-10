@@ -271,8 +271,9 @@ class HaikuRAG:
             # Batch create all chunks in a single operation
             await self.chunk_repository.create(chunks)
 
-            # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
+            # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
+            if self._config.storage.auto_vacuum:
+                asyncio.create_task(self.store.vacuum())
 
             return created_doc
         except Exception:
@@ -322,8 +323,9 @@ class HaikuRAG:
             # Batch create all chunks in a single operation
             await self.chunk_repository.create(chunks)
 
-            # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
+            # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
+            if self._config.storage.auto_vacuum:
+                asyncio.create_task(self.store.vacuum())
 
             return updated_doc
         except Exception:
@@ -1365,11 +1367,12 @@ class HaikuRAG:
             async for doc_id in self._rebuild_full(documents):
                 yield doc_id
 
-        # Final maintenance
-        try:
-            await self.store.vacuum()
-        except Exception:
-            pass
+        # Final maintenance if auto_vacuum enabled
+        if self._config.storage.auto_vacuum:
+            try:
+                await self.store.vacuum()
+            except Exception:
+                pass
 
     async def _rebuild_embed_only(
         self, documents: list[Document]

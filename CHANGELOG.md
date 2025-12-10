@@ -40,6 +40,10 @@
   - HTML format preserves document structure (headings, lists, sections) in DoclingDocument
   - Enables proper parsing of HTML content that was previously treated as plain text
 - **Inspector Context Modal**: Press `c` in the inspector to view expanded context for the selected chunk
+- **Auto-Vacuum Configuration**: New `storage.auto_vacuum` setting to control automatic vacuuming behavior
+  - When `true` (default), vacuum runs automatically after document create/update operations and rebuilds
+  - When `false`, vacuum only runs via explicit `haiku-rag vacuum` command
+  - Disabling can help avoid potential crashes in high-concurrency scenarios due to LanceDB race conditions
 
 ### Changed
 
