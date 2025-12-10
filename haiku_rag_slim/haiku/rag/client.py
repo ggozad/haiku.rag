@@ -6,8 +6,10 @@ import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING, overload
 from urllib.parse import urlparse
 
 import httpx
@@ -16,11 +18,16 @@ from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
-from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
+
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.graph.common.models import Citation
 
 logger = logging.getLogger(__name__)
 
@@ -86,25 +93,245 @@ class HaikuRAG:
         self.close()
         return False
 
-    async def _create_document_with_docling(
+    # =========================================================================
+    # Processing Primitives
+    # =========================================================================
+
+    @overload
+    async def convert(self, source: Path) -> "DoclingDocument": ...
+
+    @overload
+    async def convert(
+        self, source: str, *, format: str = "md"
+    ) -> "DoclingDocument": ...
+
+    async def convert(
+        self, source: Path | str, *, format: str = "md"
+    ) -> "DoclingDocument":
+        """Convert a file, URL, or text to DoclingDocument.
+
+        Args:
+            source: One of:
+                - Path: Local file path to convert
+                - str (URL): HTTP/HTTPS URL to download and convert
+                - str (text): Raw text content to convert
+            format: The format of text content ("md" or "html"). Defaults to "md".
+                Only used when source is raw text (not a file path or URL).
+                Files and URLs determine format from extension/content-type.
+
+        Returns:
+            DoclingDocument from the converted source.
+
+        Raises:
+            ValueError: If the file doesn't exist or has unsupported extension.
+            httpx.RequestError: If URL download fails.
+        """
+        converter = get_converter(self._config)
+
+        # Path object - convert file directly
+        if isinstance(source, Path):
+            if not source.exists():
+                raise ValueError(f"File does not exist: {source}")
+            if source.suffix.lower() not in converter.supported_extensions:
+                raise ValueError(f"Unsupported file extension: {source.suffix}")
+            return await converter.convert_file(source)
+
+        # String - check if URL or text
+        parsed = urlparse(source)
+
+        if parsed.scheme in ("http", "https"):
+            # URL - download and convert
+            async with httpx.AsyncClient() as http:
+                response = await http.get(source)
+                response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "").lower()
+                file_extension = self._get_extension_from_content_type_or_url(
+                    source, content_type
+                )
+
+                if file_extension not in converter.supported_extensions:
+                    raise ValueError(
+                        f"Unsupported content type/extension: {content_type}/{file_extension}"
+                    )
+
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", suffix=file_extension, delete=False
+                ) as temp_file:
+                    temp_file.write(response.content)
+                    temp_file.flush()
+                    temp_path = Path(temp_file.name)
+
+                try:
+                    return await converter.convert_file(temp_path)
+                finally:
+                    temp_path.unlink(missing_ok=True)
+
+        elif parsed.scheme == "file":
+            # file:// URI
+            file_path = Path(parsed.path)
+            if not file_path.exists():
+                raise ValueError(f"File does not exist: {file_path}")
+            if file_path.suffix.lower() not in converter.supported_extensions:
+                raise ValueError(f"Unsupported file extension: {file_path.suffix}")
+            return await converter.convert_file(file_path)
+
+        else:
+            # Treat as text content
+            return await converter.convert_text(source, format=format)
+
+    async def chunk(self, docling_document: "DoclingDocument") -> list[Chunk]:
+        """Chunk a DoclingDocument into Chunks.
+
+        Args:
+            docling_document: The DoclingDocument to chunk.
+
+        Returns:
+            List of Chunk objects (without embeddings, without document_id).
+            Each chunk has its `order` field set to its position in the list.
+        """
+        from haiku.rag.chunkers import get_chunker
+
+        chunker = get_chunker(self._config)
+        chunks = await chunker.chunk(docling_document)
+
+        # Set order for each chunk
+        for i, chunk in enumerate(chunks):
+            chunk.order = i
+
+        return chunks
+
+    async def _ensure_chunks_embedded(self, chunks: list[Chunk]) -> list[Chunk]:
+        """Ensure all chunks have embeddings, embedding any that don't.
+
+        Args:
+            chunks: List of chunks, some may have embeddings already.
+
+        Returns:
+            List of chunks with all embeddings populated.
+        """
+        from haiku.rag.embeddings import embed_chunks
+
+        # Find chunks that need embedding
+        chunks_to_embed = [c for c in chunks if c.embedding is None]
+
+        if not chunks_to_embed:
+            return chunks
+
+        # Embed chunks that don't have embeddings (returns new Chunk objects)
+        embedded = await embed_chunks(chunks_to_embed, self._config)
+
+        # Build result maintaining original order
+        embedded_map = {(c.content, c.order): c for c in embedded}
+        result = []
+        for chunk in chunks:
+            if chunk.embedding is not None:
+                result.append(chunk)
+            else:
+                result.append(embedded_map[(chunk.content, chunk.order)])
+
+        return result
+
+    async def _store_document_with_chunks(
         self,
-        docling_document,
-        uri: str | None = None,
-        title: str | None = None,
-        metadata: dict | None = None,
-        chunks: list[Chunk] | None = None,
+        document: Document,
+        chunks: list[Chunk],
     ) -> Document:
-        """Create a new document from DoclingDocument."""
-        content = docling_document.export_to_markdown()
-        document = Document(
-            content=content,
-            uri=uri,
-            title=title,
-            metadata=metadata or {},
-        )
-        return await self.document_repository._create_and_chunk(
-            document, docling_document, chunks
-        )
+        """Store a document with chunks, embedding any that lack embeddings.
+
+        Handles versioning/rollback on failure.
+
+        Args:
+            document: The document to store (will be created).
+            chunks: Chunks to store (will be embedded if lacking embeddings).
+
+        Returns:
+            The created Document instance with ID set.
+        """
+        import asyncio
+
+        # Ensure all chunks have embeddings before storing
+        chunks = await self._ensure_chunks_embedded(chunks)
+
+        # Snapshot table versions for versioned rollback (if supported)
+        versions = self.store.current_table_versions()
+
+        # Create the document
+        created_doc = await self.document_repository.create(document)
+
+        try:
+            assert created_doc.id is not None, (
+                "Document ID should not be None after creation"
+            )
+            # Set document_id and order for all chunks
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = created_doc.id
+                chunk.order = order
+
+            # Batch create all chunks in a single operation
+            await self.chunk_repository.create(chunks)
+
+            # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
+            if self._config.storage.auto_vacuum:
+                asyncio.create_task(self.store.vacuum())
+
+            return created_doc
+        except Exception:
+            # Roll back to the captured versions and re-raise
+            self.store.restore_table_versions(versions)
+            raise
+
+    async def _update_document_with_chunks(
+        self,
+        document: Document,
+        chunks: list[Chunk],
+    ) -> Document:
+        """Update a document and replace its chunks, embedding any that lack embeddings.
+
+        Handles versioning/rollback on failure.
+
+        Args:
+            document: The document to update (must have ID set).
+            chunks: Chunks to replace existing (will be embedded if lacking embeddings).
+
+        Returns:
+            The updated Document instance.
+        """
+        import asyncio
+
+        assert document.id is not None, "Document ID is required for update"
+
+        # Ensure all chunks have embeddings before storing
+        chunks = await self._ensure_chunks_embedded(chunks)
+
+        # Snapshot table versions for versioned rollback
+        versions = self.store.current_table_versions()
+
+        # Delete existing chunks before writing new ones
+        await self.chunk_repository.delete_by_document_id(document.id)
+
+        try:
+            # Update the document
+            updated_doc = await self.document_repository.update(document)
+
+            # Set document_id and order for all chunks
+            assert updated_doc.id is not None
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = updated_doc.id
+                chunk.order = order
+
+            # Batch create all chunks in a single operation
+            await self.chunk_repository.create(chunks)
+
+            # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
+            if self._config.storage.auto_vacuum:
+                asyncio.create_task(self.store.vacuum())
+
+            return updated_doc
+        except Exception:
+            # Roll back to the captured versions and re-raise
+            self.store.restore_table_versions(versions)
+            raise
 
     async def create_document(
         self,
@@ -112,38 +339,81 @@ class HaikuRAG:
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
-        chunks: list[Chunk] | None = None,
+        format: str = "md",
     ) -> Document:
-        """Create a new document with optional URI and metadata.
+        """Create a new document from text content.
+
+        Converts the content, chunks it, and generates embeddings.
 
         Args:
             content: The text content of the document.
             uri: Optional URI identifier for the document.
+            title: Optional title for the document.
             metadata: Optional metadata dictionary.
-            chunks: Optional list of pre-created chunks to use instead of generating new ones.
+            format: The format of the content ("md" or "html"). Defaults to "md".
+                This determines which parser is used to interpret the content structure.
+
+        Returns:
+            The created Document instance.
+        """
+        from haiku.rag.embeddings import embed_chunks
+
+        # Convert → Chunk → Embed using primitives
+        docling_document = await self.convert(content, format=format)
+        chunks = await self.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks, self._config)
+
+        # Store markdown export as content for better display/readability
+        # The original content is preserved in docling_document_json
+        stored_content = docling_document.export_to_markdown()
+
+        # Create document model
+        document = Document(
+            content=stored_content,
+            uri=uri,
+            title=title,
+            metadata=metadata or {},
+            docling_document_json=docling_document.model_dump_json(),
+            docling_version=docling_document.version,
+        )
+
+        # Store document and chunks
+        return await self._store_document_with_chunks(document, embedded_chunks)
+
+    async def import_document(
+        self,
+        docling_document: "DoclingDocument",
+        chunks: list[Chunk],
+        uri: str | None = None,
+        title: str | None = None,
+        metadata: dict | None = None,
+    ) -> Document:
+        """Import a pre-processed document with chunks.
+
+        Use this when document conversion, chunking, and embedding were done
+        externally and you want to store the results in haiku.rag.
+
+        Args:
+            docling_document: The DoclingDocument to import.
+            chunks: Pre-created chunks. Chunks without embeddings will be
+                automatically embedded.
+            uri: Optional URI identifier for the document.
+            title: Optional title for the document.
+            metadata: Optional metadata dictionary.
 
         Returns:
             The created Document instance.
         """
         document = Document(
-            content=content,
+            content=docling_document.export_to_markdown(),
             uri=uri,
             title=title,
             metadata=metadata or {},
+            docling_document_json=docling_document.model_dump_json(),
+            docling_version=docling_document.version,
         )
 
-        # Only create docling_document if we need to generate chunks
-        if chunks is None:
-            # Use converter to convert text
-            converter = get_converter(self._config)
-            docling_document = await converter.convert_text(content)
-        else:
-            # Chunks already provided, no conversion needed
-            docling_document = None
-
-        return await self.document_repository._create_and_chunk(
-            document, docling_document, chunks
-        )
+        return await self._store_document_with_chunks(document, chunks)
 
     async def create_document_from_source(
         self, source: str | Path, title: str | None = None, metadata: dict | None = None
@@ -223,6 +493,8 @@ class HaikuRAG:
         Raises:
             ValueError: If the file cannot be parsed or doesn't exist
         """
+        from haiku.rag.embeddings import embed_chunks
+
         metadata = metadata or {}
 
         converter = get_converter(self._config)
@@ -261,27 +533,33 @@ class HaikuRAG:
                 return await self.document_repository.update(existing_doc)
             return existing_doc
 
-        # Parse file only when content changed or new document
-        converter = get_converter(self._config)
-        docling_document = await converter.convert_file(source_path)
+        # Convert → Chunk → Embed using primitives
+        docling_document = await self.convert(source_path)
+        chunks = await self.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks, self._config)
 
         if existing_doc:
-            # Update existing document
+            # Update existing document and rechunk
             existing_doc.content = docling_document.export_to_markdown()
             existing_doc.metadata = metadata
+            existing_doc.docling_document_json = docling_document.model_dump_json()
+            existing_doc.docling_version = docling_document.version
             if title is not None:
                 existing_doc.title = title
-            return await self.document_repository._update_and_rechunk(
-                existing_doc, docling_document
+            return await self._update_document_with_chunks(
+                existing_doc, embedded_chunks
             )
         else:
-            # Create new document using DoclingDocument
-            return await self._create_document_with_docling(
-                docling_document=docling_document,
+            # Create new document
+            document = Document(
+                content=docling_document.export_to_markdown(),
                 uri=uri,
                 title=title,
                 metadata=metadata,
+                docling_document_json=docling_document.model_dump_json(),
+                docling_version=docling_document.version,
             )
+            return await self._store_document_with_chunks(document, embedded_chunks)
 
     async def _create_or_update_document_from_url(
         self, url: str, title: str | None = None, metadata: dict | None = None
@@ -304,6 +582,8 @@ class HaikuRAG:
             ValueError: If the content cannot be parsed
             httpx.RequestError: If URL request fails
         """
+        from haiku.rag.embeddings import embed_chunks
+
         metadata = metadata or {}
 
         converter = get_converter(self._config)
@@ -348,33 +628,45 @@ class HaikuRAG:
 
             # Create a temporary file with the appropriate extension
             with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=file_extension
+                mode="wb", suffix=file_extension, delete=False
             ) as temp_file:
                 temp_file.write(response.content)
-                temp_file.flush()  # Ensure content is written to disk
+                temp_file.flush()
                 temp_path = Path(temp_file.name)
 
-                # Parse the content using converter
-                docling_document = await converter.convert_file(temp_path)
+            try:
+                # Convert → Chunk → Embed using primitives
+                docling_document = await self.convert(temp_path)
+                chunks = await self.chunk(docling_document)
+                embedded_chunks = await embed_chunks(chunks, self._config)
+            finally:
+                temp_path.unlink(missing_ok=True)
 
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
 
             if existing_doc:
+                # Update existing document and rechunk
                 existing_doc.content = docling_document.export_to_markdown()
                 existing_doc.metadata = metadata
+                existing_doc.docling_document_json = docling_document.model_dump_json()
+                existing_doc.docling_version = docling_document.version
                 if title is not None:
                     existing_doc.title = title
-                return await self.document_repository._update_and_rechunk(
-                    existing_doc, docling_document
+                return await self._update_document_with_chunks(
+                    existing_doc, embedded_chunks
                 )
             else:
-                return await self._create_document_with_docling(
-                    docling_document=docling_document,
+                # Create new document
+                document = Document(
+                    content=docling_document.export_to_markdown(),
                     uri=url,
                     title=title,
                     metadata=metadata,
+                    docling_document_json=docling_document.model_dump_json(),
+                    docling_version=docling_document.version,
                 )
+                return await self._store_document_with_chunks(document, embedded_chunks)
 
     def _get_extension_from_content_type_or_url(
         self, url: str, content_type: str
@@ -429,78 +721,93 @@ class HaikuRAG:
         """
         return await self.document_repository.get_by_uri(uri)
 
-    async def update_document(self, document: Document) -> Document:
-        """Update an existing document."""
-        # Convert content to DoclingDocument
-        converter = get_converter(self._config)
-        docling_document = await converter.convert_text(document.content)
-
-        return await self.document_repository._update_and_rechunk(
-            document, docling_document
-        )
-
-    async def update_document_fields(
+    async def update_document(
         self,
         document_id: str,
         content: str | None = None,
         metadata: dict | None = None,
         chunks: list[Chunk] | None = None,
         title: str | None = None,
+        docling_document: "DoclingDocument | None" = None,
     ) -> Document:
-        """Update specific fields of a document by ID.
+        """Update a document by ID.
+
+        Updates specified fields. When content or docling_document is provided,
+        the document is rechunked and re-embedded. Updates to only metadata or title
+        skip rechunking for efficiency.
 
         Args:
-            document_id: The ID of the document to update
-            content: New content for the document
-            metadata: New metadata for the document
-            chunks: Custom chunks to use instead of auto-generating
-            title: New title for the document
+            document_id: The ID of the document to update.
+            content: New content (mutually exclusive with docling_document).
+            metadata: New metadata dict.
+            chunks: Custom chunks (will be embedded if missing embeddings).
+            title: New title.
+            docling_document: DoclingDocument to replace content (mutually exclusive with content).
 
         Returns:
             The updated Document instance.
+
+        Raises:
+            ValueError: If document not found, or if both content and docling_document
+                are provided.
         """
+        from haiku.rag.embeddings import embed_chunks
+
+        # Validate: content and docling_document are mutually exclusive
+        if content is not None and docling_document is not None:
+            raise ValueError(
+                "content and docling_document are mutually exclusive. "
+                "Provide one or the other, not both."
+            )
+
         # Fetch the existing document
         existing_doc = await self.get_document_by_id(document_id)
         if existing_doc is None:
             raise ValueError(f"Document with ID {document_id} not found")
 
-        # Update only the provided fields
-        if content is not None:
-            existing_doc.content = content
+        # Update metadata/title fields
         if title is not None:
             existing_doc.title = title
         if metadata is not None:
             existing_doc.metadata = metadata
 
-        # Determine if we need to rechunk
-        if content is not None or chunks is not None:
-            # Content changed or custom chunks provided - need to rechunk
-            if chunks is not None:
-                # Use custom chunks
-                # Delete existing chunks
-                await self.chunk_repository.delete_by_document_id(document_id)
-
-                # Update document metadata
-                await self.document_repository.update(existing_doc)
-
-                # Set document_id and order for all chunks
-                for order, chunk in enumerate(chunks):
-                    chunk.document_id = document_id
-                    chunk.order = order
-                # Batch create all chunks in a single operation
-                await self.chunk_repository.create(chunks)
-
-                return existing_doc
-            else:
-                # Auto-generate chunks from content
-                converter = get_converter(self._config)
-                docling_document = await converter.convert_text(existing_doc.content)
-                return await self.document_repository._update_and_rechunk(
-                    existing_doc, docling_document
-                )
-        else:
-            # Only metadata/title changed - no rechunking needed
+        # Only metadata/title update - no rechunking needed
+        if content is None and chunks is None and docling_document is None:
             return await self.document_repository.update(existing_doc)
+
+        # Custom chunks provided - use them as-is
+        if chunks is not None:
+            # Store docling data if provided
+            if docling_document is not None:
+                existing_doc.content = docling_document.export_to_markdown()
+                existing_doc.docling_document_json = docling_document.model_dump_json()
+                existing_doc.docling_version = docling_document.version
+            elif content is not None:
+                existing_doc.content = content
+
+            return await self._update_document_with_chunks(existing_doc, chunks)
+
+        # DoclingDocument provided without chunks - chunk and embed using primitives
+        if docling_document is not None:
+            existing_doc.content = docling_document.export_to_markdown()
+            existing_doc.docling_document_json = docling_document.model_dump_json()
+            existing_doc.docling_version = docling_document.version
+
+            new_chunks = await self.chunk(docling_document)
+            embedded_chunks = await embed_chunks(new_chunks, self._config)
+            return await self._update_document_with_chunks(
+                existing_doc, embedded_chunks
+            )
+
+        # Content provided without chunks - convert, chunk, and embed using primitives
+        existing_doc.content = content  # type: ignore[assignment]
+        converted_docling = await self.convert(existing_doc.content)
+        existing_doc.docling_document_json = converted_docling.model_dump_json()
+        existing_doc.docling_version = converted_docling.version
+
+        new_chunks = await self.chunk(converted_docling)
+        embedded_chunks = await embed_chunks(new_chunks, self._config)
+        return await self._update_document_with_chunks(existing_doc, embedded_chunks)
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""
@@ -529,191 +836,502 @@ class HaikuRAG:
     async def search(
         self,
         query: str,
-        limit: int = 5,
+        limit: int | None = None,
         search_type: str = "hybrid",
         filter: str | None = None,
-    ) -> list[tuple[Chunk, float]]:
+    ) -> list[SearchResult]:
         """Search for relevant chunks using the specified search method with optional reranking.
 
         Args:
             query: The search query string.
-            limit: Maximum number of results to return.
+            limit: Maximum number of results to return. Defaults to config.search.default_limit.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
 
         Returns:
-            List of (chunk, score) tuples ordered by relevance.
+            List of SearchResult objects ordered by relevance.
         """
-        # Get reranker if available
+        if limit is None:
+            limit = self._config.search.limit
+
         reranker = get_reranker(config=self._config)
 
         if reranker is None:
-            # No reranking - return direct search results
-            return await self.chunk_repository.search(query, limit, search_type, filter)
+            chunk_results = await self.chunk_repository.search(
+                query, limit, search_type, filter
+            )
+        else:
+            search_limit = limit * 10
+            raw_results = await self.chunk_repository.search(
+                query, search_limit, search_type, filter
+            )
+            chunks = [chunk for chunk, _ in raw_results]
+            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
 
-        # Get more initial results (10X) for reranking
-        search_limit = limit * 10
-        search_results = await self.chunk_repository.search(
-            query, search_limit, search_type, filter
-        )
-
-        # Apply reranking
-        chunks = [chunk for chunk, _ in search_results]
-        reranked_results = await reranker.rerank(query, chunks, top_n=limit)
-
-        # Return reranked results with scores from reranker
-        return reranked_results
+        return [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
 
     async def expand_context(
         self,
-        search_results: list[tuple[Chunk, float]],
-        radius: int | None = None,
-    ) -> list[tuple[Chunk, float]]:
-        """Expand search results with adjacent chunks, merging overlapping chunks.
+        search_results: list[SearchResult],
+    ) -> list[SearchResult]:
+        """Expand search results with adjacent content from the source document.
+
+        When DoclingDocument is available and results have doc_item_refs, expands
+        by finding adjacent DocItems with accurate bounding boxes and metadata.
+        Otherwise, falls back to chunk-based expansion using adjacent chunks.
+
+        Expansion is type-aware based on content:
+        - Tables, code blocks, and lists expand to include complete structures
+        - Text content uses the configured radius (search.context_radius)
+        - Expansion is limited by search.max_context_items and search.max_context_chars
 
         Args:
-            search_results: List of (chunk, score) tuples from search.
-            radius: Number of adjacent chunks to include before/after each chunk.
-                   If None, uses config.processing.context_chunk_radius.
+            search_results: List of SearchResult objects from search.
 
         Returns:
-            List of (chunk, score) tuples with expanded and merged context chunks.
+            List of SearchResult objects with expanded content and resolved provenance.
         """
-        if radius is None:
-            radius = self._config.processing.context_chunk_radius
-        if radius == 0:
-            return search_results
+        radius = self._config.search.context_radius
+        max_items = self._config.search.max_context_items
+        max_chars = self._config.search.max_context_chars
 
-        # Group chunks by document_id to handle merging within documents
-        document_groups = {}
-        for chunk, score in search_results:
-            doc_id = chunk.document_id
+        # Group by document_id for efficient processing
+        document_groups: dict[str | None, list[SearchResult]] = {}
+        for result in search_results:
+            doc_id = result.document_id
             if doc_id not in document_groups:
                 document_groups[doc_id] = []
-            document_groups[doc_id].append((chunk, score))
+            document_groups[doc_id].append(result)
 
-        results = []
+        expanded_results = []
 
-        for doc_id, doc_chunks in document_groups.items():
-            # Get all expanded ranges for this document
-            expanded_ranges = []
-            for chunk, score in doc_chunks:
-                adjacent_chunks = await self.chunk_repository.get_adjacent_chunks(
-                    chunk, radius
+        for doc_id, doc_results in document_groups.items():
+            if doc_id is None:
+                expanded_results.extend(doc_results)
+                continue
+
+            # Fetch the document to get DoclingDocument
+            doc = await self.get_document_by_id(doc_id)
+            if doc is None:
+                expanded_results.extend(doc_results)
+                continue
+
+            docling_doc = doc.get_docling_document()
+
+            # Check if we can use DoclingDocument-based expansion
+            has_docling = docling_doc is not None
+            has_refs = any(r.doc_item_refs for r in doc_results)
+
+            if has_docling and has_refs:
+                # Use DoclingDocument-based expansion
+                expanded = await self._expand_with_docling(
+                    doc_results,
+                    docling_doc,
+                    radius,
+                    max_items,
+                    max_chars,
                 )
+                expanded_results.extend(expanded)
+            else:
+                # Fall back to chunk-based expansion (always uses fixed radius)
+                if radius > 0:
+                    expanded = await self._expand_with_chunks(
+                        doc_id, doc_results, radius
+                    )
+                    expanded_results.extend(expanded)
+                else:
+                    expanded_results.extend(doc_results)
 
-                all_chunks = adjacent_chunks + [chunk]
+        return expanded_results
 
-                # Get the range of orders for this expanded chunk
-                orders = [c.order for c in all_chunks]
-                min_order = min(orders)
-                max_order = max(orders)
-
-                expanded_ranges.append(
-                    {
-                        "original_chunk": chunk,
-                        "score": score,
-                        "min_order": min_order,
-                        "max_order": max_order,
-                        "all_chunks": sorted(all_chunks, key=lambda c: c.order),
-                    }
-                )
-
-            # Merge overlapping/adjacent ranges
-            merged_ranges = self._merge_overlapping_ranges(expanded_ranges)
-
-            # Create merged chunks
-            for merged_range in merged_ranges:
-                combined_content_parts = [c.content for c in merged_range["all_chunks"]]
-
-                # Use the first original chunk for metadata
-                original_chunk = merged_range["original_chunks"][0]
-
-                merged_chunk = Chunk(
-                    id=original_chunk.id,
-                    document_id=original_chunk.document_id,
-                    content="".join(combined_content_parts),
-                    metadata=original_chunk.metadata,
-                    document_uri=original_chunk.document_uri,
-                    document_title=original_chunk.document_title,
-                    document_meta=original_chunk.document_meta,
-                )
-
-                # Use the highest score from merged chunks
-                best_score = max(merged_range["scores"])
-                results.append((merged_chunk, best_score))
-
-        return results
-
-    def _merge_overlapping_ranges(self, expanded_ranges):
-        """Merge overlapping or adjacent expanded ranges."""
-        if not expanded_ranges:
+    def _merge_ranges(
+        self, ranges: list[tuple[int, int, SearchResult]]
+    ) -> list[tuple[int, int, list[SearchResult]]]:
+        """Merge overlapping or adjacent ranges."""
+        if not ranges:
             return []
 
-        # Sort by min_order
-        sorted_ranges = sorted(expanded_ranges, key=lambda x: x["min_order"])
-        merged = []
+        sorted_ranges = sorted(ranges, key=lambda x: x[0])
+        merged: list[tuple[int, int, list[SearchResult]]] = []
+        cur_min, cur_max, cur_results = (
+            sorted_ranges[0][0],
+            sorted_ranges[0][1],
+            [sorted_ranges[0][2]],
+        )
 
-        current = {
-            "min_order": sorted_ranges[0]["min_order"],
-            "max_order": sorted_ranges[0]["max_order"],
-            "original_chunks": [sorted_ranges[0]["original_chunk"]],
-            "scores": [sorted_ranges[0]["score"]],
-            "all_chunks": sorted_ranges[0]["all_chunks"],
-        }
-
-        for range_info in sorted_ranges[1:]:
-            # Check if ranges overlap or are adjacent (max_order + 1 >= min_order)
-            if current["max_order"] >= range_info["min_order"] - 1:
-                # Merge ranges
-                current["max_order"] = max(
-                    current["max_order"], range_info["max_order"]
-                )
-                current["original_chunks"].append(range_info["original_chunk"])
-                current["scores"].append(range_info["score"])
-
-                # Merge all_chunks and deduplicate by order
-                all_chunks_dict = {}
-                for chunk in current["all_chunks"] + range_info["all_chunks"]:
-                    order = chunk.order
-                    all_chunks_dict[order] = chunk
-                current["all_chunks"] = [
-                    all_chunks_dict[order] for order in sorted(all_chunks_dict.keys())
-                ]
+        for min_idx, max_idx, result in sorted_ranges[1:]:
+            if cur_max >= min_idx - 1:  # Overlapping or adjacent
+                cur_max = max(cur_max, max_idx)
+                cur_results.append(result)
             else:
-                # No overlap, add current to merged and start new
-                merged.append(current)
-                current = {
-                    "min_order": range_info["min_order"],
-                    "max_order": range_info["max_order"],
-                    "original_chunks": [range_info["original_chunk"]],
-                    "scores": [range_info["score"]],
-                    "all_chunks": range_info["all_chunks"],
-                }
+                merged.append((cur_min, cur_max, cur_results))
+                cur_min, cur_max, cur_results = min_idx, max_idx, [result]
 
-        # Add the last range
-        merged.append(current)
+        merged.append((cur_min, cur_max, cur_results))
         return merged
 
+    # Label groups for type-aware expansion
+    _STRUCTURAL_LABELS = {"table", "code", "list_item", "form", "key_value_region"}
+
+    def _extract_item_text(self, item, docling_doc) -> str | None:
+        """Extract text content from a DocItem.
+
+        Handles different item types:
+        - TextItem, SectionHeaderItem, etc.: Use .text attribute
+        - TableItem: Use export_to_markdown() for table content
+        - PictureItem: Use caption if available
+        """
+        # Try simple text attribute first (works for most items)
+        if text := getattr(item, "text", None):
+            return text
+
+        # For tables, export as markdown
+        if hasattr(item, "export_to_markdown"):
+            try:
+                return item.export_to_markdown(docling_doc)
+            except Exception:
+                pass
+
+        # For pictures/charts, try to get caption
+        if caption := getattr(item, "caption", None):
+            if hasattr(caption, "text"):
+                return caption.text
+
+        return None
+
+    def _get_item_label(self, item) -> str | None:
+        """Extract label string from a DocItem."""
+        label = getattr(item, "label", None)
+        if label is None:
+            return None
+        return str(label.value) if hasattr(label, "value") else str(label)
+
+    def _compute_type_aware_range(
+        self,
+        all_items: list,
+        indices: list[int],
+        radius: int,
+        max_items: int,
+        max_chars: int,
+    ) -> tuple[int, int]:
+        """Compute expansion range based on content type with limits.
+
+        For structural content (tables, code, lists), expands to include complete
+        structures. For text, uses the configured radius. Applies hybrid limits.
+        """
+        if not indices:
+            return (0, 0)
+
+        min_idx = min(indices)
+        max_idx = max(indices)
+
+        # Determine the primary label type from matched items
+        labels_in_chunk = set()
+        for idx in indices:
+            item, _ = all_items[idx]
+            if label := self._get_item_label(item):
+                labels_in_chunk.add(label)
+
+        # Check if we have structural content
+        is_structural = bool(labels_in_chunk & self._STRUCTURAL_LABELS)
+
+        if is_structural:
+            # Expand to complete structure boundaries
+            # Expand backwards to find structure start
+            while min_idx > 0:
+                prev_item, _ = all_items[min_idx - 1]
+                prev_label = self._get_item_label(prev_item)
+                if prev_label in labels_in_chunk & self._STRUCTURAL_LABELS:
+                    min_idx -= 1
+                else:
+                    break
+
+            # Expand forwards to find structure end
+            while max_idx < len(all_items) - 1:
+                next_item, _ = all_items[max_idx + 1]
+                next_label = self._get_item_label(next_item)
+                if next_label in labels_in_chunk & self._STRUCTURAL_LABELS:
+                    max_idx += 1
+                else:
+                    break
+        else:
+            # Text content: use radius-based expansion
+            min_idx = max(0, min_idx - radius)
+            max_idx = min(len(all_items) - 1, max_idx + radius)
+
+        # Apply hybrid limits
+        # First check item count hard limit
+        if max_idx - min_idx + 1 > max_items:
+            # Center the window around original indices
+            original_center = (min(indices) + max(indices)) // 2
+            half_items = max_items // 2
+            min_idx = max(0, original_center - half_items)
+            max_idx = min(len(all_items) - 1, min_idx + max_items - 1)
+
+        # Then check character soft limit (but keep at least original items)
+        char_count = 0
+        effective_max = min_idx
+        for i in range(min_idx, max_idx + 1):
+            item, _ = all_items[i]
+            text = getattr(item, "text", "") or ""
+            char_count += len(text)
+            effective_max = i
+            # Once we've included original items, check char limit
+            if i >= max(indices) and char_count > max_chars:
+                break
+
+        max_idx = effective_max
+
+        return (min_idx, max_idx)
+
+    async def _expand_with_docling(
+        self,
+        results: list[SearchResult],
+        docling_doc,
+        radius: int,
+        max_items: int,
+        max_chars: int,
+    ) -> list[SearchResult]:
+        """Expand results using DoclingDocument structure.
+
+        Structural content (tables, code, lists) expands to complete structures.
+        Text content uses radius-based expansion.
+        """
+        all_items = list(docling_doc.iterate_items())
+        ref_to_index = {
+            getattr(item, "self_ref", None): i
+            for i, (item, _) in enumerate(all_items)
+            if getattr(item, "self_ref", None)
+        }
+
+        # Compute expanded ranges
+        ranges: list[tuple[int, int, SearchResult]] = []
+        passthrough: list[SearchResult] = []
+
+        for result in results:
+            indices = [
+                ref_to_index[r] for r in result.doc_item_refs if r in ref_to_index
+            ]
+            if not indices:
+                passthrough.append(result)
+                continue
+
+            min_idx, max_idx = self._compute_type_aware_range(
+                all_items, indices, radius, max_items, max_chars
+            )
+
+            ranges.append((min_idx, max_idx, result))
+
+        # Merge overlapping ranges
+        merged = self._merge_ranges(ranges)
+
+        final_results: list[SearchResult] = []
+        for min_idx, max_idx, original_results in merged:
+            content_parts: list[str] = []
+            refs: list[str] = []
+            pages: set[int] = set()
+            labels: set[str] = set()
+
+            for i in range(min_idx, max_idx + 1):
+                item, _ = all_items[i]
+                # Extract text content - handle different item types
+                text = self._extract_item_text(item, docling_doc)
+                if text:
+                    content_parts.append(text)
+                if self_ref := getattr(item, "self_ref", None):
+                    refs.append(self_ref)
+                if label := getattr(item, "label", None):
+                    labels.add(
+                        str(label.value) if hasattr(label, "value") else str(label)
+                    )
+                if prov := getattr(item, "prov", None):
+                    for p in prov:
+                        if (page_no := getattr(p, "page_no", None)) is not None:
+                            pages.add(page_no)
+
+            # Merge headings preserving order
+            all_headings: list[str] = []
+            for r in original_results:
+                if r.headings:
+                    all_headings.extend(h for h in r.headings if h not in all_headings)
+
+            first = original_results[0]
+            final_results.append(
+                SearchResult(
+                    content="\n\n".join(content_parts),
+                    score=max(r.score for r in original_results),
+                    chunk_id=first.chunk_id,
+                    document_id=first.document_id,
+                    document_uri=first.document_uri,
+                    document_title=first.document_title,
+                    doc_item_refs=refs,
+                    page_numbers=sorted(pages),
+                    headings=all_headings or None,
+                    labels=sorted(labels),
+                )
+            )
+
+        return final_results + passthrough
+
+    async def _expand_with_chunks(
+        self,
+        doc_id: str,
+        results: list[SearchResult],
+        radius: int,
+    ) -> list[SearchResult]:
+        """Expand results using chunk-based adjacency."""
+        all_chunks = await self.chunk_repository.get_by_document_id(doc_id)
+        if not all_chunks:
+            return results
+
+        content_to_chunk = {c.content: c for c in all_chunks}
+        chunk_by_order = {c.order: c for c in all_chunks}
+        min_order, max_order = min(chunk_by_order.keys()), max(chunk_by_order.keys())
+
+        # Build ranges
+        ranges: list[tuple[int, int, SearchResult]] = []
+        passthrough: list[SearchResult] = []
+
+        for result in results:
+            chunk = content_to_chunk.get(result.content)
+            if chunk is None:
+                passthrough.append(result)
+                continue
+            start = max(min_order, chunk.order - radius)
+            end = min(max_order, chunk.order + radius)
+            ranges.append((start, end, result))
+
+        # Merge and build results
+        final_results: list[SearchResult] = []
+        for min_idx, max_idx, original_results in self._merge_ranges(ranges):
+            # Collect chunks in order
+            chunks_in_range = [
+                chunk_by_order[o]
+                for o in range(min_idx, max_idx + 1)
+                if o in chunk_by_order
+            ]
+            first = original_results[0]
+            final_results.append(
+                SearchResult(
+                    content="".join(c.content for c in chunks_in_range),
+                    score=max(r.score for r in original_results),
+                    chunk_id=first.chunk_id,
+                    document_id=first.document_id,
+                    document_uri=first.document_uri,
+                    document_title=first.document_title,
+                    doc_item_refs=first.doc_item_refs,
+                    page_numbers=first.page_numbers,
+                    headings=first.headings,
+                    labels=first.labels,
+                )
+            )
+
+        return final_results + passthrough
+
     async def ask(
-        self, question: str, cite: bool = False, system_prompt: str | None = None
-    ) -> str:
+        self, question: str, system_prompt: str | None = None
+    ) -> "tuple[str, list[Citation]]":
         """Ask a question using the configured QA agent.
 
         Args:
             question: The question to ask.
-            cite: Whether to include citations in the response.
             system_prompt: Optional custom system prompt for the QA agent.
 
         Returns:
-            The generated answer as a string.
+            Tuple of (answer text, list of resolved citations).
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(
-            self, config=self._config, use_citations=cite, system_prompt=system_prompt
-        )
+        qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question)
+
+    async def visualize_chunk(self, chunk: Chunk) -> list:
+        """Render page images with bounding box highlights for a chunk.
+
+        Gets the DoclingDocument from the chunk's document, resolves bounding boxes
+        from chunk metadata, and renders all pages that contain bounding boxes with
+        yellow/orange highlight overlays.
+
+        Args:
+            chunk: The chunk to visualize.
+
+        Returns:
+            List of PIL Image objects, one per page with bounding boxes.
+            Empty list if no bounding boxes or page images available.
+        """
+        from copy import deepcopy
+
+        from PIL import ImageDraw
+
+        # Get the document
+        if not chunk.document_id:
+            return []
+
+        doc = await self.document_repository.get_by_id(chunk.document_id)
+        if not doc:
+            return []
+
+        # Get DoclingDocument
+        docling_doc = doc.get_docling_document()
+        if not docling_doc:
+            return []
+
+        # Resolve bounding boxes from chunk metadata
+        chunk_meta = chunk.get_chunk_metadata()
+        bounding_boxes = chunk_meta.resolve_bounding_boxes(docling_doc)
+        if not bounding_boxes:
+            return []
+
+        # Group bounding boxes by page
+        boxes_by_page: dict[int, list] = {}
+        for bbox in bounding_boxes:
+            if bbox.page_no not in boxes_by_page:
+                boxes_by_page[bbox.page_no] = []
+            boxes_by_page[bbox.page_no].append(bbox)
+
+        # Render each page with its bounding boxes
+        images = []
+        for page_no in sorted(boxes_by_page.keys()):
+            if page_no not in docling_doc.pages:
+                continue
+
+            page = docling_doc.pages[page_no]
+            if page.image is None or page.image.pil_image is None:
+                continue
+
+            pil_image = page.image.pil_image
+            page_height = page.size.height
+
+            # Calculate scale factor (image pixels vs document coordinates)
+            scale_x = pil_image.width / page.size.width
+            scale_y = pil_image.height / page.size.height
+
+            # Draw bounding boxes
+            image = deepcopy(pil_image)
+            draw = ImageDraw.Draw(image, "RGBA")
+
+            for bbox in boxes_by_page[page_no]:
+                # Convert from document coordinates to image coordinates
+                # Document coords are bottom-left origin, PIL uses top-left
+                x0 = bbox.left * scale_x
+                y0 = (page_height - bbox.top) * scale_y
+                x1 = bbox.right * scale_x
+                y1 = (page_height - bbox.bottom) * scale_y
+
+                # Ensure proper ordering (y0 should be less than y1 for PIL)
+                if y0 > y1:
+                    y0, y1 = y1, y0
+
+                # Draw filled rectangle with transparency
+                fill_color = (255, 255, 0, 80)  # Yellow with transparency
+                outline_color = (255, 165, 0, 255)  # Orange outline
+
+                draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
+                draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=3)
+
+            images.append(image)
+
+        return images
 
     async def rebuild_database(
         self, mode: RebuildMode = RebuildMode.FULL
@@ -749,110 +1367,242 @@ class HaikuRAG:
             async for doc_id in self._rebuild_full(documents):
                 yield doc_id
 
-        # Final maintenance
-        try:
-            await self.store.vacuum()
-        except Exception:
-            pass
+        # Final maintenance if auto_vacuum enabled
+        if self._config.storage.auto_vacuum:
+            try:
+                await self.store.vacuum()
+            except Exception:
+                pass
 
     async def _rebuild_embed_only(
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Re-embed all chunks without changing chunk boundaries."""
+        from haiku.rag.embeddings import contextualize
+
+        batch_size = 50
+        pending_records: list = []
+        pending_doc_ids: list[str] = []
+
         for doc in documents:
             assert doc.id is not None
 
-            # Get raw chunk records directly from LanceDB
-            chunk_records = list(
-                self.store.chunks_table.search()
-                .where(f"document_id = '{doc.id}'")
-                .to_pydantic(self.store.ChunkRecord)
-            )
-            if not chunk_records:
+            # Get existing chunks
+            chunks = await self.chunk_repository.get_by_document_id(doc.id)
+            if not chunks:
+                yield doc.id
                 continue
 
-            # Batch embed all chunk contents
-            contents = [rec.content for rec in chunk_records]
-            embeddings = await self.chunk_repository.embedder.embed(contents)
+            # Generate new embeddings using contextualize for consistency
+            texts = contextualize(chunks)
+            embeddings = await self.chunk_repository.embedder.embed(texts)
 
-            # Build updated records only for chunks with changed embeddings
-            updated_records = [
-                self.store.ChunkRecord(
-                    id=rec.id,
-                    document_id=rec.document_id,
-                    content=rec.content,
-                    metadata=rec.metadata,
-                    order=rec.order,
-                    vector=embedding,
+            # Build updated records
+            for chunk, embedding in zip(chunks, embeddings):
+                pending_records.append(
+                    self.store.ChunkRecord(
+                        id=chunk.id,  # type: ignore[arg-type]
+                        document_id=chunk.document_id,  # type: ignore[arg-type]
+                        content=chunk.content,
+                        metadata=json.dumps(chunk.metadata),
+                        order=chunk.order,
+                        vector=embedding,
+                    )
                 )
-                for rec, embedding in zip(chunk_records, embeddings)
-                if rec.vector != embedding
-            ]
 
-            # Batch update chunks with changed embeddings
-            if updated_records:
-                self.store.chunks_table.merge_insert(
-                    "id"
-                ).when_matched_update_all().execute(updated_records)
+            pending_doc_ids.append(doc.id)
 
-            yield doc.id
+            # Flush batch when size reached
+            if len(pending_doc_ids) >= batch_size:
+                if pending_records:
+                    self.store.chunks_table.merge_insert(
+                        "id"
+                    ).when_matched_update_all().execute(pending_records)
+                for doc_id in pending_doc_ids:
+                    yield doc_id
+                pending_records = []
+                pending_doc_ids = []
+
+        # Flush remaining
+        if pending_records:
+            self.store.chunks_table.merge_insert(
+                "id"
+            ).when_matched_update_all().execute(pending_records)
+        for doc_id in pending_doc_ids:
+            yield doc_id
+
+    async def _flush_rebuild_batch(
+        self, documents: list[Document], chunks: list[Chunk]
+    ) -> None:
+        """Batch write documents and chunks during rebuild.
+
+        This performs two writes: one for all document updates, one for all chunks.
+        Used by RECHUNK and FULL modes after the chunks table has been cleared.
+        """
+        from haiku.rag.store.engine import DocumentRecord
+        from haiku.rag.store.models.document import invalidate_docling_document_cache
+
+        if not documents:
+            return
+
+        now = datetime.now().isoformat()
+
+        # Invalidate cache for all documents being updated
+        for doc in documents:
+            if doc.id:
+                invalidate_docling_document_cache(doc.id)
+
+        # Batch update documents using merge_insert (single LanceDB version)
+        doc_records = [
+            DocumentRecord(
+                id=doc.id,  # type: ignore[arg-type]
+                content=doc.content,
+                uri=doc.uri,
+                title=doc.title,
+                metadata=json.dumps(doc.metadata),
+                docling_document_json=doc.docling_document_json,
+                docling_version=doc.docling_version,
+                created_at=doc.created_at.isoformat() if doc.created_at else now,
+                updated_at=now,
+            )
+            for doc in documents
+        ]
+
+        self.store.documents_table.merge_insert("id").when_matched_update_all().execute(
+            doc_records
+        )
+
+        # Batch create all chunks (single LanceDB version)
+        if chunks:
+            await self.chunk_repository.create(chunks)
 
     async def _rebuild_rechunk(
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Re-chunk and re-embed from existing document content."""
-        converter = get_converter(self._config)
+        from haiku.rag.embeddings import embed_chunks
+
+        batch_size = 50
+        pending_chunks: list[Chunk] = []
+        pending_docs: list[Document] = []
+        pending_doc_ids: list[str] = []
 
         for doc in documents:
             assert doc.id is not None
-            docling_document = await converter.convert_text(doc.content)
-            await self.chunk_repository.create_chunks_for_document(
-                doc.id, docling_document
-            )
-            yield doc.id
+
+            # Convert content to DoclingDocument
+            docling_document = await self.convert(doc.content)
+
+            # Chunk and embed
+            chunks = await self.chunk(docling_document)
+            embedded_chunks = await embed_chunks(chunks, self._config)
+
+            # Update document fields
+            doc.docling_document_json = docling_document.model_dump_json()
+            doc.docling_version = docling_document.version
+
+            # Prepare chunks with document_id and order
+            for order, chunk in enumerate(embedded_chunks):
+                chunk.document_id = doc.id
+                chunk.order = order
+
+            pending_chunks.extend(embedded_chunks)
+            pending_docs.append(doc)
+            pending_doc_ids.append(doc.id)
+
+            # Flush batch when size reached
+            if len(pending_docs) >= batch_size:
+                await self._flush_rebuild_batch(pending_docs, pending_chunks)
+                for doc_id in pending_doc_ids:
+                    yield doc_id
+                pending_chunks = []
+                pending_docs = []
+                pending_doc_ids = []
+
+        # Flush remaining
+        if pending_docs:
+            await self._flush_rebuild_batch(pending_docs, pending_chunks)
+            for doc_id in pending_doc_ids:
+                yield doc_id
 
     async def _rebuild_full(
         self, documents: list[Document]
     ) -> AsyncGenerator[str, None]:
         """Full rebuild: re-convert from source, re-chunk, re-embed."""
-        converter = get_converter(self._config)
+        from haiku.rag.embeddings import embed_chunks
+
+        batch_size = 50
+        pending_chunks: list[Chunk] = []
+        pending_docs: list[Document] = []
+        pending_doc_ids: list[str] = []
 
         for doc in documents:
             assert doc.id is not None
-            if doc.uri:
-                source_accessible = self._check_source_accessible(doc.uri)
 
-                if source_accessible:
-                    try:
-                        await self.delete_document(doc.id)
-                        new_doc = await self.create_document_from_source(
-                            source=doc.uri, metadata=doc.metadata or {}
-                        )
-                        assert isinstance(new_doc, Document)
-                        assert new_doc.id is not None
-                        yield new_doc.id
-                    except Exception as e:
-                        logger.error(
-                            "Error recreating document from source %s: %s",
-                            doc.uri,
-                            e,
-                        )
-                        continue
-                else:
-                    logger.warning(
-                        "Source missing for %s, re-embedding from content", doc.uri
+            # Try to rebuild from source if available
+            if doc.uri and self._check_source_accessible(doc.uri):
+                try:
+                    # Flush pending batch before source rebuild (creates new doc)
+                    if pending_docs:
+                        await self._flush_rebuild_batch(pending_docs, pending_chunks)
+                        for doc_id in pending_doc_ids:
+                            yield doc_id
+                        pending_chunks = []
+                        pending_docs = []
+                        pending_doc_ids = []
+
+                    await self.delete_document(doc.id)
+                    new_doc = await self.create_document_from_source(
+                        source=doc.uri, metadata=doc.metadata or {}
                     )
-                    docling_document = await converter.convert_text(doc.content)
-                    await self.chunk_repository.create_chunks_for_document(
-                        doc.id, docling_document
+                    assert isinstance(new_doc, Document)
+                    assert new_doc.id is not None
+                    yield new_doc.id
+                    continue
+                except Exception as e:
+                    logger.error(
+                        "Error recreating document from source %s: %s",
+                        doc.uri,
+                        e,
                     )
-                    yield doc.id
-            else:
-                docling_document = await converter.convert_text(doc.content)
-                await self.chunk_repository.create_chunks_for_document(
-                    doc.id, docling_document
+                    continue
+
+            # Fallback: rebuild from stored content
+            if doc.uri:
+                logger.warning(
+                    "Source missing for %s, re-embedding from content", doc.uri
                 )
-                yield doc.id
+
+            docling_document = await self.convert(doc.content)
+            chunks = await self.chunk(docling_document)
+            embedded_chunks = await embed_chunks(chunks, self._config)
+
+            doc.docling_document_json = docling_document.model_dump_json()
+            doc.docling_version = docling_document.version
+
+            # Prepare chunks with document_id and order
+            for order, chunk in enumerate(embedded_chunks):
+                chunk.document_id = doc.id
+                chunk.order = order
+
+            pending_chunks.extend(embedded_chunks)
+            pending_docs.append(doc)
+            pending_doc_ids.append(doc.id)
+
+            # Flush batch when size reached
+            if len(pending_docs) >= batch_size:
+                await self._flush_rebuild_batch(pending_docs, pending_chunks)
+                for doc_id in pending_doc_ids:
+                    yield doc_id
+                pending_chunks = []
+                pending_docs = []
+                pending_doc_ids = []
+
+        # Flush remaining
+        if pending_docs:
+            await self._flush_rebuild_batch(pending_docs, pending_chunks)
+            for doc_id in pending_doc_ids:
+                yield doc_id
 
     def _check_source_accessible(self, uri: str) -> bool:
         """Check if a document's source URI is accessible."""

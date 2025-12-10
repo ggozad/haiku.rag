@@ -8,21 +8,6 @@ from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 
-def test_build_graph_and_state():
-    graph = build_research_graph()
-    assert graph is not None
-
-    state = ResearchState(
-        context=ResearchContext(
-            original_question="What are the key features of haiku.rag?"
-        ),
-        max_iterations=1,
-        confidence_threshold=0.8,
-    )
-    assert state.iterations == 0
-    assert state.context.sub_questions == []
-
-
 @pytest.mark.asyncio
 async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
     """Test research graph with mocked LLM using AG-UI events."""

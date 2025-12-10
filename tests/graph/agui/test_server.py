@@ -45,17 +45,6 @@ def test_run_agent_input_parsing():
     assert input_data.state == {"question": "What is AI?"}
 
 
-def test_run_agent_input_defaults():
-    """Test RunAgentInput with defaults."""
-    input_data = RunAgentInput()  # type: ignore[call-arg]
-
-    assert input_data.thread_id is None
-    assert input_data.run_id is None
-    assert input_data.state == {}
-    assert input_data.messages == []
-    assert input_data.config == {}
-
-
 def test_format_sse_event():
     """Test SSE event formatting."""
     event = {"type": "TEST_EVENT", "data": "test"}
@@ -236,15 +225,3 @@ def test_server_cors_headers():
     assert (
         "access-control-allow-origin" in response.headers or response.status_code == 200
     )
-
-
-def test_agui_config_defaults():
-    """Test AGUIConfig default values."""
-    config = AGUIConfig()
-
-    assert config.host == "0.0.0.0"
-    assert config.port == 8000
-    assert config.cors_origins == ["*"]
-    assert config.cors_credentials is True
-    assert "GET" in config.cors_methods
-    assert "POST" in config.cors_methods

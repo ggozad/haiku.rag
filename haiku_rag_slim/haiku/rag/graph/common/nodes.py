@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.format_prompt import format_as_xml
 from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import StepContext
 
@@ -14,8 +13,9 @@ from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.common import get_model
-from haiku.rag.graph.common.models import ResearchPlan, SearchAnswer
+from haiku.rag.graph.common.models import RawSearchAnswer, ResearchPlan, SearchAnswer
 from haiku.rag.graph.common.prompts import PLAN_PROMPT, SEARCH_AGENT_PROMPT
+from haiku.rag.store.models import SearchResult
 
 
 class GraphContext(Protocol):
@@ -49,6 +49,7 @@ class GraphAgentDeps(Protocol):
 
     client: HaikuRAG
     context: GraphContext
+    search_results: list[SearchResult]
 
 
 def create_plan_node[AgentDepsT: GraphAgentDeps](
@@ -100,11 +101,11 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
             @plan_agent.tool
             async def gather_context(
-                ctx2: RunContext[AgentDepsT], query: str, limit: int = 6
+                ctx2: RunContext[AgentDepsT], query: str, limit: int | None = None
             ) -> str:
                 results = await ctx2.deps.client.search(query, limit=limit)
-                expanded = await ctx2.deps.client.expand_context(results)
-                return "\n\n".join(chunk.content for chunk, _ in expanded)
+                results = await ctx2.deps.client.expand_context(results)
+                return "\n\n".join(r.content for r in results)
 
             # Tool is registered via decorator above
             _ = gather_context
@@ -218,7 +219,7 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 
     agent = Agent(
         model=get_model(model_config, config),
-        output_type=ToolOutput(SearchAnswer, max_retries=3),
+        output_type=ToolOutput(RawSearchAnswer, max_retries=3),
         instructions=SEARCH_AGENT_PROMPT,
         retries=3,
         deps_type=deps_type,
@@ -226,23 +227,25 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 
     @agent.tool
     async def search_and_answer(
-        ctx2: RunContext[AgentDepsT], query: str, limit: int = 5
+        ctx2: RunContext[AgentDepsT], query: str, limit: int | None = None
     ) -> str:
-        search_results = await ctx2.deps.client.search(query, limit=limit)
-        expanded = await ctx2.deps.client.expand_context(search_results)
+        """Search the knowledge base for relevant documents.
 
-        entries: list[dict[str, Any]] = [
-            {
-                "text": chunk.content,
-                "score": score,
-                "document_uri": (chunk.document_title or chunk.document_uri or ""),
-            }
-            for chunk, score in expanded
-        ]
-        if not entries:
+        Returns results with chunk IDs and relevance scores.
+        Reference results by their chunk_id in cited_chunks.
+        """
+        results = await ctx2.deps.client.search(query, limit=limit)
+        results = await ctx2.deps.client.expand_context(results)
+        # Store results for citation resolution
+        ctx2.deps.search_results = results
+
+        # Format with metadata for agent context
+        parts = [r.format_for_agent() for r in results]
+
+        if not parts:
             return f"No relevant information found in the knowledge base for: {query}"
 
-        return format_as_xml(entries, root_tag="snippets")
+        return "\n\n".join(parts)
 
     # Tool is registered via decorator above
     _ = search_and_answer
@@ -251,8 +254,10 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
 
     try:
         result = await agent.run(sub_q, deps=agent_deps)
-        answer = result.output
-        if answer:
+        raw_answer = result.output
+        if raw_answer:
+            # Convert RawSearchAnswer to SearchAnswer with resolved citations
+            answer = SearchAnswer.from_raw(raw_answer, agent_deps.search_results)
             state.context.add_qa_response(answer)
             # State updated with new answer - emit state update and narrate
             if deps.agui_emitter:
@@ -273,7 +278,9 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
                         "confidence": answer.confidence,
                     },
                 )
-        return answer
+            return answer
+        # Return empty SearchAnswer if no result
+        return SearchAnswer(query=sub_q, answer="", confidence=0.0)
     except Exception as e:
         if handle_exceptions:
             # Narrate the error

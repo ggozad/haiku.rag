@@ -10,6 +10,7 @@ async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
+        assert doc.docling_document_json is not None
 
         chunks_before = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks_before) > 0
@@ -18,6 +19,12 @@ async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
         processed_ids = [doc_id async for doc_id in client.rebuild_database()]
 
         assert doc.id in processed_ids
+
+        # Verify DoclingDocument JSON is preserved after rebuild
+        doc_after = await client.document_repository.get_by_id(doc.id)
+        assert doc_after is not None
+        assert doc_after.docling_document_json is not None
+        assert doc_after.docling_version is not None
 
         chunks_after = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks_after) > 0
@@ -33,6 +40,7 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
+        original_docling_json = doc.docling_document_json
 
         chunks_before = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks_before) > 0
@@ -45,6 +53,11 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
         ]
 
         assert doc.id in processed_ids
+
+        # DoclingDocument JSON should be unchanged (embed-only doesn't touch documents)
+        doc_after = await client.document_repository.get_by_id(doc.id)
+        assert doc_after is not None
+        assert doc_after.docling_document_json == original_docling_json
 
         chunks_after = await client.chunk_repository.get_by_document_id(doc.id)
         chunk_ids_after = {c.id for c in chunks_after}
@@ -99,6 +112,7 @@ async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content=qa_corpus["document_extracted"][0])
         assert doc.id is not None
+        assert doc.docling_document_json is not None
 
         # Set a fake URI to simulate a document that came from a file
         doc.uri = "file:///nonexistent/path.txt"
@@ -115,10 +129,12 @@ async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
 
         assert doc.id in processed_ids
 
-        # Document content should be unchanged
+        # Document content should be unchanged, but docling JSON should be updated
         doc_after = await client.document_repository.get_by_id(doc.id)
         assert doc_after is not None
         assert doc_after.content == content_before
+        assert doc_after.docling_document_json is not None
+        assert doc_after.docling_version is not None
 
         chunks_after = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks_after) > 0

@@ -81,7 +81,9 @@ def main(
         loaded_config = AppConfig.model_validate(yaml_data)
         set_config(loaded_config)
 
-    # Configure logging minimally for CLI context
+    # Configure logging for CLI context
+    configure_cli_logging()
+
     if get_config().environment == "development":
         # Lazy import logfire only in development
         try:
@@ -92,7 +94,7 @@ def main(
         except Exception:
             pass
     else:
-        configure_cli_logging()
+        # Suppress warnings in production
         warnings.filterwarnings("ignore")
 
     # Run version check before any command
@@ -237,11 +239,11 @@ def search(
     query: str = typer.Argument(
         help="The search query to use",
     ),
-    limit: int = typer.Option(
-        5,
+    limit: int | None = typer.Option(
+        None,
         "--limit",
         "-l",
-        help="Maximum number of results to return",
+        help="Maximum number of results to return (default: config search.default_limit)",
     ),
     filter: str | None = typer.Option(
         None,
@@ -257,6 +259,21 @@ def search(
 ):
     app = create_app(db)
     asyncio.run(app.search(query=query, limit=limit, filter=filter))
+
+
+@cli.command("visualize", help="Show visual grounding for a chunk")
+def visualize(
+    chunk_id: str = typer.Argument(
+        help="The ID of the chunk to visualize",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.visualize_chunk(chunk_id=chunk_id))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")

@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.common.models import SearchAnswer
+from haiku.rag.store.models import SearchResult
 
 
 class DeepQAContext(BaseModel):
@@ -12,11 +13,9 @@ class DeepQAContext(BaseModel):
     qa_responses: list[SearchAnswer] = Field(
         default_factory=list, description="QA pairs collected during answering"
     )
-    use_citations: bool = Field(
-        default=False, description="Whether to include citations in the answer"
-    )
 
     def add_qa_response(self, qa: SearchAnswer) -> None:
+        """Add a QA response (citations already resolved)."""
         self.qa_responses.append(qa)
 
 
@@ -25,3 +24,6 @@ class DeepQADependencies(BaseModel):
 
     client: HaikuRAG = Field(description="RAG client for document operations")
     context: DeepQAContext = Field(description="Shared QA context")
+    search_results: list[SearchResult] = Field(
+        default_factory=list, description="Search results for citation resolution"
+    )

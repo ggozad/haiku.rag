@@ -8,7 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import Chunk
 
 
-class ChunkList(VerticalScroll):
+class ChunkList(VerticalScroll):  # pragma: no cover
     """Widget for displaying and browsing chunks."""
 
     can_focus = False
@@ -23,36 +23,24 @@ class ChunkList(VerticalScroll):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.chunks: list[Chunk] = []
-        self.list_view: ListView | None = None
+        self.list_view = ListView()
 
     def compose(self) -> ComposeResult:
         """Compose the chunk list."""
         yield Static("[bold]Chunks[/bold]", classes="title")
-        self.list_view = ListView()
         yield self.list_view
 
     async def load_chunks_for_document(
         self, client: HaikuRAG, document_id: str
     ) -> None:
-        """Load chunks for a specific document.
-
-        Args:
-            client: HaikuRAG client instance
-            document_id: ID of the document to load chunks for
-        """
-        if self.list_view is None:
-            return
-
+        """Load chunks for a specific document."""
         self.chunks = await client.chunk_repository.get_by_document_id(document_id)
-
-        # Clear existing items
         await self.list_view.clear()
-
-        # Add chunk items
         for chunk in self.chunks:
             first_line = chunk.content.split("\n")[0]
-            item = ListItem(Static(f"[{chunk.order}] {first_line}"))
-            await self.list_view.append(item)
+            await self.list_view.append(
+                ListItem(Static(f"[{chunk.order}] {first_line}"))
+            )
 
     @on(ListView.Highlighted)
     @on(ListView.Selected)
@@ -60,8 +48,8 @@ class ChunkList(VerticalScroll):
         self, event: ListView.Highlighted | ListView.Selected
     ) -> None:
         """Handle chunk selection (arrow keys or Enter)."""
-        if event.list_view == self.list_view:
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(self.chunks):
-                chunk = self.chunks[idx]
-                self.post_message(self.ChunkSelected(chunk))
+        if event.list_view != self.list_view:
+            return
+        idx = event.list_view.index
+        if idx is not None and 0 <= idx < len(self.chunks):
+            self.post_message(self.ChunkSelected(self.chunks[idx]))

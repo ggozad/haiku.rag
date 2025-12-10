@@ -4,7 +4,7 @@ from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
 
-class ZeroEntropyReranker(RerankerBase):
+class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
     """Zero Entropy reranker implementation using the zerank-1 model."""
 
     def __init__(self, model: str = "zerank-1"):

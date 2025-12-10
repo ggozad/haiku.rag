@@ -36,6 +36,8 @@ Three panels display your data:
 - `Tab` - Cycle between panels
 - `↑` / `↓` - Navigate lists
 - `/` - Open search modal
+- `c` - Open context expansion modal (when viewing a chunk)
+- `v` - Open visual grounding modal (when viewing a chunk)
 - `q` - Quit
 
 **Mouse:** Click to select, scroll to view content
@@ -52,3 +54,24 @@ Press `/` to open the full-screen search modal:
 - Press `Esc` to close search without selecting
 
 Search uses hybrid (vector + full-text) search across all chunks. Content is rendered as markdown with syntax highlighting.
+
+## Context Expansion
+
+Press `c` while viewing a chunk to open the context expansion modal:
+
+- Shows the expanded context that would be provided to the QA agent
+- Type-aware expansion: tables, code blocks, and lists expand to their complete structures
+- Text content expands based on `search.context_radius` setting
+- Includes metadata like source document, content type, and relevance score
+- Press `Esc` to close the modal
+
+## Visual Grounding
+
+Press `v` while viewing a chunk to open the visual grounding modal:
+
+- Shows page images from the source document with the chunk's location highlighted in yellow/orange
+- Use `←` / `→` arrow keys to navigate between pages (when chunk spans multiple pages)
+- Press `Esc` to close the modal
+
+!!! note
+    Visual grounding requires documents with a stored DoclingDocument that includes page images. Text-only documents or documents imported without DoclingDocument won't have visual grounding available.

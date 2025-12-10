@@ -36,30 +36,23 @@ doc = await client.create_document(
 )
 ```
 
-With custom externally generated chunks:
+From HTML content (preserves document structure):
 ```python
-from haiku.rag.store.models.chunk import Chunk
-
-# Create custom chunks with optional embeddings
-chunks = [
-    Chunk(
-        content="This is the first chunk",
-        metadata={"section": "intro"}
-    ),
-    Chunk(
-        content="This is the second chunk",
-        metadata={"section": "body"},
-        embedding=[0.1] * 1024  # Optional pre-computed embedding
-    ),
-]
-
+html_content = "<h1>Title</h1><p>Paragraph</p><ul><li>Item 1</li></ul>"
 doc = await client.create_document(
-    content="Full document content",
-    uri="doc://custom",
-    metadata={"source": "manual"},
-    chunks=chunks  # Use provided chunks instead of auto-generating
+    content=html_content,
+    uri="doc://html-example",
+    format="html"  # parse as HTML instead of markdown
 )
 ```
+
+The `format` parameter controls how text content is parsed:
+
+- `"md"` (default) - Parse as Markdown
+- `"html"` - Parse as HTML, preserving semantic structure (headings, lists, tables)
+
+!!! note
+    The document's `content` field stores the markdown export of the parsed document for consistent display. The original input is preserved in the `docling_document_json` field.
 
 From file:
 ```python
@@ -74,6 +67,45 @@ doc = await client.create_document_from_source(
     "https://example.com/article.html", title="Example Article"
 )
 ```
+
+### Importing Pre-Processed Documents
+
+If you process documents externally or need custom processing, use `import_document()`:
+
+```python
+from haiku.rag.store.models.chunk import Chunk
+
+# Convert your source to a DoclingDocument
+docling_doc = await client.convert("path/to/document.pdf")
+
+# Create chunks (embeddings optional - will be generated if missing)
+chunks = [
+    Chunk(
+        content="This is the first chunk",
+        metadata={"section": "intro"},
+        order=0,
+    ),
+    Chunk(
+        content="This is the second chunk",
+        metadata={"section": "body"},
+        embedding=[0.1] * 1024,  # Optional: pre-computed embedding
+        order=1,
+    ),
+]
+
+# Import document with custom chunks
+doc = await client.import_document(
+    docling_document=docling_doc,
+    chunks=chunks,
+    uri="doc://custom",
+    title="Custom Document",
+    metadata={"source": "external-pipeline"},
+)
+```
+
+The `docling_document` provides rich metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
+
+See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
 
 ### Retrieving Documents
 
@@ -109,52 +141,40 @@ docs = await client.list_documents(
 
 ### Updating Documents
 
-Update entire document:
 ```python
-doc.content = "Updated content"
-await client.update_document(doc)
-```
+# Update content (triggers re-chunking)
+await client.update_document(document_id=doc.id, content="New content")
 
-Update specific fields:
-```python
-# Update only content (triggers re-chunking)
-await client.update_document_fields(
-    document_id=doc.id,
-    content="New content"
-)
-
-# Update only metadata (no re-chunking)
-await client.update_document_fields(
+# Update metadata only (no re-chunking)
+await client.update_document(
     document_id=doc.id,
     metadata={"version": "2.0", "updated_by": "admin"}
 )
 
-# Update only title (no re-chunking)
-await client.update_document_fields(
-    document_id=doc.id,
-    title="New Title"
-)
+# Update title only (no re-chunking)
+await client.update_document(document_id=doc.id, title="New Title")
 
 # Update multiple fields at once
-await client.update_document_fields(
+await client.update_document(
     document_id=doc.id,
     content="New content",
     title="Updated Title",
     metadata={"status": "final"}
 )
 
-# Use custom chunks instead of auto-generation
+# Use custom chunks (embeddings optional - will be generated if missing)
 custom_chunks = [
     Chunk(content="Custom chunk 1"),
-    Chunk(content="Custom chunk 2"),
+    Chunk(content="Custom chunk 2", embedding=[...]),  # Pre-computed embedding
 ]
-await client.update_document_fields(
-    document_id=doc.id,
-    chunks=custom_chunks
-)
+await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```
 
-**Performance Note:** Updates to only `metadata` or `title` skip re-chunking for efficiency. Updates to `content` or `chunks` will regenerate or replace the document's chunks.
+**Notes:**
+
+- Updates to only `metadata` or `title` skip re-chunking
+- Updates to `content` trigger re-chunking and re-embedding
+- Custom `chunks` with embeddings are stored as-is; missing embeddings are generated automatically
 
 ### Deleting Documents
 
@@ -211,10 +231,10 @@ The search method performs native hybrid search (vector + full-text) using Lance
 Basic hybrid search (default):
 ```python
 results = await client.search("machine learning algorithms", limit=5)
-for chunk, score in results:
-    print(f"Score: {score:.3f}")
-    print(f"Content: {chunk.content}")
-    print(f"Document ID: {chunk.document_id}")
+for result in results:
+    print(f"Score: {result.score:.3f}")
+    print(f"Content: {result.content}")
+    print(f"Document ID: {result.document_id}")
 ```
 
 Search with different search types:
@@ -241,13 +261,12 @@ results = await client.search(
 )
 
 # Process results
-for chunk, relevance_score in results:
-    print(f"Relevance: {relevance_score:.3f}")
-    print(f"Content: {chunk.content}")
-    print(f"From document: {chunk.document_id}")
-    print(f"Document URI: {chunk.document_uri}")
-    print(f"Document Title: {chunk.document_title}")  # when available
-    print(f"Document metadata: {chunk.document_meta}")
+for result in results:
+    print(f"Relevance: {result.score:.3f}")
+    print(f"Content: {result.content}")
+    print(f"From document: {result.document_id}")
+    print(f"Document URI: {result.document_uri}")
+    print(f"Document Title: {result.document_title}")  # when available
 ```
 
 ### Filtering Search Results
@@ -300,35 +319,33 @@ Expand search results with adjacent chunks for more complete context:
 # Get initial search results
 search_results = await client.search("machine learning", limit=3)
 
-# Expand with adjacent chunks using config setting
+# Expand search results with adjacent content from the source document
 expanded_results = await client.expand_context(search_results)
 
-# Or specify a custom radius
-expanded_results = await client.expand_context(search_results, radius=2)
-
-# The expanded results contain chunks with combined content from adjacent chunks
-for chunk, score in expanded_results:
-    print(f"Expanded content: {chunk.content}")  # Now includes before/after chunks
+# The expanded results contain chunks with combined content
+for result in expanded_results:
+    print(f"Expanded content: {result.content}")
 ```
 
-**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
+Context expansion uses your configuration settings:
 
-This is automatically used by the QA system when `processing.context_chunk_radius > 0` (configured in `haiku.rag.yaml`) to provide better answers with more complete context.
+- **search.context_radius**: For text content (paragraphs), includes N DocItems before and after
+- **search.max_context_items**: Limits how many document items can be included
+- **search.max_context_chars**: Hard limit on total characters
+
+**Type-aware expansion**: Structural content (tables, code blocks, lists) automatically expands to include the complete structure, regardless of how it was split during chunking.
+
+**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
 
 ## Question Answering
 
 Ask questions about your documents:
 
 ```python
-answer = await client.ask("Who is the author of haiku.rag?")
+answer, citations = await client.ask("Who is the author of haiku.rag?")
 print(answer)
-```
-
-Ask questions with citations showing source documents:
-
-```python
-answer = await client.ask("Who is the author of haiku.rag?", cite=True)
-print(answer)
+for cite in citations:
+    print(f"  [{cite.chunk_id}] {cite.document_title or cite.document_uri}")
 ```
 
 Customize the QA agent's behavior with a custom system prompt:
@@ -338,13 +355,13 @@ custom_prompt = """You are a technical support expert for WIX.
 Answer questions based on the knowledge base documents provided.
 Be concise and helpful."""
 
-answer = await client.ask(
+answer, citations = await client.ask(
     "How do I create a blog?",
     system_prompt=custom_prompt
 )
 ```
 
-The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
+The QA agent searches your documents for relevant information and uses the configured LLM to generate an answer. The method returns a tuple of `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 

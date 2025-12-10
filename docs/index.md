@@ -1,21 +1,20 @@
 # haiku.rag
 
-`haiku.rag` is an opinionated agentic RAG system that uses LanceDB for vector storage, Pydantic AI for multi-agent workflows, and Docling for document processing. It supports hybrid search (vector + full-text) with Reciprocal Rank Fusion, multiple embedding providers (Ollama, LM Studio, vLLM, OpenAI, VoyageAI), and includes research agents that plan, search, evaluate, and synthesize answers.
+Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/).
 
 ## Features
 
-- **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
-- **Multiple embedding providers**: Ollama, LM Studio, VoyageAI, OpenAI, vLLM
-- **Multiple QA providers**: Any provider/model supported by Pydantic AI (Ollama, LM Studio, OpenAI, Anthropic, etc.)
-- **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
-- **Reranking**: Optional result reranking with MixedBread AI, Cohere, Zero Entropy, or vLLM
-- **Question answering**: Built-in QA agents on your documents
-- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
-- **File monitoring**: Auto-index files when run as server
-- **Extended file format support**: Parse PDF, DOCX, HTML, Markdown, images, code files and more
-- **Flexible document processing**: Local processing with docling or remote with [docling-serve](remote-processing.md)
-- **MCP server**: Expose as tools for AI assistants
-- **CLI & Python API**: Use from command line or Python
+- **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
+- **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
+- **Question answering** — QA agents with citations (page numbers, section headings)
+- **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
+- **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion and visual grounding
+- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
+- **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
+- **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
+- **File monitoring** — Watch directories and auto-index on changes
+- **Inspector** — TUI for browsing documents, chunks, and search results
+- **CLI & Python API** — Full functionality from command line or code
 
 ## Quick Start
 
@@ -30,15 +29,15 @@ Use from Python:
 ```python
 from haiku.rag.client import HaikuRAG
 
-async with HaikuRAG("database.lancedb") as client:
+async with HaikuRAG("database.lancedb", create=True) as client:
     # Add a document
     doc = await client.create_document("Your content here")
 
     # Search documents
     results = await client.search("query")
 
-    # Ask questions
-    answer = await client.ask("Who is the author of haiku.rag?")
+    # Ask questions (returns answer and citations)
+    answer, citations = await client.ask("Who is the author of haiku.rag?")
 ```
 
 Or use the CLI:
@@ -57,10 +56,11 @@ haiku-rag ask "Who is the author of haiku.rag?"
 - [Installation](installation.md) - Install haiku.rag with different providers
 - [Configuration](configuration/index.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
+- [Python](python.md) - Python API reference
+- [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
+- [Agents](agents.md) - QA agent and multi-agent research
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
-- [Python](python.md) - Python API reference
-- [Agents](agents.md) - QA agent and multi-agent research
 - [Remote processing](remote-processing.md) - Remote document processing with docling-serve
 
 ## License

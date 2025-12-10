@@ -3,6 +3,7 @@ from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.store.models import SearchResult
 
 
 @pytest.mark.asyncio
@@ -184,3 +185,89 @@ async def test_search_score_types(temp_db_path):
             )
 
     client.close()
+
+
+@pytest.mark.asyncio
+async def test_search_returns_search_result(temp_db_path):
+    """Test that client.search() returns SearchResult with provenance info."""
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+
+    await client.create_document(
+        content="Machine learning models can classify images with high accuracy.",
+        uri="https://example.com/ml.html",
+        title="ML Guide",
+    )
+
+    results = await client.search("machine learning", limit=3)
+
+    assert len(results) > 0
+    result = results[0]
+    assert isinstance(result, SearchResult)
+    assert result.content
+    assert result.score > 0
+    assert result.document_uri == "https://example.com/ml.html"
+    assert result.document_title == "ML Guide"
+    # page_numbers and headings come from chunk metadata
+    assert isinstance(result.page_numbers, list)
+    assert isinstance(result.labels, list)
+
+    client.close()
+
+
+@pytest.mark.asyncio
+async def test_search_graceful_degradation(temp_db_path):
+    """Test search works when docling data is unavailable."""
+    from haiku.rag.store.models import Chunk
+
+    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+
+    # Import document with custom chunks (no docling document)
+    custom_chunks = [
+        Chunk(content="Custom chunk without docling metadata", metadata={}),
+    ]
+    docling_doc = await client.convert("Document with custom chunks")
+    await client.import_document(
+        docling_document=docling_doc,
+        chunks=custom_chunks,
+        uri="https://example.com/custom.html",
+    )
+
+    results = await client.search("custom chunk", limit=3)
+
+    assert len(results) > 0
+    result = results[0]
+    assert isinstance(result, SearchResult)
+    assert result.content
+    # Metadata defaults should still work
+    assert result.page_numbers == []
+    assert result.labels == []
+
+    client.close()
+
+
+@pytest.mark.asyncio
+async def test_search_result_format_includes_metadata(temp_db_path):
+    """Test that formatted search results include document metadata."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content="Important information about machine learning algorithms.",
+            title="ML Guide",
+            uri="https://example.com/ml-guide",
+        )
+
+        results = await client.search("machine learning", limit=1)
+        assert len(results) > 0
+
+        formatted = results[0].format_for_agent()
+
+        # Should include chunk ID and score
+        assert "[" in formatted and "]" in formatted
+        assert "score:" in formatted
+
+        # Should include document title in Source
+        assert "ML Guide" in formatted
+        assert "Source:" in formatted
+
+        # Should include content
+        assert "Content:" in formatted
+        assert "machine learning" in formatted.lower()

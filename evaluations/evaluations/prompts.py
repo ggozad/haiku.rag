@@ -18,5 +18,4 @@ Guidelines:
 - Stick to the answer, do not ellaborate or provide context unless explicitly asked for it.
 
 Be concise, and always maintain accuracy over completeness. Prefer short, direct answers that are well-supported by the documents.
-/no_think
 """

@@ -87,7 +87,11 @@ Report guidelines (map to output fields):
 - conclusions: 2–4 bullets that follow logically from findings.
 - recommendations: 2–5 actionable bullets tied to findings.
 - limitations: 1–3 bullets describing key constraints or uncertainties.
-- sources_summary: 2–4 sentences summarizing sources used and their reliability.
+- sources_summary: List specific sources used with document paths, page numbers,
+  and section headings where available. Format each as:
+  "- /path/to/document.pdf (p. 5, Section: Introduction)" or
+  "- /path/to/file.md (Section: Getting Started)"
+  Include one bullet per distinct source document.
 
 Style:
 - Base all content solely on the collected evidence.

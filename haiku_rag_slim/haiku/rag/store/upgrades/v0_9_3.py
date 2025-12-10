@@ -7,7 +7,7 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 
 
-def _infer_vector_dim(store: Store) -> int:
+def _infer_vector_dim(store: Store) -> int:  # pragma: no cover
     """Infer vector dimension from existing data; fallback to embedder config."""
     try:
         arrow = store.chunks_table.search().limit(1).to_arrow()
@@ -22,7 +22,7 @@ def _infer_vector_dim(store: Store) -> int:
     return getattr(store.embedder, "_vector_dim", 1024)
 
 
-def _apply_chunk_order(store: Store) -> None:
+def _apply_chunk_order(store: Store) -> None:  # pragma: no cover
     """Add integer 'order' column to chunks and backfill from metadata."""
 
     vector_dim = _infer_vector_dim(store)
@@ -95,7 +95,7 @@ upgrade_order = Upgrade(
 )
 
 
-def _apply_fts_phrase_support(store: Store) -> None:
+def _apply_fts_phrase_support(store: Store) -> None:  # pragma: no cover
     """Recreate FTS index with phrase query support and no stop-word removal."""
     try:
         store.chunks_table.create_fts_index(

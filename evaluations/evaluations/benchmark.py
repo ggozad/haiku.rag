@@ -45,7 +45,10 @@ def build_experiment_metadata(
         "embedder_model": config.embeddings.model.name,
         "embedder_dim": config.embeddings.model.vector_dim,
         "chunk_size": config.processing.chunk_size,
-        "context_chunk_radius": config.processing.context_chunk_radius,
+        "search_limit": config.search.limit,
+        "context_radius": config.search.context_radius,
+        "max_context_items": config.search.max_context_items,
+        "max_context_chars": config.search.max_context_chars,
         "rerank_provider": config.reranking.model.provider
         if config.reranking.model
         else None,
@@ -96,6 +99,7 @@ async def populate_db(
                     uri=payload.uri,
                     title=payload.title,
                     metadata=payload.metadata,
+                    format=payload.format,
                 )
                 progress.advance(task)
 
@@ -155,10 +159,10 @@ async def run_retrieval_benchmark(
 
             seen = set()
             uris = []
-            for chunk, _ in chunks:
-                if chunk.document_id is None:
+            for result in chunks:
+                if result.document_id is None:
                     continue
-                doc = await rag.get_document_by_id(chunk.document_id)
+                doc = await rag.get_document_by_id(result.document_id)
                 if doc and doc.uri and doc.uri not in seen:
                     uris.append(doc.uri)
                     seen.add(doc.uri)
@@ -248,7 +252,8 @@ async def run_qa_benchmark(
         qa = get_qa_agent(rag, system_prompt=system_prompt)
 
         async def answer_question(question: str) -> str:
-            return await qa.answer(question)
+            answer, _ = await qa.answer(question)
+            return answer
 
         eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
 

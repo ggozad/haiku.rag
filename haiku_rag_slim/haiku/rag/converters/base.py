@@ -40,20 +40,24 @@ class DocumentConverter(ABC):
         """
         pass
 
+    SUPPORTED_FORMATS = ("md", "html")
+
     @abstractmethod
     async def convert_text(
-        self, text: str, name: str = "content.md"
+        self, text: str, name: str = "content.md", format: str = "md"
     ) -> "DoclingDocument":
         """Convert text content to DoclingDocument format.
 
         Args:
             text: The text content to convert.
             name: The name to use for the document (defaults to "content.md").
+            format: The format of the text content ("md" or "html"). Defaults to "md".
+                This determines which parser docling uses to interpret the content.
 
         Returns:
             DoclingDocument representation of the text.
 
         Raises:
-            ValueError: If the text cannot be converted.
+            ValueError: If the text cannot be converted or format is unsupported.
         """
         pass

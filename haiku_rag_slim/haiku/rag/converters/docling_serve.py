@@ -88,6 +88,7 @@ class DoclingServeConverter(DocumentConverter):
                 "table_mode": opts.table_mode,
                 "table_cell_matching": str(opts.table_cell_matching).lower(),
                 "images_scale": str(opts.images_scale),
+                "generate_picture_images": str(opts.generate_picture_images).lower(),
             }
 
             if opts.ocr_lang:
@@ -176,23 +177,37 @@ class DoclingServeConverter(DocumentConverter):
         files = {"files": (path.name, file_content, "application/octet-stream")}
         return await self._make_request(files, path.name)
 
+    SUPPORTED_FORMATS = ("md", "html")
+
     async def convert_text(
-        self, text: str, name: str = "content.md"
+        self, text: str, name: str = "content.md", format: str = "md"
     ) -> "DoclingDocument":
         """Convert text content to DoclingDocument via docling-serve.
 
-        Sends the text as a markdown file to docling-serve for conversion.
+        Sends the text to docling-serve for conversion using the specified format.
 
         Args:
             text: The text content to convert.
             name: The name to use for the document (defaults to "content.md").
+            format: The format of the text content ("md" or "html"). Defaults to "md".
+                This determines which parser docling uses to interpret the content.
 
         Returns:
             DoclingDocument representation of the text.
 
         Raises:
-            ValueError: If the text cannot be converted.
+            ValueError: If the text cannot be converted or format is unsupported.
         """
+        if format not in self.SUPPORTED_FORMATS:
+            raise ValueError(
+                f"Unsupported format: {format}. "
+                f"Supported formats: {', '.join(self.SUPPORTED_FORMATS)}"
+            )
+
+        # Derive document name from format to tell docling which parser to use
+        doc_name = f"content.{format}" if name == "content.md" else name
+        mime_type = "text/html" if format == "html" else "text/markdown"
+
         text_bytes = text.encode("utf-8")
-        files = {"files": (name, text_bytes, "text/markdown")}
-        return await self._make_request(files, name)
+        files = {"files": (doc_name, text_bytes, mime_type)}
+        return await self._make_request(files, doc_name)

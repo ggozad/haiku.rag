@@ -3,12 +3,7 @@ from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.converters import get_converter
-from haiku.rag.store.engine import Store
-from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.store.models.document import Document
-from haiku.rag.store.repositories.chunk import ChunkRepository
-from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata, SearchResult
 
 
 @pytest.mark.asyncio
@@ -53,147 +48,248 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_create_chunks_for_document(qa_corpus: Dataset, temp_db_path):
-    """Test creating chunks for a document."""
-    # Create a store and repositories
-    store = Store(temp_db_path, create=True)
-    chunk_repo = ChunkRepository(store)
-    doc_repo = DocumentRepository(store)
+async def test_chunking_pipeline(qa_corpus: Dataset, temp_db_path):
+    """Test document chunking using client primitives."""
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.embeddings import embed_chunks
 
-    # Get the first document from the corpus
-    first_doc = qa_corpus[0]
-    document_text = first_doc["document_extracted"]
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        # Get the first document from the corpus
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
 
-    # Create a document first (without chunks)
-    document = Document(content=document_text, metadata={"source": "test"})
-    created_document = await doc_repo.create(document)
-    document_id = created_document.id
+        # Use client primitives: convert → chunk → embed
+        docling_document = await client.convert(document_text)
+        chunks = await client.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks)
 
-    assert document_id is not None, "Document ID should not be None"
+        # Verify chunks were created with embeddings
+        assert len(chunks) > 0
+        assert all(chunk.embedding is None for chunk in chunks)  # Before embedding
+        assert all(chunk.embedding is not None for chunk in embedded_chunks)  # After
 
-    # Convert text to DoclingDocument
-    converter = get_converter(Config)
-    docling_document = await converter.convert_text(document_text, name="test.md")
-
-    # Test creating chunks for the document
-    chunks = await chunk_repo.create_chunks_for_document(document_id, docling_document)
-
-    # Verify chunks were created
-    assert len(chunks) > 0
-    assert all(chunk.document_id == document_id for chunk in chunks)
-    assert all(chunk.id is not None for chunk in chunks)
-
-    # Verify chunk order
-    for i, chunk in enumerate(chunks):
-        assert chunk.order == i
-
-    # Verify chunks exist in database
-    db_chunks = await chunk_repo.get_by_document_id(document_id)
-    assert len(db_chunks) == len(chunks)
-
-    store.close()
+        # Verify chunk order
+        for i, chunk in enumerate(chunks):
+            assert chunk.order == i
 
 
-@pytest.mark.asyncio
-async def test_chunk_repository_crud(temp_db_path):
-    """Test basic CRUD operations in ChunkRepository."""
-    # Create a store
-    store = Store(temp_db_path, create=True)
-    chunk_repo = ChunkRepository(store)
-    doc_repo = DocumentRepository(store)
+def test_chunk_metadata_parsing():
+    """Test ChunkMetadata parsing from chunk metadata dict."""
+    metadata_dict = {
+        "doc_item_refs": ["#/texts/0", "#/texts/1", "#/tables/0"],
+        "headings": ["Chapter 1", "Section 1.1"],
+        "labels": ["paragraph", "paragraph", "table"],
+        "page_numbers": [1, 1, 2],
+    }
 
-    # First create a document to reference
-    document = Document(content="Test document content", metadata={})
-    created_document = await doc_repo.create(document)
-    document_id = created_document.id
-
-    assert document_id is not None, "Document ID should not be None"
-
-    # Test create chunk manually
     chunk = Chunk(
-        document_id=document_id,
-        content="Test chunk content",
-        metadata={"test": "value"},
+        content="Test content",
+        metadata=metadata_dict,
     )
 
-    created_chunk = await chunk_repo.create(chunk)
-    assert isinstance(created_chunk, Chunk)
-    assert created_chunk.id is not None
-    assert created_chunk.content == "Test chunk content"
+    chunk_meta = chunk.get_chunk_metadata()
 
-    # Test get by ID
-    retrieved_chunk = await chunk_repo.get_by_id(created_chunk.id)
-    assert retrieved_chunk is not None
-    assert retrieved_chunk.content == "Test chunk content"
-    assert retrieved_chunk.metadata["test"] == "value"
-
-    # Test update
-    retrieved_chunk.content = "Updated chunk content"
-    updated_chunk = await chunk_repo.update(retrieved_chunk)
-    assert updated_chunk.content == "Updated chunk content"
-
-    # Test list all
-    all_chunks = await chunk_repo.list_all()
-    assert len(all_chunks) >= 1
-    assert any(chunk.id == created_chunk.id for chunk in all_chunks)
-
-    # Test delete
-    deleted = await chunk_repo.delete(created_chunk.id)
-    assert deleted is True
-
-    # Verify chunk is gone
-    retrieved_chunk = await chunk_repo.get_by_id(created_chunk.id)
-    assert retrieved_chunk is None
-
-    store.close()
+    assert isinstance(chunk_meta, ChunkMetadata)
+    assert chunk_meta.doc_item_refs == ["#/texts/0", "#/texts/1", "#/tables/0"]
+    assert chunk_meta.headings == ["Chapter 1", "Section 1.1"]
+    assert chunk_meta.labels == ["paragraph", "paragraph", "table"]
+    assert chunk_meta.page_numbers == [1, 1, 2]
 
 
-@pytest.mark.asyncio
-async def test_adjacent_chunks(temp_db_path):
-    """Test the get_adjacent_chunks repository method."""
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
-    chunk_repo = ChunkRepository(store)
+def test_chunk_metadata_defaults():
+    """Test ChunkMetadata with empty/default values."""
+    chunk = Chunk(content="Test content", metadata={})
+    chunk_meta = chunk.get_chunk_metadata()
 
-    # Create a simple document first
-    document_content = "Test document for chunking"
-    document = Document(content=document_content)
-    created_document = await doc_repo.create(document)
+    assert chunk_meta.doc_item_refs == []
+    assert chunk_meta.headings is None
+    assert chunk_meta.labels == []
+    assert chunk_meta.page_numbers == []
 
-    # Manually create multiple chunks with order metadata
-    chunks_data = [
-        ("First chunk content", 0),
-        ("Second chunk content", 1),
-        ("Third chunk content", 2),
-        ("Fourth chunk content", 3),
-        ("Fifth chunk content", 4),
-    ]
 
-    created_chunks = []
-    for content, order in chunks_data:
-        chunk = Chunk(document_id=created_document.id, content=content, order=order)
-        created_chunk = await chunk_repo.create(chunk)
-        created_chunks.append(created_chunk)
+def test_chunk_metadata_resolve_doc_items():
+    """Test resolving doc_item_refs to actual DocItem objects."""
+    from docling_core.types.doc.document import DoclingDocument
 
-    # Test with the middle chunk (index 2, order 2)
-    middle_chunk = created_chunks[2]
+    # Create a minimal DoclingDocument with some text items
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "First text",
+                "orig": "First text",
+                "label": "paragraph",
+            },
+            {
+                "self_ref": "#/texts/1",
+                "text": "Second text",
+                "orig": "Second text",
+                "label": "title",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    docling_doc = DoclingDocument.model_validate(doc_json)
 
-    # Get adjacent chunks (1 before and after)
-    adjacent_chunks = await chunk_repo.get_adjacent_chunks(middle_chunk, 1)
+    # Create chunk metadata with refs
+    chunk_meta = ChunkMetadata(
+        doc_item_refs=["#/texts/0", "#/texts/1"],
+        labels=["paragraph", "title"],
+    )
 
-    # Should have 2 chunks (one before, one after)
-    assert len(adjacent_chunks) == 2
+    # Resolve refs
+    doc_items = chunk_meta.resolve_doc_items(docling_doc)
 
-    # Should not include the original chunk
-    assert middle_chunk.id not in [chunk.id for chunk in adjacent_chunks]
+    assert len(doc_items) == 2
+    assert getattr(doc_items[0], "text") == "First text"
+    assert getattr(doc_items[1], "text") == "Second text"
 
-    # Should include chunks with order 1 and 3
-    orders = [chunk.order for chunk in adjacent_chunks]
-    assert 1 in orders
-    assert 3 in orders
 
-    # All adjacent chunks should be from the same document
-    for chunk in adjacent_chunks:
-        assert chunk.document_id == created_document.id
+def test_chunk_metadata_resolve_doc_items_graceful_degradation():
+    """Test that invalid refs are skipped gracefully."""
+    from docling_core.types.doc.document import DoclingDocument
 
-    store.close()
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "Only text",
+                "orig": "Only text",
+                "label": "paragraph",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    docling_doc = DoclingDocument.model_validate(doc_json)
+
+    # Create chunk metadata with one valid and one invalid ref
+    chunk_meta = ChunkMetadata(
+        doc_item_refs=["#/texts/0", "#/texts/999", "#/invalid/path"],
+    )
+
+    # Resolve refs - invalid ones should be skipped
+    doc_items = chunk_meta.resolve_doc_items(docling_doc)
+
+    assert len(doc_items) == 1
+    assert getattr(doc_items[0], "text") == "Only text"
+
+
+def test_chunk_metadata_resolve_empty_refs():
+    """Test resolving with no refs returns empty list."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    doc_json = {
+        "name": "test_doc",
+        "texts": [],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    docling_doc = DoclingDocument.model_validate(doc_json)
+
+    chunk_meta = ChunkMetadata()
+    doc_items = chunk_meta.resolve_doc_items(docling_doc)
+
+    assert doc_items == []
+
+
+def test_search_result_format_for_agent_full():
+    """Test format_for_agent with all metadata present."""
+    result = SearchResult(
+        content="This is the chunk content about elections.",
+        score=0.85,
+        chunk_id="chunk-123",
+        document_id="doc-456",
+        document_uri="file:///docs/report.pdf",
+        document_title="Annual Report 2024",
+        headings=["Chapter 1", "Section 1.1", "Elections"],
+        labels=["paragraph", "table"],
+        page_numbers=[1, 2],
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "[chunk-123]" in formatted
+    assert "(score: 0.85)" in formatted
+    assert (
+        'Source: "Annual Report 2024" > Chapter 1 > Section 1.1 > Elections'
+        in formatted
+    )
+    assert "Type: table" in formatted  # table has higher priority than paragraph
+    assert "Content:\nThis is the chunk content about elections." in formatted
+
+
+def test_search_result_format_for_agent_minimal():
+    """Test format_for_agent with minimal metadata."""
+    result = SearchResult(
+        content="Some content here.",
+        score=0.72,
+        chunk_id="chunk-abc",
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "[chunk-abc]" in formatted
+    assert "(score: 0.72)" in formatted
+    assert "Source:" not in formatted  # No title or headings
+    assert "Type:" not in formatted  # No labels
+    assert "Content:\nSome content here." in formatted
+
+
+def test_search_result_format_for_agent_title_only():
+    """Test format_for_agent with only document title."""
+    result = SearchResult(
+        content="Content text.",
+        score=0.60,
+        chunk_id="chunk-xyz",
+        document_title="My Document",
+    )
+
+    formatted = result.format_for_agent()
+
+    assert 'Source: "My Document"' in formatted
+
+
+def test_search_result_format_for_agent_headings_only():
+    """Test format_for_agent with only headings (no title)."""
+    result = SearchResult(
+        content="Content text.",
+        score=0.60,
+        chunk_id="chunk-xyz",
+        headings=["Introduction", "Background"],
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "Source: Introduction > Background" in formatted
+
+
+def test_search_result_get_primary_label():
+    """Test _get_primary_label prioritization."""
+    # Table takes priority over text labels
+    result = SearchResult(content="x", score=0.5, labels=["paragraph", "table", "text"])
+    assert result._get_primary_label() == "table"
+
+    # Code takes priority over list_item
+    result = SearchResult(content="x", score=0.5, labels=["list_item", "code"])
+    assert result._get_primary_label() == "code"
+
+    # Text labels fall through to first
+    result = SearchResult(content="x", score=0.5, labels=["paragraph", "text"])
+    assert result._get_primary_label() == "paragraph"
+
+    # Empty labels
+    result = SearchResult(content="x", score=0.5, labels=[])
+    assert result._get_primary_label() is None

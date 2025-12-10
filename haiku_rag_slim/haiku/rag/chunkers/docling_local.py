@@ -1,9 +1,11 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from haiku.rag.chunkers.base import DocumentChunker
 from haiku.rag.config import AppConfig, Config
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
 if TYPE_CHECKING:
+    from docling_core.transforms.chunker.doc_chunk import DocMeta
     from docling_core.types.doc.document import DoclingDocument
 
 
@@ -93,18 +95,66 @@ class DoclingLocalChunker(DocumentChunker):
                 "Must be 'hybrid' or 'hierarchical'."
             )
 
-    async def chunk(self, document: "DoclingDocument") -> list[str]:
-        """Split the document into chunks using docling's structure-aware chunking.
+    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
+        """Split the document into chunks with metadata.
+
+        Extracts structured metadata from each DocChunk including:
+        - doc_item_refs: JSON pointer references to DocItems (e.g., "#/texts/5")
+        - headings: Section heading hierarchy
+        - labels: Semantic labels for each doc_item (e.g., "paragraph", "table")
+        - page_numbers: Page numbers where content appears
 
         Args:
             document: The DoclingDocument to be split into chunks.
 
         Returns:
-            A list of text chunks with semantic boundaries.
+            List of Chunk containing content and structured metadata.
         """
         if document is None:
             return []
 
-        # Chunk using docling's hybrid chunker
-        chunks = list(self.chunker.chunk(document))
-        return [self.chunker.contextualize(chunk) for chunk in chunks]
+        raw_chunks = list(self.chunker.chunk(document))
+        result: list[Chunk] = []
+
+        for chunk in raw_chunks:
+            # Use raw chunk text - headings are stored separately in metadata
+            # and prepended at embedding time for better semantic search
+            text = chunk.text
+
+            # Extract metadata from DocChunk.meta (cast to DocMeta for type safety)
+            doc_item_refs: list[str] = []
+            labels: list[str] = []
+            page_numbers: list[int] = []
+            headings: list[str] | None = None
+
+            meta = cast("DocMeta | None", chunk.meta)
+            if meta and meta.doc_items:
+                for doc_item in meta.doc_items:
+                    # Get JSON pointer reference
+                    if doc_item.self_ref:
+                        doc_item_refs.append(doc_item.self_ref)
+                    # Get label
+                    if doc_item.label:
+                        labels.append(doc_item.label)
+                    # Get page numbers from provenance
+                    if doc_item.prov:
+                        for prov in doc_item.prov:
+                            if (
+                                prov.page_no is not None
+                                and prov.page_no not in page_numbers
+                            ):
+                                page_numbers.append(prov.page_no)
+
+            # Get headings from chunk metadata
+            if meta and meta.headings:
+                headings = list(meta.headings)
+
+            chunk_metadata = ChunkMetadata(
+                doc_item_refs=doc_item_refs,
+                headings=headings,
+                labels=labels,
+                page_numbers=sorted(page_numbers),
+            )
+            result.append(Chunk(content=text, metadata=chunk_metadata.model_dump()))
+
+        return result

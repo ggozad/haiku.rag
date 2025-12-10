@@ -1,12 +1,12 @@
-import importlib
-import importlib.util
 import sys
 from importlib import metadata
 from pathlib import Path
-from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.version import Version, parse
+
+if TYPE_CHECKING:
+    from haiku.rag.graph.common.models import Citation
 
 
 def apply_common_settings(
@@ -271,6 +271,37 @@ def format_bytes(num_bytes: int) -> str:
     return f"{size:.1f} PB"
 
 
+def format_citations(citations: "list[Citation]") -> str:
+    """Format citations as markdown string."""
+    if not citations:
+        return ""
+    lines = ["## Citations\n"]
+    for c in citations:
+        # Build citation header with document_id and chunk_id
+        parts = [
+            f"- document_id: `{c.document_id}` chunk_id: `{c.chunk_id}` "
+            f"uri: **{c.document_uri}**"
+        ]
+        if c.document_title:
+            parts.append(f' - "{c.document_title}"')
+        location_parts = []
+        if c.page_numbers:
+            if len(c.page_numbers) == 1:
+                location_parts.append(f"p. {c.page_numbers[0]}")
+            else:
+                location_parts.append(f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}")
+        if c.headings:
+            location_parts.append(f"Section: {c.headings[-1]}")
+        if location_parts:
+            parts.append(f" ({', '.join(location_parts)})")
+        lines.append("".join(parts))
+        # Add truncated content excerpt
+        excerpt = c.content[:500] + "…" if len(c.content) > 500 else c.content
+        excerpt = excerpt.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        lines.append(f"\n  {excerpt}\n")
+    return "\n".join(lines)
+
+
 def get_default_data_dir() -> Path:
     """Get the user data directory for the current system platform.
 
@@ -316,52 +347,3 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
     return running_version >= pypi_version, running_version, pypi_version
 
 
-def load_callable(path: str):
-    """Load a callable from a dotted path or file path.
-
-    Supported formats:
-    - "package.module:func" or "package.module.func"
-    - "path/to/file.py:func"
-
-    Returns the loaded callable. Raises ValueError on failure.
-    """
-    if not path:
-        raise ValueError("Empty callable path provided")
-
-    module_part = None
-    func_name = None
-
-    if ":" in path:
-        module_part, func_name = path.split(":", 1)
-    else:
-        # split by last dot for module.attr
-        if "." in path:
-            module_part, func_name = path.rsplit(".", 1)
-        else:
-            raise ValueError(
-                "Invalid callable path format. Use 'module:func' or 'module.func' or 'file.py:func'."
-            )
-
-    # Try file path first
-    mod: ModuleType | None = None
-    module_path = Path(module_part)
-    if module_path.suffix == ".py" and module_path.exists():
-        spec = importlib.util.spec_from_file_location(module_path.stem, module_path)
-        if spec and spec.loader:
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-    else:
-        # Import as a module path
-        try:
-            mod = importlib.import_module(module_part)
-        except Exception as e:
-            raise ValueError(f"Failed to import module '{module_part}': {e}")
-
-    if not hasattr(mod, func_name):
-        raise ValueError(f"Callable '{func_name}' not found in module '{module_part}'")
-    func = getattr(mod, func_name)
-    if not callable(func):
-        raise ValueError(
-            f"Attribute '{func_name}' in module '{module_part}' is not callable"
-        )
-    return func

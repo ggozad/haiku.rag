@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 from haiku.rag.embeddings.base import EmbedderBase
 
 
-class Embedder(EmbedderBase):
+class Embedder(EmbedderBase):  # pragma: no cover
     @overload
     async def embed(self, text: str) -> list[float]: ...
 

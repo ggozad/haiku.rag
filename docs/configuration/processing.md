@@ -10,8 +10,6 @@ Configure how documents are converted and chunked:
 processing:
   # Chunking configuration
   chunk_size: 256                            # Maximum tokens per chunk
-  context_chunk_radius: 0                    # Context radius for chunk expansion
-  markdown_preprocessor: ""                  # Optional preprocessor script
 
   # Converter selection
   converter: docling-local                   # docling-local or docling-serve
@@ -37,6 +35,7 @@ processing:
 
     # Image settings
     images_scale: 2.0                        # Image scale factor
+    generate_picture_images: false           # Include embedded images in output
 ```
 
 ### Conversion Options
@@ -75,10 +74,12 @@ conversion_options:
 
 ```yaml
 conversion_options:
-  images_scale: 2.0  # Image resolution scale factor
+  images_scale: 2.0               # Image resolution scale factor
+  generate_picture_images: false  # Include embedded images in output
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
+- **generate_picture_images**: When `true`, embedded images (figures, diagrams) are included as base64-encoded data in the document. When `false` (default), images are excluded to reduce chunk size and avoid context bloat.
 
 ### Local vs Remote Processing
 
@@ -134,52 +135,14 @@ processing:
 - `false`: Tables as narrative text ("Value A, Column 2 = Value B")
 - `true`: Tables as markdown (preserves table structure)
 
-### Chunk Size and Context
+### Chunk Size
 
 ```yaml
 processing:
-  # Chunk size for document processing
-  chunk_size: 256
-
-  # Number of adjacent chunks to include before/after retrieved chunks for context
-  # 0 = no expansion (default), 1 = include 1 chunk before and after, etc.
-  # When expanded chunks overlap or are adjacent, they are automatically merged
-  # into single chunks with continuous content to eliminate duplication
-  context_chunk_radius: 0
+  chunk_size: 256  # Maximum tokens per chunk
 ```
 
-### Markdown Preprocessor
-
-Optionally preprocess Markdown before chunking by pointing to a callable that receives and returns Markdown text. This is useful for normalizing content, stripping boilerplate, or applying custom transformations before chunk boundaries are computed.
-
-```yaml
-processing:
-  # A callable path in one of these formats:
-  # - package.module:func
-  # - package.module.func
-  # - /abs/or/relative/path/to/file.py:func
-  markdown_preprocessor: my_pkg.preprocess:clean_md
-```
-
-!!! note
-    - The function signature should be `def clean_md(text: str) -> str` or `async def clean_md(text: str) -> str`.
-    - If the function raises or returns a non-string, haiku.rag logs a warning and proceeds without preprocessing.
-    - The preprocessor affects only the chunking pipeline. The stored document content remains unchanged.
-
-Example implementation:
-
-```python
-# my_pkg/preprocess.py
-def clean_md(text: str) -> str:
-    # strip HTML comments and collapse multiple blank lines
-    lines = [line for line in text.splitlines() if not line.strip().startswith("<!--")]
-    out = []
-    for line in lines:
-        if line.strip() == "" and (out and out[-1] == ""):
-            continue
-        out.append(line)
-    return "\n".join(out)
-```
+Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa-research.md#search-settings).
 
 ## File Monitoring
 

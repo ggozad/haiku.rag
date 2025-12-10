@@ -1,22 +1,20 @@
 # Haiku RAG
 
-Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling.
-
-`haiku.rag` is an opinionated agentic RAG system that uses LanceDB for vector storage, Pydantic AI for multi-agent workflows, and Docling for document processing. It supports hybrid search (vector + full-text) with Reciprocal Rank Fusion, multiple embedding providers (Ollama, LM Studio, vLLM, OpenAI, VoyageAI), and includes research agents that plan, search, evaluate, and synthesize answers.
+Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/).
 
 ## Features
 
-- **Local LanceDB**: No external servers required, supports also LanceDB cloud storage, S3, Google Cloud & Azure
-- **Multiple embedding providers**: Ollama, LM Studio, VoyageAI, OpenAI, vLLM
-- **Multiple QA providers**: Any provider/model supported by Pydantic AI (Ollama, LM Studio, OpenAI, Anthropic, etc.)
-- **Native hybrid search**: Vector + full-text search with native LanceDB RRF reranking
-- **Reranking**: Default search result reranking with MixedBread AI, Cohere, Zero Entropy, or vLLM
-- **Question answering**: Built-in QA agents on your documents
-- **Research graph (multi‑agent)**: Plan → Search → Evaluate → Synthesize with agentic AI
-- **File monitoring**: Auto-index files when run as server
-- **CLI & Python API**: Use from command line or Python
-- **MCP server**: Expose as tools for AI assistants
-- **Flexible document processing**: Local (docling) or remote (docling-serve) processing
+- **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
+- **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
+- **Question answering** — QA agents with citations (page numbers, section headings)
+- **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
+- **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion and visual grounding
+- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
+- **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
+- **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
+- **File monitoring** — Watch directories and auto-index on changes
+- **Inspector** — TUI for browsing documents, chunks, and search results
+- **CLI & Python API** — Full functionality from command line or code
 
 ## Installation
 
@@ -41,103 +39,50 @@ Install only the extras you need. See the [Installation](https://ggozad.github.i
 ## Quick Start
 
 ```bash
-# Add documents
-haiku-rag add "Your content here"
-haiku-rag add "Your content here" --meta author=alice --meta topic=notes
-haiku-rag add-src document.pdf --meta source=manual
+# Index a PDF
+haiku-rag add-src paper.pdf
 
 # Search
-haiku-rag search "query"
-
-# Search with filters
-haiku-rag search "query" --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
-
-# Ask questions
-haiku-rag ask "Who is the author of haiku.rag?"
+haiku-rag search "attention mechanism"
 
 # Ask questions with citations
-haiku-rag ask "Who is the author of haiku.rag?" --cite
+haiku-rag ask "What datasets were used for evaluation?" --cite
 
-# Deep QA (multi-agent question decomposition)
-haiku-rag ask "Who is the author of haiku.rag?" --deep --cite
+# Deep QA — decomposes complex questions into sub-queries
+haiku-rag ask "How does the proposed method compare to the baseline on MMLU?" --deep
 
-# Deep QA with verbose output
-haiku-rag ask "Who is the author of haiku.rag?" --deep --verbose
+# Research mode — iterative planning and search
+haiku-rag research "What are the limitations of the approach?" --verbose
 
-# Multi‑agent research (iterative plan/search/evaluate)
-haiku-rag research \
-  "What are the main drivers and trends of global temperature anomalies since 1990?" \
-  --max-iterations 2 \
-  --confidence-threshold 0.8 \
-  --max-concurrency 3 \
-  --verbose
-
-# Rebuild database (re-chunk and re-embed all documents)
-haiku-rag rebuild
-
-# Start server with file monitoring
+# Watch a directory for changes
 haiku-rag serve --monitor
 ```
 
-To customize settings, create a `haiku.rag.yaml` config file (see [Configuration](https://ggozad.github.io/haiku.rag/configuration/)).
+See [Configuration](https://ggozad.github.io/haiku.rag/configuration/) for customization options.
 
-## Python Usage
+## Python API
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
-from haiku.rag.graph.agui import stream_graph
-from haiku.rag.graph.research import (
-    ResearchContext,
-    ResearchDeps,
-    ResearchState,
-    build_research_graph,
-)
 
-async with HaikuRAG("database.lancedb") as client:
-    # Add document
-    doc = await client.create_document("Your content")
+async with HaikuRAG("research.lancedb", create=True) as rag:
+    # Index documents
+    await rag.create_document_from_source("paper.pdf")
+    await rag.create_document_from_source("https://arxiv.org/pdf/1706.03762")
 
-    # Search (reranking enabled by default)
-    results = await client.search("query")
-    for chunk, score in results:
-        print(f"{score:.3f}: {chunk.content}")
+    # Search — returns chunks with provenance
+    results = await rag.search("self-attention")
+    for result in results:
+        print(f"{result.score:.2f} | p.{result.page_numbers} | {result.content[:100]}")
 
-    # Ask questions
-    answer = await client.ask("Who is the author of haiku.rag?")
+    # QA with citations
+    answer, citations = await rag.ask("What is the complexity of self-attention?")
     print(answer)
-
-    # Ask questions with citations
-    answer = await client.ask("Who is the author of haiku.rag?", cite=True)
-    print(answer)
-
-    # Multi‑agent research pipeline (Plan → Search → Evaluate → Synthesize)
-    # Graph settings (provider, model, max_iterations, etc.) come from config
-    graph = build_research_graph(config=Config)
-    question = (
-        "What are the main drivers and trends of global temperature "
-        "anomalies since 1990?"
-    )
-    context = ResearchContext(original_question=question)
-    state = ResearchState.from_config(context=context, config=Config)
-    deps = ResearchDeps(client=client)
-
-    # Blocking run (final result only)
-    report = await graph.run(state=state, deps=deps)
-    print(report.title)
-
-    # Streaming progress (AG-UI events)
-    async for event in stream_graph(graph, state, deps):
-        if event["type"] == "STEP_STARTED":
-            print(f"Starting step: {event['stepName']}")
-        elif event["type"] == "ACTIVITY_SNAPSHOT":
-            print(f"  {event['content']}")
-        elif event["type"] == "RUN_FINISHED":
-            print("\nResearch complete!\n")
-            result = event["result"]
-            print(result["title"])
-            print(result["executive_summary"])
+    for cite in citations:
+        print(f"  [{cite.chunk_id}] p.{cite.page_numbers}: {cite.content[:80]}")
 ```
+
+For research agents and streaming with [AG-UI](https://docs.ag-ui.com/), see the [Agents docs](https://ggozad.github.io/haiku.rag/agents/).
 
 ## MCP Server
 

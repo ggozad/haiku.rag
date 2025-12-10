@@ -2,14 +2,14 @@
 
 name = "haiku.rag-evals"
 description = "Benchmarking and evaluation scripts for haiku.rag"
-version = "0.19.6"
+version = "0.20.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 requires-python = ">=3.12"
 
 dependencies = [
     "haiku.rag-slim",
-    "pydantic-ai-slim[evals,logfire]>=1.19.0",
+    "pydantic-ai-slim[evals,logfire]>=1.27.0",
     "datasets>=4.4.1",
     "typer>=0.19.2,<0.20.0",
     "python-dotenv>=1.2.1",

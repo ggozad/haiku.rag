@@ -106,9 +106,37 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                 # Forward emitter events to stream
                 async def forward_events():
                     async for event in emitter:
-                        # Filter out ACTIVITY_SNAPSHOT - not supported by CopilotKit
-                        if event.get("type") == "ACTIVITY_SNAPSHOT":
+                        # Log events for debugging
+                        logger.info(f"AG-UI Event: {event}")
+                        event_type = event.get("type")
+
+                        # Convert ACTIVITY_SNAPSHOT to STATE_DELTA for CopilotKit
+                        # As CopilotKit does not handle ACTIVITY_SNAPSHOT events
+                        if event_type == "ACTIVITY_SNAPSHOT":
+                            activity_type = event.get("activityType", "")
+                            content = event.get("content", {})
+                            message = content.get("message", "")
+
+                            # Emit STATE_DELTA to patch activity info into state
+                            # Use "add" op which creates or replaces the value
+                            delta_event = {
+                                "type": "STATE_DELTA",
+                                "delta": [
+                                    {
+                                        "op": "add",
+                                        "path": "/current_activity",
+                                        "value": activity_type,
+                                    },
+                                    {
+                                        "op": "add",
+                                        "path": "/current_activity_message",
+                                        "value": message,
+                                    },
+                                ],
+                            }
+                            await send_stream.send(format_sse_event(delta_event))
                             continue
+
                         await send_stream.send(format_sse_event(event))
 
                 # Run agent and event forwarding concurrently
@@ -161,10 +189,46 @@ async def health_check(_: Request) -> JSONResponse:
     )
 
 
+async def visualize_chunk(request: Request) -> JSONResponse:
+    """Return visual grounding images for a chunk as base64."""
+    import base64
+    from io import BytesIO
+
+    chunk_id = request.path_params["chunk_id"]
+    client = get_client(db_path)
+
+    # Get the chunk
+    chunk = await client.chunk_repository.get_by_id(chunk_id)
+    if not chunk:
+        return JSONResponse({"error": "Chunk not found"}, status_code=404)
+
+    # Get visualization images
+    images = await client.visualize_chunk(chunk)
+    if not images:
+        return JSONResponse({"images": [], "message": "No visual grounding available"})
+
+    # Convert PIL images to base64
+    base64_images = []
+    for img in images:
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        base64_images.append(base64.b64encode(buffer.read()).decode("utf-8"))
+
+    return JSONResponse(
+        {
+            "images": base64_images,
+            "chunk_id": chunk_id,
+            "document_uri": chunk.document_uri,
+        }
+    )
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
         Route("/v1/research/stream", stream_research_agent, methods=["POST"]),
+        Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),
     ],
     middleware=[

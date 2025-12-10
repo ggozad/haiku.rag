@@ -10,34 +10,15 @@ Task:
 
 Output format:
 - answer: The complete answer to the original question (2-4 paragraphs)
-- sources: List of document titles/URIs used (extract from the sub-answers)
+- cited_chunks: List of chunk IDs (from sub-answers) that directly support your answer
 
 Guidelines:
 - Start directly with the answer - no preamble like "Based on the research..."
 - Use a clear, professional tone
 - Organize information logically
 - If evidence is incomplete, state limitations clearly
-- Do not include any claims not supported by the gathered information"""
-
-SYNTHESIS_PROMPT_WITH_CITATIONS = """You are an expert at synthesizing information into clear, concise answers with proper citations.
-
-Task:
-- Combine the gathered information from sub-questions into a single comprehensive answer
-- Answer the original question directly and completely
-- Base your answer strictly on the provided evidence
-- Include inline citations using [Source Title] format
-
-Output format:
-- answer: The complete answer with inline citations (2-4 paragraphs)
-- sources: List of document titles/URIs used (extract from the sub-answers)
-
-Guidelines:
-- Start directly with the answer - no preamble like "Based on the research..."
-- Add citations after each claim: [Source Title]
-- Use a clear, professional tone
-- Organize information logically
-- If evidence is incomplete, state limitations clearly
-- Do not include any claims not supported by the gathered information"""
+- Do not include any claims not supported by the gathered information
+- Each sub-answer includes cited_chunks IDs - include the relevant ones in your response"""
 
 DECISION_PROMPT = """You are an expert at evaluating whether gathered information is sufficient to answer a question.
 

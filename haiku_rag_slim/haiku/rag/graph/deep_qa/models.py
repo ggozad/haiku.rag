@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from haiku.rag.graph.common.models import Citation
+
 
 class DeepQAEvaluation(BaseModel):
     is_sufficient: bool = Field(
@@ -13,8 +15,9 @@ class DeepQAEvaluation(BaseModel):
 
 
 class DeepQAAnswer(BaseModel):
+    """Final deep QA answer with resolved citations."""
+
     answer: str = Field(description="The comprehensive answer to the question")
-    sources: list[str] = Field(
-        description="Document titles or URIs used to generate the answer",
-        default_factory=list,
+    citations: list[Citation] = Field(
+        default_factory=list, description="Resolved citations for the answer"
     )

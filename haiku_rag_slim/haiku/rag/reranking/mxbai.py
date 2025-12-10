@@ -10,7 +10,7 @@ class MxBAIReranker(RerankerBase):
         model_name = (
             Config.reranking.model.name
             if Config.reranking.model
-            else "mxbai-rerank-base-v2"
+            else "mixedbread-ai/mxbai-rerank-base-v2"
         )
         self._client = MxbaiRerankV2(model_name, disable_transformers_warnings=True)
 

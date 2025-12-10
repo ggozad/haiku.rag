@@ -78,6 +78,8 @@ class DoclingLocalConverter(DocumentConverter):
             do_ocr=opts.do_ocr,
             do_table_structure=opts.do_table_structure,
             images_scale=opts.images_scale,
+            generate_page_images=True,
+            generate_picture_images=opts.generate_picture_images,
             table_structure_options=TableStructureOptions(
                 do_cell_matching=opts.table_cell_matching,
                 mode=(
@@ -136,18 +138,20 @@ class DoclingLocalConverter(DocumentConverter):
             raise ValueError(f"Failed to parse file: {path}")
 
     async def convert_text(
-        self, text: str, name: str = "content.md"
+        self, text: str, name: str = "content.md", format: str = "md"
     ) -> "DoclingDocument":
         """Convert text content to DoclingDocument using local docling.
 
         Args:
             text: The text content to convert.
             name: The name to use for the document (defaults to "content.md").
+            format: The format of the text content ("md" or "html"). Defaults to "md".
+                This determines which parser docling uses to interpret the content.
 
         Returns:
             DoclingDocument representation of the text.
 
         Raises:
-            ValueError: If the text cannot be converted.
+            ValueError: If the text cannot be converted or format is unsupported.
         """
-        return await TextFileHandler.text_to_docling_document(text, name)
+        return await TextFileHandler.text_to_docling_document(text, name, format)

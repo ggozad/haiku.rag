@@ -27,9 +27,10 @@ def map_wix_document(doc: Mapping[str, Any]) -> DocumentPayload:
 
     return DocumentPayload(
         uri=uri,
-        content=doc["contents"],
+        content=doc["html_content"],
         title=doc.get("title"),
         metadata=metadata or None,
+        format="html",
     )
 
 

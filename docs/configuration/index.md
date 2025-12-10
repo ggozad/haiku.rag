@@ -99,6 +99,10 @@ research:
   max_concurrency: 1
 
 search:
+  limit: 5                     # Default number of results to return
+  context_radius: 0            # DocItems before/after to include for text content
+  max_context_items: 10        # Maximum items in expanded context
+  max_context_chars: 10000     # Maximum characters in expanded context
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
 
@@ -115,11 +119,9 @@ processing:
   chunker: docling-local    # docling-local or docling-serve
   chunker_type: hybrid      # hybrid or hierarchical
   chunk_size: 256
-  context_chunk_radius: 0
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
   chunking_use_markdown_tables: false
-  markdown_preprocessor: ""
   conversion_options:
     do_ocr: true
     force_ocr: false
@@ -189,7 +191,7 @@ This is useful for:
 
 For detailed configuration of specific topics, see:
 
-- **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, QA, reranking)
-- **[QA and Research](qa-research.md)** - Question answering and research workflow configuration
-- **[Storage](storage.md)** - Database, remote storage, and vector indexing
+- **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, reranking)
+- **[Search and Question Answering](qa-research.md)** - Search settings, question answering, and research workflows
 - **[Document Processing](processing.md)** - Document conversion, chunking, and file monitoring
+- **[Storage](storage.md)** - Database, remote storage, and vector indexing

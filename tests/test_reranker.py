@@ -31,7 +31,8 @@ async def test_reranker_base():
     from haiku.rag.config import Config
 
     reranker = RerankerBase()
-    assert reranker._model == Config.reranking.model
+    expected_model = Config.reranking.model.name if Config.reranking.model else None
+    assert reranker._model == expected_model
 
     with pytest.raises(NotImplementedError):
         await reranker.rerank("query", [])

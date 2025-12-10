@@ -1,4 +1,3 @@
-import inspect
 import json
 import logging
 from typing import TYPE_CHECKING, cast
@@ -16,10 +15,6 @@ from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import load_callable
-
-if TYPE_CHECKING:
-    from docling_core.types.doc.document import DoclingDocument
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +37,17 @@ class ChunkRepository:
             logger.debug(f"FTS index creation skipped: {e}")
 
     async def create(self, entity: Chunk | list[Chunk]) -> Chunk | list[Chunk]:
-        """Create one or more chunks in the database."""
+        """Create one or more chunks in the database.
+
+        Chunks must have embeddings set before calling this method.
+        Use client._ensure_chunks_embedded() to embed chunks if needed.
+        """
         # Handle single chunk
         if isinstance(entity, Chunk):
             assert entity.document_id, "Chunk must have a document_id to be created"
+            assert entity.embedding is not None, "Chunk must have an embedding"
 
             chunk_id = str(uuid4())
-
-            # Generate embedding if not provided
-            if entity.embedding is not None:
-                embedding = entity.embedding
-            else:
-                embedding = await self.embedder.embed(entity.content)
-            order_val = int(entity.order)
 
             chunk_record = self.store.ChunkRecord(
                 id=chunk_id,
@@ -63,8 +56,8 @@ class ChunkRepository:
                 metadata=json.dumps(
                     {k: v for k, v in entity.metadata.items() if k != "order"}
                 ),
-                order=order_val,
-                vector=embedding,
+                order=int(entity.order),
+                vector=entity.embedding,
             )
 
             self.store.chunks_table.add([chunk_record])
@@ -77,22 +70,15 @@ class ChunkRepository:
         if not chunks:
             return []
 
-        # Validate all chunks have document_id
+        # Validate all chunks have document_id and embedding
         for chunk in chunks:
             assert chunk.document_id, "All chunks must have a document_id to be created"
-
-        # Batch generate embeddings for chunks that need them
-        texts_to_embed = [chunk.content for chunk in chunks if chunk.embedding is None]
-        embeddings = await self.embedder.embed(texts_to_embed) if texts_to_embed else []
-        embedding_iter = iter(embeddings)
+            assert chunk.embedding is not None, "All chunks must have embeddings"
 
         # Prepare all chunk records
         chunk_records = []
         for chunk in chunks:
             chunk_id = str(uuid4())
-            embedding = (
-                chunk.embedding if chunk.embedding is not None else next(embedding_iter)
-            )
 
             assert chunk.document_id is not None
             chunk_record = self.store.ChunkRecord(
@@ -103,7 +89,7 @@ class ChunkRepository:
                     {k: v for k, v in chunk.metadata.items() if k != "order"}
                 ),
                 order=int(chunk.order),
-                vector=embedding,
+                vector=chunk.embedding,
             )
             chunk_records.append(chunk_record)
             chunk.id = chunk_id
@@ -136,11 +122,12 @@ class ChunkRepository:
         )
 
     async def update(self, entity: Chunk) -> Chunk:
-        """Update an existing chunk."""
-        assert entity.id, "Chunk ID is required for update"
+        """Update an existing chunk.
 
-        embedding = await self.embedder.embed(entity.content)
-        order_val = int(entity.order)
+        Chunk must have embedding set before calling this method.
+        """
+        assert entity.id, "Chunk ID is required for update"
+        assert entity.embedding is not None, "Chunk must have an embedding"
 
         self.store.chunks_table.update(
             where=f"id = '{entity.id}'",
@@ -150,8 +137,8 @@ class ChunkRepository:
                 "metadata": json.dumps(
                     {k: v for k, v in entity.metadata.items() if k != "order"}
                 ),
-                "order": order_val,
-                "vector": embedding,
+                "order": int(entity.order),
+                "vector": entity.embedding,
             },
         )
         return entity
@@ -191,75 +178,6 @@ class ChunkRepository:
                 )
             )
         return chunks
-
-    async def create_chunks_for_document(
-        self, document_id: str, document: "DoclingDocument"
-    ) -> list[Chunk]:
-        """Create chunks and embeddings for a document from DoclingDocument."""
-        # Lazy imports to avoid loading docling during module import
-        from haiku.rag.chunkers import get_chunker
-        from haiku.rag.converters import get_converter
-
-        chunker = get_chunker(self.store._config)
-
-        # Optionally preprocess markdown before chunking
-        processed_document = document
-        preprocessor_path = self.store._config.processing.markdown_preprocessor
-        if preprocessor_path:
-            try:
-                pre_fn = load_callable(preprocessor_path)
-                markdown = document.export_to_markdown()
-                result = pre_fn(markdown)
-                if inspect.isawaitable(result):
-                    result = await result  # type: ignore[assignment]
-                processed_markdown = result
-                if not isinstance(processed_markdown, str):
-                    raise ValueError("Preprocessor must return a markdown string")
-                converter = get_converter(self.store._config)
-                processed_document = await converter.convert_text(
-                    processed_markdown, name="content.md"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to apply MARKDOWN_PREPROCESSOR '{preprocessor_path}': {e}. Proceeding without preprocessing."
-                )
-                raise e
-
-        chunk_texts = await chunker.chunk(processed_document)
-
-        embeddings = await self.embedder.embed(chunk_texts)
-
-        # Prepare all chunk records for batch insertion
-        chunk_records = []
-        created_chunks = []
-
-        for order, (chunk_text, embedding) in enumerate(zip(chunk_texts, embeddings)):
-            chunk_id = str(uuid4())
-
-            chunk_record = self.store.ChunkRecord(
-                id=chunk_id,
-                document_id=document_id,
-                content=chunk_text,
-                metadata=json.dumps({}),
-                order=order,
-                vector=embedding,
-            )
-            chunk_records.append(chunk_record)
-
-            chunk = Chunk(
-                id=chunk_id,
-                document_id=document_id,
-                content=chunk_text,
-                metadata={},
-                order=order,
-            )
-            created_chunks.append(chunk)
-
-        # Batch insert all chunks at once
-        if chunk_records:
-            self.store.chunks_table.add(chunk_records)
-
-        return created_chunks
 
     async def delete_all(self) -> None:
         """Delete all chunks from the database."""

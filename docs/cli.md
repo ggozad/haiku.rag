@@ -90,7 +90,18 @@ haiku-rag delete 3f4a...   # document ID
 haiku-rag rm 3f4a...       # alias
 ```
 
-Use this when you want to change things like the embedding model or chunk size for example.
+## Visualize Chunk
+
+Display visual grounding for a chunk - shows page images with highlighted bounding boxes:
+
+```bash
+haiku-rag visualize <chunk_id>
+```
+
+This renders the source document pages with the chunk's location highlighted. Useful for verifying chunk boundaries and understanding document structure.
+
+!!! note
+    Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.
 
 ## Search
 

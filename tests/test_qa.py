@@ -19,7 +19,7 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     """Test Ollama QA with LLM judge."""
     client = HaikuRAG(temp_db_path, create=True)
     qa = QuestionAnswerAgent(
-        client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
+        client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=True)
     )
     llm_judge = LLMJudge()
 
@@ -31,7 +31,7 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     question = doc["question"]
     expected_answer = doc["answer"]
 
-    answer = await qa.answer(question)
+    answer, _ = await qa.answer(question)
     is_equivalent = await llm_judge.judge_answers(question, answer, expected_answer)
 
     assert is_equivalent, (
@@ -55,7 +55,7 @@ async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
     question = doc["question"]
     expected_answer = doc["answer"]
 
-    answer = await qa.answer(question)
+    answer, _ = await qa.answer(question)
     is_equivalent = await llm_judge.judge_answers(question, answer, expected_answer)
 
     assert is_equivalent, (
@@ -81,7 +81,7 @@ async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
     question = doc["question"]
     expected_answer = doc["answer"]
 
-    answer = await qa.answer(question)
+    answer, _ = await qa.answer(question)
     is_equivalent = await llm_judge.judge_answers(question, answer, expected_answer)
 
     assert is_equivalent, (
@@ -104,7 +104,7 @@ async def test_qa_vllm(qa_corpus: Dataset, temp_db_path):
 
     question = doc["question"]
     expected_answer = doc["answer"]
-    answer = await qa.answer(question)
+    answer, _ = await qa.answer(question)
     is_equivalent = await llm_judge.judge_answers(question, answer, expected_answer)
 
     assert is_equivalent, (

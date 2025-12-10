@@ -3,6 +3,7 @@ import json
 import logging
 from importlib.metadata import version as pkg_version
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -24,9 +25,11 @@ from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
-from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from haiku.rag.utils import format_bytes
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models import SearchResult
+from haiku.rag.utils import format_bytes, format_citations
 
 logger = logging.getLogger(__name__)
 
@@ -262,14 +265,48 @@ class HaikuRAGApp:
                     f"[yellow]Document with id {doc_id} not found.[/yellow]"
                 )
 
-    async def search(self, query: str, limit: int = 5, filter: str | None = None):
+    async def search(
+        self, query: str, limit: int | None = None, filter: str | None = None
+    ):
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             results = await self.client.search(query, limit=limit, filter=filter)
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
                 return
-            for chunk, score in results:
-                self._rich_print_search_result(chunk, score)
+            for result in results:
+                self._rich_print_search_result(result)
+
+    async def visualize_chunk(self, chunk_id: str):
+        """Display visual grounding images for a chunk."""
+        from textual_image.renderable import Image as RichImage
+
+        async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
+            chunk = await self.client.chunk_repository.get_by_id(chunk_id)
+            if not chunk:
+                self.console.print(f"[red]Chunk with id {chunk_id} not found.[/red]")
+                return
+
+            images = await self.client.visualize_chunk(chunk)
+            if not images:
+                self.console.print(
+                    "[yellow]No visual grounding available for this chunk.[/yellow]"
+                )
+                self.console.print(
+                    "This may be because the document was converted without page images."
+                )
+                return
+
+            self.console.print(f"[bold]Visual grounding for chunk {chunk_id}[/bold]")
+            if chunk.document_uri:
+                self.console.print(
+                    f"[repr.attrib_name]document[/repr.attrib_name]: {chunk.document_uri}"
+                )
+
+            for i, img in enumerate(images):
+                self.console.print(
+                    f"\n[bold cyan]Page {i + 1}/{len(images)}[/bold cyan]"
+                )
+                self.console.print(RichImage(img))
 
     async def ask(
         self,
@@ -288,39 +325,49 @@ class HaikuRAGApp:
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
+                citations = []
                 if deep:
                     from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
                     from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
                     from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 
                     graph = build_deep_qa_graph(config=self.config)
-                    context = DeepQAContext(
-                        original_question=question, use_citations=cite
-                    )
+                    context = DeepQAContext(original_question=question)
                     state = DeepQAState.from_config(context=context, config=self.config)
                     deps = DeepQADeps(client=self.client)
 
                     if verbose:
                         # Use AG-UI renderer to process and display events
-                        from haiku.rag.graph.agui import AGUIConsoleRenderer
+                        from haiku.rag.graph.common.models import Citation
 
                         renderer = AGUIConsoleRenderer(self.console)
                         result_dict = await renderer.render(
                             stream_graph(graph, state, deps)
                         )
-                        # Result should be a dict with 'answer' key
+                        # Result should be a dict with 'answer' and 'citations' keys
                         answer = result_dict.get("answer", "") if result_dict else ""
+                        if cite and result_dict:
+                            # Convert dicts to Citation objects
+                            raw_citations = result_dict.get("citations", [])
+                            citations = [
+                                Citation(**c) if isinstance(c, dict) else c
+                                for c in raw_citations
+                            ]
                     else:
                         # Run without rendering events, just get the result
                         result = await graph.run(state=state, deps=deps)
                         answer = result.answer
+                        if cite:
+                            citations = result.citations
                 else:
-                    answer = await self.client.ask(question, cite=cite)
+                    answer, citations = await self.client.ask(question)
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
                 self.console.print("[bold green]Answer:[/bold green]")
                 self.console.print(Markdown(answer))
+                if cite and citations:
+                    self.console.print(Markdown(format_citations(citations)))
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
@@ -606,22 +653,27 @@ class HaikuRAGApp:
         self.console.print(content)
         self.console.rule()
 
-    def _rich_print_search_result(self, chunk: Chunk, score: float):
-        """Format a search result chunk for display."""
-        content = Markdown(chunk.content)
+    def _rich_print_search_result(self, result: "SearchResult"):
+        """Format a search result for display."""
+        content = Markdown(result.content)
         self.console.print(
-            f"[repr.attrib_name]document_id[/repr.attrib_name]: {chunk.document_id} "
-            f"[repr.attrib_name]score[/repr.attrib_name]: {score:.4f}"
+            f"[repr.attrib_name]document_id[/repr.attrib_name]: {result.document_id} "
+            f"[repr.attrib_name]chunk_id[/repr.attrib_name]: {result.chunk_id} "
+            f"[repr.attrib_name]score[/repr.attrib_name]: {result.score:.4f}"
         )
-        if chunk.document_uri:
-            self.console.print("[repr.attrib_name]document uri[/repr.attrib_name]:")
-            self.console.print(chunk.document_uri)
-        if chunk.document_title:
+        if result.document_uri:
+            self.console.print(
+                f"[repr.attrib_name]document uri[/repr.attrib_name]: {result.document_uri}"
+            )
+        if result.document_title:
             self.console.print("[repr.attrib_name]document title[/repr.attrib_name]:")
-            self.console.print(chunk.document_title)
-        if chunk.document_meta:
-            self.console.print("[repr.attrib_name]document meta[/repr.attrib_name]:")
-            self.console.print(chunk.document_meta)
+            self.console.print(result.document_title)
+        if result.page_numbers:
+            self.console.print("[repr.attrib_name]pages[/repr.attrib_name]:")
+            self.console.print(", ".join(str(p) for p in result.page_numbers))
+        if result.headings:
+            self.console.print("[repr.attrib_name]headings[/repr.attrib_name]:")
+            self.console.print(" > ".join(result.headings))
         self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
         self.console.print(content)
         self.console.rule()

@@ -1,16 +1,9 @@
-import asyncio
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.document import Document
-
-if TYPE_CHECKING:
-    from docling_core.types.doc.document import DoclingDocument
-
-    from haiku.rag.store.models.chunk import Chunk
 
 
 class DocumentRepository:
@@ -37,6 +30,8 @@ class DocumentRepository:
             uri=record.uri,
             title=record.title,
             metadata=json.loads(record.metadata),
+            docling_document_json=record.docling_document_json,
+            docling_version=record.docling_version,
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
             else datetime.now(),
@@ -60,6 +55,8 @@ class DocumentRepository:
             uri=entity.uri,
             title=entity.title,
             metadata=json.dumps(entity.metadata),
+            docling_document_json=entity.docling_document_json,
+            docling_version=entity.docling_version,
             created_at=now,
             updated_at=now,
         )
@@ -88,7 +85,12 @@ class DocumentRepository:
 
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
+        from haiku.rag.store.models.document import invalidate_docling_document_cache
+
         assert entity.id, "Document ID is required for update"
+
+        # Invalidate cache before update
+        invalidate_docling_document_cache(entity.id)
 
         # Update timestamp
         now = datetime.now().isoformat()
@@ -102,6 +104,8 @@ class DocumentRepository:
                 "uri": entity.uri,
                 "title": entity.title,
                 "metadata": json.dumps(entity.metadata),
+                "docling_document_json": entity.docling_document_json,
+                "docling_version": entity.docling_version,
                 "updated_at": now,
             },
         )
@@ -110,10 +114,15 @@ class DocumentRepository:
 
     async def delete(self, entity_id: str) -> bool:
         """Delete a document by its ID."""
+        from haiku.rag.store.models.document import invalidate_docling_document_cache
+
         # Check if document exists
         doc = await self.get_by_id(entity_id)
         if doc is None:
             return False
+
+        # Invalidate cache before delete
+        invalidate_docling_document_cache(entity_id)
 
         # Delete associated chunks first
         await self.chunk_repository.delete_by_document_id(entity_id)
@@ -181,83 +190,3 @@ class DocumentRepository:
             self.store.documents_table = self.store.db.create_table(
                 "documents", schema=DocumentRecord
             )
-
-    async def _create_and_chunk(
-        self,
-        entity: Document,
-        docling_document: "DoclingDocument | None",
-        chunks: list["Chunk"] | None = None,
-    ) -> Document:
-        """Create a document with its chunks and embeddings."""
-        # Snapshot table versions for versioned rollback (if supported)
-        versions = self.store.current_table_versions()
-
-        # Create the document
-        created_doc = await self.create(entity)
-
-        # Attempt to create chunks; on failure, prefer version rollback
-        try:
-            # Create chunks if not provided
-            if chunks is None:
-                assert docling_document is not None, (
-                    "docling_document is required when chunks are not provided"
-                )
-                assert created_doc.id is not None, (
-                    "Document ID should not be None after creation"
-                )
-                await self.chunk_repository.create_chunks_for_document(
-                    created_doc.id, docling_document
-                )
-            else:
-                # Use provided chunks, set order from list position
-                assert created_doc.id is not None, (
-                    "Document ID should not be None after creation"
-                )
-                # Set document_id and order for all chunks
-                for order, chunk in enumerate(chunks):
-                    chunk.document_id = created_doc.id
-                    chunk.order = order
-                # Batch create all chunks in a single operation
-                await self.chunk_repository.create(chunks)
-
-            # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
-
-            return created_doc
-        except Exception:
-            # Roll back to the captured versions and re-raise
-            self.store.restore_table_versions(versions)
-            raise
-
-    async def _update_and_rechunk(
-        self, entity: Document, docling_document: "DoclingDocument"
-    ) -> Document:
-        """Update a document and regenerate its chunks."""
-        assert entity.id is not None, "Document ID is required for update"
-
-        # Snapshot table versions for versioned rollback
-        versions = self.store.current_table_versions()
-
-        # Delete existing chunks before writing new ones
-        await self.chunk_repository.delete_by_document_id(entity.id)
-
-        try:
-            # Update the document
-            updated_doc = await self.update(entity)
-
-            # Create new chunks
-            assert updated_doc.id is not None, (
-                "Document ID should not be None after update"
-            )
-            await self.chunk_repository.create_chunks_for_document(
-                updated_doc.id, docling_document
-            )
-
-            # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
-
-            return updated_doc
-        except Exception:
-            # Roll back to the captured versions and re-raise
-            self.store.restore_table_versions(versions)
-            raise
