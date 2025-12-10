@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.20.0] - 2025-12-10
+
 ### Added
 
 - **DoclingDocument Storage**: Full DoclingDocument JSON is now stored with each document, enabling rich context and visual grounding
