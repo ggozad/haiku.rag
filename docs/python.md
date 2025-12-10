@@ -342,15 +342,10 @@ Context expansion uses your configuration settings:
 Ask questions about your documents:
 
 ```python
-answer = await client.ask("Who is the author of haiku.rag?")
+answer, citations = await client.ask("Who is the author of haiku.rag?")
 print(answer)
-```
-
-Ask questions with citations showing source documents:
-
-```python
-answer = await client.ask("Who is the author of haiku.rag?", cite=True)
-print(answer)
+for cite in citations:
+    print(f"  [{cite.chunk_id}] {cite.document_title or cite.document_uri}")
 ```
 
 Customize the QA agent's behavior with a custom system prompt:
@@ -360,13 +355,13 @@ custom_prompt = """You are a technical support expert for WIX.
 Answer questions based on the knowledge base documents provided.
 Be concise and helpful."""
 
-answer = await client.ask(
+answer, citations = await client.ask(
     "How do I create a blog?",
     system_prompt=custom_prompt
 )
 ```
 
-The QA agent will search your documents for relevant information and use the configured LLM to generate a comprehensive answer. With `cite=True`, responses include citations showing which documents were used as sources. Citations prefer the document title when present, otherwise they use the URI.
+The QA agent searches your documents for relevant information and uses the configured LLM to generate an answer. The method returns a tuple of `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 

@@ -70,7 +70,7 @@ from haiku.rag.client import HaikuRAG
 
 async with HaikuRAG() as client:
     # PDF is processed by docling-serve
-    doc = await client.create_document_from_file("complex.pdf")
+    doc = await client.create_document_from_source("complex.pdf")
 ```
 
 ### Remote Chunking

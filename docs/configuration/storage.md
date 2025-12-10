@@ -53,14 +53,33 @@ Authentication is handled through standard cloud provider credentials (AWS CLI, 
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization is still performed locally.
 
-## Database Auto-creation
+## Database Creation
 
-haiku.rag intelligently handles database creation based on operation type:
+Databases must be explicitly created before use:
 
-- **Write operations** (add, add-src, delete, rebuild): Automatically create the database and required tables if they don't exist
-- **Read operations** (list, get, search, ask, research): Fail with a clear error if the database doesn't exist
+**CLI:**
+```bash
+# Create in default location (see Configuration File Locations below)
+haiku-rag init
 
-This prevents the common mistake where a search query accidentally creates an empty database. To initialize your database, simply add your first document using `haiku-rag add` or `haiku-rag add-src`.
+# Create at custom path
+haiku-rag init --db /path/to/database.lancedb
+```
+
+**Python:**
+```python
+# Create at custom path
+async with HaikuRAG("/path/to/database.lancedb", create=True) as client:
+    ...
+
+# Create in default location
+async with HaikuRAG(create=True) as client:
+    ...
+```
+
+The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
+
+Operations on non-existent databases raise `FileNotFoundError`. This prevents accidental database creation from typos or misconfigured paths.
 
 ## Vector Indexing
 
