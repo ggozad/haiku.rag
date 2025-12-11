@@ -10,8 +10,8 @@ The client exposes four primitives that can be composed into custom workflows:
 |-----------|-------|--------|---------|
 | `convert()` | file, URL, or text | `DoclingDocument` | Convert source to structured document |
 | `chunk()` | `DoclingDocument` | `list[Chunk]` | Split document into chunks |
-| `contextualize()` | `list[Chunk]` | `list[str]` | Prepare chunk text for embedding |
-| `embed_chunks()` | `list[Chunk]` | `list[Chunk]` | Generate embeddings for chunks |
+| `embed_chunks()` | `list[Chunk]` | `list[Chunk]` | Generate embeddings for chunks (includes contextualization) |
+| `contextualize()` | `list[Chunk]` | `list[str]` | Get embedding-ready text (for custom embedders only) |
 
 ## Basic Pipeline
 
@@ -19,7 +19,7 @@ The standard pipeline mirrors what `create_document()` does internally:
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.embeddings import contextualize, embed_chunks
+from haiku.rag.embeddings import embed_chunks
 
 async with HaikuRAG("database.lancedb", create=True) as client:
     # 1. Convert source to DoclingDocument
@@ -99,16 +99,12 @@ Chunks are returned with:
 - `embedding` - `None` (not yet embedded)
 - `document_id` - `None` (not yet stored)
 
-## Contextualize and Embed
+## Embed
 
-`contextualize()` prepares chunk content for embedding by prepending section headings. This improves semantic search quality without modifying stored content:
+`embed_chunks()` generates embeddings for chunks. It automatically contextualizes chunks (prepends section headings) before embedding for better semantic search, without modifying the stored content:
 
 ```python
-from haiku.rag.embeddings import contextualize, embed_chunks
-
-# Get embedding-ready text
-texts = contextualize(chunks)
-# texts[0] might be: "Chapter 1\nIntroduction\nThe actual chunk content..."
+from haiku.rag.embeddings import embed_chunks
 
 # Generate embeddings (returns new Chunk objects)
 embedded_chunks = await embed_chunks(chunks)
@@ -121,6 +117,20 @@ assert embedded_chunks[0].embedding is not None
 ```
 
 `embed_chunks()` returns **new** `Chunk` objects with embeddings set. The original chunks are not modified.
+
+## Contextualize (for custom embedders)
+
+`contextualize()` is a lower-level utility that prepares chunk content for embedding by prepending section headings. You only need this when implementing custom embedding logic—`embed_chunks()` already calls it internally.
+
+```python
+from haiku.rag.embeddings import contextualize
+
+# Get embedding-ready text (only needed for custom embedders)
+texts = contextualize(chunks)
+# texts[0] might be: "Chapter 1\nIntroduction\nThe actual chunk content..."
+```
+
+See the [Custom Embeddings](#custom-embeddings) example below for when to use `contextualize()`.
 
 ## Custom Processing Examples
 
