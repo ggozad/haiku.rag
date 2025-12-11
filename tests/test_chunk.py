@@ -221,14 +221,12 @@ def test_search_result_format_for_agent_full():
 
     formatted = result.format_for_agent()
 
-    assert "[chunk-123]" in formatted
-    assert "(score: 0.85)" in formatted
-    assert (
-        'Source: "Annual Report 2024" > Chapter 1 > Section 1.1 > Elections'
-        in formatted
-    )
-    assert "Type: table" in formatted  # table has higher priority than paragraph
-    assert "Content:\nThis is the chunk content about elections." in formatted
+    assert "chunk_id: chunk-123" in formatted
+    assert "score: 0.85" in formatted
+    assert "source: Annual Report 2024" in formatted
+    assert "section: Chapter 1 > Section 1.1 > Elections" in formatted
+    assert "label: table" in formatted  # table has higher priority than paragraph
+    assert "\n\nThis is the chunk content about elections." in formatted
 
 
 def test_search_result_format_for_agent_minimal():
@@ -241,11 +239,12 @@ def test_search_result_format_for_agent_minimal():
 
     formatted = result.format_for_agent()
 
-    assert "[chunk-abc]" in formatted
-    assert "(score: 0.72)" in formatted
-    assert "Source:" not in formatted  # No title or headings
-    assert "Type:" not in formatted  # No labels
-    assert "Content:\nSome content here." in formatted
+    assert "chunk_id: chunk-abc" in formatted
+    assert "score: 0.72" in formatted
+    assert "source:" not in formatted  # No title or URI
+    assert "section:" not in formatted  # No headings
+    assert "label:" not in formatted  # No labels
+    assert "\n\nSome content here." in formatted
 
 
 def test_search_result_format_for_agent_title_only():
@@ -259,7 +258,7 @@ def test_search_result_format_for_agent_title_only():
 
     formatted = result.format_for_agent()
 
-    assert 'Source: "My Document"' in formatted
+    assert "source: My Document" in formatted
 
 
 def test_search_result_format_for_agent_headings_only():
@@ -273,7 +272,7 @@ def test_search_result_format_for_agent_headings_only():
 
     formatted = result.format_for_agent()
 
-    assert "Source: Introduction > Background" in formatted
+    assert "section: Introduction > Background" in formatted
 
 
 def test_search_result_get_primary_label():

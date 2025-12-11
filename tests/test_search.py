@@ -261,13 +261,12 @@ async def test_search_result_format_includes_metadata(temp_db_path):
         formatted = results[0].format_for_agent()
 
         # Should include chunk ID and score
-        assert "[" in formatted and "]" in formatted
+        assert "chunk_id:" in formatted
         assert "score:" in formatted
 
-        # Should include document title in Source
+        # Should include document title in source
         assert "ML Guide" in formatted
-        assert "Source:" in formatted
+        assert "source:" in formatted
 
         # Should include content
-        assert "Content:" in formatted
         assert "machine learning" in formatted.lower()

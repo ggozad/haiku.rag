@@ -149,25 +149,28 @@ class SearchResult(BaseModel):
         Produces a structured format with metadata that helps LLMs understand
         the source and nature of the content.
         """
-        parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
+        parts = [f"chunk_id: {self.chunk_id}"]
+        parts.append(f"score: {self.score:.2f}")
 
-        # Document source info
-        source_parts = []
+        # Source: title if available, otherwise URI
         if self.document_title:
-            source_parts.append(f'"{self.document_title}"')
+            parts.append(f"source: {self.document_title}")
+        elif self.document_uri:
+            parts.append(f"source: {self.document_uri}")
+
+        # Section hierarchy
         if self.headings:
-            source_parts.append(" > ".join(self.headings))
-        if source_parts:
-            parts.append(f"Source: {' > '.join(source_parts)}")
+            parts.append(f"section: {' > '.join(self.headings)}")
 
         # Content type (use primary label if available)
         if self.labels:
             primary_label = self._get_primary_label()
             if primary_label:
-                parts.append(f"Type: {primary_label}")
+                parts.append(f"label: {primary_label}")
 
-        # The actual content
-        parts.append(f"Content:\n{self.content}")
+        # Blank line then content (no "Content:" prefix)
+        parts.append("")
+        parts.append(self.content)
 
         return "\n".join(parts)
 

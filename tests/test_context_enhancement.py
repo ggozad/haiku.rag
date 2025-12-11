@@ -302,9 +302,9 @@ async def test_format_for_agent_output(temp_db_path, small_chunk_config):
 
         # Check format structure
         assert "score:" in formatted
-        assert 'Source: "Format Test"' in formatted
-        assert "Type: table" in formatted
-        assert "Content:" in formatted
+        assert "source: Format Test" in formatted
+        assert "label: table" in formatted
+        assert "Employee Data" in formatted  # content without prefix
 
 
 @pytest.mark.asyncio
