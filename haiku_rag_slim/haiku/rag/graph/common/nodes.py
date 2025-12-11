@@ -34,6 +34,7 @@ class GraphState(Protocol):
 
     context: GraphContext
     max_concurrency: int
+    search_filter: str | None
 
 
 class GraphDeps(Protocol):
@@ -99,11 +100,16 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
             plan_agent = Agent(**agent_config)
 
+            # Capture search filter for use in tool
+            search_filter = state.search_filter
+
             @plan_agent.tool
             async def gather_context(
                 ctx2: RunContext[AgentDepsT], query: str, limit: int | None = None
             ) -> str:
-                results = await ctx2.deps.client.search(query, limit=limit)
+                results = await ctx2.deps.client.search(
+                    query, limit=limit, filter=search_filter
+                )
                 results = await ctx2.deps.client.expand_context(results)
                 return "\n\n".join(r.content for r in results)
 
@@ -225,6 +231,9 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
         deps_type=deps_type,
     )
 
+    # Capture search filter for use in tool
+    search_filter = state.search_filter
+
     @agent.tool
     async def search_and_answer(
         ctx2: RunContext[AgentDepsT], query: str, limit: int | None = None
@@ -234,7 +243,9 @@ async def _do_search[AgentDepsT: GraphAgentDeps](
         Returns results with chunk IDs and relevance scores.
         Reference results by their chunk_id in cited_chunks.
         """
-        results = await ctx2.deps.client.search(query, limit=limit)
+        results = await ctx2.deps.client.search(
+            query, limit=limit, filter=search_filter
+        )
         results = await ctx2.deps.client.expand_context(results)
         # Store results for citation resolution
         ctx2.deps.search_results = results

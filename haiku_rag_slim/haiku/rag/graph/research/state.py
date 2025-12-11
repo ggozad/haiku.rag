@@ -63,6 +63,9 @@ class ResearchState(BaseModel):
     last_analysis: InsightAnalysis | None = Field(
         default=None, description="Last insight analysis"
     )
+    search_filter: str | None = Field(
+        default=None, description="SQL WHERE clause to filter search results"
+    )
 
     @classmethod
     def from_config(
