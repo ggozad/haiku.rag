@@ -92,8 +92,19 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     effective_db_path = Path(effective_db_path)
                 client = get_client(effective_db_path)
 
+                # Build search filter from document IDs (empty list = search all)
+                document_ids = input_data.state.get("documentFilter") or []
+                search_filter = None
+                if document_ids:
+                    ids_str = ", ".join(f"'{id}'" for id in document_ids)
+                    search_filter = f"id IN ({ids_str})"
+
                 # Create agent dependencies with shared emitter
-                agent_deps = AgentDeps(client=client, agui_emitter=emitter)
+                agent_deps = AgentDeps(
+                    client=client,
+                    agui_emitter=emitter,
+                    search_filter=search_filter,
+                )
 
                 # Start run with empty initial state
                 emitter.start_run(
@@ -189,6 +200,19 @@ async def health_check(_: Request) -> JSONResponse:
     )
 
 
+async def list_documents(_: Request) -> JSONResponse:
+    """List all documents in the database."""
+    client = get_client(db_path)
+    docs = await client.document_repository.list_all()
+    return JSONResponse(
+        {
+            "documents": [
+                {"id": doc.id, "title": doc.title, "uri": doc.uri} for doc in docs
+            ]
+        }
+    )
+
+
 async def visualize_chunk(request: Request) -> JSONResponse:
     """Return visual grounding images for a chunk as base64."""
     import base64
@@ -228,6 +252,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
 app = Starlette(
     routes=[
         Route("/v1/research/stream", stream_research_agent, methods=["POST"]),
+        Route("/api/documents", list_documents, methods=["GET"]),
         Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),
     ],

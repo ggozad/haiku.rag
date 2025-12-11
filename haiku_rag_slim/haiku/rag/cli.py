@@ -305,9 +305,17 @@ def ask(
         "--verbose",
         help="Show verbose progress output (only with --deep)",
     ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
 ):
     app = create_app(db)
-    asyncio.run(app.ask(question=question, cite=cite, deep=deep, verbose=verbose))
+    asyncio.run(
+        app.ask(question=question, cite=cite, deep=deep, verbose=verbose, filter=filter)
+    )
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")
@@ -325,9 +333,15 @@ def research(
         "--verbose",
         help="Show planning, searching previews, evaluation summary, and stop reason",
     ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
 ):
     app = create_app(db)
-    asyncio.run(app.research(question=question, verbose=verbose))
+    asyncio.run(app.research(question=question, verbose=verbose, filter=filter))
 
 
 @cli.command("settings", help="Display current configuration settings")

@@ -314,6 +314,7 @@ class HaikuRAGApp:
         cite: bool = False,
         deep: bool = False,
         verbose: bool = False,
+        filter: str | None = None,
     ):
         """Ask a question using the RAG system.
 
@@ -322,6 +323,7 @@ class HaikuRAGApp:
             cite: Include citations in the answer
             deep: Use deep QA mode (multi-step reasoning)
             verbose: Show verbose output
+            filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as self.client:
             try:
@@ -334,6 +336,7 @@ class HaikuRAGApp:
                     graph = build_deep_qa_graph(config=self.config)
                     context = DeepQAContext(original_question=question)
                     state = DeepQAState.from_config(context=context, config=self.config)
+                    state.search_filter = filter
                     deps = DeepQADeps(client=self.client)
 
                     if verbose:
@@ -360,7 +363,7 @@ class HaikuRAGApp:
                         if cite:
                             citations = result.citations
                 else:
-                    answer, citations = await self.client.ask(question)
+                    answer, citations = await self.client.ask(question, filter=filter)
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
@@ -371,12 +374,15 @@ class HaikuRAGApp:
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
-    async def research(self, question: str, verbose: bool = False):
+    async def research(
+        self, question: str, verbose: bool = False, filter: str | None = None
+    ):
         """Run research via the pydantic-graph pipeline.
 
         Args:
             question: The research question
             verbose: Show AG-UI event stream during execution
+            filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(db_path=self.db_path, config=self.config) as client:
             try:
@@ -387,6 +393,7 @@ class HaikuRAGApp:
                 graph = build_research_graph(config=self.config)
                 context = ResearchContext(original_question=question)
                 state = ResearchState.from_config(context=context, config=self.config)
+                state.search_filter = filter
                 deps = ResearchDeps(client=client)
 
                 if verbose:

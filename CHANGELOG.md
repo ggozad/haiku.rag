@@ -1,6 +1,19 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Search Filter for Graphs**: Research and Deep QA graphs now support `search_filter` parameter to restrict searches to specific documents
+  - Set `state.search_filter` to a SQL WHERE clause (e.g., `"id IN ('doc1', 'doc2')"`) before running the graph
+  - Enables document-scoped research workflows
+  - CLI: `haiku-rag research "question" --filter "uri LIKE '%paper%'"`
+  - CLI: `haiku-rag ask "question" --filter "title = 'My Doc'"`
+  - Python: `client.ask(question, filter="...")` and `agent.answer(question, filter="...")`
+- **AG-UI Research Example**: Added bidirectional state demonstration with document filter
+  - New `/api/documents` endpoint to list available documents
+  - Frontend document selector component with search and multi-select
+  - Demonstrates client-to-server state flow via AG-UI protocol
+
 ## [0.20.0] - 2025-12-10
 
 ### Added

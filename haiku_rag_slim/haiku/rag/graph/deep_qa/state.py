@@ -36,6 +36,9 @@ class DeepQAState(BaseModel):
         default=1, description="Maximum parallel sub-question searches"
     )
     iterations: int = Field(default=0, description="Current iteration number")
+    search_filter: str | None = Field(
+        default=None, description="SQL WHERE clause to filter search results"
+    )
 
     @classmethod
     def from_config(cls, context: DeepQAContext, config: "AppConfig") -> "DeepQAState":

@@ -1229,13 +1229,17 @@ class HaikuRAG:
         return final_results + passthrough
 
     async def ask(
-        self, question: str, system_prompt: str | None = None
+        self,
+        question: str,
+        system_prompt: str | None = None,
+        filter: str | None = None,
     ) -> "tuple[str, list[Citation]]":
         """Ask a question using the configured QA agent.
 
         Args:
             question: The question to ask.
             system_prompt: Optional custom system prompt for the QA agent.
+            filter: SQL WHERE clause to filter documents.
 
         Returns:
             Tuple of (answer text, list of resolved citations).
@@ -1243,7 +1247,7 @@ class HaikuRAG:
         from haiku.rag.qa import get_qa_agent
 
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
-        return await qa_agent.answer(question)
+        return await qa_agent.answer(question, filter=filter)
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.

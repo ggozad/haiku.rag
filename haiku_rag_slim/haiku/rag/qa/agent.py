@@ -15,6 +15,7 @@ class Dependencies(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
     client: HaikuRAG
     search_results: list[SearchResult] = []
+    search_filter: str | None = None
 
 
 class QuestionAnswerAgent:
@@ -46,7 +47,9 @@ class QuestionAnswerAgent:
             Returns results with chunk IDs and relevance scores.
             Reference results by their chunk_id in cited_chunks.
             """
-            results = await ctx.deps.client.search(query, limit=limit)
+            results = await ctx.deps.client.search(
+                query, limit=limit, filter=ctx.deps.search_filter
+            )
             results = await ctx.deps.client.expand_context(results)
             # Store results for citation resolution
             ctx.deps.search_results = results
@@ -54,13 +57,19 @@ class QuestionAnswerAgent:
             parts = [r.format_for_agent() for r in results]
             return "\n\n".join(parts) if parts else "No results found."
 
-    async def answer(self, question: str) -> tuple[str, list[Citation]]:
+    async def answer(
+        self, question: str, filter: str | None = None
+    ) -> tuple[str, list[Citation]]:
         """Answer a question using the RAG system.
+
+        Args:
+            question: The question to answer
+            filter: SQL WHERE clause to filter documents
 
         Returns:
             Tuple of (answer text, list of resolved citations)
         """
-        deps = Dependencies(client=self._client)
+        deps = Dependencies(client=self._client, search_filter=filter)
         result = await self._agent.run(question, deps=deps)
         citations = resolve_citations(result.output.cited_chunks, deps.search_results)
         return result.output.answer, citations
