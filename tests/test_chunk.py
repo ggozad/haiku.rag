@@ -48,6 +48,55 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_chunk_repository_pagination(qa_corpus: Dataset, temp_db_path):
+    """Test ChunkRepository pagination with get_by_document_id and count_by_document_id."""
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Get the first document from the corpus (should produce multiple chunks)
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
+
+        # Create a document with chunks
+        created_document = await client.create_document(
+            content=document_text, metadata={"source": "test"}
+        )
+        assert created_document.id is not None
+
+        # Get total chunk count
+        total_count = await client.chunk_repository.count_by_document_id(
+            created_document.id
+        )
+        assert total_count > 0
+
+        # Get all chunks without pagination
+        all_chunks = await client.chunk_repository.get_by_document_id(
+            created_document.id
+        )
+        assert len(all_chunks) == total_count
+
+        # Test pagination with limit
+        limit = min(2, total_count)
+        first_batch = await client.chunk_repository.get_by_document_id(
+            created_document.id, limit=limit
+        )
+        assert len(first_batch) == limit
+        assert first_batch[0].id == all_chunks[0].id
+
+        # Test pagination with offset
+        if total_count > limit:
+            second_batch = await client.chunk_repository.get_by_document_id(
+                created_document.id, limit=limit, offset=limit
+            )
+            assert len(second_batch) <= limit
+            assert second_batch[0].id == all_chunks[limit].id
+
+        # Test offset beyond available chunks
+        empty_batch = await client.chunk_repository.get_by_document_id(
+            created_document.id, limit=10, offset=total_count + 100
+        )
+        assert len(empty_batch) == 0
+
+
+@pytest.mark.asyncio
 async def test_chunking_pipeline(qa_corpus: Dataset, temp_db_path):
     """Test document chunking using client primitives."""
     from haiku.rag.client import HaikuRAG

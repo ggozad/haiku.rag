@@ -281,13 +281,30 @@ class ChunkRepository:
         results = results.limit(limit)
         return await self._process_search_results(results)
 
-    async def get_by_document_id(self, document_id: str) -> list[Chunk]:
-        """Get all chunks for a specific document."""
-        results = list(
-            self.store.chunks_table.search()
-            .where(f"document_id = '{document_id}'")
-            .to_pydantic(self.store.ChunkRecord)
-        )
+    async def get_by_document_id(
+        self,
+        document_id: str,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[Chunk]:
+        """Get chunks for a specific document with optional pagination.
+
+        Args:
+            document_id: The document ID to get chunks for.
+            limit: Maximum number of chunks to return. None for all.
+            offset: Number of chunks to skip. None for no offset.
+
+        Returns:
+            List of chunks ordered by their order field.
+        """
+        query = self.store.chunks_table.search().where(f"document_id = '{document_id}'")
+
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+
+        results = list(query.to_pydantic(self.store.ChunkRecord))
 
         # Get document info
         doc_results = list(
@@ -319,6 +336,16 @@ class ChunkRepository:
 
         chunks.sort(key=lambda c: c.order)
         return chunks
+
+    async def count_by_document_id(self, document_id: str) -> int:
+        """Count the number of chunks for a specific document."""
+        df = (
+            self.store.chunks_table.search()
+            .select(["id"])
+            .where(f"document_id = '{document_id}'")
+            .to_pandas()
+        )
+        return len(df)
 
     async def get_adjacent_chunks(self, chunk: Chunk, num_adjacent: int) -> list[Chunk]:
         """Get adjacent chunks before and after the given chunk within the same document."""
