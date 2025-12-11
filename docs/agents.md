@@ -229,6 +229,20 @@ async with HaikuRAG(path_to_db) as client:
     print(report.executive_summary)
 ```
 
+### Filtering Documents
+
+Both Research and Deep QA graphs support restricting searches to specific documents via the `search_filter` parameter. Set it to a SQL WHERE clause before running:
+
+```python
+state = ResearchState.from_config(context=context, config=Config)
+# Only search documents with these IDs
+state.search_filter = "id IN ('doc-123', 'doc-456')"
+
+result = await graph.run(state=state, deps=deps)
+```
+
+The filter applies to all search operations in the graph (context gathering and sub-question searches). See [Filtering Search Results](python.md#filtering-search-results) for available filter columns and syntax.
+
 Alternative usage with custom config:
 
 ```python

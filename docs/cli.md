@@ -149,8 +149,19 @@ Show verbose output with deep QA:
 haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --verbose
 ```
 
-The QA agent will search your documents for relevant information and provide a comprehensive answer. With `--cite`, responses include citations showing which documents were used. With `--deep`, the question is decomposed into sub-questions that are answered in parallel before synthesizing a final answer. With `--verbose` (only with `--deep`), you'll see the planning, searching, evaluation, and synthesis steps as they happen.
-When available, citations use the document title; otherwise they fall back to the URI.
+Filter to specific documents with deep QA:
+```bash
+haiku-rag ask "What are the main findings?" --deep --filter "uri LIKE '%paper%'"
+```
+
+The QA agent searches your documents for relevant information and provides a comprehensive answer. When available, citations use the document title; otherwise they fall back to the URI.
+
+Flags:
+
+- `--cite`: Include citations showing which documents were used
+- `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
+- `--verbose`: Show planning, searching, evaluation, and synthesis steps (only with `--deep`)
+- `--filter`: Restrict searches to documents matching the filter (only with `--deep`)
 
 ## Research
 
@@ -166,8 +177,16 @@ With verbose output to see progress:
 haiku-rag research "How does haiku.rag organize and query documents?" --verbose
 ```
 
+Filter to specific documents:
+
+```bash
+haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
+```
+
 Flags:
+
 - `--verbose`: Show planning, searching previews, evaluation summary, and stop reason
+- `--filter`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
 
 Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 
