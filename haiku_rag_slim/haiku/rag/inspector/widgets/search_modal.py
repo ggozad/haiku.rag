@@ -173,7 +173,8 @@ class SearchModal(Screen):  # pragma: no cover
 
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
-        await self.app.push_screen(
+        # Use app's _switch_modal to close this modal before opening visual
+        await self.app._switch_modal(  # type: ignore[attr-defined]
             VisualGroundingModal(
                 chunk=chunk,
                 client=self.client,
