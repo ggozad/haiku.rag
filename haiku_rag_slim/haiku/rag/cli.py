@@ -88,7 +88,11 @@ def main(
     try:
         import logfire
 
-        logfire.configure(send_to_logfire="if-token-present")
+        is_production = get_config().environment != "development"
+        logfire.configure(
+            send_to_logfire="if-token-present",
+            console=False if is_production else None,
+        )
         logfire.instrument_pydantic_ai()
     except Exception:
         pass
