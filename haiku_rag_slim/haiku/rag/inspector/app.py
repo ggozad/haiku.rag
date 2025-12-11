@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 try:
     from textual.app import App
     from textual.binding import Binding
+    from textual.screen import Screen
     from textual.widgets import Footer, Header
 
     from haiku.rag.inspector.widgets.chunk_list import ChunkList
@@ -110,10 +111,20 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
                 chunk_list.list_view.focus()
                 break
 
+    async def _dismiss_modals(self) -> None:
+        """Dismiss all modal screens, returning to the main screen."""
+        while len(self.screen_stack) > 1:
+            self.pop_screen()
+
+    async def _switch_modal(self, screen: Screen) -> None:
+        """Switch to a new modal, dismissing any existing modals first."""
+        await self._dismiss_modals()
+        await self.push_screen(screen)
+
     async def action_search(self) -> None:
         """Open search modal."""
         if self.client:
-            await self.push_screen(SearchModal(self.client))
+            await self._switch_modal(SearchModal(self.client))
 
     async def on_search_modal_chunk_selected(
         self, message: SearchModal.ChunkSelected
@@ -191,7 +202,7 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
 
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
-        await self.push_screen(VisualGroundingModal(chunk=chunk, client=self.client))
+        await self._switch_modal(VisualGroundingModal(chunk=chunk, client=self.client))
 
     async def action_show_context(self) -> None:
         """Show how the currently selected chunk would be formatted for agents."""
@@ -207,7 +218,7 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
 
         from haiku.rag.inspector.widgets.context_modal import ContextModal
 
-        await self.push_screen(ContextModal(chunk=chunk, client=self.client))
+        await self._switch_modal(ContextModal(chunk=chunk, client=self.client))
 
 
 def run_inspector(db_path: Path | None = None) -> None:  # pragma: no cover
