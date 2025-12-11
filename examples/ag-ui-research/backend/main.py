@@ -92,8 +92,8 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     effective_db_path = Path(effective_db_path)
                 client = get_client(effective_db_path)
 
-                # Build search filter from document IDs if provided
-                document_ids = input_data.state.get("documentFilter")
+                # Build search filter from document IDs (empty list = search all)
+                document_ids = input_data.state.get("documentFilter") or []
                 search_filter = None
                 if document_ids:
                     ids_str = ", ".join(f"'{id}'" for id in document_ids)

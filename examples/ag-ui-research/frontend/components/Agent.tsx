@@ -3,6 +3,7 @@
 import { CopilotKit, useCoAgent } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
+import DocumentSelector from "./DocumentSelector";
 import StateDisplay from "./StateDisplay";
 
 interface InsightRecord {
@@ -82,10 +83,11 @@ interface ResearchState {
 	result?: ResearchReport;
 	current_activity?: string;
 	current_activity_message?: string;
+	documentFilter?: string[];
 }
 
 function AgentContent() {
-	const { state } = useCoAgent<ResearchState>({
+	const { state, setState, running } = useCoAgent<ResearchState>({
 		name: "research_agent",
 		initialState: {
 			context: {
@@ -101,8 +103,13 @@ function AgentContent() {
 			max_concurrency: 1,
 			last_eval: null,
 			last_analysis: null,
+			documentFilter: [],
 		},
 	});
+
+	const handleDocumentFilterChange = (ids: string[]) => {
+		setState({ ...state, documentFilter: ids });
+	};
 
 	return (
 		<>
@@ -162,6 +169,14 @@ function AgentContent() {
 								Live updates from the research agent
 							</p>
 						</header>
+
+						<div style={{ marginBottom: "1rem" }}>
+							<DocumentSelector
+								selected={state.documentFilter || []}
+								onChange={handleDocumentFilterChange}
+								disabled={running}
+							/>
+						</div>
 
 						<StateDisplay state={state} />
 					</div>
