@@ -1,7 +1,7 @@
 "use client";
 
 import { Markdown } from "@copilotkit/react-ui";
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 
 interface VisualGroundingState {
 	isOpen: boolean;
@@ -127,7 +127,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 
 		try {
 			const response = await fetch(
-				`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/visualize/${chunkId}`
+				`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/visualize/${chunkId}`,
 			);
 			const data = await response.json();
 
@@ -241,14 +241,25 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 								marginBottom: state.iterations > 0 ? "1rem" : 0,
 							}}
 						>
-							<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+							<div
+								style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+							>
 								<span>⏳</span>
 								<span style={{ fontWeight: "600", color: "#2b6cb0" }}>
-									{state.current_activity.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+									{state.current_activity
+										.replace(/_/g, " ")
+										.replace(/\b\w/g, (c) => c.toUpperCase())}
 								</span>
 							</div>
 							{state.current_activity_message && (
-								<div style={{ fontSize: "0.875rem", color: "#4299e1", marginTop: "0.25rem", marginLeft: "1.5rem" }}>
+								<div
+									style={{
+										fontSize: "0.875rem",
+										color: "#4299e1",
+										marginTop: "0.25rem",
+										marginLeft: "1.5rem",
+									}}
+								>
 									{state.current_activity_message}
 								</div>
 							)}
@@ -449,7 +460,9 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 									>
 										⏳
 									</div>
-									<div style={{ flex: 1, fontSize: "0.875rem", color: "#4a5568" }}>
+									<div
+										style={{ flex: 1, fontSize: "0.875rem", color: "#4a5568" }}
+									>
 										<Markdown content={question} />
 									</div>
 								</div>
@@ -510,7 +523,8 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 														marginTop: "0.25rem",
 													}}
 												>
-													Confidence: {(qaResponse.confidence * 100).toFixed(0)}%
+													Confidence: {(qaResponse.confidence * 100).toFixed(0)}
+													%
 												</div>
 											</div>
 											<span
@@ -648,7 +662,9 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 																	</div>
 																	<button
 																		type="button"
-																		onClick={() => fetchVisualGrounding(citation.chunk_id)}
+																		onClick={() =>
+																			fetchVisualGrounding(citation.chunk_id)
+																		}
 																		style={{
 																			marginTop: "0.5rem",
 																			padding: "0.25rem 0.5rem",

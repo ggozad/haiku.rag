@@ -25,12 +25,22 @@ interface GapRecord {
 	resolved_by: string[];
 }
 
+interface Citation {
+	document_id: string;
+	chunk_id: string;
+	document_uri: string;
+	document_title?: string;
+	page_numbers: number[];
+	headings?: string[];
+	content: string;
+}
+
 interface SearchAnswer {
 	query: string;
 	answer: string;
 	confidence: number;
-	context: string[];
-	sources: string[];
+	cited_chunks: string[];
+	citations: Citation[];
 }
 
 interface ResearchContext {
@@ -93,7 +103,6 @@ function AgentContent() {
 			last_analysis: null,
 		},
 	});
-
 
 	return (
 		<>

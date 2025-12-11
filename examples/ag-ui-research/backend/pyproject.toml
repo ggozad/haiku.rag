@@ -9,7 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.34.2",
     "pydantic-ai-slim[ag-ui,openai]>=1.17.0",
     "python-dotenv>=1.0.1",
-    "haiku-rag-slim @ file:///Users/ggozad/dev/open-source/haiku.rag-agui/haiku_rag_slim",
+    "haiku.rag-slim[agui]>=0.20.0",
 ]
 
 [dependency-groups]
