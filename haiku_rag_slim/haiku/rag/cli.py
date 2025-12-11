@@ -84,16 +84,16 @@ def main(
     # Configure logging for CLI context
     configure_cli_logging()
 
-    if get_config().environment == "development":
-        # Lazy import logfire only in development
-        try:
-            import logfire  # type: ignore
+    # Configure logfire (only sends data if token is present)
+    try:
+        import logfire
 
-            logfire.configure(send_to_logfire="if-token-present")
-            logfire.instrument_pydantic_ai()
-        except Exception:
-            pass
-    else:
+        logfire.configure(send_to_logfire="if-token-present")
+        logfire.instrument_pydantic_ai()
+    except Exception:
+        pass
+
+    if get_config().environment != "development":
         # Suppress warnings in production
         warnings.filterwarnings("ignore")
 
