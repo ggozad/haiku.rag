@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.20.1] - 2025-12-11
+
 ### Added
 
 - **Search Filter for Graphs**: Research and Deep QA graphs now support `search_filter` parameter to restrict searches to specific documents
