@@ -13,6 +13,14 @@
   - New `/api/documents` endpoint to list available documents
   - Frontend document selector component with search and multi-select
   - Demonstrates client-to-server state flow via AG-UI protocol
+- **Inspector Info Modal**: New `i` keyboard shortcut opens a modal displaying database information
+
+### Changed
+
+- **Inspector Lazy Loading**: Chunks panel now loads chunks in batches of 50 with infinite scroll
+  - Fixes unresponsive UI when viewing documents with large numbers of chunks
+  - New `ChunkRepository.get_by_document_id()` pagination with `limit` and `offset` parameters
+  - New `ChunkRepository.count_by_document_id()` method
 
 ## [0.20.0] - 2025-12-10
 

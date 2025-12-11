@@ -69,6 +69,7 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
         Binding("/", "search", "Search", show=True),
+        Binding("i", "show_info", "Info", show=True),
         Binding("v", "show_visual", "Visual", show=True),
         Binding("c", "show_context", "Context", show=True),
     ]
@@ -125,6 +126,13 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         """Open search modal."""
         if self.client:
             await self._switch_modal(SearchModal(self.client))
+
+    async def action_show_info(self) -> None:
+        """Show database info modal."""
+        if self.client:
+            from haiku.rag.inspector.widgets.info_modal import InfoModal
+
+            await self._switch_modal(InfoModal(self.client, self.db_path))
 
     async def on_search_modal_chunk_selected(
         self, message: SearchModal.ChunkSelected
