@@ -149,9 +149,9 @@ Show verbose output with deep QA:
 haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --verbose
 ```
 
-Filter to specific documents with deep QA:
+Filter to specific documents:
 ```bash
-haiku-rag ask "What are the main findings?" --deep --filter "uri LIKE '%paper%'"
+haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
 ```
 
 The QA agent searches your documents for relevant information and provides a comprehensive answer. When available, citations use the document title; otherwise they fall back to the URI.
@@ -161,7 +161,7 @@ Flags:
 - `--cite`: Include citations showing which documents were used
 - `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
 - `--verbose`: Show planning, searching, evaluation, and synthesis steps (only with `--deep`)
-- `--filter`: Restrict searches to documents matching the filter (only with `--deep`)
+- `--filter`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
 
 ## Research
 

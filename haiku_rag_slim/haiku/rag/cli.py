@@ -309,7 +309,7 @@ def ask(
         None,
         "--filter",
         "-f",
-        help="SQL WHERE clause to filter documents (only with --deep)",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
 ):
     app = create_app(db)

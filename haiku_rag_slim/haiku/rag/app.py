@@ -363,7 +363,7 @@ class HaikuRAGApp:
                         if cite:
                             citations = result.citations
                 else:
-                    answer, citations = await self.client.ask(question)
+                    answer, citations = await self.client.ask(question, filter=filter)
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
