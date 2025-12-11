@@ -189,6 +189,19 @@ async def health_check(_: Request) -> JSONResponse:
     )
 
 
+async def list_documents(_: Request) -> JSONResponse:
+    """List all documents in the database."""
+    client = get_client(db_path)
+    docs = await client.document_repository.list_all()
+    return JSONResponse(
+        {
+            "documents": [
+                {"id": doc.id, "title": doc.title, "uri": doc.uri} for doc in docs
+            ]
+        }
+    )
+
+
 async def visualize_chunk(request: Request) -> JSONResponse:
     """Return visual grounding images for a chunk as base64."""
     import base64
@@ -228,6 +241,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
 app = Starlette(
     routes=[
         Route("/v1/research/stream", stream_research_agent, methods=["POST"]),
+        Route("/api/documents", list_documents, methods=["GET"]),
         Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),
     ],
