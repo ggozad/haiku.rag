@@ -92,8 +92,19 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     effective_db_path = Path(effective_db_path)
                 client = get_client(effective_db_path)
 
+                # Build search filter from document IDs if provided
+                document_ids = input_data.state.get("documentFilter")
+                search_filter = None
+                if document_ids:
+                    ids_str = ", ".join(f"'{id}'" for id in document_ids)
+                    search_filter = f"id IN ({ids_str})"
+
                 # Create agent dependencies with shared emitter
-                agent_deps = AgentDeps(client=client, agui_emitter=emitter)
+                agent_deps = AgentDeps(
+                    client=client,
+                    agui_emitter=emitter,
+                    search_filter=search_filter,
+                )
 
                 # Start run with empty initial state
                 emitter.start_run(

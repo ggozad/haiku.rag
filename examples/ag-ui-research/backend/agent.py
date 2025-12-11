@@ -33,6 +33,7 @@ class AgentDeps:
 
     client: HaikuRAG
     agui_emitter: "AGUIEmitter[ResearchState, ResearchReport] | None" = None
+    search_filter: str | None = None
 
 
 model = get_model(Config.research.model, Config)
@@ -74,6 +75,7 @@ async def run_research(ctx: RunContext[AgentDeps], question: str) -> str:
     graph = build_research_graph(Config)
     context = ResearchContext(original_question=question)
     state = ResearchState.from_config(context=context, config=Config)
+    state.search_filter = ctx.deps.search_filter
 
     graph_deps = ResearchDeps(
         client=ctx.deps.client,
