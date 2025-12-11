@@ -279,7 +279,11 @@ def test_ask():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=False, verbose=False
+            question="What is Python?",
+            cite=False,
+            deep=False,
+            verbose=False,
+            filter=None,
         )
 
 
@@ -293,7 +297,11 @@ def test_ask_with_cite():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True, deep=False, verbose=False
+            question="What is Python?",
+            cite=True,
+            deep=False,
+            verbose=False,
+            filter=None,
         )
 
 
@@ -307,7 +315,11 @@ def test_ask_with_deep():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=True, verbose=False
+            question="What is Python?",
+            cite=False,
+            deep=True,
+            verbose=False,
+            filter=None,
         )
 
 
@@ -321,7 +333,11 @@ def test_ask_with_deep_and_cite():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=True, deep=True, verbose=False
+            question="What is Python?",
+            cite=True,
+            deep=True,
+            verbose=False,
+            filter=None,
         )
 
 
@@ -335,7 +351,11 @@ def test_ask_with_deep_and_verbose():
 
         assert result.exit_code == 0
         mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?", cite=False, deep=True, verbose=True
+            question="What is Python?",
+            cite=False,
+            deep=True,
+            verbose=True,
+            filter=None,
         )
 
 

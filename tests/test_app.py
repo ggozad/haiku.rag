@@ -304,7 +304,7 @@ async def test_ask_without_cite(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.ask("test question")
 
-    mock_client.ask.assert_called_once_with("test question")
+    mock_client.ask.assert_called_once_with("test question", filter=None)
 
 
 @pytest.mark.asyncio
@@ -333,7 +333,7 @@ async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.ask("test question", cite=True)
 
-    mock_client.ask.assert_called_once_with("test question")
+    mock_client.ask.assert_called_once_with("test question", filter=None)
     # Verify print was called (once for answer, once for citations)
     assert mock_print.call_count >= 1
 
@@ -353,7 +353,7 @@ async def test_ask_with_verbose(app: HaikuRAGApp, monkeypatch):
     with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
         await app.ask("test question", verbose=True)
 
-    mock_client.ask.assert_called_once_with("test question")
+    mock_client.ask.assert_called_once_with("test question", filter=None)
 
 
 @pytest.mark.asyncio
