@@ -6,6 +6,11 @@ from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.document import Document
 
 
+def _escape_sql_string(value: str) -> str:
+    """Escape single quotes in SQL string literals."""
+    return value.replace("'", "''")
+
+
 class DocumentRepository:
     """Repository for Document operations."""
 
@@ -161,9 +166,10 @@ class DocumentRepository:
 
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
+        escaped_uri = _escape_sql_string(uri)
         results = list(
             self.store.documents_table.search()
-            .where(f"uri = '{uri}'")
+            .where(f"uri = '{escaped_uri}'")
             .limit(1)
             .to_pydantic(DocumentRecord)
         )

@@ -1,18 +1,19 @@
 # Benchmarks
 
-We use the [repliqa](https://huggingface.co/datasets/ServiceNow/repliqa) dataset for the evaluation of `haiku.rag`.
+We evaluate `haiku.rag` on several datasets to measure both retrieval quality and question-answering accuracy.
 
-You can perform your own evaluations with the `evaluations` CLI command:
+## Running Evaluations
+
+You can run evaluations with the `evaluations` CLI:
 
 ```bash
 evaluations repliqa
+evaluations wix
 ```
 
-The evaluation flow is orchestrated with
-[`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals),
-which we leverage for dataset management, scoring, and report generation.
+The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we leverage for dataset management, scoring, and report generation.
 
-## Configuration
+### Configuration
 
 The benchmark script accepts several options:
 
@@ -20,109 +21,102 @@ The benchmark script accepts several options:
 evaluations repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
 ```
 
-**Configuration options:**
+**Options:**
+
 - `--config PATH` - Specify a custom `haiku.rag.yaml` configuration file
-- `--db PATH` - Override the database path (default: `~/.local/share/haiku.rag/evaluations/dbs/{dataset}.lancedb` on Linux, `~/Library/Application Support/haiku.rag/evaluations/dbs/{dataset}.lancedb` on macOS)
+- `--db PATH` - Override the database path (default: platform-specific user data directory)
 - `--skip-db` - Skip updating the evaluation database
 - `--skip-retrieval` - Skip retrieval benchmark
 - `--skip-qa` - Skip QA benchmark
-- `--limit N` - Limit number of test cases for both retrieval and QA
-- `--name NAME` - Override the evaluation name (defaults to `{dataset}_retrieval_evaluation` or `{dataset}_qa_evaluation`)
+- `--limit N` - Limit number of test cases
+- `--name NAME` - Override the evaluation name
 
-If no config file is specified, the script will search for a config file in the standard locations:
-1. `./haiku.rag.yaml` (current directory)
-2. User config directory
-3. Falls back to default configuration
+If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
-## RepliQA Retrieval
+## Methodology
 
-We use the [RepliQA](https://huggingface.co/datasets/ServiceNow/repliqa) dataset to evaluate retrieval performance. We load the `News Stories` from `repliqa_3` (1035 documents) and index them. Subsequently, we run a search over the `question` field for each row of the dataset and check whether we match the document that answers the question. Questions for which the answer cannot be found in the documents are ignored.
+### Retrieval Metrics
 
-For RepliQA, we use **Mean Reciprocal Rank (MRR)** as the primary metric since each query has exactly one relevant document.
+**Mean Reciprocal Rank (MRR)** - Used when each query has exactly one relevant document.
 
-**How MRR is calculated:**
-- For each query, we retrieve the top-K documents and find the rank (position) of the first relevant document
-- The reciprocal rank for that query is `1/rank` (e.g., if the relevant document is at position 3, the score is 1/3 ≈ 0.333)
-- If no relevant document is found in the top-K results, the score is 0
-- MRR is the mean of these reciprocal ranks across all queries
-- Scores range from 0 (never found) to 1 (always found at rank 1)
+- For each query, find the rank (position) of the first relevant document in top-K results
+- Reciprocal rank = `1/rank` (e.g., rank 3 → 1/3 ≈ 0.333)
+- If not found in top-K, score is 0
+- MRR is the mean across all queries
+- Range: 0 (never found) to 1 (always at rank 1)
 
-**Example:** If we run 3 queries and the relevant documents are found at positions 1, 2, and not found:
-- Query 1: 1/1 = 1.0
-- Query 2: 1/2 = 0.5
-- Query 3: 0 (not found)
-- MRR = (1.0 + 0.5 + 0) / 3 = 0.5
+**Mean Average Precision (MAP)** - Used when queries have multiple relevant documents.
 
-### MRR Results
+- For each relevant document at position k, calculate precision@k = (relevant docs in top k) / k
+- Average Precision (AP) = mean of these precision values / total relevant documents
+- MAP is the mean of AP scores across all queries
+- Range: 0 to 1; rewards ranking relevant documents higher
 
-| Embedding Model                       | MRR   | Reranker               |
-|---------------------------------------|-------|------------------------|
-| Ollama / `qwen3-embedding:8b`         | 0.91  | -                      |
+### QA Accuracy
 
-## Question/Answer evaluation
+For question-answering evaluation, `pydantic-evals` coordinates an LLM judge (Ollama `qwen3`) to determine whether answers are correct. Accuracy is the fraction of correctly answered questions.
 
-Again using the same dataset, we use a QA agent to answer the question.
-`pydantic-evals` runs each case and coordinates an LLM judge (Ollama `qwen3`) to
-determine whether the answer is correct. The obtained accuracy is as follows:
+## RepliQA
 
-| Embedding Model                    | QA Model                          | Accuracy  | Reranker               |
-|------------------------------------|-----------------------------------|-----------|------------------------|
-| Ollama / `qwen3-embedding:4b`      | Ollama / `gpt-oss` - no thinking  | 0.82      | None                   |
-| Ollama / `qwen3-embedding:0.6b`    | Ollama / `gpt-oss` - thinking     | 0.89      | None                   |
-| Ollama / `mxbai-embed-large`       | Ollama / `qwen3` - thinking       | 0.85      | None                   |
-| Ollama / `mxbai-embed-large`       | Ollama / `qwen3` - thinking       | 0.87      | `mxbai-rerank-base-v2` |
-| Ollama / `mxbai-embed-large`       | Ollama / `qwen3:0.6b`             | 0.28      | None                   |
+[RepliQA](https://huggingface.co/datasets/ServiceNow/repliqa) contains synthetic news stories with question-answer pairs. We use `News Stories` from `repliqa_3` (1035 documents). Each question has exactly one relevant document, so we use MRR for retrieval evaluation.
+
+*Results from v0.19.6*
+
+### Retrieval (MRR)
+
+| Embedding Model               | MRR  | Reranker |
+|-------------------------------|------|----------|
+| Ollama / `qwen3-embedding:8b` | 0.91 | -        |
+
+### QA Accuracy
+
+| Embedding Model              | QA Model                         | Accuracy | Reranker               |
+|------------------------------|----------------------------------|----------|------------------------|
+| Ollama / `qwen3-embedding:4b`   | Ollama / `gpt-oss` - no thinking | 0.82     | None                   |
+| Ollama / `qwen3-embedding:0.6b` | Ollama / `gpt-oss` - thinking    | 0.89     | None                   |
+| Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.85     | None                   |
+| Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.87     | `mxbai-rerank-base-v2` |
+| Ollama / `mxbai-embed-large`    | Ollama / `qwen3:0.6b`            | 0.28     | None                   |
 
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
 
-## Wix Retrieval
+## Wix
 
-We also track retrieval performance on [WixQA](https://huggingface.co/datasets/Wix/WixQA),
-a dataset of real customer support questions paired with curated answers from
-Wix. The benchmark follows the evaluation protocol described in the
-[WixQA paper](https://arxiv.org/abs/2505.08643) and gives us a view into how the
-system handles conversational, product-specific support queries.
+[WixQA](https://huggingface.co/datasets/Wix/WixQA) contains real customer support questions paired with curated answers from Wix. The benchmark follows the evaluation protocol from the [WixQA paper](https://arxiv.org/abs/2505.08643). Each query can have multiple relevant passages, so we use MAP for retrieval evaluation.
 
-For retrieval evaluation, we index the reference answer passages shipped with the dataset and
-run retrieval against each user question. Each sample supplies one or more
-relevant passage URIs.
+We benchmark both the plain text version (HTML stripped, no structure) and HTML version. Since HTML chunks are small (typically a phrase), we use `chunk_radius=2` to expand context.
 
-For Wix, we use **Mean Average Precision (MAP)** as the primary metric since each query has multiple relevant documents. MAP accounts for both the presence and ranking of all relevant documents.
+*Results from v0.20.0*
 
-**How MAP is calculated:**
-- For each query, we retrieve the top-K documents and identify which ones are relevant
-- For each relevant document found at position k, we calculate precision@k = (number of relevant docs in top k) / k
-- Average Precision (AP) for that query is the mean of these precision values, divided by the total number of relevant documents
-- MAP is the mean of AP scores across all queries
-- Scores range from 0 (no relevant documents found) to 1 (all relevant documents ranked at the top)
+### Retrieval (MAP)
 
-**Example:** If a query has 2 relevant documents (A and B), and we retrieve 5 documents [A, X, B, Y, Z]:
-- A is at position 1: precision@1 = 1/1 = 1.0 (1 relevant out of top 1)
-- B is at position 3: precision@3 = 2/3 ≈ 0.667 (2 relevant out of top 3)
-- AP = (1.0 + 0.667) / 2 = 0.833
-- If we had another query with AP = 0.5, then MAP = (0.833 + 0.5) / 2 = 0.667
+| Embedding Model        | Chunk size | MAP  | Reranker               | Notes                        |
+|------------------------|------------|------|------------------------|------------------------------|
+| `qwen3-embedding:4b`   | 256        | 0.34 | None                   | html, `chunk-radius=2`       |
+| `qwen3-embedding:4b`   | 256        | 0.39 | `mxbai-rerank-base-v2` | html, `chunk-radius=2`       |
+| `qwen3-embedding:4b`   | 256        | 0.43 | None                   | plain text, `chunk-radius=0` |
+| `qwen3-embedding:4b`   | 512        | 0.45 | None                   | plain text, `chunk-radius=0` |
 
-MAP rewards systems that rank relevant documents higher, not just finding them.
+### QA Accuracy
 
-In the following results the benchmarks have been run using both the plain text version of the Wix dataset (which has HTML tags stripped and no document structure) as well as the HTML version.
-Since the chunks in the HTML version are very small (typically a phrase) we use `chunk_radius=2` to tune the retrieval.
+| Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                        |
+|----------------------|------------|-----------------------------|----------|------------------------------|
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.74     | plain text, `chunk-radius=0` |
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.79     | html, `chunk-radius=2`       |
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.80     | html, `chunk-radius=2`, reranker=`mxbai-rerank-base-v2` |
 
-### MAP Results
+## HotpotQA
 
-| Embedding Model            | Chunk size | MAP   | Reranker               | Notes                                                  |
-|----------------------------|------------|-------|------------------------|--------------------------------------------------------|
-| `qwen3-embedding:4b`       | 256        | 0.34  | None                   | html, `chunk-radius=2`                                 |
-| `qwen3-embedding:4b`       | 256        | 0.39  | None                   | html, `chunk-radius=2`, reranker=`mxbai-rerank-base-v2`|
-| `qwen3-embedding:4b`       | 256        | 0.43  | None                   | plain text, `chunk-radius=0`                           |
-| `qwen3-embedding:4b`       | 512        | 0.45  | None                   | plain text, `chunk-radius=0`                           |
+[HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is a multi-hop question answering dataset requiring reasoning over multiple Wikipedia paragraphs. Each question requires evidence from 2+ documents, making it ideal for testing retrieval and reasoning capabilities. We use MAP for retrieval evaluation since queries have multiple relevant documents.
 
+### Retrieval (MAP)
 
-## QA Accuracy
+| Embedding Model | MAP | Reranker | Notes |
+|-----------------|-----|----------|-------|
+|                 |     |          |       |
 
-And for QA accuracy,
+### QA Accuracy
 
-| Embedding Model            | Chunk size | QA Model                    | Accuracy | Notes                                                   |
-|----------------------------|------------|-----------------------------|----------|---------------------------------------------------------|
-| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - no thinking | 0.74     | plain text, `chunk-radius=0`                            |
-| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - thinking    | 0.79     | html, `chunk-radius=2`                                  |
-| `qwen3-embedding:4b`       | 256        | `gpt-oss:20b` - thinking    | 0.80     | html, `chunk-radius=2`, reranker=`mxbai-rerank-base-v2` |
+| Embedding Model | QA Model | Accuracy | Notes |
+|-----------------|----------|----------|-------|
+|                 |          |          |       |

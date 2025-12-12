@@ -173,3 +173,30 @@ def test_document_get_docling_document_no_id_no_cache():
 
     # Each call parses fresh (different objects)
     assert doc1 is not doc2
+
+
+@pytest.mark.asyncio
+async def test_document_get_by_uri_with_special_characters(
+    qa_corpus: Dataset, temp_db_path
+):
+    """Test get_by_uri handles URIs with special characters like single quotes."""
+    store = Store(temp_db_path, create=True)
+    doc_repo = DocumentRepository(store)
+
+    first_doc = qa_corpus[0]
+    document_text = first_doc["document_extracted"]
+
+    doc_with_quote = Document(
+        content=document_text,
+        uri="Hamish and Andy's Gap Year",
+        metadata={"source": "test"},
+    )
+
+    created_doc = await doc_repo.create(doc_with_quote)
+
+    retrieved = await doc_repo.get_by_uri("Hamish and Andy's Gap Year")
+    assert retrieved is not None
+    assert retrieved.id == created_doc.id
+    assert retrieved.uri == "Hamish and Andy's Gap Year"
+
+    store.close()
