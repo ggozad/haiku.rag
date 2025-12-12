@@ -10,13 +10,17 @@ Responsibilities:
 
 Plan requirements:
 - Produce at most 3 sub_questions that together cover the main question.
+- sub_questions must be a list of plain strings, where each string is a complete
+  question. Do NOT use objects with nested fields like {question, details}.
 - Each sub_question must be a standalone, self-contained query that can run
   without extra context. Include concrete entities, scope, timeframe, and any
   qualifiers. Avoid ambiguous pronouns (it/they/this/that).
 - Prioritize the highest-value aspects first; avoid redundancy and overlap.
 - Prefer questions that are likely answerable from the current knowledge base;
   if coverage is uncertain, make scopes narrower and specific.
-- Order sub_questions by execution priority (most valuable first)."""
+- Order sub_questions by execution priority (most valuable first).
+
+Use the gather_context tool once on the main question before planning."""
 
 SEARCH_AGENT_PROMPT = """You are a search and question-answering specialist.
 
@@ -46,8 +50,13 @@ Each result includes:
 - Type: content type like paragraph, table, code, list_item (when available)
 - Content: the actual text
 
-IMPORTANT: In cited_chunks, use the EXACT, COMPLETE chunk ID (the full UUID).
-Do NOT truncate or shorten chunk IDs.
+Output format:
+- query: Echo the question you are answering
+- answer: Your concise answer based on the retrieved content
+- cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+- confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
 
 Guidelines:
 - Base answers strictly on retrieved content - do not use external knowledge.
