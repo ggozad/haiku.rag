@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.20.2] - 2025-12-12
+
 ### Fixed
 
 - **LLM Schema Compliance**: Improved prompts to prevent LLMs from returning objects instead of plain strings for `list[str]` fields
