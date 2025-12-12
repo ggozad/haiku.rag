@@ -182,6 +182,43 @@ class TestTextToDoclingWithFormat:
         with pytest.raises(ValueError, match="Unsupported format"):
             await converter.convert_text("content", format="invalid")
 
+    @pytest.mark.asyncio
+    async def test_plain_format(self):
+        """Test that format='plain' creates DoclingDocument directly."""
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        plain_text = (
+            "MZ Wallace is an American company which designs, manufactures "
+            "and markets handbags and fashion accessories."
+        )
+        doc = await converter.convert_text(plain_text, format="plain")
+        assert doc is not None
+        exported = doc.export_to_markdown()
+        assert "MZ Wallace" in exported
+
+    @pytest.mark.asyncio
+    async def test_plain_text_without_markdown_syntax_fallback(self):
+        """Test that plain text without markdown syntax falls back gracefully.
+
+        Docling's format detection fails for plain text that doesn't contain
+        markdown syntax (headers, lists, etc.). The converter should fall back
+        to creating a simple DoclingDocument directly.
+        """
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        # Plain text without any markdown syntax
+        plain_text = (
+            "MZ Wallace is an American company which designs, manufactures "
+            "and markets handbags and fashion accessories. The company was "
+            "founded in 1999 by Monica Zwirner and Lucy Wallace Eustice."
+        )
+        doc = await converter.convert_text(plain_text, format="md")
+        assert doc is not None
+        exported = doc.export_to_markdown()
+        assert "MZ Wallace" in exported
+
 
 class TestDoclingLocalConverter:
     """Tests for DoclingLocalConverter."""

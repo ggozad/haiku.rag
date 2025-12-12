@@ -145,8 +145,8 @@ class DoclingLocalConverter(DocumentConverter):
         Args:
             text: The text content to convert.
             name: The name to use for the document (defaults to "content.md").
-            format: The format of the text content ("md" or "html"). Defaults to "md".
-                This determines which parser docling uses to interpret the content.
+            format: The format of the text content ("md", "html", or "plain").
+                Defaults to "md". Use "plain" for plain text without parsing.
 
         Returns:
             DoclingDocument representation of the text.

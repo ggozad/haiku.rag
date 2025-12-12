@@ -50,6 +50,7 @@ The `format` parameter controls how text content is parsed:
 
 - `"md"` (default) - Parse as Markdown
 - `"html"` - Parse as HTML, preserving semantic structure (headings, lists, tables)
+- `"plain"` - Plain text, no parsing (creates a simple text document)
 
 !!! note
     The document's `content` field stores the markdown export of the parsed document for consistent display. The original input is preserved in the `docling_document_json` field.
