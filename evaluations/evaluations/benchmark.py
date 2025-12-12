@@ -75,9 +75,14 @@ async def populate_db(
     if spec.document_limit is not None:
         corpus = corpus.select(range(min(spec.document_limit, len(corpus))))
 
+    # Disable auto_vacuum - we'll vacuum periodically instead to prevent disk exhaustion
+    config.storage.auto_vacuum = False
+    vacuum_interval = 100
+
     with Progress() as progress:
         task = progress.add_task("[green]Populating database...", total=len(corpus))
         async with HaikuRAG(db, config=config) as rag:
+            docs_since_vacuum = 0
             for doc in corpus:
                 doc_mapping = cast(Mapping[str, Any], doc)
                 payload = spec.document_mapper(doc_mapping)
@@ -101,7 +106,16 @@ async def populate_db(
                     metadata=payload.metadata,
                     format=payload.format,
                 )
+                docs_since_vacuum += 1
                 progress.advance(task)
+
+                # Periodic vacuum to prevent disk exhaustion
+                if docs_since_vacuum >= vacuum_interval:
+                    await rag.store.vacuum(retention_seconds=0)
+                    docs_since_vacuum = 0
+
+            # Final vacuum
+            await rag.store.vacuum(retention_seconds=0)
 
 
 async def run_retrieval_benchmark(

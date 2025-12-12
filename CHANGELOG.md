@@ -10,6 +10,9 @@
 
 ### Changed
 
+- **Evaluations Vacuum Strategy**: `populate_db` now uses periodic vacuum to prevent disk exhaustion with large datasets
+  - Disables auto_vacuum during population, vacuums every 100 documents with retention=0
+  - Prevents disk space issues when building databases with thousands of documents (e.g., HotpotQA)
 - **Benchmarks Documentation**: Restructured benchmarks.md for clarity
   - Added dedicated Methodology section explaining MRR, MAP, and QA Accuracy metrics
   - Organized results by dataset with retrieval and QA subsections
