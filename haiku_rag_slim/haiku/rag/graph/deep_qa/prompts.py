@@ -10,7 +10,7 @@ Task:
 
 Output format:
 - answer: The complete answer to the original question (2-4 paragraphs)
-- cited_chunks: List of chunk IDs (from sub-answers) that directly support your answer
+- cited_chunks: List of plain strings containing chunk IDs (UUIDs only, not objects)
 
 Guidelines:
 - Start directly with the answer - no preamble like "Based on the research..."
@@ -30,7 +30,7 @@ Task:
 Output format:
 - is_sufficient: Boolean indicating if we can answer the question comprehensively
 - reasoning: Clear explanation of your assessment
-- new_questions: List of specific follow-up questions needed (empty if sufficient)
+- new_questions: List of plain strings, each a specific follow-up question (not objects)
 
 Guidelines:
 - Be strict but reasonable in your assessment

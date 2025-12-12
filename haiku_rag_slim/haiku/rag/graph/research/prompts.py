@@ -16,19 +16,20 @@ Tasks:
 Output format (map directly to fields):
 - highlights: list of insights with fields {summary, status, supporting_sources,
   originating_questions, notes}. Use status one of {validated, open, tentative}.
+  supporting_sources and originating_questions must be lists of plain strings.
 - gap_assessments: list of gaps with fields {description, severity, blocking,
   resolved, resolved_by, supporting_sources, notes}. Severity must be one of
-  {low, medium, high}. resolved_by may reference related insight summaries if no
-  stable identifier yet.
-- resolved_gaps: list of identifiers or descriptions for gaps now closed.
-- new_questions: up to 3 standalone, specific sub-questions (no duplicates with
-  existing ones).
+  {low, medium, high}. resolved_by and supporting_sources must be lists of plain strings.
+- resolved_gaps: list of plain strings (identifiers or descriptions for gaps now closed).
+- new_questions: list of plain strings, up to 3 standalone questions (no duplicates).
 - commentary: 1–3 sentences summarizing what changed this round.
+
+All list fields must contain plain strings only, not objects.
 
 Guidance:
 - Be concise and avoid repeating previously recorded information unless it
   changed materially.
-- Tie supporting_sources to the evidence used; omit if unavailable.
+- For supporting_sources, use only the document_uri strings from the sources.
 - Only propose new sub_questions that directly address remaining gaps.
 - When marking a gap as resolved, ensure the rationale is clear via
   resolved_by or notes."""
@@ -58,14 +59,14 @@ Strictness:
 - Treat unresolved high-severity or blocking gaps as a hard stop.
 
 Output fields must line up with EvaluationResult:
-- key_insights: concise bullet-ready statements of the most decision-relevant
-  insights (cite status if helpful).
-- new_questions: follow-up sub-questions (max 3) meeting the specificity rules.
-- gaps: list remaining blockers; reuse wording from the tracked gaps when
-  possible to aid downstream reconciliation.
+- key_insights: list of plain strings, concise bullet-ready statements.
+- new_questions: list of plain strings, follow-up sub-questions (max 3).
+- gaps: list of plain strings, remaining blockers (reuse wording from tracked gaps).
 - confidence_score: numeric in [0,1].
 - is_sufficient: true only when no blocking gaps remain.
 - reasoning: short narrative tying the decision to evidence coverage.
+
+All list fields must contain plain strings only, not objects.
 
 Remember: prefer maintaining continuity with the structured context over
 introducing new terminology."""
@@ -82,16 +83,13 @@ Goals:
 Report guidelines (map to output fields):
 - title: concise (5–12 words), informative.
 - executive_summary: 3–5 sentences summarizing the overall answer.
-- main_findings: 4–8 one‑sentence bullets; each reflects evidence from the
-  research (do not include inline citations or snippet text).
-- conclusions: 2–4 bullets that follow logically from findings.
-- recommendations: 2–5 actionable bullets tied to findings.
-- limitations: 1–3 bullets describing key constraints or uncertainties.
-- sources_summary: List specific sources used with document paths, page numbers,
-  and section headings where available. Format each as:
-  "- /path/to/document.pdf (p. 5, Section: Introduction)" or
-  "- /path/to/file.md (Section: Getting Started)"
-  Include one bullet per distinct source document.
+- main_findings: list of plain strings, 4–8 one‑sentence bullets reflecting evidence.
+- conclusions: list of plain strings, 2–4 bullets following logically from findings.
+- recommendations: list of plain strings, 2–5 actionable bullets tied to findings.
+- limitations: list of plain strings, 1–3 bullets describing constraints or uncertainties.
+- sources_summary: single string listing sources with document paths and page numbers.
+
+All list fields must contain plain strings only, not objects.
 
 Style:
 - Base all content solely on the collected evidence.
