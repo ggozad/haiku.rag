@@ -89,7 +89,22 @@ class TextFileHandler:
             return f"```{language}\n{content}\n```"
         return content
 
-    SUPPORTED_FORMATS = ("md", "html")
+    SUPPORTED_FORMATS = ("md", "html", "plain")
+
+    @staticmethod
+    def _create_simple_docling_document(text: str, name: str) -> "DoclingDocument":
+        """Create a simple DoclingDocument directly from text.
+
+        Used as fallback when docling's format detection fails for plain text
+        that doesn't contain markdown syntax.
+        """
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        doc_name = name.rsplit(".", 1)[0] if "." in name else name
+        doc = DoclingDocument(name=doc_name)
+        doc.add_text(label=DocItemLabel.TEXT, text=text)
+        return doc
 
     @staticmethod
     def _sync_text_to_docling_document(
@@ -97,6 +112,7 @@ class TextFileHandler:
     ) -> "DoclingDocument":
         """Synchronous implementation of text to DoclingDocument conversion."""
         from docling.document_converter import DocumentConverter as DoclingDocConverter
+        from docling.exceptions import ConversionError
         from docling_core.types.io import DocumentStream
 
         if format not in TextFileHandler.SUPPORTED_FORMATS:
@@ -108,11 +124,20 @@ class TextFileHandler:
         # Derive document name from format to tell docling which parser to use
         doc_name = f"content.{format}" if name == "content.md" else name
 
+        # Plain text doesn't need parsing - create document directly
+        if format == "plain":
+            return TextFileHandler._create_simple_docling_document(text, doc_name)
+
         bytes_io = BytesIO(text.encode("utf-8"))
         doc_stream = DocumentStream(name=doc_name, stream=bytes_io)
         converter = DoclingDocConverter()
-        result = converter.convert(doc_stream)
-        return result.document
+        try:
+            result = converter.convert(doc_stream)
+            return result.document
+        except ConversionError:
+            # Docling's format detection fails for plain text without markdown syntax.
+            # Fall back to creating a simple document directly.
+            return TextFileHandler._create_simple_docling_document(text, doc_name)
 
     @staticmethod
     async def text_to_docling_document(
@@ -123,8 +148,8 @@ class TextFileHandler:
         Args:
             text: The text content to convert.
             name: The name to use for the document.
-            format: The format of the text content ("md" or "html"). Defaults to "md".
-                This determines which parser docling uses to interpret the content.
+            format: The format of the text content ("md", "html", or "plain").
+                Defaults to "md". Use "plain" for plain text without parsing.
 
         Returns:
             DoclingDocument representation of the text.

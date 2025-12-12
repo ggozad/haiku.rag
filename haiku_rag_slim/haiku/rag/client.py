@@ -115,7 +115,8 @@ class HaikuRAG:
                 - Path: Local file path to convert
                 - str (URL): HTTP/HTTPS URL to download and convert
                 - str (text): Raw text content to convert
-            format: The format of text content ("md" or "html"). Defaults to "md".
+            format: The format of text content ("md", "html", or "plain").
+                Defaults to "md". Use "plain" for plain text without parsing.
                 Only used when source is raw text (not a file path or URL).
                 Files and URLs determine format from extension/content-type.
 
@@ -350,8 +351,8 @@ class HaikuRAG:
             uri: Optional URI identifier for the document.
             title: Optional title for the document.
             metadata: Optional metadata dictionary.
-            format: The format of the content ("md" or "html"). Defaults to "md".
-                This determines which parser is used to interpret the content structure.
+            format: The format of the content ("md", "html", or "plain").
+                Defaults to "md". Use "plain" for plain text without parsing.
 
         Returns:
             The created Document instance.

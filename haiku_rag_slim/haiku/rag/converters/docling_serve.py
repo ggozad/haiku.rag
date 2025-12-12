@@ -177,7 +177,7 @@ class DoclingServeConverter(DocumentConverter):
         files = {"files": (path.name, file_content, "application/octet-stream")}
         return await self._make_request(files, path.name)
 
-    SUPPORTED_FORMATS = ("md", "html")
+    SUPPORTED_FORMATS = ("md", "html", "plain")
 
     async def convert_text(
         self, text: str, name: str = "content.md", format: str = "md"
@@ -189,8 +189,8 @@ class DoclingServeConverter(DocumentConverter):
         Args:
             text: The text content to convert.
             name: The name to use for the document (defaults to "content.md").
-            format: The format of the text content ("md" or "html"). Defaults to "md".
-                This determines which parser docling uses to interpret the content.
+            format: The format of the text content ("md", "html", or "plain").
+                Defaults to "md". Use "plain" for plain text without parsing.
 
         Returns:
             DoclingDocument representation of the text.
@@ -198,6 +198,8 @@ class DoclingServeConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted or format is unsupported.
         """
+        from haiku.rag.converters.text_utils import TextFileHandler
+
         if format not in self.SUPPORTED_FORMATS:
             raise ValueError(
                 f"Unsupported format: {format}. "
@@ -206,6 +208,11 @@ class DoclingServeConverter(DocumentConverter):
 
         # Derive document name from format to tell docling which parser to use
         doc_name = f"content.{format}" if name == "content.md" else name
+
+        # Plain text doesn't need remote parsing - create document directly
+        if format == "plain":
+            return TextFileHandler._create_simple_docling_document(text, doc_name)
+
         mime_type = "text/html" if format == "html" else "text/markdown"
 
         text_bytes = text.encode("utf-8")

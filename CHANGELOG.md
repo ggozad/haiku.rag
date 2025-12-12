@@ -7,6 +7,10 @@
   - Extracts unique documents from validation set context paragraphs
   - Uses MAP for retrieval evaluation (multiple supporting documents per question)
   - Run with `evaluations hotpotqa`
+- **Plain Text Format**: Added `format="plain"` for text conversion
+  - Use when content is plain text without markdown/HTML structure
+  - Falls back gracefully when docling cannot detect markdown format in content
+  - Supported in `create_document()`, `convert()`, and all converter classes
 
 ### Changed
 
