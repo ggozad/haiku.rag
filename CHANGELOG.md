@@ -1,6 +1,19 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **HotpotQA Evaluation**: Added HotpotQA dataset adapter for multi-hop QA benchmarks
+  - Extracts unique documents from validation set context paragraphs
+  - Uses MAP for retrieval evaluation (multiple supporting documents per question)
+  - Run with `evaluations hotpotqa`
+
+### Changed
+
+- **Benchmarks Documentation**: Restructured benchmarks.md for clarity
+  - Added dedicated Methodology section explaining MRR, MAP, and QA Accuracy metrics
+  - Organized results by dataset with retrieval and QA subsections
+
 ## [0.20.2] - 2025-12-12
 
 ### Fixed
