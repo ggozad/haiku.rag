@@ -58,20 +58,22 @@ interface ResearchContext {
 }
 
 interface EvaluationResult {
-	confidence: number;
+	key_insights: string[];
+	new_questions: string[];
+	gaps: string[];
+	confidence_score: number;
+	is_sufficient: boolean;
 	reasoning: string;
-	should_continue: boolean;
-	gaps_identified: string[];
-	follow_up_questions: string[];
 }
 
 interface ResearchReport {
-	question: string;
-	summary: string;
-	findings: string[];
+	title: string;
+	executive_summary: string;
+	main_findings: string[];
 	conclusions: string[];
-	insights_used: string[];
-	methodology: string;
+	limitations: string[];
+	recommendations: string[];
+	sources_summary: string;
 }
 
 interface ResearchState {
@@ -179,7 +181,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 		state.max_iterations > 0
 			? (state.iterations / state.max_iterations) * 100
 			: 0;
-	const confidence = state.last_eval?.confidence || 0;
+	const confidence = state.last_eval?.confidence_score || 0;
 
 	return (
 		<div
@@ -1040,7 +1042,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 									color: "#2d3748",
 								}}
 							>
-								{state.result.question}
+								{state.result.title}
 							</h3>
 							<div style={{ marginBottom: "1.5rem" }}>
 								<h4
@@ -1051,7 +1053,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										marginBottom: "0.5rem",
 									}}
 								>
-									Summary
+									Executive Summary
 								</h4>
 								<div
 									style={{
@@ -1060,7 +1062,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										lineHeight: "1.6",
 									}}
 								>
-									<Markdown content={state.result.summary} />
+									<Markdown content={state.result.executive_summary} />
 								</div>
 							</div>
 							<div style={{ marginBottom: "1.5rem" }}>
@@ -1072,7 +1074,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										marginBottom: "0.5rem",
 									}}
 								>
-									Key Findings
+									Main Findings
 								</h4>
 								<ul
 									style={{
@@ -1082,7 +1084,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										lineHeight: "1.6",
 									}}
 								>
-									{state.result.findings.map((finding, idx) => (
+									{state.result.main_findings.map((finding, idx) => (
 										<li
 											key={`finding-${idx}-${finding.substring(0, 30)}`}
 											style={{ marginBottom: "0.5rem" }}
@@ -1121,27 +1123,68 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 									))}
 								</ul>
 							</div>
-							<div style={{ marginBottom: "1.5rem" }}>
-								<h4
-									style={{
-										fontSize: "0.875rem",
-										fontWeight: "600",
-										color: "#718096",
-										marginBottom: "0.5rem",
-									}}
-								>
-									Methodology
-								</h4>
-								<div
-									style={{
-										fontSize: "0.875rem",
-										color: "#4a5568",
-										lineHeight: "1.6",
-									}}
-								>
-									<Markdown content={state.result.methodology} />
+							{state.result.recommendations.length > 0 && (
+								<div style={{ marginBottom: "1.5rem" }}>
+									<h4
+										style={{
+											fontSize: "0.875rem",
+											fontWeight: "600",
+											color: "#718096",
+											marginBottom: "0.5rem",
+										}}
+									>
+										Recommendations
+									</h4>
+									<ul
+										style={{
+											paddingLeft: "1.5rem",
+											fontSize: "0.875rem",
+											color: "#4a5568",
+											lineHeight: "1.6",
+										}}
+									>
+										{state.result.recommendations.map((rec, idx) => (
+											<li
+												key={`rec-${idx}-${rec.substring(0, 30)}`}
+												style={{ marginBottom: "0.5rem" }}
+											>
+												<Markdown content={rec} />
+											</li>
+										))}
+									</ul>
 								</div>
-							</div>
+							)}
+							{state.result.limitations.length > 0 && (
+								<div style={{ marginBottom: "1.5rem" }}>
+									<h4
+										style={{
+											fontSize: "0.875rem",
+											fontWeight: "600",
+											color: "#718096",
+											marginBottom: "0.5rem",
+										}}
+									>
+										Limitations
+									</h4>
+									<ul
+										style={{
+											paddingLeft: "1.5rem",
+											fontSize: "0.875rem",
+											color: "#4a5568",
+											lineHeight: "1.6",
+										}}
+									>
+										{state.result.limitations.map((lim, idx) => (
+											<li
+												key={`lim-${idx}-${lim.substring(0, 30)}`}
+												style={{ marginBottom: "0.5rem" }}
+											>
+												<Markdown content={lim} />
+											</li>
+										))}
+									</ul>
+								</div>
+							)}
 							<div>
 								<h4
 									style={{
@@ -1151,52 +1194,16 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 										marginBottom: "0.5rem",
 									}}
 								>
-									Insights Used ({state.result.insights_used.length})
+									Sources
 								</h4>
 								<div
 									style={{
-										display: "flex",
-										flexDirection: "column",
-										gap: "0.5rem",
+										fontSize: "0.875rem",
+										color: "#4a5568",
+										lineHeight: "1.6",
 									}}
 								>
-									{state.result.insights_used.map((insightId, idx) => {
-										const insight = state.context.insights.find(
-											(i) => i.id === insightId,
-										);
-										return (
-											<div
-												key={`insight-${idx}-${insightId}`}
-												style={{
-													padding: "0.5rem",
-													background: "#f7fafc",
-													borderRadius: "4px",
-													border: "1px solid #e2e8f0",
-												}}
-											>
-												{insight ? (
-													<div
-														style={{
-															fontSize: "0.875rem",
-															color: "#2d3748",
-															lineHeight: "1.4",
-														}}
-													>
-														<Markdown content={insight.summary} />
-													</div>
-												) : (
-													<div
-														style={{
-															fontSize: "0.875rem",
-															color: "#718096",
-														}}
-													>
-														Insight ID: {insightId}
-													</div>
-												)}
-											</div>
-										);
-									})}
+									<Markdown content={state.result.sources_summary} />
 								</div>
 							</div>
 						</div>

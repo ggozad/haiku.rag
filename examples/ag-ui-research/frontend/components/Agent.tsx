@@ -53,20 +53,22 @@ interface ResearchContext {
 }
 
 interface EvaluationResult {
-	confidence: number;
+	key_insights: string[];
+	new_questions: string[];
+	gaps: string[];
+	confidence_score: number;
+	is_sufficient: boolean;
 	reasoning: string;
-	should_continue: boolean;
-	gaps_identified: string[];
-	follow_up_questions: string[];
 }
 
 interface ResearchReport {
-	question: string;
-	summary: string;
-	findings: string[];
+	title: string;
+	executive_summary: string;
+	main_findings: string[];
 	conclusions: string[];
-	insights_used: string[];
-	methodology: string;
+	limitations: string[];
+	recommendations: string[];
+	sources_summary: string;
 }
 
 interface ResearchState {

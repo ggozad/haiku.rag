@@ -1,6 +1,17 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **LLM Schema Compliance**: Improved prompts to prevent LLMs from returning objects instead of plain strings for `list[str]` fields
+  - All graph prompts now explicitly state that list fields must contain plain strings only
+  - Added missing `query` and `confidence` fields to search agent output format documentation
+  - Fixes validation errors with less capable models that ignore JSON schema constraints
+- **AG-UI Frontend Types**: Fixed TypeScript interfaces in ag-ui-research example to match backend Python models
+  - `EvaluationResult`: `confidence` → `confidence_score`, `should_continue` → `is_sufficient`, `gaps_identified` → `gaps`, `follow_up_questions` → `new_questions`, added `key_insights`
+  - `ResearchReport`: `question` → `title`, `summary` → `executive_summary`, `findings` → `main_findings`, removed `insights_used`/`methodology`, added `limitations`/`recommendations`/`sources_summary`
+  - Updated Final Report UI to display new fields (Recommendations, Limitations, Sources)
+
 ## [0.20.1] - 2025-12-11
 
 ### Added
