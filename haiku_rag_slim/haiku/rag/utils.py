@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 from packaging.version import Version, parse
 
 if TYPE_CHECKING:
+    from rich.console import RenderableType
+
     from haiku.rag.graph.common.models import Citation
 
 
@@ -272,18 +274,20 @@ def format_bytes(num_bytes: int) -> str:
 
 
 def format_citations(citations: "list[Citation]") -> str:
-    """Format citations as markdown string."""
+    """Format citations as plain text with preserved formatting.
+
+    Used by things like the MCP server where Rich renderables are not available.
+    """
     if not citations:
         return ""
+
     lines = ["## Citations\n"]
+
     for c in citations:
-        # Build citation header with document_id and chunk_id
-        parts = [
-            f"- document_id: `{c.document_id}` chunk_id: `{c.chunk_id}` "
-            f"uri: **{c.document_uri}**"
-        ]
-        if c.document_title:
-            parts.append(f' - "{c.document_title}"')
+        # Header line
+        header = f"[{c.document_id}:{c.chunk_id}]"
+
+        # Location info
         location_parts = []
         if c.page_numbers:
             if len(c.page_numbers) == 1:
@@ -292,14 +296,69 @@ def format_citations(citations: "list[Citation]") -> str:
                 location_parts.append(f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}")
         if c.headings:
             location_parts.append(f"Section: {c.headings[-1]}")
+
+        source = c.document_uri
+        if c.document_title:
+            source = f"{c.document_title} ({c.document_uri})"
         if location_parts:
-            parts.append(f" ({', '.join(location_parts)})")
-        lines.append("".join(parts))
-        # Add truncated content excerpt
-        excerpt = c.content[:500] + "…" if len(c.content) > 500 else c.content
-        excerpt = excerpt.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-        lines.append(f"\n  {excerpt}\n")
+            source += f" - {', '.join(location_parts)}"
+
+        lines.append(f"{header} {source}")
+        lines.append(c.content)
+        lines.append("")
+
     return "\n".join(lines)
+
+
+def format_citations_rich(citations: "list[Citation]") -> "list[RenderableType]":
+    """Format citations as Rich renderables.
+
+    Returns a list of Rich Panel objects for direct console printing,
+    with content rendered as markdown for syntax highlighting.
+    """
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.text import Text
+
+    if not citations:
+        return []
+
+    renderables: list[RenderableType] = []
+    renderables.append(Text("Citations", style="bold"))
+
+    for c in citations:
+        # Build header with IDs
+        header = Text()
+        header.append("doc: ", style="dim")
+        header.append(c.document_id, style="cyan")
+        header.append("  chunk: ", style="dim")
+        header.append(c.chunk_id, style="cyan")
+
+        # Location info for subtitle
+        location_parts = []
+        if c.page_numbers:
+            if len(c.page_numbers) == 1:
+                location_parts.append(f"p. {c.page_numbers[0]}")
+            else:
+                location_parts.append(f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}")
+        if c.headings:
+            location_parts.append(f"Section: {c.headings[-1]}")
+
+        subtitle = c.document_uri
+        if c.document_title:
+            subtitle = f"{c.document_title} ({c.document_uri})"
+        if location_parts:
+            subtitle += f" - {', '.join(location_parts)}"
+        panel = Panel(
+            Markdown(c.content),
+            title=header,
+            subtitle=subtitle,
+            subtitle_align="left",
+            border_style="dim",
+        )
+        renderables.append(panel)
+
+    return renderables
 
 
 def get_default_data_dir() -> Path:
@@ -345,5 +404,3 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
             # If no network connection, do not raise alarms.
             pypi_version = running_version
     return running_version >= pypi_version, running_version, pypi_version
-
-

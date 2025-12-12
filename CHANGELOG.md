@@ -11,6 +11,9 @@
   - `EvaluationResult`: `confidence` → `confidence_score`, `should_continue` → `is_sufficient`, `gaps_identified` → `gaps`, `follow_up_questions` → `new_questions`, added `key_insights`
   - `ResearchReport`: `question` → `title`, `summary` → `executive_summary`, `findings` → `main_findings`, removed `insights_used`/`methodology`, added `limitations`/`recommendations`/`sources_summary`
   - Updated Final Report UI to display new fields (Recommendations, Limitations, Sources)
+- **Citation Formatting**: Citations in CLI now render properly with Rich panels
+  - Content is rendered as markdown with proper code block formatting
+  - No longer truncates or flattens newlines in citation content
 
 ## [0.20.1] - 2025-12-11
 

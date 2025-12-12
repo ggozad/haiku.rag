@@ -29,7 +29,7 @@ from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
-from haiku.rag.utils import format_bytes, format_citations
+from haiku.rag.utils import format_bytes, format_citations_rich
 
 logger = logging.getLogger(__name__)
 
@@ -370,7 +370,8 @@ class HaikuRAGApp:
                 self.console.print("[bold green]Answer:[/bold green]")
                 self.console.print(Markdown(answer))
                 if cite and citations:
-                    self.console.print(Markdown(format_citations(citations)))
+                    for renderable in format_citations_rich(citations):
+                        self.console.print(renderable)
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 
