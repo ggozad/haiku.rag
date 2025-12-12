@@ -50,8 +50,13 @@ Each result includes:
 - Type: content type like paragraph, table, code, list_item (when available)
 - Content: the actual text
 
-IMPORTANT: cited_chunks must be a list of plain strings containing only the UUIDs.
-Use the EXACT, COMPLETE chunk ID. Do NOT use objects or truncate IDs.
+Output format:
+- query: Echo the question you are answering
+- answer: Your concise answer based on the retrieved content
+- cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+- confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
 
 Guidelines:
 - Base answers strictly on retrieved content - do not use external knowledge.
