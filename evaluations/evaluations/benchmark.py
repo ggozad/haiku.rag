@@ -67,7 +67,10 @@ def build_experiment_metadata(
 
 
 async def populate_db(
-    spec: DatasetSpec, config: AppConfig, db_path: Path | None = None
+    spec: DatasetSpec,
+    config: AppConfig,
+    db_path: Path | None = None,
+    vacuum_interval: int = 100,
 ) -> None:
     db = spec.db_path(db_path)
     db.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +80,6 @@ async def populate_db(
 
     # Disable auto_vacuum - we'll vacuum periodically instead to prevent disk exhaustion
     config.storage.auto_vacuum = False
-    vacuum_interval = 100
 
     with Progress() as progress:
         task = progress.add_task("[green]Populating database...", total=len(corpus))
@@ -323,10 +325,13 @@ async def evaluate_dataset(
     limit: int | None,
     name: str | None,
     db_path: Path | None,
+    vacuum_interval: int = 100,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
-        await populate_db(spec, config, db_path=db_path)
+        await populate_db(
+            spec, config, db_path=db_path, vacuum_interval=vacuum_interval
+        )
 
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
@@ -360,6 +365,9 @@ def run(
         None, "--limit", help="Limit number of test cases for both retrieval and QA."
     ),
     name: str | None = typer.Option(None, "--name", help="Override evaluation name."),
+    vacuum_interval: int = typer.Option(
+        100, "--vacuum-interval", help="Vacuum every N documents during DB population."
+    ),
 ) -> None:
     spec = DATASETS.get(dataset.lower())
     if spec is None:
@@ -396,6 +404,7 @@ def run(
             limit=limit,
             name=name,
             db_path=db,
+            vacuum_interval=vacuum_interval,
         )
     )
 
