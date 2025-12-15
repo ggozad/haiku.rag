@@ -11,26 +11,6 @@ interface VisualGroundingState {
 	error: string | null;
 }
 
-interface InsightRecord {
-	id: string;
-	summary: string;
-	status: string;
-	notes?: string;
-	supporting_sources: string[];
-	originating_questions: string[];
-}
-
-interface GapRecord {
-	id: string;
-	description: string;
-	severity: string;
-	blocking: boolean;
-	resolved: boolean;
-	notes?: string;
-	supporting_sources: string[];
-	resolved_by: string[];
-}
-
 interface Citation {
 	document_id: string;
 	chunk_id: string;
@@ -53,14 +33,10 @@ interface ResearchContext {
 	original_question: string;
 	sub_questions: string[];
 	qa_responses: SearchAnswer[];
-	insights: InsightRecord[];
-	gaps: GapRecord[];
 }
 
 interface EvaluationResult {
-	key_insights: string[];
 	new_questions: string[];
-	gaps: string[];
 	confidence_score: number;
 	is_sufficient: boolean;
 	reasoning: string;
@@ -83,10 +59,6 @@ interface ResearchState {
 	confidence_threshold: number;
 	max_concurrency: number;
 	last_eval: EvaluationResult | null;
-	last_analysis: {
-		insights_extracted: InsightRecord[];
-		gaps_identified: GapRecord[];
-	} | null;
 	result?: ResearchReport;
 	current_activity?: string;
 	current_activity_message?: string;
@@ -101,8 +73,6 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 		Record<string, boolean>
 	>({
 		questions: true,
-		insights: true,
-		gaps: true,
 		report: true,
 	});
 
@@ -689,305 +659,6 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 									</div>
 								);
 							})}
-						</div>
-					)}
-				</div>
-			)}
-
-			{/* Insights */}
-			{state.context.insights.length > 0 && (
-				<div
-					style={{
-						background: "white",
-						borderRadius: "8px",
-						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-						overflow: "hidden",
-					}}
-				>
-					<button
-						type="button"
-						onClick={() => toggleSection("insights")}
-						style={{
-							width: "100%",
-							display: "flex",
-							justifyContent: "space-between",
-							alignItems: "center",
-							padding: "0.75rem",
-							background: "#edf2f7",
-							border: "1px solid #e2e8f0",
-							borderRadius: "4px",
-							cursor: "pointer",
-							fontSize: "1rem",
-							fontWeight: "600",
-							color: "#2d3748",
-						}}
-					>
-						<span>Key Insights ({state.context.insights.length})</span>
-						<span>{expandedSections.insights ? "▼" : "▶"}</span>
-					</button>
-					{expandedSections.insights && (
-						<div
-							style={{
-								padding: "1rem",
-								background: "#f7fafc",
-								border: "1px solid #e2e8f0",
-								borderTop: "none",
-								borderRadius: "0 0 4px 4px",
-							}}
-						>
-							{state.context.insights.map((insight) => (
-								<div
-									key={insight.id}
-									style={{
-										padding: "0.75rem",
-										background: "white",
-										borderRadius: "4px",
-										marginBottom: "0.5rem",
-										border: "1px solid #e2e8f0",
-									}}
-								>
-									<div
-										style={{
-											display: "flex",
-											justifyContent: "space-between",
-											marginBottom: "0.5rem",
-										}}
-									>
-										<span
-											style={{
-												fontSize: "0.75rem",
-												padding: "0.125rem 0.5rem",
-												background:
-													insight.status === "validated"
-														? "#c6f6d5"
-														: insight.status === "active"
-															? "#bee3f8"
-															: "#fed7d7",
-												color:
-													insight.status === "validated"
-														? "#22543d"
-														: insight.status === "active"
-															? "#2c5282"
-															: "#742a2a",
-												borderRadius: "4px",
-											}}
-										>
-											{insight.status}
-										</span>
-										<span
-											style={{
-												fontSize: "0.75rem",
-												color: "#718096",
-											}}
-										>
-											{insight.supporting_sources.length} sources
-										</span>
-									</div>
-									<div
-										style={{
-											fontSize: "0.875rem",
-											color: "#2d3748",
-											lineHeight: "1.5",
-											marginBottom: "0.5rem",
-										}}
-									>
-										<Markdown content={insight.summary} />
-									</div>
-									{insight.notes && (
-										<div
-											style={{
-												fontSize: "0.75rem",
-												color: "#718096",
-												marginTop: "0.5rem",
-												fontStyle: "italic",
-											}}
-										>
-											<Markdown content={insight.notes} />
-										</div>
-									)}
-									{insight.supporting_sources.length > 0 && (
-										<div
-											style={{
-												fontSize: "0.75rem",
-												color: "#718096",
-												marginTop: "0.5rem",
-											}}
-										>
-											<span style={{ fontWeight: "600" }}>Sources: </span>
-											{insight.supporting_sources.map((source, srcIdx) => (
-												<span key={`${insight.id}-src-${srcIdx}`}>
-													{srcIdx > 0 && ", "}
-													{source}
-												</span>
-											))}
-										</div>
-									)}
-								</div>
-							))}
-						</div>
-					)}
-				</div>
-			)}
-
-			{/* Knowledge Gaps */}
-			{state.context.gaps.length > 0 && (
-				<div
-					style={{
-						background: "white",
-						borderRadius: "8px",
-						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-						overflow: "hidden",
-					}}
-				>
-					<button
-						type="button"
-						onClick={() => toggleSection("gaps")}
-						style={{
-							width: "100%",
-							display: "flex",
-							justifyContent: "space-between",
-							alignItems: "center",
-							padding: "0.75rem",
-							background: "#edf2f7",
-							border: "1px solid #e2e8f0",
-							borderRadius: "4px",
-							cursor: "pointer",
-							fontSize: "1rem",
-							fontWeight: "600",
-							color: "#2d3748",
-						}}
-					>
-						<span>Knowledge Gaps ({state.context.gaps.length})</span>
-						<span>{expandedSections.gaps ? "▼" : "▶"}</span>
-					</button>
-					{expandedSections.gaps && (
-						<div
-							style={{
-								padding: "1rem",
-								background: "#f7fafc",
-								border: "1px solid #e2e8f0",
-								borderTop: "none",
-								borderRadius: "0 0 4px 4px",
-							}}
-						>
-							{state.context.gaps.map((gap) => (
-								<div
-									key={gap.id}
-									style={{
-										padding: "0.75rem",
-										background: "white",
-										borderRadius: "4px",
-										marginBottom: "0.5rem",
-										border: "1px solid #e2e8f0",
-									}}
-								>
-									<div
-										style={{
-											display: "flex",
-											justifyContent: "space-between",
-											marginBottom: "0.5rem",
-											gap: "0.5rem",
-											flexWrap: "wrap",
-										}}
-									>
-										<div style={{ display: "flex", gap: "0.5rem" }}>
-											<span
-												style={{
-													fontSize: "0.75rem",
-													padding: "0.125rem 0.5rem",
-													background:
-														gap.severity === "critical"
-															? "#fed7d7"
-															: gap.severity === "high"
-																? "#feebc8"
-																: gap.severity === "medium"
-																	? "#fef5e7"
-																	: "#e6fffa",
-													color:
-														gap.severity === "critical"
-															? "#742a2a"
-															: gap.severity === "high"
-																? "#7c2d12"
-																: gap.severity === "medium"
-																	? "#744210"
-																	: "#234e52",
-													borderRadius: "4px",
-													fontWeight: "600",
-												}}
-											>
-												{gap.severity}
-											</span>
-											{gap.blocking && (
-												<span
-													style={{
-														fontSize: "0.75rem",
-														padding: "0.125rem 0.5rem",
-														background: "#fed7d7",
-														color: "#742a2a",
-														borderRadius: "4px",
-														fontWeight: "600",
-													}}
-												>
-													Blocking
-												</span>
-											)}
-											{gap.resolved && (
-												<span
-													style={{
-														fontSize: "0.75rem",
-														padding: "0.125rem 0.5rem",
-														background: "#c6f6d5",
-														color: "#22543d",
-														borderRadius: "4px",
-														fontWeight: "600",
-													}}
-												>
-													Resolved
-												</span>
-											)}
-										</div>
-									</div>
-									<div
-										style={{
-											fontSize: "0.875rem",
-											color: "#2d3748",
-											lineHeight: "1.5",
-											marginBottom: "0.5rem",
-										}}
-									>
-										<Markdown content={gap.description} />
-									</div>
-									{gap.notes && (
-										<div
-											style={{
-												fontSize: "0.75rem",
-												color: "#718096",
-												marginTop: "0.5rem",
-												fontStyle: "italic",
-											}}
-										>
-											<Markdown content={gap.notes} />
-										</div>
-									)}
-									{gap.resolved && gap.resolved_by.length > 0 && (
-										<div
-											style={{
-												fontSize: "0.75rem",
-												color: "#718096",
-												marginTop: "0.5rem",
-											}}
-										>
-											<span style={{ fontWeight: "600" }}>Resolved by: </span>
-											{gap.resolved_by.map((source, srcIdx) => (
-												<span key={`${gap.id}-resolved-${srcIdx}`}>
-													{srcIdx > 0 && ", "}
-													{source}
-												</span>
-											))}
-										</div>
-									)}
-								</div>
-							))}
 						</div>
 					)}
 				</div>

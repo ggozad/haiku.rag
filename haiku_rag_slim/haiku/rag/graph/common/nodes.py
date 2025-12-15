@@ -64,7 +64,7 @@ def create_plan_node[AgentDepsT: GraphAgentDeps](
 
     Args:
         model_config: ModelConfig with provider, model, and settings
-        deps_type: Type of dependencies for the agent (e.g., ResearchDependencies, DeepQADependencies)
+        deps_type: Type of dependencies for the agent (e.g., ResearchDependencies)
         activity_message: Message to show during planning activity
         output_retries: Number of output retries for the agent (optional)
         config: AppConfig object (defaults to global Config)

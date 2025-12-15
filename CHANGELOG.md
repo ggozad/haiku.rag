@@ -15,6 +15,17 @@
 ### Changed
 
 - **Chunker Sets Order**: Chunkers now set `chunk.order` directly
+- **Unified Research Graph**: Simplified and unified research and deep QA into a single configurable graph
+  - Removed `analyze_insights` node - graph now flows directly from `collect_answers` to `decide`
+  - Simplified `EvaluationResult` to: `is_sufficient`, `confidence_score`, `reasoning`, `new_questions`
+  - Simplified `ResearchContext` - removed insight/gap tracking methods
+  - `ask --deep` now uses research graph with `max_iterations=2`, `confidence_threshold=0.0`
+  - `ask --deep` output now shows executive summary, key findings, and sources
+  - Added `include_plan` parameter to `build_research_graph()` for plan-less execution
+  - Added `max_iterations` and `confidence_threshold` overrides to `ResearchState.from_config()`
+- **Improved Synthesis Prompt**: Updated synthesis agent prompt to produce direct answers
+  - Executive summary now directly answers the question instead of describing the report
+  - Added explicit examples of good vs bad output style
 - **Evaluations Vacuum Strategy**: `populate_db` now uses periodic vacuum to prevent disk exhaustion with large datasets
   - Disables auto_vacuum during population, vacuums every N documents with retention=0
   - New `--vacuum-interval` CLI option (default: 100) to control vacuum frequency
@@ -22,6 +33,16 @@
 - **Benchmarks Documentation**: Restructured benchmarks.md for clarity
   - Added dedicated Methodology section explaining MRR, MAP, and QA Accuracy metrics
   - Organized results by dataset with retrieval and QA subsections
+
+### Removed
+
+- **Deep QA Graph**: Removed `haiku.rag.graph.deep_qa` module entirely
+  - Use `build_research_graph()` with appropriate parameters instead
+  - `ask --deep` CLI command now uses research graph internally
+- **Insight/Gap Tracking**: Removed over-engineered insight and gap tracking from research graph
+  - Removed `InsightRecord`, `GapRecord`, `InsightAnalysis`, `InsightStatus`, `GapSeverity` models
+  - Removed `format_analysis_for_prompt()` helper
+  - Removed `INSIGHT_AGENT_PROMPT` from prompts
 
 ## [0.20.2] - 2025-12-12
 

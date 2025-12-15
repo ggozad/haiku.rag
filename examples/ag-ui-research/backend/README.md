@@ -15,13 +15,11 @@ The server starts on `http://localhost:8000` and uses [haiku.rag configuration](
 
 The backend uses `create_agui_server()` from `haiku.rag.graph.agui.server` which provides:
 
-- **Research graph execution**: Multi-iteration research workflow with insight/gap tracking
+- **Research graph execution**: Multi-iteration research workflow
 - **AG-UI protocol**: Server-Sent Events (SSE) streaming for real-time state updates
 - **Delta state updates**: Efficient incremental state synchronization using JSON Patch operations
-- **Both research and deep_qa endpoints**: `/agent/research` and `/agent/deep_qa`
 
 ## Endpoints
 
 - `GET /health` - Health check with configuration info
 - `POST /agent/research/stream` - Research graph streaming endpoint (AG-UI protocol)
-- `POST /agent/deep_qa/stream` - Deep QA graph streaming endpoint (AG-UI protocol)

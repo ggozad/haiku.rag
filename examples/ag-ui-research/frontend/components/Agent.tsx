@@ -6,26 +6,6 @@ import "@copilotkit/react-ui/styles.css";
 import DocumentSelector from "./DocumentSelector";
 import StateDisplay from "./StateDisplay";
 
-interface InsightRecord {
-	id: string;
-	summary: string;
-	status: string;
-	notes?: string;
-	supporting_sources: string[];
-	originating_questions: string[];
-}
-
-interface GapRecord {
-	id: string;
-	description: string;
-	severity: string;
-	blocking: boolean;
-	resolved: boolean;
-	notes?: string;
-	supporting_sources: string[];
-	resolved_by: string[];
-}
-
 interface Citation {
 	document_id: string;
 	chunk_id: string;
@@ -48,14 +28,10 @@ interface ResearchContext {
 	original_question: string;
 	sub_questions: string[];
 	qa_responses: SearchAnswer[];
-	insights: InsightRecord[];
-	gaps: GapRecord[];
 }
 
 interface EvaluationResult {
-	key_insights: string[];
 	new_questions: string[];
-	gaps: string[];
 	confidence_score: number;
 	is_sufficient: boolean;
 	reasoning: string;
@@ -78,10 +54,6 @@ interface ResearchState {
 	confidence_threshold: number;
 	max_concurrency: number;
 	last_eval: EvaluationResult | null;
-	last_analysis: {
-		insights_extracted: InsightRecord[];
-		gaps_identified: GapRecord[];
-	} | null;
 	result?: ResearchReport;
 	current_activity?: string;
 	current_activity_message?: string;
@@ -96,15 +68,12 @@ function AgentContent() {
 				original_question: "",
 				sub_questions: [],
 				qa_responses: [],
-				insights: [],
-				gaps: [],
 			},
 			iterations: 0,
 			max_iterations: 3,
 			confidence_threshold: 0.8,
 			max_concurrency: 1,
 			last_eval: null,
-			last_analysis: null,
 			documentFilter: [],
 		},
 	});

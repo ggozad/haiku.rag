@@ -56,7 +56,7 @@ How to decide:
 - "Tell me about Y" → Use run_research tool
 
 When you use run_research, the graph will decompose questions, search the knowledge base,
-extract insights, and generate a comprehensive report.
+and generate a comprehensive report.
 
 Be friendly and conversational in all responses.""",
 )
@@ -100,7 +100,6 @@ Main Findings:
 Conclusions:
 {chr(10).join(f"- {conclusion}" for conclusion in result.conclusions[:2])}
 
-Total insights gathered: {len(state.context.insights)}
 Confidence: {f"{state.last_eval.confidence_score:.0%}" if state.last_eval else "N/A"}
 Iterations completed: {state.iterations}
 
