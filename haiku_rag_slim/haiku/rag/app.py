@@ -329,6 +329,8 @@ class HaikuRAGApp:
             try:
                 citations = []
                 if deep:
+                    from haiku.rag.graph.research.models import ResearchReport
+
                     graph = build_research_graph(config=self.config)
                     context = ResearchContext(original_question=question)
                     state = ResearchState.from_config(
@@ -345,24 +347,40 @@ class HaikuRAGApp:
                         result_dict = await renderer.render(
                             stream_graph(graph, state, deps)
                         )
-                        answer = (
-                            result_dict.get("executive_summary", "")
+                        report = (
+                            ResearchReport.model_validate(result_dict)
                             if result_dict
-                            else ""
+                            else None
                         )
                     else:
-                        result = await graph.run(state=state, deps=deps)
-                        answer = result.executive_summary
+                        report = await graph.run(state=state, deps=deps)
+
+                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                    self.console.print()
+                    if report:
+                        self.console.print("[bold green]Answer:[/bold green]")
+                        self.console.print(Markdown(report.executive_summary))
+                        if report.main_findings:
+                            self.console.print()
+                            self.console.print("[bold cyan]Key Findings:[/bold cyan]")
+                            for finding in report.main_findings:
+                                self.console.print(f"• {finding}")
+                        if report.sources_summary:
+                            self.console.print()
+                            self.console.print("[bold cyan]Sources:[/bold cyan]")
+                            self.console.print(report.sources_summary)
+                    else:
+                        self.console.print("[yellow]No answer generated.[/yellow]")
                 else:
                     answer, citations = await self.client.ask(question, filter=filter)
 
-                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                self.console.print()
-                self.console.print("[bold green]Answer:[/bold green]")
-                self.console.print(Markdown(answer))
-                if cite and citations:
-                    for renderable in format_citations_rich(citations):
-                        self.console.print(renderable)
+                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                    self.console.print()
+                    self.console.print("[bold green]Answer:[/bold green]")
+                    self.console.print(Markdown(answer))
+                    if cite and citations:
+                        for renderable in format_citations_rich(citations):
+                            self.console.print(renderable)
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 

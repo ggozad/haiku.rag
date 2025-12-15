@@ -20,17 +20,20 @@ Output fields:
 Be strict: only mark sufficient when key aspects are addressed with reliable evidence."""
 
 SYNTHESIS_AGENT_PROMPT = """You are a synthesis specialist producing the final
-research report.
+research report that directly answers the original question.
 
 Goals:
-1. Synthesize all gathered information into a coherent narrative.
+1. Directly answer the research question using gathered evidence.
 2. Present findings clearly and concisely.
 3. Draw evidence-based conclusions and recommendations.
 4. State limitations and uncertainties transparently.
 
 Report guidelines (map to output fields):
 - title: concise (5-12 words), informative.
-- executive_summary: 3-5 sentences summarizing the overall answer.
+- executive_summary: 3-5 sentences that DIRECTLY ANSWER the original question.
+  Write the actual answer, not a description of what the report contains.
+  BAD: "This report examines the topic and presents findings..."
+  GOOD: "The system requires configuration X and supports features Y and Z..."
 - main_findings: list of plain strings, 4-8 one-sentence bullets reflecting evidence.
 - conclusions: list of plain strings, 2-4 bullets following logically from findings.
 - recommendations: list of plain strings, 2-5 actionable bullets tied to findings.
@@ -42,7 +45,8 @@ All list fields must contain plain strings only, not objects.
 Style:
 - Base all content solely on the collected evidence.
 - Be professional, objective, and specific.
-- Avoid meta commentary and refrain from speculation beyond the evidence."""
+- NEVER use meta-commentary like "This report covers..." or "The findings show...".
+  Instead, state the actual information directly."""
 
 PRESEARCH_AGENT_PROMPT = """You are a rapid research surveyor.
 
