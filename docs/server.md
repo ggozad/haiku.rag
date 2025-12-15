@@ -239,8 +239,7 @@ data: {"type":"RUN_FINISHED","threadId":"abc123","runId":"xyz789","result":{"tit
 - Additional structured fields depending on the activity type:
   - **Planning**: `sub_questions` (list of strings)
   - **Searching**: `query` (string), `confidence` (float, on completion), `error` (string, on failure)
-  - **Analyzing**: `insights` (list of insight objects), `gaps` (list of gap objects), `resolved_gaps` (list of strings)
-  - **Evaluating**: `confidence` (float), `is_sufficient` (boolean) for research; `is_sufficient` (boolean), `iterations` (int) for deep QA
+  - **Evaluating**: `confidence` (float), `is_sufficient` (boolean), `new_questions` (list of strings)
 
 The `message` field is always present for simple rendering, while structured fields enable richer UI features like displaying lists, charts, and detailed status information.
 
