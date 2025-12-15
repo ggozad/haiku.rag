@@ -1,20 +1,54 @@
-from pydantic_ai import Agent
+import asyncio
+
+from pydantic_ai import Agent, RunContext, format_as_xml
+from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import Graph, GraphBuilder, StepContext
 from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph.common import get_model
-from haiku.rag.graph.common.models import SearchAnswer
-from haiku.rag.graph.common.nodes import create_plan_node, create_search_node
-from haiku.rag.graph.research.common import format_context_for_prompt
-from haiku.rag.graph.research.dependencies import ResearchDependencies
-from haiku.rag.graph.research.models import EvaluationResult, ResearchReport
+from haiku.rag.graph.research.dependencies import ResearchContext, ResearchDependencies
+from haiku.rag.graph.research.models import (
+    EvaluationResult,
+    RawSearchAnswer,
+    ResearchPlan,
+    ResearchReport,
+    SearchAnswer,
+)
 from haiku.rag.graph.research.prompts import (
-    DECISION_AGENT_PROMPT,
-    SYNTHESIS_AGENT_PROMPT,
+    DECISION_PROMPT,
+    PLAN_PROMPT,
+    SEARCH_PROMPT,
+    SYNTHESIS_PROMPT,
 )
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+from haiku.rag.utils import get_model
+
+
+def format_context_for_prompt(context: ResearchContext) -> str:
+    """Format the research context as XML for inclusion in prompts."""
+    context_data = {
+        "original_question": context.original_question,
+        "unanswered_questions": context.sub_questions,
+        "qa_responses": [
+            {
+                "question": qa.query,
+                "answer": qa.answer,
+                "confidence": qa.confidence,
+                "sources": [
+                    {
+                        "document_uri": c.document_uri,
+                        "document_title": c.document_title,
+                        "page_numbers": c.page_numbers,
+                        "headings": c.headings,
+                    }
+                    for c in qa.citations
+                ],
+            }
+            for qa in context.qa_responses
+        ],
+    }
+    return format_as_xml(context_data, root_tag="research_context")
 
 
 def build_research_graph(
@@ -37,26 +71,172 @@ def build_research_graph(
         output_type=ResearchReport,
     )
 
-    plan = g.step(
-        create_plan_node(
-            model_config=model_config,
-            deps_type=ResearchDependencies,  # type: ignore[arg-type]
-            activity_message="Creating research plan",
-            output_retries=3,
-            config=config,
-        )
-    )  # type: ignore[arg-type]
+    @g.step
+    async def plan(ctx: StepContext[ResearchState, ResearchDeps, None]) -> None:
+        """Create research plan with sub-questions."""
+        state = ctx.state
+        deps = ctx.deps
 
-    search_one = g.step(
-        create_search_node(
-            model_config=model_config,
-            deps_type=ResearchDependencies,  # type: ignore[arg-type]
-            with_step_wrapper=True,
-            success_message_format="Found answer with {confidence:.0%} confidence",
-            handle_exceptions=True,
-            config=config,
-        )
-    )  # type: ignore[arg-type]
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("plan")
+            deps.agui_emitter.update_activity(
+                "planning", {"stepName": "plan", "message": "Creating research plan"}
+            )
+
+        try:
+            plan_agent = Agent(
+                model=get_model(model_config, config),
+                output_type=ResearchPlan,
+                instructions=(
+                    PLAN_PROMPT
+                    + "\n\nUse the gather_context tool once on the main question before planning."
+                ),
+                retries=3,
+                output_retries=3,
+                deps_type=ResearchDependencies,
+            )
+
+            search_filter = state.search_filter
+
+            @plan_agent.tool
+            async def gather_context(
+                ctx2: RunContext[ResearchDependencies],
+                query: str,
+                limit: int | None = None,
+            ) -> str:
+                results = await ctx2.deps.client.search(
+                    query, limit=limit, filter=search_filter
+                )
+                results = await ctx2.deps.client.expand_context(results)
+                return "\n\n".join(r.content for r in results)
+
+            _ = gather_context
+
+            prompt = (
+                "Plan a focused approach for the main question.\n\n"
+                f"Main question: {state.context.original_question}"
+            )
+
+            agent_deps = ResearchDependencies(client=deps.client, context=state.context)
+            plan_result = await plan_agent.run(prompt, deps=agent_deps)
+            state.context.sub_questions = list(plan_result.output.sub_questions)
+
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+                count = len(state.context.sub_questions)
+                deps.agui_emitter.update_activity(
+                    "planning",
+                    {
+                        "stepName": "plan",
+                        "message": f"Created plan with {count} sub-questions",
+                        "sub_questions": list(state.context.sub_questions),
+                    },
+                )
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
+
+    @g.step
+    async def search_one(
+        ctx: StepContext[ResearchState, ResearchDeps, str],
+    ) -> SearchAnswer:
+        """Answer a single sub-question using the knowledge base."""
+        state = ctx.state
+        deps = ctx.deps
+        sub_q = ctx.inputs
+        step_name = f"search: {sub_q}"
+
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step(step_name)
+
+        try:
+            if deps.semaphore is None:
+                deps.semaphore = asyncio.Semaphore(state.max_concurrency)
+
+            async with deps.semaphore:
+                if deps.agui_emitter:
+                    deps.agui_emitter.update_activity(
+                        "searching",
+                        {
+                            "stepName": "search_one",
+                            "message": f"Searching: {sub_q}",
+                            "query": sub_q,
+                        },
+                    )
+
+                agent = Agent(
+                    model=get_model(model_config, config),
+                    output_type=ToolOutput(RawSearchAnswer, max_retries=3),
+                    instructions=SEARCH_PROMPT,
+                    retries=3,
+                    deps_type=ResearchDependencies,
+                )
+
+                search_filter = state.search_filter
+
+                @agent.tool
+                async def search_and_answer(
+                    ctx2: RunContext[ResearchDependencies],
+                    query: str,
+                    limit: int | None = None,
+                ) -> str:
+                    """Search the knowledge base for relevant documents."""
+                    results = await ctx2.deps.client.search(
+                        query, limit=limit, filter=search_filter
+                    )
+                    results = await ctx2.deps.client.expand_context(results)
+                    ctx2.deps.search_results = results
+                    parts = [r.format_for_agent() for r in results]
+                    if not parts:
+                        return f"No relevant information found for: {query}"
+                    return "\n\n".join(parts)
+
+                _ = search_and_answer
+
+                agent_deps = ResearchDependencies(
+                    client=deps.client, context=state.context
+                )
+
+                try:
+                    result = await agent.run(sub_q, deps=agent_deps)
+                    raw_answer = result.output
+                    if raw_answer:
+                        answer = SearchAnswer.from_raw(
+                            raw_answer, agent_deps.search_results
+                        )
+                        state.context.add_qa_response(answer)
+                        if deps.agui_emitter:
+                            deps.agui_emitter.update_state(state)
+                            deps.agui_emitter.update_activity(
+                                "searching",
+                                {
+                                    "stepName": "search_one",
+                                    "message": f"Found answer with {answer.confidence:.0%} confidence",
+                                    "query": sub_q,
+                                    "confidence": answer.confidence,
+                                },
+                            )
+                        return answer
+                    return SearchAnswer(query=sub_q, answer="", confidence=0.0)
+                except Exception as e:
+                    if deps.agui_emitter:
+                        deps.agui_emitter.update_activity(
+                            "searching",
+                            {
+                                "stepName": "search_one",
+                                "message": f"Search failed: {e}",
+                                "query": sub_q,
+                                "error": str(e),
+                            },
+                        )
+                    return SearchAnswer(
+                        query=sub_q,
+                        answer=f"Search failed: {str(e)}",
+                        confidence=0.0,
+                    )
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
 
     @g.step
     async def get_batch(
@@ -76,6 +256,7 @@ def build_research_graph(
     async def decide(
         ctx: StepContext[ResearchState, ResearchDeps, list[SearchAnswer]],
     ) -> bool:
+        """Evaluate research sufficiency and decide whether to continue."""
         state = ctx.state
         deps = ctx.deps
 
@@ -89,7 +270,7 @@ def build_research_graph(
             agent = Agent(
                 model=get_model(model_config, config),
                 output_type=EvaluationResult,
-                instructions=DECISION_AGENT_PROMPT,
+                instructions=DECISION_PROMPT,
                 retries=3,
                 output_retries=3,
                 deps_type=ResearchDependencies,
@@ -152,6 +333,7 @@ def build_research_graph(
     async def synthesize(
         ctx: StepContext[ResearchState, ResearchDeps, None | bool],
     ) -> ResearchReport:
+        """Generate final research report."""
         state = ctx.state
         deps = ctx.deps
 
@@ -165,7 +347,7 @@ def build_research_graph(
             agent = Agent(
                 model=get_model(model_config, config),
                 output_type=ResearchReport,
-                instructions=SYNTHESIS_AGENT_PROMPT,
+                instructions=SYNTHESIS_PROMPT,
                 retries=3,
                 output_retries=3,
                 deps_type=ResearchDependencies,
@@ -201,7 +383,6 @@ def build_research_graph(
     else:
         g.add(g.edge_from(g.start_node).to(get_batch))
 
-    # Branch based on whether we have questions
     g.add(
         g.edge_from(get_batch).to(
             g.decision()
@@ -209,12 +390,9 @@ def build_research_graph(
             .branch(g.match(type(None)).label("No questions").to(synthesize))
         ),
         g.edge_from(search_one).to(collect_answers),
-        g.edge_from(collect_answers).to(
-            decide
-        ),  # Direct: collect → decide (no analyze_insights)
+        g.edge_from(collect_answers).to(decide),
     )
 
-    # Branch based on decision
     g.add(
         g.edge_from(decide).to(
             g.decision()

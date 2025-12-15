@@ -8,7 +8,7 @@ from packaging.version import Version, parse
 if TYPE_CHECKING:
     from rich.console import RenderableType
 
-    from haiku.rag.graph.common.models import Citation
+    from haiku.rag.graph.research.models import Citation
 
 
 def apply_common_settings(

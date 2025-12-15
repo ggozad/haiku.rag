@@ -67,8 +67,6 @@ async def test_research_graph_uses_search_filter(monkeypatch, client_with_docs):
         return TestModel()
 
     monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()
@@ -114,8 +112,6 @@ async def test_search_filter_none_searches_all(monkeypatch, client_with_docs):
         return TestModel()
 
     monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()

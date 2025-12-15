@@ -310,7 +310,7 @@ async def test_ask_without_cite(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with citations."""
-    from haiku.rag.graph.common.models import Citation
+    from haiku.rag.graph.research.models import Citation
 
     mock_answer = "Test answer with citations"
     mock_citations = [

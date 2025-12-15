@@ -18,8 +18,6 @@ async def test_graph_end_to_end_with_test_model(monkeypatch, temp_db_path):
 
     # Patch all locations where get_model is imported
     monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
     monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()

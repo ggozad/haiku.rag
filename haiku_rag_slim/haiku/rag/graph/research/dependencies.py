@@ -1,8 +1,12 @@
+from typing import TYPE_CHECKING, Any
+
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.common.models import SearchAnswer
 from haiku.rag.store.models import SearchResult
+
+if TYPE_CHECKING:
+    from haiku.rag.graph.research.models import SearchAnswer
 
 
 class ResearchContext(BaseModel):
@@ -12,11 +16,11 @@ class ResearchContext(BaseModel):
     sub_questions: list[str] = Field(
         default_factory=list, description="Decomposed sub-questions"
     )
-    qa_responses: list[SearchAnswer] = Field(
+    qa_responses: list[Any] = Field(
         default_factory=list, description="Structured QA pairs used during research"
     )
 
-    def add_qa_response(self, qa: SearchAnswer) -> None:
+    def add_qa_response(self, qa: "SearchAnswer") -> None:
         """Add a structured QA response."""
         self.qa_responses.append(qa)
 
