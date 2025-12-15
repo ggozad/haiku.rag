@@ -358,25 +358,36 @@ async def test_ask_with_verbose(app: HaikuRAGApp, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
-    """Test asking a question with deep QA."""
-    from haiku.rag.graph.deep_qa.models import DeepQAAnswer
+    """Test asking a question with deep mode uses research graph."""
+    import haiku.rag.app as app_module
+    from haiku.rag.graph.research.models import ResearchReport
 
-    mock_output = DeepQAAnswer(answer="Deep QA answer")
+    mock_output = ResearchReport(
+        title="Test",
+        executive_summary="Deep research answer",
+        main_findings=["Finding 1"],
+        conclusions=["Conclusion 1"],
+        sources_summary="Sources",
+    )
 
     mock_graph = AsyncMock()
     mock_graph.run.return_value = mock_output
 
     mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
 
     mock_print = MagicMock()
     monkeypatch.setattr(app.console, "print", mock_print)
+    monkeypatch.setattr(app_module, "build_research_graph", lambda **kwargs: mock_graph)
 
-    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        with patch(
-            "haiku.rag.graph.deep_qa.graph.build_deep_qa_graph", return_value=mock_graph
-        ):
-            await app.ask("test question", deep=True)
+    with patch("haiku.rag.app.HaikuRAG") as mock_rag_class:
+        mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        await app.ask("test question", deep=True)
+
+    # Check if there was an error printed
+    print_calls = [str(c) for c in mock_print.call_args_list]
+    error_calls = [c for c in print_calls if "Error" in c]
+    assert not error_calls, f"Error was printed: {error_calls}"
 
     mock_graph.run.assert_called_once()
     call_kwargs = mock_graph.run.call_args[1]
@@ -385,25 +396,31 @@ async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
-    """Test asking a question with deep QA and citations (cite ignored for deep)."""
-    from haiku.rag.graph.deep_qa.models import DeepQAAnswer
+    """Test asking a question with deep mode (cite is ignored for research graph)."""
+    import haiku.rag.app as app_module
+    from haiku.rag.graph.research.models import ResearchReport
 
-    mock_output = DeepQAAnswer(answer="Deep QA answer")
+    mock_output = ResearchReport(
+        title="Test",
+        executive_summary="Deep research answer",
+        main_findings=["Finding 1"],
+        conclusions=["Conclusion 1"],
+        sources_summary="Sources",
+    )
 
     mock_graph = AsyncMock()
     mock_graph.run.return_value = mock_output
 
     mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
 
     mock_print = MagicMock()
     monkeypatch.setattr(app.console, "print", mock_print)
+    monkeypatch.setattr(app_module, "build_research_graph", lambda **kwargs: mock_graph)
 
-    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        with patch(
-            "haiku.rag.graph.deep_qa.graph.build_deep_qa_graph", return_value=mock_graph
-        ):
-            await app.ask("test question", deep=True, cite=True)
+    with patch("haiku.rag.app.HaikuRAG") as mock_rag_class:
+        mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        await app.ask("test question", deep=True, cite=True)
 
     mock_graph.run.assert_called_once()
     call_kwargs = mock_graph.run.call_args[1]
@@ -412,9 +429,10 @@ async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
-    """Test asking a question with deep QA and verbose output."""
+    """Test asking a question with deep mode and verbose output."""
+    import haiku.rag.app as app_module
 
-    mock_output = {"answer": "Deep QA answer", "citations": []}
+    mock_output = {"executive_summary": "Deep research answer"}
 
     mock_renderer = AsyncMock()
     mock_renderer.render.return_value = mock_output
@@ -422,17 +440,16 @@ async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
     mock_graph = AsyncMock()
 
     mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
 
     mock_print = MagicMock()
     monkeypatch.setattr(app.console, "print", mock_print)
+    monkeypatch.setattr(app_module, "build_research_graph", lambda **kwargs: mock_graph)
 
-    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        with patch(
-            "haiku.rag.graph.deep_qa.graph.build_deep_qa_graph", return_value=mock_graph
-        ):
-            with patch("haiku.rag.app.AGUIConsoleRenderer", return_value=mock_renderer):
-                await app.ask("test question", deep=True, verbose=True)
+    with patch("haiku.rag.app.HaikuRAG") as mock_rag_class:
+        mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
+        with patch("haiku.rag.app.AGUIConsoleRenderer", return_value=mock_renderer):
+            await app.ask("test question", deep=True, verbose=True)
 
     # With verbose, it should use AGUIConsoleRenderer.render, not graph.run
     mock_renderer.render.assert_called_once()

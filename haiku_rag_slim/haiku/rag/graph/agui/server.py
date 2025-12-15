@@ -164,9 +164,6 @@ def create_agui_server(  # pragma: no cover
         Starlette app with research and deep ask endpoints
     """
     from haiku.rag.client import HaikuRAG
-    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
-    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
-    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
     from haiku.rag.graph.research.dependencies import ResearchContext
     from haiku.rag.graph.research.graph import build_research_graph
     from haiku.rag.graph.research.state import ResearchDeps, ResearchState
@@ -202,26 +199,31 @@ def create_agui_server(  # pragma: no cover
         )
         return ResearchDeps(client=get_client(effective_db_path))
 
-    # Deep ask graph factories
+    # Deep ask graph factories (uses research graph with quick settings)
     def deep_ask_graph_factory() -> Graph:
-        return build_deep_qa_graph(config)
+        return build_research_graph(config)
 
-    def deep_ask_state_factory(input_state: dict[str, Any]) -> DeepQAState:
+    def deep_ask_state_factory(input_state: dict[str, Any]) -> ResearchState:
         question = input_state.get("question", "")
         if not question:
             messages = input_state.get("messages", [])
             if messages:
                 question = messages[0].get("content", "")
-        context = DeepQAContext(original_question=question)
-        return DeepQAState.from_config(context=context, config=config)
+        context = ResearchContext(original_question=question)
+        return ResearchState.from_config(
+            context=context,
+            config=config,
+            max_iterations=2,
+            confidence_threshold=0.0,
+        )
 
-    def deep_ask_deps_factory(input_config: dict[str, Any]) -> DeepQADeps:
+    def deep_ask_deps_factory(input_config: dict[str, Any]) -> ResearchDeps:
         effective_db_path = (
             db_path
             or input_config.get("db_path")
             or config.storage.data_dir / "haiku.rag.lancedb"
         )
-        return DeepQADeps(client=get_client(effective_db_path))
+        return ResearchDeps(client=get_client(effective_db_path))
 
     # Create event stream functions for each graph type
     async def research_event_stream(

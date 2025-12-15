@@ -19,11 +19,13 @@ from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 def build_research_graph(
     config: AppConfig = Config,
+    include_plan: bool = True,
 ) -> Graph[ResearchState, ResearchDeps, None, ResearchReport]:
     """Build the Research graph.
 
     Args:
         config: AppConfig object (uses config.research for provider, model, and graph parameters)
+        include_plan: Whether to include the planning step (False for execute-only mode)
 
     Returns:
         Configured Research graph
@@ -191,10 +193,13 @@ def build_research_graph(
         initial_factory=list[SearchAnswer],
     )
 
-    g.add(
-        g.edge_from(g.start_node).to(plan),
-        g.edge_from(plan).to(get_batch),
-    )
+    if include_plan:
+        g.add(
+            g.edge_from(g.start_node).to(plan),
+            g.edge_from(plan).to(get_batch),
+        )
+    else:
+        g.add(g.edge_from(g.start_node).to(get_batch))
 
     # Branch based on whether we have questions
     g.add(

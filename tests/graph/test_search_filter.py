@@ -2,9 +2,6 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
-from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
-from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
 from haiku.rag.graph.research.dependencies import ResearchContext
 from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
@@ -86,52 +83,6 @@ async def test_research_graph_uses_search_filter(monkeypatch, client_with_docs):
     )
 
     deps = ResearchDeps(client=client)
-
-    await graph.run(state=state, deps=deps)
-
-    # Verify search was called with the filter
-    assert len(search_calls) > 0, "Expected search to be called"
-    for call in search_calls:
-        assert call["filter"] == filter_clause, (
-            f"Expected filter '{filter_clause}', got '{call['filter']}'"
-        )
-
-
-@pytest.mark.asyncio
-async def test_deep_qa_graph_uses_search_filter(monkeypatch, client_with_docs):
-    """Test that deep QA graph passes search_filter to search operations."""
-    client, doc1_id, doc2_id = client_with_docs
-
-    # Track search calls to verify filter is passed
-    search_calls = []
-    original_search = client.search
-
-    async def tracking_search(query, limit=None, search_type="hybrid", filter=None):
-        search_calls.append({"query": query, "filter": filter})
-        return await original_search(query, limit, search_type, filter)
-
-    client.search = tracking_search
-
-    # Mock get_model to return TestModel
-    def test_model_factory(_provider, _model, _config=None):
-        return TestModel()
-
-    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.common.nodes.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.deep_qa.graph.get_model", test_model_factory)
-
-    graph = build_deep_qa_graph()
-
-    # Create state with search_filter
-    filter_clause = f"id = '{doc2_id}'"
-    state = DeepQAState(
-        context=DeepQAContext(original_question="Tell me about animals"),
-        max_sub_questions=2,
-        search_filter=filter_clause,
-    )
-
-    deps = DeepQADeps(client=client)
 
     await graph.run(state=state, deps=deps)
 
