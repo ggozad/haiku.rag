@@ -7,19 +7,11 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.graph.common import get_model
 from haiku.rag.graph.common.models import SearchAnswer
 from haiku.rag.graph.common.nodes import create_plan_node, create_search_node
-from haiku.rag.graph.research.common import (
-    format_analysis_for_prompt,
-    format_context_for_prompt,
-)
+from haiku.rag.graph.research.common import format_context_for_prompt
 from haiku.rag.graph.research.dependencies import ResearchDependencies
-from haiku.rag.graph.research.models import (
-    EvaluationResult,
-    InsightAnalysis,
-    ResearchReport,
-)
+from haiku.rag.graph.research.models import EvaluationResult, ResearchReport
 from haiku.rag.graph.research.prompts import (
     DECISION_AGENT_PROMPT,
-    INSIGHT_AGENT_PROMPT,
     SYNTHESIS_AGENT_PROMPT,
 )
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
@@ -43,7 +35,6 @@ def build_research_graph(
         output_type=ResearchReport,
     )
 
-    # Create and register the plan node using the factory
     plan = g.step(
         create_plan_node(
             model_config=model_config,
@@ -54,7 +45,6 @@ def build_research_graph(
         )
     )  # type: ignore[arg-type]
 
-    # Create and register the search_one node using the factory
     search_one = g.step(
         create_search_node(
             model_config=model_config,
@@ -76,84 +66,14 @@ def build_research_graph(
         if not state.context.sub_questions:
             return None
 
-        # Take ALL remaining questions and process them in parallel
         batch = list(state.context.sub_questions)
         state.context.sub_questions.clear()
         return batch
 
     @g.step
-    async def analyze_insights(
+    async def decide(
         ctx: StepContext[ResearchState, ResearchDeps, list[SearchAnswer]],
-    ) -> None:
-        state = ctx.state
-        deps = ctx.deps
-
-        if deps.agui_emitter:
-            deps.agui_emitter.start_step("analyze_insights")
-            deps.agui_emitter.update_activity(
-                "analyzing", {"message": "Synthesizing insights and gaps"}
-            )
-
-        try:
-            agent = Agent(
-                model=get_model(model_config, config),
-                output_type=InsightAnalysis,
-                instructions=INSIGHT_AGENT_PROMPT,
-                retries=3,
-                output_retries=3,
-                deps_type=ResearchDependencies,
-            )
-
-            context_xml = format_context_for_prompt(state.context)
-            prompt = (
-                "Review the latest research context and update the shared ledger of insights, gaps,"
-                " and follow-up questions.\n\n"
-                f"{context_xml}"
-            )
-            agent_deps = ResearchDependencies(
-                client=deps.client,
-                context=state.context,
-            )
-            result = await agent.run(prompt, deps=agent_deps)
-            analysis: InsightAnalysis = result.output
-
-            state.context.integrate_analysis(analysis)
-            state.last_analysis = analysis
-
-            # State updated with insights/gaps - emit state update and narrate
-            if deps.agui_emitter:
-                deps.agui_emitter.update_state(state)
-                highlights = len(analysis.highlights)
-                gaps = len(analysis.gap_assessments)
-                resolved = len(analysis.resolved_gaps)
-                parts = []
-                if highlights:
-                    parts.append(f"{highlights} insights")
-                if gaps:
-                    parts.append(f"{gaps} gaps")
-                if resolved:
-                    parts.append(f"{resolved} resolved")
-                summary = ", ".join(parts) if parts else "No updates"
-                deps.agui_emitter.update_activity(
-                    "analyzing",
-                    {
-                        "stepName": "analyze_insights",
-                        "message": f"Analysis: {summary}",
-                        "insights": [
-                            h.model_dump(mode="json") for h in analysis.highlights
-                        ],
-                        "gaps": [
-                            g.model_dump(mode="json") for g in analysis.gap_assessments
-                        ],
-                        "resolved_gaps": list(analysis.resolved_gaps),
-                    },
-                )
-        finally:
-            if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
-
-    @g.step
-    async def decide(ctx: StepContext[ResearchState, ResearchDeps, None]) -> bool:
+    ) -> bool:
         state = ctx.state
         deps = ctx.deps
 
@@ -174,11 +94,9 @@ def build_research_graph(
             )
 
             context_xml = format_context_for_prompt(state.context)
-            analysis_xml = format_analysis_for_prompt(state.last_analysis)
             prompt_parts = [
                 "Assess whether the research now answers the original question with adequate confidence.",
                 context_xml,
-                analysis_xml,
             ]
             if state.last_eval is not None:
                 prev = state.last_eval
@@ -205,7 +123,6 @@ def build_research_graph(
                 if new_q not in state.context.sub_questions:
                     state.context.sub_questions.append(new_q)
 
-            # State updated with evaluation - emit state update and narrate
             if deps.agui_emitter:
                 deps.agui_emitter.update_state(state)
                 sufficient = "Yes" if output.is_sufficient else "No"
@@ -287,8 +204,9 @@ def build_research_graph(
             .branch(g.match(type(None)).label("No questions").to(synthesize))
         ),
         g.edge_from(search_one).to(collect_answers),
-        g.edge_from(collect_answers).to(analyze_insights),
-        g.edge_from(analyze_insights).to(decide),
+        g.edge_from(collect_answers).to(
+            decide
+        ),  # Direct: collect → decide (no analyze_insights)
     )
 
     # Branch based on decision
