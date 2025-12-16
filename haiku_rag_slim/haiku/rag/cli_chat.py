@@ -1,6 +1,7 @@
 """Interactive CLI chat loop for research graph with human-in-the-loop."""
 
 import asyncio
+import json
 
 from pydantic_ai import Agent
 from rich.console import Console
@@ -225,7 +226,8 @@ async def run_interactive_research(
                     pass
 
             elif event_type == "TOOL_CALL_ARGS":
-                args = event.get("delta", {})
+                delta = event.get("delta", "{}")
+                args = json.loads(delta) if isinstance(delta, str) else delta
                 original_question = args.get("original_question", "")
                 sub_questions = list(args.get("sub_questions", []))
                 qa_responses = args.get("qa_responses", [])

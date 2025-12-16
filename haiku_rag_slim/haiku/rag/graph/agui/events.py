@@ -289,10 +289,12 @@ def emit_tool_call_args(tool_call_id: str, args: dict[str, Any]) -> dict[str, An
     Returns:
         ToolCallArgs event dict
     """
+    import json
+
     return {
         "type": "TOOL_CALL_ARGS",
         "toolCallId": tool_call_id,
-        "delta": args,
+        "delta": json.dumps(args),
     }
 
 

@@ -160,12 +160,14 @@ def test_emit_tool_call_start_with_parent():
 
 def test_emit_tool_call_args():
     """Test TOOL_CALL_ARGS event creation."""
+    import json
+
     args = {"query": "test query", "limit": 10}
     event = emit_tool_call_args("call-1", args)
 
     assert event["type"] == "TOOL_CALL_ARGS"
     assert event["toolCallId"] == "call-1"
-    assert event["delta"] == args
+    assert event["delta"] == json.dumps(args)
 
 
 def test_emit_tool_call_end():
