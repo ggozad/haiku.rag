@@ -11,6 +11,9 @@ from haiku.rag.graph.agui.events import (
     emit_step_finished,
     emit_step_started,
     emit_text_message,
+    emit_tool_call_args,
+    emit_tool_call_end,
+    emit_tool_call_start,
 )
 
 
@@ -135,6 +138,44 @@ def test_emit_activity():
     assert event["content"] == {"message": "Working on task"}
 
 
+def test_emit_tool_call_start():
+    """Test TOOL_CALL_START event creation."""
+    event = emit_tool_call_start("call-1", "search_documents")
+
+    assert event["type"] == "TOOL_CALL_START"
+    assert event["toolCallId"] == "call-1"
+    assert event["toolCallName"] == "search_documents"
+    assert "parentMessageId" not in event
+
+
+def test_emit_tool_call_start_with_parent():
+    """Test TOOL_CALL_START event with parent message ID."""
+    event = emit_tool_call_start("call-1", "search", parent_message_id="msg-1")
+
+    assert event["type"] == "TOOL_CALL_START"
+    assert event["toolCallId"] == "call-1"
+    assert event["toolCallName"] == "search"
+    assert event["parentMessageId"] == "msg-1"
+
+
+def test_emit_tool_call_args():
+    """Test TOOL_CALL_ARGS event creation."""
+    args = {"query": "test query", "limit": 10}
+    event = emit_tool_call_args("call-1", args)
+
+    assert event["type"] == "TOOL_CALL_ARGS"
+    assert event["toolCallId"] == "call-1"
+    assert event["delta"] == args
+
+
+def test_emit_tool_call_end():
+    """Test TOOL_CALL_END event creation."""
+    event = emit_tool_call_end("call-1")
+
+    assert event["type"] == "TOOL_CALL_END"
+    assert event["toolCallId"] == "call-1"
+
+
 def test_event_structure_consistency():
     """Test that all events have consistent structure."""
     events = [
@@ -146,6 +187,9 @@ def test_event_structure_consistency():
         emit_text_message("text"),
         emit_state_snapshot(TestState(value=1)),
         emit_activity("m1", "type", {"content": "value"}),
+        emit_tool_call_start("c1", "tool"),
+        emit_tool_call_args("c1", {"arg": "value"}),
+        emit_tool_call_end("c1"),
     ]
 
     for event in events:

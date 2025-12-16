@@ -166,7 +166,10 @@ def create_agui_server(  # pragma: no cover
     from haiku.rag.client import HaikuRAG
     from haiku.rag.graph.research.dependencies import ResearchContext
     from haiku.rag.graph.research.graph import build_research_graph
-    from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+    from haiku.rag.graph.research.state import (
+        ResearchDeps,
+        ResearchState,
+    )
 
     # Store client reference for proper lifecycle management
     _client_cache: dict[str, HaikuRAG] = {}

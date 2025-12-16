@@ -9,10 +9,10 @@ from pydantic_ai import Agent, RunContext
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph.common import get_model
 from haiku.rag.graph.research.dependencies import ResearchContext
 from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+from haiku.rag.utils import get_model
 
 if TYPE_CHECKING:
     from haiku.rag.graph.agui.emitter import AGUIEmitter

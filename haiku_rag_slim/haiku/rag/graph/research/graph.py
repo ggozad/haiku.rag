@@ -1,4 +1,6 @@
 import asyncio
+from typing import Literal
+from uuid import uuid4
 
 from pydantic_ai import Agent, RunContext, format_as_xml
 from pydantic_ai.output import ToolOutput
@@ -7,6 +9,11 @@ from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
+from haiku.rag.graph.agui.events import (
+    emit_tool_call_args,
+    emit_tool_call_end,
+    emit_tool_call_start,
+)
 from haiku.rag.graph.research.dependencies import ResearchContext, ResearchDependencies
 from haiku.rag.graph.research.models import (
     EvaluationResult,
@@ -54,12 +61,14 @@ def format_context_for_prompt(context: ResearchContext) -> str:
 def build_research_graph(
     config: AppConfig = Config,
     include_plan: bool = True,
+    interactive: bool = False,
 ) -> Graph[ResearchState, ResearchDeps, None, ResearchReport]:
     """Build the Research graph.
 
     Args:
         config: AppConfig object (uses config.research for provider, model, and graph parameters)
         include_plan: Whether to include the planning step (False for execute-only mode)
+        interactive: Whether to include human decision nodes for HIL
 
     Returns:
         Configured Research graph
@@ -240,7 +249,7 @@ def build_research_graph(
 
     @g.step
     async def get_batch(
-        ctx: StepContext[ResearchState, ResearchDeps, None | bool],
+        ctx: StepContext[ResearchState, ResearchDeps, None | bool | str],
     ) -> list[str] | None:
         """Get all remaining questions for this iteration."""
         state = ctx.state
@@ -302,9 +311,16 @@ def build_research_graph(
             state.last_eval = output
             state.iterations += 1
 
+            # Get already-answered questions to avoid duplicates
+            answered_queries = {qa.query.lower() for qa in state.context.qa_responses}
+
             for new_q in output.new_questions:
-                if new_q not in state.context.sub_questions:
-                    state.context.sub_questions.append(new_q)
+                # Skip if already in pending or already answered
+                if new_q in state.context.sub_questions:
+                    continue
+                if new_q.lower() in answered_queries:
+                    continue
+                state.context.sub_questions.append(new_q)
 
             if deps.agui_emitter:
                 deps.agui_emitter.update_state(state)
@@ -330,8 +346,74 @@ def build_research_graph(
                 deps.agui_emitter.finish_step()
 
     @g.step
+    async def human_decide(
+        ctx: StepContext[ResearchState, ResearchDeps, list[SearchAnswer] | None | bool],
+    ) -> Literal["search", "synthesize"]:
+        """Wait for human decision on whether to continue searching or synthesize."""
+        state = ctx.state
+        deps = ctx.deps
+
+        if deps.agui_emitter:
+            deps.agui_emitter.start_step("human_decide")
+            deps.agui_emitter.update_state(state)
+
+        try:
+            # Emit tool call for human input
+            tool_call_id = str(uuid4())
+
+            if deps.agui_emitter:
+                deps.agui_emitter.emit(
+                    emit_tool_call_start(tool_call_id, "human_decision")
+                )
+                # Include full state for display
+                qa_responses = [
+                    {
+                        "query": qa.query,
+                        "answer": qa.answer,
+                        "confidence": qa.confidence,
+                        "citations_count": len(qa.citations),
+                    }
+                    for qa in state.context.qa_responses
+                ]
+                deps.agui_emitter.emit(
+                    emit_tool_call_args(
+                        tool_call_id,
+                        {
+                            "original_question": state.context.original_question,
+                            "sub_questions": list(state.context.sub_questions),
+                            "qa_responses": qa_responses,
+                            "iterations": state.iterations,
+                        },
+                    )
+                )
+                deps.agui_emitter.emit(emit_tool_call_end(tool_call_id))
+
+            # Wait for human input
+            if deps.human_input_queue is None:
+                raise RuntimeError("human_input_queue is required for interactive mode")
+
+            decision = await deps.human_input_queue.get()
+
+            # Process decision
+            if decision.action == "modify_questions" and decision.questions:
+                state.context.sub_questions = list(decision.questions)
+            elif decision.action == "add_questions" and decision.questions:
+                state.context.sub_questions.extend(decision.questions)
+
+            if deps.agui_emitter:
+                deps.agui_emitter.update_state(state)
+
+            if decision.action in ("search", "modify_questions", "add_questions"):
+                return "search"
+            else:
+                return "synthesize"
+        finally:
+            if deps.agui_emitter:
+                deps.agui_emitter.finish_step()
+
+    @g.step
     async def synthesize(
-        ctx: StepContext[ResearchState, ResearchDeps, None | bool],
+        ctx: StepContext[ResearchState, ResearchDeps, None | bool | str],
     ) -> ResearchReport:
         """Generate final research report."""
         state = ctx.state
@@ -375,39 +457,76 @@ def build_research_graph(
         initial_factory=list[SearchAnswer],
     )
 
-    if include_plan:
+    if interactive:
+        # Interactive mode: human decides after plan and after evaluation
+        if include_plan:
+            g.add(
+                g.edge_from(g.start_node).to(plan),
+                g.edge_from(plan).to(human_decide),
+            )
+        else:
+            g.add(g.edge_from(g.start_node).to(human_decide))
+
         g.add(
-            g.edge_from(g.start_node).to(plan),
-            g.edge_from(plan).to(get_batch),
+            g.edge_from(human_decide).to(
+                g.decision()
+                .branch(
+                    g.match(str, matches=lambda x: x == "search")
+                    .label("Search")
+                    .to(get_batch)
+                )
+                .branch(
+                    g.match(str, matches=lambda x: x == "synthesize")
+                    .label("Synthesize")
+                    .to(synthesize)
+                )
+            ),
+            g.edge_from(get_batch).to(
+                g.decision()
+                .branch(g.match(list).label("Has questions").map().to(search_one))
+                .branch(g.match(type(None)).label("No questions").to(human_decide))
+            ),
+            g.edge_from(search_one).to(collect_answers),
+            # After search, evaluate to suggest new questions, then human decides
+            g.edge_from(collect_answers).to(decide),
+            g.edge_from(decide).to(human_decide),
+            g.edge_from(synthesize).to(g.end_node),
         )
     else:
-        g.add(g.edge_from(g.start_node).to(get_batch))
-
-    g.add(
-        g.edge_from(get_batch).to(
-            g.decision()
-            .branch(g.match(list).label("Has questions").map().to(search_one))
-            .branch(g.match(type(None)).label("No questions").to(synthesize))
-        ),
-        g.edge_from(search_one).to(collect_answers),
-        g.edge_from(collect_answers).to(decide),
-    )
-
-    g.add(
-        g.edge_from(decide).to(
-            g.decision()
-            .branch(
-                g.match(bool, matches=lambda x: x)
-                .label("Continue research")
-                .to(get_batch)
+        # Non-interactive mode: automatic decision based on confidence/iterations
+        if include_plan:
+            g.add(
+                g.edge_from(g.start_node).to(plan),
+                g.edge_from(plan).to(get_batch),
             )
-            .branch(
-                g.match(bool, matches=lambda x: not x)
-                .label("Done researching")
-                .to(synthesize)
-            )
-        ),
-        g.edge_from(synthesize).to(g.end_node),
-    )
+        else:
+            g.add(g.edge_from(g.start_node).to(get_batch))
+
+        g.add(
+            g.edge_from(get_batch).to(
+                g.decision()
+                .branch(g.match(list).label("Has questions").map().to(search_one))
+                .branch(g.match(type(None)).label("No questions").to(synthesize))
+            ),
+            g.edge_from(search_one).to(collect_answers),
+            g.edge_from(collect_answers).to(decide),
+        )
+
+        g.add(
+            g.edge_from(decide).to(
+                g.decision()
+                .branch(
+                    g.match(bool, matches=lambda x: x)
+                    .label("Continue research")
+                    .to(get_batch)
+                )
+                .branch(
+                    g.match(bool, matches=lambda x: not x)
+                    .label("Done researching")
+                    .to(synthesize)
+                )
+            ),
+            g.edge_from(synthesize).to(g.end_node),
+        )
 
     return g.build()

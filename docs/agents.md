@@ -196,3 +196,27 @@ report = await graph.run(state=state, deps=deps)
 ```
 
 The filter applies to all search operations in the graph. See [Filtering Search Results](python.md#filtering-search-results) for available filter columns and syntax.
+
+### Interactive Research Mode
+
+Interactive mode provides human-in-the-loop control over the research process through a conversational interface.
+
+**CLI usage:**
+
+```bash
+# Start interactive research mode
+haiku-rag research --interactive
+
+# With document filter
+haiku-rag research --interactive --filter "uri LIKE '%report%'"
+```
+
+In interactive mode, you can:
+
+- Chat with the assistant before starting research
+- Review the generated sub-questions after planning
+- Add, remove, or modify questions through natural conversation
+- Execute searches and review collected answers
+- Continue researching or synthesize when ready
+
+For a web-based interactive experience, see the [AG-UI Research Example](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research).

@@ -80,8 +80,8 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             self._thread_id = self._generate_thread_id(state_json)
 
         # RunStarted (state snapshot follows immediately with full state)
-        self._emit(emit_run_started(self._thread_id, self._run_id))
-        self._emit(emit_state_snapshot(initial_state))
+        self.emit(emit_run_started(self._thread_id, self._run_id))
+        self.emit(emit_state_snapshot(initial_state))
         # Store a deep copy to detect future changes
         self._last_state = initial_state.model_copy(deep=True)
 
@@ -92,12 +92,12 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             step_name: Name of the step being started
         """
         self._current_step = step_name
-        self._emit(emit_step_started(step_name))
+        self.emit(emit_step_started(step_name))
 
     def finish_step(self) -> None:
         """Emit StepFinished event for the current step."""
         if self._current_step:
-            self._emit(emit_step_finished(self._current_step))
+            self.emit(emit_step_finished(self._current_step))
             self._current_step = None
 
     def log(self, message: str, role: str = "assistant") -> None:
@@ -107,7 +107,7 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             message: The message content
             role: The role of the sender (default: assistant)
         """
-        self._emit(emit_text_message(message, role))
+        self.emit(emit_text_message(message, role))
 
     def update_state(self, new_state: StateT) -> None:
         """Emit StateDelta or StateSnapshot for state change.
@@ -117,10 +117,10 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         """
         if self._use_deltas and self._last_state is not None:
             # Emit delta for incremental updates
-            self._emit(emit_state_delta(self._last_state, new_state))
+            self.emit(emit_state_delta(self._last_state, new_state))
         else:
             # Emit full snapshot for initial state or when deltas disabled
-            self._emit(emit_state_snapshot(new_state))
+            self.emit(emit_state_snapshot(new_state))
         # Store a deep copy to detect future changes
         self._last_state = new_state.model_copy(deep=True)
 
@@ -139,7 +139,7 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         """
         if message_id is None:
             message_id = str(uuid4())
-        self._emit(emit_activity(message_id, activity_type, content))
+        self.emit(emit_activity(message_id, activity_type, content))
 
     def finish_run(self, result: ResultT) -> None:
         """Emit RunFinished event.
@@ -147,7 +147,7 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         Args:
             result: The final result from the graph
         """
-        self._emit(emit_run_finished(self._thread_id, self._run_id, result))
+        self.emit(emit_run_finished(self._thread_id, self._run_id, result))
 
     def error(self, error: Exception, code: str | None = None) -> None:
         """Emit RunError event.
@@ -156,9 +156,9 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             error: The exception that occurred
             code: Optional error code
         """
-        self._emit(emit_run_error(str(error), code))
+        self.emit(emit_run_error(str(error), code))
 
-    def _emit(self, event: AGUIEvent) -> None:
+    def emit(self, event: AGUIEvent) -> None:
         """Put event in queue.
 
         Args:

@@ -3,6 +3,15 @@
 
 ### Added
 
+- **Interactive Research Mode**: Human-in-the-loop research using graph-based decision nodes
+  - `haiku-rag research --interactive` starts conversational CLI chat
+  - Natural language interpretation for user commands (search, modify questions, synthesize)
+  - Chat with assistant before starting research, and during decision points
+  - Review collected answers and pending questions at each decision point
+  - Add, remove, or modify sub-questions through natural conversation
+  - New `human_decide` graph node emits AG-UI tool calls (`TOOL_CALL_START/ARGS/END`) for frontend integration
+  - New `emit_tool_call_start()`, `emit_tool_call_args()`, `emit_tool_call_end()` AG-UI event helpers
+  - New `AGUIEmitter.emit()` method for direct event emission
 - **HotpotQA Evaluation**: Added HotpotQA dataset adapter for multi-hop QA benchmarks
   - Extracts unique documents from validation set context paragraphs
   - Uses MAP for retrieval evaluation (multiple supporting documents per question)
