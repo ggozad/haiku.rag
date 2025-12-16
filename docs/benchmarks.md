@@ -109,14 +109,17 @@ We benchmark both the plain text version (HTML stripped, no structure) and HTML 
 
 [HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is a multi-hop question answering dataset requiring reasoning over multiple Wikipedia paragraphs. Each question requires evidence from 2+ documents, making it ideal for testing retrieval and reasoning capabilities. We use MAP for retrieval evaluation since queries have multiple relevant documents.
 
+*Results from v0.20.2*
+QA accuracy is evaluated over 2000 "hard" questions from the validation dataset.
+
 ### Retrieval (MAP)
 
-| Embedding Model | MAP | Reranker | Notes |
-|-----------------|-----|----------|-------|
-|                 |     |          |       |
+| Embedding Model      | MAP  | Reranker |
+|----------------------|------|----------|
+| `qwen3-embedding:4b` | 0.69 | none     |
 
 ### QA Accuracy
 
-| Embedding Model | QA Model | Accuracy | Notes |
-|-----------------|----------|----------|-------|
-|                 |          |          |       |
+| Embedding Model      | QA Model                 | Accuracy |
+|----------------------|--------------------------|----------|
+| `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
