@@ -369,6 +369,7 @@ async def run_chat_loop(
     client: HaikuRAG,
     config: AppConfig | None = None,
     search_filter: str | None = None,
+    question: str | None = None,
 ) -> None:
     """Run an interactive chat loop for research.
 
@@ -376,6 +377,7 @@ async def run_chat_loop(
         client: HaikuRAG client for document operations
         config: Application configuration (uses global config if None)
         search_filter: Optional SQL WHERE clause to filter documents
+        question: Optional initial research question (skips initial chat if provided)
     """
     config = config or get_config()
     console = Console()
@@ -392,31 +394,39 @@ async def run_chat_loop(
 
     while True:
         try:
-            # Initial conversation loop - chat until user wants to research
-            research_question = None
-            while research_question is None:
-                user_input = Prompt.ask("\n[bold blue]You[/bold blue]")
+            # Use provided question or get one through conversation
+            if question:
+                research_question = question
+                console.print(f"[dim]Starting research: {research_question}[/dim]")
+                question = None  # Clear so subsequent loops go through chat
+            else:
+                # Initial conversation loop - chat until user wants to research
+                research_question = None
+                while research_question is None:
+                    user_input = Prompt.ask("\n[bold blue]You[/bold blue]")
 
-                if not user_input.strip():
-                    continue
+                    if not user_input.strip():
+                        continue
 
-                if user_input.lower().strip() in ("exit", "quit", "q"):
-                    console.print("[dim]Goodbye![/dim]")
-                    return
+                    if user_input.lower().strip() in ("exit", "quit", "q"):
+                        console.print("[dim]Goodbye![/dim]")
+                        return
 
-                console.print("[dim]Thinking...[/dim]")
-                decision = await initial_chat(user_input, config)
+                    console.print("[dim]Thinking...[/dim]")
+                    decision = await initial_chat(user_input, config)
 
-                if decision.action == "research" and decision.research_question:
-                    research_question = decision.research_question
-                    console.print(f"[dim]Starting research: {research_question}[/dim]")
-                elif decision.action == "chat" and decision.message:
-                    console.print(
-                        f"\n[bold cyan]Assistant:[/bold cyan] {decision.message}"
-                    )
-                else:
-                    # Fallback - treat as research question
-                    research_question = user_input
+                    if decision.action == "research" and decision.research_question:
+                        research_question = decision.research_question
+                        console.print(
+                            f"[dim]Starting research: {research_question}[/dim]"
+                        )
+                    elif decision.action == "chat" and decision.message:
+                        console.print(
+                            f"\n[bold cyan]Assistant:[/bold cyan] {decision.message}"
+                        )
+                    else:
+                        # Fallback - treat as research question
+                        research_question = user_input
 
             console.print()
             report = await run_interactive_research(
@@ -447,7 +457,8 @@ async def run_chat_loop(
             console.print(Markdown(f"**Sources:** {report.sources_summary}"))
 
         except KeyboardInterrupt:
-            console.print("\n[dim]Interrupted. Type 'exit' to quit.[/dim]")
+            console.print("\n[dim]Goodbye![/dim]")
+            return
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
 
@@ -456,6 +467,7 @@ def interactive_research(
     client: HaikuRAG,
     config: AppConfig | None = None,
     search_filter: str | None = None,
+    question: str | None = None,
 ) -> None:
     """Entry point for interactive research mode.
 
@@ -463,5 +475,6 @@ def interactive_research(
         client: HaikuRAG client for document operations
         config: Application configuration (uses global config if None)
         search_filter: Optional SQL WHERE clause to filter documents
+        question: Optional initial research question (skips initial chat if provided)
     """
-    asyncio.run(run_chat_loop(client, config, search_filter))
+    asyncio.run(run_chat_loop(client, config, search_filter, question))

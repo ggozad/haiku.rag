@@ -359,6 +359,7 @@ def research(
                 client=client,
                 config=app.config,
                 search_filter=filter,
+                question=question,
             )
         finally:
             client.close()
