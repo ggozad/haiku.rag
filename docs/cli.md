@@ -183,10 +183,24 @@ Filter to specific documents:
 haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
 ```
 
+Interactive mode with human-in-the-loop:
+
+```bash
+# Start interactive research mode
+haiku-rag research --interactive
+
+# Start with a specific question
+haiku-rag research --interactive "How does haiku.rag work?"
+
+# With document filter
+haiku-rag research --interactive --filter "uri LIKE '%docs%'"
+```
+
 Flags:
 
 - `--verbose`: Show planning, searching previews, evaluation summary, and stop reason
 - `--filter`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
+- `--interactive` / `-i`: Start interactive research mode with human-in-the-loop decision points
 
 Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 

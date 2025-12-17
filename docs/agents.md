@@ -207,6 +207,9 @@ Interactive mode provides human-in-the-loop control over the research process th
 # Start interactive research mode
 haiku-rag research --interactive
 
+# Start with a specific question
+haiku-rag research --interactive "How does X work?"
+
 # With document filter
 haiku-rag research --interactive --filter "uri LIKE '%report%'"
 ```
