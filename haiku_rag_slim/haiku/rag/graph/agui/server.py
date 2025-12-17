@@ -154,14 +154,14 @@ def format_sse_event(event: AGUIEvent) -> str:
 def create_agui_server(  # pragma: no cover
     config: "AppConfig", db_path: Path | None = None
 ) -> Starlette:
-    """Create AG-UI server with both research and deep ask endpoints.
+    """Create AG-UI server with research endpoint.
 
     Args:
-        config: Application config with research and qa settings
+        config: Application config with research settings
         db_path: Optional database path override
 
     Returns:
-        Starlette app with research and deep ask endpoints
+        Starlette app with research endpoint
     """
     from haiku.rag.client import HaikuRAG
     from haiku.rag.graph.research.dependencies import ResearchContext
@@ -189,7 +189,14 @@ def create_agui_server(  # pragma: no cover
             if messages:
                 question = messages[0].get("content", "")
         context = ResearchContext(original_question=question)
-        return ResearchState.from_config(context=context, config=config)
+        max_iterations = input_state.get("max_iterations")
+        confidence_threshold = input_state.get("confidence_threshold")
+        return ResearchState.from_config(
+            context=context,
+            config=config,
+            max_iterations=max_iterations,
+            confidence_threshold=confidence_threshold,
+        )
 
     def research_deps_factory(input_config: dict[str, Any]) -> ResearchDeps:
         effective_db_path = (
@@ -199,33 +206,7 @@ def create_agui_server(  # pragma: no cover
         )
         return ResearchDeps(client=get_client(effective_db_path))
 
-    # Deep ask graph factories (uses research graph with quick settings)
-    def deep_ask_graph_factory() -> Graph:
-        return build_research_graph(config)
-
-    def deep_ask_state_factory(input_state: dict[str, Any]) -> ResearchState:
-        question = input_state.get("question", "")
-        if not question:
-            messages = input_state.get("messages", [])
-            if messages:
-                question = messages[0].get("content", "")
-        context = ResearchContext(original_question=question)
-        return ResearchState.from_config(
-            context=context,
-            config=config,
-            max_iterations=2,
-            confidence_threshold=0.0,
-        )
-
-    def deep_ask_deps_factory(input_config: dict[str, Any]) -> ResearchDeps:
-        effective_db_path = (
-            db_path
-            or input_config.get("db_path")
-            or config.storage.data_dir / "haiku.rag.lancedb"
-        )
-        return ResearchDeps(client=get_client(effective_db_path))
-
-    # Create event stream functions for each graph type
+    # Create event stream function
     async def research_event_stream(
         input_data: RunAgentInput,
     ) -> AsyncIterator[str]:
@@ -233,18 +214,6 @@ def create_agui_server(  # pragma: no cover
         graph = research_graph_factory()
         initial_state = research_state_factory(input_data.state)
         deps = research_deps_factory(input_data.config)
-
-        async for event in stream_graph(graph, initial_state, deps):
-            event_data = format_sse_event(event)
-            yield event_data
-
-    async def deep_ask_event_stream(
-        input_data: RunAgentInput,
-    ) -> AsyncIterator[str]:
-        """Generate SSE event stream from deep ask graph execution."""
-        graph = deep_ask_graph_factory()
-        initial_state = deep_ask_state_factory(input_data.state)
-        deps = deep_ask_deps_factory(input_data.config)
 
         async for event in stream_graph(graph, initial_state, deps):
             event_data = format_sse_event(event)
@@ -266,21 +235,6 @@ def create_agui_server(  # pragma: no cover
             },
         )
 
-    async def stream_deep_ask(request: Request) -> StreamingResponse:
-        """Deep ask graph streaming endpoint."""
-        body = await request.json()
-        input_data = RunAgentInput(**body)
-
-        return StreamingResponse(
-            deep_ask_event_stream(input_data),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
-
     async def health_check(_: Request) -> JSONResponse:
         """Health check endpoint."""
         return JSONResponse({"status": "healthy"})
@@ -288,7 +242,6 @@ def create_agui_server(  # pragma: no cover
     # Define routes
     routes = [
         Route("/v1/research/stream", stream_research, methods=["POST"]),
-        Route("/v1/deep-ask/stream", stream_deep_ask, methods=["POST"]),
         Route("/health", health_check, methods=["GET"]),
     ]
 
