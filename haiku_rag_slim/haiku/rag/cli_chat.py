@@ -289,9 +289,18 @@ async def run_interactive_research(
                     if iterations > 0:
                         console.print(f"[dim]Iteration: {iterations}[/dim]")
 
-                    # Prompt user for natural language input
+                    # Prompt user with context-aware hints
                     console.print()
-                    user_input = Prompt.ask("[bold]What would you like to do?[/bold]")
+                    hints = []
+                    if sub_questions:
+                        hints.append("search questions")
+                        hints.append("modify questions")
+                    if qa_responses:
+                        hints.append("generate report")
+                    hint_text = f" [dim]({', '.join(hints)})[/dim]" if hints else ""
+                    user_input = Prompt.ask(
+                        f"[bold]What would you like to do?[/bold]{hint_text}"
+                    )
 
                     # Chat with research assistant
                     console.print("[dim]Thinking...[/dim]")
