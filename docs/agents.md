@@ -219,4 +219,8 @@ In interactive mode, you can:
 - Execute searches and review collected answers
 - Continue researching or synthesize when ready
 
-For a web-based interactive experience, see the [AG-UI Research Example](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research).
+For a web-based interactive experience with visual decision UI, see the [AG-UI Research Example](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research). The web interface provides:
+
+- Question editing panel to add/remove sub-questions at decision points
+- Search and Generate Report buttons for controlling research flow
+- Live state display showing answers, confidence, and progress

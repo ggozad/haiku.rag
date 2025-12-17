@@ -1,8 +1,9 @@
+import json
 import logging
 import os
 from pathlib import Path
 
-from agent import AgentDeps, agent
+from agent import AgentDeps, _active_research, agent
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
 from starlette.applications import Starlette
@@ -19,7 +20,7 @@ from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.agui.server import RunAgentInput, format_sse_event
 from haiku.rag.graph.research.dependencies import ResearchContext
 from haiku.rag.graph.research.models import ResearchReport
-from haiku.rag.graph.research.state import ResearchState
+from haiku.rag.graph.research.state import HumanDecision, ResearchState
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -79,11 +80,11 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
         """Execute agent and forward emitter events to memory stream."""
         async with send_stream:
             try:
-                # Create shared emitter
+                # Create shared emitter (use_deltas=True for CopilotKit compatibility)
                 emitter: AGUIEmitter[ResearchState, ResearchReport] = AGUIEmitter(
                     thread_id=input_data.thread_id,
                     run_id=input_data.run_id,
-                    use_deltas=False,
+                    use_deltas=True,
                 )
 
                 # Get client
@@ -99,11 +100,14 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     ids_str = ", ".join(f"'{id}'" for id in document_ids)
                     search_filter = f"id IN ({ids_str})"
 
+                thread_id = input_data.thread_id
+
                 # Create agent dependencies with shared emitter
                 agent_deps = AgentDeps(
                     client=client,
                     agui_emitter=emitter,
                     search_filter=search_filter,
+                    thread_id=thread_id,
                 )
 
                 # Start run with empty initial state
@@ -147,6 +151,37 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                             }
                             await send_stream.send(format_sse_event(delta_event))
                             continue
+
+                        # When human_decision tool starts, set awaiting_decision flag
+                        if event_type == "TOOL_CALL_START":
+                            tool_name = event.get("toolCallName")
+                            if tool_name == "human_decision":
+                                delta_event = {
+                                    "type": "STATE_DELTA",
+                                    "delta": [
+                                        {
+                                            "op": "add",
+                                            "path": "/awaiting_decision",
+                                            "value": True,
+                                        }
+                                    ],
+                                }
+                                await send_stream.send(format_sse_event(delta_event))
+
+                        # Sync state to ActiveResearch when human_decision tool call
+                        if event_type == "TOOL_CALL_ARGS" and thread_id:
+                            delta = event.get("delta", "{}")
+                            args = (
+                                json.loads(delta) if isinstance(delta, str) else delta
+                            )
+                            active = _active_research.get(thread_id)
+                            if active:
+                                active.sub_questions = list(
+                                    args.get("sub_questions", [])
+                                )
+                                active.qa_responses = list(args.get("qa_responses", []))
+                                if "original_question" in args:
+                                    active.original_question = args["original_question"]
 
                         await send_stream.send(format_sse_event(event))
 
@@ -248,10 +283,36 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     )
 
 
+async def research_decide(request: Request) -> JSONResponse:
+    """Endpoint to receive human decisions for active research."""
+    body = await request.json()
+    action = body.get("action", "search")
+    questions = body.get("questions", [])
+
+    # Get first active research (single-user example)
+    active = next(iter(_active_research.values()), None)
+    if not active:
+        return JSONResponse({"error": "No active research found"}, status_code=404)
+
+    # When "search" action is sent with questions, use "modify_questions" to update them
+    effective_action = (
+        "modify_questions" if action == "search" and questions else action
+    )
+
+    decision = HumanDecision(
+        action=effective_action,
+        questions=questions or None,
+    )
+    await active.queue.put(decision)
+
+    return JSONResponse({"status": "ok", "action": effective_action})
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
         Route("/v1/research/stream", stream_research_agent, methods=["POST"]),
+        Route("/v1/research/decide", research_decide, methods=["POST"]),
         Route("/api/documents", list_documents, methods=["GET"]),
         Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),

@@ -192,8 +192,8 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 				</div>
 			)}
 
-			{/* Research Progress - only show when research has started */}
-			{(state.iterations > 0 || (state.current_activity && !state.result)) && (
+			{/* Research Progress - only show when research is in progress (not when complete) */}
+			{(state.iterations > 0 || state.current_activity) && !state.result && (
 				<div
 					style={{
 						background: "white",
@@ -202,8 +202,8 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 						boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
 					}}
 				>
-					{/* Current Activity - hide when complete */}
-					{state.current_activity && !state.result && (
+					{/* Current Activity */}
+					{state.current_activity && (
 						<div
 							style={{
 								padding: "0.75rem",
@@ -363,9 +363,8 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 				</div>
 			)}
 
-			{/* Sub-Questions and QA Responses */}
-			{(state.context.sub_questions.length > 0 ||
-				state.context.qa_responses.length > 0) && (
+			{/* Answers */}
+			{state.context.qa_responses.length > 0 && (
 				<div
 					style={{
 						background: "white",
@@ -392,10 +391,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 							color: "#2d3748",
 						}}
 					>
-						<span>
-							Sub-Questions ({state.context.sub_questions.length}) • Answers (
-							{state.context.qa_responses.length})
-						</span>
+						<span>Answers ({state.context.qa_responses.length})</span>
 						<span>{expandedSections.questions ? "▼" : "▶"}</span>
 					</button>
 					{expandedSections.questions && (
@@ -408,38 +404,6 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 								borderRadius: "0 0 4px 4px",
 							}}
 						>
-							{/* Show pending sub_questions */}
-							{state.context.sub_questions.map((question, idx) => (
-								<div
-									key={`pending-${idx}`}
-									style={{
-										marginBottom: "0.5rem",
-										background: "white",
-										borderRadius: "4px",
-										border: "1px solid #e2e8f0",
-										padding: "0.75rem",
-										display: "flex",
-										gap: "0.75rem",
-										alignItems: "center",
-									}}
-								>
-									<div
-										style={{
-											fontSize: "1.25rem",
-											color: "#a0aec0",
-											flexShrink: 0,
-										}}
-									>
-										⏳
-									</div>
-									<div
-										style={{ flex: 1, fontSize: "0.875rem", color: "#4a5568" }}
-									>
-										<Markdown content={question} />
-									</div>
-								</div>
-							))}
-
 							{/* Show all qa_responses (each has query + answer) */}
 							{state.context.qa_responses.map((qaResponse, idx) => {
 								const questionId = `q-${idx}`;
