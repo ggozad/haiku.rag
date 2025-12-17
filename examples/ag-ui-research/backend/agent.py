@@ -50,6 +50,7 @@ class AgentDeps:
     agui_emitter: "AGUIEmitter[ResearchState, ResearchReport] | None" = None
     search_filter: str | None = None
     thread_id: str | None = None
+    research_result: "ResearchReport | None" = None
 
 
 model = get_model(Config.research.model, Config)
@@ -119,6 +120,8 @@ async def run_research(ctx: RunContext[AgentDeps], question: str) -> str:
 
         if ctx.deps.agui_emitter:
             ctx.deps.agui_emitter.log("Research complete!")
+            # Store result for main.py to emit RUN_FINISHED after agent completes
+            ctx.deps.research_result = result
 
         return f"""Research completed successfully!
 

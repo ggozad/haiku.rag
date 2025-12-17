@@ -93,7 +93,7 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
 
 ### Agent + Graph Pattern
 
-This example demonstrates the **agent+graph** architecture pattern:
+This example demonstrates the **agent+graph** architecture with AG-UI client-side tool calls:
 
 1. **Conversational Agent** (`agent.py`):
    - Pydantic AI agent handles user conversations
@@ -102,13 +102,14 @@ This example demonstrates the **agent+graph** architecture pattern:
 
 2. **Interactive Research Graph** (haiku.rag):
    - Multi-step research workflow invoked by the agent's tool
-   - Pauses at decision points waiting for human input via async queue
-   - Emits AG-UI events for real-time progress tracking
+   - At decision points, emits AG-UI `TOOL_CALL_START/ARGS/END` events for `human_decision`
+   - Waits for tool result via async queue before continuing
 
-3. **Decision Endpoint** (`main.py`):
-   - `/v1/research/decide` receives human decisions from frontend
-   - Forwards decisions to the waiting graph via `HumanDecision` queue
-   - Supports actions: `search`, `synthesize`, `modify_questions`
+3. **Client-Side Tool Handling** (AG-UI pattern):
+   - Frontend listens for `human_decision` tool calls via AG-UI events
+   - Renders decision UI inline in chat when tool call is received
+   - User decision sent directly to backend `/v1/research/stream` endpoint
+   - Backend extracts tool result from messages and routes to waiting graph via async queue
 
 4. **Shared Event Stream**:
    - `AGUIEmitter` is shared between agent and graph
@@ -120,14 +121,14 @@ This example demonstrates the **agent+graph** architecture pattern:
 - **Backend** (Python):
   - Uses published `ghcr.io/ggozad/haiku.rag:latest` Docker image as base
   - `agent.py`: Pydantic AI agent with `run_research` tool, manages `ActiveResearch` registry
-  - `main.py`: Custom AG-UI streaming endpoint, decision endpoint for human input
+  - `main.py`: Custom AG-UI streaming endpoint, extracts tool results from messages
   - Real-time event forwarding from emitter to SSE stream
 
 - **Frontend** (Next.js/React):
-  - CopilotKit for AG-UI protocol integration
+  - AG-UI protocol integration for real-time streaming
+  - Handles `human_decision` tool calls with inline decision UI
   - Split-pane UI: chat on left, live research state on right
-  - Decision UI: question editor with add/remove, search and generate report buttons
-  - Real-time state synchronization via Server-Sent Events (SSE)
+  - Tool results sent directly to backend endpoint
 
 ## Configuration
 

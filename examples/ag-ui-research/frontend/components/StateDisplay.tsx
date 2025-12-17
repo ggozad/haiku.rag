@@ -162,7 +162,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 			}}
 		>
 			{/* Question */}
-			{state.context.original_question && (
+			{state.context?.original_question && (
 				<div
 					style={{
 						background: "white",
@@ -364,7 +364,7 @@ export default function StateDisplay({ state }: StateDisplayProps) {
 			)}
 
 			{/* Answers */}
-			{state.context.qa_responses.length > 0 && (
+			{state.context?.qa_responses && state.context.qa_responses.length > 0 && (
 				<div
 					style={{
 						background: "white",

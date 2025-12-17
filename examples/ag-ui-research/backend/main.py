@@ -63,10 +63,53 @@ def get_client(effective_db_path: Path) -> HaikuRAG:
     return _client_cache[path_key]
 
 
+def extract_tool_result(messages: list[dict]) -> dict | None:
+    """Extract human_decision tool result from messages if present."""
+    for msg in reversed(messages):
+        # Check for tool result message (CopilotKit sends role="tool")
+        if msg.get("role") == "tool":
+            content = msg.get("content")
+            # Content may be a string (JSON) or dict
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except json.JSONDecodeError:
+                    continue
+            if isinstance(content, dict) and "action" in content:
+                return content
+    return None
+
+
 async def stream_research_agent(request: Request) -> StreamingResponse:
     """Agent streaming endpoint with research graph integration."""
     body = await request.json()
+    logger.info(f"Received request body keys: {list(body.keys())}")
+    if "tools" in body:
+        logger.info(f"Frontend tools received: {body['tools']}")
     input_data = RunAgentInput(**body)
+
+    thread_id = input_data.thread_id
+    active_research = _active_research.get(thread_id) if thread_id else None
+
+    # Check if this is a tool result for active research
+    if active_research and input_data.messages:
+        tool_result = extract_tool_result(input_data.messages)
+        if tool_result:
+            logger.info(f"Received tool result: {tool_result}")
+            action = tool_result.get("action", "search")
+            questions = tool_result.get("questions")
+
+            decision = HumanDecision(
+                action=action,
+                questions=questions,
+            )
+            await active_research.queue.put(decision)
+
+            # Return acknowledgment - the original stream will continue
+            return StreamingResponse(
+                iter([format_sse_event({"type": "TOOL_RESULT_RECEIVED"})]),
+                media_type="text/event-stream",
+            )
 
     user_message = ""
     if input_data.messages:
@@ -100,8 +143,6 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     ids_str = ", ".join(f"'{id}'" for id in document_ids)
                     search_filter = f"id IN ({ids_str})"
 
-                thread_id = input_data.thread_id
-
                 # Create agent dependencies with shared emitter
                 agent_deps = AgentDeps(
                     client=client,
@@ -121,9 +162,12 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                 # Forward emitter events to stream
                 async def forward_events():
                     async for event in emitter:
-                        # Log events for debugging
-                        logger.info(f"AG-UI Event: {event}")
                         event_type = event.get("type")
+                        logger.info(f"AG-UI event: {event_type}")
+
+                        # Log tool call events for debugging
+                        if event_type and event_type.startswith("TOOL_CALL"):
+                            logger.info(f"Tool call event: {event}")
 
                         # Convert ACTIVITY_SNAPSHOT to STATE_DELTA for CopilotKit
                         # As CopilotKit does not handle ACTIVITY_SNAPSHOT events
@@ -133,7 +177,6 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                             message = content.get("message", "")
 
                             # Emit STATE_DELTA to patch activity info into state
-                            # Use "add" op which creates or replaces the value
                             delta_event = {
                                 "type": "STATE_DELTA",
                                 "delta": [
@@ -151,22 +194,6 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                             }
                             await send_stream.send(format_sse_event(delta_event))
                             continue
-
-                        # When human_decision tool starts, set awaiting_decision flag
-                        if event_type == "TOOL_CALL_START":
-                            tool_name = event.get("toolCallName")
-                            if tool_name == "human_decision":
-                                delta_event = {
-                                    "type": "STATE_DELTA",
-                                    "delta": [
-                                        {
-                                            "op": "add",
-                                            "path": "/awaiting_decision",
-                                            "value": True,
-                                        }
-                                    ],
-                                }
-                                await send_stream.send(format_sse_event(delta_event))
 
                         # Sync state to ActiveResearch when human_decision tool call
                         if event_type == "TOOL_CALL_ARGS" and thread_id:
@@ -191,6 +218,9 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
 
                     result = await agent.run(user_message, deps=agent_deps)
                     emitter.log(result.output)
+                    # Emit RUN_FINISHED with research result if available
+                    if agent_deps.research_result:
+                        emitter.finish_run(agent_deps.research_result)
                     await emitter.close()
 
             except Exception as e:
@@ -283,36 +313,10 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     )
 
 
-async def research_decide(request: Request) -> JSONResponse:
-    """Endpoint to receive human decisions for active research."""
-    body = await request.json()
-    action = body.get("action", "search")
-    questions = body.get("questions", [])
-
-    # Get first active research (single-user example)
-    active = next(iter(_active_research.values()), None)
-    if not active:
-        return JSONResponse({"error": "No active research found"}, status_code=404)
-
-    # When "search" action is sent with questions, use "modify_questions" to update them
-    effective_action = (
-        "modify_questions" if action == "search" and questions else action
-    )
-
-    decision = HumanDecision(
-        action=effective_action,
-        questions=questions or None,
-    )
-    await active.queue.put(decision)
-
-    return JSONResponse({"status": "ok", "action": effective_action})
-
-
 # Create Starlette app
 app = Starlette(
     routes=[
         Route("/v1/research/stream", stream_research_agent, methods=["POST"]),
-        Route("/v1/research/decide", research_decide, methods=["POST"]),
         Route("/api/documents", list_documents, methods=["GET"]),
         Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),

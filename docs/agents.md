@@ -219,8 +219,9 @@ In interactive mode, you can:
 - Execute searches and review collected answers
 - Continue researching or synthesize when ready
 
-For a web-based interactive experience with visual decision UI, see the [AG-UI Research Example](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research). The web interface provides:
+For a web-based interactive experience, see the [AG-UI Research Example](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research). The example demonstrates AG-UI client-side tool calling:
 
-- Question editing panel to add/remove sub-questions at decision points
-- Search and Generate Report buttons for controlling research flow
-- Live state display showing answers, confidence, and progress
+- Frontend handles `human_decision` tool calls via AG-UI `TOOL_CALL_*` events
+- Decision UI rendered inline in the chat at each decision point
+- Question editing (add/remove) and action buttons (Search, Generate Report)
+- Tool results sent directly to the backend endpoint which queues decisions and continues the graph

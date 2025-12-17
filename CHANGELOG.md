@@ -12,8 +12,10 @@
   - New `human_decide` graph node emits AG-UI tool calls (`TOOL_CALL_START/ARGS/END`) for frontend integration
   - New `emit_tool_call_start()`, `emit_tool_call_args()`, `emit_tool_call_end()` AG-UI event helpers
   - New `AGUIEmitter.emit()` method for direct event emission
-- **AG-UI Research Example**: Updated with interactive decision UI
-  - Decision panel with question editing (add/remove) at each decision point
+- **AG-UI Research Example**: Human-in-the-loop research with client-side tool calling
+  - Frontend handles `human_decision` tool calls via AG-UI `TOOL_CALL_*` events
+  - Tool results sent directly to backend `/v1/research/stream` endpoint
+  - Backend queues decisions and continues the research graph
 - **HotpotQA Evaluation**: Added HotpotQA dataset adapter for multi-hop QA benchmarks
   - Extracts unique documents from validation set context paragraphs
   - Uses MAP for retrieval evaluation (multiple supporting documents per question)
