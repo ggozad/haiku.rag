@@ -10,6 +10,8 @@ from pydantic_graph.beta.join import reduce_list_append
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.graph.agui.events import (
+    emit_text_message_end,
+    emit_text_message_start,
     emit_tool_call_args,
     emit_tool_call_end,
     emit_tool_call_start,
@@ -358,12 +360,17 @@ def build_research_graph(
             deps.agui_emitter.update_state(state)
 
         try:
-            # Emit tool call for human input
+            # Emit tool call for human input wrapped in a message context
+            # This makes the tool call appear as if emitted by the LLM
+            message_id = str(uuid4())
             tool_call_id = str(uuid4())
 
             if deps.agui_emitter:
+                # Start an assistant message to contain the tool call
+                deps.agui_emitter.emit(emit_text_message_start(message_id))
+                # Emit tool call with parent message reference
                 deps.agui_emitter.emit(
-                    emit_tool_call_start(tool_call_id, "human_decision")
+                    emit_tool_call_start(tool_call_id, "human_decision", message_id)
                 )
                 # Include full state for display
                 qa_responses = [
@@ -387,6 +394,8 @@ def build_research_graph(
                     )
                 )
                 deps.agui_emitter.emit(emit_tool_call_end(tool_call_id))
+                # End the message after tool call
+                deps.agui_emitter.emit(emit_text_message_end(message_id))
 
             # Wait for human input
             if deps.human_input_queue is None:
