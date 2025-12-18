@@ -63,7 +63,12 @@ haiku-rag serve --mcp --mcp-port 9000
 
 # stdio transport (for Claude Desktop)
 haiku-rag serve --mcp --stdio
+
+# Read-only mode (excludes write tools)
+haiku-rag --read-only serve --mcp --stdio
 ```
+
+**Read-only mode:** When `--read-only` is specified, write tools (`add_document_from_file`, `add_document_from_url`, `add_document_from_text`, `delete_document`) are not registered. Only search and query tools remain available.
 
 ## Claude Desktop Integration
 

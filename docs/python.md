@@ -17,10 +17,18 @@ async with HaikuRAG("path/to/database.lancedb", create=True) as client:
 async with HaikuRAG("path/to/database.lancedb") as client:
     # Your code here
     pass
+
+# Open in read-only mode (blocks writes, skips upgrades)
+async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
+    results = await client.search("query")  # Read operations work
+    # await client.create_document(...)  # Would raise ReadOnlyError
 ```
 
 !!! note
     Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Operations on non-existent databases will raise `FileNotFoundError`.
+
+!!! note
+    Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations, skips database upgrades on open, and prevents settings from being saved.
 
 ## Document Management
 
