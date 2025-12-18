@@ -60,6 +60,7 @@ class HaikuRAG:
         config: AppConfig = Config,
         skip_validation: bool = False,
         create: bool = False,
+        read_only: bool = False,
     ):
         """Initialize the RAG client with a database path.
 
@@ -68,6 +69,7 @@ class HaikuRAG:
             config: Configuration to use. Defaults to global Config.
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
+            read_only: Whether to open the database in read-only mode.
         """
         self._config = config
         if db_path is None:
@@ -77,9 +79,15 @@ class HaikuRAG:
             config=self._config,
             skip_validation=skip_validation,
             create=create,
+            read_only=read_only,
         )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
+
+    @property
+    def is_read_only(self) -> bool:
+        """Whether the client is in read-only mode."""
+        return self.store.is_read_only
 
     async def __aenter__(self):
         """Async context manager entry."""

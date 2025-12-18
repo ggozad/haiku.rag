@@ -74,9 +74,10 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         Binding("c", "show_context", "Context", show=True),
     ]
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, read_only: bool = False):
         super().__init__()
         self.db_path = db_path
+        self.read_only = read_only
         self.client: HaikuRAG | None = None
 
     def compose(self) -> "ComposeResult":
@@ -90,7 +91,9 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
         config = get_config()
-        self.client = HaikuRAG(db_path=self.db_path, config=config)
+        self.client = HaikuRAG(
+            db_path=self.db_path, config=config, read_only=self.read_only
+        )
         await self.client.__aenter__()
 
         # Load initial documents
@@ -229,15 +232,18 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         await self._switch_modal(ContextModal(chunk=chunk, client=self.client))
 
 
-def run_inspector(db_path: Path | None = None) -> None:  # pragma: no cover
+def run_inspector(
+    db_path: Path | None = None, read_only: bool = False
+) -> None:  # pragma: no cover
     """Run the inspector TUI.
 
     Args:
         db_path: Path to the LanceDB database. If None, uses default from config.
+        read_only: Whether to open the database in read-only mode.
     """
     config = get_config()
     if db_path is None:
         db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    app = InspectorApp(db_path)
+    app = InspectorApp(db_path, read_only=read_only)
     app.run()

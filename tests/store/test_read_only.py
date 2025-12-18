@@ -1,5 +1,6 @@
 import pytest
 
+from haiku.rag.client import HaikuRAG
 from haiku.rag.store import ReadOnlyError, Store
 from haiku.rag.store.models import Chunk, Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
@@ -227,3 +228,62 @@ class TestSettingsRepositoryReadOnly:
         with pytest.raises(ReadOnlyError):
             repo.save_current_settings()
         store.close()
+
+
+class TestClientReadOnly:
+    def test_client_default_is_not_read_only(self, temp_db_path):
+        """Client defaults to not read-only."""
+        client = HaikuRAG(temp_db_path, create=True)
+        assert client.is_read_only is False
+        client.close()
+
+    def test_client_can_be_created_read_only(self, temp_db_path):
+        """Client can be created with read_only=True."""
+        client = HaikuRAG(temp_db_path, create=True)
+        client.close()
+
+        client = HaikuRAG(temp_db_path, read_only=True)
+        assert client.is_read_only is True
+        client.close()
+
+    @pytest.mark.asyncio
+    async def test_client_create_document_raises_when_read_only(self, temp_db_path):
+        """Client.create_document() raises ReadOnlyError when read_only=True."""
+        client = HaikuRAG(temp_db_path, create=True)
+        client.close()
+
+        async with HaikuRAG(temp_db_path, read_only=True) as client:
+            with pytest.raises(ReadOnlyError):
+                await client.create_document("test content")
+
+    @pytest.mark.asyncio
+    async def test_client_delete_document_raises_when_read_only(self, temp_db_path):
+        """Client.delete_document() raises ReadOnlyError when read_only=True."""
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document("test content")
+            assert doc.id is not None
+            doc_id = doc.id
+
+        async with HaikuRAG(temp_db_path, read_only=True) as client:
+            with pytest.raises(ReadOnlyError):
+                await client.delete_document(doc_id)
+
+    @pytest.mark.asyncio
+    async def test_client_search_works_when_read_only(self, temp_db_path):
+        """Client.search() works in read-only mode."""
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document("test content about cats")
+
+        async with HaikuRAG(temp_db_path, read_only=True) as client:
+            results = await client.search("cats")
+            assert len(results) > 0
+
+    @pytest.mark.asyncio
+    async def test_client_list_documents_works_when_read_only(self, temp_db_path):
+        """Client.list_documents() works in read-only mode."""
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document("test content")
+
+        async with HaikuRAG(temp_db_path, read_only=True) as client:
+            docs = await client.list_documents()
+            assert len(docs) == 1

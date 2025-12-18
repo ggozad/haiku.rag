@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Read-Only Mode**: Global `--read-only` CLI flag for safe database access without modifications
+  - Blocks all write operations at the Store layer
+  - Skips database upgrades and settings saves on open
+  - Excludes write tools (`add_document_*`, `delete_document`) from MCP server
+  - Disables file monitor with warning when `--read-only` is used with `serve --monitor`
+
 ## [0.21.0] - 2025-12-18
 
 ### Added

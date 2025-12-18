@@ -26,6 +26,9 @@ cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
 )
 
+# Module-level read-only flag set by callback
+_read_only: bool = False
+
 
 def create_app(db: Path | None = None) -> HaikuRAGApp:
     """Create HaikuRAGApp with loaded config and resolved database path.
@@ -38,7 +41,7 @@ def create_app(db: Path | None = None) -> HaikuRAGApp:
     """
     config = get_config()
     db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
-    return HaikuRAGApp(db_path=db_path, config=config)
+    return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
 
 
 async def check_version():
@@ -72,8 +75,15 @@ def main(
         "--config",
         help="Path to YAML configuration file",
     ),
+    read_only: bool = typer.Option(
+        False,
+        "--read-only",
+        help="Open database in read-only mode",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
+    global _read_only
+    _read_only = read_only
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
@@ -353,7 +363,7 @@ def research(
         from haiku.rag.cli_chat import interactive_research
         from haiku.rag.client import HaikuRAG
 
-        client = HaikuRAG(db_path=app.db_path, config=app.config)
+        client = HaikuRAG(db_path=app.db_path, config=app.config, read_only=_read_only)
         try:
             interactive_research(
                 client=client,
@@ -521,7 +531,7 @@ def inspect(
         raise typer.Exit(1) from e
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path)
+    run_inspector(db_path, read_only=_read_only)
 
 
 @cli.command(
