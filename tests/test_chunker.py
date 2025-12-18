@@ -145,6 +145,33 @@ async def test_local_chunker_markdown_tables():
 
 
 @pytest.mark.asyncio
+async def test_local_chunker_sets_order():
+    """Test that DoclingLocalChunker sets sequential order on chunks."""
+    sample_md = """# Introduction
+
+First paragraph with some content.
+
+## Section One
+
+Second paragraph.
+
+## Section Two
+
+Third paragraph.
+"""
+    converter = get_converter(Config)
+    doc = await converter.convert_text(sample_md, name="test.md")
+
+    chunker = DoclingLocalChunker()
+    chunks = await chunker.chunk(doc)
+
+    assert len(chunks) > 0
+    # Verify order is set sequentially starting from 0
+    for i, chunk in enumerate(chunks):
+        assert chunk.order == i, f"Chunk {i} has order {chunk.order}, expected {i}"
+
+
+@pytest.mark.asyncio
 async def test_local_chunker_metadata_extraction():
     """Test that DoclingLocalChunker extracts metadata correctly."""
     sample_md = """# Chapter 1: Introduction

@@ -14,6 +14,7 @@
 
 ### Changed
 
+- **Chunker Sets Order**: Chunkers now set `chunk.order` directly
 - **Evaluations Vacuum Strategy**: `populate_db` now uses periodic vacuum to prevent disk exhaustion with large datasets
   - Disables auto_vacuum during population, vacuums every N documents with retention=0
   - New `--vacuum-interval` CLI option (default: 100) to control vacuum frequency

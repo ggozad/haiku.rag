@@ -194,13 +194,7 @@ class HaikuRAG:
         from haiku.rag.chunkers import get_chunker
 
         chunker = get_chunker(self._config)
-        chunks = await chunker.chunk(docling_document)
-
-        # Set order for each chunk
-        for i, chunk in enumerate(chunks):
-            chunk.order = i
-
-        return chunks
+        return await chunker.chunk(docling_document)
 
     async def _ensure_chunks_embedded(self, chunks: list[Chunk]) -> list[Chunk]:
         """Ensure all chunks have embeddings, embedding any that don't.

@@ -155,6 +155,12 @@ class DoclingLocalChunker(DocumentChunker):
                 labels=labels,
                 page_numbers=sorted(page_numbers),
             )
-            result.append(Chunk(content=text, metadata=chunk_metadata.model_dump()))
+            result.append(
+                Chunk(
+                    content=text,
+                    metadata=chunk_metadata.model_dump(),
+                    order=len(result),
+                )
+            )
 
         return result
