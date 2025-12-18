@@ -27,6 +27,9 @@
 
 ### Changed
 
+- **AG-UI Events**: Replaced custom event classes with `ag_ui.core` types
+  - Removed `haiku.rag.graph.agui.events` module
+  - Event factory functions (`emit_*`) now wrap official `ag_ui.core` event classes
 - **Chunker Sets Order**: Chunkers now set `chunk.order` directly
 - **Unified Research Graph**: Simplified and unified research and deep QA into a single configurable graph
   - Removed `analyze_insights` node - graph now flows directly from `collect_answers` to `decide`

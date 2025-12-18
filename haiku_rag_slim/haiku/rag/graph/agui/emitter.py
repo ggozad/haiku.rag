@@ -2,24 +2,39 @@
 
 import asyncio
 import hashlib
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
 
+from ag_ui.core import (
+    ActivitySnapshotEvent,
+    BaseEvent,
+    RunErrorEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    StateDeltaEvent,
+    StateSnapshotEvent,
+    StepFinishedEvent,
+    StepStartedEvent,
+    TextMessageChunkEvent,
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
+)
 from pydantic import BaseModel
 
-from haiku.rag.graph.agui.events import (
-    AGUIEvent,
-    emit_activity,
-    emit_run_error,
-    emit_run_finished,
-    emit_run_started,
-    emit_state_delta,
-    emit_state_snapshot,
-    emit_step_finished,
-    emit_step_started,
-    emit_text_message,
-)
+from haiku.rag.graph.agui.state import compute_state_delta
+
+AGUIEvent = dict[str, Any]
+
+
+def _serialize_event(event: BaseEvent) -> AGUIEvent:
+    """Serialize an ag_ui event to a dict with camelCase keys."""
+    return event.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 class AGUIEmitter[StateT: BaseModel, ResultT]:
@@ -80,8 +95,14 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             self._thread_id = self._generate_thread_id(state_json)
 
         # RunStarted (state snapshot follows immediately with full state)
-        self.emit(emit_run_started(self._thread_id, self._run_id))
-        self.emit(emit_state_snapshot(initial_state))
+        self.emit(
+            _serialize_event(
+                RunStartedEvent(thread_id=self._thread_id, run_id=self._run_id)
+            )
+        )
+        self.emit(
+            _serialize_event(StateSnapshotEvent(snapshot=initial_state.model_dump()))
+        )
         # Store a deep copy to detect future changes
         self._last_state = initial_state.model_copy(deep=True)
 
@@ -92,12 +113,12 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             step_name: Name of the step being started
         """
         self._current_step = step_name
-        self.emit(emit_step_started(step_name))
+        self.emit(_serialize_event(StepStartedEvent(step_name=step_name)))
 
     def finish_step(self) -> None:
         """Emit StepFinished event for the current step."""
         if self._current_step:
-            self.emit(emit_step_finished(self._current_step))
+            self.emit(_serialize_event(StepFinishedEvent(step_name=self._current_step)))
             self._current_step = None
 
     def log(self, message: str, role: str = "assistant") -> None:
@@ -107,7 +128,16 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             message: The message content
             role: The role of the sender (default: assistant)
         """
-        self.emit(emit_text_message(message, role))
+        message_id = str(uuid4())
+        self.emit(
+            _serialize_event(
+                TextMessageChunkEvent(
+                    message_id=message_id,
+                    role=role,  # type: ignore[arg-type]
+                    delta=message,
+                )
+            )
+        )
 
     def update_state(self, new_state: StateT) -> None:
         """Emit StateDelta or StateSnapshot for state change.
@@ -117,10 +147,13 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         """
         if self._use_deltas and self._last_state is not None:
             # Emit delta for incremental updates
-            self.emit(emit_state_delta(self._last_state, new_state))
+            delta = compute_state_delta(self._last_state, new_state)
+            self.emit(_serialize_event(StateDeltaEvent(delta=delta)))
         else:
             # Emit full snapshot for initial state or when deltas disabled
-            self.emit(emit_state_snapshot(new_state))
+            self.emit(
+                _serialize_event(StateSnapshotEvent(snapshot=new_state.model_dump()))
+            )
         # Store a deep copy to detect future changes
         self._last_state = new_state.model_copy(deep=True)
 
@@ -139,7 +172,15 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         """
         if message_id is None:
             message_id = str(uuid4())
-        self.emit(emit_activity(message_id, activity_type, content))
+        self.emit(
+            _serialize_event(
+                ActivitySnapshotEvent(
+                    message_id=message_id,
+                    activity_type=activity_type,
+                    content=content,
+                )
+            )
+        )
 
     def finish_run(self, result: ResultT) -> None:
         """Emit RunFinished event.
@@ -147,7 +188,18 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         Args:
             result: The final result from the graph
         """
-        self.emit(emit_run_finished(self._thread_id, self._run_id, result))
+        # Convert result to dict if it's a Pydantic model
+        result_data: Any = result
+        if hasattr(result, "model_dump"):
+            result_data = result.model_dump()  # type: ignore[union-attr]
+
+        self.emit(
+            _serialize_event(
+                RunFinishedEvent(
+                    thread_id=self._thread_id, run_id=self._run_id, result=result_data
+                )
+            )
+        )
 
     def error(self, error: Exception, code: str | None = None) -> None:
         """Emit RunError event.
@@ -156,7 +208,7 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
             error: The exception that occurred
             code: Optional error code
         """
-        self.emit(emit_run_error(str(error), code))
+        self.emit(_serialize_event(RunErrorEvent(message=str(error), code=code)))
 
     def emit(self, event: AGUIEvent) -> None:
         """Put event in queue.
@@ -199,3 +251,132 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         # Use hash of input for deterministic thread ID
         hash_obj = hashlib.sha256(input_data.encode("utf-8"))
         return hash_obj.hexdigest()[:16]
+
+
+def emit_text_message_start(message_id: str, role: str = "assistant") -> AGUIEvent:
+    """Create a TextMessageStart event."""
+    return _serialize_event(
+        TextMessageStartEvent(message_id=message_id, role=role)  # type: ignore[arg-type]
+    )
+
+
+def emit_text_message_content(message_id: str, delta: str) -> AGUIEvent:
+    """Create a TextMessageContent event."""
+    return _serialize_event(TextMessageContentEvent(message_id=message_id, delta=delta))
+
+
+def emit_text_message_end(message_id: str) -> AGUIEvent:
+    """Create a TextMessageEnd event."""
+    return _serialize_event(TextMessageEndEvent(message_id=message_id))
+
+
+def emit_tool_call_start(
+    tool_call_id: str,
+    tool_name: str,
+    parent_message_id: str | None = None,
+) -> AGUIEvent:
+    """Create a ToolCallStart event."""
+    return _serialize_event(
+        ToolCallStartEvent(
+            tool_call_id=tool_call_id,
+            tool_call_name=tool_name,
+            parent_message_id=parent_message_id,
+        )
+    )
+
+
+def emit_tool_call_args(tool_call_id: str, args: dict[str, Any]) -> AGUIEvent:
+    """Create a ToolCallArgs event."""
+    return _serialize_event(
+        ToolCallArgsEvent(tool_call_id=tool_call_id, delta=json.dumps(args))
+    )
+
+
+def emit_tool_call_end(tool_call_id: str) -> AGUIEvent:
+    """Create a ToolCallEnd event."""
+    return _serialize_event(ToolCallEndEvent(tool_call_id=tool_call_id))
+
+
+def emit_run_started(thread_id: str, run_id: str) -> AGUIEvent:
+    """Create a RunStarted event."""
+    return _serialize_event(RunStartedEvent(thread_id=thread_id, run_id=run_id))
+
+
+def emit_run_finished(thread_id: str, run_id: str, result: Any) -> AGUIEvent:
+    """Create a RunFinished event."""
+    # Convert result to dict if it's a Pydantic model
+    if hasattr(result, "model_dump"):
+        result = result.model_dump()
+    return _serialize_event(
+        RunFinishedEvent(thread_id=thread_id, run_id=run_id, result=result)
+    )
+
+
+def emit_run_error(message: str, code: str | None = None) -> AGUIEvent:
+    """Create a RunError event."""
+    return _serialize_event(RunErrorEvent(message=message, code=code))
+
+
+def emit_step_started(step_name: str) -> AGUIEvent:
+    """Create a StepStarted event."""
+    return _serialize_event(StepStartedEvent(step_name=step_name))
+
+
+def emit_step_finished(step_name: str) -> AGUIEvent:
+    """Create a StepFinished event."""
+    return _serialize_event(StepFinishedEvent(step_name=step_name))
+
+
+def emit_text_message(content: str, role: str = "assistant") -> AGUIEvent:
+    """Create a TextMessageChunk event (convenience wrapper)."""
+    message_id = str(uuid4())
+    return _serialize_event(
+        TextMessageChunkEvent(
+            message_id=message_id,
+            role=role,  # type: ignore[arg-type]
+            delta=content,
+        )
+    )
+
+
+def emit_state_snapshot(state: BaseModel) -> AGUIEvent:
+    """Create a StateSnapshot event."""
+    return _serialize_event(StateSnapshotEvent(snapshot=state.model_dump()))
+
+
+def emit_state_delta(old_state: BaseModel, new_state: BaseModel) -> AGUIEvent:
+    """Create a StateDelta event with JSON Patch operations."""
+    delta = compute_state_delta(old_state, new_state)
+    return _serialize_event(StateDeltaEvent(delta=delta))
+
+
+def emit_activity(
+    message_id: str,
+    activity_type: str,
+    content: dict[str, Any],
+) -> AGUIEvent:
+    """Create an ActivitySnapshot event."""
+    return _serialize_event(
+        ActivitySnapshotEvent(
+            message_id=message_id,
+            activity_type=activity_type,
+            content=content,
+        )
+    )
+
+
+def emit_activity_delta(
+    message_id: str,
+    activity_type: str,
+    patch: list[dict[str, Any]],
+) -> AGUIEvent:
+    """Create an ActivityDelta event with JSON Patch operations."""
+    from ag_ui.core import ActivityDeltaEvent
+
+    return _serialize_event(
+        ActivityDeltaEvent(
+            message_id=message_id,
+            activity_type=activity_type,
+            patch=patch,
+        )
+    )

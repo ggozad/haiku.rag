@@ -9,7 +9,7 @@ from pydantic_graph.beta.join import reduce_list_append
 
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph.agui.events import (
+from haiku.rag.graph.agui.emitter import (
     emit_text_message_end,
     emit_text_message_start,
     emit_tool_call_args,
