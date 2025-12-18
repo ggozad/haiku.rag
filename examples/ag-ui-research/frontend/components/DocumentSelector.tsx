@@ -298,22 +298,29 @@ export default function DocumentSelector({
 												}}
 											/>
 											<div style={{ flex: 1, minWidth: 0 }}>
+												{doc.title && (
+													<div
+														style={{
+															fontSize: "0.875rem",
+															fontWeight: isSelected ? "600" : "400",
+															color: "#2d3748",
+															whiteSpace: "nowrap",
+															overflow: "hidden",
+															textOverflow: "ellipsis",
+														}}
+													>
+														{doc.title}
+													</div>
+												)}
 												<div
 													style={{
-														fontSize: "0.875rem",
-														fontWeight: isSelected ? "600" : "400",
-														color: "#2d3748",
-														whiteSpace: "nowrap",
-														overflow: "hidden",
-														textOverflow: "ellipsis",
-													}}
-												>
-													{doc.title || "Untitled"}
-												</div>
-												<div
-													style={{
-														fontSize: "0.7rem",
-														color: "#718096",
+														fontSize: doc.title ? "0.7rem" : "0.875rem",
+														fontWeight: doc.title
+															? "400"
+															: isSelected
+																? "600"
+																: "400",
+														color: doc.title ? "#718096" : "#2d3748",
 														whiteSpace: "nowrap",
 														overflow: "hidden",
 														textOverflow: "ellipsis",
