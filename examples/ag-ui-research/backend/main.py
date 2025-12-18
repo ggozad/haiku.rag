@@ -1,8 +1,9 @@
+import json
 import logging
 import os
 from pathlib import Path
 
-from agent import AgentDeps, agent
+from agent import AgentDeps, _active_research, agent
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
 from starlette.applications import Starlette
@@ -19,7 +20,7 @@ from haiku.rag.graph.agui.emitter import AGUIEmitter
 from haiku.rag.graph.agui.server import RunAgentInput, format_sse_event
 from haiku.rag.graph.research.dependencies import ResearchContext
 from haiku.rag.graph.research.models import ResearchReport
-from haiku.rag.graph.research.state import ResearchState
+from haiku.rag.graph.research.state import HumanDecision, ResearchState
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -62,10 +63,53 @@ def get_client(effective_db_path: Path) -> HaikuRAG:
     return _client_cache[path_key]
 
 
+def extract_tool_result(messages: list[dict]) -> dict | None:
+    """Extract human_decision tool result from messages if present."""
+    for msg in reversed(messages):
+        # Check for tool result message (CopilotKit sends role="tool")
+        if msg.get("role") == "tool":
+            content = msg.get("content")
+            # Content may be a string (JSON) or dict
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except json.JSONDecodeError:
+                    continue
+            if isinstance(content, dict) and "action" in content:
+                return content
+    return None
+
+
 async def stream_research_agent(request: Request) -> StreamingResponse:
     """Agent streaming endpoint with research graph integration."""
     body = await request.json()
+    logger.info(f"Received request body keys: {list(body.keys())}")
+    if "tools" in body:
+        logger.info(f"Frontend tools received: {body['tools']}")
     input_data = RunAgentInput(**body)
+
+    thread_id = input_data.thread_id
+    active_research = _active_research.get(thread_id) if thread_id else None
+
+    # Check if this is a tool result for active research
+    if active_research and input_data.messages:
+        tool_result = extract_tool_result(input_data.messages)
+        if tool_result:
+            logger.info(f"Received tool result: {tool_result}")
+            action = tool_result.get("action", "search")
+            questions = tool_result.get("questions")
+
+            decision = HumanDecision(
+                action=action,
+                questions=questions,
+            )
+            await active_research.queue.put(decision)
+
+            # Return acknowledgment - the original stream will continue
+            return StreamingResponse(
+                iter([format_sse_event({"type": "TOOL_RESULT_RECEIVED"})]),
+                media_type="text/event-stream",
+            )
 
     user_message = ""
     if input_data.messages:
@@ -79,11 +123,11 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
         """Execute agent and forward emitter events to memory stream."""
         async with send_stream:
             try:
-                # Create shared emitter
+                # Create shared emitter (use_deltas=True for CopilotKit compatibility)
                 emitter: AGUIEmitter[ResearchState, ResearchReport] = AGUIEmitter(
                     thread_id=input_data.thread_id,
                     run_id=input_data.run_id,
-                    use_deltas=False,
+                    use_deltas=True,
                 )
 
                 # Get client
@@ -104,6 +148,7 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                     client=client,
                     agui_emitter=emitter,
                     search_filter=search_filter,
+                    thread_id=thread_id,
                 )
 
                 # Start run with empty initial state
@@ -117,9 +162,12 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                 # Forward emitter events to stream
                 async def forward_events():
                     async for event in emitter:
-                        # Log events for debugging
-                        logger.info(f"AG-UI Event: {event}")
                         event_type = event.get("type")
+                        logger.info(f"AG-UI event: {event_type}")
+
+                        # Log tool call events for debugging
+                        if event_type and event_type.startswith("TOOL_CALL"):
+                            logger.info(f"Tool call event: {event}")
 
                         # Convert ACTIVITY_SNAPSHOT to STATE_DELTA for CopilotKit
                         # As CopilotKit does not handle ACTIVITY_SNAPSHOT events
@@ -129,7 +177,6 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                             message = content.get("message", "")
 
                             # Emit STATE_DELTA to patch activity info into state
-                            # Use "add" op which creates or replaces the value
                             delta_event = {
                                 "type": "STATE_DELTA",
                                 "delta": [
@@ -148,6 +195,21 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
                             await send_stream.send(format_sse_event(delta_event))
                             continue
 
+                        # Sync state to ActiveResearch when human_decision tool call
+                        if event_type == "TOOL_CALL_ARGS" and thread_id:
+                            delta = event.get("delta", "{}")
+                            args = (
+                                json.loads(delta) if isinstance(delta, str) else delta
+                            )
+                            active = _active_research.get(thread_id)
+                            if active:
+                                active.sub_questions = list(
+                                    args.get("sub_questions", [])
+                                )
+                                active.qa_responses = list(args.get("qa_responses", []))
+                                if "original_question" in args:
+                                    active.original_question = args["original_question"]
+
                         await send_stream.send(format_sse_event(event))
 
                 # Run agent and event forwarding concurrently
@@ -156,6 +218,9 @@ async def stream_research_agent(request: Request) -> StreamingResponse:
 
                     result = await agent.run(user_message, deps=agent_deps)
                     emitter.log(result.output)
+                    # Emit RUN_FINISHED with research result if available
+                    if agent_deps.research_result:
+                        emitter.finish_run(agent_deps.research_result)
                     await emitter.close()
 
             except Exception as e:

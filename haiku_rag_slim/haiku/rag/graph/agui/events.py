@@ -252,3 +252,62 @@ def emit_activity_delta(
         "activityType": activity_type,
         "patch": patch,
     }
+
+
+def emit_tool_call_start(
+    tool_call_id: str,
+    tool_name: str,
+    parent_message_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a ToolCallStart event.
+
+    Args:
+        tool_call_id: Unique identifier for this tool call
+        tool_name: Name of the tool being called
+        parent_message_id: Optional parent message ID
+
+    Returns:
+        ToolCallStart event dict
+    """
+    event: dict[str, Any] = {
+        "type": "TOOL_CALL_START",
+        "toolCallId": tool_call_id,
+        "toolCallName": tool_name,
+    }
+    if parent_message_id:
+        event["parentMessageId"] = parent_message_id
+    return event
+
+
+def emit_tool_call_args(tool_call_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Create a ToolCallArgs event.
+
+    Args:
+        tool_call_id: Identifier for the tool call
+        args: Tool arguments
+
+    Returns:
+        ToolCallArgs event dict
+    """
+    import json
+
+    return {
+        "type": "TOOL_CALL_ARGS",
+        "toolCallId": tool_call_id,
+        "delta": json.dumps(args),
+    }
+
+
+def emit_tool_call_end(tool_call_id: str) -> dict[str, Any]:
+    """Create a ToolCallEnd event.
+
+    Args:
+        tool_call_id: Identifier for the tool call being completed
+
+    Returns:
+        ToolCallEnd event dict
+    """
+    return {
+        "type": "TOOL_CALL_END",
+        "toolCallId": tool_call_id,
+    }

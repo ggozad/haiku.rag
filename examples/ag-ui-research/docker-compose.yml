@@ -32,9 +32,13 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
       # Prevent Python bytecode caching for development
       - PYTHONDONTWRITEBYTECODE=1
+      # Use local haiku_rag_slim for development
+      - PYTHONPATH=/app/haiku_rag_slim
     volumes:
       - ${DB_PATH}:/app/data/haiku.rag.lancedb
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+      # Mount local haiku_rag_slim for development
+      - ../../haiku_rag_slim:/app/haiku_rag_slim:ro
     networks:
       - ag-ui-network
     extra_hosts:

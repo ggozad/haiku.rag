@@ -321,7 +321,8 @@ def ask(
 @cli.command("research", help="Run multi-agent research and output a concise report")
 def research(
     question: str = typer.Argument(
-        help="The research question to investigate",
+        None,
+        help="The research question to investigate (required unless --interactive)",
     ),
     db: Path | None = typer.Option(
         None,
@@ -339,9 +340,34 @@ def research(
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Start interactive research mode with human-in-the-loop",
+    ),
 ):
     app = create_app(db)
-    asyncio.run(app.research(question=question, verbose=verbose, filter=filter))
+
+    if interactive:
+        from haiku.rag.cli_chat import interactive_research
+        from haiku.rag.client import HaikuRAG
+
+        client = HaikuRAG(db_path=app.db_path, config=app.config)
+        try:
+            interactive_research(
+                client=client,
+                config=app.config,
+                search_filter=filter,
+                question=question,
+            )
+        finally:
+            client.close()
+    else:
+        if question is None:
+            typer.echo("Error: Question is required unless using --interactive mode")
+            raise typer.Exit(1)
+        asyncio.run(app.research(question=question, verbose=verbose, filter=filter))
 
 
 @cli.command("settings", help="Display current configuration settings")
