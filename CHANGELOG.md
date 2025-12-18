@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.21.0] - 2025-12-18
+
 ### Added
 
 - **Interactive Research Mode**: Human-in-the-loop research using graph-based decision nodes
