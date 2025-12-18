@@ -329,49 +329,58 @@ class HaikuRAGApp:
             try:
                 citations = []
                 if deep:
-                    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
-                    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
-                    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
+                    from haiku.rag.graph.research.models import ResearchReport
 
-                    graph = build_deep_qa_graph(config=self.config)
-                    context = DeepQAContext(original_question=question)
-                    state = DeepQAState.from_config(context=context, config=self.config)
+                    graph = build_research_graph(config=self.config)
+                    context = ResearchContext(original_question=question)
+                    state = ResearchState.from_config(
+                        context=context,
+                        config=self.config,
+                        max_iterations=2,
+                        confidence_threshold=0.0,
+                    )
                     state.search_filter = filter
-                    deps = DeepQADeps(client=self.client)
+                    deps = ResearchDeps(client=self.client)
 
                     if verbose:
-                        # Use AG-UI renderer to process and display events
-                        from haiku.rag.graph.common.models import Citation
-
                         renderer = AGUIConsoleRenderer(self.console)
                         result_dict = await renderer.render(
                             stream_graph(graph, state, deps)
                         )
-                        # Result should be a dict with 'answer' and 'citations' keys
-                        answer = result_dict.get("answer", "") if result_dict else ""
-                        if cite and result_dict:
-                            # Convert dicts to Citation objects
-                            raw_citations = result_dict.get("citations", [])
-                            citations = [
-                                Citation(**c) if isinstance(c, dict) else c
-                                for c in raw_citations
-                            ]
+                        report = (
+                            ResearchReport.model_validate(result_dict)
+                            if result_dict
+                            else None
+                        )
                     else:
-                        # Run without rendering events, just get the result
-                        result = await graph.run(state=state, deps=deps)
-                        answer = result.answer
-                        if cite:
-                            citations = result.citations
+                        report = await graph.run(state=state, deps=deps)
+
+                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                    self.console.print()
+                    if report:
+                        self.console.print("[bold green]Answer:[/bold green]")
+                        self.console.print(Markdown(report.executive_summary))
+                        if report.main_findings:
+                            self.console.print()
+                            self.console.print("[bold cyan]Key Findings:[/bold cyan]")
+                            for finding in report.main_findings:
+                                self.console.print(f"• {finding}")
+                        if report.sources_summary:
+                            self.console.print()
+                            self.console.print("[bold cyan]Sources:[/bold cyan]")
+                            self.console.print(report.sources_summary)
+                    else:
+                        self.console.print("[yellow]No answer generated.[/yellow]")
                 else:
                     answer, citations = await self.client.ask(question, filter=filter)
 
-                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                self.console.print()
-                self.console.print("[bold green]Answer:[/bold green]")
-                self.console.print(Markdown(answer))
-                if cite and citations:
-                    for renderable in format_citations_rich(citations):
-                        self.console.print(renderable)
+                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                    self.console.print()
+                    self.console.print("[bold green]Answer:[/bold green]")
+                    self.console.print(Markdown(answer))
+                    if cite and citations:
+                        for renderable in format_citations_rich(citations):
+                            self.console.print(renderable)
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
 

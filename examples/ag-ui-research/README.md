@@ -6,10 +6,9 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
 
 ## Features
 
-- **Multi-iteration research graph**: Automated question decomposition, search, insight extraction, and gap analysis
+- **Multi-iteration research graph**: Automated question decomposition and search
 - **Intelligent evaluation**: Confidence-based decision making with automatic iteration until sufficient information is gathered
 - **Live state synchronization**: Real-time delta updates of research progress via AG-UI protocol
-- **Insight & gap tracking**: Structured insights with provenance and automatic gap identification
 - **Rich reporting**: Generates comprehensive research reports with findings, conclusions, and sources
 
 ## Quick Start
@@ -81,9 +80,8 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
    - Gathers initial context about the topic
 3. **Research iterations**: The graph autonomously:
    - Searches the knowledge base for each sub-question in parallel
-   - Extracts structured insights with source provenance
-   - Identifies information gaps and assesses confidence
-   - Generates new follow-up questions for gaps
+   - Assesses confidence in gathered information
+   - Generates new follow-up questions if needed
    - Iterates until confidence threshold is met or max iterations reached
 4. **Synthesis**: Generates a comprehensive research report with:
    - Executive summary
@@ -126,7 +124,7 @@ This example demonstrates the **agent+graph** architecture pattern:
   - CopilotKit for AG-UI protocol integration
   - Split-pane UI: chat on left, live research state on right
   - Real-time state synchronization via Server-Sent Events (SSE)
-  - `StateDisplay` component with collapsible sections for questions, insights, and gaps
+  - `StateDisplay` component with collapsible sections for questions and report
 
 ## Configuration
 

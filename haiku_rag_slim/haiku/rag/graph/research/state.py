@@ -6,11 +6,7 @@ from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.models import (
-    EvaluationResult,
-    InsightAnalysis,
-    ResearchReport,
-)
+from haiku.rag.graph.research.models import EvaluationResult, ResearchReport
 
 if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig
@@ -26,12 +22,7 @@ class ResearchDeps:
     semaphore: asyncio.Semaphore | None = None
 
     def emit_log(self, message: str, state: "ResearchState | None" = None) -> None:
-        """Emit a log message through AG-UI events.
-
-        Args:
-            message: The message to log
-            state: Optional state to include in state update
-        """
+        """Emit a log message through AG-UI events."""
         if self.agui_emitter:
             self.agui_emitter.log(message)
             if state:
@@ -39,15 +30,12 @@ class ResearchDeps:
 
 
 class ResearchState(BaseModel):
-    """Research graph state model.
-
-    Fully JSON-serializable Pydantic model suitable for AG-UI state synchronization.
-    """
+    """Research graph state model."""
 
     model_config = {"arbitrary_types_allowed": True}
 
     context: ResearchContext = Field(
-        description="Shared research context with questions, insights, and gaps"
+        description="Shared research context with questions and QA responses"
     )
     iterations: int = Field(default=0, description="Current iteration number")
     max_iterations: int = Field(default=3, description="Maximum allowed iterations")
@@ -60,29 +48,33 @@ class ResearchState(BaseModel):
     last_eval: EvaluationResult | None = Field(
         default=None, description="Last evaluation result"
     )
-    last_analysis: InsightAnalysis | None = Field(
-        default=None, description="Last insight analysis"
-    )
     search_filter: str | None = Field(
         default=None, description="SQL WHERE clause to filter search results"
     )
 
     @classmethod
     def from_config(
-        cls, context: ResearchContext, config: "AppConfig"
+        cls,
+        context: ResearchContext,
+        config: "AppConfig",
+        max_iterations: int | None = None,
+        confidence_threshold: float | None = None,
     ) -> "ResearchState":
         """Create a ResearchState from an AppConfig.
 
         Args:
-            context: The ResearchContext containing the question and settings
-            config: The AppConfig object (uses config.research for state parameters)
-
-        Returns:
-            A configured ResearchState instance
+            context: The ResearchContext containing the question
+            config: The AppConfig object
+            max_iterations: Override max iterations (None uses config default)
+            confidence_threshold: Override threshold (None uses config, 0.0 disables check)
         """
         return cls(
             context=context,
-            max_iterations=config.research.max_iterations,
-            confidence_threshold=config.research.confidence_threshold,
+            max_iterations=max_iterations
+            if max_iterations is not None
+            else config.research.max_iterations,
+            confidence_threshold=confidence_threshold
+            if confidence_threshold is not None
+            else config.research.confidence_threshold,
             max_concurrency=config.research.max_concurrency,
         )

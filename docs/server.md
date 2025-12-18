@@ -119,7 +119,7 @@ URLs are also supported - the content is fetched and converted to markdown.
 
 ## AG-UI Server
 
-The AG-UI server provides HTTP streaming of both research and deep ask graph execution using Server-Sent Events (SSE).
+The AG-UI server provides HTTP streaming of research graph execution using Server-Sent Events (SSE).
 
 ### Starting the AG-UI Server
 
@@ -131,7 +131,6 @@ This starts an HTTP server (default: http://0.0.0.0:8000) that exposes:
 
 - `GET /health` - Health check endpoint
 - `POST /v1/research/stream` - Research graph streaming endpoint
-- `POST /v1/deep-ask/stream` - Deep ask graph streaming endpoint
 
 ### Configuration
 
@@ -154,9 +153,9 @@ agui:
 - **cors_methods**: Allowed HTTP methods (default: `["GET", "POST", "OPTIONS"]`)
 - **cors_headers**: Allowed headers (default: `["*"]`)
 
-### Using the Streaming Endpoints
+### Using the Streaming Endpoint
 
-Both endpoints accept POST requests with the same AG-UI RunAgentInput format and stream AG-UI events.
+The endpoint accepts POST requests with AG-UI RunAgentInput format and streams AG-UI events.
 
 **Request format:**
 ```json
@@ -171,7 +170,7 @@ Both endpoints accept POST requests with the same AG-UI RunAgentInput format and
 }
 ```
 
-**Research endpoint example:**
+**Example:**
 ```bash
 curl -X POST http://localhost:8000/v1/research/stream \
   -H "Content-Type: application/json" \
@@ -183,24 +182,12 @@ curl -X POST http://localhost:8000/v1/research/stream \
   --no-buffer
 ```
 
-**Deep ask endpoint example:**
-```bash
-curl -X POST http://localhost:8000/v1/deep-ask/stream \
-  -H "Content-Type: application/json" \
-  -d '{
-    "state": {
-      "question": "How does haiku.rag handle document chunking?",
-      "use_citations": true
-    }
-  }' \
-  --no-buffer
-```
-
 The `--no-buffer` flag ensures curl displays events as they arrive instead of buffering them.
 
 **Note:** The `state` object can include:
 - `question`: The question to answer (required)
-- `use_citations`: Enable citations in deep ask responses (optional, deep ask only)
+- `max_iterations`: Maximum research iterations (optional, defaults to config)
+- `confidence_threshold`: Confidence threshold for early termination (optional, defaults to config)
 
 **Response:** Server-Sent Events stream with AG-UI protocol events:
 - `RUN_STARTED` - Graph execution started
@@ -239,8 +226,7 @@ data: {"type":"RUN_FINISHED","threadId":"abc123","runId":"xyz789","result":{"tit
 - Additional structured fields depending on the activity type:
   - **Planning**: `sub_questions` (list of strings)
   - **Searching**: `query` (string), `confidence` (float, on completion), `error` (string, on failure)
-  - **Analyzing**: `insights` (list of insight objects), `gaps` (list of gap objects), `resolved_gaps` (list of strings)
-  - **Evaluating**: `confidence` (float), `is_sufficient` (boolean) for research; `is_sufficient` (boolean), `iterations` (int) for deep QA
+  - **Evaluating**: `confidence` (float), `is_sufficient` (boolean), `new_questions` (list of strings)
 
 The `message` field is always present for simple rendering, while structured fields enable richer UI features like displaying lists, charts, and detailed status information.
 

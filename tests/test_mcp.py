@@ -243,7 +243,7 @@ async def test_mcp_delete_document():
 
 @pytest.mark.asyncio
 async def test_mcp_ask_question_deep():
-    """Test ask_question tool with deep=True is properly wired."""
+    """Test ask_question tool with deep=True uses research graph."""
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = Path(temp_dir) / "test.lancedb"
         mcp = create_mcp_server(db_path)
@@ -251,7 +251,7 @@ async def test_mcp_ask_question_deep():
         with (
             patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class,
             patch(
-                "haiku.rag.graph.deep_qa.graph.build_deep_qa_graph"
+                "haiku.rag.graph.research.graph.build_research_graph"
             ) as mock_graph_builder,
         ):
             mock_rag = AsyncMock()
@@ -260,8 +260,7 @@ async def test_mcp_ask_question_deep():
 
             mock_graph = AsyncMock()
             mock_result = AsyncMock()
-            mock_result.answer = "Deep answer"
-            mock_result.citations = []
+            mock_result.executive_summary = "Deep answer from research"
             mock_graph.run = AsyncMock(return_value=mock_result)
             mock_graph_builder.return_value = mock_graph
 
@@ -273,7 +272,7 @@ async def test_mcp_ask_question_deep():
                 question="Deep question?", cite=False, deep=True
             )
 
-            assert result == "Deep answer"
+            assert result == "Deep answer from research"
             mock_graph.run.assert_called_once()
 
 

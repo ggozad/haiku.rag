@@ -1,148 +1,127 @@
-import uuid
-from enum import Enum
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
-
-def _deduplicate_list(items: list[str]) -> list[str]:
-    """Remove duplicates while preserving order."""
-    return list(dict.fromkeys(items))
+if TYPE_CHECKING:
+    from haiku.rag.store.models import SearchResult
 
 
-class InsightStatus(str, Enum):
-    OPEN = "open"
-    VALIDATED = "validated"
-    TENTATIVE = "tentative"
+class ResearchPlan(BaseModel):
+    """A structured research plan with sub-questions to explore."""
 
-
-class GapSeverity(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-
-class TrackedRecord(BaseModel):
-    """Base model for tracked entities with sources and metadata."""
-
-    model_config = {"validate_assignment": True}
-
-    id: str = Field(
-        default_factory=lambda: str(uuid.uuid4())[:8],
-        description="Unique identifier for the record",
-    )
-    supporting_sources: list[str] = Field(
-        default_factory=list,
-        description="Source identifiers backing this record",
-    )
-    notes: str | None = Field(
-        default=None,
-        description="Optional elaboration or caveats",
+    sub_questions: list[str] = Field(
+        ...,
+        description="Specific questions to research, phrased as complete questions",
     )
 
-    @field_validator("supporting_sources", mode="before")
+    @field_validator("sub_questions")
     @classmethod
-    def deduplicate_sources(cls, v: list[str]) -> list[str]:
-        """Ensure supporting_sources has no duplicates."""
-        return _deduplicate_list(v) if v else []
+    def validate_sub_questions(cls, v: list[str]) -> list[str]:
+        if len(v) < 1:
+            raise ValueError("Must have at least 1 sub-question")
+        if len(v) > 12:
+            raise ValueError("Cannot have more than 12 sub-questions")
+        return v
 
 
-class InsightRecord(TrackedRecord):
-    """Structured insight with provenance and lifecycle metadata."""
+class Citation(BaseModel):
+    """Resolved citation with full metadata for display/visual grounding."""
 
-    summary: str = Field(description="Concise description of the insight")
-    status: InsightStatus = Field(
-        default=InsightStatus.OPEN,
-        description="Lifecycle status for the insight",
-    )
-    originating_questions: list[str] = Field(
+    document_id: str
+    chunk_id: str
+    document_uri: str
+    document_title: str | None = None
+    page_numbers: list[int] = Field(default_factory=list)
+    headings: list[str] | None = None
+    content: str
+
+
+class RawSearchAnswer(BaseModel):
+    """Answer to a search query with chunk references."""
+
+    query: str = Field(..., description="The question that was answered")
+    answer: str = Field(..., description="The answer to the question")
+    cited_chunks: list[str] = Field(
         default_factory=list,
-        description="Research sub-questions that produced this insight",
+        description="IDs of chunks used to form the answer",
     )
-
-    @field_validator("originating_questions", mode="before")
-    @classmethod
-    def deduplicate_questions(cls, v: list[str]) -> list[str]:
-        """Ensure originating_questions has no duplicates."""
-        return _deduplicate_list(v) if v else []
-
-
-class GapRecord(TrackedRecord):
-    """Structured representation of an identified research gap."""
-
-    description: str = Field(description="Concrete statement of what is missing")
-    severity: GapSeverity = Field(
-        default=GapSeverity.MEDIUM,
-        description="Severity of the gap for answering the main question",
-    )
-    blocking: bool = Field(
-        default=True,
-        description="Whether this gap blocks a confident answer",
-    )
-    resolved: bool = Field(
-        default=False,
-        description="Flag indicating if the gap has been resolved",
-    )
-    resolved_by: list[str] = Field(
-        default_factory=list,
-        description="Insight IDs or notes explaining how the gap was closed",
-    )
-
-    @field_validator("resolved_by", mode="before")
-    @classmethod
-    def deduplicate_resolved_by(cls, v: list[str]) -> list[str]:
-        """Ensure resolved_by has no duplicates."""
-        return _deduplicate_list(v) if v else []
-
-
-class InsightAnalysis(BaseModel):
-    """Output of the insight aggregation agent."""
-
-    highlights: list[InsightRecord] = Field(
-        default_factory=list,
-        description="New or updated insights discovered this iteration",
-    )
-    gap_assessments: list[GapRecord] = Field(
-        default_factory=list,
-        description="New or updated gap records based on current evidence",
-    )
-    resolved_gaps: list[str] = Field(
-        default_factory=list,
-        description="Gap identifiers or descriptions considered resolved",
-    )
-    new_questions: list[str] = Field(
-        default_factory=list,
-        max_length=3,
-        description="Up to three follow-up sub-questions to pursue next",
-    )
-    commentary: str = Field(
-        description="Short narrative summary of the incremental findings",
-    )
-
-
-class EvaluationResult(BaseModel):
-    """Result of analysis and evaluation."""
-
-    key_insights: list[str] = Field(
-        description="Main insights extracted from the research so far"
-    )
-    new_questions: list[str] = Field(
-        description="New sub-questions to add to the research (max 3)",
-        max_length=3,
-        default=[],
-    )
-    gaps: list[str] = Field(
-        description="Concrete information gaps that remain", default_factory=list
-    )
-    confidence_score: float = Field(
-        description="Confidence level in the completeness of research (0-1)",
+    confidence: float = Field(
+        default=1.0,
+        description="Confidence score for this answer (0-1)",
         ge=0.0,
         le=1.0,
     )
+
+
+class SearchAnswer(RawSearchAnswer):
+    """Answer to a search query with resolved citations."""
+
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="Resolved citations with full metadata",
+    )
+
+    @classmethod
+    def from_raw(
+        cls,
+        raw: RawSearchAnswer,
+        search_results: "list[SearchResult]",
+    ) -> "SearchAnswer":
+        """Create SearchAnswer from RawSearchAnswer with resolved citations."""
+        citations = resolve_citations(raw.cited_chunks, search_results)
+        return cls(
+            query=raw.query,
+            answer=raw.answer,
+            cited_chunks=raw.cited_chunks,
+            confidence=raw.confidence,
+            citations=citations,
+        )
+
+
+def resolve_citations(
+    cited_chunk_ids: list[str],
+    search_results: "list[SearchResult]",
+) -> list[Citation]:
+    """Resolve chunk IDs to full Citation objects with metadata."""
+    by_id = {r.chunk_id: r for r in search_results if r.chunk_id}
+
+    citations = []
+    for chunk_id in cited_chunk_ids:
+        r = by_id.get(chunk_id)
+        if not r:
+            continue
+        citations.append(
+            Citation(
+                document_id=r.document_id or "",
+                chunk_id=chunk_id,
+                document_uri=r.document_uri or "",
+                document_title=r.document_title,
+                page_numbers=r.page_numbers,
+                headings=r.headings,
+                content=r.content,
+            )
+        )
+    return citations
+
+
+class EvaluationResult(BaseModel):
+    """Result of research sufficiency evaluation."""
+
     is_sufficient: bool = Field(
         description="Whether the research is sufficient to answer the original question"
     )
+    confidence_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence level in the completeness of research (0-1)",
+    )
     reasoning: str = Field(
         description="Explanation of why the research is or isn't complete"
+    )
+    new_questions: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description="New sub-questions to add to the research (max 3)",
     )
 
 

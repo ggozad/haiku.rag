@@ -27,7 +27,7 @@ from haiku.rag.store.repositories.settings import SettingsRepository
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.graph.common.models import Citation
+    from haiku.rag.graph.research.models import Citation
 
 logger = logging.getLogger(__name__)
 

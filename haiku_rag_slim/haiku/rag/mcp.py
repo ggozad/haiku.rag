@@ -174,18 +174,26 @@ def create_mcp_server(db_path: Path, config: AppConfig = Config) -> FastMCP:
         try:
             async with HaikuRAG(db_path, config=config) as rag:
                 if deep:
-                    from haiku.rag.graph.deep_qa.dependencies import DeepQAContext
-                    from haiku.rag.graph.deep_qa.graph import build_deep_qa_graph
-                    from haiku.rag.graph.deep_qa.state import DeepQADeps, DeepQAState
+                    from haiku.rag.graph.research.dependencies import ResearchContext
+                    from haiku.rag.graph.research.graph import build_research_graph
+                    from haiku.rag.graph.research.state import (
+                        ResearchDeps,
+                        ResearchState,
+                    )
 
-                    graph = build_deep_qa_graph(config=config)
-                    context = DeepQAContext(original_question=question)
-                    state = DeepQAState.from_config(context=context, config=config)
-                    deps = DeepQADeps(client=rag)
+                    graph = build_research_graph(config=config)
+                    context = ResearchContext(original_question=question)
+                    state = ResearchState.from_config(
+                        context=context,
+                        config=config,
+                        max_iterations=2,
+                        confidence_threshold=0.0,
+                    )
+                    deps = ResearchDeps(client=rag)
 
                     result = await graph.run(state=state, deps=deps)
-                    answer = result.answer
-                    citations = result.citations
+                    answer = result.executive_summary
+                    citations = []
                 else:
                     answer, citations = await rag.ask(question)
                 if cite and citations:
