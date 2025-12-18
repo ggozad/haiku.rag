@@ -18,8 +18,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.config.models import AGUIConfig
-from haiku.rag.graph.agui.emitter import AGUIEmitter
-from haiku.rag.graph.agui.events import AGUIEvent
+from haiku.rag.graph.agui.emitter import AGUIEmitter, AGUIEvent
 from haiku.rag.graph.agui.stream import stream_graph
 
 

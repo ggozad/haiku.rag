@@ -8,8 +8,7 @@ from typing import Protocol, TypeVar
 from pydantic import BaseModel
 from pydantic_graph.beta import Graph
 
-from haiku.rag.graph.agui.emitter import AGUIEmitter
-from haiku.rag.graph.agui.events import AGUIEvent
+from haiku.rag.graph.agui.emitter import AGUIEmitter, AGUIEvent
 
 StateT = TypeVar("StateT", bound=BaseModel)
 ResultT = TypeVar("ResultT")

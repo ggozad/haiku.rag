@@ -5,7 +5,7 @@ from typing import Any
 
 from rich.console import Console
 
-from haiku.rag.graph.agui.events import AGUIEvent
+from haiku.rag.graph.agui.emitter import AGUIEvent
 
 
 class AGUIConsoleRenderer:

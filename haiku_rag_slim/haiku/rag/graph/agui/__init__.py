@@ -1,8 +1,8 @@
 """Generic AG-UI protocol support for haiku.rag graphs."""
 
 from haiku.rag.graph.agui.cli_renderer import AGUIConsoleRenderer
-from haiku.rag.graph.agui.emitter import AGUIEmitter
-from haiku.rag.graph.agui.events import (
+from haiku.rag.graph.agui.emitter import (
+    AGUIEmitter,
     AGUIEvent,
     emit_activity,
     emit_activity_delta,
@@ -17,6 +17,9 @@ from haiku.rag.graph.agui.events import (
     emit_text_message_content,
     emit_text_message_end,
     emit_text_message_start,
+    emit_tool_call_args,
+    emit_tool_call_end,
+    emit_tool_call_start,
 )
 from haiku.rag.graph.agui.server import (
     RunAgentInput,
@@ -48,6 +51,9 @@ __all__ = [
     "emit_text_message_content",
     "emit_text_message_end",
     "emit_text_message_start",
+    "emit_tool_call_args",
+    "emit_tool_call_end",
+    "emit_tool_call_start",
     "format_sse_event",
     "stream_graph",
 ]
