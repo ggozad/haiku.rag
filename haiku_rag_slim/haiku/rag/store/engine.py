@@ -12,6 +12,7 @@ from pydantic import Field
 
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.embeddings import get_embedder
+from haiku.rag.store.exceptions import ReadOnlyError
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +58,11 @@ class Store:
         config: AppConfig = Config,
         skip_validation: bool = False,
         create: bool = False,
+        read_only: bool = False,
     ):
         self.db_path: Path = db_path
         self._config = config
+        self._read_only = read_only
         self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
 
@@ -87,14 +90,26 @@ class Store:
         self._init_tables()
 
         # Run upgrades only on existing databases, set version for new ones
-        if is_new_db:
-            self._set_initial_version()
-        else:
-            self._run_upgrades()
+        # Skip upgrades in read-only mode (they would fail anyway)
+        if not read_only:
+            if is_new_db:
+                self._set_initial_version()
+            else:
+                self._run_upgrades()
 
         # Validate config compatibility after connection is established
         if not skip_validation:
             self._validate_configuration()
+
+    @property
+    def is_read_only(self) -> bool:
+        """Whether the store is in read-only mode."""
+        return self._read_only
+
+    def _assert_writable(self) -> None:
+        """Raise ReadOnlyError if the store is in read-only mode."""
+        if self._read_only:
+            raise ReadOnlyError("Cannot modify database in read-only mode")
 
     async def vacuum(self, retention_seconds: int | None = None) -> None:
         """Optimize and clean up old versions across all tables to reduce disk usage.
@@ -106,7 +121,12 @@ class Store:
         Note:
             If vacuum is already running, this method returns immediately without blocking.
             Use asyncio.create_task(store.vacuum()) for non-blocking background execution.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
         """
+        self._assert_writable()
+
         if self._has_cloud_config() and str(self._config.lancedb.uri).startswith(
             "db://"
         ):
@@ -317,7 +337,12 @@ class Store:
         return "0.0.0"
 
     def set_haiku_version(self, version: str) -> None:
-        """Updates the user version in settings."""
+        """Updates the user version in settings.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+        """
+        self._assert_writable()
         settings_records = list(
             self.settings_table.search().limit(1).to_pydantic(SettingsRecord)
         )
@@ -343,7 +368,12 @@ class Store:
             )
 
     def recreate_embeddings_table(self) -> None:
-        """Recreate the chunks table with current vector dimensions."""
+        """Recreate the chunks table with current vector dimensions.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+        """
+        self._assert_writable()
         # Drop and recreate chunks table
         try:
             self.db.drop_table("chunks")
@@ -373,7 +403,12 @@ class Store:
         }
 
     def restore_table_versions(self, versions: dict[str, int]) -> bool:
-        """Restore tables to the provided versions using LanceDB's API."""
+        """Restore tables to the provided versions using LanceDB's API.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+        """
+        self._assert_writable()
         self.documents_table.restore(int(versions["documents"]))
         self.chunks_table.restore(int(versions["chunks"]))
         self.settings_table.restore(int(versions["settings"]))

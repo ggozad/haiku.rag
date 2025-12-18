@@ -47,6 +47,7 @@ class DocumentRepository:
 
     async def create(self, entity: Document) -> Document:
         """Create a document in the database."""
+        self.store._assert_writable()
         # Generate new UUID
         doc_id = str(uuid4())
 
@@ -90,6 +91,7 @@ class DocumentRepository:
 
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
+        self.store._assert_writable()
         from haiku.rag.store.models.document import invalidate_docling_document_cache
 
         assert entity.id, "Document ID is required for update"
@@ -119,6 +121,7 @@ class DocumentRepository:
 
     async def delete(self, entity_id: str) -> bool:
         """Delete a document by its ID."""
+        self.store._assert_writable()
         from haiku.rag.store.models.document import invalidate_docling_document_cache
 
         # Check if document exists
@@ -181,6 +184,7 @@ class DocumentRepository:
 
     async def delete_all(self) -> None:
         """Delete all documents from the database."""
+        self.store._assert_writable()
         # Delete all chunks first
         await self.chunk_repository.delete_all()
 
