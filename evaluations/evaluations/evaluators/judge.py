@@ -1,8 +1,7 @@
 from pydantic import BaseModel
 from pydantic_ai import Agent
 
-from haiku.rag.config import Config
-from haiku.rag.config.models import ModelConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.utils import get_model
 
 ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether two answers to the same question are semantically equivalent.
@@ -36,10 +35,9 @@ class LLMJudgeResponseSchema(BaseModel):
 class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
-    def __init__(self, model: str = "gpt-oss"):
-        # Create model using get_model with thinking disabled
+    def __init__(self, model: str = "gpt-oss", config: AppConfig | None = None):
         model_config = ModelConfig(provider="ollama", name=model, enable_thinking=False)
-        model_obj = get_model(model_config, Config)
+        model_obj = get_model(model_config, config)
 
         # Create Pydantic AI agent
         self._agent = Agent(
