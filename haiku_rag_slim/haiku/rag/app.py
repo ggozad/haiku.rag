@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -36,11 +37,16 @@ logger = logging.getLogger(__name__)
 
 class HaikuRAGApp:
     def __init__(
-        self, db_path: Path, config: AppConfig = Config, read_only: bool = False
+        self,
+        db_path: Path,
+        config: AppConfig = Config,
+        read_only: bool = False,
+        before: datetime | None = None,
     ):
         self.db_path = db_path
         self.config = config
         self.read_only = read_only
+        self.before = before
         self.console = Console()
 
     async def init(self):
@@ -217,7 +223,10 @@ class HaikuRAGApp:
 
     async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
@@ -225,7 +234,10 @@ class HaikuRAGApp:
 
     async def add_document_from_text(self, text: str, metadata: dict | None = None):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             doc = await self.client.create_document(text, metadata=metadata)
             self._rich_print_document(doc, truncate=True)
@@ -237,7 +249,10 @@ class HaikuRAGApp:
         self, source: str, title: str | None = None, metadata: dict | None = None
     ):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             result = await self.client.create_document_from_source(
                 source, title=title, metadata=metadata
@@ -256,7 +271,10 @@ class HaikuRAGApp:
 
     async def get_document(self, doc_id: str):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -266,7 +284,10 @@ class HaikuRAGApp:
 
     async def delete_document(self, doc_id: str):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
@@ -282,7 +303,10 @@ class HaikuRAGApp:
         self, query: str, limit: int | None = None, filter: str | None = None
     ):
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             results = await self.client.search(query, limit=limit, filter=filter)
             if not results:
@@ -296,7 +320,10 @@ class HaikuRAGApp:
         from textual_image.renderable import Image as RichImage
 
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             chunk = await self.client.chunk_repository.get_by_id(chunk_id)
             if not chunk:
@@ -343,7 +370,10 @@ class HaikuRAGApp:
             filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as self.client:
             try:
                 citations = []
@@ -414,7 +444,10 @@ class HaikuRAGApp:
             filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(
-            db_path=self.db_path, config=self.config, read_only=self.read_only
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as client:
             try:
                 self.console.print("[bold cyan]Starting research[/bold cyan]")
@@ -510,6 +543,7 @@ class HaikuRAGApp:
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
+            before=self.before,
         ) as client:
             try:
                 documents = await client.list_documents()
@@ -549,6 +583,7 @@ class HaikuRAGApp:
                 config=self.config,
                 skip_validation=True,
                 read_only=self.read_only,
+                before=self.before,
             ) as client:
                 await client.vacuum()
             self.console.print(
@@ -565,6 +600,7 @@ class HaikuRAGApp:
                 config=self.config,
                 skip_validation=True,
                 read_only=self.read_only,
+                before=self.before,
             ) as client:
                 row_count = client.store.chunks_table.count_rows()
                 self.console.print(f"Chunks in database: {row_count}")
@@ -735,7 +771,10 @@ class HaikuRAGApp:
     ):
         """Start the server with selected services."""
         async with HaikuRAG(
-            self.db_path, config=self.config, read_only=self.read_only
+            self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
         ) as client:
             tasks = []
 

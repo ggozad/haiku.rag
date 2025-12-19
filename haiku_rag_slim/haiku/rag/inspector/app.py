@@ -1,4 +1,5 @@
 # pyright: reportPossiblyUnboundVariable=false
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -74,10 +75,13 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         Binding("c", "show_context", "Context", show=True),
     ]
 
-    def __init__(self, db_path: Path, read_only: bool = False):
+    def __init__(
+        self, db_path: Path, read_only: bool = False, before: datetime | None = None
+    ):
         super().__init__()
         self.db_path = db_path
         self.read_only = read_only
+        self.before = before
         self.client: HaikuRAG | None = None
 
     def compose(self) -> "ComposeResult":
@@ -92,7 +96,10 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         """Initialize the app when mounted."""
         config = get_config()
         self.client = HaikuRAG(
-            db_path=self.db_path, config=config, read_only=self.read_only
+            db_path=self.db_path,
+            config=config,
+            read_only=self.read_only,
+            before=self.before,
         )
         await self.client.__aenter__()
 
@@ -233,17 +240,20 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
 
 
 def run_inspector(
-    db_path: Path | None = None, read_only: bool = False
+    db_path: Path | None = None,
+    read_only: bool = False,
+    before: datetime | None = None,
 ) -> None:  # pragma: no cover
     """Run the inspector TUI.
 
     Args:
         db_path: Path to the LanceDB database. If None, uses default from config.
         read_only: Whether to open the database in read-only mode.
+        before: Query database as it existed before this datetime.
     """
     config = get_config()
     if db_path is None:
         db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    app = InspectorApp(db_path, read_only=read_only)
+    app = InspectorApp(db_path, read_only=read_only, before=before)
     app.run()
