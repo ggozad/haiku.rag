@@ -440,3 +440,37 @@ async def test_file_watcher_orphan_handles_spaces_in_filenames():
 
         # Should NOT delete the document since file exists
         mock_client.delete_document.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_observe_raises_on_missing_paths():
+    """Test observe() raises FileNotFoundError when directories don't exist."""
+    mock_client = AsyncMock(spec=HaikuRAG)
+
+    test_config = AppConfig(
+        monitor=MonitorConfig(
+            directories=[Path("/nonexistent/path/that/does/not/exist")]
+        )
+    )
+    watcher = FileWatcher(client=mock_client, config=test_config)
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        await watcher.observe()
+
+    assert "Monitor directories do not exist" in str(exc_info.value)
+    assert "haiku.rag.yaml" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_file_watcher_observe_returns_early_when_no_directories():
+    """Test observe() returns early when no directories are configured."""
+    mock_client = AsyncMock(spec=HaikuRAG)
+
+    test_config = AppConfig(monitor=MonitorConfig(directories=[]))
+    watcher = FileWatcher(client=mock_client, config=test_config)
+
+    # Should return without error when no directories configured
+    await watcher.observe()
+
+    # No documents should have been processed
+    mock_client.create_document_from_source.assert_not_called()

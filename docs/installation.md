@@ -93,7 +93,10 @@ Build locally to include all features and document processing without docling-se
 
 ```bash
 docker build -f docker/Dockerfile -t haiku-rag .
-docker run -p 8001:8001 -v $(pwd)/data:/data haiku-rag
+docker run -p 8001:8001 \
+  -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
+  -v /path/to/data:/data \
+  haiku-rag
 ```
 
-See `docker/README.md` for complete build and configuration instructions.
+See `docker/README.md` for complete build and configuration instructions, including how to enable file monitoring.
