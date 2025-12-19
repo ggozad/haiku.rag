@@ -14,12 +14,35 @@ This setup showcases the minimal haiku.rag-slim image combined with external doc
 ## Quick Start
 
 ```bash
+# Create required directories
 mkdir -p data docs
-cp haiku.rag.yaml.example haiku.rag.yaml  # Edit as needed
+
+# Create config file from example (required)
+cp haiku.rag.yaml.example haiku.rag.yaml
+
+# Start services
 docker compose up -d
 ```
 
 Place documents in `docs/` for automatic indexing.
+
+## Volume Mounts
+
+The docker-compose.yml mounts three volumes:
+
+| Host Path | Container Path | Purpose |
+|-----------|---------------|---------|
+| `./data` | `/data` | Persistent LanceDB database |
+| `./docs` | `/docs` | Documents to monitor and index |
+| `./haiku.rag.yaml` | `/app/haiku.rag.yaml` | Configuration file |
+
+**Important:** The `haiku.rag.yaml` config file must exist before running `docker compose up`. Copy it from the example:
+
+```bash
+cp haiku.rag.yaml.example haiku.rag.yaml
+```
+
+The example config sets `monitor.directories: [/docs]` - this is the **container path**, not your host path. Documents placed in `./docs` on your host will appear at `/docs` inside the container.
 
 ## Usage
 

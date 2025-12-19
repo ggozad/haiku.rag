@@ -44,19 +44,35 @@ Mount your config file and data directory:
 
 ```bash
 docker run -p 8001:8001 \
-  -v $(pwd)/haiku.rag.yaml:/app/haiku.rag.yaml \
-  -v $(pwd)/data:/data \
+  -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
+  -v /path/to/data:/data \
   haiku-rag
 ```
 
-The container will automatically use the mounted `haiku.rag.yaml` configuration file.
+To enable file monitoring, also mount a documents directory:
+
+```bash
+docker run -p 8001:8001 \
+  -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
+  -v /path/to/data:/data \
+  -v /path/to/docs:/docs \
+  haiku-rag haiku-rag serve --mcp --monitor
+```
+
+Your `haiku.rag.yaml` must reference the **container path** for monitoring:
+
+```yaml
+monitor:
+  directories:
+    - /docs  # Container path, not host path
+```
 
 For API keys (OpenAI, Anthropic, etc.), pass them as environment variables:
 
 ```bash
 docker run -p 8001:8001 \
-  -v $(pwd)/haiku.rag.yaml:/app/haiku.rag.yaml \
-  -v $(pwd)/data:/data \
+  -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
+  -v /path/to/data:/data \
   -e OPENAI_API_KEY=your-key-here \
   haiku-rag
 ```
