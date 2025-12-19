@@ -7,6 +7,7 @@ The `haiku-rag` CLI provides complete document management functionality.
 
     - `--config` - Specify custom configuration file
     - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
+    - `--before` - Query database as it existed before a datetime (implies `--read-only`)
     - `--version` / `-v` - Show version and exit
 
     Per-command options:
@@ -19,6 +20,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag --config /path/to/config.yaml list
     haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
     haiku-rag --read-only search "query"
+    haiku-rag --before "2025-01-15" search "query"
     haiku-rag add -h
     ```
 
@@ -354,3 +356,66 @@ This command downloads:
 - Ollama models referenced in your configuration (embeddings, QA, research, rerank)
 
 Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
+
+## Time Travel
+
+LanceDB maintains version history for tables, enabling you to query the database as it existed at a previous point in time. This is useful for:
+
+- **Debugging**: Investigate data before a problematic change
+- **Auditing**: Verify what knowledge was available when a support ticket was filed
+
+### Query Historical State
+
+Use `--before` to query the database as it existed before a specific datetime:
+
+```bash
+# Query documents as of January 15, 2025
+haiku-rag --before "2025-01-15" list
+
+# Search historical state
+haiku-rag --before "2025-01-15T14:30:00" search "machine learning"
+
+# Ask questions against historical data
+haiku-rag --before "2025-01-15" ask "What documents existed?"
+```
+
+Supported datetime formats:
+
+- ISO 8601: `2025-01-15T14:30:00`, `2025-01-15T14:30:00Z`, `2025-01-15T14:30:00+00:00`
+- Date only: `2025-01-15` (interpreted as start of day)
+
+!!! note
+    Time travel mode automatically enables read-only mode. You cannot modify the database while viewing historical state.
+
+### Version History
+
+View version history for database tables:
+
+```bash
+# Show history for all tables
+haiku-rag history
+
+# Show history for a specific table
+haiku-rag history --table documents
+
+# Limit number of versions shown
+haiku-rag history --limit 10
+```
+
+Output shows version numbers and timestamps, sorted newest first:
+
+```
+Version History
+
+documents
+  v5: 2025-01-15 14:30:00
+  v4: 2025-01-14 10:00:00
+  v3: 2025-01-13 09:15:00
+
+chunks
+  v8: 2025-01-15 14:30:00
+  v7: 2025-01-14 10:00:00
+  ...
+```
+
+Use the timestamps from `history` to construct `--before` queries.

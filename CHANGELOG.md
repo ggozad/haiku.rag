@@ -8,6 +8,12 @@
   - Skips database upgrades and settings saves on open
   - Excludes write tools (`add_document_*`, `delete_document`) from MCP server
   - Disables file monitor with warning when `--read-only` is used with `serve --monitor`
+- **Time Travel**: Query the database as it existed at a previous point in time
+  - Global `--before` CLI flag accepts datetime strings (ISO 8601 or date-only)
+  - Automatically enables read-only mode when time-traveling
+  - New `history` command shows version history for database tables
+  - Useful for debugging and auditing
+  - Supported throughout: CLI, Client, App, Inspector
 
 ### Fixed
 
