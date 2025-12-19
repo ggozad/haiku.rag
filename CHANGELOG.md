@@ -24,6 +24,14 @@
   - Added volume mount examples for config file and documents directory
   - Clarified that `monitor.directories` must use container paths, not host paths
 
+### Changed
+
+- **Dependencies**: Updated core dependencies
+  - `pydantic-ai-slim`: 1.27.0 → 1.36.0 (FileSearchTool, web chat UI, GPT-5.2 support, prompt caching)
+  - `lancedb`: 0.25.3 → 0.26.0
+  - `docling`: 2.64.0 → 2.65.0
+  - `docling-core`: 2.54.0 → 2.57.0
+
 ## [0.21.0] - 2025-12-18
 
 ### Added
