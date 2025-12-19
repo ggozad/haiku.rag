@@ -8,6 +8,7 @@ from packaging.version import Version, parse
 if TYPE_CHECKING:
     from rich.console import RenderableType
 
+    from haiku.rag.config.models import AppConfig, ModelConfig
     from haiku.rag.graph.research.models import Citation
 
 
@@ -44,8 +45,8 @@ def apply_common_settings(
 
 
 def get_model(
-    model_config: Any,
-    app_config: Any | None = None,
+    model_config: "ModelConfig",
+    app_config: "AppConfig | None" = None,
 ) -> Any:
     """
     Get a model instance for the specified configuration.

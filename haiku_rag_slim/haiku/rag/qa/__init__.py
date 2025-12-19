@@ -21,5 +21,6 @@ def get_qa_agent(
     return QuestionAnswerAgent(
         client=client,
         model_config=config.qa.model,
+        config=config,
         system_prompt=system_prompt,
     )
