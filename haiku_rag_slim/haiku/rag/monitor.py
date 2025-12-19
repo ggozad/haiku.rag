@@ -90,6 +90,18 @@ class FileWatcher:
         self.supported_extensions = get_converter(config).supported_extensions
 
     async def observe(self):
+        if not self.paths:
+            logger.warning("No directories configured for monitoring")
+            return
+
+        # Validate all paths exist before attempting to watch
+        missing_paths = [p for p in self.paths if not Path(p).exists()]
+        if missing_paths:
+            raise FileNotFoundError(
+                f"Monitor directories do not exist: {missing_paths}. "
+                "Check your haiku.rag.yaml configuration."
+            )
+
         logger.info(f"Watching files in {self.paths}")
         filter = FileFilter(
             ignore_patterns=self.ignore_patterns,

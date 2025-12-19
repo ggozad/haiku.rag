@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **File Monitor Path Validation**: Monitor now validates directories exist before watching ([#204](https://github.com/ggozad/haiku.rag/issues/204))
+  - Provides clear error message pointing to `haiku.rag.yaml` configuration
+  - Prevents cryptic `FileNotFoundError: No path was found` from watchfiles
+- **Docker Documentation**: Improved Docker setup instructions
+  - Added volume mount examples for config file and documents directory
+  - Clarified that `monitor.directories` must use container paths, not host paths
+
 ## [0.21.0] - 2025-12-18
 
 ### Added
