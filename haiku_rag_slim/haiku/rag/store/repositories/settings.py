@@ -72,6 +72,7 @@ class SettingsRepository:
 
     def save_current_settings(self) -> None:
         """Save the current configuration to the database."""
+        self.store._assert_writable()
         current_config = self.store._config.model_dump(mode="json")
 
         # Check if settings exist

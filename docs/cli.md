@@ -6,6 +6,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     Global options (must be specified before the command):
 
     - `--config` - Specify custom configuration file
+    - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
     - `--version` / `-v` - Show version and exit
 
     Per-command options:
@@ -17,6 +18,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     ```bash
     haiku-rag --config /path/to/config.yaml list
     haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
+    haiku-rag --read-only search "query"
     haiku-rag add -h
     ```
 
@@ -234,6 +236,9 @@ haiku-rag serve --monitor --mcp --agui
 
 # Custom MCP port
 haiku-rag serve --mcp --mcp-port 9000
+
+# Read-only mode (excludes write MCP tools, disables monitor)
+haiku-rag --read-only serve --mcp
 ```
 
 See [Server Mode](server.md) for details on available services.

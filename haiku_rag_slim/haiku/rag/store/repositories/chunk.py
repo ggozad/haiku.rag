@@ -42,6 +42,7 @@ class ChunkRepository:
         Chunks must have embeddings set before calling this method.
         Use client._ensure_chunks_embedded() to embed chunks if needed.
         """
+        self.store._assert_writable()
         # Handle single chunk
         if isinstance(entity, Chunk):
             assert entity.document_id, "Chunk must have a document_id to be created"
@@ -126,6 +127,7 @@ class ChunkRepository:
 
         Chunk must have embedding set before calling this method.
         """
+        self.store._assert_writable()
         assert entity.id, "Chunk ID is required for update"
         assert entity.embedding is not None, "Chunk must have an embedding"
 
@@ -145,6 +147,7 @@ class ChunkRepository:
 
     async def delete(self, entity_id: str) -> bool:
         """Delete a chunk by its ID."""
+        self.store._assert_writable()
         chunk = await self.get_by_id(entity_id)
         if chunk is None:
             return False
@@ -181,6 +184,7 @@ class ChunkRepository:
 
     async def delete_all(self) -> None:
         """Delete all chunks from the database."""
+        self.store._assert_writable()
         # Drop and recreate table to clear all data
         self.store.db.drop_table("chunks")
         self.store.chunks_table = self.store.db.create_table(
@@ -193,6 +197,7 @@ class ChunkRepository:
 
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
+        self.store._assert_writable()
         chunks = await self.get_by_document_id(document_id)
 
         if not chunks:
