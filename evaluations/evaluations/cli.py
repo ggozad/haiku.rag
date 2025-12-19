@@ -102,7 +102,10 @@ def optimize(
     ),
     db: Path | None = typer.Option(None, "--db", help="Override the database path."),
     trials: int = typer.Option(
-        20, "--trials", "-t", help="Number of optimization trials."
+        20,
+        "--trials",
+        "-t",
+        help="Number of optimization trials (only used with --auto none).",
     ),
     train_limit: int | None = typer.Option(
         None, "--train-limit", help="Limit training examples."
@@ -110,7 +113,7 @@ def optimize(
     auto_mode: str = typer.Option(
         "light",
         "--auto",
-        help="MIPROv2 auto mode: light, medium, or heavy.",
+        help="MIPROv2 auto mode: light, medium, heavy, or none (for manual --trials).",
     ),
 ) -> None:
     """Optimize the QA system prompt using DSPy MIPROv2.
@@ -119,16 +122,20 @@ def optimize(
     Outputs an optimized prompt to a YAML file compatible with haiku.rag config.
 
     Example:
-        evaluations optimize repliqa --output optimized_prompt.yaml --trials 20
+        evaluations optimize repliqa --output optimized_prompt.yaml
+        evaluations optimize repliqa --auto none --trials 30
     """
     from evaluations.optimizer import run_optimization, save_optimized_prompt
 
     spec = get_dataset_spec(dataset)
 
-    if auto_mode not in ("light", "medium", "heavy"):
+    if auto_mode not in ("light", "medium", "heavy", "none"):
         raise typer.BadParameter(
-            f"Invalid auto mode '{auto_mode}'. Choose from: light, medium, heavy"
+            f"Invalid auto mode '{auto_mode}'. Choose from: light, medium, heavy, none"
         )
+
+    # Convert "none" string to Python None
+    auto_mode_value = None if auto_mode == "none" else auto_mode
 
     app_config = load_config(config)
 
@@ -136,7 +143,10 @@ def optimize(
     console.print(
         f"Model: {app_config.qa.model.provider}/{app_config.qa.model.name}", style="dim"
     )
-    console.print(f"Trials: {trials}, Auto mode: {auto_mode}", style="dim")
+    if auto_mode_value:
+        console.print(f"Auto mode: {auto_mode_value}", style="dim")
+    else:
+        console.print(f"Manual mode: {trials} trials", style="dim")
 
     optimized_prompt = run_optimization(
         spec=spec,
@@ -144,7 +154,7 @@ def optimize(
         db_path=db,
         train_limit=train_limit,
         num_trials=trials,
-        auto_mode=auto_mode,  # type: ignore[arg-type]
+        auto_mode=auto_mode_value,  # type: ignore[arg-type]
     )
 
     save_optimized_prompt(optimized_prompt, output)

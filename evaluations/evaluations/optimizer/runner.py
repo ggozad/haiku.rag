@@ -84,7 +84,7 @@ async def optimize_prompt(
     db_path: Path | None = None,
     train_limit: int | None = None,
     num_trials: int = 20,
-    auto_mode: AutoMode = "light",
+    auto_mode: AutoMode | None = "light",
 ) -> str:
     """
     Run MIPROv2 optimization on the QA system prompt.
@@ -153,26 +153,37 @@ async def optimize_prompt(
             return metric(example, prediction, trace)
 
         # Configure MIPROv2 for instruction-only optimization
-        console.print("Initializing MIPROv2 optimizer...", style="blue")
-        optimizer = dspy.MIPROv2(
-            metric=evaluation_metric,
-            auto=auto_mode,
-            verbose=True,
-        )
+        # When auto mode is set, MIPROv2 determines num_trials automatically
+        # When auto is None, we use explicit num_trials
+        if auto_mode is not None:
+            optimizer = dspy.MIPROv2(
+                metric=evaluation_metric,
+                auto=auto_mode,
+                verbose=False,
+            )
+        else:
+            optimizer = dspy.MIPROv2(
+                metric=evaluation_metric,
+                verbose=False,
+            )
 
-        # Run optimization
-        console.print(
-            f"Running optimization ({num_trials} trials, {auto_mode} mode)...",
-            style="yellow",
-        )
-        optimized_module = optimizer.compile(
-            qa_module,
-            trainset=trainset,
-            valset=valset,
-            num_trials=num_trials,
-            max_bootstrapped_demos=0,  # instruction-only, no few-shot
-            max_labeled_demos=0,
-        )
+        if auto_mode is not None:
+            optimized_module = optimizer.compile(
+                qa_module,
+                trainset=trainset,
+                valset=valset,
+                max_bootstrapped_demos=0,  # instruction-only, no few-shot
+                max_labeled_demos=0,
+            )
+        else:
+            optimized_module = optimizer.compile(
+                qa_module,
+                trainset=trainset,
+                valset=valset,
+                num_trials=num_trials,
+                max_bootstrapped_demos=0,
+                max_labeled_demos=0,
+            )
 
         # Extract optimized prompt
         optimized_prompt = optimized_module.get_instructions()
@@ -208,7 +219,7 @@ def run_optimization(
     db_path: Path | None = None,
     train_limit: int | None = None,
     num_trials: int = 20,
-    auto_mode: AutoMode = "light",
+    auto_mode: AutoMode | None = "light",
 ) -> str:
     """Sync wrapper for optimize_prompt."""
     return asyncio.run(

@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import logfire
-from pydantic_evals import Case, Dataset as EvalDataset
+from pydantic_evals import Case
+from pydantic_evals import Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
 from rich.console import Console
@@ -17,7 +18,9 @@ from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.qa import get_qa_agent
 from haiku.rag.utils import get_model
 
-logfire.configure(send_to_logfire="if-token-present", service_name="evals")
+logfire.configure(
+    send_to_logfire="if-token-present", service_name="evals", console=False
+)
 logfire.instrument_pydantic_ai()
 console = Console()
 

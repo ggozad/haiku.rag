@@ -1,11 +1,15 @@
 import asyncio
 
 import dspy
+import nest_asyncio
 
 from evaluations.evaluators import LLMJudge
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.qa import get_qa_agent
+
+# Allow nested event loops (needed because DSPy runs its own event loop)
+nest_asyncio.apply()
 
 
 class QAMetric:
