@@ -30,6 +30,7 @@ embeddings:
 
 def test_find_config_file_cwd(tmp_path, monkeypatch):
     """Test finding config in current directory."""
+    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
     monkeypatch.chdir(tmp_path)
     config_file = tmp_path / "haiku.rag.yaml"
     config_file.write_text("environment: production")
@@ -40,6 +41,7 @@ def test_find_config_file_cwd(tmp_path, monkeypatch):
 
 def test_find_config_file_user_config(tmp_path, monkeypatch):
     """Test finding config in user config directory."""
+    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
     monkeypatch.chdir(tmp_path)
 
     # Mock get_default_data_dir to return tmp_path
@@ -79,6 +81,7 @@ def test_find_config_file_env_var(tmp_path, monkeypatch):
 
 def test_find_config_file_not_found(tmp_path, monkeypatch):
     """Test returning None when no config found."""
+    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
     monkeypatch.chdir(tmp_path)
 
     # Mock get_default_data_dir to return tmp_path
@@ -103,6 +106,8 @@ def test_find_config_file_cli_path_not_exists(tmp_path):
 
 def test_config_precedence_cwd_over_user(tmp_path, monkeypatch):
     """Test that cwd config takes precedence over user config."""
+    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
+
     # Create separate directories for cwd and user config
     cwd_dir = tmp_path / "cwd"
     cwd_dir.mkdir()

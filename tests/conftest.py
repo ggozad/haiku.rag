@@ -1,9 +1,18 @@
+import os
 import tempfile
 from pathlib import Path
 
-import pytest
-import yaml
-from datasets import Dataset, load_dataset, load_from_disk
+# Prevent tests from loading user's local haiku.rag.yaml by setting env var
+# to an empty config file BEFORE any haiku.rag imports.
+# This ensures tests always use default config values.
+_test_config_dir = tempfile.mkdtemp()
+_test_config_path = Path(_test_config_dir) / "test-defaults.yaml"
+_test_config_path.write_text("{}")  # Empty YAML = use all defaults
+os.environ["HAIKU_RAG_CONFIG_PATH"] = str(_test_config_path)
+
+import pytest  # noqa: E402
+import yaml  # noqa: E402
+from datasets import Dataset, load_dataset, load_from_disk  # noqa: E402
 
 
 @pytest.fixture(scope="session")
