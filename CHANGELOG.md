@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.22.0] - 2025-12-19
+
 ### Added
 
 - **Read-Only Mode**: Global `--read-only` CLI flag for safe database access without modifications
