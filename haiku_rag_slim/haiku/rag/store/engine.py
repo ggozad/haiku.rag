@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import lancedb
@@ -59,10 +60,13 @@ class Store:
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
+        before: datetime | None = None,
     ):
         self.db_path: Path = db_path
         self._config = config
-        self._read_only = read_only
+        self._before = before
+        # Time-travel mode is always read-only
+        self._read_only = read_only or (before is not None)
         self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
 
@@ -89,9 +93,13 @@ class Store:
         # Initialize tables (creates them if they don't exist)
         self._init_tables()
 
+        # Checkout tables to historical state if before is specified
+        if before is not None:
+            self._checkout_tables_before(before)
+
         # Run upgrades only on existing databases, set version for new ones
         # Skip upgrades in read-only mode (they would fail anyway)
-        if not read_only:
+        if not self._read_only:
             if is_new_db:
                 self._set_initial_version()
             else:
@@ -418,3 +426,83 @@ class Store:
     def _connection(self):
         """Compatibility property for repositories expecting _connection."""
         return self
+
+    def _checkout_tables_before(self, before: datetime) -> None:
+        """Checkout all tables to their state at or before the given datetime.
+
+        Args:
+            before: The datetime to checkout to
+
+        Raises:
+            ValueError: If no version exists before the given datetime
+        """
+        # LanceDB stores timestamps as naive datetimes in local time.
+        # Convert 'before' to naive local time for comparison.
+        if before.tzinfo is not None:
+            # Convert to local time and make naive
+            before_local = before.astimezone().replace(tzinfo=None)
+        else:
+            # Already naive, assume local time
+            before_local = before
+
+        tables = [
+            ("documents", self.documents_table),
+            ("chunks", self.chunks_table),
+            ("settings", self.settings_table),
+        ]
+
+        for table_name, table in tables:
+            versions = table.list_versions()
+            # Find the latest version at or before the target datetime
+            # Versions are sorted by version number, not timestamp, so we need to check all
+            best_version = None
+            best_timestamp = None
+
+            for v in versions:
+                # LanceDB version timestamps are naive datetime objects in local time
+                v_timestamp = v["timestamp"]
+                # Make sure it's naive for comparison
+                if v_timestamp.tzinfo is not None:
+                    v_timestamp = v_timestamp.replace(tzinfo=None)
+
+                if v_timestamp <= before_local:
+                    if best_timestamp is None or v_timestamp > best_timestamp:
+                        best_version = v["version"]
+                        best_timestamp = v_timestamp
+
+            if best_version is None:
+                # Find the earliest version to report in error message
+                if versions:
+                    earliest = min(versions, key=lambda v: v["timestamp"])
+                    earliest_ts = earliest["timestamp"]
+                    raise ValueError(
+                        f"No data exists before {before}. "
+                        f"Database was created on {earliest_ts}"
+                    )
+                else:
+                    raise ValueError(
+                        f"No data exists before {before}. Table has no versions."
+                    )
+
+            # Checkout to the found version
+            table.checkout(best_version)
+
+    def list_table_versions(self, table_name: str) -> list[dict[str, Any]]:
+        """List version history for a table.
+
+        Args:
+            table_name: Name of the table ("documents", "chunks", or "settings")
+
+        Returns:
+            List of version info dicts with "version" and "timestamp" keys
+        """
+        table_map = {
+            "documents": self.documents_table,
+            "chunks": self.chunks_table,
+            "settings": self.settings_table,
+        }
+        table = table_map.get(table_name)
+        if table is None:
+            raise ValueError(f"Unknown table: {table_name}")
+
+        return list(table.list_versions())
