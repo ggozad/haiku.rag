@@ -8,7 +8,9 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Question answering** — QA agents with citations (page numbers, section headings)
 - **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
-- **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion and visual grounding
+- **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
+- **Visual grounding** — View chunks highlighted on original page images
+- **Time travel** — Query the database at any historical point with `--before`
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
@@ -53,6 +55,9 @@ haiku-rag ask "How does the proposed method compare to the baseline on MMLU?" --
 
 # Research mode — iterative planning and search
 haiku-rag research "What are the limitations of the approach?" --verbose
+
+# Interactive research — human-in-the-loop with decision points
+haiku-rag research "Compare the approaches discussed" --interactive
 
 # Watch a directory for changes
 haiku-rag serve --monitor
