@@ -529,6 +529,30 @@ def info(
     asyncio.run(app.info())
 
 
+@cli.command("history", help="Show version history for database tables")
+def history(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    table: str | None = typer.Option(
+        None,
+        "--table",
+        "-t",
+        help="Specific table to show history for (documents, chunks, settings)",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of versions to show per table",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.history(table=table, limit=limit))
+
+
 @cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():
     app = HaikuRAGApp(db_path=Path(), config=get_config())

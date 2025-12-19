@@ -221,6 +221,58 @@ class HaikuRAGApp:
             f"  [repr.attrib_name]docling[/repr.attrib_name]: {docling_version}"
         )
 
+    async def history(self, table: str | None = None, limit: int | None = None):
+        """Display version history for database tables.
+
+        Args:
+            table: Specific table to show history for (documents, chunks, settings).
+                   If None, shows history for all tables.
+            limit: Maximum number of versions to show per table.
+        """
+        from haiku.rag.store.engine import Store
+
+        if not self.db_path.exists():
+            self.console.print("[red]Database path does not exist.[/red]")
+            return
+
+        store = Store(self.db_path, config=self.config, skip_validation=True)
+
+        tables = ["documents", "chunks", "settings"]
+        if table:
+            if table not in tables:
+                self.console.print(
+                    f"[red]Unknown table: {table}. Must be one of: {', '.join(tables)}[/red]"
+                )
+                store.close()
+                return
+            tables = [table]
+
+        self.console.print("[bold]Version History[/bold]")
+
+        for table_name in tables:
+            versions = store.list_table_versions(table_name)
+
+            # Sort by version descending (newest first)
+            versions = sorted(versions, key=lambda v: v["version"], reverse=True)
+
+            if limit:
+                versions = versions[:limit]
+
+            self.console.print(f"\n[bold cyan]{table_name}[/bold cyan]")
+
+            if not versions:
+                self.console.print("  [dim]No versions found[/dim]")
+                continue
+
+            for v in versions:
+                version_num = v["version"]
+                timestamp = v["timestamp"]
+                self.console.print(
+                    f"  [repr.attrib_name]v{version_num}[/repr.attrib_name]: {timestamp}"
+                )
+
+        store.close()
+
     async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(
             db_path=self.db_path,
