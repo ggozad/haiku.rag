@@ -114,6 +114,11 @@ agui:
   cors_methods: ["GET", "POST", "OPTIONS"]
   cors_headers: ["*"]
 
+prompts:
+  domain_preamble: ""  # Prepended to all agent prompts
+  qa: null             # Custom QA agent prompt (null = use default)
+  synthesis: null      # Custom research synthesis prompt (null = use default)
+
 processing:
   converter: docling-local  # docling-local or docling-serve
   chunker: docling-local    # docling-local or docling-serve
@@ -189,3 +194,4 @@ For detailed configuration of specific topics, see:
 - **[Search and Question Answering](qa-research.md)** - Search settings, question answering, and research workflows
 - **[Document Processing](processing.md)** - Document conversion, chunking, and file monitoring
 - **[Storage](storage.md)** - Database, remote storage, and vector indexing
+- **[Prompts](prompts.md)** - Customize agent prompts for your domain

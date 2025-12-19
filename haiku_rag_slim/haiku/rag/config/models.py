@@ -162,6 +162,12 @@ class AGUIConfig(BaseModel):
     cors_headers: list[str] = ["*"]
 
 
+class PromptsConfig(BaseModel):
+    domain_preamble: str = ""
+    qa: str | None = None
+    synthesis: str | None = None
+
+
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -175,3 +181,4 @@ class AppConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     agui: AGUIConfig = Field(default_factory=AGUIConfig)
+    prompts: PromptsConfig = Field(default_factory=PromptsConfig)

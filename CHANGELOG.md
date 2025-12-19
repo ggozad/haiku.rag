@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Prompt Customization**: Configure agent prompts via `prompts` config section
+  - `domain_preamble`: Prepended to all agent prompts for domain context
+  - `qa`: Full replacement for QA agent prompt
+  - `synthesis`: Full replacement for research synthesis prompt
+
 ### Changed
 
 - **Embeddings**: Migrated to pydantic-ai's embeddings module

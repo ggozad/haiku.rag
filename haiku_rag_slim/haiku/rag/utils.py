@@ -398,6 +398,21 @@ def get_default_data_dir() -> Path:
     return data_path
 
 
+def build_prompt(base_prompt: str, config: "AppConfig") -> str:
+    """Build a prompt with domain_preamble prepended if configured.
+
+    Args:
+        base_prompt: The base prompt to use
+        config: AppConfig with prompts.domain_preamble
+
+    Returns:
+        Prompt with domain_preamble prepended if configured
+    """
+    if config.prompts.domain_preamble:
+        return f"{config.prompts.domain_preamble}\n\n{base_prompt}"
+    return base_prompt
+
+
 async def is_up_to_date() -> tuple[bool, Version, Version]:
     """Check whether haiku.rag is current.
 
