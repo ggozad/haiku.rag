@@ -1,11 +1,8 @@
-import asyncio
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
 import logfire
-import typer
-from dotenv import load_dotenv
 from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
@@ -13,21 +10,15 @@ from rich.console import Console
 from rich.progress import Progress
 
 from evaluations.config import DatasetSpec
-from evaluations.datasets import DATASETS
 from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
 from evaluations.prompts import WIX_SUPPORT_PROMPT
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
-from haiku.rag.config.models import ModelConfig
-from haiku.rag.logging import configure_cli_logging
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.qa import get_qa_agent
 from haiku.rag.utils import get_model
 
-load_dotenv()
-
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
-configure_cli_logging()
 console = Console()
 
 
@@ -342,72 +333,3 @@ async def evaluate_dataset(
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
         await run_qa_benchmark(spec, config, limit=limit, name=name, db_path=db_path)
-
-
-app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
-
-
-@app.command()
-def run(
-    dataset: str = typer.Argument(..., help="Dataset key to evaluate."),
-    config: Path | None = typer.Option(
-        None, "--config", help="Path to haiku.rag YAML config file."
-    ),
-    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
-    skip_db: bool = typer.Option(
-        False, "--skip-db", help="Skip updateing the evaluation db."
-    ),
-    skip_retrieval: bool = typer.Option(
-        False, "--skip-retrieval", help="Skip retrieval benchmark."
-    ),
-    skip_qa: bool = typer.Option(False, "--skip-qa", help="Skip QA benchmark."),
-    limit: int | None = typer.Option(
-        None, "--limit", help="Limit number of test cases for both retrieval and QA."
-    ),
-    name: str | None = typer.Option(None, "--name", help="Override evaluation name."),
-    vacuum_interval: int = typer.Option(
-        100, "--vacuum-interval", help="Vacuum every N documents during DB population."
-    ),
-) -> None:
-    spec = DATASETS.get(dataset.lower())
-    if spec is None:
-        valid_datasets = ", ".join(sorted(DATASETS))
-        raise typer.BadParameter(
-            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
-        )
-
-    # Load config from file or use defaults
-    if config:
-        if not config.exists():
-            raise typer.BadParameter(f"Config file not found: {config}")
-        console.print(f"Loading config from: {config}", style="dim")
-        yaml_data = load_yaml_config(config)
-        app_config = AppConfig.model_validate(yaml_data)
-    else:
-        # Try to find config file using standard search path
-        config_path = find_config_file(None)
-        if config_path:
-            console.print(f"Loading config from: {config_path}", style="dim")
-            yaml_data = load_yaml_config(config_path)
-            app_config = AppConfig.model_validate(yaml_data)
-        else:
-            console.print("No config file found, using defaults", style="dim")
-            app_config = AppConfig()
-
-    asyncio.run(
-        evaluate_dataset(
-            spec=spec,
-            config=app_config,
-            skip_db=skip_db,
-            skip_retrieval=skip_retrieval,
-            skip_qa=skip_qa,
-            limit=limit,
-            name=name,
-            db_path=db,
-            vacuum_interval=vacuum_interval,
-        )
-    )
-
-
-if __name__ == "__main__":
-    app()

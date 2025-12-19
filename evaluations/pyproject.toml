@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-evaluations = "evaluations.benchmark:app"
+evaluations = "evaluations.cli:app"
 
 [build-system]
 requires = ["hatchling"]
