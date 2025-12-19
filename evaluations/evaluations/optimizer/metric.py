@@ -3,7 +3,7 @@ import asyncio
 import dspy
 import nest_asyncio
 
-from evaluations.evaluators import LLMJudge
+from evaluations.evaluators import OptimizationJudge
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.qa import get_qa_agent
@@ -18,15 +18,15 @@ class QAMetric:
 
     This metric:
     1. Runs the actual pydantic-ai QuestionAnswerAgent with the candidate prompt
-    2. Uses LLMJudge to evaluate answer equivalence
-    3. Returns 1.0 for equivalent answers, 0.0 otherwise
+    2. Uses OptimizationJudge to score on correctness AND helpfulness
+    3. Returns a continuous score from 0.0 to 1.0
     """
 
     def __init__(
         self,
         rag: HaikuRAG,
         config: AppConfig,
-        judge: LLMJudge,
+        judge: OptimizationJudge,
     ):
         self.rag = rag
         self.config = config
@@ -52,7 +52,7 @@ class QAMetric:
             trace: Optional trace (unused)
 
         Returns:
-            1.0 if answer is equivalent, 0.0 otherwise
+            Score from 0.0 to 1.0 based on correctness and helpfulness
         """
         if self._current_prompt is None:
             raise RuntimeError("No prompt set. Call set_prompt() before evaluation.")
@@ -71,9 +71,9 @@ class QAMetric:
             qa_agent.answer(question)
         )
 
-        # Use LLMJudge to evaluate
-        is_equivalent = asyncio.get_event_loop().run_until_complete(
-            self.judge.judge_answers(question, answer, expected_answer)
+        # Use OptimizationJudge to score on correctness and helpfulness
+        score = asyncio.get_event_loop().run_until_complete(
+            self.judge.score_answer(question, answer, expected_answer)
         )
 
-        return 1.0 if is_equivalent else 0.0
+        return score

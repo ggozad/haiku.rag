@@ -8,7 +8,7 @@ import yaml
 from rich.console import Console
 
 from evaluations.config import DatasetSpec
-from evaluations.evaluators import LLMJudge
+from evaluations.evaluators import OptimizationJudge
 from evaluations.optimizer.dspy_module import QAModule
 from evaluations.optimizer.metric import QAMetric
 from haiku.rag.client import HaikuRAG
@@ -138,7 +138,7 @@ async def optimize_prompt(
 
     async with HaikuRAG(db, config=config) as rag:
         # Create judge and metric
-        judge = LLMJudge(config=config)
+        judge = OptimizationJudge(config=config)
         metric = QAMetric(rag=rag, config=config, judge=judge)
 
         def evaluation_metric(
