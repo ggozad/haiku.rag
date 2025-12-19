@@ -1,6 +1,7 @@
 import asyncio
 import json
 import warnings
+from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,9 @@ cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
 )
 
-# Module-level read-only flag set by callback
+# Module-level flags set by callback
 _read_only: bool = False
+_before: datetime | None = None
 
 
 def create_app(db: Path | None = None) -> HaikuRAGApp:
@@ -41,7 +43,9 @@ def create_app(db: Path | None = None) -> HaikuRAGApp:
     """
     config = get_config()
     db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
-    return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
+    return HaikuRAGApp(
+        db_path=db_path, config=config, read_only=_read_only, before=_before
+    )
 
 
 async def check_version():
@@ -80,10 +84,28 @@ def main(
         "--read-only",
         help="Open database in read-only mode",
     ),
+    before: str | None = typer.Option(
+        None,
+        "--before",
+        help="Query database as it existed before this datetime (implies --read-only). "
+        "Accepts ISO 8601 format (e.g., 2025-01-15T14:30:00) or date (e.g., 2025-01-15)",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only
+    global _read_only, _before
     _read_only = read_only
+
+    # Parse and store before datetime
+    if before is not None:
+        from haiku.rag.utils import parse_datetime, to_utc
+
+        try:
+            _before = to_utc(parse_datetime(before))
+        except ValueError as e:
+            typer.echo(f"Error: {e}")
+            raise typer.Exit(1)
+    else:
+        _before = None
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
@@ -363,7 +385,9 @@ def research(
         from haiku.rag.cli_chat import interactive_research
         from haiku.rag.client import HaikuRAG
 
-        client = HaikuRAG(db_path=app.db_path, config=app.config, read_only=_read_only)
+        client = HaikuRAG(
+            db_path=app.db_path, config=app.config, read_only=_read_only, before=_before
+        )
         try:
             interactive_research(
                 client=client,
@@ -505,6 +529,30 @@ def info(
     asyncio.run(app.info())
 
 
+@cli.command("history", help="Show version history for database tables")
+def history(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    table: str | None = typer.Option(
+        None,
+        "--table",
+        "-t",
+        help="Specific table to show history for (documents, chunks, settings)",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of versions to show per table",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.history(table=table, limit=limit))
+
+
 @cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():
     app = HaikuRAGApp(db_path=Path(), config=get_config())
@@ -531,7 +579,7 @@ def inspect(
         raise typer.Exit(1) from e
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path, read_only=_read_only)
+    run_inspector(db_path, read_only=_read_only, before=_before)
 
 
 @cli.command(

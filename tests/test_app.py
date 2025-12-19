@@ -454,3 +454,102 @@ async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
     # With verbose, it should use AGUIConsoleRenderer.render, not graph.run
     mock_renderer.render.assert_called_once()
     mock_graph.run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_history_all_tables(tmp_path, monkeypatch):
+    """Test history command shows version history for all tables."""
+    from haiku.rag.store.engine import Store
+
+    # Create a real database with some data
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.history()
+
+    # Should print header and at least one version for each table
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Version History" in c for c in calls)
+    assert any("documents" in c for c in calls)
+    assert any("chunks" in c for c in calls)
+    assert any("settings" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_history_specific_table(tmp_path, monkeypatch):
+    """Test history command for a specific table."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.history(table="documents")
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Version History" in c for c in calls)
+    assert any("documents" in c for c in calls)
+    # Should not show other tables
+    assert not any("chunks" in c and "documents" not in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_history_invalid_table(tmp_path, monkeypatch):
+    """Test history command with invalid table name."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.history(table="invalid_table")
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Unknown table" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_history_with_limit(tmp_path, monkeypatch):
+    """Test history command with limit."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.history(limit=1)
+
+    # Should still work with limit
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Version History" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_history_nonexistent_db(tmp_path, monkeypatch):
+    """Test history command when database doesn't exist."""
+    db_path = tmp_path / "nonexistent.lancedb"
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.history()
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("does not exist" in c for c in calls)

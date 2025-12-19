@@ -1,8 +1,10 @@
 import sys
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from dateutil import parser as dateutil_parser
 from packaging.version import Version, parse
 
 if TYPE_CHECKING:
@@ -10,6 +12,55 @@ if TYPE_CHECKING:
 
     from haiku.rag.config.models import AppConfig, ModelConfig
     from haiku.rag.graph.research.models import Citation
+
+
+def parse_datetime(s: str) -> datetime:
+    """Parse a datetime string into a datetime object.
+
+    Supports:
+    - ISO 8601 format: "2025-01-15T14:30:00", "2025-01-15T14:30:00Z", "2025-01-15T14:30:00+00:00"
+    - Date only: "2025-01-15" (interpreted as 00:00:00)
+    - Various other formats via dateutil
+
+    Args:
+        s: String to parse
+
+    Returns:
+        Parsed datetime object
+
+    Raises:
+        ValueError: If the string cannot be parsed
+    """
+    try:
+        return dateutil_parser.parse(s)
+    except (ValueError, TypeError) as e:
+        raise ValueError(
+            f"Could not parse datetime: {s}. "
+            "Use ISO 8601 format (e.g., 2025-01-15T14:30:00) or date (e.g., 2025-01-15)"
+        ) from e
+
+
+def to_utc(dt: datetime) -> datetime:
+    """Convert a datetime to UTC.
+
+    - Naive datetimes are assumed to be local time and converted to UTC
+    - Datetimes with timezone info are converted to UTC
+    - UTC datetimes are returned as-is
+
+    Args:
+        dt: Datetime to convert
+
+    Returns:
+        Datetime in UTC timezone
+    """
+    if dt.tzinfo is None:
+        # Naive datetime - assume local time
+        local_dt = dt.astimezone()  # Adds local timezone
+        return local_dt.astimezone(UTC)
+    elif dt.tzinfo == UTC:
+        return dt
+    else:
+        return dt.astimezone(UTC)
 
 
 def apply_common_settings(
