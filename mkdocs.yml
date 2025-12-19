@@ -69,12 +69,13 @@ nav:
       - CLI: cli.md
       - Python: python.md
       - Custom Pipelines: custom-pipelines.md
-      - Tuning: tuning.md
       - Agents: agents.md
       - Server: server.md
       - Remote processing: remote-processing.md
       - MCP: mcp.md
       - Inspector: inspector.md
+      - Tuning: tuning.md
+      - Prompt Optimization: optimization.md
       - Benchmarks: benchmarks.md
       - Changelog: changelog.md
 markdown_extensions:

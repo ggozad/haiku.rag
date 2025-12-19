@@ -9,27 +9,48 @@ This package is not published to PyPI and is only used for development and testi
 Contains evaluation scripts for benchmarking RAG performance using datasets like:
 - RepliQA
 - WiX
+- HotpotQA
 
-## Usage
+## Commands
 
-After installing the package, you can run evaluations using the `evaluations` command:
+### Run Benchmarks
 
 ```bash
 # Run evaluations with default settings
-evaluations repliqa
+evaluations run repliqa
 
 # Use a custom config file
-evaluations repliqa --config /path/to/haiku.rag.yaml
+evaluations run repliqa --config /path/to/haiku.rag.yaml
 
 # Override the database path
-evaluations repliqa --db /path/to/custom.lancedb
+evaluations run repliqa --db /path/to/custom.lancedb
 
 # Skip database population and run only benchmarks
-evaluations repliqa --skip-db
+evaluations run repliqa --skip-db
 
 # Limit the number of test cases
-evaluations repliqa --limit 100
+evaluations run repliqa --limit 100
 ```
+
+### Optimize Prompts
+
+Uses DSPy MIPROv2 to tune the QA system prompt:
+
+```bash
+# Basic optimization
+evaluations optimize repliqa -o optimized_prompt.yaml
+
+# Different intensity levels
+evaluations optimize wix --auto medium
+
+# Manual control over trials
+evaluations optimize repliqa --auto none --trials 50
+
+# Limit training examples for faster iteration
+evaluations optimize hotpotqa --train-limit 100
+```
+
+See the [Prompt Optimization guide](https://ggozad.github.io/haiku.rag/optimization/) for guidance on dataset selection and interpreting results.
 
 ## Database Storage
 
