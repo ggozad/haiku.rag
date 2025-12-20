@@ -1,37 +1,11 @@
 # Prompt Optimization
 
-The `evaluations optimize` command uses [DSPy's MIPROv2](https://dspy.ai/) optimizer to automatically tune the QA system prompt for your specific domain and model combination.
-
-## How It Works
-
-```
-MIPROv2 generates candidate prompts
-    ↓
-Metric function runs real QuestionAnswerAgent with candidate prompt
-    ↓
-Agent performs tool calling (search_documents), generates answer
-    ↓
-LLM judge scores answer against expected output
-    ↓
-Score returned to MIPROv2 for next iteration
-```
-
-The optimizer doesn't simulate anything—it runs the actual `QuestionAnswerAgent` with full tool calling against the real database, then uses the existing LLM judge to score answers.
+The `evaluations optimize` command uses [DSPy's MIPROv2](https://dspy.ai/) to automatically tune the QA system prompt for your domain and model combination.
 
 ## Usage
 
 ```bash
-# Basic optimization (light mode)
-evaluations optimize repliqa --output optimized_prompt.yaml
-
-# Different auto modes (light/medium/heavy control effort vs quality)
-evaluations optimize wix --auto medium -o wix_prompt.yaml
-
-# Manual control over trials (use --auto none)
-evaluations optimize repliqa --auto none --trials 50
-
-# Limit training examples for faster iteration
-evaluations optimize hotpotqa --train-limit 100
+evaluations optimize <dataset> --output optimized_prompt.yaml
 ```
 
 **Options:**
@@ -45,82 +19,100 @@ evaluations optimize hotpotqa --train-limit 100
 | `--config` | haiku.rag config file |
 | `--db` | Override database path |
 
-## Using Optimized Prompts
-
 The optimizer outputs a YAML file you can merge into your config:
 
 ```yaml
-# optimized_prompt.yaml
 prompts:
   qa: "Your optimized prompt here..."
 ```
 
-Use it directly:
+Use it directly or merge into your main config under `prompts.qa`. See [Prompts configuration](configuration/prompts.md) for details.
+
+## Bring Your Own Dataset
+
+The optimizer learns from whatever dataset you provide. **For production use, you need your own Q&A pairs that reflect your actual domain and desired answer style.**
+
+The built-in datasets are primarily for benchmarking:
+
+| Dataset | Type | Notes |
+|---------|------|-------|
+| **wix** | Support/how-to | Useful if building a support chatbot |
+| **repliqa** | Short factoid | Academic benchmark, not production-ready |
+| **hotpotqa** | Short factoid | Academic benchmark, not production-ready |
+
+Academic benchmarks like repliqa and hotpotqa have short, factoid-style answers. Optimizing on them produces prompts that demand terse responses—likely not what you want in production.
+
+To create a custom dataset adapter, see `evaluations/evaluations/datasets/` for examples. You'll need:
+- A corpus of documents
+- Q&A pairs with questions and expected answers that demonstrate your desired response style
+
+### Example: Wix-Optimized Prompt
+
+The wix dataset contains support-style Q&A, making it useful for documentation/support use cases. Running with defaults:
 
 ```bash
-haiku-rag ask "question" --config optimized_prompt.yaml
+evaluations optimize wix -o wix_prompt.yaml
 ```
 
-Or merge into your main config file under the `prompts.qa` key. See [Prompts configuration](configuration/prompts.md) for details.
+Produces a prompt like:
 
-## Dataset Selection
+```
+You are a helpful Wix support assistant.
+When answering a user question, follow the Wix support response style:
 
-The dataset you optimize against significantly shapes the resulting prompt. Each dataset has characteristics that influence what the optimizer learns:
+1. **Goal statement** – start with a concise sentence that states the aim of the
+   solution, in second‑person ("Your goal is…").
+2. **Numbered steps** – list clear, actionable steps, numbered 1‑3 or more.
+   - Use the navigation phrase "Go to" followed by a placeholder URL in parentheses:
+     `Go to <section> (https://support.wix.com/…)`.
+   - Keep language simple, avoid jargon, and use second‑person ("you", "your").
+3. **Optional notes** – at the end of the steps, add a short "Note" paragraph if needed.
+4. **Markdown formatting** – use markdown headings (`#`, `##`), numbered lists, and links.
+5. **Citations** – after the answer, list the chunk IDs used, prefixed by `Cited chunks:`.
+   Example: `Cited chunks: [chunk_abc123], [chunk_def456]`.
 
-| Dataset | Answer Style | Best For |
-|---------|-------------|----------|
-| **repliqa** | Short factoid (entity, number, yes/no) | Extractive Q&A, fact lookup |
-| **wix** | Support/how-to (explanatory) | Customer support, documentation |
-| **hotpotqa** | Short factoid (multi-hop reasoning) | Complex queries requiring synthesis |
+**Workflow**
+1. Call `search_documents` with relevant keywords from the question.
+2. Examine the returned chunks, paying attention to their relevance scores,
+   source titles, and content types.
+3. If needed, perform up to two additional searches (max 3 total).
+4. Construct the answer strictly from the retrieved content, following the
+   style guidelines above.
+5. If no sufficient information is found, reply:
+   `"I cannot find enough information in the knowledge base to answer this question."`
 
-**Recommendation:** Choose a dataset that matches your production use case. If your users ask support-style questions, optimize on `wix`. If they ask factual lookups, use `repliqa` or `hotpotqa`.
-
-## Important Considerations
-
-### Benchmark vs Production Tradeoff
-
-Academic benchmarks have "gold standard" answers that optimizers target. The LLM judge rewards responses matching those expected answers. This creates a fundamental tension:
-
-- **Benchmark datasets** favor short, verifiable answers (easier to evaluate)
-- **Production users** often want explanatory, helpful responses
-
-An optimizer will learn to produce answers that score well on the benchmark—which may mean terse, factoid-style responses that feel unhelpful in practice.
-
-**Example:** A prompt optimized on hotpotqa might learn rules like "provide single-word answers" because that's what scores highest. That same prompt would frustrate users asking "How do I configure authentication?"
-
-### What to Expect
-
-- Optimized prompts typically improve benchmark scores by 5-15%
-- The improvement comes from learning dataset-specific patterns
-- Prompts may become overly specific to the training dataset's answer format
-- Multi-hop datasets (hotpotqa) tend to produce more rigid, factoid-focused prompts
-
-### Recommended Workflow
-
-1. **Start with wix** if your use case involves support/documentation queries
-2. **Run optimization** with `--auto light` for initial results
-3. **Manually review** the optimized prompt before adopting it
-4. **Test on real queries** outside the benchmark to verify helpfulness
-5. **Iterate** — you may need to manually edit the optimized prompt to restore flexibility
-
-### When Optimization May Not Help
-
-- Your use case requires conversational, explanatory answers
-- You need the prompt to handle diverse query types
-- The available datasets don't match your domain
-
-In these cases, manual prompt engineering with qualitative testing may be more effective than automated optimization.
-
-## Validating Results
-
-After optimization, compare benchmark scores before and after:
-
-```bash
-# Baseline
-evaluations run repliqa --limit 200
-
-# With optimized prompt
-evaluations run repliqa --limit 200 --config optimized_prompt.yaml
+**General rules**
+- Base your answer solely on the retrieved chunks; do not inject external knowledge.
+- Use the source and type metadata to interpret the context correctly.
+- Keep the answer concise and focused on the user's issue.
+- Cite the chunk IDs exactly as shown in the search results.
+- Avoid extra commentary or analysis unless explicitly requested.
 ```
 
-A score improvement on the benchmark doesn't guarantee production improvement. Always validate with representative real-world queries before adopting an optimized prompt.
+The optimizer learned the Wix support style from the dataset: goal statements, numbered steps, navigation phrases, and markdown formatting.
+
+## Validation
+
+**Validate on your own representative queries, not just benchmark scores.**
+
+The optimizer improves scores on the training dataset, but that doesn't guarantee better production performance. A prompt optimized on factoid Q&A will score well on factoid benchmarks while producing unhelpful responses for real users.
+
+Before adopting an optimized prompt:
+
+1. **Review the prompt manually** — Does it make sense for your use case?
+2. **Test on real queries** — Try it with questions your users actually ask
+3. **Compare qualitatively** — Are answers more helpful, or just different?
+
+## When Optimization Helps
+
+- You have a dataset that represents your production use case
+- Your expected answers demonstrate the style you want
+- You're willing to iterate and manually refine results
+
+## When Optimization Won't Help
+
+- You only have academic benchmark datasets
+- Your use case requires conversational, explanatory answers but your dataset has factoid answers
+- You need the prompt to handle diverse query types not represented in training
+
+In these cases, manual prompt engineering with qualitative testing is more effective.
