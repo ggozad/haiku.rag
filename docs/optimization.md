@@ -28,6 +28,29 @@ prompts:
 
 Use it directly or merge into your main config under `prompts.qa`. See [Prompts configuration](configuration/prompts.md) for details.
 
+## Configuration
+
+Configure MIPROv2 behavior in your `haiku.rag.yaml`:
+
+```yaml
+optimization:
+  teacher_model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 1.0
+  num_candidates: 10
+  seed: 42
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `teacher_model` | Model used to generate instruction candidates. If not set, uses `qa.model` | `null` |
+| `teacher_model.temperature` | Sampling temperature for instruction generation. Higher = more diverse proposals | `1.0` |
+| `num_candidates` | Number of candidate instructions to generate per predictor | Auto (based on `--auto` mode) |
+| `seed` | Random seed for reproducibility | `42` |
+
+Using a stronger `teacher_model` (e.g., Claude Opus or GPT-4) can produce higher-quality instruction candidates, while the evaluation still uses your target `qa.model`. This is a one-time optimization cost.
+
 ## Bring Your Own Dataset
 
 The optimizer learns from whatever dataset you provide. **For production use, you need your own Q&A pairs that reflect your actual domain and desired answer style.**

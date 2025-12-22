@@ -168,6 +168,14 @@ class PromptsConfig(BaseModel):
     synthesis: str | None = None
 
 
+class OptimizationConfig(BaseModel):
+    """Configuration for DSPy prompt optimization."""
+
+    teacher_model: ModelConfig | None = None
+    num_candidates: int | None = None
+    seed: int = 42
+
+
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -182,3 +190,4 @@ class AppConfig(BaseModel):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     agui: AGUIConfig = Field(default_factory=AGUIConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)

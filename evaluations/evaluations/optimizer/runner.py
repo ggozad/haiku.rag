@@ -153,19 +153,42 @@ async def optimize_prompt(
             return metric(example, prediction, trace)
 
         # Configure MIPROv2 for instruction-only optimization
+        opt_config = config.optimization
+
+        # Create teacher LM if configured
+        teacher_lm = None
+        teacher_temperature = 1.0
+        if opt_config.teacher_model is not None:
+            teacher_lm = create_dspy_lm(opt_config.teacher_model, config)
+            teacher_info = (
+                f"{opt_config.teacher_model.provider}/{opt_config.teacher_model.name}"
+            )
+            console.print(f"Teacher model: {teacher_info}", style="dim")
+            if opt_config.teacher_model.temperature is not None:
+                teacher_temperature = opt_config.teacher_model.temperature
+        else:
+            console.print("Teacher model: same as QA model", style="dim")
+
+        # Build optimizer kwargs
+        optimizer_kwargs: dict[str, Any] = {
+            "metric": evaluation_metric,
+            "verbose": False,
+            "init_temperature": teacher_temperature,
+            "seed": opt_config.seed,
+        }
+
+        if teacher_lm is not None:
+            optimizer_kwargs["prompt_model"] = teacher_lm
+
+        if opt_config.num_candidates is not None:
+            optimizer_kwargs["num_candidates"] = opt_config.num_candidates
+
         # When auto mode is set, MIPROv2 determines num_trials automatically
         # When auto is None, we use explicit num_trials
         if auto_mode is not None:
-            optimizer = dspy.MIPROv2(
-                metric=evaluation_metric,
-                auto=auto_mode,
-                verbose=False,
-            )
-        else:
-            optimizer = dspy.MIPROv2(
-                metric=evaluation_metric,
-                verbose=False,
-            )
+            optimizer_kwargs["auto"] = auto_mode
+
+        optimizer = dspy.MIPROv2(**optimizer_kwargs)
 
         if auto_mode is not None:
             optimized_module = optimizer.compile(
