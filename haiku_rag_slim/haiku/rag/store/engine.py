@@ -47,6 +47,24 @@ def create_chunk_model(vector_dim: int):
     return ChunkRecord
 
 
+def create_raptor_node_model(vector_dim: int):
+    """Create a RaptorNodeRecord model with the specified vector dimension.
+
+    This creates a model for storing RAPTOR hierarchical summary nodes.
+    """
+
+    class RaptorNodeRecord(LanceModel):
+        id: str = Field(default_factory=lambda: str(uuid4()))
+        content: str
+        layer: int = Field(default=0)
+        parent_ids: str = Field(default="[]")  # JSON array of parent node IDs
+        cluster_id: int = Field(default=0)
+        source_chunk_ids: str = Field(default="[]")  # JSON array of source chunk IDs
+        vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
+
+    return RaptorNodeRecord
+
+
 class SettingsRecord(LanceModel):
     id: str = Field(default="settings")
     settings: str = Field(default="{}")
@@ -70,8 +88,9 @@ class Store:
         self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
 
-        # Create the ChunkRecord model with the correct vector dimension
+        # Create the ChunkRecord and RaptorNodeRecord models with correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
+        self.RaptorNodeRecord = create_raptor_node_model(self.embedder._vector_dim)
 
         # Check if database exists (for local filesystem only)
         is_new_db = False
@@ -304,6 +323,14 @@ class Store:
             settings_data = self._config.model_dump(mode="json")
             self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
+            )
+
+        # Create or get raptor_nodes table
+        if "raptor_nodes" in existing_tables:
+            self.raptor_nodes_table = self.db.open_table("raptor_nodes")
+        else:
+            self.raptor_nodes_table = self.db.create_table(
+                "raptor_nodes", schema=self.RaptorNodeRecord
             )
 
     def _set_initial_version(self):
