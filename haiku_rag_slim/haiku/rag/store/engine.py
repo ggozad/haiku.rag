@@ -57,7 +57,6 @@ def create_raptor_node_model(vector_dim: int):
         id: str = Field(default_factory=lambda: str(uuid4()))
         content: str
         layer: int = Field(default=0)
-        parent_ids: str = Field(default="[]")  # JSON array of parent node IDs
         cluster_id: int = Field(default=0)
         source_chunk_ids: str = Field(default="[]")  # JSON array of source chunk IDs
         vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
