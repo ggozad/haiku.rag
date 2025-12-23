@@ -624,8 +624,51 @@ class HaikuRAGApp:
                 self.console.print(
                     "[bold green]Database rebuild completed successfully.[/bold green]"
                 )
+
+                # Build RAPTOR tree for FULL and RECHUNK modes
+                if mode in (RebuildMode.FULL, RebuildMode.RECHUNK):
+                    try:
+                        await self._build_raptor(client)
+                    except ImportError:
+                        self.console.print(
+                            "[yellow]Skipping RAPTOR build: dependencies not installed. "
+                            "Install with: pip install 'haiku.rag-slim[raptor]'[/yellow]"
+                        )
+
             except Exception as e:
                 self.console.print(f"[red]Error rebuilding database: {e}[/red]")
+
+    async def _build_raptor(self, client: HaikuRAG):
+        """Build RAPTOR tree using existing client."""
+        from haiku.rag.raptor.builder import RaptorTreeBuilder
+
+        builder = RaptorTreeBuilder(client)
+        with self.console.status("") as status:
+            async for progress in builder.build():
+                status.update(f"[bold cyan]{progress}[/bold cyan]")
+
+        if builder.total_nodes == 0:
+            self.console.print(
+                "[yellow]No RAPTOR nodes created (not enough chunks to cluster).[/yellow]"
+            )
+        else:
+            self.console.print(
+                f"[bold green]RAPTOR tree built with {builder.total_nodes} nodes.[/bold green]"
+            )
+
+    async def raptor_rebuild(self):
+        """Rebuild the RAPTOR hierarchical summary tree."""
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            skip_validation=True,
+            read_only=self.read_only,
+            before=self.before,
+        ) as client:
+            try:
+                await self._build_raptor(client)
+            except Exception as e:
+                self.console.print(f"[red]Error building RAPTOR tree: {e}[/red]")
 
     async def vacuum(self):
         """Run database maintenance: optimize and cleanup table history."""

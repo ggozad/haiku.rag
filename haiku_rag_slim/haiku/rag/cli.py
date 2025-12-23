@@ -461,24 +461,35 @@ def rebuild(
     rechunk: bool = typer.Option(
         False,
         "--rechunk",
-        help="Re-chunk from existing content without accessing source files",
+        help="Re-chunk from existing content without accessing source files. Rebuilds RAPTOR tree if available.",
+    ),
+    raptor_only: bool = typer.Option(
+        False,
+        "--raptor-only",
+        help="Only rebuild the RAPTOR hierarchical summary tree",
     ),
 ):
     from haiku.rag.client import RebuildMode
 
-    if embed_only and rechunk:
-        typer.echo("Error: --embed-only and --rechunk are mutually exclusive")
+    exclusive_flags = sum([embed_only, rechunk, raptor_only])
+    if exclusive_flags > 1:
+        typer.echo(
+            "Error: --embed-only, --rechunk, and --raptor-only are mutually exclusive"
+        )
         raise typer.Exit(1)
 
-    if embed_only:
-        mode = RebuildMode.EMBED_ONLY
-    elif rechunk:
-        mode = RebuildMode.RECHUNK
-    else:
-        mode = RebuildMode.FULL
-
     app = create_app(db)
-    asyncio.run(app.rebuild(mode=mode))
+
+    if raptor_only:
+        asyncio.run(app.raptor_rebuild())
+    else:
+        if embed_only:
+            mode = RebuildMode.EMBED_ONLY
+        elif rechunk:
+            mode = RebuildMode.RECHUNK
+        else:
+            mode = RebuildMode.FULL
+        asyncio.run(app.rebuild(mode=mode))
 
 
 @cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
