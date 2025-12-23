@@ -265,7 +265,7 @@ async def run_qa_benchmark(
     db = spec.db_path(db_path)
     async with HaikuRAG(db, config=config) as rag:
         system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
-        qa = get_qa_agent(rag, system_prompt=system_prompt)
+        qa = await get_qa_agent(rag, system_prompt=system_prompt)
 
         async def answer_question(question: str) -> str:
             answer, _ = await qa.answer(question)

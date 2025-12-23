@@ -22,6 +22,7 @@ from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.raptor import RaptorNodeRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
@@ -88,6 +89,7 @@ class HaikuRAG:
         )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
+        self.raptor_repository = RaptorNodeRepository(self.store)
 
     @property
     def is_read_only(self) -> bool:
@@ -848,22 +850,28 @@ class HaikuRAG:
         search_type: str = "hybrid",
         filter: str | None = None,
     ) -> list[SearchResult]:
-        """Search for relevant chunks using the specified search method with optional reranking.
+        """Search for relevant chunks and RAPTOR summaries.
+
+        Searches both chunk and RAPTOR tables, merging results by score.
+        RAPTOR summaries provide high-level context but are not citable.
 
         Args:
             query: The search query string.
             limit: Maximum number of results to return. Defaults to config.search.default_limit.
             search_type: Type of search - "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
+                Note: filter only applies to chunks, not RAPTOR summaries.
 
         Returns:
             List of SearchResult objects ordered by relevance.
+            Results with chunk_id are citable; results with raptor_node_id are summaries.
         """
         if limit is None:
             limit = self._config.search.limit
 
         reranker = get_reranker(config=self._config)
 
+        # Search chunks
         if reranker is None:
             chunk_results = await self.chunk_repository.search(
                 query, limit, search_type, filter
@@ -876,7 +884,29 @@ class HaikuRAG:
             chunks = [chunk for chunk, _ in raw_results]
             chunk_results = await reranker.rerank(query, chunks, top_n=limit)
 
-        return [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
+        # Search RAPTOR nodes (if any exist)
+        raptor_results: list[SearchResult] = []
+        if await self.raptor_repository.has_nodes():
+            max_summaries = self._config.raptor.max_search_results
+            raptor_hits = await self.raptor_repository.search(
+                query, limit=max_summaries
+            )
+            raptor_results = [
+                SearchResult.from_raptor_node(node, score)
+                for node, score in raptor_hits
+            ]
+
+        # Convert chunk results to SearchResult
+        chunk_search_results = [
+            SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results
+        ]
+
+        # limit applies to chunks; RAPTOR summaries are appended as supplementary context
+        if reranker is None:
+            # Both use vector similarity scores - sort chunks by score
+            chunk_search_results.sort(key=lambda r: r.score, reverse=True)
+
+        return chunk_search_results[:limit] + raptor_results
 
     async def expand_context(
         self,
@@ -1254,7 +1284,9 @@ class HaikuRAG:
         """
         from haiku.rag.qa import get_qa_agent
 
-        qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
+        qa_agent = await get_qa_agent(
+            self, config=self._config, system_prompt=system_prompt
+        )
         return await qa_agent.answer(question, filter=filter)
 
     async def visualize_chunk(self, chunk: Chunk) -> list:

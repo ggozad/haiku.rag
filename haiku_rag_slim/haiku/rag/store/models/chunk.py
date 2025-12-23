@@ -5,6 +5,8 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
 
+    from haiku.rag.store.models.raptor import RaptorNode
+
 
 class BoundingBox(BaseModel):
     """Bounding box coordinates for visual grounding."""
@@ -109,11 +111,17 @@ class Chunk(BaseModel):
 
 
 class SearchResult(BaseModel):
-    """Search result with optional provenance information for citations."""
+    """Search result with optional provenance information for citations.
+
+    Either chunk_id or raptor_node_id is set, not both.
+    - chunk_id set: result is from a document chunk (citable)
+    - raptor_node_id set: result is from a RAPTOR summary (not citable)
+    """
 
     content: str
     score: float
     chunk_id: str | None = None
+    raptor_node_id: str | None = None
     document_id: str | None = None
     document_uri: str | None = None
     document_title: str | None = None
@@ -143,12 +151,29 @@ class SearchResult(BaseModel):
             labels=meta.labels,
         )
 
+    @classmethod
+    def from_raptor_node(
+        cls,
+        node: "RaptorNode",
+        score: float,
+    ) -> "SearchResult":
+        """Create from a RaptorNode (summary)."""
+        return cls(
+            content=node.content,
+            score=score,
+            raptor_node_id=node.id,
+        )
+
     def format_for_agent(self) -> str:
         """Format this search result for inclusion in agent context.
 
         Produces a structured format with metadata that helps LLMs understand
         the source and nature of the content.
         """
+        # RAPTOR summaries are formatted differently (not citable)
+        if self.raptor_node_id:
+            return f"[Summary] (score: {self.score:.2f})\n{self.content}"
+
         parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
 
         # Document source info

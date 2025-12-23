@@ -11,6 +11,7 @@ class TestRaptorConfig:
         assert config.umap_n_neighbors == 10
         assert config.umap_min_dist == 0.0
         assert config.model is None
+        assert config.max_search_results == 3
 
     def test_custom_values(self):
         config = RaptorConfig(

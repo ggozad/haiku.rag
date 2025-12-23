@@ -155,6 +155,10 @@ class RaptorNodeRepository:
         """Count total number of RAPTOR nodes."""
         return self.store.raptor_nodes_table.count_rows()
 
+    async def has_nodes(self) -> bool:
+        """Check if any RAPTOR nodes exist."""
+        return self.store.raptor_nodes_table.count_rows() > 0
+
     async def search(
         self,
         query: str,
