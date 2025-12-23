@@ -46,6 +46,8 @@ cohere = ["cohere>=5.20.0"]
 zeroentropy = ["zeroentropy>=0.1.0a7"]
 # Inspector TUI
 inspector = ["textual>=6.0.0", "textual-image>=0.8.4"]
+# RAPTOR hierarchical summarization
+raptor = ["scikit-learn>=1.6.0", "umap-learn>=0.5.7"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]
