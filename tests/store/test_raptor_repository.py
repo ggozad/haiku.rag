@@ -9,14 +9,12 @@ class TestRaptorNode:
             id="node-1",
             content="Summary of cluster content",
             layer=1,
-            parent_ids=["chunk-1", "chunk-2", "chunk-3"],
             cluster_id=0,
             source_chunk_ids=["chunk-1", "chunk-2", "chunk-3"],
         )
         assert node.id == "node-1"
         assert node.content == "Summary of cluster content"
         assert node.layer == 1
-        assert node.parent_ids == ["chunk-1", "chunk-2", "chunk-3"]
         assert node.cluster_id == 0
         assert node.source_chunk_ids == ["chunk-1", "chunk-2", "chunk-3"]
         assert node.embedding is None
@@ -27,7 +25,6 @@ class TestRaptorNode:
             id="node-1",
             content="Content",
             layer=1,
-            parent_ids=["n1"],
             cluster_id=0,
             source_chunk_ids=["c1"],
             embedding=embedding,
@@ -47,7 +44,6 @@ class TestRaptorNodeRepository:
         node = RaptorNode(
             content="Test summary",
             layer=1,
-            parent_ids=["p1", "p2"],
             cluster_id=0,
             source_chunk_ids=["c1", "c2"],
             embedding=[0.1] * store.embedder._vector_dim,
@@ -68,7 +64,6 @@ class TestRaptorNodeRepository:
             RaptorNode(
                 content=f"Summary {i}",
                 layer=1,
-                parent_ids=[f"p{i}"],
                 cluster_id=i,
                 source_chunk_ids=[f"c{i}"],
                 embedding=[0.1] * store.embedder._vector_dim,
@@ -90,7 +85,6 @@ class TestRaptorNodeRepository:
         node = RaptorNode(
             content="Test content",
             layer=2,
-            parent_ids=["p1"],
             cluster_id=0,
             source_chunk_ids=["c1"],
             embedding=[0.1] * store.embedder._vector_dim,
@@ -117,7 +111,6 @@ class TestRaptorNodeRepository:
                 node = RaptorNode(
                     content=f"Layer {layer} node {i}",
                     layer=layer,
-                    parent_ids=[],
                     cluster_id=i,
                     source_chunk_ids=[f"c{i}"],
                     embedding=[0.1] * store.embedder._vector_dim,
@@ -140,7 +133,6 @@ class TestRaptorNodeRepository:
             node = RaptorNode(
                 content=f"Node {i}",
                 layer=1,
-                parent_ids=[],
                 cluster_id=i,
                 source_chunk_ids=[f"c{i}"],
                 embedding=[0.1] * store.embedder._vector_dim,
@@ -169,7 +161,6 @@ class TestRaptorNodeRepository:
             node = RaptorNode(
                 content=f"Node {i}",
                 layer=(i % 2) + 1,
-                parent_ids=[],
                 cluster_id=i,
                 source_chunk_ids=[f"c{i}"],
                 embedding=[0.1] * store.embedder._vector_dim,
@@ -197,7 +188,6 @@ class TestRaptorNodeRepository:
             node = RaptorNode(
                 content=content,
                 layer=1,
-                parent_ids=[],
                 cluster_id=i,
                 source_chunk_ids=[f"c{i}"],
                 embedding=embedding,

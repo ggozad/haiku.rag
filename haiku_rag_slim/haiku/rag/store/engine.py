@@ -205,14 +205,16 @@ class Store:
         """Get comprehensive table statistics.
 
         Returns:
-            Dictionary with statistics for documents and chunks tables including:
+            Dictionary with statistics for documents, chunks, and raptor_nodes tables including:
             - Row counts
             - Storage sizes
             - Vector index status and statistics
+            - RAPTOR staleness status
         """
         stats_dict: dict = {
             "documents": {"exists": False},
             "chunks": {"exists": False},
+            "raptor_nodes": {"exists": False},
         }
 
         # Documents table stats
@@ -243,6 +245,15 @@ class Store:
                 stats_dict["chunks"]["num_unindexed_rows"] = (
                     index_stats.num_unindexed_rows
                 )
+
+        # RAPTOR nodes table stats
+        raptor_stats: dict = self.raptor_nodes_table.stats()  # type: ignore[assignment]
+        stats_dict["raptor_nodes"] = {
+            "exists": True,
+            "num_rows": raptor_stats.get("num_rows", 0),
+            "total_bytes": raptor_stats.get("total_bytes", 0),
+            "is_stale": self.is_raptor_stale(),
+        }
 
         return stats_dict
 
@@ -518,7 +529,7 @@ class Store:
         """List version history for a table.
 
         Args:
-            table_name: Name of the table ("documents", "chunks", or "settings")
+            table_name: Name of the table ("documents", "chunks", "settings", or "raptor_nodes")
 
         Returns:
             List of version info dicts with "version" and "timestamp" keys
@@ -527,9 +538,35 @@ class Store:
             "documents": self.documents_table,
             "chunks": self.chunks_table,
             "settings": self.settings_table,
+            "raptor_nodes": self.raptor_nodes_table,
         }
         table = table_map.get(table_name)
         if table is None:
             raise ValueError(f"Unknown table: {table_name}")
 
         return list(table.list_versions())
+
+    def is_raptor_stale(self) -> bool | None:
+        """Check if RAPTOR nodes are stale relative to chunks.
+
+        Compares the latest version timestamps of the raptor_nodes and chunks tables.
+        RAPTOR is stale if chunks have been modified after the last RAPTOR build.
+
+        Returns:
+            True if RAPTOR is stale (chunks modified after last build)
+            False if RAPTOR is up-to-date
+            None if RAPTOR has never been built (no nodes exist)
+        """
+        raptor_versions = list(self.raptor_nodes_table.list_versions())
+        chunks_versions = list(self.chunks_table.list_versions())
+
+        if not raptor_versions or self.raptor_nodes_table.count_rows() == 0:
+            return None  # Never built
+
+        if not chunks_versions:
+            return False  # No chunks, nothing to be stale against
+
+        raptor_latest = max(v["timestamp"] for v in raptor_versions)
+        chunks_latest = max(v["timestamp"] for v in chunks_versions)
+
+        return chunks_latest > raptor_latest

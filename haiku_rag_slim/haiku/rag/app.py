@@ -203,11 +203,43 @@ class HaikuRAGApp:
                     f"(need {256 - num_chunks} more chunks)"
                 )
 
+        # RAPTOR nodes info
+        num_raptor = table_stats["raptor_nodes"].get("num_rows", 0)
+        raptor_bytes = table_stats["raptor_nodes"].get("total_bytes", 0)
+        raptor_stale = table_stats["raptor_nodes"].get("is_stale")
+
+        if num_raptor > 0:
+            stale_indicator = ""
+            if raptor_stale is True:
+                stale_indicator = (
+                    " [yellow](stale - run: haiku-rag rebuild --raptor-only)[/yellow]"
+                )
+            elif raptor_stale is False:
+                stale_indicator = " [green](up-to-date)[/green]"
+            self.console.print(
+                f"  [repr.attrib_name]raptor nodes[/repr.attrib_name]: {num_raptor} "
+                f"({format_bytes(raptor_bytes)}){stale_indicator}"
+            )
+        else:
+            self.console.print(
+                "  [repr.attrib_name]raptor nodes[/repr.attrib_name]: 0 "
+                "(run: haiku-rag rebuild --raptor-only)"
+            )
+
+        raptor_versions = (
+            len(list(db.open_table("raptor_nodes").list_versions()))
+            if "raptor_nodes" in table_names
+            else 0
+        )
+
         self.console.print(
             f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: {doc_versions}"
         )
         self.console.print(
             f"  [repr.attrib_name]versions (chunks)[/repr.attrib_name]: {chunk_versions}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]versions (raptor_nodes)[/repr.attrib_name]: {raptor_versions}"
         )
         self.console.rule()
         self.console.print("[bold]Versions[/bold]")
