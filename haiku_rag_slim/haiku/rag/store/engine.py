@@ -173,6 +173,7 @@ class Store:
                     self.documents_table,
                     self.chunks_table,
                     self.settings_table,
+                    self.raptor_nodes_table,
                 ]:
                     table.optimize(cleanup_older_than=retention)
             except (RuntimeError, OSError) as e:
