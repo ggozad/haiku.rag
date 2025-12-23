@@ -1,6 +1,13 @@
 import pytest
 
 
+async def _exhaust_build(builder):
+    """Helper to run build() generator and return total_nodes."""
+    async for _ in builder.build():
+        pass
+    return builder.total_nodes
+
+
 @pytest.mark.asyncio
 class TestRaptorTreeBuilder:
     async def test_build_tree_creates_nodes(self, temp_db_path):
@@ -16,7 +23,7 @@ class TestRaptorTreeBuilder:
                 )
 
             builder = RaptorTreeBuilder(client)
-            node_count = await builder.build()
+            node_count = await _exhaust_build(builder)
 
             assert node_count > 0
 
@@ -30,7 +37,7 @@ class TestRaptorTreeBuilder:
             await client.create_document(content="Second document.", uri="doc://2")
 
             builder = RaptorTreeBuilder(client)
-            node_count = await builder.build()
+            node_count = await _exhaust_build(builder)
 
             # Too few chunks to cluster
             assert node_count == 0
@@ -52,7 +59,7 @@ class TestRaptorTreeBuilder:
                 )
 
             builder = RaptorTreeBuilder(client)
-            await builder.build()
+            await _exhaust_build(builder)
 
             repo = RaptorNodeRepository(client.store)
             nodes = await repo.list_all()
@@ -78,8 +85,8 @@ class TestRaptorTreeBuilder:
             builder = RaptorTreeBuilder(client)
 
             # Build twice
-            await builder.build()
-            second_count = await builder.build()
+            await _exhaust_build(builder)
+            second_count = await _exhaust_build(builder)
 
             # Second build should have similar count (not doubled)
             repo = RaptorNodeRepository(client.store)

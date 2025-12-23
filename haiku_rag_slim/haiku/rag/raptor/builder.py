@@ -1,4 +1,4 @@
-import logging
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,8 +11,6 @@ from haiku.rag.store.repositories.raptor import RaptorNodeRepository
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
 
-logger = logging.getLogger(__name__)
-
 
 class RaptorTreeBuilder:
     """Builds the RAPTOR hierarchical summary tree."""
@@ -24,8 +22,9 @@ class RaptorTreeBuilder:
         self._embedder = self._store.embedder
         self._repo = RaptorNodeRepository(self._store)
         self._summarizer = ClusterSummarizer(self._config)
+        self.total_nodes = 0
 
-    async def build(self) -> int:
+    async def build(self) -> AsyncGenerator[str, None]:
         """Build the RAPTOR tree from all chunks in the database.
 
         Recursively clusters chunks using UMAP + GMM, summarizes each cluster
@@ -33,9 +32,12 @@ class RaptorTreeBuilder:
         Each layer's summaries become input for the next layer until max_depth
         is reached or too few items remain to cluster.
 
-        Returns:
-            Total number of RAPTOR nodes created
+        Yields:
+            Progress messages during the build process.
+            Access total_nodes attribute after completion for the count.
         """
+        self.total_nodes = 0
+
         # Clear existing RAPTOR nodes
         await self._repo.delete_all()
 
@@ -45,29 +47,21 @@ class RaptorTreeBuilder:
         )
 
         if len(chunks) < self._config.raptor.min_cluster_size:
-            logger.debug(
-                f"Not enough chunks ({len(chunks)}) to build RAPTOR tree "
-                f"(min_cluster_size={self._config.raptor.min_cluster_size})"
-            )
-            return 0
+            return
 
         # Layer 0 is chunks - start building from layer 1
         current_layer_texts = [c.content for c in chunks]
         current_layer_embeddings = np.array([c.vector for c in chunks])
         current_layer_chunk_ids = [[c.id] for c in chunks]  # Each chunk maps to itself
 
-        total_nodes = 0
         layer = 1
 
         while layer <= self._config.raptor.max_depth:
-            logger.debug(
-                f"Building RAPTOR layer {layer} from {len(current_layer_texts)} items"
-            )
-
             # Check if we have enough items to cluster
             if len(current_layer_texts) < self._config.raptor.min_cluster_size:
-                logger.debug(f"Not enough items to cluster at layer {layer}")
                 break
+
+            yield f"Layer {layer}: clustering {len(current_layer_texts)} items..."
 
             # Cluster the current layer
             cluster_assignments = cluster_embeddings(
@@ -94,15 +88,17 @@ class RaptorTreeBuilder:
             ]
 
             if not valid_clusters:
-                logger.debug(f"No valid clusters at layer {layer}")
                 break
 
             # Create summary nodes for each cluster
             next_layer_texts = []
             next_layer_embeddings = []
             next_layer_chunk_ids = []
+            num_clusters = len(valid_clusters)
 
             for cluster_idx, (texts, chunk_ids_list) in enumerate(valid_clusters):
+                yield f"Layer {layer}: summarizing cluster {cluster_idx + 1}/{num_clusters}..."
+
                 # Summarize the cluster
                 summary = await self._summarizer.summarize(texts)
 
@@ -124,20 +120,17 @@ class RaptorTreeBuilder:
                     embedding=embedding,
                 )
                 await self._repo.create(node)
-                total_nodes += 1
+                self.total_nodes += 1
 
                 # Add to next layer inputs
                 next_layer_texts.append(summary)
                 next_layer_embeddings.append(embedding)
                 next_layer_chunk_ids.append(source_chunk_ids)
 
-            logger.debug(f"Created {len(valid_clusters)} nodes at layer {layer}")
+            yield f"Layer {layer}: created {num_clusters} nodes"
 
             # Prepare for next layer
             current_layer_texts = next_layer_texts
             current_layer_embeddings = np.array(next_layer_embeddings)
             current_layer_chunk_ids = next_layer_chunk_ids
             layer += 1
-
-        logger.debug(f"RAPTOR tree built with {total_nodes} total nodes")
-        return total_nodes
