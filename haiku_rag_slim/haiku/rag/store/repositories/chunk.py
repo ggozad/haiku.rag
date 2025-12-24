@@ -245,7 +245,7 @@ class ChunkRepository:
 
         # Prepare search query based on search type
         if search_type == "vector":
-            query_embedding = await self.embedder.embed(query)
+            query_embedding = await self.embedder.embed_query(query)
             vector_query = cast(
                 "LanceVectorQueryBuilder",
                 self.store.chunks_table.search(
@@ -260,7 +260,7 @@ class ChunkRepository:
             results = self.store.chunks_table.search(query, query_type="fts")
 
         else:  # hybrid (default)
-            query_embedding = await self.embedder.embed(query)
+            query_embedding = await self.embedder.embed_query(query)
             # Create RRF reranker
             reranker = RRFReranker()
             # Perform native hybrid search with RRF reranking

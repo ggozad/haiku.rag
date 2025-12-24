@@ -1,27 +1,33 @@
 try:
-    from typing import overload
-
     from voyageai.client import Client  # type: ignore
 
-    from haiku.rag.embeddings.base import EmbedderBase
+    from haiku.rag.config import AppConfig
 
-    class Embedder(EmbedderBase):
-        @overload
-        async def embed(self, text: str) -> list[float]: ...
+    class Embedder:
+        """VoyageAI embedder with explicit query/document methods."""
 
-        @overload
-        async def embed(self, text: list[str]) -> list[list[float]]: ...
+        def __init__(self, model: str, vector_dim: int, config: AppConfig):
+            self._model = model
+            self._vector_dim = vector_dim
+            self._config = config
 
-        async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
+        async def embed_query(self, text: str) -> list[float]:
+            """Embed a search query."""
             client = Client()
-            if not text:
+            res = client.embed(
+                [text], model=self._model, input_type="query", output_dtype="float"
+            )
+            return res.embeddings[0]  # type: ignore[return-value]
+
+        async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            """Embed documents/chunks for indexing."""
+            if not texts:
                 return []
-            if isinstance(text, str):
-                res = client.embed([text], model=self._model, output_dtype="float")
-                return res.embeddings[0]  # type: ignore[return-value]
-            else:
-                res = client.embed(text, model=self._model, output_dtype="float")
-                return res.embeddings  # type: ignore[return-value]
+            client = Client()
+            res = client.embed(
+                texts, model=self._model, input_type="document", output_dtype="float"
+            )
+            return res.embeddings  # type: ignore[return-value]
 
 except ImportError:
     pass

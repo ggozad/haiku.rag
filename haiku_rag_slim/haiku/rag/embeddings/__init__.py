@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING
 
 from pydantic_ai.embeddings import Embedder
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
@@ -12,27 +12,23 @@ if TYPE_CHECKING:
 
 
 class EmbedderWrapper:
-    """Wrapper around pydantic-ai Embedder to provide simple embed() interface."""
+    """Wrapper around pydantic-ai Embedder with explicit query/document methods."""
 
     def __init__(self, embedder: Embedder, vector_dim: int):
         self._embedder = embedder
         self._vector_dim = vector_dim
 
-    @overload
-    async def embed(self, text: str) -> list[float]: ...
+    async def embed_query(self, text: str) -> list[float]:
+        """Embed a search query."""
+        result = await self._embedder.embed_query(text)
+        return list(result.embeddings[0])
 
-    @overload
-    async def embed(self, text: list[str]) -> list[list[float]]: ...
-
-    async def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
-        if isinstance(text, str):
-            result = await self._embedder.embed_query(text)
-            return list(result.embeddings[0])
-        else:
-            if not text:
-                return []
-            result = await self._embedder.embed_documents(text)
-            return [list(e) for e in result.embeddings]
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed documents/chunks for indexing."""
+        if not texts:
+            return []
+        result = await self._embedder.embed_documents(texts)
+        return [list(e) for e in result.embeddings]
 
 
 def contextualize(chunks: list["Chunk"]) -> list[str]:
@@ -80,7 +76,7 @@ async def embed_chunks(
 
     embedder = get_embedder(config)
     texts = contextualize(chunks)
-    embeddings = await embedder.embed(texts)
+    embeddings = await embedder.embed_documents(texts)
 
     return [
         Chunk(
