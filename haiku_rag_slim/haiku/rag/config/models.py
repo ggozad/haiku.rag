@@ -12,6 +12,7 @@ class ModelConfig(BaseModel):
     Attributes:
         provider: Model provider (ollama, openai, anthropic, etc.)
         name: Model name/identifier
+        base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
         enable_thinking: Control reasoning behavior (true/false/None for default)
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
@@ -19,6 +20,7 @@ class ModelConfig(BaseModel):
 
     provider: str = "ollama"
     name: str = "gpt-oss"
+    base_url: str | None = None
 
     enable_thinking: bool | None = None
     temperature: float | None = None
@@ -29,14 +31,16 @@ class EmbeddingModelConfig(BaseModel):
     """Configuration for an embedding model.
 
     Attributes:
-        provider: Model provider (ollama, openai, voyageai, vllm, lm_studio)
+        provider: Model provider (ollama, openai, voyageai, cohere, sentence-transformers)
         name: Model name/identifier
         vector_dim: Vector dimensions produced by the model
+        base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
     """
 
     provider: str = "ollama"
     name: str = "qwen3-embedding:4b"
     vector_dim: int = 2560
+    base_url: str | None = None
 
 
 class StorageConfig(BaseModel):
