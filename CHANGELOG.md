@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.23.0] - 2025-12-26
+
 ### Added
 
 - **Prompt Customization**: Configure agent prompts via `prompts` config section
