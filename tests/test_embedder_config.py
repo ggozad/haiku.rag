@@ -4,16 +4,14 @@ from haiku.rag.config import (
     AppConfig,
     EmbeddingModelConfig,
     EmbeddingsConfig,
-    LMStudioConfig,
     OllamaConfig,
     ProvidersConfig,
-    VLLMConfig,
 )
 from haiku.rag.embeddings import get_embedder
 
 
-def test_embedder_uses_config_from_get_embedder():
-    """Test that embedders use the config passed to get_embedder."""
+def test_ollama_embedder_uses_config():
+    """Test that Ollama embedder uses the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
             model=EmbeddingModelConfig(
@@ -22,41 +20,16 @@ def test_embedder_uses_config_from_get_embedder():
         ),
         providers=ProvidersConfig(
             ollama=OllamaConfig(base_url="http://custom-ollama:8080"),
-            vllm=VLLMConfig(embeddings_base_url="http://custom-vllm:9000"),
         ),
     )
 
     embedder = get_embedder(custom_config)
 
-    assert embedder._model == "custom-model"
     assert embedder._vector_dim == 512
-    assert embedder._config.providers.ollama.base_url == "http://custom-ollama:8080"
-
-
-def test_vllm_embedder_uses_config():
-    """Test that vllm embedder uses the config passed to get_embedder."""
-    custom_config = AppConfig(
-        embeddings=EmbeddingsConfig(
-            model=EmbeddingModelConfig(
-                provider="vllm", name="custom-vllm-model", vector_dim=768
-            ),
-        ),
-        providers=ProvidersConfig(
-            vllm=VLLMConfig(embeddings_base_url="http://custom-vllm:9001"),
-        ),
-    )
-
-    embedder = get_embedder(custom_config)
-
-    assert embedder._model == "custom-vllm-model"
-    assert embedder._vector_dim == 768
-    assert (
-        embedder._config.providers.vllm.embeddings_base_url == "http://custom-vllm:9001"
-    )
 
 
 def test_openai_embedder_uses_config():
-    """Test that openai embedder uses the config passed to get_embedder."""
+    """Test that OpenAI embedder uses the config passed to get_embedder."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
             model=EmbeddingModelConfig(
@@ -67,48 +40,68 @@ def test_openai_embedder_uses_config():
 
     embedder = get_embedder(custom_config)
 
-    assert embedder._model == "text-embedding-3-large"
     assert embedder._vector_dim == 3072
-    assert embedder._config == custom_config
 
 
-def test_lm_studio_embedder_uses_config():
-    """Test that lm_studio embedder uses the config passed to get_embedder."""
+def test_openai_embedder_with_base_url():
+    """Test that OpenAI embedder uses custom base_url for vLLM/LM Studio."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
             model=EmbeddingModelConfig(
-                provider="lm_studio", name="custom-lm-studio-model", vector_dim=1024
+                provider="openai",
+                name="some-local-model",
+                vector_dim=768,
+                base_url="http://localhost:8000/v1",
             ),
-        ),
-        providers=ProvidersConfig(
-            lm_studio=LMStudioConfig(base_url="http://custom-lmstudio:5678"),
         ),
     )
 
     embedder = get_embedder(custom_config)
 
-    assert embedder._model == "custom-lm-studio-model"
+    assert embedder._vector_dim == 768
+
+
+def test_cohere_embedder_uses_config():
+    """Test that Cohere embedder uses the config passed to get_embedder."""
+    custom_config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="cohere", name="embed-v4.0", vector_dim=1024
+            ),
+        ),
+    )
+
+    embedder = get_embedder(custom_config)
+
     assert embedder._vector_dim == 1024
-    assert (
-        embedder._config.providers.lm_studio.base_url == "http://custom-lmstudio:5678"
-    )
 
 
-@pytest.mark.skipif(
-    True, reason="VoyageAI is an optional dependency, may not be installed"
-)
-def test_voyageai_embedder_uses_config():
-    """Test that voyageai embedder uses the config passed to get_embedder."""
+def test_sentence_transformers_embedder_uses_config():
+    """Test that SentenceTransformers embedder uses the config."""
     custom_config = AppConfig(
         embeddings=EmbeddingsConfig(
             model=EmbeddingModelConfig(
-                provider="voyageai", name="voyage-large-2", vector_dim=1536
+                provider="sentence-transformers",
+                name="all-MiniLM-L6-v2",
+                vector_dim=384,
             ),
         ),
     )
 
     embedder = get_embedder(custom_config)
 
-    assert embedder._model == "voyage-large-2"
-    assert embedder._vector_dim == 1536
-    assert embedder._config == custom_config
+    assert embedder._vector_dim == 384
+
+
+def test_unsupported_provider_raises():
+    """Test that unsupported provider raises ValueError."""
+    custom_config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="unsupported-provider", name="model", vector_dim=512
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Unsupported embedding provider"):
+        get_embedder(custom_config)

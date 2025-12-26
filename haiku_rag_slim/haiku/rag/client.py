@@ -1407,7 +1407,7 @@ class HaikuRAG:
 
             # Generate new embeddings using contextualize for consistency
             texts = contextualize(chunks)
-            embeddings = await self.chunk_repository.embedder.embed(texts)
+            embeddings = await self.chunk_repository.embedder.embed_documents(texts)
 
             # Build updated records
             for chunk, embedding in zip(chunks, embeddings):
