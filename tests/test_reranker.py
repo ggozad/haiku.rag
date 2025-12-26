@@ -2,13 +2,12 @@ import os
 
 import pytest
 
-from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
 
 COHERE_AVAILABLE = bool(os.getenv("CO_API_KEY"))
-VLLM_RERANK_AVAILABLE = bool(Config.providers.vllm.rerank_base_url)
+VLLM_RERANK_BASE_URL = os.getenv("VLLM_RERANK_BASE_URL", "")
 ZEROENTROPY_AVAILABLE = bool(os.getenv("ZEROENTROPY_API_KEY"))
 
 chunks = [
@@ -41,6 +40,7 @@ async def test_reranker_base():
 @pytest.mark.asyncio
 async def test_mxbai_reranker():
     try:
+        from haiku.rag.config import Config
         from haiku.rag.config.models import ModelConfig
         from haiku.rag.reranking.mxbai import MxBAIReranker
 
@@ -80,11 +80,13 @@ async def test_cohere_reranker():
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(
-    not VLLM_RERANK_AVAILABLE, reason="vLLM rerank server not configured"
+    not VLLM_RERANK_BASE_URL, reason="vLLM rerank server not configured"
 )
 async def test_vllm_reranker():
     try:
-        reranker = VLLMReranker("mixedbread-ai/mxbai-rerank-base-v2")
+        reranker = VLLMReranker(
+            "mixedbread-ai/mxbai-rerank-base-v2", VLLM_RERANK_BASE_URL
+        )
 
         reranked = await reranker.rerank(
             "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2

@@ -1,6 +1,28 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Embeddings**: Migrated to pydantic-ai's embeddings module
+  - Uses pydantic-ai v1.39.0+ embeddings with instrumentation and token counting support
+  - Explicit `embed_query()` and `embed_documents()` API for query/document distinction
+  - New providers available: Cohere (`cohere:`), SentenceTransformers (`sentence-transformers:`)
+  - VoyageAI refactored to extend pydantic-ai's `EmbeddingModel` base class
+- **Configuration**: Added `base_url` to `ModelConfig` and `EmbeddingModelConfig`
+  - Enables custom endpoints for OpenAI-compatible providers (vLLM, LM Studio, etc.)
+  - Model-level `base_url` takes precedence over provider config
+
+### Deprecated
+
+- **vLLM and LM Studio providers**: Use `openai` provider with `base_url` instead
+  - `provider: vllm` → `provider: openai` with `base_url: http://localhost:8000/v1`
+  - `provider: lm_studio` → `provider: openai` with `base_url: http://localhost:1234/v1`
+
+### Removed
+
+- Deleted obsolete embedder implementations: `ollama.py`, `openai.py`, `vllm.py`, `lm_studio.py`, `base.py`
+- Removed `VLLMConfig` and `LMStudioConfig` from configuration (use `base_url` in model config instead)
+
 ## [0.22.0] - 2025-12-19
 
 ### Added

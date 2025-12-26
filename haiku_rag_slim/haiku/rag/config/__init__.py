@@ -12,7 +12,6 @@ from haiku.rag.config.models import (
     EmbeddingModelConfig,
     EmbeddingsConfig,
     LanceDBConfig,
-    LMStudioConfig,
     ModelConfig,
     MonitorConfig,
     OllamaConfig,
@@ -22,7 +21,6 @@ from haiku.rag.config.models import (
     RerankingConfig,
     ResearchConfig,
     StorageConfig,
-    VLLMConfig,
 )
 
 __all__ = [
@@ -33,7 +31,6 @@ __all__ = [
     "EmbeddingModelConfig",
     "EmbeddingsConfig",
     "LanceDBConfig",
-    "LMStudioConfig",
     "ModelConfig",
     "MonitorConfig",
     "OllamaConfig",
@@ -43,7 +40,6 @@ __all__ = [
     "RerankingConfig",
     "ResearchConfig",
     "StorageConfig",
-    "VLLMConfig",
     "find_config_file",
     "generate_default_config",
     "get_config",

@@ -270,20 +270,6 @@ def test_get_model_bedrock_with_thinking():
     assert isinstance(result, BedrockConverseModel)
 
 
-def test_get_model_vllm():
-    """Test get_model returns OpenAIChatModel for vLLM."""
-    model_config = ModelConfig(provider="vllm", name="Qwen/Qwen3-4B")
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
-
-
-def test_get_model_vllm_with_thinking():
-    """Test get_model configures thinking for gpt-oss on vLLM."""
-    model_config = ModelConfig(provider="vllm", name="gpt-oss", enable_thinking=False)
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
-
-
 def test_get_model_unknown_provider():
     """Test get_model returns string format for unknown providers."""
     model_config = ModelConfig(provider="mistral", name="mistral-large-latest")

@@ -5,13 +5,11 @@ from datasets import Dataset
 from evaluations.evaluators import LLMJudge
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.qa.agent import QuestionAnswerAgent
 
 OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
 ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
-VLLM_QA_AVAILABLE = bool(Config.providers.vllm.qa_base_url)
 
 
 @pytest.mark.asyncio
@@ -81,29 +79,6 @@ async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
     question = doc["question"]
     expected_answer = doc["answer"]
 
-    answer, _ = await qa.answer(question)
-    is_equivalent = await llm_judge.judge_answers(question, answer, expected_answer)
-
-    assert is_equivalent, (
-        f"Generated answer not equivalent to expected answer.\nQuestion: {question}\nGenerated: {answer}\nExpected: {expected_answer}"
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.skipif(not VLLM_QA_AVAILABLE, reason="vLLM QA server not configured")
-async def test_qa_vllm(qa_corpus: Dataset, temp_db_path):
-    """Test vLLM QA with LLM judge."""
-    client = HaikuRAG(temp_db_path, create=True)
-    qa = QuestionAnswerAgent(client, ModelConfig(provider="vllm", name="Qwen/Qwen3-4B"))
-    llm_judge = LLMJudge()
-
-    doc = qa_corpus[1]
-    await client.create_document(
-        content=doc["document_extracted"], uri=doc["document_id"]
-    )
-
-    question = doc["question"]
-    expected_answer = doc["answer"]
     answer, _ = await qa.answer(question)
     is_equivalent = await llm_judge.judge_answers(question, answer, expected_answer)
 

@@ -135,11 +135,12 @@ def get_model(
             model_settings, OpenAIChatModelSettings, model_config
         )
 
+        # Use model-level base_url if set, otherwise fall back to providers config
+        base_url = model_config.base_url or f"{app_config.providers.ollama.base_url}/v1"
+
         return OpenAIChatModel(
             model_name=model,
-            provider=OllamaProvider(
-                base_url=f"{app_config.providers.ollama.base_url}/v1"
-            ),
+            provider=OllamaProvider(base_url=base_url),
             settings=model_settings,
         )
 
@@ -158,6 +159,14 @@ def get_model(
         openai_settings = apply_common_settings(
             openai_settings, OpenAIChatModelSettings, model_config
         )
+
+        # Use model-level base_url if set (for vLLM, LM Studio, etc.)
+        if model_config.base_url:
+            return OpenAIChatModel(
+                model_name=model,
+                provider=OpenAIProvider(base_url=model_config.base_url),
+                settings=openai_settings,
+            )
 
         return OpenAIChatModel(model_name=model, settings=openai_settings)
 
@@ -263,52 +272,6 @@ def get_model(
         )
 
         return BedrockConverseModel(model_name=model, settings=bedrock_settings)
-
-    elif provider == "vllm":
-        vllm_settings = None
-
-        # Apply thinking control for gpt-oss
-        if model == "gpt-oss" and model_config.enable_thinking is not None:
-            if model_config.enable_thinking is False:
-                vllm_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
-            else:
-                vllm_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
-
-        vllm_settings = apply_common_settings(
-            vllm_settings, OpenAIChatModelSettings, model_config
-        )
-
-        return OpenAIChatModel(
-            model_name=model,
-            provider=OpenAIProvider(
-                base_url=f"{app_config.providers.vllm.research_base_url or app_config.providers.vllm.qa_base_url}/v1",
-                api_key="none",
-            ),
-            settings=vllm_settings,
-        )
-
-    elif provider == "lm_studio":
-        model_settings = None
-
-        # Apply thinking control for gpt-oss
-        if model == "gpt-oss" and model_config.enable_thinking is not None:
-            if model_config.enable_thinking is False:
-                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
-            else:
-                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
-
-        model_settings = apply_common_settings(
-            model_settings, OpenAIChatModelSettings, model_config
-        )
-
-        return OpenAIChatModel(
-            model_name=model,
-            provider=OpenAIProvider(
-                base_url=f"{app_config.providers.lm_studio.base_url}/v1",
-                api_key="dummy",
-            ),
-            settings=model_settings,
-        )
 
     else:
         # For any other provider, use string format and let Pydantic AI handle it
