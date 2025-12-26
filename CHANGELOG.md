@@ -1,6 +1,18 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **GitHub Actions CI**: Test workflow runs pytest, pyright, and ruff on push/PR to main
+- **VCR Cassette Recording**: Integration tests use recorded HTTP responses for deterministic CI runs
+  - LLM tests (QA, embeddings, research graph) replay from cassettes without real API calls
+  - docling-serve tests run without Docker container in CI
+  - Uses pytest-recording with custom JSON body serializer
+
+### Removed
+
+- Removed obsolete `test_config_validation_on_db_load` test (chunk_size changes don't invalidate database)
+
 ## [0.23.0] - 2025-12-26
 
 ### Added

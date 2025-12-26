@@ -1,0 +1,106 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "repliqa",
+  "dataset_size": 648387648,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/ServiceNow/repliqa@bc880adc948fd3a70d5f8b2b3a1d1ee90d820dbd/data/repliqa_0-00000-of-00001.parquet": {
+      "num_bytes": 20855947,
+      "checksum": null
+    },
+    "hf://datasets/ServiceNow/repliqa@bc880adc948fd3a70d5f8b2b3a1d1ee90d820dbd/data/repliqa_1-00000-of-00001.parquet": {
+      "num_bytes": 20903799,
+      "checksum": null
+    },
+    "hf://datasets/ServiceNow/repliqa@bc880adc948fd3a70d5f8b2b3a1d1ee90d820dbd/data/repliqa_2-00000-of-00001.parquet": {
+      "num_bytes": 20876034,
+      "checksum": null
+    },
+    "hf://datasets/ServiceNow/repliqa@bc880adc948fd3a70d5f8b2b3a1d1ee90d820dbd/data/repliqa_3-00000-of-00001.parquet": {
+      "num_bytes": 20919214,
+      "checksum": null
+    },
+    "hf://datasets/ServiceNow/repliqa@bc880adc948fd3a70d5f8b2b3a1d1ee90d820dbd/data/repliqa_4-00000-of-00001.parquet": {
+      "num_bytes": 20866527,
+      "checksum": null
+    }
+  },
+  "download_size": 104421521,
+  "features": {
+    "document_id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "document_topic": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "document_path": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "document_extracted": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "question_id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "question": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "answer": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "long_answer": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 752809169,
+  "splits": {
+    "repliqa_0": {
+      "name": "repliqa_0",
+      "num_bytes": 129579219,
+      "num_examples": 17955,
+      "dataset_name": "repliqa"
+    },
+    "repliqa_1": {
+      "name": "repliqa_1",
+      "num_bytes": 129844840,
+      "num_examples": 17955,
+      "dataset_name": "repliqa"
+    },
+    "repliqa_2": {
+      "name": "repliqa_2",
+      "num_bytes": 129338522,
+      "num_examples": 17955,
+      "dataset_name": "repliqa"
+    },
+    "repliqa_3": {
+      "name": "repliqa_3",
+      "num_bytes": 129981017,
+      "num_examples": 17955,
+      "dataset_name": "repliqa"
+    },
+    "repliqa_4": {
+      "name": "repliqa_4",
+      "num_bytes": 129644050,
+      "num_examples": 17950,
+      "dataset_name": "repliqa"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}

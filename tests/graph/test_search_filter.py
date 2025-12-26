@@ -1,10 +1,16 @@
+from pathlib import Path
+
 import pytest
-from pydantic_ai.models.test import TestModel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.research.dependencies import ResearchContext
 from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent / "cassettes" / "test_search_filter")
 
 
 @pytest.fixture
@@ -47,8 +53,11 @@ async def test_search_filter_restricts_results(client_with_docs):
         assert result.document_id == doc1_id
 
 
+@pytest.mark.vcr()
 @pytest.mark.asyncio
-async def test_research_graph_uses_search_filter(monkeypatch, client_with_docs):
+async def test_research_graph_uses_search_filter(
+    allow_model_requests, client_with_docs
+):
     """Test that research graph passes search_filter to search operations."""
     client, doc1_id, doc2_id = client_with_docs
 
@@ -61,13 +70,6 @@ async def test_research_graph_uses_search_filter(monkeypatch, client_with_docs):
         return await original_search(query, limit, search_type, filter)
 
     client.search = tracking_search
-
-    # Mock get_model to return TestModel
-    def test_model_factory(_provider, _model, _config=None):
-        return TestModel()
-
-    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()
 
@@ -92,8 +94,9 @@ async def test_research_graph_uses_search_filter(monkeypatch, client_with_docs):
         )
 
 
+@pytest.mark.vcr()
 @pytest.mark.asyncio
-async def test_search_filter_none_searches_all(monkeypatch, client_with_docs):
+async def test_search_filter_none_searches_all(allow_model_requests, client_with_docs):
     """Test that search_filter=None searches all documents."""
     client, doc1_id, doc2_id = client_with_docs
 
@@ -106,13 +109,6 @@ async def test_search_filter_none_searches_all(monkeypatch, client_with_docs):
         return await original_search(query, limit, search_type, filter)
 
     client.search = tracking_search
-
-    # Mock get_model
-    def test_model_factory(_provider, _model, _config=None):
-        return TestModel()
-
-    monkeypatch.setattr("haiku.rag.utils.get_model", test_model_factory)
-    monkeypatch.setattr("haiku.rag.graph.research.graph.get_model", test_model_factory)
 
     graph = build_research_graph()
 

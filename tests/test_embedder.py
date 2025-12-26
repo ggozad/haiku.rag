@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -7,8 +7,10 @@ from haiku.rag.config import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
 from haiku.rag.embeddings import contextualize, embed_chunks, get_embedder
 from haiku.rag.store.models.chunk import Chunk
 
-OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
-VOYAGEAI_AVAILABLE = bool(os.getenv("VOYAGE_API_KEY"))
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent / "cassettes" / "test_embedder")
 
 
 def similarities(embeddings, test_embedding):
@@ -20,8 +22,8 @@ def similarities(embeddings, test_embedding):
     ]
 
 
-@pytest.mark.asyncio
-async def test_ollama_embedder():
+@pytest.mark.vcr()
+async def test_ollama_embedder(allow_model_requests):
     """Test Ollama embedder via pydantic-ai."""
     config = AppConfig(
         embeddings=EmbeddingsConfig(
@@ -61,9 +63,8 @@ async def test_ollama_embedder():
     assert max(sims) == sims[1]
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI API key not available")
-async def test_openai_embedder():
+@pytest.mark.vcr()
+async def test_openai_embedder(allow_model_requests):
     """Test OpenAI embedder via pydantic-ai."""
     config = AppConfig(
         embeddings=EmbeddingsConfig(
@@ -103,50 +104,45 @@ async def test_openai_embedder():
     assert max(sims) == sims[1]
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(not VOYAGEAI_AVAILABLE, reason="VoyageAI API key not available")
-async def test_voyageai_embedder():
+@pytest.mark.vcr()
+async def test_voyageai_embedder(allow_model_requests):
     """Test VoyageAI embedder."""
-    try:
-        config = AppConfig(
-            embeddings=EmbeddingsConfig(
-                model=EmbeddingModelConfig(
-                    provider="voyageai", name="voyage-3.5", vector_dim=1024
-                )
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="voyageai", name="voyage-3.5", vector_dim=1024
             )
         )
-        embedder = get_embedder(config)
-        phrases = [
-            "I enjoy eating great food.",
-            "Python is my favorite programming language.",
-            "I love to travel and see new places.",
-        ]
+    )
+    embedder = get_embedder(config)
+    phrases = [
+        "I enjoy eating great food.",
+        "Python is my favorite programming language.",
+        "I love to travel and see new places.",
+    ]
 
-        # Test batch embedding (documents)
-        embeddings = await embedder.embed_documents(phrases)
-        assert isinstance(embeddings, list)
-        assert len(embeddings) == 3
-        assert all(isinstance(emb, list) for emb in embeddings)
-        embeddings = [np.array(emb) for emb in embeddings]
+    # Test batch embedding (documents)
+    embeddings = await embedder.embed_documents(phrases)
+    assert isinstance(embeddings, list)
+    assert len(embeddings) == 3
+    assert all(isinstance(emb, list) for emb in embeddings)
+    embeddings = [np.array(emb) for emb in embeddings]
 
-        # Test query embedding
-        test_phrase = "I am going for a camping trip."
-        test_embedding = await embedder.embed_query(test_phrase)
-        sims = similarities(embeddings, test_embedding)
-        assert max(sims) == sims[2]
+    # Test query embedding
+    test_phrase = "I am going for a camping trip."
+    test_embedding = await embedder.embed_query(test_phrase)
+    sims = similarities(embeddings, test_embedding)
+    assert max(sims) == sims[2]
 
-        test_phrase = "When is dinner ready?"
-        test_embedding = await embedder.embed_query(test_phrase)
-        sims = similarities(embeddings, test_embedding)
-        assert max(sims) == sims[0]
+    test_phrase = "When is dinner ready?"
+    test_embedding = await embedder.embed_query(test_phrase)
+    sims = similarities(embeddings, test_embedding)
+    assert max(sims) == sims[0]
 
-        test_phrase = "I work as a software developer."
-        test_embedding = await embedder.embed_query(test_phrase)
-        sims = similarities(embeddings, test_embedding)
-        assert max(sims) == sims[1]
-
-    except ImportError:
-        pytest.skip("VoyageAI package not installed")
+    test_phrase = "I work as a software developer."
+    test_embedding = await embedder.embed_query(test_phrase)
+    sims = similarities(embeddings, test_embedding)
+    assert max(sims) == sims[1]
 
 
 def test_contextualize_with_headings():
@@ -191,8 +187,8 @@ def test_contextualize_empty_list():
     assert texts == []
 
 
-@pytest.mark.asyncio
-async def test_embed_chunks_basic():
+@pytest.mark.vcr()
+async def test_embed_chunks_basic(allow_model_requests):
     """Test that embed_chunks generates embeddings for chunks."""
     chunks = [
         Chunk(
@@ -226,8 +222,8 @@ async def test_embed_chunks_basic():
     assert embedded_chunks[1].embedding is not None
 
 
-@pytest.mark.asyncio
-async def test_embed_chunks_returns_new_objects():
+@pytest.mark.vcr()
+async def test_embed_chunks_returns_new_objects(allow_model_requests):
     """Test that embed_chunks returns new Chunk objects (immutable pattern)."""
     original = Chunk(id="orig", content="Test content.")
     embedded = await embed_chunks([original])
@@ -240,15 +236,15 @@ async def test_embed_chunks_returns_new_objects():
     assert embedded[0] is not original
 
 
-@pytest.mark.asyncio
-async def test_embed_chunks_empty_list():
+@pytest.mark.vcr()
+async def test_embed_chunks_empty_list(allow_model_requests):
     """Test that embed_chunks handles empty list."""
     result = await embed_chunks([])
     assert result == []
 
 
-@pytest.mark.asyncio
-async def test_embed_chunks_preserves_all_fields():
+@pytest.mark.vcr()
+async def test_embed_chunks_preserves_all_fields(allow_model_requests):
     """Test that embed_chunks preserves all chunk fields."""
     chunk = Chunk(
         id="test-id",
