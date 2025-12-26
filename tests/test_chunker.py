@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -9,6 +10,11 @@ from haiku.rag.chunkers.docling_local import DoclingLocalChunker
 from haiku.rag.chunkers.docling_serve import DoclingServeChunker
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent / "cassettes" / "test_chunker")
 
 
 @pytest.mark.asyncio
@@ -479,27 +485,10 @@ This is content.
         assert meta1.page_numbers == [1, 2]
 
 
-def is_docling_serve_available(base_url: str = "http://localhost:5001") -> bool:
-    """Check if docling-serve is running and accessible."""
-    import requests
-
-    try:
-        response = requests.get(f"{base_url}/health", timeout=2)
-        return response.status_code == 200
-    except Exception:
-        return False
-
-
-@pytest.mark.skipif(
-    not is_docling_serve_available(),
-    reason="docling-serve not available at http://localhost:5001",
-)
-@pytest.mark.integration
+@pytest.mark.vcr()
 @pytest.mark.asyncio
 async def test_local_and_serve_chunkers_produce_same_output():
     """Test that local and serve chunkers produce identical output for the same document.
-
-    This integration test requires docling-serve to be running on localhost:5001.
 
     Note: Labels are resolved from the DoclingDocument since docling-serve API
     only returns ref strings, not labels. See:
