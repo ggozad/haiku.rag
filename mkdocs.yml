@@ -65,6 +65,7 @@ nav:
           - Search and Question Answering: configuration/qa-research.md
           - Document Processing: configuration/processing.md
           - Storage: configuration/storage.md
+          - Prompts: configuration/prompts.md
       - CLI: cli.md
       - Python: python.md
       - Custom Pipelines: custom-pipelines.md

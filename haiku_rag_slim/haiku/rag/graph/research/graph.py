@@ -31,7 +31,7 @@ from haiku.rag.graph.research.prompts import (
     SYNTHESIS_PROMPT,
 )
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
-from haiku.rag.utils import get_model
+from haiku.rag.utils import build_prompt, get_model
 
 
 def format_context_for_prompt(context: ResearchContext) -> str:
@@ -76,6 +76,18 @@ def build_research_graph(
         Configured Research graph
     """
     model_config = config.research.model
+
+    # Build prompts with system_context if configured
+    plan_prompt = build_prompt(
+        PLAN_PROMPT
+        + "\n\nUse the gather_context tool once on the main question before planning.",
+        config,
+    )
+    search_prompt = build_prompt(SEARCH_PROMPT, config)
+    decision_prompt = build_prompt(DECISION_PROMPT, config)
+    synthesis_prompt = build_prompt(
+        config.prompts.synthesis or SYNTHESIS_PROMPT, config
+    )
     g = GraphBuilder(
         state_type=ResearchState,
         deps_type=ResearchDeps,
@@ -98,10 +110,7 @@ def build_research_graph(
             plan_agent = Agent(
                 model=get_model(model_config, config),
                 output_type=ResearchPlan,
-                instructions=(
-                    PLAN_PROMPT
-                    + "\n\nUse the gather_context tool once on the main question before planning."
-                ),
+                instructions=plan_prompt,
                 retries=3,
                 output_retries=3,
                 deps_type=ResearchDependencies,
@@ -178,7 +187,7 @@ def build_research_graph(
                 agent = Agent(
                     model=get_model(model_config, config),
                     output_type=ToolOutput(RawSearchAnswer, max_retries=3),
-                    instructions=SEARCH_PROMPT,
+                    instructions=search_prompt,
                     retries=3,
                     deps_type=ResearchDependencies,
                 )
@@ -281,7 +290,7 @@ def build_research_graph(
             agent = Agent(
                 model=get_model(model_config, config),
                 output_type=EvaluationResult,
-                instructions=DECISION_PROMPT,
+                instructions=decision_prompt,
                 retries=3,
                 output_retries=3,
                 deps_type=ResearchDependencies,
@@ -438,7 +447,7 @@ def build_research_graph(
             agent = Agent(
                 model=get_model(model_config, config),
                 output_type=ResearchReport,
-                instructions=SYNTHESIS_PROMPT,
+                instructions=synthesis_prompt,
                 retries=3,
                 output_retries=3,
                 deps_type=ResearchDependencies,
