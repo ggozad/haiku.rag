@@ -378,10 +378,7 @@ reranking:
   model:
     provider: vllm
     name: mixedbread-ai/mxbai-rerank-base-v2
-
-providers:
-  vllm:
-    rerank_base_url: http://localhost:8001
+    base_url: http://localhost:8001
 ```
 
-**Note:** vLLM reranking uses the `/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded. Consult the specific model's documentation for proper vLLM serving configuration.
+**Note:** vLLM reranking uses the `/v1/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded.

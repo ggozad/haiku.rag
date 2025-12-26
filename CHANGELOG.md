@@ -21,6 +21,7 @@
 ### Removed
 
 - Deleted obsolete embedder implementations: `ollama.py`, `openai.py`, `vllm.py`, `lm_studio.py`, `base.py`
+- Removed `VLLMConfig` and `LMStudioConfig` from configuration (use `base_url` in model config instead)
 
 ## [0.22.0] - 2025-12-19
 

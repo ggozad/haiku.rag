@@ -45,7 +45,10 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         try:
             from haiku.rag.reranking.vllm import VLLMReranker
 
-            reranker = VLLMReranker(config.reranking.model.name)
+            base_url = config.reranking.model.base_url
+            if not base_url:
+                raise ValueError("vLLM reranker requires base_url in reranking.model")
+            reranker = VLLMReranker(config.reranking.model.name, base_url)
         except ImportError:
             reranker = None
 

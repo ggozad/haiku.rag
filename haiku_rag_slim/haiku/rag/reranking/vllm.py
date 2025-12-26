@@ -1,14 +1,13 @@
 import httpx
 
-from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
 
 class VLLMReranker(RerankerBase):  # pragma: no cover
-    def __init__(self, model: str):
+    def __init__(self, model: str, base_url: str):
         self._model = model
-        self._base_url = Config.providers.vllm.rerank_base_url
+        self._base_url = base_url
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

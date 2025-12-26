@@ -142,27 +142,14 @@ class OllamaConfig(BaseModel):
     )
 
 
-class VLLMConfig(BaseModel):
-    embeddings_base_url: str = ""
-    rerank_base_url: str = ""
-    qa_base_url: str = ""
-    research_base_url: str = ""
-
-
 class DoclingServeConfig(BaseModel):
     base_url: str = "http://localhost:5001"
     api_key: str = ""
     timeout: int = 300
 
 
-class LMStudioConfig(BaseModel):
-    base_url: str = "http://localhost:1234"
-
-
 class ProvidersConfig(BaseModel):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
-    vllm: VLLMConfig = Field(default_factory=VLLMConfig)
-    lm_studio: LMStudioConfig = Field(default_factory=LMStudioConfig)
     docling_serve: DoclingServeConfig = Field(default_factory=DoclingServeConfig)
 
 
