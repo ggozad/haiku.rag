@@ -1,3 +1,4 @@
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,8 @@ from evaluations.evaluators import LLMJudge
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.qa.agent import QuestionAnswerAgent
+
+HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
 
 
 @pytest.fixture(scope="module")
@@ -63,6 +66,7 @@ async def test_qa_openai(allow_model_requests, qa_corpus: Dataset, temp_db_path)
 
 
 @pytest.mark.vcr()
+@pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
 async def test_qa_anthropic(allow_model_requests, qa_corpus: Dataset, temp_db_path):
     """Test Anthropic QA with LLM judge (VCR recorded)."""
     client = HaikuRAG(temp_db_path, create=True)
