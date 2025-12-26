@@ -95,6 +95,12 @@ def set_mock_api_keys(monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-key-for-vcr-playback")
     if not os.getenv("ANTHROPIC_API_KEY"):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-mock-key-for-vcr-playback")
+    if not os.getenv("CO_API_KEY"):
+        monkeypatch.setenv("CO_API_KEY", "mock-cohere-key-for-vcr-playback")
+    if not os.getenv("ZEROENTROPY_API_KEY"):
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "mock-ze-key-for-vcr-playback")
+    if not os.getenv("VOYAGE_API_KEY"):
+        monkeypatch.setenv("VOYAGE_API_KEY", "mock-voyage-key-for-vcr-playback")
 
 
 def pytest_recording_configure(config: Any, vcr: "VCR"):

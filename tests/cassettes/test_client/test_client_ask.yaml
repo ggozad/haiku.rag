@@ -1,0 +1,703 @@
+interactions:
+- request:
+    body: null
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - identity
+      connection:
+      - keep-alive
+    method: HEAD
+    uri: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/resolve/main/tokenizer_config.json
+  response:
+    body:
+      string: ''
+    headers:
+      accept-ranges:
+      - bytes
+      access-control-allow-origin:
+      - https://huggingface.co
+      access-control-expose-headers:
+      - X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash
+      access-control-max-age:
+      - '86400'
+      connection:
+      - keep-alive
+      content-disposition:
+      - inline; filename*=UTF-8''tokenizer_config.json; filename="tokenizer_config.json";
+      content-length:
+      - '274'
+      content-security-policy:
+      - default-src 'none'; sandbox
+      content-type:
+      - text/plain; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin
+      location:
+      - /api/resolve-cache/models/Qwen/Qwen3-Embedding-0.6B/c54f2e6e80b2d7b7de06f51cec4959f6b3e03418/tokenizer_config.json?%2FQwen%2FQwen3-Embedding-0.6B%2Fresolve%2Fmain%2Ftokenizer_config.json=&etag=%227345216a0785dc7086e8c245b2a9d3896ce2b756%22
+      ratelimit:
+      - '"resolvers";r=4986;t=51'
+      ratelimit-policy:
+      - '"fixed window";"resolvers";q=5000;w=300'
+      referrer-policy:
+      - strict-origin-when-cross-origin
+      vary:
+      - Origin, Accept
+    status:
+      code: 307
+      message: Temporary Redirect
+- request:
+    body: null
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - identity
+      connection:
+      - keep-alive
+    method: HEAD
+    uri: https://huggingface.co/api/resolve-cache/models/Qwen/Qwen3-Embedding-0.6B/c54f2e6e80b2d7b7de06f51cec4959f6b3e03418/tokenizer_config.json
+  response:
+    body:
+      string: ''
+    headers:
+      accept-ranges:
+      - bytes
+      access-control-allow-origin:
+      - https://huggingface.co
+      access-control-expose-headers:
+      - X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash
+      access-control-max-age:
+      - '86400'
+      age:
+      - '253543'
+      connection:
+      - keep-alive
+      content-disposition:
+      - inline; filename*=UTF-8''tokenizer_config.json; filename="tokenizer_config.json";
+      content-length:
+      - '9706'
+      content-security-policy:
+      - default-src 'none'; sandbox
+      content-type:
+      - text/plain; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin
+      etag:
+      - '"7345216a0785dc7086e8c245b2a9d3896ce2b756"'
+      ratelimit:
+      - '"resolvers";r=4997;t=94'
+      ratelimit-policy:
+      - '"fixed window";"resolvers";q=5000;w=300'
+      referrer-policy:
+      - strict-origin-when-cross-origin
+      vary:
+      - Origin
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+    method: GET
+    uri: https://huggingface.co/api/models/Qwen/Qwen3-Embedding-0.6B/tree/main/additional_chat_templates?recursive=False&expand=False
+  response:
+    headers:
+      access-control-allow-origin:
+      - https://huggingface.co
+      access-control-expose-headers:
+      - X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash
+      access-control-max-age:
+      - '86400'
+      connection:
+      - keep-alive
+      content-length:
+      - '64'
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin
+      etag:
+      - W/"40-09f9IAqP13xarAhQxFS2W8rvRkM"
+      ratelimit:
+      - '"api";r=986;t=51'
+      ratelimit-policy:
+      - '"fixed window";"api";q=1000;w=300'
+      referrer-policy:
+      - strict-origin-when-cross-origin
+      vary:
+      - Origin
+    parsed_body:
+      error: additional_chat_templates does not exist on "main"
+    status:
+      code: 404
+      message: Not Found
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '114'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - Python is a high-level programming language.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: DPUZuaOrH716Sx888vSPPEXkfbqS6o+6/UidPZ7fhjvXuEo7BMTZvKd1iD0/ffC7DhqHuydKmrxzypg8e8jyuWTxAz2v91K9H+bOvNuKU7vbBo+7rKhDvGuFCz1ep648BAU4vUaq6Tze4ZW8h0YfvfmZgbujnTA9F2fcPONwjjxQH5g8n84TPM1QPrq6Dbi81WgxvMtNmbtGoKa8LbFAvORFtrv22tk7RNdmO867Fj1yIzy6iLngvMyXwDvtu4k7akYrO0UD/rwkTkQ6VUw9vDRyBT1+WcG8X7w7PCQ5izzjhO86FWEJvH6SHb0dD0q9W5YGu2dZqLtjvBK94pm7utqLyLvQyx28IMyCOWI/m7zUNNc7bcfVOfNBCr0rh3E9HM2wvIgR3zwa6AA8j+FtvFNaIrxQL4o80CAFvSEMkzyMQo28aFNEO3jRsTsR+A49MvFQPJnGejyJrao8R6G3u8hR57wu8pa7Atc6PDE0Az2r5G+7C9sgOyHwDTtBsg48/+IFvBFs77uM9y28CHgvu72wKjzEBXW8CzgvvBvfR7qYVqE8cJhAPHPKWrzMXFg8XfBVPH1Bvzo8nf+5qVL3u32axLt6yZ48ZtXrO5v/hjsEsNe7TJwWPei9rDtL3Os8+uWouzIk0DwcU008kKEZvewawDywXWi84Z3KuwRHfjyhKzi8wHPoODnCIDxhsJO8Pc3OO7A+nrtFBQ08T/6Uu/Lrnzooxba8v7VKvI0DqzyrusU74Q7puUpql7siQvQ8BXxGPBcoar04/9u7ypzbPInp4DtJHnk7aqJ2O+sglbyTSM+7vzq4PFBP7zueJA483YcmO875hDylQgu8ASOFPCCr5DvH4j280KjxOzU63juuOoW80pAHOw6z2LyY0Zs6vWsrvL4NqrzVqaY8qaw5vLZ3HrybhCE8UWYKu1YZkjpCD1i8R4tSOre1rzs4PwY8ApFLO4UCIroSLgo8szu9OzX6VLvIZZ87zl4TvNGXzTwghoU8BcuJuk+QOrwPMqC8/DDhO7LMtDvLh1c7PL5gvL63U7wwvRu9PeG7OhkMjjwctBk9GIOfPP8ijjtUNyu8TSWYPCrgljzP9Hu6SxXwu0cBlrpu5wY7sEm9O8RGgTkovm68oVeEvfu1JbxKI/O2WA6IvNNTobyw+F47xCkYPSK74btbpOw7Ha7+ug6pk7u4i3G8HNiPPPPYubtiJ6g7Ozq8O7SoMrzIuDQ9QkAdPDaGiLsMvIa8lQFJvN4jwjv8j2K6rHiSu1uygbsXK6C8HsRYvKY5eLzfcCM8xNEGPJl+YzxfmJK8TnPNu1aRkrt6zSY8R+JxvL9HMTwi9yU6ukmQPCFWALzbwJw8drnUu5vcGLw62ZY8/jrau3aUxjojf4q8udXKPMUsE7wO6FY7rfKeO7zFEr0nuyQ8sF/9uzWuAzxWrEG7kfHOPFB05rtaPou7oaLcu+31lbvag3K8CjS+PE3DpDtQjkk8SqQ5PBN3ibsZJJE7EIavvF11OjwHzaS8euBou8dGRT0/GTa72Ijiu6KvtjyFOTm7qwsMvTijbzzOohQ8oURbvVIPBj1SqpY7ztnqu0T6mbz4uhC9zcMPPEJ82Dq8MX+7MMCLPCflgzv5Fm07hdsWvLKWlzuiqru5gypWPC9eH7w7lEK85JdeO4oIjLwedN07a23Suluv5bs0goa7ZUmQvILBCr1B55o8BqIXvbXYD7xJhG28u/d4vTfQCL2r4Is8O5FjvGwUibhOrx88gAtEvJ6DtTwfKCi95U1JvJZqyDvBnwK8772VvD8Y8Dz27GK7VNaUu7Msl7svaoY87gfxvJV5gryhXSw86IUhvPSRbDwGzsy75/mcuzbHFr3jYQK9UMqTvIRltby/I4C8lCkTvC0vbzs88y87TEkQvT8otrzvR8a8FrcTvLNdAT1HL5y7tnyjPN/irbuPB3g8R7T7vGWGyLsq7A89nksHO2cSgjvyHC69IdiIPEecFjw7Sg66cAkZvGSHH7wpp2S8TioQO93XgruyZY07FaPSvPqunrw3Qjo8hfp3uxVuETzmypO82TDTO1vAmztKurw7LkPFuoQvuLo3t9s7YFZYPXoZDr0vwCM8cAo5O5BHFjw503i8Vf/CvKRIALzaYra7IyoSvaoEWrw4rII7iqq6vKozgzyxPws9qmmOvPnDRjvJMiK6oPnGuinaqzzReIU8M9UdPWizgzxTI7Y8R1jtvLXIPL2YF307OQt8PPq+Ejv4Wb07mIoOO/PfDjzmA8q6qlb6uZDxAD2lPrO8y+RJPCASxTyanZ68vHA5PFl93jxlBpy7crq6OxEpTr1bvx09PE8rvGCpIjzdH0G8qRhEO2a59DufaIO6zXf9vMJTajzQbLs8GxKFuz18kDzLIUK8KNV0vJ1O97v1tDA82OHAvCLtU71YCII8iMR1u8Frk7x2MrG8QXmivANydL3KnNe5wUQwvGpkjTxeBGI8/OCvvATukbz1ypA8wwaavE/0sTvqmay89KtlvD5csbw231E86wOdPGvXLDqL3kU8Q/5/Oz2gCr10BKE87OzoPG9/hjwaUyG8ajqaOyJYCjvRX6M7QYE7PKFECT3eFOK7IrMvvG3Vszy6rA28asjBPCqGBjuCtoy6se8ZPMEi+zu7MDu78SdkPG4HTDwxtoU8xl7jO6abAD3Eeai73tD6vN/YPDwrx5k8FJEivHSy3TtatO67kMm0vGD3HDz1Pu46LN0XvezRvbwVe2C6bucLPZnCPDwBSrU7a4myvFcJgDzGlRO9O5CkPLat8DtF2VC9LGJpPDdNzDzAxLG95DbzvMN6yLzrHZu8nMgqPFB5z7xzPL08941lvcvkmTwUiI08EO/CurOQOrpRYXM8gYzcu7anPzzwWGK8PtmVOx8d6TzFyMY7ulWbu3fjKbypbIS7L1WivIdqtjvY2CC6NOHmPBWQEb0RcaW8ReGnPM3xCjx/KSQ9dfP1PAwbdzyQEbo8Mm/FPDNVirxPVTK8H8srPOMt8rwFNma8FPN/PC6hLry8NGO8+c0CvNDls7tp6HQ8BHi0OwHG/byBNLY8RVCNvDj6z7vP3Gw7C8mSuiCBAbwDoJq7mCqYO0VaIrzG12o8R2GhvFVb47w8H+A7nS0pvMFzRrx36MS8J3WLPKRUXDxQd5c82PYdPadKabxnMsW8nXEZPHYGHbzFUwS90Bb4POlcFrx6Vzk8pIsCO1iqc7tuisI8t21bvPEmkDxzwFI8+4DbOoPUx7wK+zk8S5grvL3f8jxNPSA9F7GXu2Mp7rnwghG8XOzwu7ZEsbvpMCg7LWKHvKu1U7z3h4a9WmApPWxs2LxGW2i8W/D+PBrNEb390p68N5/Ku5LQ3LxY4xg9mJQiPN74g7wuSCU8IIbuvFlYo7wal7W8Oq4KvG4pL7uPJrw8L8QIPWuxtLwdxQA8bRCEPA0Uu7zex7G8iRYlvWKYLjucYbo7vx3COfhLmrwlxwE8fbyLO3QODrwdZsk8l9sfPRMIULx1KdE8a+GKO4WzvTq7W7Y7Qu0CvAqJRLwkb0w8VFZOvXX4b7x9fDk92i7vu0Vk4jy0uY289gB2vP2vRrtT9wK8LnJ0vH5QKj0LIhA9I8o3PcT9ZbxUGIg814aJu8D51rwg0re74uroPNa/tDxnlTy9ljfTO0gzCbxIrdE7pChfvBQcxDukN5g8WQZuPBu8Frx6oSQ7s6aAPDEikbqTvqu6fx8ovM6airuvgRI76/irvDr+k7yPREm8PhKKPfNDCrt5Yag8Y4w8upBoFzvbehG9jhr2vHDZp7w//jM8qVvFOw1q5TyNoxS9ijyqvNBCprwh4486uNKsPCwV3jwlGsu89havO3BQMDukqZY7KupbO70gZbsIUZi80S1pPUXD0zzW/pw7quCYu85q1Dwi2nm8wAxqPIO2izxKnYW6d7Utu83MI7x/7Uo8U7Ohu79GrzzFeHY8DcTHPLBnODx4wpe89blXvK6oRTwQSrk8IYntu/bMrjyhwwW9SDqMvPoDtDxZaL48A1B8vJofuLt6ly08Li9LPKD5DL0i4ya8XUgJPVNbybplhoS7/4d6O2YhszxYiT285QuZvA0p5ztaJye8jVeiPMcXzDsy9b66tOhyu8o65TwqDfg683PSuw0mPT0ON0+8U9WBvKfeR720Nw28h4yyvEpSrrqYrgG6rmgEvZFT/rytuQi9ONbevNyJFrzLJ0w8FwQBvYZmoryJTdM8QYFEu/YjmzoSyHE8A1EavVO9gzyjDxQ8ewSbvPlYkTxtjRW8/A5mvF847TzB9bk7FlMjvdvKhjvAls88q0QkPFERjbv+Sg88ur6hPBxVSzzTSMU8nSQcPWBFL715SIq8bpJUPX5xczvzOKK6fDMQvKV1E7wq6Us8VazAvFVnSD3+HLw7jXGVPEQaULznqEE8fSVcvEJfTTyGDuw7zpiNvEe4azuRv1G7sHoUveKtk7ud6Ca8C9T9PAZSljvgzTW8asWAvOsWg7ujvYS832ZiPFRiHTwZwRY9bVa9O0Xh+rwPFhY9/F+ZvCqHCzxxP5c8NcyBPBM80jyHzio8fzSlPMiGxLtXKxe5SC1IvYMJ7LzF3E87qojwPBWYljo9m/w8K1abvB8tTLwpxte74pP/O5IYnTxzspq7rtK/u+1MIbzGopM8tkUBu2b/rbtf2xs97MhjvKmCEbzA2PC8rmIfPVb5fLxFM9a8xBhEO490vDygYlA8N8mavOSHIT2+fL47bXYBPQPTdDysS1+8T9xSvJ/QL7tP50m9PSRAPCRo9bsG2JI7hp1Fu5E1TDpsIEs7zcvgPDMsEz2AKs08OVucPEGsV7yAd4O7PasAPM5pMbxeL2I8XeizPMgkpLxMimG6GGlJu7jiAL1fZm49SxcxPItfQb0lcDo8N3mwvL74C7x8vBO89BvtPN6M9TlfGSa9OF4FPWLqH7028vM7vGMXvLiSpjsH4JK7o4x6vPeetzuxZn28s8szPDPDWDzWUyI8yx7xvHvomryA84m4nQHJOx5MxjzMd7o8sEmlvKb3OLxFfgE9ZJ0RPIS7HT3LXdW7bfDmu+RkBLzsjr48V+gzvJeYpTxCF4i8Eh5DvLyKgDw52aE7AEvOvAC9A71noqI8akNsO9fFEDz4obi8zlUfOIA1sTzQd7Q8GNiNuTGbsbtwVc48VbBxvTrqcbw0K6e7SxfKPPfZ2jsnlFM8aZpBPWmrKT0F5wa9/U19Ox+Tnjtt1OU7dDIJvCJux7xA7208+U9xvKhQUTxnhGO8ftnsPELFrbwYEJM85ifEO8qy9jvNR0I8X2C2vM+FeDzzkIc8rZKIOxrwkLwCZrY8LvXtPDqbFbygzww9+QFcvH1piTwT9Aw8Sk0MPY3K+DuN6167VAQnPNbiobyJGNA6m63Yu52qhbzncUy8iu/XvHTxXrvBYhW8Dt8yu37nybz2V7U4OyTFvDLalzxoo1W82fEQO+oHsDxIsrm62RmXvAjiBjzm3Ci9mto0vMfVBLyN1Ls8ARoFO7eGPLy4sNW7QEk4vNYZ/7sig6C8K1NoOzYvHD2BFi27dau6vJtuubyUkic8kQUTu+OLZLzXeSo94sYMu2/kcT3rMqS7pJ06vDG9ubvV5Zo7QGfKPI//Szz/E1Q6BnnVu/VvqzwJED48ZHhUPRunaTso5MW7vfXPvBnEQryBLkU8gcCsuS2NJLvzqSM8QsLovDzSTTy8z0c8X59OPE62wbx6kSW8zdKZPH9/sbzOjdo6QZuUvNmR/rrpOa28MghSvCL91bv0gpY8PYbXPG/xkryrK1W7tP7zO8u2oTywwCQ9QU2kOcIoB7yLKiI9xePdvIejLLzbEew7b61nvFQl+LsHD7k7EGVcOpcM5Tzi6548viQGu5A75DwOiQ08SCFgukrUQrxqoK+7Q2NUvFtK+zt/YEQ72kKQu1I2yDsF3FE7NTKgvKXMTjzLvOq8IOUjvBrZ2zw5wkY8T/JrvNawxzznTMq7dhyIvIaZdLzspTE7ZDfwvDKCKjtq1zI8DAQKu8plnru8KxC9rZUXPfW+KD1g8TU8fxZwu9CW5DvOPH88bELiOKEMIbuMY6Q7FFbAvLkR5bzIHWU9ieeovC6Pxjy4HII7FNtqPBGS/bq1vjy8qnJ3PNY6t7mNmBu8dlqJO2Rv+TztKsK7tzTEPHUTnTwsFei7wJIwvOyRvjxLsPI84LbNvDWqED15PI88j8y9PKFGrTve3a67Lg4CvQaA2LzFYgg6eveHPIE45LsoBdU8cdaXPMKpg7vRR6c7ivbFvCCH3zylQnC8kejXuAb+LrzWNby8xMbzPNU2EDxj6rQ8v9TEvFVQcrxmdJY8VM0UvM8Flrxbp3C6d1/UPNwHpDxGuhq6i6lqvZqDEL3uxEE7H8C5u+a4BL0urpE7cyPQPJjHXTyvlKe8KOwqvc5AVDsNc4W87FiyOyZ6p7vAZpU8Hgu9unss7zxbK9S8Be1tuu4SBTzBupG8A17tPLxj8Lz4KBs9nyn0uw6ln7pXZTG8Jtc0vOTDELxkMyq8Kt8HPIUgFLwM4jE7ZzCMO3Fy8rtuzBA9Qa9ZO3Qchjxt0mI7kTQQvPww8boHAEI8gG40PS8N27sc1g647ThBOzsifDwAEr67Dk0/u/bYCLwSx548D/NwPAnii7yVRgq9ADGMvBbq4DyOWQQ9QPoEvMLNsLjYxXE8OWwkvAynDTzXCaw8XuS4vC8jNL1rZ1E6nscPvAohzLtiLsi8KJ3DvAnFCz3ETGi88DaCPOF4wzwZqwM9mBKdPJs9ID2irJK7MdmLvKgqoLybXPa8NBv3usLFOjx5lgu98zNuu0tzOzyoggO8qXGVOemLV70HRZC88KWePJSEuLz6axm9+lKmvOCX7TsPzPk70pcYvPRLbrwTOBe8jdu1PAAgrjxTVs+8aM4ou/q3gbx9vj88RzQzO+3kK7x21We6sN3ivMj9KT2NqYw66bgYvdYkUT2JjyU8MBtrvNOcAzygx5g8vLlHPTxJ+LtdY5K8LSYCvd96x7k9+q65UskSPebCNbxRU7o85y8XPCKNvjwjw7w74rsHvC1fOzyb0+G7bNUCvAOv6ryAiLI8WP/ivNOkMD0gTuw7+5LdO3mNuLk4mwA8r608PFlSw7w73y28S1D6PKUwKL0sFz48mjWtO/rn5zvqVls8vwsXPCrM1jvY6S88tovFvI9PszwbEZ48Z7IIPWpNBD177PU74rBSvGYf8zoWE0C8Afd6vNupsrwCy9S8BOzWO0ACJzvzjh69mvzKPDw4rTxHPMc84el+vPXGJj0u+6u6lS9WPWmMgbxwkNa7AhUYPevxgTx2Qn48IyrZPL27KLva3A29trakPCTUgjvH1048QYqEvMGW7DxMU1g8f/FRu6d59TvBito8LCNsO5+YsbxK0ZG2X85GPI1ENzx21qY8Qhs9vI7MV7t1nbc76+1WPELvHDzpvzG8S7SyvAER7jpyfAo9eHAbPLBllbl8Tog8dTc6vI7yxbzXkxq9VK6EOwHqRj3QlgC9SnqmvDIsgTwQ48Q8DGS5PLc277yBSwc850WnvAcJPzzAlF67BnxKu16JiDz+Bva7gdfDvJjprDxpqRE8X9K8O17c4DsaNy88UsOGPFJ31LwFLxo7AGYcvLbzAD1S/qQ7V5KiPJVbgzxu7Vo5YaQHPC6tijvpVt08lUJYvEYk4jouSgk82wxyueL3JDxz8ig9vEMoPfBcFzxTmha8jnq1PM+qojzQa5w8aeLYOtsiJrwFRog6SnWSvIXdML0Wwey8gZwEPZG9gru32FY8pVOmO74srby0NwG7/x0GvBzLjTyVvye7sTbrvBSe9Dxh/je5dkjju72Q9LwKD4886YBau0lGt7yExro7i6Z6OG3HmTyJCa684EOoPIRBljpE4nO9oSJ2vHVDlrwu0be7ufyXPPlFKzwa+dG7iKrOvCvM+bvKpZ08g3eXPHk/M7wbAsg6QtEOvRJU0TyuPI68kIx8PJW7PTye9488yVqsvAZ3vDiG0EK8KS2Du+H/KDyAELK5O6VrOxuYW7tR9Cc8Y8YEvEMSX7znpzy7gF00vBUVqTxduUq8BPcYvWT9jLonUXQ8FEeJvEY3v7w37ny7MC4XPYQz+ryQmBa6Fr1VvG8w7rt2mYe8FgvDPGKn3bwuHQC9nBtOPNFhx7zAtz+85cFNvD8EULxOydk7KE0Eu6POmDyiRdq8VHhBPeIBkrsU3Nw6JimYvAJc/ztpEOI8ZqUaPCbe0bu2XXY8wxk6vZB2QDwONiw89M94vGA1lDyvftw8D4VlPNOfKD0WpBw9QFlWuzlt5zx7vi+9ex6gPImCGb3K3628FJBZu/DAxzzV5fq8Y8bvu23ktLxTPMo8IfX0OvgAOjyx/qO8NQufO3sOe7yWUta8h4yCvFdX6bvy/W+8Mc28vI7NojyPs/c7BOoUu6Ur6jwV1IW6IMfXPM+ZMzukSxa9aqkivB9TyTxo7Q+8G4YcvKwXBbxQFO68EjSPPF/OKz3FwIQ8iM3uPOqKYrtcPsw8am0lvCFnFj2oWqA8FeFDvF5fL7uerGK8lChEO5Onjjy0BbM7YrmXPGOSfzyRfro8saF3PLQWDbwpZYO7NHwPPQ8iyjuskzA85P0fPI1QbDzHRhO8f5I3vQ94crxcmOk8xVPVPLWuxLv0U9W7ClEvu+kyvTwXUWG8S2mRO9lNn7v176q8skbfO7vnS7uBGAI9wPavvGhFjrzFHgs8gzyiOwuxsjwCucO8dLb5O6n44TuPjxG7xQ9YvIuPqjxR6VA8VXQZPELKAL2VYve7DUs+PCmW8DzRt4y7tlfpvIFIh7wleew7eKbhu1PIijxTzCK9gUoEPcj6STr5e9k4JewlPEsKsDuUcmm87HuxvIRoCbzSDiI8Mbo6PJ8Xpjt1o/+85f6mvMl9pDx8zUq9LHsWPL7f1bu7OqY6X2O2vDaOa7xyhxO8vW0PPKw4xboppKU8Gg8JvCugnjt7fQw9HaYCPRE9y7w9zwk8s+vGvHpFYDxLW3M8rfSMvMlHezwovNa7imrdOzG2IzybOAw7Hy08vIaxxTv8oQa8NNilPG2wsTzRgxG9yEsbvbUFcr1rt5s80Ui6OjPzXjxrmug8b9HBuwfPyDyo+wS6XrpWPFftuzyr2T06SkzCPM/GZ7wvDDq8W10kvZZcBbthGJe8HwOXu3TawDyeax48d/EGO+fu6jwK1kE7QigvvDhn+DyOibe8Z1oBvOgUqrsnAoe8uVPpu0NWZzueVzw80q8ZPOJUo7rGPb+81J+KvMdxkzyUIM47ZoLIvMt5Iz3mmAI9nd1BPJU9kjzn0CA7O/kvvBYhWrxbvgK5uXdwPBuXPrwCbjw8FWFOvCh/07oHZFY8k0jkvKWPJ73RBti8UkDBOUyixroJkGS6KsDuu0IKCTzBUtw8oyqqvCaOLbySszG6LkqLvNrTzDzOYdi8iHGXPL6XpzykrN+76f/+uYSVTzow0MW8lYCNPE9m5jwpQpy7CRL6uv9PLry6lxE9zewIPR5ya7uQRfm8TI2bPEO/Djx4GjO8c2lZO1zqjryfDui8C34oPSavILyTl608yJMTu89Zybwhqnc8+ih4vPeGtTx+jxW8Z1/gu7suCjsfd6m7VNhQvGVkeTzzAIo8TsoAu37C6LvZGa+6umf1vHptsjxaIXY8+0BLvLtYhTybwv+8jFEDu42uIjzUqHa8gHcCvWYL8LwfU088UHlfvITw6rwzXcM7tUViPLbfnDzsJDs87G8NvOSKxTzzRTg8m4lTu+xdGr32Uku70qFkvDwBszu9Ady8QC+ouwVKfjvodoM8csItvEl0rrwhWjO8J9W9vO0BCDzGGEY8v0yNO2RQjbyZ56y8EFyKvNnWsDxO3F68llPCO/S9Rrwt1Bg8mCQtusjZCb3QRCw8KJkcPCApKbtNTI089XxmvE9rgDlU2S48oXnpu5CsDTyAuqq8ndebu6uIvLkt/uo8lovAOxeX1Lv5H9o8htkHvBKkDL2OBIY8S1yxPNeT0rs8eOy8lOoUPVsqnjvjdvO7eAaxPAfVVbxTDs68QUvRPIT2Fz3Cjoa8RlAEPSrorztIOgo86DRFPCKY6rwfxQu83gxaPH3uqTxFCDG7A9MJOwXawLyWDRO85UsDvYKmczz871K8ZGjTuzt+DrwAqaU7rGqKPNc1pzys3e48BS9SvI+CKj3CEhI93D1LvDe6Jj3mpn68mJuGO1M09bshNgE9PCfxvHBnq7xBf2E9MXZDPHay6zu0D4M85u6APH6VWju8Jhw8z9EUPRdepTwGIZM7LzPGuyGK8DzKxBE8vfnWOtJB0zra4RO9VWg5vI9k+ryh35I8YmlCOyAxf7v//jo8L2YnvJleDz0yGxQ7CdGSvIkznbwbIOk4v4IFPFb1MjxajME81D6AOxtbZDwaa2g85JKGPFbS0DxyHGc8YnlfPBreHb0lncm8mBJqvPvA7bw2Vxu983WEPFLhHbxb3lS8dlwWvOJWHb1vxAq9nvyBPEz1N7pS0hY8FguWvMoCoLyYOym9LTyAu48MNzsrMfu8r+EkPKx7VTxaGPi6cDd5PDX8m7wrUgq8+5DyOmU0zTznSwu7dnQkPNZK1jtej+i79U7fvACxjryNOf08BYwUvA9djjvdwao6dFriPIzE+zxt/lK8wJCIPOloO726zXm8RFLEu6aMKrqaGTm7eaMxPE7QXb2uY6y8muFYvPi9xbt4lbO7YNBrvGDokDtxDEk8OvPIvPvUgzvBnai7D2iGPGx2RrxSpCK8KVuovLg8FDxdAnw81suoOmiEgLzz/r27iR6nuwuVqrzlQxy8QoO/PAmVWDzlOIO8VRPHvImOMLzBFgK8NB4bPFugxLwMtRy74S5JPYCXbzy8ius7GQoFPatxrbxCOQq8a7ufPPk1sbzVPpk8ORfRvDHY0Dzj1Pi8HulwPIEdpDyOmiC9IKbOu1oNSjtEJDC8Td7yPDSrsLwq/w69H3BVPIv6Srt+uW88lSyRu4zxLrypoJw8fy9gvQkKiTr045S8/erLvP4YUzvUIoe8iNnFvB+guTo2Fse8HBrivB906DwRoaE8PpgUPCAZozui7tO8SYiMPEFGo7zBue08FLH5O7H9SLwSG+Q6vmJOPJfozLpuwQI9k/kVPVJq5TulDKS59oiwPK6PTTszOQe8wV4rPL+0ATxgIeq7swR/uwloxTzZsmU8nIeSO71IbDwiAx+8M8o7uo63yrw9HW28K7iXvCmm/7v8Ch68mmPyPJNx37v1Ahi9jt7UvFyQD71U/8Y7uOFzvEhL7Lx6kw48Y5yNPCK/hbwBm8U8fZCPuyuNrTy/9L071K6SvLgmC7suJSS9OsOcvEOnCryWMz+866c2PJne9DtMWEq77OV3Oy0c37pO+z26F+XDPG6uhTyg4FU7Ws2CuvoMqTu3Y5e7PsAGPYV7iDxhHPg8wx8CPcHBlrwrLBS7gFXHO829djuPbCi6Gy6NPH+KUjzKQUK5xsMQvU0moTsiDKG55Aa3vB4ADbwoFuU6WqkaPdS6Cr3jark7IVg+OYI5hbw67QK9f7UMPGdvZDwkxEK6nmMnvVDwHLxQUjq9aGIEPB90HjxSfPE7rFxSvO1Uj7ynZB89i1QiPbpDiLuhH6k6NRMCPcYKiTuzsxo9zpu/PCs3prvllW+7RkgOvApIwzvBu+067Q92vIuiTjzfBja9j/sPvDBR9rwHQBK8N8EhvBfChTtY+WG8knBsO55hALwZFK29iudivK9u4jtpwXu7HFvMu3Us/bwjG3M8GU/FvME22TzJdWe8kES8vDuE8DuDggi8F87rOziWjrtpJdc8ag6JvL9Ez7mZoV67q+ozPdApG7xPzbK8wdHjvFvdkzzm7IK8XhQIPZHikbwxdZU8CRWmPGWQlTtzII88Ai88vEPMsrupvHy8DtwbPDAAR7xaSRK9v6k5vHJO17ssGoM8VSqpPKIJWjywisA78kfmvJmaRzvthCa6wtsFPIfKujxdHro8s+z5vMJOIjwtoo+8GQ8mvNDN7jpk8ci8wmzLPNPN3Duq7468ibysu96ON7x3E3W9ki7puyu8DTzpqBm7OUqQvOU527y2Sae897uYu2vT+jqJ+Du88tyTvPUxq7yP4uQ6PrKtui+l7ryJkAo9RwisvP8LsryTFwu8kR2+u2E8crxGXKs8/f5sPFa+brwoOy28h5XwuzdadTz/BiC89yMUvcUdwDxaJcG7zj+7PFs7ijzn43W726+OOSMkCz3ujEm840gjPJcjr7lD02w8Uq1Vu8Jg5LwsSUK8gYJFuWtwG7zPdDg8PFkSPJGSgL23a2I8riVcPdXecDxdUAA8c0CQvCNNBbyTT7c7aghyPADDgLvVS5G7cETkuxGbirrOSsa8pk6rOlkJ1TyAARA71UUavNs81jpZyaS75r/Zu3xsDzw7n/w8C9egPGNs/7vDRHg83rPevFEMlrz4xSi8yclXvF46gTvNRnc4nx1APNJ70zwDDZq8CGTcvHT/Aj3YUbU6QB83vffixDxfIjC8vLwePHrLQrxuMGe85a6zvJKuTrnt1GA8klu/vCqfXTrDsHk83pj2u/tU17yzgiu7hi//u9EY5boWZ4e8/hi+vEY01zx7NLW8rScGOw9XF72Ie/g7Um6Eu2UQ0rspRiA8SG4tPQoTGz0buhg86NHMvInx3rpgc4E8GedCvVQ6EjsfHCO95m1LPK7IrLy/Ynk8mIS0PDqSz7s5t0M8mQlIPaF5jjystKA8BAJJu6+okLtG9BK8pjTEPM8A1LzTXI+6dj4BPQwTg7zby9Q7K4VrvA51hLqEAy27J3qHPE2vkjyKt1O8BYlKvQGh+jvfnZA7/7K0PEOXWbz8QII71Lexu7NkED3SLYo8xZM0OdbfqbqFOSE9uYGUPMGdD72UTnE7La8sPHgQn7sMPxS9X+NqPH54DDsULF87ICjnu3z1A7zRqCa9+pP0u95g+ToWFYg8PV35ulT3lLxHTgC84pb9PJTwwTtjEpe8cAOYumjSMr34cHY8OLDTPEfDybzM99K7Y/+3vLCN9zwfu0Y7ulXpPF2zBrwcJqs76flVPD8OZzy8avK7R+SgvOoznzvCH506K0A6PZ9pozxxDIq7fLQgvJURrLyTpSy8A+NVvCLKiDwTL508dYqZu0vT5jzgR0e8IMEdPL/KmbtUnbW8rayJvCOW27vzzPk6GXq9O5f2i7yYOKY8GixDuyCrvrxFUkS8pW4jPU5Ltbx3VfW8l14tPFposbo7gTw98Tl6PCrOCbp1UPE7/xOqPJfrWrz0/4S8Qv+GPMeytLzSxSs8ZWeXvNMuybzklKi84fkZvInYKTyvsGa812Wbu5oLiboreyK9NSJrPDj5oDo5GQQ7GcxKvCm3Ej3NS/S7sBRdu6mMeDxp3Kg7i7hevBN6WTxrcIY7zfXdPNM8bru9B0C7oz8HPSFEMLxf9788pLY2PKNKsDq1bIw6OEUfPKbgAbvzrk88GXHgPKiaKbodReo7pyIIOzXt7rzUr4S8RmZGPLSu/7tYqH48nS33vGf9sbw6G/y8RXPovHkttLqX7Uk8LsjXvE2OmrtRBc88K/rUuqYgULugv2i8+meIuySHRLv85BA9/WtuOw==
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 9
+        total_tokens: 9
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2630'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a knowledgeable assistant that answers questions using a document knowledge base.
+
+          Process:
+          1. Call search_documents with relevant keywords from the question
+          2. Review the results and their relevance scores
+          3. If needed, perform follow-up searches with different keywords (max 3 total)
+          4. Provide a concise answer based strictly on the retrieved content
+
+          The search tool returns results like:
+          [chunk_abc123] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [chunk_def456] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          In your response, include the chunk IDs you used in cited_chunks.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge
+          - Use the Source and Type metadata to understand context
+          - If multiple results are relevant, synthesize them coherently
+          - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
+          - Be concise and direct - avoid elaboration unless asked
+          - Higher scores indicate more relevant results
+        role: system
+      - content: What is Python?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Returns results with chunk IDs and relevance scores.
+            Reference results by their chunk_id in cited_chunks.
+          name: search_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '500'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"Python what is Python definition"}'
+              name: search_documents
+            id: call_2n6q797i
+            index: 0
+            type: function
+      created: 1766759884
+      id: chatcmpl-350
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 36
+        prompt_tokens: 532
+        total_tokens: 568
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '102'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - Python what is Python definition
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 6
+        total_tokens: 6
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3048'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a knowledgeable assistant that answers questions using a document knowledge base.
+
+          Process:
+          1. Call search_documents with relevant keywords from the question
+          2. Review the results and their relevance scores
+          3. If needed, perform follow-up searches with different keywords (max 3 total)
+          4. Provide a concise answer based strictly on the retrieved content
+
+          The search tool returns results like:
+          [chunk_abc123] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [chunk_def456] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          In your response, include the chunk IDs you used in cited_chunks.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge
+          - Use the Source and Type metadata to understand context
+          - If multiple results are relevant, synthesize them coherently
+          - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
+          - Be concise and direct - avoid elaboration unless asked
+          - Higher scores indicate more relevant results
+        role: system
+      - content: What is Python?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"Python what is Python definition"}'
+            name: search_documents
+          id: call_2n6q797i
+          type: function
+      - content: |-
+          [b01d280b-1328-4b0e-8a8a-2527d410035b] (score: 0.03)
+          Type: text
+          Content:
+          Python is a high-level programming language.
+        role: tool
+        tool_call_id: call_2n6q797i
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Returns results with chunk IDs and relevance scores.
+            Reference results by their chunk_id in cited_chunks.
+          name: search_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '487'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: '{"answer":"Python is a high‑level programming language.","cited_chunks":["b01d280b-1328-4b0e-8a8a-2527d410035b"],"confidence":0.9,"query":"What
+            is Python?"}'
+          reasoning: Only one result.
+          role: assistant
+      created: 1766759886
+      id: chatcmpl-741
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 78
+        prompt_tokens: 633
+        total_tokens: 711
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3421'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a knowledgeable assistant that answers questions using a document knowledge base.
+
+          Process:
+          1. Call search_documents with relevant keywords from the question
+          2. Review the results and their relevance scores
+          3. If needed, perform follow-up searches with different keywords (max 3 total)
+          4. Provide a concise answer based strictly on the retrieved content
+
+          The search tool returns results like:
+          [chunk_abc123] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [chunk_def456] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          In your response, include the chunk IDs you used in cited_chunks.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge
+          - Use the Source and Type metadata to understand context
+          - If multiple results are relevant, synthesize them coherently
+          - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
+          - Be concise and direct - avoid elaboration unless asked
+          - Higher scores indicate more relevant results
+        role: system
+      - content: What is Python?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"Python what is Python definition"}'
+            name: search_documents
+          id: call_2n6q797i
+          type: function
+      - content: |-
+          [b01d280b-1328-4b0e-8a8a-2527d410035b] (score: 0.03)
+          Type: text
+          Content:
+          Python is a high-level programming language.
+        role: tool
+        tool_call_id: call_2n6q797i
+      - content: |-
+          <think>
+          Only one result.
+          </think>
+
+          {"answer":"Python is a high‑level programming language.","cited_chunks":["b01d280b-1328-4b0e-8a8a-2527d410035b"],"confidence":0.9,"query":"What is Python?"}
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Returns results with chunk IDs and relevance scores.
+            Reference results by their chunk_id in cited_chunks.
+          name: search_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '578'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"Python is a high‑level programming language.","cited_chunks":["b01d280b-1328-4b0e-8a8a-2527d410035b"],"confidence":0.9,"query":"What
+                is Python?"}'
+              name: final_result
+            id: call_fqpant5d
+            index: 0
+            type: function
+      created: 1766759887
+      id: chatcmpl-647
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 69
+        prompt_tokens: 728
+        total_tokens: 797
+    status:
+      code: 200
+      message: OK
+version: 1

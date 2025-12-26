@@ -12,6 +12,11 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
 
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent / "cassettes" / "test_client")
+
+
 @pytest.mark.asyncio
 async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
     """Test HaikuRAG CRUD operations for documents."""
@@ -739,26 +744,19 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
             )  # Original metadata preserved
 
 
-@pytest.mark.asyncio
-async def test_client_ask(monkeypatch, temp_db_path):
-    """Test asking questions returns answer and citations."""
-    from pydantic_ai.models.test import TestModel
-
-    # Mock get_model to return TestModel
-    monkeypatch.setattr(
-        "haiku.rag.utils.get_model", lambda *args, **kwargs: TestModel()
-    )
-
+@pytest.mark.vcr()
+async def test_client_ask(allow_model_requests, temp_db_path):
+    """Test asking questions returns answer and citations (VCR recorded)."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create a test document for the agent to search
         await client.create_document(
             content="Python is a high-level programming language.", uri="test.txt"
         )
 
-        # Use real QA agent with TestModel
+        # Use real QA agent with VCR-recorded responses
         answer, citations = await client.ask("What is Python?")
 
-        # TestModel will generate a valid string response
+        # Should return a valid response
         assert answer is not None
         assert isinstance(answer, str)
         assert isinstance(citations, list)
