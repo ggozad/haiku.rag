@@ -135,12 +135,6 @@ providers:
   ollama:
     base_url: http://localhost:11434
 
-  vllm:
-    embeddings_base_url: ""
-    rerank_base_url: ""
-    qa_base_url: ""
-    research_base_url: ""
-
   docling_serve:
     base_url: http://localhost:5001
     api_key: ""

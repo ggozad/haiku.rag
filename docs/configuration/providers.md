@@ -28,6 +28,7 @@ qa:
   - Higher (0.8-1.0+): Creative, varied responses
 - **max_tokens**: Maximum tokens in response
 - **enable_thinking**: Control reasoning behavior (see below)
+- **base_url**: Custom endpoint for OpenAI-compatible servers (vLLM, LM Studio, etc.)
 
 ### Thinking Control
 
@@ -67,7 +68,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 
 ## Embedding Providers
 
-If you use Ollama, you can use any pulled model that supports embeddings.
+Embedding models require three settings: `provider`, `name`, and `vector_dim`. Optionally, use `base_url` for OpenAI-compatible servers.
 
 ### Ollama (Default)
 
@@ -135,41 +136,59 @@ Set your API key via environment variable:
 export OPENAI_API_KEY=your-api-key
 ```
 
-### vLLM
+### Cohere
 
-For high-performance local inference, you can use vLLM to serve embedding models with OpenAI-compatible APIs:
+Cohere embeddings are available via pydantic-ai:
 
 ```yaml
 embeddings:
   model:
-    provider: vllm
+    provider: cohere
+    name: embed-v4.0
+    vector_dim: 1024
+```
+
+Set your API key via environment variable:
+
+```bash
+export CO_API_KEY=your-api-key
+```
+
+### SentenceTransformers
+
+For local embeddings using HuggingFace models:
+
+```yaml
+embeddings:
+  model:
+    provider: sentence-transformers
+    name: all-MiniLM-L6-v2
+    vector_dim: 384
+```
+
+### OpenAI-Compatible Servers (vLLM, LM Studio, etc.)
+
+For local inference servers with OpenAI-compatible APIs, use the `openai` provider with a custom `base_url`:
+
+```yaml
+# vLLM example
+embeddings:
+  model:
+    provider: openai
     name: mixedbread-ai/mxbai-embed-large-v1
     vector_dim: 512
+    base_url: http://localhost:8000/v1
 
-providers:
-  vllm:
-    embeddings_base_url: http://localhost:8000
-```
-
-**Note:** You need to run a vLLM server separately with an embedding model loaded.
-
-### LM Studio
-
-[LM Studio](https://lmstudio.ai/) provides a local OpenAI-compatible API server for running models:
-
-```yaml
+# LM Studio example
 embeddings:
   model:
-    provider: lm_studio
+    provider: openai
     name: text-embedding-qwen3-embedding-4b
     vector_dim: 2560
-
-providers:
-  lm_studio:
-    base_url: http://localhost:1234
+    base_url: http://localhost:1234/v1
 ```
 
-**Note:** LM Studio must be running with an embedding model loaded. The default URL is `http://localhost:1234`.
+**Note:** The `base_url` must include the `/v1` path for OpenAI-compatible endpoints.
 
 ## Question Answering Providers
 
@@ -232,45 +251,28 @@ Set your API key via environment variable:
 export ANTHROPIC_API_KEY=your-api-key
 ```
 
-### vLLM
+### OpenAI-Compatible Servers (vLLM, LM Studio, etc.)
 
-For high-performance local inference:
-
-```yaml
-qa:
-  model:
-    provider: vllm
-    name: Qwen/Qwen3-4B  # Any model with tool support in vLLM
-
-providers:
-  vllm:
-    qa_base_url: http://localhost:8002
-```
-
-**Note:** You need to run a vLLM server separately with a model that supports tool calling loaded. Consult the specific model's documentation for proper vLLM serving configuration.
-
-### LM Studio
-
-Use LM Studio for local question answering and research:
+For local inference servers with OpenAI-compatible APIs, use the `openai` provider with a custom `base_url`:
 
 ```yaml
+# vLLM example
 qa:
   model:
-    provider: lm_studio
-    name: openai/gpt-oss-20b
+    provider: openai
+    name: Qwen/Qwen3-4B
+    base_url: http://localhost:8002/v1
+
+# LM Studio example
+qa:
+  model:
+    provider: openai
+    name: gpt-oss-20b
+    base_url: http://localhost:1234/v1
     enable_thinking: false
-
-research:
-  model:
-    provider: lm_studio
-    name: openai/gpt-oss-20b
-
-providers:
-  lm_studio:
-    base_url: http://localhost:1234
 ```
 
-**Note:** LM Studio must be running with a chat model that supports tool calling loaded.
+**Note:** The server must be running with a model that supports tool calling. The `base_url` must include the `/v1` path.
 
 ### Other Providers
 
