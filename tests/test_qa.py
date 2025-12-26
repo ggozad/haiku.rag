@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 import pytest
 from datasets import Dataset
@@ -8,13 +8,15 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.qa.agent import QuestionAnswerAgent
 
-OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
-ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent / "cassettes" / "test_qa")
 
 
-@pytest.mark.asyncio
-async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
-    """Test Ollama QA with LLM judge."""
+@pytest.mark.vcr()
+async def test_qa_ollama(allow_model_requests, qa_corpus: Dataset, temp_db_path):
+    """Test Ollama QA with LLM judge (VCR recorded)."""
     client = HaikuRAG(temp_db_path, create=True)
     qa = QuestionAnswerAgent(
         client, ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=True)
@@ -37,10 +39,9 @@ async def test_qa_ollama(qa_corpus: Dataset, temp_db_path):
     )
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not available")
-async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
-    """Test OpenAI QA with LLM judge."""
+@pytest.mark.vcr()
+async def test_qa_openai(allow_model_requests, qa_corpus: Dataset, temp_db_path):
+    """Test OpenAI QA with LLM judge (VCR recorded)."""
     client = HaikuRAG(temp_db_path, create=True)
     qa = QuestionAnswerAgent(client, ModelConfig(provider="openai", name="gpt-4o-mini"))
     llm_judge = LLMJudge()
@@ -61,10 +62,9 @@ async def test_qa_openai(qa_corpus: Dataset, temp_db_path):
     )
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(not ANTHROPIC_AVAILABLE, reason="Anthropic not available")
-async def test_qa_anthropic(qa_corpus: Dataset, temp_db_path):
-    """Test Anthropic QA with LLM judge."""
+@pytest.mark.vcr()
+async def test_qa_anthropic(allow_model_requests, qa_corpus: Dataset, temp_db_path):
+    """Test Anthropic QA with LLM judge (VCR recorded)."""
     client = HaikuRAG(temp_db_path, create=True)
     qa = QuestionAnswerAgent(
         client, ModelConfig(provider="anthropic", name="claude-3-5-haiku-20241022")
