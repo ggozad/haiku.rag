@@ -1410,12 +1410,13 @@ class HaikuRAG:
             embeddings = await self.chunk_repository.embedder.embed_documents(texts)
 
             # Build updated records
-            for chunk, embedding in zip(chunks, embeddings):
+            for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
                 pending_records.append(
                     self.store.ChunkRecord(
                         id=chunk.id,  # type: ignore[arg-type]
                         document_id=chunk.document_id,  # type: ignore[arg-type]
                         content=chunk.content,
+                        content_fts=content_fts,
                         metadata=json.dumps(chunk.metadata),
                         order=chunk.order,
                         vector=embedding,

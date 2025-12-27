@@ -40,6 +40,7 @@ def create_chunk_model(vector_dim: int):
         id: str = Field(default_factory=lambda: str(uuid4()))
         document_id: str
         content: str
+        content_fts: str = Field(default="")
         metadata: str = Field(default="{}")
         order: int = Field(default=0)
         vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
@@ -288,9 +289,9 @@ class Store:
             self.chunks_table = self.db.open_table("chunks")
         else:
             self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
-            # Create FTS index on the new table with phrase query support
+            # Create FTS index on content_fts (contextualized content) for better search
             self.chunks_table.create_fts_index(
-                "content", replace=True, with_position=True, remove_stop_words=False
+                "content_fts", replace=True, with_position=True, remove_stop_words=False
             )
 
         # Create or get settings table
@@ -392,9 +393,9 @@ class Store:
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
         self.chunks_table = self.db.create_table("chunks", schema=self.ChunkRecord)
 
-        # Create FTS index on the new table with phrase query support
+        # Create FTS index on content_fts (contextualized content) for better search
         self.chunks_table.create_fts_index(
-            "content", replace=True, with_position=True, remove_stop_words=False
+            "content_fts", replace=True, with_position=True, remove_stop_words=False
         )
 
     def close(self):
