@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Contextualized FTS Search**: Full-text search now includes section headings
+  - New `content_fts` column stores contextualized content (headings + body text)
+  - FTS index now searches `content_fts` for better keyword matching on section context
+  - Original `content` column preserved for display and context expansion
+  - Migration automatically populates `content_fts` for existing databases
+
 ## [0.23.0] - 2025-12-26
 
 ### Added
