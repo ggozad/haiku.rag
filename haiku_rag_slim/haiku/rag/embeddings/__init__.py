@@ -32,16 +32,15 @@ class EmbedderWrapper:
 
 
 def contextualize(chunks: list["Chunk"]) -> list[str]:
-    """Prepare chunk content for embedding by adding context.
+    """Prepare chunk content for embedding/FTS by adding context.
 
     Prepends section headings to chunk content for better semantic search.
-    The embeddings will capture section context while stored content stays raw.
 
     Args:
         chunks: List of chunks to contextualize.
 
     Returns:
-        List of contextualized text strings for embedding.
+        List of contextualized text strings.
     """
     texts = []
     for chunk in chunks:

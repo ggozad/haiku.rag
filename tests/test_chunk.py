@@ -342,3 +342,86 @@ def test_search_result_get_primary_label():
     # Empty labels
     result = SearchResult(content="x", score=0.5, labels=[])
     assert result._get_primary_label() is None
+
+
+@pytest.mark.asyncio
+async def test_chunk_content_fts_populated(temp_db_path):
+    """Test that content_fts column is populated with contextualized content."""
+    from haiku.rag.embeddings import get_embedder
+
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Create a chunk with headings
+        chunk = Chunk(
+            document_id="test-doc",
+            content="This is the raw chunk content.",
+            metadata={"headings": ["Chapter 1", "Section 1.1"]},
+            order=0,
+        )
+
+        # Generate embedding
+        embedder = get_embedder(Config)
+        embedding = (await embedder.embed_documents([chunk.content]))[0]
+        chunk.embedding = embedding
+
+        # Store the chunk
+        await client.chunk_repository.create(chunk)
+
+        # Read the raw record from the database
+        records = list(
+            client.store.chunks_table.search()
+            .where(f"id = '{chunk.id}'")
+            .limit(1)
+            .to_arrow()
+            .to_pylist()
+        )
+
+        assert len(records) == 1
+        record = records[0]
+
+        # Verify content is raw (no headings)
+        assert record["content"] == "This is the raw chunk content."
+
+        # Verify content_fts is contextualized (headings + content)
+        assert (
+            record["content_fts"]
+            == "Chapter 1\nSection 1.1\nThis is the raw chunk content."
+        )
+
+
+@pytest.mark.asyncio
+async def test_chunk_content_fts_without_headings(temp_db_path):
+    """Test that content_fts equals content when no headings present."""
+    from haiku.rag.embeddings import get_embedder
+
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Create a chunk without headings
+        chunk = Chunk(
+            document_id="test-doc",
+            content="Plain content without headings.",
+            metadata={},
+            order=0,
+        )
+
+        # Generate embedding
+        embedder = get_embedder(Config)
+        embedding = (await embedder.embed_documents([chunk.content]))[0]
+        chunk.embedding = embedding
+
+        # Store the chunk
+        await client.chunk_repository.create(chunk)
+
+        # Read the raw record from the database
+        records = list(
+            client.store.chunks_table.search()
+            .where(f"id = '{chunk.id}'")
+            .limit(1)
+            .to_arrow()
+            .to_pylist()
+        )
+
+        assert len(records) == 1
+        record = records[0]
+
+        # Both should be the same when no headings
+        assert record["content"] == "Plain content without headings."
+        assert record["content_fts"] == "Plain content without headings."
