@@ -1,22 +1,20 @@
 # Changelog
 ## [Unreleased]
 
+## [0.23.1] - 2025-12-29
+
 ### Added
 
-- **GitHub Actions CI**: Test workflow runs pytest, pyright, and ruff on push/PR to main
-- **VCR Cassette Recording**: Integration tests use recorded HTTP responses for deterministic CI runs
-  - LLM tests (QA, embeddings, research graph) replay from cassettes without real API calls
-  - docling-serve tests run without Docker container in CI
-  - Uses pytest-recording with custom JSON body serializer
 - **Contextualized FTS Search**: Full-text search now includes section headings
   - New `content_fts` column stores contextualized content (headings + body text)
   - FTS index now searches `content_fts` for better keyword matching on section context
   - Original `content` column preserved for display and context expansion
   - Migration automatically populates `content_fts` for existing databases
-
-### Removed
-
-- Removed obsolete `test_config_validation_on_db_load` test (chunk_size changes don't invalidate database)
+- **GitHub Actions CI**: Test workflow runs pytest, pyright, and ruff on push/PR to main
+- **VCR Cassette Recording**: Integration tests use recorded HTTP responses for deterministic CI runs
+  - LLM tests (QA, embeddings, research graph) replay from cassettes without real API calls
+  - docling-serve tests run without Docker container in CI
+  - Uses pytest-recording with custom JSON body serializer
 
 ## [0.23.0] - 2025-12-26
 
