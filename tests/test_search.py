@@ -6,7 +6,7 @@ from haiku.rag.config import Config
 from haiku.rag.store.models import SearchResult
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
     # Create client
@@ -35,23 +35,23 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     for target_document, doc_data in documents:
         question = doc_data["question"]
 
-        # Test vector search
+        # Test vector search (limit=10 to accommodate different embedding models)
         vector_results = await client.chunk_repository.search(
-            question, limit=5, search_type="vector"
+            question, limit=10, search_type="vector"
         )
         target_document_ids = {chunk.document_id for chunk, _ in vector_results}
         assert target_document.id in target_document_ids
 
         # Test FTS search
         fts_results = await client.chunk_repository.search(
-            question, limit=5, search_type="fts"
+            question, limit=10, search_type="fts"
         )
         target_document_ids = {chunk.document_id for chunk, _ in fts_results}
         assert target_document.id in target_document_ids
 
         # Test hybrid search
         hybrid_results = await client.chunk_repository.search(
-            question, limit=5, search_type="hybrid"
+            question, limit=10, search_type="hybrid"
         )
         target_document_ids = {chunk.document_id for chunk, _ in hybrid_results}
         assert target_document.id in target_document_ids
@@ -59,7 +59,7 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chunks_include_document_info(temp_db_path):
     """Test that search results include document URI and metadata."""
     client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
@@ -91,7 +91,7 @@ async def test_chunks_include_document_info(temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chunks_include_document_title(temp_db_path):
     """Test that search results include the parent document title when present."""
     client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
@@ -117,7 +117,7 @@ async def test_chunks_include_document_title(temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_score_types(temp_db_path):
     """Test that different search types return appropriate score ranges."""
     client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
@@ -187,7 +187,7 @@ async def test_search_score_types(temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_returns_search_result(temp_db_path):
     """Test that client.search() returns SearchResult with provenance info."""
     client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
@@ -214,7 +214,7 @@ async def test_search_returns_search_result(temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_graceful_degradation(temp_db_path):
     """Test search works when docling data is unavailable."""
     from haiku.rag.store.models import Chunk
@@ -245,7 +245,7 @@ async def test_search_graceful_degradation(temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_result_format_includes_metadata(temp_db_path):
     """Test that formatted search results include document metadata."""
     async with HaikuRAG(temp_db_path, create=True) as client:

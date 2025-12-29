@@ -4,7 +4,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.store.engine import Store
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_version_rollback_on_create_failure(temp_db_path):
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Patch chunk_repository.create to succeed then fail, triggering rollback
@@ -29,7 +29,7 @@ async def test_version_rollback_on_create_failure(temp_db_path):
         assert len(all_chunks) == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_version_rollback_on_update_failure(temp_db_path):
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create a valid document first
@@ -91,7 +91,7 @@ def test_existing_database_runs_upgrades(monkeypatch, temp_db_path):
     assert called["value"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_vacuum_with_retention_threshold(temp_db_path):
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create first document
@@ -149,7 +149,7 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     """Test that background vacuum completes when context manager exits."""
     from haiku.rag.config import Config
@@ -176,7 +176,7 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     store.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
     """Test that auto_vacuum=False prevents automatic vacuum after operations."""
     from haiku.rag.config import Config
@@ -202,7 +202,7 @@ async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
     """Test that auto_vacuum=True (default) triggers vacuum after operations."""
     from haiku.rag.config import Config

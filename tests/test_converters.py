@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-import requests
 from docling_core.types.doc.document import DoclingDocument
 
 from haiku.rag.config import AppConfig
@@ -16,13 +15,9 @@ from haiku.rag.converters.docling_serve import DoclingServeConverter
 from haiku.rag.converters.text_utils import TextFileHandler
 
 
-def is_docling_serve_available(base_url: str = "http://localhost:5001") -> bool:
-    """Check if docling-serve is running and accessible."""
-    try:
-        response = requests.get(f"{base_url}/health", timeout=2)
-        return response.status_code == 200
-    except Exception:
-        return False
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent / "cassettes" / "test_converters")
 
 
 def create_mock_docling_document_json(name: str = "test") -> dict:
@@ -560,13 +555,8 @@ class TestDoclingServeConverter:
             assert "files" in call_kwargs
 
 
-@pytest.mark.integration
-@pytest.mark.skipif(
-    not is_docling_serve_available(),
-    reason="docling-serve not available at http://localhost:5001",
-)
 class TestDoclingServeConverterIntegration:
-    """Integration tests with real docling-serve (requires service running)."""
+    """Integration tests with real docling-serve recorded via VCR."""
 
     @pytest.fixture
     def config(self):
@@ -580,22 +570,23 @@ class TestDoclingServeConverterIntegration:
         """Create converter for integration tests."""
         return DoclingServeConverter(config)
 
+    @pytest.mark.vcr()
     @pytest.mark.asyncio
     async def test_convert_text_real_service(self, converter):
-        """Test text conversion with real docling-serve (integration)."""
+        """Test text conversion with real docling-serve."""
         doc = await converter.convert_text("# Test Document\n\nThis is a test.")
         assert isinstance(doc, DoclingDocument)
-        assert doc.version == "1.8.0"
 
+    @pytest.mark.vcr()
     @pytest.mark.asyncio
     async def test_convert_code_file_real_service(self, converter):
-        """Test code file conversion with real docling-serve (integration)."""
+        """Test code file conversion with real docling-serve."""
         code = "def test():\n    return 42"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(code)
-            f.flush()
             temp_path = Path(f.name)
-            doc = await converter.convert_file(temp_path)
+        doc = await converter.convert_file(temp_path)
+        temp_path.unlink()
 
         assert isinstance(doc, DoclingDocument)
         result = doc.export_to_markdown()

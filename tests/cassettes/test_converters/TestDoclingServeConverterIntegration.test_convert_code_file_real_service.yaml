@@ -1,0 +1,100 @@
+interactions:
+- request:
+    body: "--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition:
+      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition:
+      form-data; name=\"do_table_structure\"\r\n\r\ntrue\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data;
+      name=\"table_mode\"\r\n\r\naccurate\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data; name=\"table_cell_matching\"\r\n\r\ntrue\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition:
+      form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data;
+      name=\"generate_picture_images\"\r\n\r\nfalse\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data;
+      name=\"files\"; filename=\"tmpgc9za8mg.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
+      42\n```\r\n--313fb28cff30a333a81f610f9c6bdaf3--\r\n"
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1011'
+      content-type:
+      - multipart/form-data; boundary=313fb28cff30a333a81f610f9c6bdaf3
+      host:
+      - localhost:5001
+    method: POST
+    uri: http://localhost:5001/v1/convert/file
+  response:
+    headers:
+      content-length:
+      - '1113'
+      content-type:
+      - application/json
+    parsed_body:
+      document:
+        doctags_content: null
+        filename: tmpgc9za8mg.md
+        html_content: null
+        json_content:
+          body:
+            children:
+            - $ref: '#/texts/0'
+            content_layer: body
+            label: unspecified
+            meta: null
+            name: _root_
+            parent: null
+            self_ref: '#/body'
+          form_items: []
+          furniture:
+            children: []
+            content_layer: furniture
+            label: unspecified
+            meta: null
+            name: _root_
+            parent: null
+            self_ref: '#/furniture'
+          groups: []
+          key_value_items: []
+          name: tmpgc9za8mg
+          origin:
+            binary_hash: 9008975733065065710
+            filename: tmpgc9za8mg.md
+            mimetype: text/markdown
+            uri: null
+          pages: {}
+          pictures: []
+          schema_name: DoclingDocument
+          tables: []
+          texts:
+          - captions: []
+            children: []
+            code_language: unknown
+            content_layer: body
+            footnotes: []
+            formatting: null
+            hyperlink: null
+            image: null
+            label: code
+            meta: null
+            orig: |-
+              def test():
+                  return 42
+            parent:
+              $ref: '#/body'
+            prov: []
+            references: []
+            self_ref: '#/texts/0'
+            text: |-
+              def test():
+                  return 42
+          version: 1.8.0
+        md_content: null
+        text_content: null
+      errors: []
+      processing_time: 0.002258999999980915
+      status: success
+      timings: {}
+    status:
+      code: 200
+      message: OK
+version: 1

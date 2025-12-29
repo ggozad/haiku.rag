@@ -1,18 +1,33 @@
+import logging
 import os
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 # Prevent tests from loading user's local haiku.rag.yaml by setting env var
-# to an empty config file BEFORE any haiku.rag imports.
-# This ensures tests always use default config values.
+# to a test config file BEFORE any haiku.rag imports.
+# Uses Ollama for embeddings - HTTP calls are recorded/replayed via VCR.
 _test_config_dir = tempfile.mkdtemp()
 _test_config_path = Path(_test_config_dir) / "test-defaults.yaml"
-_test_config_path.write_text("{}")  # Empty YAML = use all defaults
+_test_config_path.write_text("""
+embeddings:
+  model:
+    provider: ollama
+    name: qwen3-embedding:4b
+    vector_dim: 2560
+""")
 os.environ["HAIKU_RAG_CONFIG_PATH"] = str(_test_config_path)
 
+import pydantic_ai.models  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
 from datasets import Dataset, load_dataset, load_from_disk  # noqa: E402
+
+if TYPE_CHECKING:
+    from vcr import VCR
+
+pydantic_ai.models.ALLOW_MODEL_REQUESTS = False
+logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="session")
@@ -71,3 +86,46 @@ def temp_yaml_config(tmp_path, monkeypatch):
     monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", str(config_file))
 
     yield config_file
+
+
+@pytest.fixture
+def allow_model_requests():
+    with pydantic_ai.models.override_allow_model_requests(True):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def set_mock_api_keys(monkeypatch):
+    """Set mock API keys for providers that require them during initialization."""
+    if not os.getenv("OPENAI_API_KEY"):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-key-for-vcr-playback")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-mock-key-for-vcr-playback")
+    if not os.getenv("CO_API_KEY"):
+        monkeypatch.setenv("CO_API_KEY", "mock-cohere-key-for-vcr-playback")
+    if not os.getenv("ZEROENTROPY_API_KEY"):
+        monkeypatch.setenv("ZEROENTROPY_API_KEY", "mock-ze-key-for-vcr-playback")
+    if not os.getenv("VOYAGE_API_KEY"):
+        monkeypatch.setenv("VOYAGE_API_KEY", "mock-voyage-key-for-vcr-playback")
+    if not os.getenv("GROQ_API_KEY"):
+        monkeypatch.setenv("GROQ_API_KEY", "mock-groq-key-for-vcr-playback")
+    if not os.getenv("GOOGLE_API_KEY"):
+        monkeypatch.setenv("GOOGLE_API_KEY", "mock-google-key-for-vcr-playback")
+    if not os.getenv("AWS_DEFAULT_REGION"):
+        monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+
+def pytest_recording_configure(config: Any, vcr: "VCR"):
+    from . import json_body_serializer
+
+    vcr.register_serializer("yaml", json_body_serializer)
+
+
+@pytest.fixture(scope="module")
+def vcr_config():
+    return {
+        "ignore_localhost": False,
+        "ignore_hosts": ["huggingface.co"],
+        "filter_headers": ["authorization", "x-api-key"],
+        "decode_compressed_response": True,
+    }

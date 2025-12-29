@@ -30,7 +30,7 @@ def test_database_created_with_create_flag():
         client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_operations_work_after_database_created():
     """Test that operations work after DB is created."""
     with tempfile.TemporaryDirectory() as tmpdir:

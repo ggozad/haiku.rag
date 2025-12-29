@@ -1,4 +1,4 @@
-from zeroentropy import ZeroEntropy
+from zeroentropy import AsyncZeroEntropy
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
@@ -15,7 +15,7 @@ class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
         """
         self._model = model
         # Zero Entropy SDK reads ZEROENTROPY_API_KEY from environment by default
-        self._client = ZeroEntropy()
+        self._client = AsyncZeroEntropy()
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
@@ -38,7 +38,7 @@ class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
 
         # Call Zero Entropy reranking API
         model_name = self._model or "zerank-1"
-        response = self._client.models.rerank(
+        response = await self._client.models.rerank(
             model=model_name,
             query=query,
             documents=documents,

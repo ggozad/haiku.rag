@@ -4,7 +4,7 @@ from datasets import Dataset
 from haiku.rag.client import HaikuRAG, RebuildMode
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
     """Test full rebuild: converts, chunks, and embeds all documents."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -34,7 +34,7 @@ async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
         assert chunk_ids_before.isdisjoint(chunk_ids_after)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
     """Test embed-only rebuild: keeps chunks, only regenerates embeddings."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -70,7 +70,7 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
             assert chunk.content == chunk_contents_before[chunk.id]
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_path):
     """Test embed-only rebuild skips chunks with unchanged embeddings."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -106,7 +106,7 @@ async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_pa
             assert embeddings_before[chunk_id] == embeddings_after[chunk_id]
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
     """Test rechunk rebuild: re-chunks from content without accessing source files."""
     async with HaikuRAG(temp_db_path, create=True) as client:
