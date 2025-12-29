@@ -62,7 +62,9 @@ async def test_app_info_outputs(temp_db_path, capsys):
 
     out = capsys.readouterr().out
     # Validate expected content substrings
-    assert f"path: \n{temp_db_path}" in out
+    # Note: Rich console may wrap long paths to new lines, so check separately
+    assert "path:" in out
+    assert str(temp_db_path) in out
     assert "haiku.rag version (db):" in out
     assert "embeddings: openai/text-embedding-3-small (dim: 3)" in out
     assert "documents: 1" in out
