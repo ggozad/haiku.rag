@@ -344,7 +344,7 @@ def test_search_result_get_primary_label():
     assert result._get_primary_label() is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chunk_content_fts_populated(temp_db_path):
     """Test that content_fts column is populated with contextualized content."""
     from haiku.rag.embeddings import get_embedder
@@ -388,7 +388,7 @@ async def test_chunk_content_fts_populated(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chunk_content_fts_without_headings(temp_db_path):
     """Test that content_fts equals content when no headings present."""
     from haiku.rag.embeddings import get_embedder
