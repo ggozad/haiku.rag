@@ -8,6 +8,11 @@
   - LLM tests (QA, embeddings, research graph) replay from cassettes without real API calls
   - docling-serve tests run without Docker container in CI
   - Uses pytest-recording with custom JSON body serializer
+- **Contextualized FTS Search**: Full-text search now includes section headings
+  - New `content_fts` column stores contextualized content (headings + body text)
+  - FTS index now searches `content_fts` for better keyword matching on section context
+  - Original `content` column preserved for display and context expansion
+  - Migration automatically populates `content_fts` for existing databases
 
 ### Removed
 

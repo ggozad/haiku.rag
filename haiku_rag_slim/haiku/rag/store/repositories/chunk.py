@@ -27,14 +27,21 @@ class ChunkRepository:
         self.embedder = store.embedder
 
     def _ensure_fts_index(self) -> None:
-        """Ensure FTS index exists on the content column."""
+        """Ensure FTS index exists on the content_fts column."""
         try:
             self.store.chunks_table.create_fts_index(
-                "content", replace=True, with_position=True, remove_stop_words=False
+                "content_fts", replace=True, with_position=True, remove_stop_words=False
             )
         except Exception as e:
             # Log the error but don't fail - FTS might already exist
             logger.debug(f"FTS index creation skipped: {e}")
+
+    def _contextualize_content(self, chunk: Chunk) -> str:
+        """Generate contextualized content for FTS by prepending headings."""
+        meta = chunk.get_chunk_metadata()
+        if meta.headings:
+            return "\n".join(meta.headings) + "\n" + chunk.content
+        return chunk.content
 
     async def create(self, entity: Chunk | list[Chunk]) -> Chunk | list[Chunk]:
         """Create one or more chunks in the database.
@@ -54,6 +61,7 @@ class ChunkRepository:
                 id=chunk_id,
                 document_id=entity.document_id,
                 content=entity.content,
+                content_fts=self._contextualize_content(entity),
                 metadata=json.dumps(
                     {k: v for k, v in entity.metadata.items() if k != "order"}
                 ),
@@ -86,6 +94,7 @@ class ChunkRepository:
                 id=chunk_id,
                 document_id=chunk.document_id,
                 content=chunk.content,
+                content_fts=self._contextualize_content(chunk),
                 metadata=json.dumps(
                     {k: v for k, v in chunk.metadata.items() if k != "order"}
                 ),
@@ -136,6 +145,7 @@ class ChunkRepository:
             values={
                 "document_id": entity.document_id,
                 "content": entity.content,
+                "content_fts": self._contextualize_content(entity),
                 "metadata": json.dumps(
                     {k: v for k, v in entity.metadata.items() if k != "order"}
                 ),
@@ -190,9 +200,9 @@ class ChunkRepository:
         self.store.chunks_table = self.store.db.create_table(
             "chunks", schema=self.store.ChunkRecord
         )
-        # Create FTS index on the new table with phrase query support
+        # Create FTS index on content_fts (contextualized content) for better search
         self.store.chunks_table.create_fts_index(
-            "content", replace=True, with_position=True, remove_stop_words=False
+            "content_fts", replace=True, with_position=True, remove_stop_words=False
         )
 
     async def delete_by_document_id(self, document_id: str) -> bool:
@@ -409,6 +419,7 @@ class ChunkRepository:
                 id=str(row["id"]),
                 document_id=str(row["document_id"]),
                 content=str(row["content"]),
+                content_fts=str(row.get("content_fts", "")),
                 metadata=str(row["metadata"]),
                 order=int(row["order"]) if "order" in row else 0,
             )

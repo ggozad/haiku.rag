@@ -66,9 +66,13 @@ from haiku.rag.store.upgrades.v0_19_6 import (
 from haiku.rag.store.upgrades.v0_20_0 import (
     upgrade_add_docling_document as upgrade_0_20_0_docling,
 )
+from haiku.rag.store.upgrades.v0_23_1 import (
+    upgrade_contextualize_chunks as upgrade_0_23_1_contextualize,
+)
 
 upgrades.append(upgrade_0_9_3_order)
 upgrades.append(upgrade_0_9_3_fts)
 upgrades.append(upgrade_0_10_1_add_title)
 upgrades.append(upgrade_0_19_6_embeddings)
 upgrades.append(upgrade_0_20_0_docling)
+upgrades.append(upgrade_0_23_1_contextualize)
