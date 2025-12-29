@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
+from haiku.rag.reranking import _reranker_cache, get_reranker
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
@@ -9,6 +11,14 @@ from haiku.rag.store.models.chunk import Chunk
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_reranker")
+
+
+@pytest.fixture(autouse=True)
+def clear_reranker_cache():
+    """Clear the reranker cache before each test."""
+    _reranker_cache.clear()
+    yield
+    _reranker_cache.clear()
 
 
 chunks = [
@@ -98,3 +108,123 @@ async def test_zeroentropy_reranker():
 
     except ImportError:
         pytest.skip("Zero Entropy package not installed")
+
+
+class TestGetReranker:
+    def test_returns_none_when_no_model_configured(self):
+        config = AppConfig(reranking=RerankingConfig(model=None))
+        result = get_reranker(config)
+        assert result is None
+
+    def test_mxbai_provider(self):
+        try:
+            from haiku.rag.reranking.mxbai import MxBAIReranker
+
+            config = AppConfig(
+                reranking=RerankingConfig(
+                    model=ModelConfig(
+                        provider="mxbai", name="mixedbread-ai/mxbai-rerank-base-v2"
+                    )
+                )
+            )
+            result = get_reranker(config)
+            assert isinstance(result, MxBAIReranker)
+        except ImportError:
+            pytest.skip("MxBAI package not installed")
+
+    def test_cohere_provider(self):
+        try:
+            from haiku.rag.reranking.cohere import CohereReranker
+
+            config = AppConfig(
+                reranking=RerankingConfig(
+                    model=ModelConfig(provider="cohere", name="rerank-v3.5")
+                )
+            )
+            result = get_reranker(config)
+            assert isinstance(result, CohereReranker)
+        except ImportError:
+            pytest.skip("Cohere package not installed")
+
+    def test_vllm_provider_with_base_url(self):
+        from haiku.rag.reranking.vllm import VLLMReranker
+
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(
+                    provider="vllm",
+                    name="BAAI/bge-reranker-v2-m3",
+                    base_url="http://localhost:8000",
+                )
+            )
+        )
+        result = get_reranker(config)
+        assert isinstance(result, VLLMReranker)
+        assert result._model == "BAAI/bge-reranker-v2-m3"
+        assert result._base_url == "http://localhost:8000"
+
+    def test_vllm_provider_without_base_url_raises_error(self):
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="vllm", name="BAAI/bge-reranker-v2-m3")
+            )
+        )
+        with pytest.raises(ValueError, match="vLLM reranker requires base_url"):
+            get_reranker(config)
+
+    def test_zeroentropy_provider(self):
+        try:
+            from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
+
+            config = AppConfig(
+                reranking=RerankingConfig(
+                    model=ModelConfig(provider="zeroentropy", name="zerank-1")
+                )
+            )
+            result = get_reranker(config)
+            assert isinstance(result, ZeroEntropyReranker)
+            assert result._model == "zerank-1"
+        except ImportError:
+            pytest.skip("Zero Entropy package not installed")
+
+    def test_zeroentropy_provider_default_model(self):
+        try:
+            from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
+
+            config = AppConfig(
+                reranking=RerankingConfig(
+                    model=ModelConfig(provider="zeroentropy", name="")
+                )
+            )
+            result = get_reranker(config)
+            assert isinstance(result, ZeroEntropyReranker)
+            assert result._model == "zerank-1"
+        except ImportError:
+            pytest.skip("Zero Entropy package not installed")
+
+    def test_caching_returns_same_instance(self):
+        config = AppConfig(reranking=RerankingConfig(model=None))
+        result1 = get_reranker(config)
+        result2 = get_reranker(config)
+        assert result1 is result2
+
+    def test_different_configs_get_separate_cache_entries(self):
+        config1 = AppConfig(reranking=RerankingConfig(model=None))
+        config2 = AppConfig(reranking=RerankingConfig(model=None))
+
+        result1 = get_reranker(config1)
+        result2 = get_reranker(config2)
+
+        # Both return None, but they should be cached separately
+        assert result1 is None
+        assert result2 is None
+        assert len(_reranker_cache) == 2
+
+    def test_unknown_provider_returns_none(self):
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="unknown_provider", name="some-model")
+            )
+        )
+        result = get_reranker(config)
+        assert result is None
