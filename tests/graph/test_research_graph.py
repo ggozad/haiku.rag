@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -7,11 +5,6 @@ from haiku.rag.graph.agui.stream import stream_graph
 from haiku.rag.graph.research.dependencies import ResearchContext
 from haiku.rag.graph.research.graph import build_research_graph
 from haiku.rag.graph.research.state import ResearchDeps, ResearchState
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent / "cassettes" / "test_research_graph")
 
 
 @pytest.mark.vcr()
