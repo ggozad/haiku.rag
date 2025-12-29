@@ -12,7 +12,7 @@ except ImportError as e:
 class CohereReranker(RerankerBase):  # pragma: no cover
     def __init__(self):
         # Cohere SDK reads CO_API_KEY from environment by default
-        self._client = cohere.ClientV2()
+        self._client = cohere.AsyncClientV2()
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
@@ -23,7 +23,7 @@ class CohereReranker(RerankerBase):  # pragma: no cover
         documents = [chunk.content for chunk in chunks]
 
         model_name = self._model or "rerank-v3.5"
-        response = self._client.rerank(
+        response = await self._client.rerank(
             model=model_name, query=query, documents=documents, top_n=top_n
         )
 

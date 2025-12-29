@@ -17,7 +17,7 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_client")
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
     """Test HaikuRAG CRUD operations for documents."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -84,7 +84,7 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
         assert deleted_again is False
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_document(qa_corpus: Dataset, temp_db_path):
     """Test updating document with individual parameters."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -155,7 +155,7 @@ async def test_client_update_document(qa_corpus: Dataset, temp_db_path):
         assert doc_chunks[1].content == "Custom chunk 2"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_source(temp_db_path):
     """Test creating a document from a file source."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -186,7 +186,7 @@ async def test_client_create_document_from_source(temp_db_path):
             assert "md5" in doc2.metadata
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_source_with_title(temp_db_path):
     """Test creating a document from a file source with a title."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -203,7 +203,7 @@ async def test_client_create_document_from_source_with_title(temp_db_path):
             assert doc.title == "My Doc"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_title_noop_behavior(temp_db_path):
     """When content is unchanged, updating title should update document without re-chunking."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -225,7 +225,7 @@ async def test_client_update_title_noop_behavior(temp_db_path):
             assert got.title == "Title B"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_source_unsupported(temp_db_path):
     """Test creating a document from an unsupported file type."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -241,7 +241,7 @@ async def test_client_create_document_from_source_unsupported(temp_db_path):
                 await client.create_document_from_source(temp_path)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_source_nonexistent(temp_db_path):
     """Test creating a document from a non-existent file."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -252,7 +252,7 @@ async def test_client_create_document_from_source_nonexistent(temp_db_path):
             await client.create_document_from_source(non_existent_path)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_directory(temp_db_path):
     """Test creating documents from a directory recursively."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -287,7 +287,7 @@ async def test_client_create_document_from_directory(temp_db_path):
             assert not any("unsupported.xyz" in uri for uri in uris)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_directory_with_filters(
     monkeypatch, temp_db_path
 ):
@@ -336,7 +336,7 @@ async def test_client_create_document_from_directory_with_filters(
             assert not any("debug.log" in uri for uri in uris)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_url(temp_db_path):
     """Test creating a document from a URL."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -362,7 +362,7 @@ async def test_client_create_document_from_url(temp_db_path):
             assert doc.metadata["contentType"] == "text/html"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_url_with_different_content_types(
     temp_db_path,
 ):
@@ -409,7 +409,7 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.metadata["contentType"] == "text/plain"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_url_unsupported_content(temp_db_path):
     """Test creating a document from URL with unsupported content type."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -426,7 +426,7 @@ async def test_client_create_document_from_url_unsupported_content(temp_db_path)
                 )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_url_http_error(temp_db_path):
     """Test handling HTTP errors when creating document from URL."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -443,7 +443,7 @@ async def test_client_create_document_from_url_http_error(temp_db_path):
                 )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_get_extension_from_content_type_or_url(temp_db_path):
     """Test the helper method for determining file extensions."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -488,7 +488,7 @@ async def test_get_extension_from_content_type_or_url(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_metadata_content_type_and_md5(temp_db_path):
     """Test that contentType and md5 metadata are correctly set."""
     import hashlib
@@ -523,7 +523,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
                 assert url_doc.metadata["md5"] == expected_md5
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_update_no_op_behavior(temp_db_path):
     """Test create/update/no-op behavior based on MD5 changes."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -562,7 +562,7 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert retrieved_doc.content == updated_content
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_unchanged_file_keeps_timestamp(temp_db_path):
     """Test that unchanged files don't update the updated_at timestamp."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -584,7 +584,7 @@ async def test_client_unchanged_file_keeps_timestamp(temp_db_path):
             assert doc2.updated_at == original_updated_at  # Timestamp should not change
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_url_create_update_no_op_behavior(temp_db_path):
     """Test create/update/no-op behavior for URLs based on MD5 changes."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -623,7 +623,7 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
             assert doc3.content == updated_content.decode()  # Updated content
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_search(temp_db_path):
     """Test HaikuRAG search functionality."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -666,7 +666,7 @@ async def test_client_search(temp_db_path):
         assert len(limited_results) <= 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_async_context_manager(temp_db_path):
     """Test HaikuRAG as async context manager."""
 
@@ -691,7 +691,7 @@ async def test_client_async_context_manager(temp_db_path):
     # but the test passing means the context manager methods work correctly
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_import_document_with_custom_chunks(temp_db_path):
     """Test importing a document with pre-created chunks."""
     from docling_core.types.doc.document import DoclingDocument
@@ -762,7 +762,7 @@ async def test_client_ask(allow_model_requests, temp_db_path):
         assert isinstance(citations, list)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_expand_context(temp_db_path):
     """Test that expand_context method exists and works with basic input."""
     from haiku.rag.store.models import SearchResult
@@ -779,7 +779,7 @@ async def test_client_expand_context(temp_db_path):
         assert expanded_results[0].score == 0.9
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_stores_docling_json(temp_db_path):
     """Test that create_document stores DoclingDocument JSON."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -801,7 +801,7 @@ async def test_client_create_document_stores_docling_json(temp_db_path):
         assert parsed["version"] == doc.docling_version
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_import_document_stores_docling_data(temp_db_path):
     """Test that import_document stores DoclingDocument data correctly."""
     from docling_core.types.doc.document import DoclingDocument
@@ -828,7 +828,7 @@ async def test_client_import_document_stores_docling_data(temp_db_path):
         assert doc.docling_version == docling_doc.version
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
     """Test that create_document_from_source stores DoclingDocument JSON for files."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -850,7 +850,7 @@ async def test_client_create_document_from_file_stores_docling_json(temp_db_path
             assert retrieved.docling_version == doc.docling_version
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_document_stores_docling_json(temp_db_path):
     """Test that update_document stores DoclingDocument JSON when content changes."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -870,7 +870,7 @@ async def test_client_update_document_stores_docling_json(temp_db_path):
         assert updated_doc.docling_document_json != original_json
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_document_with_custom_chunks_no_docling_json(
     temp_db_path,
 ):
@@ -891,7 +891,7 @@ async def test_client_update_document_with_custom_chunks_no_docling_json(
         assert updated_doc.docling_document_json == original_json
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_document_content_docling_mutually_exclusive(
     temp_db_path,
 ):
@@ -915,7 +915,7 @@ async def test_client_update_document_content_docling_mutually_exclusive(
             )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_document_with_docling_rechunks(temp_db_path):
     """Test that providing docling_document without chunks triggers rechunk."""
     from docling_core.types.doc.document import DoclingDocument
@@ -952,7 +952,7 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
         assert new_chunks[0].content != original_chunks[0].content
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_update_document_docling_with_chunks(temp_db_path):
     """Test that providing both docling_document and chunks stores both."""
     from docling_core.types.doc.document import DoclingDocument
@@ -990,7 +990,7 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         assert chunks[1].content == "Custom chunk 2"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_file_update_stores_docling_json(temp_db_path):
     """Test that updating a file re-stores DoclingDocument JSON."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1018,7 +1018,7 @@ async def test_client_file_update_stores_docling_json(temp_db_path):
             assert doc2.docling_version == original_version  # Version stays same
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_visualize_chunk_no_document(temp_db_path):
     """Test visualize_chunk returns empty list when chunk has no document_id."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1027,7 +1027,7 @@ async def test_client_visualize_chunk_no_document(temp_db_path):
         assert images == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_visualize_chunk_no_bounding_boxes(temp_db_path):
     """Test visualize_chunk returns empty list when chunk has no bounding boxes."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1049,7 +1049,7 @@ async def test_client_visualize_chunk_no_bounding_boxes(temp_db_path):
         assert images == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_visualize_chunk_returns_list(temp_db_path):
     """Test visualize_chunk returns a list (empty or with images)."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1082,7 +1082,7 @@ This is paragraph four about topic C.
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_visualize_chunk_with_pdf(temp_db_path):
     """Test visualize_chunk returns images with bounding boxes for PDF documents."""
     from PIL.Image import Image as PILImage
@@ -1120,7 +1120,7 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path):
 # =============================================================================
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_convert_text(temp_db_path):
     """Test convert() with plain text content."""
     from docling_core.types.doc.document import DoclingDocument
@@ -1135,7 +1135,7 @@ async def test_client_convert_text(temp_db_path):
         assert "test content" in markdown
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_convert_file(temp_db_path):
     """Test convert() with a file path."""
     from docling_core.types.doc.document import DoclingDocument
@@ -1152,7 +1152,7 @@ async def test_client_convert_file(temp_db_path):
             assert "File content" in markdown
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_convert_file_not_found(temp_db_path):
     """Test convert() raises ValueError for non-existent file."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1160,7 +1160,7 @@ async def test_client_convert_file_not_found(temp_db_path):
             await client.convert(Path("/nonexistent/path/file.txt"))
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_convert_unsupported_extension(temp_db_path):
     """Test convert() raises ValueError for unsupported file extension."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1172,7 +1172,7 @@ async def test_client_convert_unsupported_extension(temp_db_path):
                 await client.convert(temp_path)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_convert_file_uri(temp_db_path):
     """Test convert() with a file:// URI string."""
     from docling_core.types.doc.document import DoclingDocument
@@ -1195,7 +1195,7 @@ async def test_client_convert_file_uri(temp_db_path):
 # =============================================================================
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_chunk_basic(temp_db_path):
     """Test chunk() produces Chunk objects from DoclingDocument."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1215,7 +1215,7 @@ async def test_client_chunk_basic(temp_db_path):
         assert all(c.document_id is None for c in chunks)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_chunk_preserves_metadata(temp_db_path):
     """Test chunk() preserves structured metadata from DoclingDocument."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1244,7 +1244,7 @@ This is a subsection.
         assert has_metadata, "Chunks should have structured metadata"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_chunk_empty_document(temp_db_path):
     """Test chunk() with empty DoclingDocument."""
     from docling_core.types.doc.document import DoclingDocument
@@ -1259,7 +1259,7 @@ async def test_client_chunk_empty_document(temp_db_path):
         assert len(chunks) == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_import_document_embeds_chunks_without_embeddings(temp_db_path):
     """Test that import_document embeds chunks that don't have embeddings."""
     from docling_core.types.doc.document import DoclingDocument
@@ -1295,7 +1295,7 @@ async def test_import_document_embeds_chunks_without_embeddings(temp_db_path):
         assert results[0].content == "First chunk without embedding"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_update_document_embeds_chunks_without_embeddings(temp_db_path):
     """Test that update_document embeds chunks that don't have embeddings."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1324,7 +1324,7 @@ async def test_update_document_embeds_chunks_without_embeddings(temp_db_path):
         assert results[0].content == "Updated chunk without embedding"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_create_document_with_html_format(temp_db_path):
     """Test create_document with HTML format preserves document structure."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1359,7 +1359,7 @@ async def test_client_create_document_with_html_format(temp_db_path):
         assert "list_item" in labels
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_client_convert_with_html_format(temp_db_path):
     """Test convert with HTML format."""
     async with HaikuRAG(temp_db_path, create=True) as client:

@@ -1,0 +1,70 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1261'
+      content-type:
+      - application/json
+      host:
+      - api.cohere.com
+    method: POST
+    parsed_body:
+      documents:
+      - To Kill a Mockingbird is a novel by Harper Lee published in 1960. It was immediately successful, winning the Pulitzer
+        Prize, and has become a classic of modern American literature.
+      - The novel Moby-Dick was written by Herman Melville and first published in 1851. It is considered a masterpiece of
+        American literature and deals with complex themes of obsession, revenge, and the conflict between good and evil.
+      - Harper Lee, an American novelist widely known for her novel To Kill a Mockingbird, was born in 1926 in Monroeville,
+        Alabama. She received the Pulitzer Prize for Fiction in 1961.
+      - Jane Austen was an English novelist known primarily for her six major novels, which interpret, critique and comment
+        upon the British landed gentry at the end of the 18th century.
+      - The Harry Potter series, which consists of seven fantasy novels written by British author J.K. Rowling, is among the
+        most popular and critically acclaimed books of the modern era.
+      - The Great Gatsby, a novel written by American author F. Scott Fitzgerald, was published in 1925. The story is set
+        in the Jazz Age and follows the life of millionaire Jay Gatsby and his pursuit of Daisy Buchanan.
+      model: rerank-v3.5
+      query: Who wrote 'To Kill a Mockingbird'?
+      top_n: 2
+    uri: https://api.cohere.com/v2/rerank
+  response:
+    headers:
+      access-control-expose-headers:
+      - X-Debug-Trace-ID
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, no-transform, must-revalidate, private, max-age=0
+      content-length:
+      - '210'
+      content-type:
+      - application/json
+      expires:
+      - Thu, 01 Jan 1970 00:00:00 GMT
+      pragma:
+      - no-cache
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin,Accept-Encoding
+    parsed_body:
+      id: 56d8804a-d476-4c6a-ade8-69deb3fc8c64
+      meta:
+        api_version:
+          version: '2'
+        billed_units:
+          search_units: 1
+      results:
+      - index: 0
+        relevance_score: 0.9438932
+      - index: 2
+        relevance_score: 0.8455478
+    status:
+      code: 200
+      message: OK
+version: 1

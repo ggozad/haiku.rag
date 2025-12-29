@@ -3,7 +3,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_with_uri_filter(temp_db_path):
     """Test filtering by document URI."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
@@ -37,7 +37,7 @@ async def test_search_with_uri_filter(temp_db_path):
             assert result.document_uri == "https://other.com/java.html"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_with_title_filter(temp_db_path):
     """Test filtering by document title."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
@@ -63,7 +63,7 @@ async def test_search_with_title_filter(temp_db_path):
             assert "Python" in result.document_title
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_with_combined_filters(temp_db_path):
     """Test filtering with AND/OR conditions."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
@@ -102,7 +102,7 @@ async def test_search_with_combined_filters(temp_db_path):
         assert len(results) > 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_with_no_matching_filter(temp_db_path):
     """Test that search returns empty results when filter matches no documents."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
@@ -120,7 +120,7 @@ async def test_search_with_no_matching_filter(temp_db_path):
         assert len(results) == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_with_invalid_filter(temp_db_path):
     """Test that invalid filter syntax raises an appropriate error."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
@@ -136,7 +136,7 @@ async def test_search_with_invalid_filter(temp_db_path):
             await client.search("test", limit=5, filter="invalid = 'value'")
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_filter_with_all_search_types(temp_db_path):
     """Test that filtering works with all search types (vector, fts, hybrid)."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:

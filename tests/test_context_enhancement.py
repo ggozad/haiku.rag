@@ -86,7 +86,7 @@ def small_chunk_config() -> AppConfig:
     return config
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_table_expansion_includes_split_rows(temp_db_path, small_chunk_config):
     """Verify that table expansion retrieves rows that were split into different chunks."""
     docling_doc = create_table_document()
@@ -129,7 +129,7 @@ async def test_table_expansion_includes_split_rows(temp_db_path, small_chunk_con
             )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_list_expansion_includes_split_items(temp_db_path, small_chunk_config):
     """Verify that list expansion retrieves items that were split into different chunks."""
     docling_doc = create_list_document()
@@ -177,7 +177,7 @@ async def test_list_expansion_includes_split_items(temp_db_path, small_chunk_con
             )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_code_expansion_includes_adjacent_blocks(
     temp_db_path, small_chunk_config
 ):
@@ -223,7 +223,7 @@ async def test_code_expansion_includes_adjacent_blocks(
             )
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_text_expansion_uses_radius(temp_db_path):
     """Text content expansion should use radius, not structural boundaries."""
     config = AppConfig()
@@ -265,7 +265,7 @@ async def test_text_expansion_uses_radius(temp_db_path):
         assert len(expanded[0].content) >= len(original.content)
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expansion_preserves_metadata(temp_db_path, small_chunk_config):
     """Expansion should preserve document metadata."""
     docling_doc = create_table_document()
@@ -284,7 +284,7 @@ async def test_expansion_preserves_metadata(temp_db_path, small_chunk_config):
         assert expanded[0].document_id == results[0].document_id
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_format_for_agent_output(temp_db_path, small_chunk_config):
     """format_for_agent should include source, type, and content sections."""
     docling_doc = create_table_document()
@@ -307,7 +307,7 @@ async def test_format_for_agent_output(temp_db_path, small_chunk_config):
         assert "Content:" in formatted
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_max_items_limit_caps_expansion(temp_db_path):
     """Expansion should respect max_context_items limit."""
     config = AppConfig()
@@ -334,7 +334,7 @@ async def test_max_items_limit_caps_expansion(temp_db_path):
         assert item_count <= 2, f"Expected at most 2 items, got {item_count}"
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_result_get_primary_label():
     """Test _get_primary_label prioritizes structural labels correctly."""
     # Table should be prioritized
@@ -388,7 +388,7 @@ async def test_search_result_get_primary_label():
     assert result._get_primary_label() is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expand_context_radius_zero(temp_db_path):
     """Test expand_context with radius 0 returns original results."""
     # Default config has context_radius=0
@@ -406,7 +406,7 @@ async def test_expand_context_radius_zero(temp_db_path):
         assert expanded_results[0].score == search_results[0].score
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expand_context_multiple_documents(temp_db_path):
     """Test expand_context with results from multiple documents."""
     config = AppConfig()
@@ -467,7 +467,7 @@ async def test_expand_context_multiple_documents(temp_db_path):
         assert "Doc2 Section Y" in expanded2.content
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expand_context_merges_overlapping_chunks(temp_db_path):
     """Test that overlapping expanded chunks are merged into one."""
     config = AppConfig()
@@ -522,7 +522,7 @@ async def test_expand_context_merges_overlapping_chunks(temp_db_path):
         assert merged.score == 0.8
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
     """Test that non-overlapping expanded chunks remain separate."""
     config = AppConfig()
@@ -587,7 +587,7 @@ async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
         assert chunk5_expanded.score == 0.7
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expand_context_with_docling_merges_overlapping(temp_db_path):
     """Test that expand_context with DoclingDocument merges overlapping results."""
     config = AppConfig()
@@ -642,7 +642,7 @@ This is paragraph four about topic C.
                 assert r.doc_item_refs is not None
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_expand_context_docling_merges_metadata(temp_db_path):
     """Test that expand_context properly merges metadata from multiple results."""
     config = AppConfig()

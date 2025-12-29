@@ -33,7 +33,7 @@ async def client_with_docs(temp_db_path):
     client.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_search_filter_restricts_results(client_with_docs):
     """Test that search_filter restricts search to specified documents."""
     client, doc1_id, doc2_id = client_with_docs

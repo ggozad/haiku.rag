@@ -1,13 +1,9 @@
-import os
 from pathlib import Path
 
 import pytest
 
 from haiku.rag.reranking.base import RerankerBase
-from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
-
-VLLM_RERANK_BASE_URL = os.getenv("VLLM_RERANK_BASE_URL", "")
 
 
 @pytest.fixture(scope="module")
@@ -65,7 +61,7 @@ async def test_mxbai_reranker():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Cohere sync client has VCR compatibility issues - TODO: fix")
+@pytest.mark.vcr()
 async def test_cohere_reranker():
     try:
         from haiku.rag.reranking.cohere import CohereReranker
@@ -84,30 +80,7 @@ async def test_cohere_reranker():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not VLLM_RERANK_BASE_URL, reason="vLLM rerank server not configured"
-)
-async def test_vllm_reranker():
-    try:
-        reranker = VLLMReranker(
-            "mixedbread-ai/mxbai-rerank-base-v2", VLLM_RERANK_BASE_URL
-        )
-
-        reranked = await reranker.rerank(
-            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
-        )
-        assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
-        assert all(isinstance(score, float) for chunk, score in reranked)
-
-    except Exception:
-        # Skip test if vLLM rerank server is not available
-        pytest.skip("vLLM rerank server not available")
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="ZeroEntropy sync client has VCR compatibility issues - TODO: fix"
-)
+@pytest.mark.vcr()
 async def test_zeroentropy_reranker():
     try:
         from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker

@@ -10,7 +10,7 @@ from haiku.rag.utils import get_model
 
 # Check for optional dependencies
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
-HAS_GOOGLE = importlib.util.find_spec("google.generativeai") is not None
+HAS_GOOGLE = importlib.util.find_spec("google.genai") is not None
 HAS_GROQ = importlib.util.find_spec("groq") is not None
 HAS_BEDROCK = importlib.util.find_spec("botocore") is not None
 
