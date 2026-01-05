@@ -36,6 +36,13 @@ processing:
     # Image settings
     images_scale: 2.0                        # Image scale factor
     generate_picture_images: false           # Include embedded images in output
+
+    # VLM picture description (optional)
+    picture_description:
+      enabled: false                         # Enable VLM image descriptions
+      model:
+        provider: ollama
+        name: ministral-3
 ```
 
 ### Conversion Options
@@ -80,6 +87,70 @@ conversion_options:
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_picture_images**: When `true`, embedded images (figures, diagrams) are included as base64-encoded data in the document. When `false` (default), images are excluded to reduce chunk size and avoid context bloat.
+
+#### Picture Description (VLM)
+
+Use a Vision Language Model (VLM) to automatically describe images in documents. Descriptions become searchable text, improving RAG retrieval for visual content.
+
+```yaml
+conversion_options:
+  picture_description:
+    enabled: true                  # Enable VLM picture description
+    model:
+      provider: ollama             # ollama, openai, or custom
+      name: ministral-3            # VLM model name
+    prompt: "Describe this image in detail. Be precise and concise."
+    timeout: 90                    # Request timeout in seconds
+    max_tokens: 200                # Maximum tokens in response
+```
+
+**Configuration options:**
+
+- **enabled**: When `true`, each embedded image is sent to a VLM for description. Requires `generate_picture_images` to be `true` (automatically enabled).
+- **model**: Standard model configuration
+  - `provider`: `ollama` (default), `openai`, or use `base_url` for custom endpoints
+  - `name`: Model name (e.g., `ministral-3`, `granite3.2-vision`, `gpt-4-vision`)
+  - `base_url`: Optional custom API endpoint for vLLM, LM Studio, etc.
+- **prompt**: Instruction for the VLM when describing images
+- **timeout**: Request timeout in seconds
+- **max_tokens**: Maximum tokens in the VLM response
+
+**Using with Ollama:**
+
+```yaml
+conversion_options:
+  picture_description:
+    enabled: true
+    model:
+      provider: ollama
+      name: ministral-3
+```
+
+Requires Ollama running with a vision-capable model:
+
+```bash
+ollama pull ministral-3
+ollama serve
+```
+
+**Using with vLLM or custom endpoints:**
+
+```yaml
+conversion_options:
+  picture_description:
+    enabled: true
+    model:
+      provider: openai           # Use OpenAI-compatible API format
+      name: granite-vision
+      base_url: http://my-vllm-server:8000
+```
+
+**How it works:**
+
+1. During PDF conversion, docling extracts embedded images
+2. Each image is sent to the configured VLM for description
+3. Descriptions are added as annotations on the image
+4. When exported to markdown, descriptions appear as searchable text
 
 ### Local vs Remote Processing
 

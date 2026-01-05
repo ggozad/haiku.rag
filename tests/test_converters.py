@@ -308,6 +308,74 @@ class TestDoclingLocalConverter:
                 "Pictures should have image data when generate_picture_images=True"
             )
 
+    def test_get_vlm_api_url_with_ollama(self, config):
+        """Test VLM API URL construction for Ollama provider."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="ollama", name="ministral-3")
+        url = converter._get_vlm_api_url(model)
+        assert url == "http://localhost:11434/v1/chat/completions"
+
+    def test_get_vlm_api_url_with_custom_base_url(self, config):
+        """Test VLM API URL construction with custom base_url."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(
+            provider="openai", name="gpt-4-vision", base_url="http://my-vllm:8000"
+        )
+        url = converter._get_vlm_api_url(model)
+        assert url == "http://my-vllm:8000/v1/chat/completions"
+
+    def test_get_vlm_api_url_with_openai(self, config):
+        """Test VLM API URL construction for OpenAI provider."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="openai", name="gpt-4-vision")
+        url = converter._get_vlm_api_url(model)
+        assert url == "https://api.openai.com/v1/chat/completions"
+
+    def test_get_vlm_api_url_unsupported_provider(self, config):
+        """Test VLM API URL construction raises error for unsupported provider."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="unsupported", name="test")
+        with pytest.raises(ValueError, match="Unsupported VLM provider"):
+            converter._get_vlm_api_url(model)
+
+    def test_picture_description_config_defaults(self, config):
+        """Test that picture description config has correct defaults."""
+        assert config.processing.conversion_options.picture_description.enabled is False
+        assert (
+            config.processing.conversion_options.picture_description.model.provider
+            == "ollama"
+        )
+        assert (
+            config.processing.conversion_options.picture_description.model.name
+            == "ministral-3"
+        )
+        assert config.processing.conversion_options.picture_description.timeout == 90
+        assert (
+            config.processing.conversion_options.picture_description.max_tokens == 200
+        )
+
+    def test_picture_description_config_applied(self, config):
+        """Test that picture description config is applied to converter."""
+        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.conversion_options.picture_description.prompt = (
+            "Custom prompt for testing."
+        )
+        config.processing.conversion_options.picture_description.timeout = 120
+        converter = DoclingLocalConverter(config)
+
+        pic_desc = converter.config.processing.conversion_options.picture_description
+        assert pic_desc.enabled is True
+        assert pic_desc.prompt == "Custom prompt for testing."
+        assert pic_desc.timeout == 120
+
 
 class TestDoclingServeConverter:
     """Tests for DoclingServeConverter (mocked)."""

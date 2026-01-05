@@ -96,6 +96,21 @@ class ResearchConfig(BaseModel):
     max_concurrency: int = 1
 
 
+class PictureDescriptionConfig(BaseModel):
+    """Configuration for VLM-based picture description."""
+
+    enabled: bool = False
+    model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            name="ministral-3",
+        )
+    )
+    prompt: str = "Describe this image in detail. Be precise and concise."
+    timeout: int = 90
+    max_tokens: int = 200
+
+
 class ConversionOptions(BaseModel):
     """Options for document conversion."""
 
@@ -112,6 +127,11 @@ class ConversionOptions(BaseModel):
     # Image options
     images_scale: float = 2.0
     generate_picture_images: bool = False
+
+    # VLM picture description
+    picture_description: PictureDescriptionConfig = Field(
+        default_factory=PictureDescriptionConfig
+    )
 
 
 class ProcessingConfig(BaseModel):
