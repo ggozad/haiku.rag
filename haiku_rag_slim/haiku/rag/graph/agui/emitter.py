@@ -70,7 +70,7 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         self._thread_id = thread_id or str(uuid4())
         self._run_id = run_id or str(uuid4())
         self._last_state: StateT | None = None
-        self._current_step: str | None = None
+        self._active_steps: set[str] = set()
         self._use_deltas = use_deltas
 
     @property
@@ -112,14 +112,17 @@ class AGUIEmitter[StateT: BaseModel, ResultT]:
         Args:
             step_name: Name of the step being started
         """
-        self._current_step = step_name
+        self._active_steps.add(step_name)
         self.emit(_serialize_event(StepStartedEvent(step_name=step_name)))
 
-    def finish_step(self) -> None:
-        """Emit StepFinished event for the current step."""
-        if self._current_step:
-            self.emit(_serialize_event(StepFinishedEvent(step_name=self._current_step)))
-            self._current_step = None
+    def finish_step(self, step_name: str) -> None:
+        """Emit StepFinished event for the specified step.
+
+        Args:
+            step_name: Name of the step being finished
+        """
+        self._active_steps.discard(step_name)
+        self.emit(_serialize_event(StepFinishedEvent(step_name=step_name)))
 
     def log(self, message: str, role: str = "assistant") -> None:
         """Emit a text message event.

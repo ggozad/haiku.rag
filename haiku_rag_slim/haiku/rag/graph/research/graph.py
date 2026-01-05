@@ -154,7 +154,7 @@ def build_research_graph(
                 )
         finally:
             if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
+                deps.agui_emitter.finish_step("plan")
 
     @g.step
     async def search_one(
@@ -256,7 +256,7 @@ def build_research_graph(
                     )
         finally:
             if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
+                deps.agui_emitter.finish_step(step_name)
 
     @g.step
     async def get_batch(
@@ -354,7 +354,7 @@ def build_research_graph(
             return should_continue
         finally:
             if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
+                deps.agui_emitter.finish_step("decide")
 
     @g.step
     async def human_decide(
@@ -427,7 +427,7 @@ def build_research_graph(
                 return "synthesize"
         finally:
             if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
+                deps.agui_emitter.finish_step("human_decide")
 
     @g.step
     async def synthesize(
@@ -467,7 +467,7 @@ def build_research_graph(
             return result.output
         finally:
             if deps.agui_emitter:
-                deps.agui_emitter.finish_step()
+                deps.agui_emitter.finish_step("synthesize")
 
     # Build the graph structure
     collect_answers = g.join(
