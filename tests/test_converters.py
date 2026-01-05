@@ -374,6 +374,51 @@ class TestDoclingLocalConverter:
         assert pic_desc.enabled is True
         assert pic_desc.timeout == 120
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.vcr()
+    async def test_picture_description_end_to_end(self, config):
+        """End-to-end test: convert PDF with VLM picture descriptions."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        # Enable picture description with Ollama
+        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.conversion_options.picture_description.model.provider = (
+            "ollama"
+        )
+        config.processing.conversion_options.picture_description.model.name = (
+            "ministral-3"
+        )
+
+        converter = DoclingLocalConverter(config)
+        doc = await converter.convert_file(pdf_path)
+
+        # Export to markdown and check for picture descriptions
+        markdown = doc.export_to_markdown()
+
+        # The document should have pictures with descriptions
+        assert doc.pictures, "Document should have pictures"
+
+        # Check that at least one picture has a description annotation
+        from docling_core.types.doc.document import PictureDescriptionData
+
+        pictures_with_descriptions = []
+        for pic in doc.pictures:
+            for ann in pic.annotations:
+                if isinstance(ann, PictureDescriptionData):
+                    pictures_with_descriptions.append(pic)
+                    # Description should appear in markdown output
+                    assert ann.text in markdown, (
+                        f"Picture description '{ann.text[:50]}...' should be in markdown"
+                    )
+                    break
+
+        assert pictures_with_descriptions, (
+            "At least one picture should have a VLM description"
+        )
+
 
 class TestDoclingServeConverter:
     """Tests for DoclingServeConverter (mocked)."""
