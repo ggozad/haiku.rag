@@ -73,7 +73,7 @@ For question-answering evaluation, `pydantic-evals` coordinates an LLM judge (Ol
 | Embedding Model              | QA Model                         | Accuracy | Reranker               |
 |------------------------------|----------------------------------|----------|------------------------|
 | Ollama / `qwen3-embedding:4b`   | Ollama / `gpt-oss` - no thinking | 0.82     | None                   |
-| Ollama / `qwen3-embedding:0.6b` | Ollama / `gpt-oss` - thinking    | 0.89     | None                   |
+| Ollama / `qwen3-embedding:8b`   | Ollama / `gpt-oss` - thinking    | 0.89     | None                   |
 | Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.85     | None                   |
 | Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.87     | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`    | Ollama / `qwen3:0.6b`            | 0.28     | None                   |
