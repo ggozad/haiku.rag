@@ -361,19 +361,17 @@ class TestDoclingLocalConverter:
         assert (
             config.processing.conversion_options.picture_description.max_tokens == 200
         )
+        # Default prompt is in PromptsConfig
+        assert "blind user" in config.prompts.picture_description
 
     def test_picture_description_config_applied(self, config):
         """Test that picture description config is applied to converter."""
         config.processing.conversion_options.picture_description.enabled = True
-        config.processing.conversion_options.picture_description.prompt = (
-            "Custom prompt for testing."
-        )
         config.processing.conversion_options.picture_description.timeout = 120
         converter = DoclingLocalConverter(config)
 
         pic_desc = converter.config.processing.conversion_options.picture_description
         assert pic_desc.enabled is True
-        assert pic_desc.prompt == "Custom prompt for testing."
         assert pic_desc.timeout == 120
 
 

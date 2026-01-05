@@ -99,7 +99,6 @@ conversion_options:
     model:
       provider: ollama             # ollama, openai, or custom
       name: ministral-3            # VLM model name
-    prompt: "Describe this image in detail. Be precise and concise."
     timeout: 90                    # Request timeout in seconds
     max_tokens: 200                # Maximum tokens in response
 ```
@@ -111,9 +110,23 @@ conversion_options:
   - `provider`: `ollama` (default), `openai`, or use `base_url` for custom endpoints
   - `name`: Model name (e.g., `ministral-3`, `granite3.2-vision`, `gpt-4-vision`)
   - `base_url`: Optional custom API endpoint for vLLM, LM Studio, etc.
-- **prompt**: Instruction for the VLM when describing images
 - **timeout**: Request timeout in seconds
 - **max_tokens**: Maximum tokens in the VLM response
+
+**Default prompt** (configured in `prompts.picture_description`):
+
+```
+Describe this image for a blind user. State the image type
+(screenshot, chart, photo, etc.), what it depicts, any visible text,
+and key visual details. Be concise and accurate.
+```
+
+To customize the prompt globally:
+
+```yaml
+prompts:
+  picture_description: "Your custom prompt here..."
+```
 
 **Using with Ollama:**
 

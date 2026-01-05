@@ -106,7 +106,6 @@ class PictureDescriptionConfig(BaseModel):
             name="ministral-3",
         )
     )
-    prompt: str = "Describe this image in detail. Be precise and concise."
     timeout: int = 90
     max_tokens: int = 200
 
@@ -186,6 +185,12 @@ class PromptsConfig(BaseModel):
     domain_preamble: str = ""
     qa: str | None = None
     synthesis: str | None = None
+    picture_description: str = (
+        "Describe this image for a blind user. "
+        "State the image type (screenshot, chart, photo, etc.), "
+        "what it depicts, any visible text, and key visual details. "
+        "Be concise and accurate."
+    )
 
 
 class AppConfig(BaseModel):

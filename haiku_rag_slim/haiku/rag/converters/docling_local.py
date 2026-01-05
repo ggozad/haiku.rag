@@ -117,6 +117,8 @@ class DoclingLocalConverter(DocumentConverter):
         if pic_desc.enabled:
             from pydantic import AnyUrl
 
+            prompt = self.config.prompts.picture_description
+
             pipeline_options.enable_remote_services = True
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
                 url=AnyUrl(self._get_vlm_api_url(pic_desc.model)),
@@ -124,7 +126,7 @@ class DoclingLocalConverter(DocumentConverter):
                     model=pic_desc.model.name,
                     max_completion_tokens=pic_desc.max_tokens,
                 ),
-                prompt=pic_desc.prompt,
+                prompt=prompt,
                 timeout=pic_desc.timeout,
             )
 
