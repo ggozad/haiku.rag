@@ -1,0 +1,39 @@
+# haiku.rag configuration for the chat app
+# Copy to haiku.rag.yaml and customize as needed
+
+# QA model configuration
+qa:
+  model:
+    provider: ollama
+    name: gpt-oss
+    # For Anthropic:
+    # provider: anthropic
+    # name: claude-sonnet-4-20250514
+    # For OpenAI:
+    # provider: openai
+    # name: gpt-4o
+
+# Embedding configuration
+embeddings:
+  model:
+    provider: ollama
+    name: nomic-embed-text
+    # For OpenAI:
+    # provider: openai
+    # name: text-embedding-3-small
+
+# Optional reranking
+# reranking:
+#   model:
+#     provider: cohere
+#     name: rerank-v3.5
+
+# Search settings
+search:
+  limit: 10
+  context_radius: 1
+
+# Provider settings
+providers:
+  ollama:
+    base_url: http://localhost:11434
