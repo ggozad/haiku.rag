@@ -9,7 +9,7 @@ from haiku.rag.config import AppConfig, Config
 from haiku.rag.utils import get_model
 
 from .context import load_message_history, save_message_history
-from .models import A2AConfig, AgentDependencies, SearchResult
+from .models import A2AConfig, AgentDependencies
 from .prompts import A2A_SYSTEM_PROMPT
 from .skills import extract_question_from_task, get_agent_skills
 from .storage import LRUMemoryStorage
@@ -78,24 +78,16 @@ def create_a2a_app(
         ctx: RunContext[AgentDependencies],
         query: str,
         limit: int = 3,
-    ) -> list[SearchResult]:
+    ) -> str:
         """Search the knowledge base for relevant documents.
 
         Returns chunks of text with their relevance scores and document URIs.
         Use get_full_document if you need to see the complete document content.
         """
         search_results = await ctx.deps.client.search(query, limit=limit)
-        expanded_results = await ctx.deps.client.expand_context(search_results)
-
-        return [
-            SearchResult(
-                content=result.content,
-                score=result.score,
-                document_title=result.document_title,
-                document_uri=(result.document_uri or ""),
-            )
-            for result in expanded_results
-        ]
+        results = await ctx.deps.client.expand_context(search_results)
+        parts = [r.format_for_agent() for r in results]
+        return "\n\n".join(parts) if parts else "No results found."
 
     @agent.tool
     async def get_full_document(
