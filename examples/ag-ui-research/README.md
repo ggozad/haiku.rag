@@ -61,12 +61,17 @@ Research assistant powered by [haiku.rag](https://ggozad.github.io/haiku.rag/), 
    DB_PATH=/path/to/your/existing/haiku_rag.lancedb # If using an existing db.
    ```
 
-4. **Start the application**
+4. **Pull the base image**
+   ```bash
+   docker pull ghcr.io/ggozad/haiku.rag-slim:latest
+   ```
+
+5. **Start the application**
    ```bash
    docker compose up --build
    ```
 
-5. **Access the interface**
+6. **Access the interface**
    - Frontend: http://localhost:3000
    - Backend health: http://localhost:8000/health
 
