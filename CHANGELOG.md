@@ -1,6 +1,16 @@
 # Changelog
 ## [Unreleased]
 
+## [0.23.2] - 2026-01-05
+
+### Fixed
+
+- **AG-UI Concurrent Step Tracking**: Emitter now correctly tracks multiple concurrent steps ([#216](https://github.com/ggozad/haiku.rag/issues/216))
+
+### Changed
+
+- **Dependencies**: Updated core and development dependencies
+
 ## [0.23.1] - 2025-12-29
 
 ### Added
