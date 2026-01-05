@@ -37,7 +37,7 @@ class MockGraph:
         if deps.agui_emitter:
             deps.agui_emitter.start_step("mock_step")
             deps.agui_emitter.update_activity("working", {"message": "Doing work"})
-            deps.agui_emitter.finish_step()
+            deps.agui_emitter.finish_step("mock_step")
 
         return self.result
 

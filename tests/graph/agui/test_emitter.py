@@ -50,7 +50,7 @@ async def test_emitter_step_events():
     emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter()
 
     emitter.start_step("test_step")
-    emitter.finish_step()
+    emitter.finish_step("test_step")
     await emitter.close()
 
     events = []
@@ -132,7 +132,7 @@ async def test_emitter_activity_events():
     emitter.update_activity(
         "done", {"stepName": "analyze", "message": "Completed"}, message_id="msg-1"
     )
-    emitter.finish_step()
+    emitter.finish_step("analyze")
 
     await emitter.close()
 
@@ -273,3 +273,45 @@ async def test_emitter_concurrent_emission():
     # Should have all 10 messages
     text_events = [e for e in events if e["type"] == "TEXT_MESSAGE_CHUNK"]
     assert len(text_events) == 10
+
+
+@pytest.mark.asyncio
+async def test_emitter_concurrent_steps():
+    """Test that multiple steps can run concurrently and finish independently."""
+    emitter: AGUIEmitter[TestState, TestResult] = AGUIEmitter()
+
+    async def run_step(step_name: str, delay: float):
+        emitter.start_step(step_name)
+        await asyncio.sleep(delay)
+        emitter.finish_step(step_name)
+
+    # Start collecting events in background
+    events: list[dict] = []
+
+    async def collect():
+        async for event in emitter:
+            events.append(event)
+
+    collector = asyncio.create_task(collect())
+
+    # Run three steps concurrently with different durations
+    # Step A finishes last, Step B first, Step C middle
+    await asyncio.gather(
+        run_step("step_a", 0.03),
+        run_step("step_b", 0.01),
+        run_step("step_c", 0.02),
+    )
+
+    await emitter.close()
+    await collector
+
+    started = [e for e in events if e["type"] == "STEP_STARTED"]
+    finished = [e for e in events if e["type"] == "STEP_FINISHED"]
+
+    # All three steps should have started
+    started_names = {e["stepName"] for e in started}
+    assert started_names == {"step_a", "step_b", "step_c"}
+
+    # All three steps should have finished
+    finished_names = {e["stepName"] for e in finished}
+    assert finished_names == {"step_a", "step_b", "step_c"}
