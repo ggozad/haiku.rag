@@ -176,11 +176,40 @@ async def list_documents(_: Request) -> JSONResponse:
     )
 
 
+async def db_info(_: Request) -> JSONResponse:
+    """Get database info and statistics."""
+    if not db_path.exists():
+        return JSONResponse(
+            {
+                "exists": False,
+                "path": str(db_path),
+                "documents": 0,
+                "chunks": 0,
+            }
+        )
+
+    client = get_client(db_path)
+    stats = client.store.get_stats()
+
+    return JSONResponse(
+        {
+            "exists": True,
+            "path": str(db_path),
+            "documents": stats.get("documents", {}).get("num_rows", 0),
+            "chunks": stats.get("chunks", {}).get("num_rows", 0),
+            "documents_bytes": stats.get("documents", {}).get("total_bytes", 0),
+            "chunks_bytes": stats.get("chunks", {}).get("total_bytes", 0),
+            "has_vector_index": stats.get("chunks", {}).get("has_vector_index", False),
+        }
+    )
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
         Route("/v1/chat/stream", stream_chat, methods=["POST"]),
         Route("/api/documents", list_documents, methods=["GET"]),
+        Route("/api/info", db_info, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),
     ],
     middleware=[
