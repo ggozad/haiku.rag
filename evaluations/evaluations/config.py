@@ -11,10 +11,11 @@ from pydantic_evals.evaluators import Evaluator
 @dataclass
 class DocumentPayload:
     uri: str
-    content: str
+    content: str | None = None
     title: str | None = None
     metadata: dict[str, Any] | None = None
     format: str = "md"
+    source_path: Path | None = None
 
 
 @dataclass
@@ -22,6 +23,7 @@ class RetrievalSample:
     question: str
     expected_uris: tuple[str, ...]
     skip: bool = False
+    source_type: str | None = None
 
 
 DocumentLoader = Callable[[], Dataset]
