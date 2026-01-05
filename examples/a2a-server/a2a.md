@@ -129,7 +129,7 @@ All operations create artifacts for traceability:
 
 - **search_results**: Created for each `search_documents` tool call
 
-  - Contains query and array of SearchResult objects (content, score, document_title, document_uri)
+  - Contains query and formatted search results string
 
 - **document**: Created for each `get_full_document` tool call
 

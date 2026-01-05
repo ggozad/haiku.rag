@@ -41,9 +41,9 @@ uv run haiku-rag-a2a serve --host 0.0.0.0 --port 8080
 ```
 
 By default, the server uses the same database location as `haiku-rag`:
-- Linux: `~/.local/share/haiku.rag`
-- macOS: `~/Library/Application Support/haiku.rag`
-- Windows: `C:/Users/<USER>/AppData/Roaming/haiku.rag`
+- Linux: `~/.local/share/haiku.rag/haiku.rag.lancedb`
+- macOS: `~/Library/Application Support/haiku.rag/haiku.rag.lancedb`
+- Windows: `C:/Users/<USER>/AppData/Roaming/haiku.rag/haiku.rag.lancedb`
 
 ### Interactive Client
 

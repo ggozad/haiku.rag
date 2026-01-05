@@ -50,10 +50,10 @@ def serve(
         config = AppConfig.model_validate(yaml_data)
 
     if db is None:
-        db = get_default_data_dir()
+        db = get_default_data_dir() / "haiku.rag.lancedb"
 
     if not db.exists():
-        typer.echo(f"Error: Database directory {db} does not exist")
+        typer.echo(f"Error: Database {db} does not exist")
         raise typer.Exit(1)
 
     logger.info(f"Starting A2A server on {host}:{port}")

@@ -7,11 +7,10 @@ COPY main.py agent.py ./
 
 # Install additional dependencies for the example
 RUN pip install --no-cache-dir \
-    starlette>=0.45.2 \
-    uvicorn[standard]>=0.34.2 \
-    python-dotenv>=1.0.1
+    starlette>=0.50.0 \
+    uvicorn[standard]>=0.40.0 \
+    python-dotenv>=1.2.1
 
 EXPOSE 8000
 
-# Run with uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
