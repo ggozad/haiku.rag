@@ -164,7 +164,6 @@ class OllamaConfig(BaseModel):
 class DoclingServeConfig(BaseModel):
     base_url: str = "http://localhost:5001"
     api_key: str = ""
-    timeout: int = 300
 
 
 class ProvidersConfig(BaseModel):

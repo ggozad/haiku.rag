@@ -1,13 +1,14 @@
 interactions:
 - request:
-    body: "--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition:
-      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition:
-      form-data; name=\"do_table_structure\"\r\n\r\ntrue\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data;
-      name=\"table_mode\"\r\n\r\naccurate\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data; name=\"table_cell_matching\"\r\n\r\ntrue\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition:
-      form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data;
-      name=\"generate_picture_images\"\r\n\r\nfalse\r\n--313fb28cff30a333a81f610f9c6bdaf3\r\nContent-Disposition: form-data;
-      name=\"files\"; filename=\"tmpgc9za8mg.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
-      42\n```\r\n--313fb28cff30a333a81f610f9c6bdaf3--\r\n"
+    body: "--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition:
+      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition:
+      form-data; name=\"do_table_structure\"\r\n\r\ntrue\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data;
+      name=\"table_mode\"\r\n\r\naccurate\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data; name=\"table_cell_matching\"\r\n\r\ntrue\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition:
+      form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data;
+      name=\"generate_picture_images\"\r\n\r\nfalse\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data;
+      name=\"do_picture_description\"\r\n\r\nfalse\r\n--26e45846cd2f5c82db7b770428d74912\r\nContent-Disposition: form-data;
+      name=\"files\"; filename=\"tmp0aa4633w.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
+      42\n```\r\n--26e45846cd2f5c82db7b770428d74912--\r\n"
     headers:
       accept:
       - '*/*'
@@ -16,23 +17,107 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1011'
+      - '1119'
       content-type:
-      - multipart/form-data; boundary=313fb28cff30a333a81f610f9c6bdaf3
+      - multipart/form-data; boundary=26e45846cd2f5c82db7b770428d74912
       host:
       - localhost:5001
     method: POST
-    uri: http://localhost:5001/v1/convert/file
+    uri: http://localhost:5001/v1/convert/file/async
   response:
     headers:
       content-length:
-      - '1113'
+      - '131'
+      content-type:
+      - application/json
+    parsed_body:
+      task_id: 7436648c-490d-4938-b42b-9755823f8d78
+      task_meta: null
+      task_position: 1
+      task_status: pending
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/7436648c-490d-4938-b42b-9755823f8d78
+  response:
+    headers:
+      content-length:
+      - '134'
+      content-type:
+      - application/json
+    parsed_body:
+      task_id: 7436648c-490d-4938-b42b-9755823f8d78
+      task_meta: null
+      task_position: null
+      task_status: started
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/7436648c-490d-4938-b42b-9755823f8d78
+  response:
+    headers:
+      content-length:
+      - '134'
+      content-type:
+      - application/json
+    parsed_body:
+      task_id: 7436648c-490d-4938-b42b-9755823f8d78
+      task_meta: null
+      task_position: null
+      task_status: success
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/result/7436648c-490d-4938-b42b-9755823f8d78
+  response:
+    headers:
+      content-length:
+      - '1114'
       content-type:
       - application/json
     parsed_body:
       document:
         doctags_content: null
-        filename: tmpgc9za8mg.md
+        filename: tmp0aa4633w.md
         html_content: null
         json_content:
           body:
@@ -55,10 +140,10 @@ interactions:
             self_ref: '#/furniture'
           groups: []
           key_value_items: []
-          name: tmpgc9za8mg
+          name: tmp0aa4633w
           origin:
             binary_hash: 9008975733065065710
-            filename: tmpgc9za8mg.md
+            filename: tmp0aa4633w.md
             mimetype: text/markdown
             uri: null
           pages: {}
@@ -91,7 +176,7 @@ interactions:
         md_content: null
         text_content: null
       errors: []
-      processing_time: 0.002258999999980915
+      processing_time: 0.0027105000044684857
       status: success
       timings: {}
     status:
