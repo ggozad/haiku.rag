@@ -1672,6 +1672,9 @@ class HaikuRAG:
             and self._config.reranking.model.provider == "ollama"
         ):
             required_models.add(self._config.reranking.model.name)
+        pic_desc = self._config.processing.conversion_options.picture_description
+        if pic_desc.enabled and pic_desc.model.provider == "ollama":
+            required_models.add(pic_desc.model.name)
 
         if not required_models:
             return
