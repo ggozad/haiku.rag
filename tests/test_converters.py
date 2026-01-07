@@ -54,6 +54,31 @@ def create_mock_docling_document_json(name: str = "test") -> dict:
     }
 
 
+def create_async_workflow_mocks(
+    doc_json: dict, task_id: str = "test-task-123"
+) -> tuple[Mock, Mock, Mock]:
+    """Create mock responses for docling-serve async workflow.
+
+    Returns tuple of (submit_response, poll_response, result_response).
+    """
+    submit_response = Mock()
+    submit_response.status_code = 200
+    submit_response.json.return_value = {"task_id": task_id, "task_status": "pending"}
+    submit_response.raise_for_status = Mock()
+
+    poll_response = Mock()
+    poll_response.status_code = 200
+    poll_response.json.return_value = {"task_id": task_id, "task_status": "success"}
+    poll_response.raise_for_status = Mock()
+
+    result_response = Mock()
+    result_response.status_code = 200
+    result_response.json.return_value = {"document": {"json_content": doc_json}}
+    result_response.raise_for_status = Mock()
+
+    return submit_response, poll_response, result_response
+
+
 class TestTextFileHandler:
     """Tests for TextFileHandler utility class."""
 
@@ -308,6 +333,117 @@ class TestDoclingLocalConverter:
                 "Pictures should have image data when generate_picture_images=True"
             )
 
+    def test_get_vlm_api_url_with_ollama(self, config):
+        """Test VLM API URL construction for Ollama provider."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="ollama", name="ministral-3")
+        url = converter._get_vlm_api_url(model)
+        assert url == "http://localhost:11434/v1/chat/completions"
+
+    def test_get_vlm_api_url_with_custom_base_url(self, config):
+        """Test VLM API URL construction with custom base_url."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(
+            provider="openai", name="gpt-4-vision", base_url="http://my-vllm:8000"
+        )
+        url = converter._get_vlm_api_url(model)
+        assert url == "http://my-vllm:8000/v1/chat/completions"
+
+    def test_get_vlm_api_url_with_openai(self, config):
+        """Test VLM API URL construction for OpenAI provider."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="openai", name="gpt-4-vision")
+        url = converter._get_vlm_api_url(model)
+        assert url == "https://api.openai.com/v1/chat/completions"
+
+    def test_get_vlm_api_url_unsupported_provider(self, config):
+        """Test VLM API URL construction raises error for unsupported provider."""
+        converter = DoclingLocalConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="unsupported", name="test")
+        with pytest.raises(ValueError, match="Unsupported VLM provider"):
+            converter._get_vlm_api_url(model)
+
+    def test_picture_description_config_defaults(self, config):
+        """Test that picture description config has correct defaults."""
+        assert config.processing.conversion_options.picture_description.enabled is False
+        assert (
+            config.processing.conversion_options.picture_description.model.provider
+            == "ollama"
+        )
+        assert (
+            config.processing.conversion_options.picture_description.model.name
+            == "ministral-3"
+        )
+        assert config.processing.conversion_options.picture_description.timeout == 90
+        assert (
+            config.processing.conversion_options.picture_description.max_tokens == 200
+        )
+        # Default prompt is in PromptsConfig
+        assert "blind user" in config.prompts.picture_description
+
+    def test_picture_description_config_applied(self, config):
+        """Test that picture description config is applied to converter."""
+        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.conversion_options.picture_description.timeout = 120
+        converter = DoclingLocalConverter(config)
+
+        pic_desc = converter.config.processing.conversion_options.picture_description
+        assert pic_desc.enabled is True
+        assert pic_desc.timeout == 120
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.vcr()
+    async def test_picture_description_end_to_end(self, config):
+        """End-to-end test: convert PDF with VLM picture descriptions."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        # Enable picture description with Ollama
+        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.conversion_options.picture_description.model.provider = (
+            "ollama"
+        )
+        config.processing.conversion_options.picture_description.model.name = (
+            "ministral-3"
+        )
+
+        converter = DoclingLocalConverter(config)
+        doc = await converter.convert_file(pdf_path)
+
+        # Export to markdown and check for picture descriptions
+        markdown = doc.export_to_markdown()
+
+        # The document should have pictures with descriptions
+        assert doc.pictures, "Document should have pictures"
+
+        # Check that at least one picture has a description annotation
+        from docling_core.types.doc.document import PictureDescriptionData
+
+        pictures_with_descriptions = []
+        for pic in doc.pictures:
+            for ann in pic.annotations:
+                if isinstance(ann, PictureDescriptionData):
+                    pictures_with_descriptions.append(pic)
+                    # Description should appear in markdown output
+                    assert ann.text in markdown, (
+                        f"Picture description '{ann.text[:50]}...' should be in markdown"
+                    )
+                    break
+
+        assert pictures_with_descriptions, (
+            "At least one picture should have a VLM description"
+        )
+
 
 class TestDoclingServeConverter:
     """Tests for DoclingServeConverter (mocked)."""
@@ -318,7 +454,6 @@ class TestDoclingServeConverter:
         config = AppConfig()
         config.providers.docling_serve.base_url = "http://localhost:5001"
         config.providers.docling_serve.api_key = ""
-        config.providers.docling_serve.timeout = 300
         return config
 
     @pytest.fixture
@@ -328,8 +463,7 @@ class TestDoclingServeConverter:
 
     def test_initialization(self, converter):
         """Test converter initialization."""
-        assert converter.base_url == "http://localhost:5001"
-        assert converter.timeout == 300
+        assert converter.client.base_url == "http://localhost:5001"
 
     def test_supported_extensions(self, converter):
         """Test that converter reports correct supported extensions."""
@@ -341,18 +475,14 @@ class TestDoclingServeConverter:
 
     @pytest.mark.asyncio
     async def test_convert_text_success(self, converter):
-        """Test successful text conversion via docling-serve."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "document": {"json_content": create_mock_docling_document_json("test")},
-        }
-        mock_response.raise_for_status = Mock()
+        """Test successful text conversion via docling-serve async workflow."""
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -368,17 +498,13 @@ class TestDoclingServeConverter:
         config.providers.docling_serve.api_key = "test-key"
         converter = DoclingServeConverter(config)
 
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "document": {"json_content": create_mock_docling_document_json("test")},
-        }
-        mock_response.raise_for_status = Mock()
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -401,17 +527,13 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.images_scale = 3.0
         converter = DoclingServeConverter(config)
 
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "document": {"json_content": create_mock_docling_document_json("test")},
-        }
-        mock_response.raise_for_status = Mock()
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -480,17 +602,16 @@ class TestDoclingServeConverter:
     @pytest.mark.asyncio
     async def test_convert_text_no_json_content(self, converter):
         """Test handling when docling-serve returns no JSON content."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "document": {"json_content": None},
-        }
-        mock_response.raise_for_status = Mock()
+        submit_resp, poll_resp, _ = create_async_workflow_mocks({})
+        result_resp = Mock()
+        result_resp.status_code = 200
+        result_resp.json.return_value = {"document": {"json_content": None}}
+        result_resp.raise_for_status = Mock()
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -500,18 +621,14 @@ class TestDoclingServeConverter:
 
     @pytest.mark.asyncio
     async def test_convert_file_pdf(self, converter):
-        """Test converting PDF file via docling-serve."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "document": {"json_content": create_mock_docling_document_json("test")},
-        }
-        mock_response.raise_for_status = Mock()
+        """Test converting PDF file via docling-serve async workflow."""
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -528,17 +645,13 @@ class TestDoclingServeConverter:
     @pytest.mark.asyncio
     async def test_convert_file_text(self, converter):
         """Test converting text file (reads locally, sends to docling-serve)."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "document": {"json_content": create_mock_docling_document_json("test")},
-        }
-        mock_response.raise_for_status = Mock()
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -553,6 +666,124 @@ class TestDoclingServeConverter:
             mock_client.post.assert_called_once()
             call_kwargs = mock_client.post.call_args.kwargs
             assert "files" in call_kwargs
+
+
+class TestDoclingServeConverterPictureDescription:
+    """Tests for DoclingServeConverter picture description support."""
+
+    @pytest.fixture
+    def config(self):
+        """Create test configuration."""
+        config = AppConfig()
+        config.providers.docling_serve.base_url = "http://localhost:5001"
+        config.providers.docling_serve.api_key = ""
+        return config
+
+    def test_get_vlm_api_url_with_ollama(self, config):
+        """Test VLM API URL construction for Ollama provider."""
+        converter = DoclingServeConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="ollama", name="ministral-3")
+        url = converter._get_vlm_api_url(model)
+        assert url == "http://localhost:11434/v1/chat/completions"
+
+    def test_get_vlm_api_url_with_custom_base_url(self, config):
+        """Test VLM API URL construction with custom base_url."""
+        converter = DoclingServeConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(
+            provider="openai", name="gpt-4-vision", base_url="http://my-vllm:8000"
+        )
+        url = converter._get_vlm_api_url(model)
+        assert url == "http://my-vllm:8000/v1/chat/completions"
+
+    def test_get_vlm_api_url_with_openai(self, config):
+        """Test VLM API URL construction for OpenAI provider."""
+        converter = DoclingServeConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="openai", name="gpt-4-vision")
+        url = converter._get_vlm_api_url(model)
+        assert url == "https://api.openai.com/v1/chat/completions"
+
+    def test_get_vlm_api_url_unsupported_provider(self, config):
+        """Test VLM API URL construction raises error for unsupported provider."""
+        converter = DoclingServeConverter(config)
+        from haiku.rag.config.models import ModelConfig
+
+        model = ModelConfig(provider="unsupported", name="test")
+        with pytest.raises(ValueError, match="Unsupported VLM provider"):
+            converter._get_vlm_api_url(model)
+
+    @pytest.mark.asyncio
+    async def test_picture_description_options_passed_to_api(self, config):
+        """Test that picture description options are passed to docling-serve API."""
+        import json
+
+        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.conversion_options.picture_description.model.provider = (
+            "ollama"
+        )
+        config.processing.conversion_options.picture_description.model.name = (
+            "ministral-3"
+        )
+        config.processing.conversion_options.picture_description.timeout = 120
+        config.processing.conversion_options.picture_description.max_tokens = 300
+        config.prompts.picture_description = "Test prompt for picture description"
+        converter = DoclingServeConverter(config)
+
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_text("# Test")
+
+            call_kwargs = mock_client.post.call_args.kwargs
+            assert "data" in call_kwargs
+            data = call_kwargs["data"]
+
+            assert data["do_picture_description"] == "true"
+            assert data["generate_picture_images"] == "true"
+            assert "picture_description_api" in data
+
+            api_config = json.loads(data["picture_description_api"])
+            assert api_config["url"] == "http://localhost:11434/v1/chat/completions"
+            assert api_config["params"]["model"] == "ministral-3"
+            assert api_config["params"]["max_completion_tokens"] == 300
+            assert api_config["prompt"] == "Test prompt for picture description"
+            assert api_config["timeout"] == 120
+
+    @pytest.mark.asyncio
+    async def test_picture_description_disabled_by_default(self, config):
+        """Test that picture description is disabled by default."""
+        converter = DoclingServeConverter(config)
+
+        doc_json = create_mock_docling_document_json("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_text("# Test")
+
+            call_kwargs = mock_client.post.call_args.kwargs
+            data = call_kwargs["data"]
+            assert data["do_picture_description"] == "false"
+            assert "picture_description_api" not in data
 
 
 class TestDoclingServeConverterIntegration:
@@ -591,3 +822,48 @@ class TestDoclingServeConverterIntegration:
         assert isinstance(doc, DoclingDocument)
         result = doc.export_to_markdown()
         assert "def test():" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_picture_description_end_to_end(self, config):
+        """End-to-end test: convert PDF with VLM picture descriptions via docling-serve.
+
+        Note: Not using VCR because this test involves polling with changing task IDs.
+        """
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.conversion_options.picture_description.model.provider = (
+            "ollama"
+        )
+        config.processing.conversion_options.picture_description.model.name = (
+            "ministral-3"
+        )
+        # Use host.docker.internal so docling-serve in Docker can reach host's Ollama
+        config.processing.conversion_options.picture_description.model.base_url = (
+            "http://host.docker.internal:11434"
+        )
+        converter = DoclingServeConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+
+        assert doc.pictures, "Document should have pictures"
+
+        from docling_core.types.doc.document import PictureDescriptionData
+
+        pictures_with_descriptions = []
+        markdown = doc.export_to_markdown()
+        for pic in doc.pictures:
+            for ann in pic.annotations:
+                if isinstance(ann, PictureDescriptionData):
+                    pictures_with_descriptions.append(pic)
+                    assert ann.text in markdown, (
+                        f"Picture description '{ann.text[:50]}...' should be in markdown"
+                    )
+                    break
+
+        assert pictures_with_descriptions, (
+            "At least one picture should have a VLM description"
+        )

@@ -96,6 +96,20 @@ class ResearchConfig(BaseModel):
     max_concurrency: int = 1
 
 
+class PictureDescriptionConfig(BaseModel):
+    """Configuration for VLM-based picture description."""
+
+    enabled: bool = False
+    model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            name="ministral-3",
+        )
+    )
+    timeout: int = 90
+    max_tokens: int = 200
+
+
 class ConversionOptions(BaseModel):
     """Options for document conversion."""
 
@@ -112,6 +126,11 @@ class ConversionOptions(BaseModel):
     # Image options
     images_scale: float = 2.0
     generate_picture_images: bool = False
+
+    # VLM picture description
+    picture_description: PictureDescriptionConfig = Field(
+        default_factory=PictureDescriptionConfig
+    )
 
 
 class ProcessingConfig(BaseModel):
@@ -145,7 +164,6 @@ class OllamaConfig(BaseModel):
 class DoclingServeConfig(BaseModel):
     base_url: str = "http://localhost:5001"
     api_key: str = ""
-    timeout: int = 300
 
 
 class ProvidersConfig(BaseModel):
@@ -166,6 +184,12 @@ class PromptsConfig(BaseModel):
     domain_preamble: str = ""
     qa: str | None = None
     synthesis: str | None = None
+    picture_description: str = (
+        "Describe this image for a blind user. "
+        "State the image type (screenshot, chart, photo, etc.), "
+        "what it depicts, any visible text, and key visual details. "
+        "Be concise and accurate."
+    )
 
 
 class AppConfig(BaseModel):

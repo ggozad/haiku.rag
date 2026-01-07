@@ -1,17 +1,19 @@
 """docling-serve remote converter implementation."""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
-
-import httpx
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import DocumentConverter
 from haiku.rag.converters.text_utils import TextFileHandler
+from haiku.rag.providers.docling_serve import DoclingServeClient
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.config.models import ModelConfig
 
 
 class DoclingServeConverter(DocumentConverter):
@@ -53,17 +55,70 @@ class DoclingServeConverter(DocumentConverter):
             config: Application configuration containing docling-serve settings.
         """
         self.config = config
-        self.base_url = config.providers.docling_serve.base_url.rstrip("/")
-        self.api_key = config.providers.docling_serve.api_key
-        self.timeout = config.providers.docling_serve.timeout
+        self.client = DoclingServeClient(
+            base_url=config.providers.docling_serve.base_url,
+            api_key=config.providers.docling_serve.api_key,
+        )
 
     @property
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
         return self.docling_serve_extensions + TextFileHandler.text_extensions
 
+    def _get_vlm_api_url(self, model: "ModelConfig") -> str:
+        """Construct VLM API URL from model config."""
+        if model.base_url:
+            base = model.base_url.rstrip("/")
+            return f"{base}/v1/chat/completions"
+
+        if model.provider == "ollama":
+            base = self.config.providers.ollama.base_url.rstrip("/")
+            return f"{base}/v1/chat/completions"
+
+        if model.provider == "openai":
+            return "https://api.openai.com/v1/chat/completions"
+
+        raise ValueError(f"Unsupported VLM provider: {model.provider}")
+
+    def _build_conversion_data(self) -> dict[str, str | list[str]]:
+        """Build form data for conversion request."""
+        opts = self.config.processing.conversion_options
+        pic_desc = opts.picture_description
+
+        data: dict[str, str | list[str]] = {
+            "to_formats": "json",
+            "do_ocr": str(opts.do_ocr).lower(),
+            "force_ocr": str(opts.force_ocr).lower(),
+            "do_table_structure": str(opts.do_table_structure).lower(),
+            "table_mode": opts.table_mode,
+            "table_cell_matching": str(opts.table_cell_matching).lower(),
+            "images_scale": str(opts.images_scale),
+            "generate_picture_images": str(
+                opts.generate_picture_images or pic_desc.enabled
+            ).lower(),
+            "do_picture_description": str(pic_desc.enabled).lower(),
+        }
+
+        if opts.ocr_lang:
+            data["ocr_lang"] = opts.ocr_lang
+
+        if pic_desc.enabled:
+            prompt = self.config.prompts.picture_description
+            picture_description_api = {
+                "url": self._get_vlm_api_url(pic_desc.model),
+                "params": {
+                    "model": pic_desc.model.name,
+                    "max_completion_tokens": pic_desc.max_tokens,
+                },
+                "prompt": prompt,
+                "timeout": pic_desc.timeout,
+            }
+            data["picture_description_api"] = json.dumps(picture_description_api)
+
+        return data
+
     async def _make_request(self, files: dict, name: str) -> "DoclingDocument":
-        """Make a request to docling-serve and return the DoclingDocument.
+        """Make an async request to docling-serve and poll for results.
 
         Args:
             files: Dictionary with files parameter for httpx
@@ -77,73 +132,27 @@ class DoclingServeConverter(DocumentConverter):
         """
         from docling_core.types.doc.document import DoclingDocument
 
-        try:
-            opts = self.config.processing.conversion_options
+        data = self._build_conversion_data()
+        result = await self.client.submit_and_poll(
+            endpoint="/v1/convert/file/async",
+            files=files,
+            data=data,
+            name=name,
+        )
 
-            data: dict[str, str | list[str]] = {
-                "to_formats": "json",
-                "do_ocr": str(opts.do_ocr).lower(),
-                "force_ocr": str(opts.force_ocr).lower(),
-                "do_table_structure": str(opts.do_table_structure).lower(),
-                "table_mode": opts.table_mode,
-                "table_cell_matching": str(opts.table_cell_matching).lower(),
-                "images_scale": str(opts.images_scale),
-                "generate_picture_images": str(opts.generate_picture_images).lower(),
-            }
+        if result.get("status") not in ("success", "partial_success", None):
+            errors = result.get("errors", [])
+            raise ValueError(f"Conversion failed: {errors}")
 
-            if opts.ocr_lang:
-                data["ocr_lang"] = opts.ocr_lang
+        json_content = result.get("document", {}).get("json_content")
 
-            headers = {}
-            if self.api_key:
-                headers["X-Api-Key"] = self.api_key
-
-            url = f"{self.base_url}/v1/convert/file"
-
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    url,
-                    files=files,
-                    data=data,
-                    headers=headers,
-                )
-                response.raise_for_status()
-                result = response.json()
-
-            if result["status"] not in ("success", "partial_success"):
-                errors = result.get("errors", [])
-                raise ValueError(f"Conversion failed: {errors}")
-
-            json_content = result["document"]["json_content"]
-
-            if json_content is None:
-                raise ValueError(
-                    f"docling-serve did not return JSON content for {name}. "
-                    "This may indicate an unsupported file format."
-                )
-
-            return DoclingDocument.model_validate(json_content)
-
-        except httpx.ConnectError as e:
+        if json_content is None:
             raise ValueError(
-                f"Could not connect to docling-serve at {self.base_url}. "
-                f"Ensure the service is running and accessible. Error: {e}"
+                f"docling-serve did not return JSON content for {name}. "
+                "This may indicate an unsupported file format."
             )
-        except httpx.TimeoutException as e:
-            raise ValueError(
-                f"Request to docling-serve timed out after {self.timeout}s. "
-                f"Consider increasing the timeout in configuration. Error: {e}"
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise ValueError(
-                    "Authentication failed. Check your API key configuration."
-                )
-            raise ValueError(f"HTTP error from docling-serve: {e}")
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Failed to convert via docling-serve: {e}")
+
+        return DoclingDocument.model_validate(json_content)
 
     async def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument using docling-serve.

@@ -16,6 +16,9 @@ prompts:
 
   # Full replacement for research synthesis prompt (optional)
   synthesis: null
+
+  # VLM prompt for image description during conversion (optional)
+  picture_description: null  # Uses default prompt
 ```
 
 ## Domain Preamble
@@ -92,6 +95,29 @@ prompts:
     - Avoid meta-commentary like "This report covers..."
 ```
 
+## Picture Description Prompt
+
+Customize the prompt used when generating VLM descriptions for embedded images during document conversion. This prompt is sent to the configured Vision Language Model for each image.
+
+**Default prompt:**
+
+```
+Describe this image for a blind user. State the image type (screenshot, chart, photo, etc.),
+what it depicts, any visible text, and key visual details. Be concise and accurate.
+```
+
+**Custom example:**
+
+```yaml
+prompts:
+  picture_description: |
+    Describe this image for a document search system.
+    Focus on: image type, main content, any text, key visual elements.
+    Be concise and factual.
+```
+
+The prompt is used when `processing.conversion_options.picture_description.enabled` is `true`. See [Picture Description (VLM)](processing.md#picture-description-vlm) for full configuration.
+
 ## Programmatic Configuration
 
 ```python
@@ -103,6 +129,7 @@ config = AppConfig(
         domain_preamble="You are answering questions about our product documentation.",
         qa=None,  # Use default QA prompt
         synthesis=None,  # Use default synthesis prompt
+        picture_description="Describe this image for search indexing.",
     )
 )
 ```

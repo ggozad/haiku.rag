@@ -232,6 +232,28 @@ def test_get_chunker_docling_serve():
     assert isinstance(chunker, DoclingServeChunker)
 
 
+def create_async_workflow_mocks(
+    result_data: dict, task_id: str = "test-task-123"
+) -> tuple[Mock, Mock, Mock]:
+    """Create mock responses for docling-serve async workflow."""
+    submit_response = Mock()
+    submit_response.status_code = 200
+    submit_response.json.return_value = {"task_id": task_id, "task_status": "pending"}
+    submit_response.raise_for_status = Mock()
+
+    poll_response = Mock()
+    poll_response.status_code = 200
+    poll_response.json.return_value = {"task_id": task_id, "task_status": "success"}
+    poll_response.raise_for_status = Mock()
+
+    result_response = Mock()
+    result_response.status_code = 200
+    result_response.json.return_value = result_data
+    result_response.raise_for_status = Mock()
+
+    return submit_response, poll_response, result_response
+
+
 class TestDoclingServeChunker:
     """Tests for DoclingServeChunker (mocked)."""
 
@@ -241,7 +263,6 @@ class TestDoclingServeChunker:
         config = AppConfig()
         config.providers.docling_serve.base_url = "http://localhost:5001"
         config.providers.docling_serve.api_key = ""
-        config.providers.docling_serve.timeout = 300
         config.processing.chunk_size = 256
         config.processing.chunking_tokenizer = "Qwen/Qwen3-Embedding-0.6B"
         return config
@@ -252,21 +273,20 @@ class TestDoclingServeChunker:
         return DoclingServeChunker(config)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_success(self, mock_client_class, chunker):
-        """Test successful chunking via docling-serve."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
+        """Test successful chunking via docling-serve async workflow."""
+        result_data = {
             "chunks": [
                 {"text": "Chunk 1", "chunk_index": 0},
                 {"text": "Chunk 2", "chunk_index": 1},
             ]
         }
-        mock_response.raise_for_status = Mock()
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
 
         mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         # Create a simple document
@@ -280,21 +300,18 @@ class TestDoclingServeChunker:
         mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_with_api_key(self, mock_client_class, config):
         """Test that API key is included in request headers."""
         config.providers.docling_serve.api_key = "test-key"
         chunker = DoclingServeChunker(config)
 
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "chunks": [{"text": "Chunk 1", "chunk_index": 0}]
-        }
-        mock_response.raise_for_status = Mock()
+        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
 
         mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
@@ -306,21 +323,18 @@ class TestDoclingServeChunker:
         assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_hierarchical_endpoint(self, mock_client_class, config):
         """Test that hierarchical chunker uses correct endpoint."""
         config.processing.chunker_type = "hierarchical"
         chunker = DoclingServeChunker(config)
 
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "chunks": [{"text": "Chunk 1", "chunk_index": 0}]
-        }
-        mock_response.raise_for_status = Mock()
+        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
 
         mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
@@ -328,10 +342,10 @@ class TestDoclingServeChunker:
         await chunker.chunk(doc)
 
         call_args = mock_client.post.call_args
-        assert "/v1/chunk/hierarchical/file" in call_args[0][0]
+        assert "/v1/chunk/hierarchical/file/async" in call_args[0][0]
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_passes_config_parameters(self, mock_client_class, config):
         """Test that all config parameters are passed to API."""
         config.processing.chunk_size = 512
@@ -339,15 +353,12 @@ class TestDoclingServeChunker:
         config.processing.chunking_use_markdown_tables = True
         chunker = DoclingServeChunker(config)
 
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "chunks": [{"text": "Chunk 1", "chunk_index": 0}]
-        }
-        mock_response.raise_for_status = Mock()
+        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
 
         mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         converter = get_converter(Config)
@@ -361,7 +372,7 @@ class TestDoclingServeChunker:
         assert data["chunking_use_markdown_tables"] == "true"
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_connection_error(self, mock_client_class, chunker):
         """Test handling of connection errors."""
         import httpx
@@ -377,7 +388,7 @@ class TestDoclingServeChunker:
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_timeout_error(self, mock_client_class, chunker):
         """Test handling of timeout errors."""
         import httpx
@@ -393,7 +404,7 @@ class TestDoclingServeChunker:
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_auth_error(self, mock_client_class, chunker):
         """Test handling of authentication errors."""
         import httpx
@@ -416,18 +427,14 @@ class TestDoclingServeChunker:
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
-    @patch("haiku.rag.chunkers.docling_serve.httpx.AsyncClient")
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_metadata_extraction(self, mock_client_class, chunker):
         """Test that metadata is correctly extracted from API response.
 
         Labels are resolved from the DoclingDocument using the refs, so we need
         to create a document with matching structure for the mocked API response.
         """
-        mock_response = Mock()
-        mock_response.status_code = 200
-        # docling-serve returns doc_items as list of ref strings
-        # We'll reference texts[0], texts[1], and tables[0]
-        mock_response.json.return_value = {
+        result_data = {
             "chunks": [
                 {
                     "text": "Chapter 1\nThis is content.",
@@ -443,10 +450,11 @@ class TestDoclingServeChunker:
                 },
             ]
         }
-        mock_response.raise_for_status = Mock()
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
 
         mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         # Create a document with texts and tables that match the mocked refs

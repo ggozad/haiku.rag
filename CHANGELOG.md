@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **VLM Picture Description**: Describe embedded images using Vision Language Models during document conversion
+  - Images are sent to a VLM for automatic description via OpenAI-compatible API
+  - Descriptions become searchable text, improving RAG retrieval for visual content
+  - Configure via `processing.conversion_options.picture_description` with `enabled`, `model`, `timeout`, `max_tokens`
+  - Default prompt customizable via `prompts.picture_description`
+  - Requires OpenAI-compatible `/v1/chat/completions` endpoint (Ollama, OpenAI, vLLM, LM Studio)
+
 ## [0.23.2] - 2026-01-05
 
 ### Fixed

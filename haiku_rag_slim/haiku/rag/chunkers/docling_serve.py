@@ -2,10 +2,9 @@ import re
 from io import BytesIO
 from typing import TYPE_CHECKING
 
-import httpx
-
 from haiku.rag.chunkers.base import DocumentChunker
 from haiku.rag.config import AppConfig, Config
+from haiku.rag.providers.docling_serve import DoclingServeClient
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
 if TYPE_CHECKING:
@@ -56,10 +55,24 @@ class DoclingServeChunker(DocumentChunker):
 
     def __init__(self, config: AppConfig = Config):
         self.config = config
-        self.base_url = config.providers.docling_serve.base_url.rstrip("/")
-        self.api_key = config.providers.docling_serve.api_key
-        self.timeout = config.providers.docling_serve.timeout
+        self.client = DoclingServeClient(
+            base_url=config.providers.docling_serve.base_url,
+            api_key=config.providers.docling_serve.api_key,
+        )
         self.chunker_type = config.processing.chunker_type
+
+    def _build_chunking_data(self) -> dict[str, str]:
+        """Build form data for chunking request."""
+        return {
+            "chunking_max_tokens": str(self.config.processing.chunk_size),
+            "chunking_tokenizer": self.config.processing.chunking_tokenizer,
+            "chunking_merge_peers": str(
+                self.config.processing.chunking_merge_peers
+            ).lower(),
+            "chunking_use_markdown_tables": str(
+                self.config.processing.chunking_use_markdown_tables
+            ).lower(),
+        }
 
     async def _call_chunk_api(self, document: "DoclingDocument") -> list[dict]:
         """Call docling-serve chunking API and return raw chunk data.
@@ -75,9 +88,9 @@ class DoclingServeChunker(DocumentChunker):
         """
         # Determine endpoint based on chunker_type
         if self.chunker_type == "hierarchical":
-            url = f"{self.base_url}/v1/chunk/hierarchical/file"
+            endpoint = "/v1/chunk/hierarchical/file/async"
         else:
-            url = f"{self.base_url}/v1/chunk/hybrid/file"
+            endpoint = "/v1/chunk/hybrid/file/async"
 
         # Export document to JSON
         doc_json = document.model_dump_json()
@@ -85,53 +98,16 @@ class DoclingServeChunker(DocumentChunker):
 
         # Prepare multipart request with DoclingDocument JSON
         files = {"files": ("document.json", BytesIO(doc_bytes), "application/json")}
+        data = self._build_chunking_data()
 
-        # Build form data with chunking parameters
-        data = {
-            "chunking_max_tokens": str(self.config.processing.chunk_size),
-            "chunking_tokenizer": self.config.processing.chunking_tokenizer,
-            "chunking_merge_peers": str(
-                self.config.processing.chunking_merge_peers
-            ).lower(),
-            "chunking_use_markdown_tables": str(
-                self.config.processing.chunking_use_markdown_tables
-            ).lower(),
-        }
+        result = await self.client.submit_and_poll(
+            endpoint=endpoint,
+            files=files,
+            data=data,
+            name="document",
+        )
 
-        headers = {}
-        if self.api_key:
-            headers["X-Api-Key"] = self.api_key
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    url,
-                    files=files,
-                    data=data,
-                    headers=headers,
-                )
-                response.raise_for_status()
-                result = response.json()
-                return result.get("chunks", [])
-
-        except httpx.ConnectError as e:
-            raise ValueError(
-                f"Could not connect to docling-serve at {self.base_url}. "
-                f"Ensure the service is running and accessible. Error: {e}"
-            )
-        except httpx.TimeoutException as e:
-            raise ValueError(
-                f"Request to docling-serve timed out after {self.timeout}s. "
-                f"Consider increasing the timeout in configuration. Error: {e}"
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise ValueError(
-                    "Authentication failed. Check your API key configuration."
-                )
-            raise ValueError(f"HTTP error from docling-serve: {e}")
-        except Exception as e:
-            raise ValueError(f"Failed to chunk via docling-serve: {e}")
+        return result.get("chunks", [])
 
     async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
         """Split the document into chunks with metadata via docling-serve.

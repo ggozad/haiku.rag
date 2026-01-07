@@ -11,6 +11,8 @@ from haiku.rag.converters.text_utils import TextFileHandler
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.config.models import ModelConfig
+
 
 class DoclingLocalConverter(DocumentConverter):
     """Converter that uses local docling for document conversion.
@@ -54,6 +56,21 @@ class DoclingLocalConverter(DocumentConverter):
         """Return list of file extensions supported by this converter."""
         return self.docling_extensions + TextFileHandler.text_extensions
 
+    def _get_vlm_api_url(self, model: "ModelConfig") -> str:
+        """Construct VLM API URL from model config."""
+        if model.base_url:
+            base = model.base_url.rstrip("/")
+            return f"{base}/v1/chat/completions"
+
+        if model.provider == "ollama":
+            base = self.config.providers.ollama.base_url.rstrip("/")
+            return f"{base}/v1/chat/completions"
+
+        if model.provider == "openai":
+            return "https://api.openai.com/v1/chat/completions"
+
+        raise ValueError(f"Unsupported VLM provider: {model.provider}")
+
     def _sync_convert_docling_file(self, path: Path) -> "DoclingDocument":
         """Synchronous conversion of docling-supported files."""
         from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
@@ -61,6 +78,7 @@ class DoclingLocalConverter(DocumentConverter):
         from docling.datamodel.pipeline_options import (
             OcrAutoOptions,
             PdfPipelineOptions,
+            PictureDescriptionApiOptions,
             TableFormerMode,
             TableStructureOptions,
         )
@@ -73,13 +91,14 @@ class DoclingLocalConverter(DocumentConverter):
         )
 
         opts = self.config.processing.conversion_options
+        pic_desc = opts.picture_description
 
         pipeline_options = PdfPipelineOptions(
             do_ocr=opts.do_ocr,
             do_table_structure=opts.do_table_structure,
             images_scale=opts.images_scale,
             generate_page_images=True,
-            generate_picture_images=opts.generate_picture_images,
+            generate_picture_images=opts.generate_picture_images or pic_desc.enabled,
             table_structure_options=TableStructureOptions(
                 do_cell_matching=opts.table_cell_matching,
                 mode=(
@@ -92,7 +111,24 @@ class DoclingLocalConverter(DocumentConverter):
                 force_full_page_ocr=opts.force_ocr,
                 lang=opts.ocr_lang if opts.ocr_lang else [],
             ),
+            do_picture_description=pic_desc.enabled,
         )
+
+        if pic_desc.enabled:
+            from pydantic import AnyUrl
+
+            prompt = self.config.prompts.picture_description
+
+            pipeline_options.enable_remote_services = True
+            pipeline_options.picture_description_options = PictureDescriptionApiOptions(
+                url=AnyUrl(self._get_vlm_api_url(pic_desc.model)),
+                params=dict(
+                    model=pic_desc.model.name,
+                    max_completion_tokens=pic_desc.max_tokens,
+                ),
+                prompt=prompt,
+                timeout=pic_desc.timeout,
+            )
 
         format_options = cast(
             dict[InputFormat, FormatOption],

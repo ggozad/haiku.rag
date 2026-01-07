@@ -12,7 +12,6 @@ providers:
   docling_serve:
     base_url: http://docling-serve:5001
     api_key: ""
-    timeout: 300
   ollama:
     base_url: http://host.docker.internal:11434
 
