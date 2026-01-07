@@ -113,6 +113,8 @@ conversion_options:
 - **timeout**: Request timeout in seconds
 - **max_tokens**: Maximum tokens in the VLM response
 
+**Note:** Requires an OpenAI-compatible `/v1/chat/completions` endpoint. Providers with different API formats (e.g., Anthropic Claude) are not supported.
+
 **Default prompt** (configured in `prompts.picture_description`):
 
 ```
@@ -165,6 +167,13 @@ conversion_options:
 3. Descriptions are added as annotations on the image
 4. When exported to markdown, descriptions appear as searchable text
 
+**Using with docling-serve:**
+
+When using `converter: docling-serve`, the VLM calls are made by the docling-serve instance, not by haiku.rag. You must:
+
+1. Set `DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true` when running docling-serve
+2. Ensure the VLM endpoint is accessible from where docling-serve is running
+
 ### Local vs Remote Processing
 
 **Local processing** (default):
@@ -190,7 +199,6 @@ providers:
   docling_serve:
     base_url: http://localhost:5001
     api_key: "your-api-key"  # Optional
-    timeout: 300              # Request timeout in seconds
 ```
 
 Conversion options work identically for both local and remote processing.

@@ -55,8 +55,7 @@ processing:
 providers:
   docling_serve:
     base_url: http://localhost:5001
-    api_key: ""     # Optional API key for authentication
-    timeout: 300    # Request timeout in seconds
+    api_key: ""  # Optional API key for authentication
 ```
 
 ## Features
