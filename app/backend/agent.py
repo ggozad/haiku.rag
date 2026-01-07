@@ -13,10 +13,24 @@ if TYPE_CHECKING:
     from haiku.rag.graph.agui.emitter import AGUIEmitter
 
 
+class CitationInfo(BaseModel):
+    """Citation info for frontend display."""
+
+    index: int
+    document_id: str
+    chunk_id: str
+    document_uri: str
+    document_title: str | None = None
+    page_numbers: list[int] = []
+    headings: list[str] | None = None
+    content: str
+
+
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
     session_id: str = ""
+    citations: list[CitationInfo] = []
 
 
 @dataclass
@@ -35,13 +49,12 @@ You have access to a knowledge base of documents. Use your tools to search and a
 
 CRITICAL RULES:
 1. For greetings or casual chat: respond directly WITHOUT using any tools
-2. For substantive questions requiring information: use the search or ask tools
+2. For questions: ALWAYS use the "ask" tool - it provides answers with proper citations
 3. NEVER make up information - always use tools to get facts from the knowledge base
-4. When citing sources, reference the chunk IDs from search results
 
 How to decide which tool to use:
-- "search" - When you need to find relevant documents or explore what's in the knowledge base
-- "ask" - When you have a specific question that needs a direct answer with citations
+- "ask" - DEFAULT CHOICE for any question. Use this for questions like "What is X?", "How does Y work?", "Explain Z", etc. Returns answers with citations.
+- "search" - ONLY use when explicitly exploring/browsing the knowledge base, or when the user asks to "search for" or "find" something without needing an answer.
 
 Be friendly and conversational. When you use tools, summarize the key findings for the user."""
 
@@ -111,13 +124,29 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         answer, citations = await ctx.deps.client.ask(question, filter=document_filter)
 
-        # Format answer with citations
-        if citations:
-            citation_list = "\n".join(
-                f"  [{i + 1}] {c.document_uri or c.document_title or 'Unknown'} (chunk: {c.chunk_id})"
+        # Emit citations via AG-UI state for frontend rendering
+        if citations and ctx.deps.agui_emitter:
+            citation_infos = [
+                CitationInfo(
+                    index=i + 1,
+                    document_id=c.document_id,
+                    chunk_id=c.chunk_id,
+                    document_uri=c.document_uri,
+                    document_title=c.document_title,
+                    page_numbers=c.page_numbers,
+                    headings=c.headings,
+                    content=c.content,
+                )
                 for i, c in enumerate(citations)
+            ]
+            ctx.deps.agui_emitter.update_state(
+                ChatSessionState(citations=citation_infos)
             )
-            return f"{answer}\n\nSources:\n{citation_list}"
+
+        # Format answer with citation references
+        if citations:
+            citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citations)))
+            return f"{answer}\n\nSources: {citation_refs}"
 
         return answer
 

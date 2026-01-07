@@ -1,12 +1,29 @@
 "use client";
 
-import { CopilotKit, useCoAgent } from "@copilotkit/react-core";
+import {
+	CopilotKit,
+	useCoAgent,
+	useCoAgentStateRender,
+} from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
+import CitationBlock from "./CitationBlock";
 import DbInfo from "./DbInfo";
+
+interface Citation {
+	index: number;
+	document_id: string;
+	chunk_id: string;
+	document_uri: string;
+	document_title: string | null;
+	page_numbers: number[];
+	headings: string[] | null;
+	content: string;
+}
 
 interface ChatSessionState {
 	session_id: string;
+	citations: Citation[];
 }
 
 function ChatContent() {
@@ -14,6 +31,17 @@ function ChatContent() {
 		name: "chat_agent",
 		initialState: {
 			session_id: "",
+			citations: [],
+		},
+	});
+
+	useCoAgentStateRender<ChatSessionState>({
+		name: "chat_agent",
+		render: ({ state }) => {
+			if (state.citations && state.citations.length > 0) {
+				return <CitationBlock citations={state.citations} />;
+			}
+			return null;
 		},
 	});
 
@@ -39,6 +67,12 @@ function ChatContent() {
 					flex-direction: column;
 				}
 				.chat-content {
+					flex: 1;
+					min-height: 0;
+					display: flex;
+					flex-direction: column;
+				}
+				.chat-content > * {
 					flex: 1;
 					min-height: 0;
 				}
