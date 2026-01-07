@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.24.0] - 2026-01-07
+
 ### Added
 
 - **VLM Picture Description**: Describe embedded images using Vision Language Models during document conversion
