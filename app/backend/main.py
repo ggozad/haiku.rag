@@ -258,12 +258,49 @@ async def db_info(_: Request) -> JSONResponse:
     )
 
 
+async def visualize_chunk(request: Request) -> JSONResponse:
+    """Return visual grounding images for a chunk as base64."""
+    import base64
+    from io import BytesIO
+
+    chunk_id = request.path_params["chunk_id"]
+
+    if not db_path.exists():
+        return JSONResponse({"error": "Database not found"}, status_code=404)
+
+    client = get_client(db_path)
+
+    chunk = await client.chunk_repository.get_by_id(chunk_id)
+    if not chunk:
+        return JSONResponse({"error": "Chunk not found"}, status_code=404)
+
+    images = await client.visualize_chunk(chunk)
+    if not images:
+        return JSONResponse({"images": [], "message": "No visual grounding available"})
+
+    base64_images = []
+    for img in images:
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        base64_images.append(base64.b64encode(buffer.read()).decode("utf-8"))
+
+    return JSONResponse(
+        {
+            "images": base64_images,
+            "chunk_id": chunk_id,
+            "document_uri": chunk.document_uri,
+        }
+    )
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
         Route("/v1/chat/stream", stream_chat, methods=["POST"]),
         Route("/api/documents", list_documents, methods=["GET"]),
         Route("/api/info", db_info, methods=["GET"]),
+        Route("/api/visualize/{chunk_id}", visualize_chunk, methods=["GET"]),
         Route("/health", health_check, methods=["GET"]),
     ],
     middleware=[
