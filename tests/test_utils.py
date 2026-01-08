@@ -176,6 +176,17 @@ def test_get_model_openai_with_thinking():
     assert isinstance(result, OpenAIChatModel)
 
 
+def test_get_model_openai_non_reasoning_model_ignores_thinking():
+    """Test that non-reasoning OpenAI models don't get reasoning_effort setting."""
+    model_config = ModelConfig(
+        provider="openai", name="gpt-4o-mini", enable_thinking=False
+    )
+    result = get_model(model_config)
+    assert isinstance(result, OpenAIChatModel)
+    # Non-reasoning models should not have reasoning_effort set
+    assert result._settings is None
+
+
 @pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
 def test_get_model_anthropic():
     """Test get_model returns AnthropicModel for Anthropic."""

@@ -2,7 +2,7 @@ import sys
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from dateutil import parser as dateutil_parser
 from packaging.version import Version, parse
@@ -145,10 +145,16 @@ def get_model(
         )
 
     elif provider == "openai":
+        from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
+
         openai_settings: Any = None
 
-        # Apply thinking control
-        if model_config.enable_thinking is not None:
+        # Apply thinking control only for reasoning models (o-series, gpt-5)
+        profile = cast(OpenAIModelProfile, openai_model_profile(model))
+        if (
+            model_config.enable_thinking is not None
+            and profile.openai_supports_encrypted_reasoning_content
+        ):
             if model_config.enable_thinking is False:
                 openai_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
             else:
@@ -247,8 +253,8 @@ def get_model(
                     }
                 else:
                     additional_fields = {"thinking": {"type": "disabled"}}
-            elif "gpt" in model or "o1" in model or "o3" in model:
-                # OpenAI models on Bedrock
+            elif "o1" in model or "o3" in model:
+                # OpenAI reasoning models on Bedrock (o-series only, not gpt-4o)
                 additional_fields = {
                     "reasoning_effort": "high"
                     if model_config.enable_thinking
