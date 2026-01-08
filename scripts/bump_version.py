@@ -41,6 +41,19 @@ def update_dependency_version(file_path: Path, new_version: str) -> None:
     print(f"✓ Updated haiku.rag-slim dependency in {file_path.relative_to(Path.cwd())}")
 
 
+def update_example_dependencies(file_path: Path, new_version: str) -> None:
+    """Update haiku.rag and haiku.rag-slim dependency versions in example pyproject.toml files."""
+    content = file_path.read_text()
+    # Update haiku.rag-slim[...] >= X.Y.Z
+    updated = re.sub(
+        r"(haiku\.rag-slim\[.*?\])>=[0-9.]+", rf"\1>={new_version}", content
+    )
+    # Update haiku.rag >= X.Y.Z
+    updated = re.sub(r"(haiku\.rag)>=[0-9.]+", rf"\1>={new_version}", updated)
+    file_path.write_text(updated)
+    print(f"✓ Updated example dependencies in {file_path.relative_to(Path.cwd())}")
+
+
 def update_changelog(changelog_path: Path, new_version: str) -> None:
     """Update CHANGELOG.md with new version."""
     content = changelog_path.read_text()
@@ -105,10 +118,15 @@ def main():
         root / "evaluations" / "pyproject.toml",
     ]
 
+    example_pyproject_files = [
+        root / "examples" / "ag-ui-research" / "backend" / "pyproject.toml",
+        root / "examples" / "a2a-server" / "pyproject.toml",
+    ]
+
     changelog_file = root / "CHANGELOG.md"
 
     # Check all files exist
-    for file in pyproject_files + [changelog_file]:
+    for file in pyproject_files + example_pyproject_files + [changelog_file]:
         if not file.exists():
             print(f"Error: {file} not found")
             sys.exit(1)
@@ -133,6 +151,10 @@ def main():
 
     # Update haiku.rag-slim dependency version in root pyproject.toml
     update_dependency_version(pyproject_files[0], new_version)
+
+    # Update example project dependencies
+    for file in example_pyproject_files:
+        update_example_dependencies(file, new_version)
 
     # Update CHANGELOG.md
     update_changelog(changelog_file, new_version)

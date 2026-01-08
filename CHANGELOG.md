@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.24.1] - 2026-01-08
+
 ### Fixed
 
 - **OpenAI Non-Reasoning Models**: Fixed `reasoning_effort` parameter being sent to non-reasoning OpenAI models (gpt-4o, gpt-4o-mini), causing 400 errors. Now correctly detects reasoning models (o1, o3 series) using pydantic-ai's model profile.
