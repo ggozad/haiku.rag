@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Base64 Images in Expanded Context**: Fixed base64 image data leaking into expanded search results when `expand_context()` processed `PictureItem` objects. The issue was `PictureItem.export_to_markdown()` defaulting to `EMBEDDED` mode. Now explicitly uses `PLACEHOLDER` mode to prevent base64 data while still including VLM descriptions and captions.
+
 ## [0.24.1] - 2026-01-08
 
 ### Fixed
