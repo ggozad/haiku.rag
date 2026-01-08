@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, format_as_xml
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -26,11 +26,38 @@ class CitationInfo(BaseModel):
     content: str
 
 
+class QAResponse(BaseModel):
+    """A Q&A pair from conversation history."""
+
+    question: str
+    answer: str
+    sources: list[str] = []
+
+
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
     session_id: str = ""
     citations: list[CitationInfo] = []
+    qa_history: list[QAResponse] = []
+
+
+def format_conversation_context(qa_history: list[QAResponse]) -> str:
+    """Format conversation history as XML for inclusion in prompts."""
+    if not qa_history:
+        return ""
+
+    context_data = {
+        "previous_qa": [
+            {
+                "question": qa.question,
+                "answer": qa.answer,
+                "sources": qa.sources,
+            }
+            for qa in qa_history
+        ],
+    }
+    return format_as_xml(context_data, root_tag="conversation_context")
 
 
 @dataclass
@@ -41,6 +68,7 @@ class ChatDeps:
     config: AppConfig
     agui_emitter: "AGUIEmitter | None" = None
     search_results: list[SearchResult] | None = None
+    session_state: ChatSessionState | None = None
 
 
 CHAT_SYSTEM_PROMPT = """You are a helpful research assistant powered by haiku.rag, a knowledge base system.
@@ -53,7 +81,7 @@ CRITICAL RULES:
 3. NEVER make up information - always use tools to get facts from the knowledge base
 
 How to decide which tool to use:
-- "ask" - DEFAULT CHOICE for any question. Use this for questions like "What is X?", "How does Y work?", "Explain Z", etc. Returns answers with citations.
+- "ask" - DEFAULT CHOICE for any question. Use this for questions like "What is X?", "How does Y work?", "Explain Z", etc. Returns answers with citations. The ask tool maintains conversation context, so follow-up questions benefit from previous answers.
 - "search" - ONLY use when explicitly exploring/browsing the knowledge base, or when the user asks to "search for" or "find" something without needing an answer.
 
 Be friendly and conversational. When you use tools, summarize the key findings for the user."""
@@ -122,10 +150,40 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         if ctx.deps.agui_emitter:
             ctx.deps.agui_emitter.log(f"Answering: {question}")
 
-        answer, citations = await ctx.deps.client.ask(question, filter=document_filter)
+        # Build context-aware system prompt if we have history
+        system_prompt = None
+        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
+            from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT
 
-        # Emit citations via AG-UI state for frontend rendering
-        if citations and ctx.deps.agui_emitter:
+            context_xml = format_conversation_context(ctx.deps.session_state.qa_history)
+            system_prompt = (
+                f"{QA_SYSTEM_PROMPT}\n\n"
+                f"{context_xml}\n\n"
+                "Use this conversation context to provide informed answers. "
+                "Reference previous answers when relevant."
+            )
+
+        answer, citations = await ctx.deps.client.ask(
+            question, system_prompt=system_prompt, filter=document_filter
+        )
+
+        # Accumulate Q&A in session state
+        if ctx.deps.session_state is not None:
+            sources = (
+                [c.document_title or c.document_uri for c in citations]
+                if citations
+                else []
+            )
+            qa_response = QAResponse(
+                question=question,
+                answer=answer,
+                sources=list(dict.fromkeys(sources)),  # dedupe preserving order
+            )
+            ctx.deps.session_state.qa_history.append(qa_response)
+
+        # Build citation infos for frontend
+        citation_infos = []
+        if citations:
             citation_infos = [
                 CitationInfo(
                     index=i + 1,
@@ -139,8 +197,23 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 )
                 for i, c in enumerate(citations)
             ]
+
+        # Emit updated state with citations AND accumulated qa_history
+        if ctx.deps.agui_emitter:
             ctx.deps.agui_emitter.update_state(
-                ChatSessionState(citations=citation_infos)
+                ChatSessionState(
+                    session_id=(
+                        ctx.deps.session_state.session_id
+                        if ctx.deps.session_state
+                        else ""
+                    ),
+                    citations=citation_infos,
+                    qa_history=(
+                        ctx.deps.session_state.qa_history
+                        if ctx.deps.session_state
+                        else []
+                    ),
+                )
             )
 
         # Format answer with citation references

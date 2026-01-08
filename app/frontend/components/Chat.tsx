@@ -21,9 +21,16 @@ interface Citation {
 	content: string;
 }
 
+interface QAResponse {
+	question: string;
+	answer: string;
+	sources: string[];
+}
+
 interface ChatSessionState {
 	session_id: string;
 	citations: Citation[];
+	qa_history: QAResponse[];
 }
 
 function ChatContent() {
@@ -32,6 +39,7 @@ function ChatContent() {
 		initialState: {
 			session_id: "",
 			citations: [],
+			qa_history: [],
 		},
 	});
 

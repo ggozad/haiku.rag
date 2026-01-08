@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from agent import ChatDeps, ChatSessionState, create_chat_agent
+from agent import ChatDeps, ChatSessionState, QAResponse, create_chat_agent
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
 from dotenv import load_dotenv
@@ -122,16 +122,26 @@ async def stream_chat(request: Request) -> StreamingResponse:
                     effective_db_path = Path(input_data.config["db_path"])
                 client = get_client(effective_db_path)
 
-                # Create deps
+                # Parse incoming state to restore qa_history
+                initial_qa_history: list[QAResponse] = []
+                if input_data.state and "qa_history" in input_data.state:
+                    initial_qa_history = [
+                        QAResponse(**qa)
+                        for qa in input_data.state.get("qa_history", [])
+                    ]
+
+                # Create initial state with restored history
+                initial_state = ChatSessionState(
+                    session_id=input_data.thread_id or "",
+                    qa_history=initial_qa_history,
+                )
+
+                # Create deps with session state
                 deps = ChatDeps(
                     client=client,
                     config=Config,
                     agui_emitter=emitter,
-                )
-
-                # Start run with empty state
-                initial_state = ChatSessionState(
-                    session_id=input_data.thread_id or "",
+                    session_state=initial_state,
                 )
                 emitter.start_run(initial_state=initial_state)
 
