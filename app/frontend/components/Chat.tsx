@@ -64,8 +64,8 @@ function ChatContent() {
 					padding: 1rem;
 				}
 				.chat-container {
-					width: 100%;
-					max-width: 800px;
+					width: calc(100% - 2rem);
+					max-width: 1400px;
 					height: 90vh;
 					border-radius: 12px;
 					overflow: hidden;
@@ -87,7 +87,6 @@ function ChatContent() {
 			`}</style>
 			<div className="chat-wrapper">
 				<div className="chat-container">
-					<DbInfo />
 					<div className="chat-content">
 						<CopilotChat
 							labels={{
@@ -97,6 +96,7 @@ function ChatContent() {
 							}}
 						/>
 					</div>
+					<DbInfo />
 				</div>
 			</div>
 		</>

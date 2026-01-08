@@ -66,7 +66,7 @@ export default function DbInfo() {
 					font-size: 0.75rem;
 					color: #64748b;
 					background: #f8fafc;
-					border-bottom: 1px solid #e2e8f0;
+					border-top: 1px solid #e2e8f0;
 					justify-content: center;
 				}
 				.db-info-error {
