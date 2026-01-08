@@ -9,6 +9,7 @@ dependencies = [
     "pydantic-ai-slim[ag-ui,anthropic,openai]>=1.39.0",
     "python-dotenv>=1.2.1",
     "haiku.rag-slim[agui]>=0.23.1",
+    "logfire[pydantic-ai]>=3.17.0",
 ]
 
 [dependency-groups]

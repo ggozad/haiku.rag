@@ -52,6 +52,15 @@ def convert_messages_to_history(
 
 load_dotenv()
 
+# Configure logfire (only sends data if LOGFIRE_TOKEN is present)
+try:
+    import logfire
+
+    logfire.configure(send_to_logfire="if-token-present", console=False)
+    logfire.instrument_pydantic_ai()
+except Exception:
+    pass
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
