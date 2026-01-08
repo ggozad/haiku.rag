@@ -69,7 +69,8 @@ a {
 	padding: 0.15em 0.4em;
 	border-radius: 4px;
 	font-size: 0.9em;
-	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	font-family:
+		ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .copilotKitAssistantMessage pre {
