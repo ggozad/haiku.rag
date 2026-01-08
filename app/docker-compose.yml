@@ -13,6 +13,7 @@ services:
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
     volumes:
       - ${DB_PATH:-./data/haiku.rag.lancedb}:/data
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
