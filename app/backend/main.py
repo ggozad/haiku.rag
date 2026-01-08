@@ -3,7 +3,12 @@ import os
 from pathlib import Path
 
 from agent import ChatDeps, ChatSessionState, QAResponse, create_chat_agent
-from anyio import create_memory_object_stream, create_task_group
+from anyio import (
+    EndOfStream,
+    create_memory_object_stream,
+    create_task_group,
+    move_on_after,
+)
 from anyio.streams.memory import MemoryObjectSendStream
 from dotenv import load_dotenv
 from pydantic_ai.messages import (
@@ -182,12 +187,21 @@ async def stream_chat(request: Request) -> StreamingResponse:
                     pass
 
     async def event_generator():
-        """Generate SSE events."""
+        """Generate SSE events with heartbeat to keep connection alive."""
         async with create_task_group() as tg:
             tg.start_soon(run_agent_with_streaming, send_stream)
             async with receive_stream:
-                async for event_str in receive_stream:
-                    yield event_str
+                while True:
+                    try:
+                        # Wait for event with timeout, send heartbeat if nothing received
+                        with move_on_after(15):  # 15 second timeout
+                            event_str = await receive_stream.receive()
+                            yield event_str
+                            continue
+                        # No event received within timeout - send SSE comment as heartbeat
+                        yield ": heartbeat\n\n"
+                    except EndOfStream:
+                        break
 
     return StreamingResponse(
         event_generator(),
