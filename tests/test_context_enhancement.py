@@ -695,3 +695,126 @@ First paragraph of results.
                 assert len(r.content) > 0
                 # Score should be preserved (best score)
                 assert r.score in [0.9, 0.8]
+
+
+def create_picture_document() -> DoclingDocument:
+    """Create a document with picture items for testing image handling."""
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name="picture_test")
+
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Introduction with context.")
+    doc.add_heading(text="Figures Section", level=1)
+
+    # Add a picture item - this will have export_to_markdown method
+    # that defaults to EMBEDDED mode if called without image_mode parameter
+    doc.add_picture()
+
+    doc.add_text(label=DocItemLabel.CAPTION, text="Figure 1: Sample diagram")
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Conclusion paragraph.")
+
+    return doc
+
+
+@pytest.mark.vcr()
+async def test_expand_context_no_base64_images(temp_db_path):
+    """Ensure expanded context does not contain base64 image data.
+
+    This test verifies that when expand_context includes PictureItem objects,
+    they are serialized with PLACEHOLDER mode (not EMBEDDED), preventing
+    base64 image data from leaking into the expanded content.
+    """
+    config = AppConfig()
+    config.search.context_radius = 5  # Expand enough to include pictures
+
+    docling_doc = create_picture_document()
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        doc = await create_document_with_docling(client, docling_doc, "Picture Test")
+        assert doc.id is not None
+
+        # Search for content near the picture
+        results = await client.search("Figure diagram", limit=5)
+        assert len(results) > 0
+
+        # Expand context - this should include the picture area
+        expanded = await client.expand_context(results)
+
+        for result in expanded:
+            # Base64 image data should never appear in expanded content
+            assert "base64" not in result.content.lower(), (
+                f"Found 'base64' in expanded content: {result.content[:500]}"
+            )
+            assert "data:image" not in result.content.lower(), (
+                f"Found 'data:image' in expanded content: {result.content[:500]}"
+            )
+
+
+@pytest.mark.integration
+@pytest.mark.vcr()
+async def test_expand_context_no_base64_images_docling_local(temp_db_path):
+    """Ensure expanded context from real PDF does not contain base64 image data.
+
+    Tests end-to-end with doclaynet.pdf using docling-local converter.
+    """
+    from pathlib import Path
+
+    config = AppConfig()
+    config.processing.converter = "docling-local"
+    config.processing.chunker = "docling-local"
+    config.search.context_radius = 5
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+        result = await client.create_document_from_source(pdf_path)
+        doc = result if not isinstance(result, list) else result[0]
+        assert doc.id is not None
+
+        # Search for content that might include pictures
+        results = await client.search("figure table", limit=10)
+
+        if len(results) > 0:
+            expanded = await client.expand_context(results)
+
+            for result in expanded:
+                assert "base64" not in result.content.lower(), (
+                    f"Found 'base64' in expanded content: {result.content[:500]}"
+                )
+                assert "data:image" not in result.content.lower(), (
+                    f"Found 'data:image' in expanded content: {result.content[:500]}"
+                )
+
+
+@pytest.mark.integration
+@pytest.mark.vcr()
+async def test_expand_context_no_base64_images_docling_serve(temp_db_path):
+    """Ensure expanded context from real PDF does not contain base64 image data.
+
+    Tests end-to-end with doclaynet.pdf using docling-serve converter.
+    """
+    from pathlib import Path
+
+    config = AppConfig()
+    config.processing.converter = "docling-serve"
+    config.processing.chunker = "docling-serve"
+    config.search.context_radius = 5
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+        result = await client.create_document_from_source(pdf_path)
+        doc = result if not isinstance(result, list) else result[0]
+        assert doc.id is not None
+
+        # Search for content that might include pictures
+        results = await client.search("figure table", limit=10)
+
+        if len(results) > 0:
+            expanded = await client.expand_context(results)
+
+            for result in expanded:
+                assert "base64" not in result.content.lower(), (
+                    f"Found 'base64' in expanded content: {result.content[:500]}"
+                )
+                assert "data:image" not in result.content.lower(), (
+                    f"Found 'data:image' in expanded content: {result.content[:500]}"
+                )

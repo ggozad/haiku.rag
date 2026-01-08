@@ -987,20 +987,32 @@ class HaikuRAG:
         Handles different item types:
         - TextItem, SectionHeaderItem, etc.: Use .text attribute
         - TableItem: Use export_to_markdown() for table content
-        - PictureItem: Use caption if available
+        - PictureItem: Use export_to_markdown() with PLACEHOLDER mode to avoid base64
         """
+        from docling_core.types.doc.base import ImageRefMode
+        from docling_core.types.doc.document import PictureItem
+
         # Try simple text attribute first (works for most items)
         if text := getattr(item, "text", None):
             return text
 
-        # For tables, export as markdown
+        # For pictures: use PLACEHOLDER mode to avoid base64 images in content.
+        # This still includes VLM descriptions (annotations) and captions.
+        if isinstance(item, PictureItem):
+            return item.export_to_markdown(
+                docling_doc,
+                image_mode=ImageRefMode.PLACEHOLDER,
+                image_placeholder="",
+            )
+
+        # For tables and other items with export_to_markdown
         if hasattr(item, "export_to_markdown"):
             try:
                 return item.export_to_markdown(docling_doc)
             except Exception:
                 pass
 
-        # For pictures/charts, try to get caption
+        # Fallback for items with captions
         if caption := getattr(item, "caption", None):
             if hasattr(caption, "text"):
                 return caption.text
