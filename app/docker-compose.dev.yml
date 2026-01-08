@@ -18,6 +18,7 @@ services:
     volumes:
       - ${DB_PATH:-./data/haiku.rag.lancedb}:/data
       - ./backend:/app/src:ro
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
