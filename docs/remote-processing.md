@@ -39,7 +39,13 @@ The easiest way to use haiku.rag with docling-serve is using the slim Docker ima
 See the [official docling-serve repository](https://github.com/docling-project/docling-serve) for installation options. The quickest way is using Docker:
 
 ```bash
-docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_UI=1 quay.io/docling-project/docling-serve
+docker run -p 5001:5001 quay.io/docling-project/docling-serve
+```
+
+To enable the web UI for debugging:
+
+```bash
+docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_UI=true quay.io/docling-project/docling-serve
 ```
 
 ### Configuration
@@ -127,6 +133,79 @@ processing:
 
 - `false` (default): Tables as narrative text
 - `true`: Tables as markdown format
+
+## VLM Picture Description with docling-serve
+
+When using VLM picture description with docling-serve, the VLM API calls are made by the docling-serve container, not by haiku.rag. This requires additional configuration.
+
+### Enable Remote Services
+
+docling-serve blocks external API calls by default. To enable VLM picture description, start docling-serve with:
+
+```bash
+docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true quay.io/docling-project/docling-serve
+```
+
+### Docker Networking
+
+When docling-serve runs in Docker and your VLM (e.g., Ollama) runs on the host, `localhost` inside the container refers to the container itself, not your host machine.
+
+Use `host.docker.internal` to reach host services from within Docker:
+
+```yaml
+# haiku.rag.yaml
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+  conversion_options:
+    picture_description:
+      enabled: true
+      model:
+        provider: ollama
+        name: ministral-3
+        base_url: http://host.docker.internal:11434  # NOT localhost!
+```
+
+### Complete Example
+
+1. Start Ollama with a vision model on your host:
+
+```bash
+ollama pull ministral-3
+ollama serve
+```
+
+2. Start docling-serve with remote services enabled:
+
+```bash
+docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true quay.io/docling-project/docling-serve
+```
+
+3. Configure haiku.rag:
+
+```yaml
+# haiku.rag.yaml
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+  conversion_options:
+    picture_description:
+      enabled: true
+      model:
+        provider: ollama
+        name: ministral-3
+        base_url: http://host.docker.internal:11434
+
+providers:
+  docling_serve:
+    base_url: http://localhost:5001
+```
+
+4. Add a document:
+
+```bash
+haiku-rag add-src document.pdf
+```
 
 ## Resources
 

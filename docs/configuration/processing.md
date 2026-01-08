@@ -174,6 +174,19 @@ When using `converter: docling-serve`, the VLM calls are made by the docling-ser
 1. Set `DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true` when running docling-serve
 2. Ensure the VLM endpoint is accessible from where docling-serve is running
 
+**Docker networking:** If docling-serve runs in Docker and your VLM runs on the host, use `host.docker.internal` instead of `localhost`:
+
+```yaml
+picture_description:
+  enabled: true
+  model:
+    provider: ollama
+    name: ministral-3
+    base_url: http://host.docker.internal:11434  # NOT localhost!
+```
+
+See [VLM Picture Description with docling-serve](../remote-processing.md#vlm-picture-description-with-docling-serve) for a complete example.
+
 ### Local vs Remote Processing
 
 **Local processing** (default):
