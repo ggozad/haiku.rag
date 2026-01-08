@@ -77,14 +77,16 @@ You have access to a knowledge base of documents. Use your tools to search and a
 
 CRITICAL RULES:
 1. For greetings or casual chat: respond directly WITHOUT using any tools
-2. For questions: ALWAYS use the "ask" tool - it provides answers with proper citations
-3. NEVER make up information - always use tools to get facts from the knowledge base
+2. For questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+3. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
+4. NEVER call the same tool multiple times for a single user message
+5. NEVER make up information - always use tools to get facts from the knowledge base
 
 How to decide which tool to use:
-- "ask" - DEFAULT CHOICE for any question. Use this for questions like "What is X?", "How does Y work?", "Explain Z", etc. Returns answers with citations. The ask tool maintains conversation context, so follow-up questions benefit from previous answers.
-- "search" - ONLY use when explicitly exploring/browsing the knowledge base, or when the user asks to "search for" or "find" something without needing an answer.
+- "ask" - DEFAULT CHOICE for any question. Call it ONCE with the user's question. It internally handles query decomposition and returns answers with citations.
+- "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, just output the list of results returned by the tool verbatim. Do NOT summarize or add commentary.
 
-Be friendly and conversational. When you use tools, summarize the key findings for the user."""
+Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user."""
 
 
 def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
@@ -102,36 +104,74 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
     async def search(
         ctx: RunContext[ChatDeps],
         query: str,
-        limit: int = 5,
-        document_filter: str | None = None,
     ) -> str:
         """Search the knowledge base for relevant documents.
 
         Use this when you need to find documents or explore the knowledge base.
-        Returns relevant chunks with metadata.
+        Results are displayed to the user - just list the titles found.
 
         Args:
             query: The search query
-            limit: Maximum number of results (default 5)
-            document_filter: Optional SQL WHERE clause to filter documents (e.g. "id IN ('doc1', 'doc2')")
         """
+        from search_agent import SearchAgent
+
         if ctx.deps.agui_emitter:
             ctx.deps.agui_emitter.log(f"Searching: {query}")
 
-        results = await ctx.deps.client.search(
-            query, limit=limit, filter=document_filter
-        )
-        results = await ctx.deps.client.expand_context(results)
+        # Build context from conversation history
+        context = None
+        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
+            context = format_conversation_context(ctx.deps.session_state.qa_history)
+
+        # Use search agent for query expansion and deduplication
+        search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
+        results = await search_agent.search(query, context=context)
 
         # Store for potential citation resolution
         ctx.deps.search_results = results
 
         if not results:
-            return "No results found for your query."
+            return "No results found."
 
-        # Format results for the agent
-        parts = [r.format_for_agent() for r in results]
-        return "\n\n".join(parts)
+        # Build citation infos for frontend display
+        citation_infos = [
+            CitationInfo(
+                index=i + 1,
+                document_id=r.document_id or "",
+                chunk_id=r.chunk_id or "",
+                document_uri=r.document_uri or "",
+                document_title=r.document_title,
+                page_numbers=r.page_numbers or [],
+                headings=r.headings,
+                content=r.content,
+            )
+            for i, r in enumerate(results)
+        ]
+
+        # Emit search results as citations
+        if ctx.deps.agui_emitter:
+            ctx.deps.agui_emitter.update_state(
+                ChatSessionState(
+                    session_id=(
+                        ctx.deps.session_state.session_id
+                        if ctx.deps.session_state
+                        else ""
+                    ),
+                    citations=citation_infos,
+                    qa_history=(
+                        ctx.deps.session_state.qa_history
+                        if ctx.deps.session_state
+                        else []
+                    ),
+                )
+            )
+
+        # Return simple list of titles for the agent to present
+        titles = []
+        for i, r in enumerate(results):
+            title = r.document_title or r.document_uri or "Unknown"
+            titles.append(f"[{i + 1}] {title}")
+        return f"Found {len(results)} results:\n" + "\n".join(titles)
 
     @agent.tool
     async def ask(
