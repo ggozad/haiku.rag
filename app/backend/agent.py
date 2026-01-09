@@ -87,6 +87,17 @@ How to decide which tool to use:
 - "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
 - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, just output the list of results returned by the tool verbatim. Do NOT summarize or add commentary.
 
+IMPORTANT - When user mentions a document in search/ask:
+- If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
+  - Extract the TOPIC as `query`/`question`
+  - Extract the DOCUMENT NAME as `document_name`
+- Examples for search:
+  - "search for latrines in TB MED 593" → query="latrines", document_name="TB MED 593"
+  - "find waste disposal in the army manual" → query="waste disposal", document_name="army manual"
+- Examples for ask:
+  - "what does TB MED 593 say about latrines?" → question="what are the guidelines for latrines?", document_name="TB MED 593"
+  - "answer from the army manual about sanitation" → question="what are the sanitation guidelines?", document_name="army manual"
+
 Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user."""
 
 
@@ -105,6 +116,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
     async def search(
         ctx: RunContext[ChatDeps],
         query: str,
+        document_name: str | None = None,
     ) -> str:
         """Search the knowledge base for relevant documents.
 
@@ -112,21 +124,36 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         Results are displayed to the user - just list the titles found.
 
         Args:
-            query: The search query
+            query: The search query (what to search for)
+            document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
         from search_agent import SearchAgent
 
         if ctx.deps.agui_emitter:
-            ctx.deps.agui_emitter.log(f"Searching: {query}")
+            msg = f"Searching: {query}"
+            if document_name:
+                msg += f" (in {document_name})"
+            ctx.deps.agui_emitter.log(msg)
 
         # Build context from conversation history
         context = None
         if ctx.deps.session_state and ctx.deps.session_state.qa_history:
             context = format_conversation_context(ctx.deps.session_state.qa_history)
 
+        # Build filter from document_name
+        doc_filter = None
+        if document_name:
+            escaped = document_name.replace("'", "''")
+            # Also try without spaces for matching "TB MED 593" to "tbmed593"
+            no_spaces = escaped.replace(" ", "")
+            doc_filter = (
+                f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
+                f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
+            )
+
         # Use search agent for query expansion and deduplication
         search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
-        results = await search_agent.search(query, context=context)
+        results = await search_agent.search(query, context=context, filter=doc_filter)
 
         # Store for potential citation resolution
         ctx.deps.search_results = results
@@ -178,7 +205,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
     async def ask(
         ctx: RunContext[ChatDeps],
         question: str,
-        document_filter: str | None = None,
+        document_name: str | None = None,
     ) -> str:
         """Answer a specific question using the knowledge base.
 
@@ -186,10 +213,24 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         Args:
             question: The question to answer
-            document_filter: Optional SQL WHERE clause to filter documents (e.g. "id IN ('doc1', 'doc2')")
+            document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
         if ctx.deps.agui_emitter:
-            ctx.deps.agui_emitter.log(f"Answering: {question}")
+            msg = f"Answering: {question}"
+            if document_name:
+                msg += f" (in {document_name})"
+            ctx.deps.agui_emitter.log(msg)
+
+        # Build filter from document_name
+        doc_filter = None
+        if document_name:
+            escaped = document_name.replace("'", "''")
+            # Also try without spaces for matching "TB MED 593" to "tbmed593"
+            no_spaces = escaped.replace(" ", "")
+            doc_filter = (
+                f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
+                f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
+            )
 
         # Build context-aware system prompt if we have history
         system_prompt = None
@@ -205,7 +246,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             )
 
         answer, citations = await ctx.deps.client.ask(
-            question, system_prompt=system_prompt, filter=document_filter
+            question, system_prompt=system_prompt, filter=doc_filter
         )
 
         # Accumulate Q&A in session state
@@ -283,19 +324,23 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         doc = await ctx.deps.client.get_document_by_uri(query)
 
         escaped_query = query.replace("'", "''")
+        # Also try without spaces for matching "TB MED 593" to "tbmed593"
+        no_spaces = escaped_query.replace(" ", "")
 
-        # If not found, try partial URI match
+        # If not found, try partial URI match (with and without spaces)
         if doc is None:
             docs = await ctx.deps.client.list_documents(
-                limit=1, filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%')"
+                limit=1,
+                filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%') OR LOWER(uri) LIKE LOWER('%{no_spaces}%')",
             )
             if docs:
                 doc = docs[0]
 
-        # If still not found, try partial title match
+        # If still not found, try partial title match (with and without spaces)
         if doc is None:
             docs = await ctx.deps.client.list_documents(
-                limit=1, filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%')"
+                limit=1,
+                filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')",
             )
             if docs:
                 doc = docs[0]
