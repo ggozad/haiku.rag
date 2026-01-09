@@ -1,6 +1,18 @@
 # Changelog
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: Custom AG-UI Infrastructure**: Removed custom AG-UI event handling in favor of pydantic-ai's native AG-UI support
+  - Deleted `haiku.rag.graph.agui` module (`AGUIEmitter`, `AGUIConsoleRenderer`, `stream_graph()`, `create_agui_server()`)
+  - Removed `--agui` flag from `serve` command
+  - Removed `--verbose` flags from `ask` and `research` commands
+  - Removed `--interactive` flag from `research` command
+  - Removed `AGUIConfig` from configuration
+  - Deleted `cli_chat.py` interactive chat module
+  - Research graph now uses `graph.run()` directly instead of `stream_graph()`
+  - For AG-UI streaming, use pydantic-ai's native `AGUIAdapter` with `ToolReturn` and `StateSnapshotEvent` (see `app/backend/` for example)
+
 ## [0.25.0] - 2026-01-12
 
 ### Fixed

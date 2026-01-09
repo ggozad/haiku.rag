@@ -339,24 +339,6 @@ async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ask_with_verbose(app: HaikuRAGApp, monkeypatch):
-    """Test asking a question with verbose (should be ignored for non-deep)."""
-    mock_answer = "Test answer"
-    mock_citations = []
-    mock_client = AsyncMock()
-    mock_client.ask.return_value = (mock_answer, mock_citations)
-    mock_client.__aenter__.return_value = mock_client
-
-    mock_print = MagicMock()
-    monkeypatch.setattr(app.console, "print", mock_print)
-
-    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
-        await app.ask("test question", verbose=True)
-
-    mock_client.ask.assert_called_once_with("test question", filter=None)
-
-
-@pytest.mark.asyncio
 async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with deep mode uses research graph."""
     import haiku.rag.app as app_module
@@ -425,35 +407,6 @@ async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
     mock_graph.run.assert_called_once()
     call_kwargs = mock_graph.run.call_args[1]
     assert call_kwargs["state"].context.original_question == "test question"
-
-
-@pytest.mark.asyncio
-async def test_ask_with_deep_and_verbose(app: HaikuRAGApp, monkeypatch):
-    """Test asking a question with deep mode and verbose output."""
-    import haiku.rag.app as app_module
-
-    mock_output = {"executive_summary": "Deep research answer"}
-
-    mock_renderer = AsyncMock()
-    mock_renderer.render.return_value = mock_output
-
-    mock_graph = AsyncMock()
-
-    mock_client = AsyncMock()
-
-    mock_print = MagicMock()
-    monkeypatch.setattr(app.console, "print", mock_print)
-    monkeypatch.setattr(app_module, "build_research_graph", lambda **kwargs: mock_graph)
-
-    with patch("haiku.rag.app.HaikuRAG") as mock_rag_class:
-        mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
-        with patch("haiku.rag.app.AGUIConsoleRenderer", return_value=mock_renderer):
-            await app.ask("test question", deep=True, verbose=True)
-
-    # With verbose, it should use AGUIConsoleRenderer.render, not graph.run
-    mock_renderer.render.assert_called_once()
-    mock_graph.run.assert_not_called()
 
 
 @pytest.mark.asyncio
