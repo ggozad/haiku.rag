@@ -14,16 +14,22 @@ class SearchDeps:
 
     client: HaikuRAG
     config: AppConfig
+    filter: str | None = None
     search_results: list[SearchResult] = field(default_factory=list)
 
 
-SEARCH_SYSTEM_PROMPT = """You are a search query optimizer. Given a user's search request:
+SEARCH_SYSTEM_PROMPT = """You are a search query optimizer for a document knowledge base.
 
-1. Generate 2-4 diverse search queries that cover different aspects/phrasings of the request
-2. For each query, call the run_search tool
-3. After all searches complete, respond with "Search complete"
+Given a user's search request:
+1. ALWAYS run the original query first as-is
+2. Then generate 1-2 alternative queries using different keywords or phrasings
+3. Keep queries SHORT (2-5 words) - use keywords, not full sentences
+4. After all searches, respond with "Search complete"
 
-Be thorough but focused. Generate queries that will find relevant results without being redundant."""
+Example: User asks "latrines" → queries: "latrines", "latrine sanitation", "field toilet"
+Example: User asks "waste disposal" → queries: "waste disposal", "garbage management", "refuse handling"
+
+Do NOT generate long verbose queries like "environmental impact of waste disposal methods" - keep it simple."""
 
 
 class SearchAgent:
@@ -52,7 +58,9 @@ class SearchAgent:
                 query: The search query
             """
             limit = ctx.deps.config.search.limit
-            results = await ctx.deps.client.search(query, limit=limit)
+            results = await ctx.deps.client.search(
+                query, limit=limit, filter=ctx.deps.filter
+            )
             results = await ctx.deps.client.expand_context(results)
             ctx.deps.search_results.extend(results)
 
@@ -64,12 +72,14 @@ class SearchAgent:
         self,
         query: str,
         context: str | None = None,
+        filter: str | None = None,
     ) -> list[SearchResult]:
         """Execute search with query expansion and deduplication.
 
         Args:
             query: The user's search request
             context: Optional conversation context
+            filter: Optional SQL WHERE clause to filter documents
 
         Returns:
             Deduplicated list of SearchResult sorted by score
@@ -78,7 +88,7 @@ class SearchAgent:
         if context:
             prompt = f"Context: {context}\n\nSearch request: {query}"
 
-        deps = SearchDeps(client=self._client, config=self._config)
+        deps = SearchDeps(client=self._client, config=self._config, filter=filter)
         await self._agent.run(prompt, deps=deps)
 
         # Deduplicate by chunk_id, keeping highest score
