@@ -332,11 +332,6 @@ def ask(
         "--deep",
         help="Use deep multi-agent QA for complex questions",
     ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        help="Show verbose progress output (only with --deep)",
-    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
@@ -345,63 +340,26 @@ def ask(
     ),
 ):
     app = create_app(db)
-    asyncio.run(
-        app.ask(question=question, cite=cite, deep=deep, verbose=verbose, filter=filter)
-    )
+    asyncio.run(app.ask(question=question, cite=cite, deep=deep, filter=filter))
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")
 def research(
-    question: str = typer.Argument(
-        None,
-        help="The research question to investigate (required unless --interactive)",
-    ),
+    question: str = typer.Argument(..., help="The research question to investigate"),
     db: Path | None = typer.Option(
         None,
         "--db",
         help="Path to the LanceDB database file",
     ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        help="Show planning, searching previews, evaluation summary, and stop reason",
-    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
-    interactive: bool = typer.Option(
-        False,
-        "--interactive",
-        "-i",
-        help="Start interactive research mode with human-in-the-loop",
-    ),
 ):
     app = create_app(db)
-
-    if interactive:
-        from haiku.rag.cli_chat import interactive_research
-        from haiku.rag.client import HaikuRAG
-
-        client = HaikuRAG(
-            db_path=app.db_path, config=app.config, read_only=_read_only, before=_before
-        )
-        try:
-            interactive_research(
-                client=client,
-                config=app.config,
-                search_filter=filter,
-                question=question,
-            )
-        finally:
-            client.close()
-    else:
-        if question is None:
-            typer.echo("Error: Question is required unless using --interactive mode")
-            raise typer.Exit(1)
-        asyncio.run(app.research(question=question, verbose=verbose, filter=filter))
+    asyncio.run(app.research(question=question, filter=filter))
 
 
 @cli.command("settings", help="Display current configuration settings")
@@ -584,7 +542,7 @@ def inspect(
 
 @cli.command(
     "serve",
-    help="Start haiku.rag server. Use --monitor, --mcp, and/or --agui to enable services.",
+    help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",
 )
 def serve(
     db: Path | None = typer.Option(
@@ -612,17 +570,12 @@ def serve(
         "--mcp-port",
         help="Port to bind MCP server to (ignored with --stdio)",
     ),
-    agui: bool = typer.Option(
-        False,
-        "--agui",
-        help="Enable AG-UI HTTP server for graph streaming",
-    ),
 ) -> None:
     """Start the server with selected services."""
     # Require at least one service flag
-    if not (monitor or mcp or agui):
+    if not (monitor or mcp):
         typer.echo(
-            "Error: At least one service flag (--monitor, --mcp, or --agui) must be specified"
+            "Error: At least one service flag (--monitor or --mcp) must be specified"
         )
         raise typer.Exit(1)
 
@@ -640,7 +593,6 @@ def serve(
             enable_mcp=mcp,
             mcp_transport=transport,
             mcp_port=mcp_port,
-            enable_agui=agui,
         )
     )
 

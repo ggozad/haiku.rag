@@ -282,7 +282,6 @@ def test_ask():
             question="What is Python?",
             cite=False,
             deep=False,
-            verbose=False,
             filter=None,
         )
 
@@ -300,7 +299,6 @@ def test_ask_with_cite():
             question="What is Python?",
             cite=True,
             deep=False,
-            verbose=False,
             filter=None,
         )
 
@@ -318,7 +316,6 @@ def test_ask_with_deep():
             question="What is Python?",
             cite=False,
             deep=True,
-            verbose=False,
             filter=None,
         )
 
@@ -336,25 +333,6 @@ def test_ask_with_deep_and_cite():
             question="What is Python?",
             cite=True,
             deep=True,
-            verbose=False,
-            filter=None,
-        )
-
-
-def test_ask_with_deep_and_verbose():
-    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
-        mock_app_instance = MagicMock()
-        mock_app_instance.ask = AsyncMock()
-        mock_app.return_value = mock_app_instance
-
-        result = runner.invoke(cli, ["ask", "What is Python?", "--deep", "--verbose"])
-
-        assert result.exit_code == 0
-        mock_app_instance.ask.assert_called_once_with(
-            question="What is Python?",
-            cite=False,
-            deep=True,
-            verbose=True,
             filter=None,
         )
 
