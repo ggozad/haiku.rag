@@ -207,4 +207,4 @@ The following people are presenting talks at PyCon Finland 2025:
 - **[Python API](python.md)** - Use haiku.rag in your Python applications
 - **[Agents](agents.md)** - Deep QA and multi-agent research workflows
 - **[Configuration](configuration/index.md)** - Complete YAML configuration reference
-- **[Server Mode](server.md)** - File monitoring, MCP server, and AG-UI streaming
+- **[Server Mode](server.md)** - File monitoring and MCP server
