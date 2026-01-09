@@ -85,7 +85,7 @@ CRITICAL RULES:
 How to decide which tool to use:
 - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
 - "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
-- "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, just output the list of results returned by the tool verbatim. Do NOT summarize or add commentary.
+- "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
 
 IMPORTANT - When user mentions a document in search/ask:
 - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
@@ -194,12 +194,22 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 )
             )
 
-        # Return simple list of titles for the agent to present
-        titles = []
+        # Return detailed results for the agent to present
+        result_lines = []
         for i, r in enumerate(results):
             title = r.document_title or r.document_uri or "Unknown"
-            titles.append(f"[{i + 1}] {title}")
-        return f"Found {len(results)} results:\n" + "\n".join(titles)
+            # Truncate content for display
+            snippet = r.content[:300].replace("\n", " ").strip()
+            if len(r.content) > 300:
+                snippet += "..."
+
+            line = f"[{i + 1}] **{title}**"
+            if r.page_numbers:
+                line += f" (pages {', '.join(map(str, r.page_numbers))})"
+            line += f"\n    {snippet}"
+            result_lines.append(line)
+
+        return f"Found {len(results)} results:\n\n" + "\n\n".join(result_lines)
 
     @agent.tool
     async def ask(
