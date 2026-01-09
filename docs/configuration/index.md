@@ -106,14 +106,6 @@ search:
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
 
-agui:
-  host: "0.0.0.0"
-  port: 8000
-  cors_origins: ["*"]
-  cors_credentials: true
-  cors_methods: ["GET", "POST", "OPTIONS"]
-  cors_headers: ["*"]
-
 prompts:
   domain_preamble: ""  # Prepended to all agent prompts
   qa: null             # Custom QA agent prompt (null = use default)

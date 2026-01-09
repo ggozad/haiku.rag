@@ -102,17 +102,11 @@ After restarting Claude Desktop, you can ask Claude to search your documents, ad
 
 ## Running with Other Services
 
-Combine MCP with file monitoring or AG-UI:
+Combine MCP with file monitoring:
 
 ```bash
 # MCP + file monitoring
 haiku-rag serve --mcp --monitor
-
-# MCP + AG-UI streaming
-haiku-rag serve --mcp --agui
-
-# All services
-haiku-rag serve --mcp --monitor --agui
 ```
 
-See [Server Mode](server.md) for details on file monitoring and AG-UI.
+See [Server Mode](server.md) for details on file monitoring.
