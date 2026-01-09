@@ -1,27 +1,15 @@
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.models import EvaluationResult, ResearchReport
+from haiku.rag.graph.research.models import EvaluationResult
 
 if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig
-    from haiku.rag.graph.agui.emitter import AGUIEmitter
-
-
-class HumanDecision(BaseModel):
-    """Human decision input for interactive research."""
-
-    action: Literal[
-        "search", "synthesize", "modify_questions", "add_questions", "chat", "research"
-    ]
-    questions: list[str] | None = None
-    message: str | None = None
-    research_question: str | None = None
 
 
 @dataclass
@@ -29,17 +17,7 @@ class ResearchDeps:
     """Dependencies for research graph execution."""
 
     client: HaikuRAG
-    agui_emitter: "AGUIEmitter[ResearchState, ResearchReport] | None" = None
     semaphore: asyncio.Semaphore | None = None
-    human_input_queue: asyncio.Queue[HumanDecision] | None = None
-    interactive: bool = False
-
-    def emit_log(self, message: str, state: "ResearchState | None" = None) -> None:
-        """Emit a log message through AG-UI events."""
-        if self.agui_emitter:
-            self.agui_emitter.log(message)
-            if state:
-                self.agui_emitter.update_state(state)
 
 
 class ResearchState(BaseModel):

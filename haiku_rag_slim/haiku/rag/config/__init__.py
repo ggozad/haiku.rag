@@ -1,12 +1,9 @@
-import os
-
 from haiku.rag.config.loader import (
     find_config_file,
     generate_default_config,
     load_yaml_config,
 )
 from haiku.rag.config.models import (
-    AGUIConfig,
     AppConfig,
     ConversionOptions,
     EmbeddingModelConfig,
@@ -26,7 +23,6 @@ from haiku.rag.config.models import (
 
 __all__ = [
     "Config",
-    "AGUIConfig",
     "AppConfig",
     "ConversionOptions",
     "EmbeddingModelConfig",

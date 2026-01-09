@@ -1,0 +1,138 @@
+* {
+	box-sizing: border-box;
+	padding: 0;
+	margin: 0;
+}
+
+html,
+body {
+	max-width: 100vw;
+	overflow-x: hidden;
+	font-family:
+		system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+		"Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+	background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
+	min-height: 100vh;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+/* CopilotKit markdown styling */
+.copilotKitAssistantMessage {
+	line-height: 1.6;
+}
+
+.copilotKitAssistantMessage h1,
+.copilotKitAssistantMessage h2,
+.copilotKitAssistantMessage h3,
+.copilotKitAssistantMessage h4 {
+	margin-top: 1.25em;
+	margin-bottom: 0.5em;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.copilotKitAssistantMessage h1 {
+	font-size: 1.5em;
+}
+
+.copilotKitAssistantMessage h2 {
+	font-size: 1.3em;
+}
+
+.copilotKitAssistantMessage h3 {
+	font-size: 1.15em;
+}
+
+.copilotKitAssistantMessage p {
+	margin-bottom: 0.75em;
+}
+
+.copilotKitAssistantMessage ul,
+.copilotKitAssistantMessage ol {
+	margin: 0.75em 0;
+	padding-left: 1.5em;
+}
+
+.copilotKitAssistantMessage li {
+	margin-bottom: 0.35em;
+}
+
+.copilotKitAssistantMessage code {
+	background: #f1f5f9;
+	padding: 0.15em 0.4em;
+	border-radius: 4px;
+	font-size: 0.9em;
+	font-family:
+		ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.copilotKitAssistantMessage pre {
+	background: #1e293b;
+	color: #e2e8f0;
+	padding: 1em;
+	border-radius: 8px;
+	overflow-x: auto;
+	margin: 1em 0;
+}
+
+.copilotKitAssistantMessage pre code {
+	background: transparent;
+	padding: 0;
+	color: inherit;
+}
+
+.copilotKitAssistantMessage blockquote {
+	border-left: 3px solid #3b82f6;
+	padding-left: 1em;
+	margin: 1em 0;
+	color: #64748b;
+	font-style: italic;
+}
+
+.copilotKitAssistantMessage a {
+	color: #3b82f6;
+	text-decoration: underline;
+}
+
+.copilotKitAssistantMessage a:hover {
+	color: #2563eb;
+}
+
+.copilotKitAssistantMessage hr {
+	border: none;
+	border-top: 1px solid #e2e8f0;
+	margin: 1.5em 0;
+}
+
+.copilotKitAssistantMessage table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 1em 0;
+}
+
+.copilotKitAssistantMessage th,
+.copilotKitAssistantMessage td {
+	border: 1px solid #e2e8f0;
+	padding: 0.5em 0.75em;
+	text-align: left;
+}
+
+.copilotKitAssistantMessage th {
+	background: #f8fafc;
+	font-weight: 600;
+}
+
+.copilotKitAssistantMessage strong {
+	font-weight: 600;
+}
+
+.copilotKitAssistantMessage em {
+	font-style: italic;
+}

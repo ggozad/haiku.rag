@@ -171,15 +171,6 @@ class ProvidersConfig(BaseModel):
     docling_serve: DoclingServeConfig = Field(default_factory=DoclingServeConfig)
 
 
-class AGUIConfig(BaseModel):
-    host: str = "0.0.0.0"
-    port: int = 8000
-    cors_origins: list[str] = ["*"]
-    cors_credentials: bool = True
-    cors_methods: list[str] = ["GET", "POST", "OPTIONS"]
-    cors_headers: list[str] = ["*"]
-
-
 class PromptsConfig(BaseModel):
     domain_preamble: str = ""
     qa: str | None = None
@@ -204,5 +195,4 @@ class AppConfig(BaseModel):
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
-    agui: AGUIConfig = Field(default_factory=AGUIConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
