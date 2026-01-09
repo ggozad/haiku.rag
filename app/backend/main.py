@@ -3,57 +3,19 @@ import os
 from pathlib import Path
 
 from agent import ChatDeps, ChatSessionState, QAResponse, create_chat_agent
-from anyio import (
-    EndOfStream,
-    create_memory_object_stream,
-    create_task_group,
-    move_on_after,
-)
-from anyio.streams.memory import MemoryObjectSendStream
 from dotenv import load_dotenv
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-)
+from pydantic_ai.ui import SSE_CONTENT_TYPE
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.graph.agui.emitter import AGUIEmitter
-from haiku.rag.graph.agui.server import RunAgentInput, format_sse_event
-
-
-def convert_messages_to_history(
-    messages: list[dict[str, str]],
-) -> list[ModelMessage]:
-    """Convert AG-UI/CopilotKit messages to pydantic-ai message history.
-
-    Skips the last message since it will be passed as user_prompt to agent.run().
-    """
-    history: list[ModelMessage] = []
-
-    # Skip the last message - it will be the current user prompt
-    for msg in messages[:-1]:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-
-        if role == "user":
-            history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
-        elif role == "assistant":
-            history.append(ModelResponse(parts=[TextPart(content=content)]))
-        # Skip other roles (system, tool, etc.) for now
-
-    return history
-
 
 load_dotenv()
 
@@ -103,109 +65,40 @@ def get_client(effective_db_path: Path) -> HaikuRAG:
     return _client_cache[path_key]
 
 
-async def stream_chat(request: Request) -> StreamingResponse:
+async def stream_chat(request: Request) -> Response:
     """Chat streaming endpoint with AG-UI protocol."""
-    body = await request.json()
-    logger.info(f"Received request: {list(body.keys())}")
-    input_data = RunAgentInput(**body)
+    body = await request.body()
+    logger.info("Received chat request")
 
-    user_message = ""
-    message_history: list[ModelMessage] = []
-    if input_data.messages:
-        user_message = input_data.messages[-1].get("content", "")
-        message_history = convert_messages_to_history(input_data.messages)
+    # Parse request to build run_input
+    accept = request.headers.get("accept", SSE_CONTENT_TYPE)
+    run_input = AGUIAdapter.build_run_input(body)
 
-    send_stream, receive_stream = create_memory_object_stream[str]()
+    # Restore qa_history from incoming state
+    initial_qa_history: list[QAResponse] = []
+    state = getattr(run_input, "state", None)
+    if state and "qa_history" in state:
+        initial_qa_history = [QAResponse(**qa) for qa in state.get("qa_history", [])]
 
-    async def run_agent_with_streaming(
-        send_stream: MemoryObjectSendStream[str],
-    ) -> None:
-        """Execute agent and forward events to stream."""
-        async with send_stream:
-            try:
-                # Create emitter for streaming
-                emitter: AGUIEmitter = AGUIEmitter(
-                    thread_id=input_data.thread_id,
-                    run_id=input_data.run_id,
-                    use_deltas=True,
-                )
+    # Build deps with session state
+    thread_id = getattr(run_input, "thread_id", None)
+    deps = ChatDeps(
+        client=get_client(db_path),
+        config=Config,
+        session_state=ChatSessionState(
+            session_id=thread_id or "",
+            qa_history=initial_qa_history,
+        ),
+    )
 
-                # Get client
-                effective_db_path = db_path
-                if input_data.config and input_data.config.get("db_path"):
-                    effective_db_path = Path(input_data.config["db_path"])
-                client = get_client(effective_db_path)
-
-                # Parse incoming state to restore qa_history
-                initial_qa_history: list[QAResponse] = []
-                if input_data.state and "qa_history" in input_data.state:
-                    initial_qa_history = [
-                        QAResponse(**qa)
-                        for qa in input_data.state.get("qa_history", [])
-                    ]
-
-                # Create initial state with restored history
-                initial_state = ChatSessionState(
-                    session_id=input_data.thread_id or "",
-                    qa_history=initial_qa_history,
-                )
-
-                # Create deps with session state
-                deps = ChatDeps(
-                    client=client,
-                    config=Config,
-                    agui_emitter=emitter,
-                    session_state=initial_state,
-                )
-                emitter.start_run(initial_state=initial_state)
-
-                # Forward events
-                async def forward_events():
-                    async for event in emitter:
-                        event_type = event.get("type")
-                        logger.debug(f"AG-UI event: {event_type}")
-                        await send_stream.send(format_sse_event(event))
-
-                # Run agent and forward concurrently
-                async with create_task_group() as tg:
-                    tg.start_soon(forward_events)
-
-                    result = await chat_agent.run(
-                        user_message, deps=deps, message_history=message_history
-                    )
-                    emitter.log(result.output)
-                    emitter.finish_run(result.output)
-                    await emitter.close()
-
-            except Exception as e:
-                logger.exception("Error executing agent")
-                try:
-                    await send_stream.send(
-                        format_sse_event({"type": "RUN_ERROR", "message": str(e)})
-                    )
-                except Exception:
-                    pass
-
-    async def event_generator():
-        """Generate SSE events with heartbeat to keep connection alive."""
-        async with create_task_group() as tg:
-            tg.start_soon(run_agent_with_streaming, send_stream)
-            async with receive_stream:
-                while True:
-                    try:
-                        # Wait for event with timeout, send heartbeat if nothing received
-                        with move_on_after(15):  # 15 second timeout
-                            event_str = await receive_stream.receive()
-                            yield event_str
-                            continue
-                        # No event received within timeout - send SSE comment as heartbeat
-                        yield ": heartbeat\n\n"
-                    except EndOfStream:
-                        break
+    # Use AGUIAdapter for streaming
+    adapter = AGUIAdapter(agent=chat_agent, run_input=run_input, accept=accept)
+    event_stream = adapter.run_stream(deps=deps)
+    sse_event_stream = adapter.encode_stream(event_stream)
 
     return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
+        sse_event_stream,
+        media_type=accept,
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
