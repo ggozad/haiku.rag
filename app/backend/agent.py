@@ -27,11 +27,19 @@ class CitationInfo(BaseModel):
 
 
 class QAResponse(BaseModel):
-    """A Q&A pair from conversation history."""
+    """A Q&A pair from conversation history with citations."""
 
     question: str
     answer: str
-    sources: list[str] = []
+    confidence: float = 0.9
+    citations: list[CitationInfo] = []
+
+    @property
+    def sources(self) -> list[str]:
+        """Source names for display."""
+        return list(
+            dict.fromkeys(c.document_title or c.document_uri for c in self.citations)
+        )
 
 
 class ChatSessionState(BaseModel):
@@ -69,6 +77,16 @@ class ChatDeps:
     agui_emitter: "AGUIEmitter | None" = None
     search_results: list[SearchResult] | None = None
     session_state: ChatSessionState | None = None
+
+
+def build_document_filter(document_name: str) -> str:
+    """Build SQL filter for document name matching."""
+    escaped = document_name.replace("'", "''")
+    no_spaces = escaped.replace(" ", "")
+    return (
+        f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
+        f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
+    )
 
 
 CHAT_SYSTEM_PROMPT = """You are a helpful research assistant powered by haiku.rag, a knowledge base system.
@@ -141,15 +159,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             context = format_conversation_context(ctx.deps.session_state.qa_history)
 
         # Build filter from document_name
-        doc_filter = None
-        if document_name:
-            escaped = document_name.replace("'", "''")
-            # Also try without spaces for matching "TB MED 593" to "tbmed593"
-            no_spaces = escaped.replace(" ", "")
-            doc_filter = (
-                f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
-                f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
-            )
+        doc_filter = build_document_filter(document_name) if document_name else None
 
         # Use search agent for query expansion and deduplication
         search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
@@ -220,11 +230,17 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         """Answer a specific question using the knowledge base.
 
         Use this for direct questions that need a focused answer with citations.
+        Uses a research graph for planning, searching, and synthesis.
 
         Args:
             question: The question to answer
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
+        from haiku.rag.graph.research.dependencies import ResearchContext
+        from haiku.rag.graph.research.graph import build_conversational_graph
+        from haiku.rag.graph.research.models import Citation, SearchAnswer
+        from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+
         if ctx.deps.agui_emitter:
             msg = f"Answering: {question}"
             if document_name:
@@ -232,63 +248,80 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             ctx.deps.agui_emitter.log(msg)
 
         # Build filter from document_name
-        doc_filter = None
-        if document_name:
-            escaped = document_name.replace("'", "''")
-            # Also try without spaces for matching "TB MED 593" to "tbmed593"
-            no_spaces = escaped.replace(" ", "")
-            doc_filter = (
-                f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
-                f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
-            )
+        doc_filter = build_document_filter(document_name) if document_name else None
 
-        # Build context-aware system prompt if we have history
-        system_prompt = None
+        # Convert existing qa_history to SearchAnswers for context seeding
+        existing_qa: list[SearchAnswer] = []
         if ctx.deps.session_state and ctx.deps.session_state.qa_history:
-            from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT
+            for qa in ctx.deps.session_state.qa_history:
+                citations = [
+                    Citation(
+                        document_id=c.document_id,
+                        chunk_id=c.chunk_id,
+                        document_uri=c.document_uri,
+                        document_title=c.document_title,
+                        page_numbers=c.page_numbers,
+                        headings=c.headings,
+                        content=c.content,
+                    )
+                    for c in qa.citations
+                ]
+                existing_qa.append(
+                    SearchAnswer(
+                        query=qa.question,
+                        answer=qa.answer,
+                        confidence=qa.confidence,
+                        cited_chunks=[c.chunk_id for c in qa.citations],
+                        citations=citations,
+                    )
+                )
 
-            context_xml = format_conversation_context(ctx.deps.session_state.qa_history)
-            system_prompt = (
-                f"{QA_SYSTEM_PROMPT}\n\n"
-                f"{context_xml}\n\n"
-                "Use this conversation context to provide informed answers. "
-                "Reference previous answers when relevant."
-            )
+        # Build and run the conversational research graph
+        graph = build_conversational_graph(config=ctx.deps.config)
 
-        answer, citations = await ctx.deps.client.ask(
-            question, system_prompt=system_prompt, filter=doc_filter
+        context = ResearchContext(
+            original_question=question,
+            qa_responses=existing_qa,
+        )
+        state = ResearchState(
+            context=context,
+            max_iterations=1,
+            confidence_threshold=0.0,
+            search_filter=doc_filter,
+            max_concurrency=ctx.deps.config.research.max_concurrency,
+        )
+        # Don't pass agui_emitter to research graph - its state model differs from ChatSessionState
+        # The ask tool handles final state emission with citations
+        deps = ResearchDeps(
+            client=ctx.deps.client,
         )
 
-        # Accumulate Q&A in session state
-        if ctx.deps.session_state is not None:
-            sources = (
-                [c.document_title or c.document_uri for c in citations]
-                if citations
-                else []
+        result = await graph.run(state=state, deps=deps)
+
+        # Build citation infos for frontend and history
+        citation_infos = [
+            CitationInfo(
+                index=i + 1,
+                document_id=c.document_id,
+                chunk_id=c.chunk_id,
+                document_uri=c.document_uri,
+                document_title=c.document_title,
+                page_numbers=c.page_numbers,
+                headings=c.headings,
+                content=c.content,
             )
+            for i, c in enumerate(result.citations)
+        ]
+
+        # Accumulate Q&A in session state with full citation metadata
+        if ctx.deps.session_state is not None:
             qa_response = QAResponse(
                 question=question,
-                answer=answer,
-                sources=list(dict.fromkeys(sources)),  # dedupe preserving order
+                answer=result.answer,
+                confidence=result.confidence,
+                citations=citation_infos,
             )
             ctx.deps.session_state.qa_history.append(qa_response)
-
-        # Build citation infos for frontend
-        citation_infos = []
-        if citations:
-            citation_infos = [
-                CitationInfo(
-                    index=i + 1,
-                    document_id=c.document_id,
-                    chunk_id=c.chunk_id,
-                    document_uri=c.document_uri,
-                    document_title=c.document_title,
-                    page_numbers=c.page_numbers,
-                    headings=c.headings,
-                    content=c.content,
-                )
-                for i, c in enumerate(citations)
-            ]
 
         # Emit updated state with citations AND accumulated qa_history
         if ctx.deps.agui_emitter:
@@ -308,12 +341,13 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 )
             )
 
-        # Format answer with citation references
-        if citations:
-            citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citations)))
-            return f"{answer}\n\nSources: {citation_refs}"
+        # Format answer with citation references and confidence
+        answer_text = result.answer
+        if citation_infos:
+            citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citation_infos)))
+            answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
-        return answer
+        return answer_text
 
     @agent.tool
     async def get_document(

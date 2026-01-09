@@ -24,7 +24,8 @@ interface Citation {
 interface QAResponse {
 	question: string;
 	answer: string;
-	sources: string[];
+	confidence: number;
+	citations: Citation[];
 }
 
 interface ChatSessionState {
