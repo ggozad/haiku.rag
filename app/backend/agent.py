@@ -83,7 +83,8 @@ CRITICAL RULES:
 5. NEVER make up information - always use tools to get facts from the knowledge base
 
 How to decide which tool to use:
-- "ask" - DEFAULT CHOICE for any question. Call it ONCE with the user's question. It internally handles query decomposition and returns answers with citations.
+- "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
+- "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
 - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, just output the list of results returned by the tool verbatim. Do NOT summarize or add commentary.
 
 Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user."""
@@ -262,5 +263,52 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             return f"{answer}\n\nSources: {citation_refs}"
 
         return answer
+
+    @agent.tool
+    async def get_document(
+        ctx: RunContext[ChatDeps],
+        query: str,
+    ) -> str:
+        """Retrieve a specific document by title or URI.
+
+        Use this when the user wants to fetch/get/retrieve a specific document.
+
+        Args:
+            query: The document title or URI to look up
+        """
+        if ctx.deps.agui_emitter:
+            ctx.deps.agui_emitter.log(f"Fetching document: {query}")
+
+        # Try exact URI match first
+        doc = await ctx.deps.client.get_document_by_uri(query)
+
+        escaped_query = query.replace("'", "''")
+
+        # If not found, try partial URI match
+        if doc is None:
+            docs = await ctx.deps.client.list_documents(
+                limit=1, filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%')"
+            )
+            if docs:
+                doc = docs[0]
+
+        # If still not found, try partial title match
+        if doc is None:
+            docs = await ctx.deps.client.list_documents(
+                limit=1, filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%')"
+            )
+            if docs:
+                doc = docs[0]
+
+        if doc is None:
+            return f"Document not found: {query}"
+
+        return (
+            f"**{doc.title or 'Untitled'}**\n\n"
+            f"- ID: {doc.id}\n"
+            f"- URI: {doc.uri or 'N/A'}\n"
+            f"- Created: {doc.created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
+            f"**Content:**\n{doc.content}"
+        )
 
     return agent
