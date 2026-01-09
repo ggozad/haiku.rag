@@ -1,16 +1,13 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
+from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext, format_as_xml
+from pydantic_ai import Agent, RunContext, ToolReturn, format_as_xml
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import get_model
-
-if TYPE_CHECKING:
-    from haiku.rag.graph.agui.emitter import AGUIEmitter
 
 
 class CitationInfo(BaseModel):
@@ -74,7 +71,6 @@ class ChatDeps:
 
     client: HaikuRAG
     config: AppConfig
-    agui_emitter: "AGUIEmitter | None" = None
     search_results: list[SearchResult] | None = None
     session_state: ChatSessionState | None = None
 
@@ -135,7 +131,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         ctx: RunContext[ChatDeps],
         query: str,
         document_name: str | None = None,
-    ) -> str:
+    ) -> ToolReturn:
         """Search the knowledge base for relevant documents.
 
         Use this when you need to find documents or explore the knowledge base.
@@ -146,12 +142,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
         from search_agent import SearchAgent
-
-        if ctx.deps.agui_emitter:
-            msg = f"Searching: {query}"
-            if document_name:
-                msg += f" (in {document_name})"
-            ctx.deps.agui_emitter.log(msg)
 
         # Build context from conversation history
         context = None
@@ -169,7 +159,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         ctx.deps.search_results = results
 
         if not results:
-            return "No results found."
+            return ToolReturn(return_value="No results found.")
 
         # Build citation infos for frontend display
         citation_infos = [
@@ -186,23 +176,16 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             for i, r in enumerate(results)
         ]
 
-        # Emit search results as citations
-        if ctx.deps.agui_emitter:
-            ctx.deps.agui_emitter.update_state(
-                ChatSessionState(
-                    session_id=(
-                        ctx.deps.session_state.session_id
-                        if ctx.deps.session_state
-                        else ""
-                    ),
-                    citations=citation_infos,
-                    qa_history=(
-                        ctx.deps.session_state.qa_history
-                        if ctx.deps.session_state
-                        else []
-                    ),
-                )
-            )
+        # Build new state with citations
+        new_state = ChatSessionState(
+            session_id=(
+                ctx.deps.session_state.session_id if ctx.deps.session_state else ""
+            ),
+            citations=citation_infos,
+            qa_history=(
+                ctx.deps.session_state.qa_history if ctx.deps.session_state else []
+            ),
+        )
 
         # Return detailed results for the agent to present
         result_lines = []
@@ -219,14 +202,23 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             line += f"\n    {snippet}"
             result_lines.append(line)
 
-        return f"Found {len(results)} results:\n\n" + "\n\n".join(result_lines)
+        return ToolReturn(
+            return_value=f"Found {len(results)} results:\n\n"
+            + "\n\n".join(result_lines),
+            metadata=[
+                StateSnapshotEvent(
+                    type=EventType.STATE_SNAPSHOT,
+                    snapshot=new_state.model_dump(),
+                )
+            ],
+        )
 
     @agent.tool
     async def ask(
         ctx: RunContext[ChatDeps],
         question: str,
         document_name: str | None = None,
-    ) -> str:
+    ) -> ToolReturn:
         """Answer a specific question using the knowledge base.
 
         Use this for direct questions that need a focused answer with citations.
@@ -240,12 +232,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         from haiku.rag.graph.research.graph import build_conversational_graph
         from haiku.rag.graph.research.models import Citation, SearchAnswer
         from haiku.rag.graph.research.state import ResearchDeps, ResearchState
-
-        if ctx.deps.agui_emitter:
-            msg = f"Answering: {question}"
-            if document_name:
-                msg += f" (in {document_name})"
-            ctx.deps.agui_emitter.log(msg)
 
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
@@ -290,8 +276,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             search_filter=doc_filter,
             max_concurrency=ctx.deps.config.research.max_concurrency,
         )
-        # Don't pass agui_emitter to research graph - its state model differs from ChatSessionState
-        # The ask tool handles final state emission with citations
         deps = ResearchDeps(
             client=ctx.deps.client,
         )
@@ -323,23 +307,16 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             )
             ctx.deps.session_state.qa_history.append(qa_response)
 
-        # Emit updated state with citations AND accumulated qa_history
-        if ctx.deps.agui_emitter:
-            ctx.deps.agui_emitter.update_state(
-                ChatSessionState(
-                    session_id=(
-                        ctx.deps.session_state.session_id
-                        if ctx.deps.session_state
-                        else ""
-                    ),
-                    citations=citation_infos,
-                    qa_history=(
-                        ctx.deps.session_state.qa_history
-                        if ctx.deps.session_state
-                        else []
-                    ),
-                )
-            )
+        # Build new state with citations AND accumulated qa_history
+        new_state = ChatSessionState(
+            session_id=(
+                ctx.deps.session_state.session_id if ctx.deps.session_state else ""
+            ),
+            citations=citation_infos,
+            qa_history=(
+                ctx.deps.session_state.qa_history if ctx.deps.session_state else []
+            ),
+        )
 
         # Format answer with citation references and confidence
         answer_text = result.answer
@@ -347,7 +324,15 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citation_infos)))
             answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
-        return answer_text
+        return ToolReturn(
+            return_value=answer_text,
+            metadata=[
+                StateSnapshotEvent(
+                    type=EventType.STATE_SNAPSHOT,
+                    snapshot=new_state.model_dump(),
+                )
+            ],
+        )
 
     @agent.tool
     async def get_document(
@@ -361,9 +346,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         Args:
             query: The document title or URI to look up
         """
-        if ctx.deps.agui_emitter:
-            ctx.deps.agui_emitter.log(f"Fetching document: {query}")
-
         # Try exact URI match first
         doc = await ctx.deps.client.get_document_by_uri(query)
 
