@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
-from haiku.rag.store.engine import DocumentRecord, Store
+from haiku.rag.store.engine import DocumentRecord, Store, get_documents_arrow_schema
 from haiku.rag.store.models.document import Document
 
 
@@ -35,7 +35,7 @@ class DocumentRepository:
             uri=record.uri,
             title=record.title,
             metadata=json.loads(record.metadata),
-            docling_document_json=record.docling_document_json,
+            docling_document=record.docling_document,
             docling_version=record.docling_version,
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
@@ -61,7 +61,7 @@ class DocumentRepository:
             uri=entity.uri,
             title=entity.title,
             metadata=json.dumps(entity.metadata),
-            docling_document_json=entity.docling_document_json,
+            docling_document=entity.docling_document,
             docling_version=entity.docling_version,
             created_at=now,
             updated_at=now,
@@ -111,7 +111,7 @@ class DocumentRepository:
                 "uri": entity.uri,
                 "title": entity.title,
                 "metadata": json.dumps(entity.metadata),
-                "docling_document_json": entity.docling_document_json,
+                "docling_document": entity.docling_document,
                 "docling_version": entity.docling_version,
                 "updated_at": now,
             },
@@ -198,5 +198,5 @@ class DocumentRepository:
             # Drop and recreate table to clear all data
             self.store.db.drop_table("documents")
             self.store.documents_table = self.store.db.create_table(
-                "documents", schema=DocumentRecord
+                "documents", schema=get_documents_arrow_schema()
             )
