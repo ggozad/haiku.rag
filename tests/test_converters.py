@@ -20,7 +20,7 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_converters")
 
 
-def create_mock_docling_document_json(name: str = "test") -> dict:
+def create_mock_docling_document(name: str = "test") -> dict:
     """Create a minimal valid DoclingDocument JSON structure for mocking."""
     return {
         "schema_name": "DoclingDocument",
@@ -476,7 +476,7 @@ class TestDoclingServeConverter:
     @pytest.mark.asyncio
     async def test_convert_text_success(self, converter):
         """Test successful text conversion via docling-serve async workflow."""
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -498,7 +498,7 @@ class TestDoclingServeConverter:
         config.providers.docling_serve.api_key = "test-key"
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -527,7 +527,7 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.images_scale = 3.0
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -622,7 +622,7 @@ class TestDoclingServeConverter:
     @pytest.mark.asyncio
     async def test_convert_file_pdf(self, converter):
         """Test converting PDF file via docling-serve async workflow."""
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -645,7 +645,7 @@ class TestDoclingServeConverter:
     @pytest.mark.asyncio
     async def test_convert_file_text(self, converter):
         """Test converting text file (reads locally, sends to docling-serve)."""
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -734,7 +734,7 @@ class TestDoclingServeConverterPictureDescription:
         config.prompts.picture_description = "Test prompt for picture description"
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -767,7 +767,7 @@ class TestDoclingServeConverterPictureDescription:
         """Test that picture description is disabled by default."""
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document_json("test")
+        doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:

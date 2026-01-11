@@ -613,7 +613,7 @@ This is paragraph four about topic C.
         )
 
         assert doc.id is not None
-        assert doc.docling_document_json is not None
+        assert doc.docling_document is not None
 
         # Get chunks which should have doc_item_refs
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
