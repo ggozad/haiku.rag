@@ -43,6 +43,64 @@ class EmbeddingModelConfig(BaseModel):
     base_url: str | None = None
 
 
+class MultimodalEmbeddingModelConfig(BaseModel):
+    """Configuration for a multimodal embedding model (text + image).
+
+    This is used for image-to-image and text-to-image retrieval.
+
+    Notes:
+    - This feature is opt-in and may require external services (e.g., vLLM).
+    - Keep vector_dim stable for a database once created, just like text embeddings.
+    """
+
+    provider: Literal["vllm"] = "vllm"
+    name: str = "Qwen/Qwen3-VL-Embedding-2B"
+    vector_dim: int = 2048
+
+    # Base URL for the multimodal embedding service.
+    # vLLM default is typically http://localhost:8000
+    base_url: str = "http://localhost:8000"
+
+    # HTTP client settings
+    timeout: int = 60
+
+    # Optional: request server-side output dimension (if the backend supports it).
+    # For OpenAI-compatible /v1/embeddings this is usually called "dimensions".
+    #
+    # Note: Some servers/models (including vLLM + Qwen3-VL-Embedding-2B) reject the
+    # presence of this field unless the model explicitly supports matryoshka output.
+    # Keep this unset by default; haiku will validate the returned dimension via
+    # `vector_dim`.
+    dimensions: int | None = None
+
+    # OpenAI-compatible embeddings response format.
+    # vLLM/OpenAI supports "float"; some servers also support "base64".
+    encoding_format: Literal["float", "base64"] = "float"
+
+
+class MultimodalConfig(BaseModel):
+    """Opt-in multimodal embedding configuration."""
+
+    enabled: bool = False
+    index_pictures: bool = True
+
+    # Crop padding (in pixels) for bbox-based image crops.
+    # Kept here (rather than conversion options) because it affects embedding, not conversion.
+    image_crop_padding_px: int = 8
+
+    # Image resize guardrail before embedding (to keep payload sizes manageable and avoid
+    # backend limits). Set to 0 to disable resizing.
+    image_max_side_px: int = 1024
+
+    # Max number of images to send per /v1/embeddings call for mm_assets indexing.
+    # (Large PDFs can contain many figures; batching avoids oversized requests.)
+    embed_batch_size: int = 8
+
+    model: MultimodalEmbeddingModelConfig = Field(
+        default_factory=MultimodalEmbeddingModelConfig
+    )
+
+
 class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     auto_vacuum: bool = True
@@ -198,6 +256,7 @@ class AppConfig(BaseModel):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+    multimodal: MultimodalConfig = Field(default_factory=MultimodalConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)

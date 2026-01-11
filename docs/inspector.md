@@ -38,6 +38,8 @@ Three panels display your data:
 - `/` - Open search modal
 - `c` - Open context expansion modal (when viewing a chunk)
 - `v` - Open visual grounding modal (when viewing a chunk)
+- `m` - Browse multimodal image assets (`mm_assets`) for the selected document
+- `d` - Show whole-document index overlay (all chunk boxes + all image asset boxes)
 - `q` - Quit
 
 **Mouse:** Click to select, scroll to view content
@@ -71,7 +73,31 @@ Press `v` while viewing a chunk to open the visual grounding modal:
 
 - Shows page images from the source document with the chunk's location highlighted in yellow/orange
 - Use `←` / `→` arrow keys to navigate between pages (when chunk spans multiple pages)
+- Press `o` to open the current page image in your OS image viewer (recommended for terminals that don't render images inline)
 - Press `Esc` to close the modal
 
 !!! note
-    Visual grounding requires documents with a stored DoclingDocument that includes page images. Text-only documents or documents imported without DoclingDocument won't have visual grounding available.
+    Visual and export images are written to a temporary directory and **deleted when you close the modal**.
+    If you want to keep an image, press `o` to open it and save/copy it from your OS viewer before closing.
+
+## Multimodal Assets (mm_assets)
+
+Press `m` to open the multimodal assets modal for the currently selected document:
+
+- Lists all `mm_assets` rows (one per indexed picture crop)
+- Press `p` to toggle between `crop` and `page` modes
+- Press `o` to export + open the current selection in your OS image viewer
+  (exports are stored in a temporary directory and deleted when you close the modal)
+
+## Whole-Document Index Overlay
+
+Press `d` to open the whole-document overlay:
+
+- Exports per-page PNGs with **all chunk bounding boxes** (yellow/orange) and **all mm_asset bounding boxes** (cyan/blue)
+- Use `←` / `→` to navigate pages
+- Press `o` to open the current page PNG in your OS viewer
+  (exports are stored in a temporary directory and deleted when you close the modal)
+
+!!! note
+    Visual grounding requires documents with a stored DoclingDocument that includes page images.
+    Text-only documents or documents imported without DoclingDocument won't have visual grounding available.

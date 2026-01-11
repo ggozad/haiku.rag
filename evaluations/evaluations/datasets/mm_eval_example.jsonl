@@ -1,0 +1,3 @@
+{"id":"t1","type":"text","instruction":"Retrieve images matching this description.","query_text":"architecture diagram","relevant":[{"document_uri":"file:///path/to/your.pdf","doc_item_ref":"#/pictures/0","item_index":123}]}
+{"id":"i1","type":"image","query_image_path":"/absolute/path/to/query_crop.png","relevant":[{"document_uri":"file:///path/to/your.pdf","doc_item_ref":"#/pictures/0","item_index":123}]}
+

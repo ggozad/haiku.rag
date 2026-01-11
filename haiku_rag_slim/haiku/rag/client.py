@@ -22,6 +22,7 @@ from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.mm_asset import MMAssetRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
@@ -88,6 +89,7 @@ class HaikuRAG:
         )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
+        self.mm_asset_repository = MMAssetRepository(self.store)
 
     @property
     def is_read_only(self) -> bool:
@@ -279,6 +281,9 @@ class HaikuRAG:
             # Batch create all chunks in a single operation
             await self.chunk_repository.create(chunks)
 
+            # Optional: index multimodal assets (images) into mm_assets table
+            await self._index_mm_assets_for_document(created_doc)
+
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
                 asyncio.create_task(self.store.vacuum())
@@ -317,6 +322,9 @@ class HaikuRAG:
 
         # Delete existing chunks before writing new ones
         await self.chunk_repository.delete_by_document_id(document.id)
+        # Delete existing multimodal assets before writing new ones (if table exists)
+        if self.store.mm_assets_table is not None:
+            await self.mm_asset_repository.delete_by_document_id(document.id)
 
         try:
             # Update the document
@@ -330,6 +338,9 @@ class HaikuRAG:
 
             # Batch create all chunks in a single operation
             await self.chunk_repository.create(chunks)
+
+            # Optional: re-index multimodal assets
+            await self._index_mm_assets_for_document(updated_doc)
 
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
@@ -821,6 +832,150 @@ class HaikuRAG:
         """Delete a document by its ID."""
         return await self.document_repository.delete(document_id)
 
+    async def _index_mm_assets_for_document(self, document: Document) -> None:
+        """Index Docling PictureItems into the mm_assets table (Phase 1).
+
+        This is best-effort and opt-in:
+        - No-op unless config.multimodal.enabled
+        - No-op in read-only mode
+        - No-op if mm_assets table is not available
+
+        Embedding is performed via the configured multimodal embedder (remote vLLM).
+        """
+        if not self._config.multimodal.enabled:
+            return
+        if self.store.is_read_only:
+            return
+        if self.store.mm_assets_table is None:
+            return
+        if document.id is None:
+            return
+
+        docling_doc = document.get_docling_document()
+        if not docling_doc:
+            return
+
+        # Lazy imports (docling + pillow are optional in slim installs)
+        from haiku.rag.embeddings.multimodal import get_multimodal_embedder
+
+        embedder = get_multimodal_embedder(self._config)
+        if embedder is None:
+            return
+
+        try:
+            from docling_core.types.doc.document import PictureItem
+        except Exception:
+            # Docling not installed → nothing to index
+            return
+
+        padding_px = int(self._config.multimodal.image_crop_padding_px)
+
+        # Collect crops + asset metadata first, then embed in a batch.
+        crops = []
+        assets = []
+
+        all_items = list(docling_doc.iterate_items())
+        for idx, (item, _) in enumerate(all_items):
+            if not isinstance(item, PictureItem):
+                continue
+
+            self_ref = getattr(item, "self_ref", None)
+            if not self_ref:
+                continue
+
+            prov = getattr(item, "prov", None) or []
+            if not prov:
+                continue
+
+            # Prefer the first provenance entry for MVP; can be extended to multiple.
+            p = prov[0]
+            page_no = getattr(p, "page_no", None)
+            bbox = getattr(p, "bbox", None)
+            if page_no is None or bbox is None:
+                continue
+            if page_no not in docling_doc.pages:
+                continue
+
+            page = docling_doc.pages[page_no]
+            if page.image is None or page.image.pil_image is None:
+                continue
+
+            pil_image = page.image.pil_image
+            page_height = page.size.height
+
+            # Convert from Docling document coordinates to pixel coordinates (same as visualize_chunk)
+            scale_x = pil_image.width / page.size.width
+            scale_y = pil_image.height / page.size.height
+
+            x0 = bbox.l * scale_x
+            y0 = (page_height - bbox.t) * scale_y
+            x1 = bbox.r * scale_x
+            y1 = (page_height - bbox.b) * scale_y
+            if y0 > y1:
+                y0, y1 = y1, y0
+
+            # Apply pixel padding + clamp
+            x0 = max(0, int(x0) - padding_px)
+            y0 = max(0, int(y0) - padding_px)
+            x1 = min(pil_image.width, int(x1) + padding_px)
+            y1 = min(pil_image.height, int(y1) + padding_px)
+            if x1 <= x0 or y1 <= y0:
+                continue
+
+            crop = pil_image.crop((x0, y0, x1, y1))
+            crops.append(crop)
+
+            # Best-effort caption extraction
+            caption = None
+            cap = getattr(item, "caption", None)
+            if cap is not None and hasattr(cap, "text"):
+                caption = cap.text
+
+            assets.append(
+                {
+                    "document_id": document.id,
+                    "doc_item_ref": self_ref,
+                    "item_index": idx,
+                    "page_no": int(page_no),
+                    "bbox": {
+                        "left": float(bbox.l),
+                        "top": float(bbox.t),
+                        "right": float(bbox.r),
+                        "bottom": float(bbox.b),
+                    },
+                    "caption": caption,
+                }
+            )
+
+        if not crops:
+            return
+
+        embeddings = await embedder.embed_images(crops)
+        if len(embeddings) != len(assets):
+            raise ValueError(
+                f"Multimodal embedder returned {len(embeddings)} embeddings for "
+                f"{len(assets)} image crops"
+            )
+
+        from haiku.rag.store.models.mm_asset import MMAsset
+
+        mm_entities = []
+        for a, e in zip(assets, embeddings):
+            mm_entities.append(
+                MMAsset(
+                    document_id=a["document_id"],
+                    doc_item_ref=a["doc_item_ref"],
+                    item_index=a["item_index"],
+                    page_no=a["page_no"],
+                    bbox=a["bbox"],
+                    caption=a["caption"],
+                    metadata={},
+                    embedding=e,
+                )
+            )
+
+        await self.mm_asset_repository.create(mm_entities)
+
     async def list_documents(
         self,
         limit: int | None = None,
@@ -1193,6 +1348,72 @@ class HaikuRAG:
 
         return final_results + passthrough
 
+    async def search_images_by_text(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        filter: str | None = None,
+    ):
+        """Search indexed multimodal assets using a text query (text→image).
+
+        Requires:
+        - config.multimodal.enabled
+        - mm_assets table present
+        - multimodal embedder configured (remote vLLM Mode A endpoint)
+        """
+        if not self._config.multimodal.enabled or self.store.mm_assets_table is None:
+            return []
+
+        from haiku.rag.embeddings.multimodal import get_multimodal_embedder
+
+        embedder = get_multimodal_embedder(self._config)
+        if embedder is None:
+            return []
+
+        limit = limit or self._config.search.limit
+        vecs = await embedder.embed_texts([query])
+        if not vecs:
+            return []
+        return await self.mm_asset_repository.search_by_vector(
+            vecs[0], limit=int(limit), filter=filter
+        )
+
+    async def search_images(
+        self,
+        image_path: Path,
+        *,
+        limit: int | None = None,
+        filter: str | None = None,
+    ):
+        """Search indexed multimodal assets using an image query (image→image)."""
+        if not self._config.multimodal.enabled or self.store.mm_assets_table is None:
+            return []
+
+        from haiku.rag.embeddings.multimodal import get_multimodal_embedder
+
+        embedder = get_multimodal_embedder(self._config)
+        if embedder is None:
+            return []
+
+        try:
+            from PIL import Image
+        except Exception as e:
+            raise ImportError(
+                "Image search requires Pillow. Install an appropriate extra or dependency."
+            ) from e
+
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            vecs = await embedder.embed_images([img])
+        if not vecs:
+            return []
+
+        limit = limit or self._config.search.limit
+        return await self.mm_asset_repository.search_by_vector(
+            vecs[0], limit=int(limit), filter=filter
+        )
+
     async def _expand_with_chunks(
         self,
         doc_id: str,
@@ -1356,6 +1577,122 @@ class HaikuRAG:
             images.append(image)
 
         return images
+
+    async def visualize_mm_asset(self, *, asset_id: str, mode: str = "crop") -> list:
+        """Visualize a stored multimodal asset (mm_assets).
+
+        This is primarily a UX/debugging helper (CLI/inspector). It uses the stored
+        provenance (page_no + bbox) and the document's Docling page images.
+
+        Args:
+            asset_id: mm_assets row id (UUID).
+            mode: "crop" (return crop only) or "page" (full page with bbox overlay).
+
+        Returns:
+            List of PIL Image objects (usually length 1). Empty list if unavailable.
+        """
+        # Optional dependency: only needed for visualization paths.
+        from copy import deepcopy
+
+        try:
+            from PIL import ImageDraw
+        except Exception as e:
+            raise ImportError(
+                "Visualizing multimodal assets requires Pillow. "
+                "Install an appropriate extra or dependency."
+            ) from e
+
+        if self.store.mm_assets_table is None:
+            return []
+
+        if mode not in ("crop", "page"):
+            raise ValueError("mode must be 'crop' or 'page'")
+
+        # Fetch row by id. We keep this simple (scan) since this is a debug UX path.
+        # If this becomes hot, add an indexed lookup in MMAssetRepository.
+        rows = (
+            self.store.mm_assets_table.search()
+            .where(f"id = '{asset_id}'")
+            .limit(1)
+            .to_list()
+        )
+        row = rows[0] if rows else None
+        if row is None:
+            return []
+
+        doc_id = row.get("document_id")
+        page_no = row.get("page_no")
+        bbox_raw = row.get("bbox")
+        if not doc_id or page_no is None or not bbox_raw:
+            return []
+
+        # Parse bbox
+        bbox = None
+        try:
+            import json as _json
+
+            bbox = _json.loads(bbox_raw) if isinstance(bbox_raw, str) else bbox_raw
+        except Exception:
+            bbox = None
+
+        if not isinstance(bbox, dict) or not all(
+            k in bbox for k in ("left", "top", "right", "bottom")
+        ):
+            return []
+
+        doc = await self.document_repository.get_by_id(str(doc_id))
+        if not doc:
+            return []
+
+        docling_doc = doc.get_docling_document()
+        if not docling_doc:
+            return []
+
+        if int(page_no) not in docling_doc.pages:
+            return []
+
+        page = docling_doc.pages[int(page_no)]
+        if page.image is None or page.image.pil_image is None or page.size is None:
+            return []
+
+        pil_image = page.image.pil_image
+        page_width = float(page.size.width)
+        page_height = float(page.size.height)
+
+        scale_x = pil_image.width / page_width
+        scale_y = pil_image.height / page_height
+
+        left = float(bbox["left"])
+        top = float(bbox["top"])
+        right = float(bbox["right"])
+        bottom = float(bbox["bottom"])
+
+        x0 = left * scale_x
+        x1 = right * scale_x
+        y0 = (page_height - top) * scale_y
+        y1 = (page_height - bottom) * scale_y
+        if y0 > y1:
+            y0, y1 = y1, y0
+
+        pad = int(self._config.multimodal.image_crop_padding_px)
+        x0i = max(0, int(x0) - pad)
+        y0i = max(0, int(y0) - pad)
+        x1i = min(pil_image.width, int(x1) + pad)
+        y1i = min(pil_image.height, int(y1) + pad)
+
+        if mode == "crop":
+            if x1i <= x0i or y1i <= y0i:
+                return []
+            return [pil_image.crop((x0i, y0i, x1i, y1i))]
+
+        # mode == "page": draw bbox overlay
+        image = deepcopy(pil_image)
+        draw = ImageDraw.Draw(image, "RGBA")
+        fill_color = (255, 255, 0, 80)
+        outline_color = (255, 165, 0, 255)
+        draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
+        draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=3)
+        return [image]
 
     async def rebuild_database(
         self, mode: RebuildMode = RebuildMode.FULL

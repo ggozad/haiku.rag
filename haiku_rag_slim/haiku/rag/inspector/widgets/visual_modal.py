@@ -7,6 +7,11 @@ from textual.screen import Screen
 from textual.widget import Widget
 from textual.widgets import Static
 from textual_image.widget import Image as TextualImage
+import shutil
+import tempfile
+from pathlib import Path
+import subprocess
+import sys
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
@@ -23,6 +28,7 @@ class VisualGroundingModal(Screen):  # pragma: no cover
         Binding("v", "dismiss", "Close", show=True),
         Binding("left", "prev_page", "Previous Page"),
         Binding("right", "next_page", "Next Page"),
+        Binding("o", "open_image", "Open image", show=True),
     ]
 
     CSS = """
@@ -66,6 +72,8 @@ class VisualGroundingModal(Screen):  # pragma: no cover
         self.client = client
         self.document_uri = document_uri or chunk.document_uri
         self.images: list[PILImage] = []
+        self._saved_paths: list[Path] = []
+        self._out_dir: Path | None = None
         self.current_page_idx = 0
         self._image_widget: Widget = Static("Loading...", id="image-display")
         self._page_info = Static("", id="page-info")
@@ -82,6 +90,18 @@ class VisualGroundingModal(Screen):  # pragma: no cover
     async def on_mount(self) -> None:
         """Load images and display the first page."""
         self.images = await self.client.visualize_chunk(self.chunk)
+        # Always save to disk as a reliable fallback: many terminals (incl. Cursor/VSCode)
+        # cannot render images inline via terminal graphics protocols.
+        if self.images:
+            self._out_dir = Path(tempfile.mkdtemp(prefix="haiku-inspector-visual-"))
+            self._saved_paths = []
+            for i, img in enumerate(self.images):
+                p = self._out_dir / f"page_{i+1}.png"
+                try:
+                    img.save(p, format="PNG")
+                    self._saved_paths.append(p)
+                except Exception:
+                    continue
         await self._render_current_page()
 
     async def _render_current_page(self) -> None:
@@ -95,8 +115,11 @@ class VisualGroundingModal(Screen):  # pragma: no cover
             self._page_info.update("")
             return
 
+        extra = ""
+        if self._out_dir is not None:
+            extra = f"  |  Saved to: {self._out_dir}  (press 'o' to open)"
         self._page_info.update(
-            f"Page {self.current_page_idx + 1}/{len(self.images)} - Use ←/→ to navigate"
+            f"Page {self.current_page_idx + 1}/{len(self.images)} - Use ←/→ to navigate{extra}"
         )
 
         try:
@@ -111,6 +134,12 @@ class VisualGroundingModal(Screen):  # pragma: no cover
                 self._image_widget.update(f"[red]Error: {e}[/red]")
 
     async def action_dismiss(self, result=None) -> None:
+        # Best-effort cleanup of temporary images.
+        if self._out_dir is not None:
+            try:
+                shutil.rmtree(self._out_dir, ignore_errors=True)
+            except Exception:
+                pass
         self.app.pop_screen()
 
     async def action_prev_page(self) -> None:
@@ -124,3 +153,16 @@ class VisualGroundingModal(Screen):  # pragma: no cover
         if self.current_page_idx < len(self.images) - 1:
             self.current_page_idx += 1
             await self._render_current_page()
+
+    async def action_open_image(self) -> None:
+        """Open the current page image in the OS viewer (best-effort)."""
+        if not self._saved_paths or self.current_page_idx >= len(self._saved_paths):
+            return
+        p = self._saved_paths[self.current_page_idx]
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", str(p)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(p)], check=False)
+        except Exception:
+            return

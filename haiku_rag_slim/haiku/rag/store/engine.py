@@ -53,6 +53,24 @@ class SettingsRecord(LanceModel):
     settings: str = Field(default="{}")
 
 
+def create_mm_asset_model(vector_dim: int):
+    """Create an MMAssetRecord model with the specified vector dimension."""
+
+    class MMAssetRecord(LanceModel):
+        id: str = Field(default_factory=lambda: str(uuid4()))
+        document_id: str
+        doc_item_ref: str
+        item_index: int | None = None
+        page_no: int | None = None
+        bbox: str | None = None  # JSON string
+        caption: str | None = None
+        description: str | None = None
+        metadata: str = Field(default="{}")
+        vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
+
+    return MMAssetRecord
+
+
 class Store:
     def __init__(
         self,
@@ -73,6 +91,9 @@ class Store:
 
         # Create the ChunkRecord model with the correct vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
+        self.MMAssetRecord = create_mm_asset_model(
+            int(self._config.multimodal.model.vector_dim)
+        )
 
         # Check if database exists (for local filesystem only)
         is_new_db = False
@@ -156,6 +177,12 @@ class Store:
                     self.documents_table,
                     self.chunks_table,
                     self.settings_table,
+                    # Optional multimodal table
+                    *(  # type: ignore[misc]
+                        [self.mm_assets_table]
+                        if getattr(self, "mm_assets_table", None) is not None
+                        else []
+                    ),
                 ]:
                     table.optimize(cleanup_older_than=retention)
             except (RuntimeError, OSError) as e:
@@ -195,6 +222,7 @@ class Store:
         stats_dict: dict = {
             "documents": {"exists": False},
             "chunks": {"exists": False},
+            "mm_assets": {"exists": False},
         }
 
         # Documents table stats
@@ -307,6 +335,54 @@ class Store:
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )
 
+        # Ensure `ChunkRecord` matches the DB schema for the `chunks.vector` column.
+        #
+        # This matters for read-only tools (e.g. inspector) where the runtime config
+        # may not match the DB's stored embedding config. If these differ, Pydantic
+        # validation will fail when materializing rows.
+        try:
+            stored_dim: int | None = None
+            # Prefer the DB's stored settings when available (works even if chunks is empty).
+            recs = list(
+                self.settings_table.search().where("id = 'settings'").limit(1).to_list()
+            )
+            if recs:
+                raw = recs[0].get("settings") or "{}"
+                settings_obj = json.loads(raw) if isinstance(raw, str) else raw
+                stored_dim_val = (
+                    settings_obj.get("embeddings", {})
+                    .get("model", {})
+                    .get("vector_dim", None)
+                )
+                if stored_dim_val is not None:
+                    stored_dim = int(stored_dim_val)
+
+            # If we have at least one chunk row, infer from the stored vector length.
+            inferred_dim: int | None = None
+            try:
+                one = self.chunks_table.search().limit(1).to_arrow().to_pylist()
+                if one and isinstance(one[0].get("vector"), list) and one[0]["vector"]:
+                    inferred_dim = int(len(one[0]["vector"]))
+            except Exception:
+                inferred_dim = None
+
+            dim = inferred_dim or stored_dim or int(getattr(self.embedder, "_vector_dim", 1024))
+            self.ChunkRecord = create_chunk_model(int(dim))
+        except Exception:
+            # Best-effort: never fail DB opening due to inference.
+            pass
+
+        # Create or get multimodal assets table (optional)
+        self.mm_assets_table = None
+        if "mm_assets" in existing_tables:
+            self.mm_assets_table = self.db.open_table("mm_assets")
+        else:
+            # Only create this table if multimodal is enabled AND store is writable.
+            if self._config.multimodal.enabled and not self._read_only:
+                self.mm_assets_table = self.db.create_table(
+                    "mm_assets", schema=self.MMAssetRecord
+                )
+
     def _set_initial_version(self):
         """Set the initial version for a new database."""
         self.set_haiku_version(metadata.version("haiku.rag-slim"))
@@ -405,11 +481,14 @@ class Store:
 
     def current_table_versions(self) -> dict[str, int]:
         """Capture current versions of key tables for rollback using LanceDB's API."""
-        return {
+        versions = {
             "documents": int(self.documents_table.version),
             "chunks": int(self.chunks_table.version),
             "settings": int(self.settings_table.version),
         }
+        if self.mm_assets_table is not None:
+            versions["mm_assets"] = int(self.mm_assets_table.version)
+        return versions
 
     def restore_table_versions(self, versions: dict[str, int]) -> bool:
         """Restore tables to the provided versions using LanceDB's API.
@@ -421,6 +500,8 @@ class Store:
         self.documents_table.restore(int(versions["documents"]))
         self.chunks_table.restore(int(versions["chunks"]))
         self.settings_table.restore(int(versions["settings"]))
+        if self.mm_assets_table is not None and "mm_assets" in versions:
+            self.mm_assets_table.restore(int(versions["mm_assets"]))
         return True
 
     @property
@@ -450,6 +531,11 @@ class Store:
             ("documents", self.documents_table),
             ("chunks", self.chunks_table),
             ("settings", self.settings_table),
+            *(
+                [("mm_assets", self.mm_assets_table)]
+                if self.mm_assets_table is not None
+                else []
+            ),
         ]
 
         for table_name, table in tables:
@@ -501,6 +587,7 @@ class Store:
             "documents": self.documents_table,
             "chunks": self.chunks_table,
             "settings": self.settings_table,
+            "mm_assets": self.mm_assets_table,
         }
         table = table_map.get(table_name)
         if table is None:

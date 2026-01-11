@@ -22,6 +22,8 @@ from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.qa import get_qa_agent
 from haiku.rag.utils import get_model
+from evaluations.mm_eval import run_mm_eval_sync
+from evaluations.mm_dataset_builder import build_mm_dataset_sync
 
 load_dotenv()
 
@@ -406,6 +408,125 @@ def run(
             db_path=db,
             vacuum_interval=vacuum_interval,
         )
+    )
+
+
+@app.command()
+def mm(
+    dataset: Path = typer.Argument(..., help="Path to multimodal eval dataset JSONL."),
+    config: Path | None = typer.Option(
+        None, "--config", help="Path to haiku.rag YAML config file."
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
+    k: str = typer.Option(
+        "1,5,10", "--k", help="Comma-separated recall@k values to report."
+    ),
+    limit: int = typer.Option(
+        10, "--limit", help="Top-N retrieved mm_assets per query."
+    ),
+) -> None:
+    """Run multimodal retrieval benchmarks (mm_assets) and report recall@k + MRR.
+
+    Dataset format is JSONL; each line is a case:
+    - type: "text" | "image"
+    - instruction: optional string (recommended for Qwen3-VL)
+    - query_text or query_image_path
+    - relevant: [{document_uri, doc_item_ref, item_index?}, ...]
+    """
+    if not dataset.exists():
+        raise typer.BadParameter(f"Dataset file not found: {dataset}")
+
+    ks = [int(x.strip()) for x in k.split(",") if x.strip()]
+    if not ks:
+        raise typer.BadParameter("--k must include at least one integer.")
+
+    # Load config from file or use defaults (mirror `run` command behavior).
+    if config:
+        if not config.exists():
+            raise typer.BadParameter(f"Config file not found: {config}")
+        console.print(f"Loading config from: {config}", style="dim")
+        yaml_data = load_yaml_config(config)
+        app_config = AppConfig.model_validate(yaml_data)
+    else:
+        config_path = find_config_file(None)
+        if config_path:
+            console.print(f"Loading config from: {config_path}", style="dim")
+            yaml_data = load_yaml_config(config_path)
+            app_config = AppConfig.model_validate(yaml_data)
+        else:
+            console.print("No config file found, using defaults", style="dim")
+            app_config = AppConfig()
+
+    raise SystemExit(
+        run_mm_eval_sync(
+            dataset_path=dataset,
+            config=app_config,
+            db_path=db,
+            ks=ks,
+            limit=int(limit),
+        )
+    )
+
+
+@app.command()
+def mm_build(
+    out: Path = typer.Option(
+        Path("./mm_eval_out"),
+        "--out",
+        help="Output directory (writes mm_eval.jsonl + query_images/ crops).",
+    ),
+    config: Path | None = typer.Option(
+        None, "--config", help="Path to haiku.rag YAML config file."
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Database path (LanceDB dir)."),
+    n: int = typer.Option(50, "--n", help="How many mm_assets rows to sample."),
+    seed: int = typer.Option(0, "--seed", help="Random seed."),
+    include_text: bool = typer.Option(True, "--include-text/--no-include-text"),
+    include_image: bool = typer.Option(True, "--include-image/--no-include-image"),
+    instruction: str = typer.Option(
+        "Retrieve images matching this description.",
+        "--instruction",
+        help="Instruction prefix for text queries (folded into query_text).",
+    ),
+) -> None:
+    """Build a *sanity* multimodal eval dataset from an existing DB.
+
+    This generates:
+    - text→image cases using mm_assets.caption/description when available
+    - image→image cases by exporting bbox crops from Docling page images
+    """
+    # Load config from file or use defaults (mirror `run` command behavior).
+    if config:
+        if not config.exists():
+            raise typer.BadParameter(f"Config file not found: {config}")
+        console.print(f"Loading config from: {config}", style="dim")
+        yaml_data = load_yaml_config(config)
+        app_config = AppConfig.model_validate(yaml_data)
+    else:
+        config_path = find_config_file(None)
+        if config_path:
+            console.print(f"Loading config from: {config_path}", style="dim")
+            yaml_data = load_yaml_config(config_path)
+            app_config = AppConfig.model_validate(yaml_data)
+        else:
+            console.print("No config file found, using defaults", style="dim")
+            app_config = AppConfig()
+
+    dataset_path = build_mm_dataset_sync(
+        config=app_config,
+        db_path=db,
+        out_dir=out,
+        n=int(n),
+        seed=int(seed),
+        include_text=bool(include_text),
+        include_image=bool(include_image),
+        instruction=str(instruction),
+    )
+
+    console.print("\nNow run:", style="bold")
+    console.print(
+        f"uv run evaluations mm {dataset_path} --config <config> --db <db>",
+        style="cyan",
     )
 
 

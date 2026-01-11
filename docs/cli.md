@@ -107,6 +107,34 @@ This renders the source document pages with the chunk's location highlighted. Us
 !!! note
     Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.
 
+## Search Images (Multimodal)
+
+These commands require `multimodal.enabled: true` and an embedding server configured under `multimodal.model` (typically vLLM).
+
+### Text → image
+
+```bash
+haiku-rag search-image-text "architecture diagram"
+```
+
+### Image → image
+
+```bash
+haiku-rag search-image /path/to/query.png
+```
+
+## Visualize Asset (Multimodal)
+
+After `search-image*`, you can visualize an `asset_id`:
+
+```bash
+haiku-rag visualize-asset <asset_id> --mode crop
+haiku-rag visualize-asset <asset_id> --mode page
+```
+
+!!! note
+    Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.
+
 ## Search
 
 Basic search:

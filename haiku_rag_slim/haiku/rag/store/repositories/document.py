@@ -17,6 +17,7 @@ class DocumentRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self._chunk_repository = None
+        self._mm_asset_repository = None
 
     @property
     def chunk_repository(self):
@@ -26,6 +27,15 @@ class DocumentRepository:
 
             self._chunk_repository = ChunkRepository(self.store)
         return self._chunk_repository
+
+    @property
+    def mm_asset_repository(self):
+        """Lazy-load MMAssetRepository when needed."""
+        if self._mm_asset_repository is None:
+            from haiku.rag.store.repositories.mm_asset import MMAssetRepository
+
+            self._mm_asset_repository = MMAssetRepository(self.store)
+        return self._mm_asset_repository
 
     def _record_to_document(self, record: DocumentRecord) -> Document:
         """Convert a DocumentRecord to a Document model."""
@@ -134,6 +144,10 @@ class DocumentRepository:
 
         # Delete associated chunks first
         await self.chunk_repository.delete_by_document_id(entity_id)
+
+        # Delete associated multimodal assets (if table exists)
+        if getattr(self.store, "mm_assets_table", None) is not None:
+            await self.mm_asset_repository.delete_by_document_id(entity_id)
 
         # Delete the document
         self.store.documents_table.delete(f"id = '{entity_id}'")
