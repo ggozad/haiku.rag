@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling-core==2.58.1",
+    "docling-core==2.57.0",
     "httpx>=0.28.1",
     "lancedb==0.26.1",
     "pathspec>=0.12.1",
