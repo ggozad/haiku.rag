@@ -1362,7 +1362,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-slim"
-version = "0.24.2"
+version = "0.25.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "docling-core" },
