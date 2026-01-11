@@ -405,7 +405,6 @@ class HaikuRAGApp:
 
     async def visualize_chunk(self, chunk_id: str):
         """Display visual grounding images for a chunk."""
-        import os
         import subprocess
         import sys
         import tempfile
@@ -475,7 +474,6 @@ class HaikuRAGApp:
         - crop: show the cropped image region (bbox + padding)
         - page: show the full page with bbox overlay (if available)
         """
-        import os
         import subprocess
         import sys
         import tempfile

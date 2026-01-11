@@ -1,3 +1,8 @@
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -7,11 +12,6 @@ from textual.screen import Screen
 from textual.widget import Widget
 from textual.widgets import Static
 from textual_image.widget import Image as TextualImage
-import shutil
-import tempfile
-from pathlib import Path
-import subprocess
-import sys
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage

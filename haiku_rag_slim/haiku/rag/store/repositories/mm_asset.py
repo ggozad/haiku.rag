@@ -105,6 +105,10 @@ class MMAssetRepository:
         rows = q.to_list()
         results: list[MMSearchResult] = []
         for row in rows:
+            asset_id = row.get("id")
+            document_id = row.get("document_id")
+            if not asset_id or not document_id:
+                continue
             distance = float(row.get("_distance", 0.0))
             score = 1.0 / (1.0 + distance)
             bbox = None
@@ -114,8 +118,8 @@ class MMAssetRepository:
                 bbox = None
             results.append(
                 MMSearchResult(
-                    asset_id=row.get("id"),
-                    document_id=row.get("document_id"),
+                    asset_id=str(asset_id),
+                    document_id=str(document_id),
                     score=score,
                     doc_item_ref=row.get("doc_item_ref", ""),
                     item_index=row.get("item_index"),

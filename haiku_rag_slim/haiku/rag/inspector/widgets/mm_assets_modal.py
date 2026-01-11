@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
-import shutil
 from pathlib import Path
 
 from textual.app import ComposeResult
