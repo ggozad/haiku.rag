@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.25.0] - 2026-01-12
+
 ### Fixed
 
 - **Large Document Storage Overflow**: Fixed "byte array offset overflow" panic when vacuuming/rebuilding databases with many large PDF documents ([#225](https://github.com/ggozad/haiku.rag/issues/225))
