@@ -14,6 +14,10 @@
 
 - **Dependencies**: Updated lancedb 0.26.0 → 0.26.1, docling 2.65.0 → 2.67.0
 
+### Removed
+
+- **Legacy Migrations**: Removed obsolete database migration files (`v0_9_3.py`, `v0_10_1.py`, `v0_19_6.py`). These migrations were for versions prior to 0.20.0 and are no longer needed since the current release requires a database rebuild anyway.
+
 ## [0.24.2] - 2026-01-08
 
 ### Fixed

@@ -55,14 +55,6 @@ def run_pending_upgrades(store: Store, from_version: str, to_version: str) -> No
 
 # Import upgrade modules AFTER Upgrade class is defined to avoid circular imports
 # ruff: noqa: E402, I001
-from haiku.rag.store.upgrades.v0_9_3 import upgrade_fts_phrase as upgrade_0_9_3_fts
-from haiku.rag.store.upgrades.v0_9_3 import upgrade_order as upgrade_0_9_3_order
-from haiku.rag.store.upgrades.v0_10_1 import (
-    upgrade_add_title as upgrade_0_10_1_add_title,
-)
-from haiku.rag.store.upgrades.v0_19_6 import (
-    upgrade_embeddings_model_config as upgrade_0_19_6_embeddings,
-)
 from haiku.rag.store.upgrades.v0_20_0 import (
     upgrade_add_docling_document as upgrade_0_20_0_docling,
 )
@@ -73,10 +65,6 @@ from haiku.rag.store.upgrades.v0_25_0 import (
     upgrade_compress_docling_document as upgrade_0_25_0_compress,
 )
 
-upgrades.append(upgrade_0_9_3_order)
-upgrades.append(upgrade_0_9_3_fts)
-upgrades.append(upgrade_0_10_1_add_title)
-upgrades.append(upgrade_0_19_6_embeddings)
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
 upgrades.append(upgrade_0_25_0_compress)
