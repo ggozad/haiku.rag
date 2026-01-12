@@ -2,7 +2,6 @@ import logging
 import os
 from pathlib import Path
 
-from agent import ChatDeps, ChatSessionState, QAResponse, create_chat_agent
 from dotenv import load_dotenv
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -13,6 +12,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from haiku.rag.agents.chat import (
+    ChatDeps,
+    ChatSessionState,
+    QAResponse,
+    create_chat_agent,
+)
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig

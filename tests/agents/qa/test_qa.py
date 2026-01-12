@@ -5,16 +5,16 @@ import pytest
 from datasets import Dataset
 from evaluations.evaluators import LLMJudge
 
+from haiku.rag.agents.qa.agent import QuestionAnswerAgent
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import ModelConfig
-from haiku.rag.qa.agent import QuestionAnswerAgent
 
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
 
 
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_qa")
+    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_qa")
 
 
 @pytest.mark.vcr()

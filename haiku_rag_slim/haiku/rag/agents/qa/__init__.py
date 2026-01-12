@@ -1,7 +1,7 @@
+from haiku.rag.agents.qa.agent import QuestionAnswerAgent
+from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.qa.agent import QuestionAnswerAgent
-from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.utils import build_prompt
 
 

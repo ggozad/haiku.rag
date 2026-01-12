@@ -18,11 +18,11 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher
 from haiku.rag.store.models.document import Document

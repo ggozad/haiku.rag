@@ -1,10 +1,10 @@
 import pytest
 
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.models import ResearchReport
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.models import ResearchReport
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
 
 
 @pytest.mark.vcr()

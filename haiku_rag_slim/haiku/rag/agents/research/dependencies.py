@@ -6,7 +6,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import SearchResult
 
 if TYPE_CHECKING:
-    from haiku.rag.graph.research.models import SearchAnswer
+    from haiku.rag.agents.research.models import SearchAnswer
 
 
 class ResearchContext(BaseModel):

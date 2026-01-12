@@ -310,7 +310,7 @@ async def test_ask_without_cite(app: HaikuRAGApp, monkeypatch):
 @pytest.mark.asyncio
 async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with citations."""
-    from haiku.rag.graph.research.models import Citation
+    from haiku.rag.agents.research.models import Citation
 
     mock_answer = "Test answer with citations"
     mock_citations = [
@@ -342,7 +342,7 @@ async def test_ask_with_cite(app: HaikuRAGApp, monkeypatch):
 async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with deep mode uses research graph."""
     import haiku.rag.app as app_module
-    from haiku.rag.graph.research.models import ResearchReport
+    from haiku.rag.agents.research.models import ResearchReport
 
     mock_output = ResearchReport(
         title="Test",
@@ -380,7 +380,7 @@ async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
 async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
     """Test asking a question with deep mode (cite is ignored for research graph)."""
     import haiku.rag.app as app_module
-    from haiku.rag.graph.research.models import ResearchReport
+    from haiku.rag.agents.research.models import ResearchReport
 
     mock_output = ResearchReport(
         title="Test",

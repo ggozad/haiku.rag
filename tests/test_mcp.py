@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from haiku.rag.graph.research.models import ResearchReport
+from haiku.rag.agents.research.models import ResearchReport
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.models.document import Document
 
@@ -251,7 +251,7 @@ async def test_mcp_ask_question_deep():
         with (
             patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class,
             patch(
-                "haiku.rag.graph.research.graph.build_research_graph"
+                "haiku.rag.agents.research.graph.build_research_graph"
             ) as mock_graph_builder,
         ):
             mock_rag = AsyncMock()
@@ -295,7 +295,7 @@ async def test_mcp_research_question():
         with (
             patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class,
             patch(
-                "haiku.rag.graph.research.graph.build_research_graph"
+                "haiku.rag.agents.research.graph.build_research_graph"
             ) as mock_graph_builder,
         ):
             mock_rag = AsyncMock()

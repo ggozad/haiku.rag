@@ -1,118 +1,22 @@
-from dataclasses import dataclass
-
 from ag_ui.core import EventType, StateSnapshotEvent
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext, ToolReturn, format_as_xml
+from pydantic_ai import Agent, RunContext, ToolReturn
 
-from haiku.rag.client import HaikuRAG
+from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
+from haiku.rag.agents.chat.search import SearchAgent
+from haiku.rag.agents.chat.state import (
+    ChatDeps,
+    ChatSessionState,
+    CitationInfo,
+    QAResponse,
+    build_document_filter,
+    format_conversation_context,
+)
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_conversational_graph
+from haiku.rag.agents.research.models import Citation, SearchAnswer
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import get_model
-
-
-class CitationInfo(BaseModel):
-    """Citation info for frontend display."""
-
-    index: int
-    document_id: str
-    chunk_id: str
-    document_uri: str
-    document_title: str | None = None
-    page_numbers: list[int] = []
-    headings: list[str] | None = None
-    content: str
-
-
-class QAResponse(BaseModel):
-    """A Q&A pair from conversation history with citations."""
-
-    question: str
-    answer: str
-    confidence: float = 0.9
-    citations: list[CitationInfo] = []
-
-    @property
-    def sources(self) -> list[str]:
-        """Source names for display."""
-        return list(
-            dict.fromkeys(c.document_title or c.document_uri for c in self.citations)
-        )
-
-
-class ChatSessionState(BaseModel):
-    """State shared between frontend and agent via AG-UI."""
-
-    session_id: str = ""
-    citations: list[CitationInfo] = []
-    qa_history: list[QAResponse] = []
-
-
-def format_conversation_context(qa_history: list[QAResponse]) -> str:
-    """Format conversation history as XML for inclusion in prompts."""
-    if not qa_history:
-        return ""
-
-    context_data = {
-        "previous_qa": [
-            {
-                "question": qa.question,
-                "answer": qa.answer,
-                "sources": qa.sources,
-            }
-            for qa in qa_history
-        ],
-    }
-    return format_as_xml(context_data, root_tag="conversation_context")
-
-
-@dataclass
-class ChatDeps:
-    """Dependencies for chat agent."""
-
-    client: HaikuRAG
-    config: AppConfig
-    search_results: list[SearchResult] | None = None
-    session_state: ChatSessionState | None = None
-
-
-def build_document_filter(document_name: str) -> str:
-    """Build SQL filter for document name matching."""
-    escaped = document_name.replace("'", "''")
-    no_spaces = escaped.replace(" ", "")
-    return (
-        f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
-        f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
-    )
-
-
-CHAT_SYSTEM_PROMPT = """You are a helpful research assistant powered by haiku.rag, a knowledge base system.
-
-You have access to a knowledge base of documents. Use your tools to search and answer questions.
-
-CRITICAL RULES:
-1. For greetings or casual chat: respond directly WITHOUT using any tools
-2. For questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
-3. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
-4. NEVER call the same tool multiple times for a single user message
-5. NEVER make up information - always use tools to get facts from the knowledge base
-
-How to decide which tool to use:
-- "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
-- "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
-- "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
-
-IMPORTANT - When user mentions a document in search/ask:
-- If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
-  - Extract the TOPIC as `query`/`question`
-  - Extract the DOCUMENT NAME as `document_name`
-- Examples for search:
-  - "search for latrines in TB MED 593" → query="latrines", document_name="TB MED 593"
-  - "find waste disposal in the army manual" → query="waste disposal", document_name="army manual"
-- Examples for ask:
-  - "what does TB MED 593 say about latrines?" → question="what are the guidelines for latrines?", document_name="TB MED 593"
-  - "answer from the army manual about sanitation" → question="what are the sanitation guidelines?", document_name="army manual"
-
-Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user."""
 
 
 def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
@@ -141,8 +45,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             query: The search query (what to search for)
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
-        from search_agent import SearchAgent
-
         # Build context from conversation history
         context = None
         if ctx.deps.session_state and ctx.deps.session_state.qa_history:
@@ -228,11 +130,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             question: The question to answer
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
-        from haiku.rag.graph.research.dependencies import ResearchContext
-        from haiku.rag.graph.research.graph import build_conversational_graph
-        from haiku.rag.graph.research.models import Citation, SearchAnswer
-        from haiku.rag.graph.research.state import ResearchDeps, ResearchState
-
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
 

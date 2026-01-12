@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.models import EvaluationResult
 from haiku.rag.client import HaikuRAG
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.models import EvaluationResult
 
 if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig

@@ -33,7 +33,7 @@ haiku-rag ask "What are the main features of haiku.rag?" --deep
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.agent import QuestionAnswerAgent
+from haiku.rag.agents.qa.agent import QuestionAnswerAgent
 
 async with HaikuRAG(path_to_db) as client:
     agent = QuestionAnswerAgent(
@@ -105,9 +105,9 @@ haiku-rag research "What are the key findings?" --filter "uri LIKE '%report%'"
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 async with HaikuRAG(path_to_db) as client:
     graph = build_research_graph(config=Config)
@@ -126,9 +126,9 @@ async with HaikuRAG(path_to_db) as client:
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, ResearchConfig
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 custom_config = AppConfig(
     research=ResearchConfig(

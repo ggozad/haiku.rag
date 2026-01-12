@@ -2,10 +2,14 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.output import ToolOutput
 
+from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
+from haiku.rag.agents.research.models import (
+    Citation,
+    RawSearchAnswer,
+    resolve_citations,
+)
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, ModelConfig
-from haiku.rag.graph.research.models import Citation, RawSearchAnswer, resolve_citations
-from haiku.rag.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import get_model
 

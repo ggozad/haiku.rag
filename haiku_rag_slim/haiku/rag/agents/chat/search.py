@@ -1,35 +1,11 @@
-from dataclasses import dataclass, field
-
 from pydantic_ai import Agent, RunContext
 
+from haiku.rag.agents.chat.prompts import SEARCH_SYSTEM_PROMPT
+from haiku.rag.agents.chat.state import SearchDeps
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import get_model
-
-
-@dataclass
-class SearchDeps:
-    """Dependencies for search agent."""
-
-    client: HaikuRAG
-    config: AppConfig
-    filter: str | None = None
-    search_results: list[SearchResult] = field(default_factory=list)
-
-
-SEARCH_SYSTEM_PROMPT = """You are a search query optimizer for a document knowledge base.
-
-Given a user's search request:
-1. ALWAYS run the original query first as-is
-2. Then generate 1-2 alternative queries using different keywords or phrasings
-3. Keep queries SHORT (2-5 words) - use keywords, not full sentences
-4. After all searches, respond with "Search complete"
-
-Example: User asks "latrines" → queries: "latrines", "latrine sanitation", "field toilet"
-Example: User asks "waste disposal" → queries: "waste disposal", "garbage management", "refuse handling"
-
-Do NOT generate long verbose queries like "environmental impact of waste disposal methods" - keep it simple."""
 
 
 class SearchAgent:

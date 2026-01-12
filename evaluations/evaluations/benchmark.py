@@ -20,7 +20,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
-from haiku.rag.qa import get_qa_agent
+from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model
 
 load_dotenv()
