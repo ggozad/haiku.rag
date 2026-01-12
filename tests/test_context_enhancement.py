@@ -761,6 +761,7 @@ async def test_expand_context_no_base64_images_docling_local(temp_db_path):
     config = AppConfig()
     config.processing.converter = "docling-local"
     config.processing.chunker = "docling-local"
+    config.processing.conversion_options.do_ocr = False
     config.search.context_radius = 5
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:

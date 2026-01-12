@@ -1098,11 +1098,16 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path):
     """Test visualize_chunk returns images with bounding boxes for PDF documents."""
     from PIL.Image import Image as PILImage
 
+    from haiku.rag.config import AppConfig
+
     pdf_path = Path("tests/data/doclaynet.pdf")
     if not pdf_path.exists():
         pytest.skip("doclaynet.pdf not found")
 
-    async with HaikuRAG(temp_db_path, create=True) as client:
+    config = AppConfig()
+    config.processing.conversion_options.do_ocr = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         doc = await client.create_document_from_source(pdf_path)
         assert isinstance(doc, Document)
         assert doc.id is not None

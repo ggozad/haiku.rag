@@ -407,6 +407,8 @@ class TestDoclingLocalConverter:
         if not pdf_path.exists():
             pytest.skip("doclaynet.pdf not found")
 
+        # Disable OCR (not needed for native PDF, avoids model downloads)
+        config.processing.conversion_options.do_ocr = False
         # Enable picture description with Ollama
         config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.model.provider = (
