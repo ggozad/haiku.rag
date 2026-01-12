@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,15 @@ from haiku.rag.store.models import SearchResult
 
 if TYPE_CHECKING:
     from haiku.rag.embeddings import EmbedderWrapper
+
+MAX_QA_HISTORY = 50
+
+_embedding_cache: dict[str, list[float]] = {}
+
+
+def _qa_cache_key(question: str, answer: str) -> str:
+    """Generate cache key from Q/A content."""
+    return hashlib.sha256(f"Q: {question}\nA: {answer}".encode()).hexdigest()
 
 
 class CitationInfo(BaseModel):
@@ -104,9 +114,28 @@ async def rank_qa_history_by_similarity(
     # Embed current question
     question_embedding = np.array(await embedder.embed_query(current_question))
 
-    # Embed Q&A pairs as "Q: {question}\nA: {answer}"
-    qa_texts = [f"Q: {qa.question}\nA: {qa.answer}" for qa in qa_history]
-    qa_embeddings = await embedder.embed_documents(qa_texts)
+    # Check cache and collect uncached entries
+    qa_embeddings: list[list[float]] = []
+    uncached_indices: list[int] = []
+    uncached_texts: list[str] = []
+
+    for i, qa in enumerate(qa_history):
+        cache_key = _qa_cache_key(qa.question, qa.answer)
+        if cache_key in _embedding_cache:
+            qa_embeddings.append(_embedding_cache[cache_key])
+        else:
+            qa_embeddings.append([])  # placeholder
+            uncached_indices.append(i)
+            uncached_texts.append(f"Q: {qa.question}\nA: {qa.answer}")
+
+    # Embed only uncached entries
+    if uncached_texts:
+        new_embeddings = await embedder.embed_documents(uncached_texts)
+        for idx, embedding in zip(uncached_indices, new_embeddings):
+            qa = qa_history[idx]
+            cache_key = _qa_cache_key(qa.question, qa.answer)
+            _embedding_cache[cache_key] = embedding
+            qa_embeddings[idx] = embedding
 
     # Compute similarities
     similarities: list[tuple[int, float]] = []

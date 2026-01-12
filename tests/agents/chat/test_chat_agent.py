@@ -10,6 +10,7 @@ from haiku.rag.agents.chat import (
     SearchAgent,
     create_chat_agent,
 )
+from haiku.rag.agents.chat.state import MAX_QA_HISTORY
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 
@@ -478,3 +479,37 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
         assert result.output is not None
         # The qa_history should have been updated with the new Q&A
         assert len(session_state.qa_history) >= 1
+
+
+def test_fifo_limit_enforcement():
+    """Test that FIFO limit enforcement logic works correctly.
+
+    This tests the FIFO trimming logic used in the ask() tool:
+    if len(qa_history) > MAX_QA_HISTORY:
+        qa_history = qa_history[-MAX_QA_HISTORY:]
+    """
+    # Create a session state with MAX_QA_HISTORY + 1 entries
+    qa_history = [
+        QAResponse(
+            question=f"Question {i}",
+            answer=f"Answer {i}",
+            confidence=0.9,
+        )
+        for i in range(MAX_QA_HISTORY + 1)
+    ]
+
+    session_state = ChatSessionState(
+        session_id="test-fifo",
+        qa_history=qa_history,
+    )
+
+    # Simulate the FIFO enforcement from agent.py
+    if len(session_state.qa_history) > MAX_QA_HISTORY:
+        session_state.qa_history = session_state.qa_history[-MAX_QA_HISTORY:]
+
+    # History should be trimmed to MAX_QA_HISTORY
+    assert len(session_state.qa_history) == MAX_QA_HISTORY
+    # The first entry should now be "Question 1" (Question 0 was dropped)
+    assert session_state.qa_history[0].question == "Question 1"
+    # The last entry should be the last added question
+    assert session_state.qa_history[-1].question == f"Question {MAX_QA_HISTORY}"

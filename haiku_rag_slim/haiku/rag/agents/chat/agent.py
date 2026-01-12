@@ -4,6 +4,7 @@ from pydantic_ai import Agent, RunContext, ToolReturn
 from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
 from haiku.rag.agents.chat.search import SearchAgent
 from haiku.rag.agents.chat.state import (
+    MAX_QA_HISTORY,
     ChatDeps,
     ChatSessionState,
     CitationInfo,
@@ -217,6 +218,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 citations=citation_infos,
             )
             ctx.deps.session_state.qa_history.append(qa_response)
+            # Enforce FIFO limit
+            if len(ctx.deps.session_state.qa_history) > MAX_QA_HISTORY:
+                ctx.deps.session_state.qa_history = ctx.deps.session_state.qa_history[
+                    -MAX_QA_HISTORY:
+                ]
 
         # Build new state with citations AND accumulated qa_history
         new_state = ChatSessionState(

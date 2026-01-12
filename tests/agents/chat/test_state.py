@@ -3,8 +3,11 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.agents.chat.state import (
+    MAX_QA_HISTORY,
     CitationInfo,
     QAResponse,
+    _embedding_cache,
+    _qa_cache_key,
     build_document_filter,
     format_conversation_context,
     rank_qa_history_by_similarity,
@@ -66,7 +69,7 @@ async def test_rank_qa_history_small_list(temp_db_path, allow_model_requests):
 @pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_rank_qa_history_returns_top_k(temp_db_path, allow_model_requests):
-    """Test ranking returns top-K most similar entries."""
+    """Test ranking returns top-K most similar entries and populates cache."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         embedder = client.chunk_repository.embedder
 
@@ -106,6 +109,9 @@ async def test_rank_qa_history_returns_top_k(temp_db_path, allow_model_requests)
             ),
         ]
 
+        # Clear cache to verify it gets populated
+        _embedding_cache.clear()
+
         # Ask a question related to class labels (Q1)
         result = await rank_qa_history_by_similarity(
             current_question="Which class label has the highest count in DocLayNet?",
@@ -120,6 +126,12 @@ async def test_rank_qa_history_returns_top_k(temp_db_path, allow_model_requests)
         # The class labels Q&A should be in the top 5 (it's most semantically similar)
         result_questions = [qa.question for qa in result]
         assert "What are the 11 class labels in DocLayNet?" in result_questions
+
+        # Verify cache is populated for all Q/A pairs
+        for qa in qa_history:
+            cache_key = _qa_cache_key(qa.question, qa.answer)
+            assert cache_key in _embedding_cache
+            assert len(_embedding_cache[cache_key]) > 0
 
 
 @pytest.mark.asyncio
@@ -231,3 +243,8 @@ def test_build_document_filter_escapes_quotes():
     result = build_document_filter("O'Reilly")
     # Single quotes should be doubled for SQL escaping
     assert "O''Reilly" in result
+
+
+def test_max_qa_history_constant():
+    """Test MAX_QA_HISTORY constant value."""
+    assert MAX_QA_HISTORY == 50
