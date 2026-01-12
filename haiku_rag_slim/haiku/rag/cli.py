@@ -297,6 +297,60 @@ def search(
     asyncio.run(app.search(query=query, limit=limit, filter=filter))
 
 
+@cli.command("search-image-text", help="Search indexed images using a text query")
+def search_image_text(
+    query: str = typer.Argument(
+        help="Text query to embed and search against indexed image assets",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of results to return (default: config search.default_limit)",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter image assets (e.g., \"document_id = '...'\")",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.search_image_text(query=query, limit=limit, filter=filter))
+
+
+@cli.command("search-image", help="Search indexed images using an image query (image-to-image)")
+def search_image(
+    image_path: str = typer.Argument(
+        help="Path to an image file to embed and search against indexed image assets",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of results to return (default: config search.default_limit)",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter image assets (e.g., \"document_id = '...'\")",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.search_image(image_path=image_path, limit=limit, filter=filter))
+
+
 @cli.command("visualize", help="Show visual grounding for a chunk")
 def visualize(
     chunk_id: str = typer.Argument(
@@ -310,6 +364,26 @@ def visualize(
 ):
     app = create_app(db)
     asyncio.run(app.visualize_chunk(chunk_id=chunk_id))
+
+
+@cli.command("visualize-asset", help="Show a multimodal asset image (mm_assets) by asset_id")
+def visualize_asset(
+    asset_id: str = typer.Argument(
+        help="The asset_id returned by search-image/search-image-text",
+    ),
+    mode: str = typer.Option(
+        "crop",
+        "--mode",
+        help="Visualization mode: crop (default) or page",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.visualize_asset(asset_id=asset_id, mode=mode))
 
 
 @cli.command("ask", help="Ask a question using the QA agent")

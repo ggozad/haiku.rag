@@ -190,6 +190,27 @@ embeddings:
 
 **Note:** The `base_url` must include the `/v1` path for OpenAI-compatible endpoints.
 
+## Multimodal Embeddings (vLLM)
+
+Multimodal embeddings are configured separately under `multimodal` and are used for **image search** (not text chunk search).
+
+```yaml
+multimodal:
+  enabled: true
+  model:
+    provider: vllm
+    name: Qwen/Qwen3-VL-Embedding-2B
+    vector_dim: 2048
+    base_url: http://localhost:8000   # accepts with or without trailing /v1
+    timeout: 60
+    encoding_format: float
+    # dimensions: 2048   # omit unless your backend/model supports matryoshka output
+```
+
+!!! note
+    Unlike `embeddings.model.base_url` (OpenAI provider), `multimodal.model.base_url` can be either `http://host:port`
+    or `http://host:port/v1`. haiku.rag will normalize it internally.
+
 ## Question Answering Providers
 
 Configure which LLM provider to use for question answering. Any provider and model supported by [Pydantic AI](https://ai.pydantic.dev/models/) can be used.

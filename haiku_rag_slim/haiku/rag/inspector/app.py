@@ -73,6 +73,8 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         Binding("i", "show_info", "Info", show=True),
         Binding("v", "show_visual", "Visual", show=True),
         Binding("c", "show_context", "Context", show=True),
+        Binding("m", "show_mm_assets", "MM Assets", show=True),
+        Binding("d", "show_doc_index", "Doc Index", show=True),
     ]
 
     def __init__(
@@ -83,6 +85,9 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         self.read_only = read_only
         self.before = before
         self.client: HaikuRAG | None = None
+        self._selected_document_id: str | None = None
+        self._selected_document_uri: str | None = None
+        self._selected_document_title: str | None = None
 
     def compose(self) -> "ComposeResult":
         """Compose the UI layout."""
@@ -100,6 +105,14 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
             config=config,
             read_only=self.read_only,
             before=self.before,
+            # The inspector is a read-only browsing tool; it should be able to open a DB
+            # even when the current environment config doesn't match the DB settings.
+            #
+            # This commonly happens when you created a DB with one embedder (e.g. vLLM/OpenAI)
+            # and later run the inspector without passing the same `--config`.
+            #
+            # We skip config compatibility validation here to avoid hard-failing the TUI.
+            skip_validation=True,
         )
         await self.client.__aenter__()
 
@@ -191,6 +204,9 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
 
         # Load chunks for this document
         if message.document.id:
+            self._selected_document_id = str(message.document.id)
+            self._selected_document_uri = message.document.uri
+            self._selected_document_title = message.document.title
             chunk_list = self.query_one(ChunkList)
             await chunk_list.load_chunks_for_document(self.client, message.document.id)
 
@@ -237,6 +253,36 @@ class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
         from haiku.rag.inspector.widgets.context_modal import ContextModal
 
         await self._switch_modal(ContextModal(chunk=chunk, client=self.client))
+
+    async def action_show_mm_assets(self) -> None:
+        """Show multimodal image assets (mm_assets) for the selected document."""
+        if not self.client or not self._selected_document_id:
+            return
+        from haiku.rag.inspector.widgets.mm_assets_modal import MMAssetsModal
+
+        await self._switch_modal(
+            MMAssetsModal(
+                client=self.client,
+                document_id=self._selected_document_id,
+                document_uri=self._selected_document_uri,
+                document_title=self._selected_document_title,
+            )
+        )
+
+    async def action_show_doc_index(self) -> None:
+        """Show a whole-document overlay (all chunk boxes + mm_asset boxes)."""
+        if not self.client or not self._selected_document_id:
+            return
+        from haiku.rag.inspector.widgets.doc_index_modal import DocIndexModal
+
+        await self._switch_modal(
+            DocIndexModal(
+                client=self.client,
+                document_id=self._selected_document_id,
+                document_uri=self._selected_document_uri,
+                document_title=self._selected_document_title,
+            )
+        )
 
 
 def run_inspector(

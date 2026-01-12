@@ -367,8 +367,49 @@ class HaikuRAGApp:
             for result in results:
                 self._rich_print_search_result(result)
 
+    async def search_image_text(
+        self, query: str, limit: int | None = None, filter: str | None = None
+    ):
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
+        ) as self.client:
+            results = await self.client.search_images_by_text(
+                query, limit=limit, filter=filter
+            )
+            if not results:
+                self.console.print("[yellow]No image results found.[/yellow]")
+                return
+            for result in results:
+                self._rich_print_mm_search_result(result)
+
+    async def search_image(
+        self, image_path: str, limit: int | None = None, filter: str | None = None
+    ):
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
+        ) as self.client:
+            results = await self.client.search_images(
+                Path(image_path), limit=limit, filter=filter
+            )
+            if not results:
+                self.console.print("[yellow]No image results found.[/yellow]")
+                return
+            for result in results:
+                self._rich_print_mm_search_result(result)
+
     async def visualize_chunk(self, chunk_id: str):
         """Display visual grounding images for a chunk."""
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
         from textual_image.renderable import Image as RichImage
 
         async with HaikuRAG(
@@ -403,6 +444,86 @@ class HaikuRAGApp:
                     f"\n[bold cyan]Page {i + 1}/{len(images)}[/bold cyan]"
                 )
                 self.console.print(RichImage(img))
+
+            # Also save images to disk for reliable viewing (many terminals can't display images).
+            out_dir = Path(tempfile.mkdtemp(prefix="haiku-visualize-chunk-"))
+            saved: list[Path] = []
+            for i, img in enumerate(images):
+                p = out_dir / f"chunk_{chunk_id}_page_{i+1}.png"
+                try:
+                    img.save(p, format="PNG")
+                    saved.append(p)
+                except Exception:
+                    continue
+            if saved:
+                self.console.print(
+                    f"\n[green]Saved {len(saved)} image(s) to[/green] {out_dir}"
+                )
+                # Best-effort: open the first image on macOS.
+                # (DISPLAY isn't set on macOS; `open` is still fine.)
+                if sys.platform == "darwin":
+                    try:
+                        subprocess.run(["open", str(saved[0])], check=False)
+                    except Exception:
+                        pass
+
+    async def visualize_asset(self, asset_id: str, mode: str = "crop"):
+        """Display a multimodal asset (mm_assets) as an image in the terminal.
+
+        Modes:
+        - crop: show the cropped image region (bbox + padding)
+        - page: show the full page with bbox overlay (if available)
+        """
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        from textual_image.renderable import Image as RichImage
+
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
+        ) as self.client:
+            images = await self.client.visualize_mm_asset(asset_id=asset_id, mode=mode)
+            if not images:
+                self.console.print(
+                    "[yellow]No image available for this asset.[/yellow]\n"
+                    "This may be because the document was converted without page images "
+                    "or the asset has no bbox provenance."
+                )
+                return
+
+            self.console.print(f"[bold]Visualize asset {asset_id}[/bold]")
+            self.console.print(f"[repr.attrib_name]mode[/repr.attrib_name]: {mode}")
+            for i, img in enumerate(images):
+                self.console.print(
+                    f"\n[bold cyan]Image {i + 1}/{len(images)}[/bold cyan]"
+                )
+                self.console.print(RichImage(img))
+
+            # Also save images to disk for reliable viewing (many terminals can't display images).
+            out_dir = Path(tempfile.mkdtemp(prefix="haiku-visualize-asset-"))
+            saved: list[Path] = []
+            for i, img in enumerate(images):
+                p = out_dir / f"asset_{asset_id}_{mode}_{i+1}.png"
+                try:
+                    img.save(p, format="PNG")
+                    saved.append(p)
+                except Exception:
+                    continue
+            if saved:
+                self.console.print(
+                    f"\n[green]Saved {len(saved)} image(s) to[/green] {out_dir}"
+                )
+                # Best-effort: open the first image on macOS.
+                if sys.platform == "darwin":
+                    try:
+                        subprocess.run(["open", str(saved[0])], check=False)
+                    except Exception:
+                        pass
 
     async def ask(
         self,
@@ -811,6 +932,22 @@ class HaikuRAGApp:
             self.console.print(" > ".join(result.headings))
         self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
         self.console.print(content)
+
+    def _rich_print_mm_search_result(self, result):
+        """Format a multimodal search result for display."""
+        from rich.text import Text
+
+        self.console.rule()
+        header = Text(f"Score: {result.score:.4f}  ", style="bold")
+        header.append(f"asset={result.asset_id}", style="green")
+        header.append(f"doc={result.document_id}", style="cyan")
+        if result.page_no is not None:
+            header.append(f"  page={result.page_no}", style="magenta")
+        self.console.print(header)
+        if result.caption:
+            self.console.print(f"[bold]caption[/bold]: {result.caption}")
+        if result.description:
+            self.console.print(f"[bold]description[/bold]: {result.description}")
         self.console.rule()
 
     async def serve(
