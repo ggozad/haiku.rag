@@ -1093,7 +1093,6 @@ This is paragraph four about topic C.
             assert isinstance(images, list)
 
 
-@pytest.mark.integration
 @pytest.mark.vcr()
 async def test_client_visualize_chunk_with_pdf(temp_db_path):
     """Test visualize_chunk returns images with bounding boxes for PDF documents."""

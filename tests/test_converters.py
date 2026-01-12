@@ -400,7 +400,6 @@ class TestDoclingLocalConverter:
         assert pic_desc.timeout == 120
 
     @pytest.mark.asyncio
-    @pytest.mark.integration
     @pytest.mark.vcr()
     async def test_picture_description_end_to_end(self, config):
         """End-to-end test: convert PDF with VLM picture descriptions."""

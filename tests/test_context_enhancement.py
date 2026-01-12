@@ -750,7 +750,6 @@ async def test_expand_context_no_base64_images(temp_db_path):
             )
 
 
-@pytest.mark.integration
 @pytest.mark.vcr()
 async def test_expand_context_no_base64_images_docling_local(temp_db_path):
     """Ensure expanded context from real PDF does not contain base64 image data.
@@ -785,7 +784,6 @@ async def test_expand_context_no_base64_images_docling_local(temp_db_path):
                 )
 
 
-@pytest.mark.integration
 @pytest.mark.vcr()
 async def test_expand_context_no_base64_images_docling_serve(temp_db_path):
     """Ensure expanded context from real PDF does not contain base64 image data.
