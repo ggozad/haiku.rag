@@ -55,6 +55,26 @@ def format_context_for_prompt(context: ResearchContext) -> str:
     return format_as_xml(context_data, root_tag="research_context")
 
 
+def format_conversational_context_for_prompt(context: ResearchContext) -> str:
+    """Format context for conversational mode - excludes unanswered_questions."""
+    context_data: dict[str, object] = {
+        "question": context.original_question,
+    }
+
+    # Only include conversation_history if there are qa_responses
+    if context.qa_responses:
+        context_data["conversation_history"] = [
+            {
+                "question": qa.query,
+                "answer": qa.answer,
+                "sources": [c.document_title or c.document_uri for c in qa.citations],
+            }
+            for qa in context.qa_responses
+        ]
+
+    return format_as_xml(context_data, root_tag="context")
+
+
 # =============================================================================
 # Shared step logic helpers
 # =============================================================================
@@ -460,12 +480,8 @@ def build_conversational_graph(
             deps_type=ResearchDependencies,
         )
 
-        context_xml = format_context_for_prompt(state.context)
-        prompt = (
-            f"Answer the following question based on the gathered evidence.\n\n"
-            f"{context_xml}\n\n"
-            f"Question: {state.context.original_question}"
-        )
+        context_xml = format_conversational_context_for_prompt(state.context)
+        prompt = f"Answer the question based on the gathered evidence.\n\n{context_xml}"
         agent_deps = ResearchDependencies(
             client=deps.client,
             context=state.context,

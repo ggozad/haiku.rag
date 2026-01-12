@@ -134,13 +134,19 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
 
-        # Rank qa_history by similarity to current question
+        # Filter and rank qa_history
         ranked_history: list[QAResponse] = []
         if ctx.deps.session_state and ctx.deps.session_state.qa_history:
+            # Step 1: Filter out low-confidence responses
+            filtered_history = [
+                qa for qa in ctx.deps.session_state.qa_history if qa.confidence >= 0.3
+            ]
+
+            # Step 2: Rank filtered history by similarity to current question
             embedder = ctx.deps.client.chunk_repository.embedder
             ranked_history = await rank_qa_history_by_similarity(
                 current_question=question,
-                qa_history=ctx.deps.session_state.qa_history,
+                qa_history=filtered_history,
                 embedder=embedder,
                 top_k=5,
             )
