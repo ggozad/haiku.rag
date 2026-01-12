@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: Module Reorganization**: Consolidated all agent code under `haiku.rag.agents`
+  - Moved `haiku.rag.qa` → `haiku.rag.agents.qa`
+  - Moved `haiku.rag.graph.research` → `haiku.rag.agents.research`
+  - Added `haiku.rag.agents.chat` module with conversational RAG agent (`create_chat_agent`, `SearchAgent`, `ChatDeps`, `ChatSessionState`)
+  - Deleted `haiku.rag.graph` module (research graph now at `haiku.rag.agents.research.graph`)
+
 ### Removed
 
 - **BREAKING: Custom AG-UI Infrastructure**: Removed custom AG-UI event handling in favor of pydantic-ai's native AG-UI support
