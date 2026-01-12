@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import lancedb
+import pyarrow as pa
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
@@ -24,10 +25,31 @@ class DocumentRecord(LanceModel):
     uri: str | None = None
     title: str | None = None
     metadata: str = Field(default="{}")
-    docling_document_json: str | None = None
+    docling_document: bytes | None = None
     docling_version: str | None = None
     created_at: str = Field(default_factory=lambda: "")
     updated_at: str = Field(default_factory=lambda: "")
+
+
+def get_documents_arrow_schema() -> pa.Schema:
+    """Generate Arrow schema for documents table with large_binary for docling_document.
+
+    LanceDB maps Python `bytes` to Arrow's `binary` type, which uses 32-bit offsets
+    and is limited to ~2GB per column in a fragment. When many large documents
+    (with embedded page images) are grouped in a single fragment, this limit is
+    exceeded, causing "byte array offset overflow" panics.
+
+    This function overrides the default mapping to use `large_binary` instead,
+    which has 64-bit offsets and no practical size limit.
+    """
+    base_schema = DocumentRecord.to_arrow_schema()
+    fields = []
+    for field in base_schema:
+        if field.name == "docling_document":
+            fields.append(pa.field("docling_document", pa.large_binary()))
+        else:
+            fields.append(field)
+    return pa.schema(fields)
 
 
 def create_chunk_model(vector_dim: int):
@@ -281,7 +303,7 @@ class Store:
             self.documents_table = self.db.open_table("documents")
         else:
             self.documents_table = self.db.create_table(
-                "documents", schema=DocumentRecord
+                "documents", schema=get_documents_arrow_schema()
             )
 
         # Create or get chunks table

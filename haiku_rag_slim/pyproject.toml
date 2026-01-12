@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Minimal dependencies"
-version = "0.24.2"
+version = "0.25.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "docling-core==2.57.0",
     "httpx>=0.28.1",
-    "lancedb==0.26.0",
+    "lancedb==0.26.1",
     "pathspec>=0.12.1",
     "pydantic>=2.12.5",
     "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.39.0",
@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling==2.65.0", "opencv-python-headless>=4.12.0.88"]
+docling = ["docling==2.67.0", "opencv-python-headless>=4.12.0.88"]
 # Embedding providers
 voyageai = ["voyageai>=0.3.7"]
 # Rerankers

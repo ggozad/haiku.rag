@@ -70,9 +70,11 @@ def test_document_get_docling_document():
 
     import json
 
+    from haiku.rag.store.compression import compress_json
+
     document = Document(
         content="Test content",
-        docling_document_json=json.dumps(doc_json),
+        docling_document=compress_json(json.dumps(doc_json)),
         docling_version="1.3.0",
     )
 
@@ -88,7 +90,7 @@ def test_document_get_docling_document_none():
     """Test get_docling_document returns None when not stored."""
     document = Document(content="Test content")
 
-    assert document.docling_document_json is None
+    assert document.docling_document is None
     assert document.get_docling_document() is None
 
 
@@ -118,13 +120,15 @@ def test_document_get_docling_document_caching():
 
     import json
 
-    json_str = json.dumps(doc_json)
+    from haiku.rag.store.compression import compress_json
+
+    compressed = compress_json(json.dumps(doc_json))
 
     # Clear cache to get clean state
     _docling_document_cache.clear()
 
     document = Document(
-        id="test-doc-id", content="Test content", docling_document_json=json_str
+        id="test-doc-id", content="Test content", docling_document=compressed
     )
 
     # First call - not in cache
@@ -157,13 +161,15 @@ def test_document_get_docling_document_no_id_no_cache():
 
     import json
 
-    json_str = json.dumps(doc_json)
+    from haiku.rag.store.compression import compress_json
+
+    compressed = compress_json(json.dumps(doc_json))
 
     # Clear cache
     _docling_document_cache.clear()
 
     # Document without ID
-    document = Document(content="Test content", docling_document_json=json_str)
+    document = Document(content="Test content", docling_document=compressed)
 
     doc1 = document.get_docling_document()
     doc2 = document.get_docling_document()

@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 from cachetools import LRUCache
 from pydantic import BaseModel, Field
 
+from haiku.rag.store.compression import decompress_json
+
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
@@ -11,13 +13,16 @@ if TYPE_CHECKING:
 _docling_document_cache: LRUCache[str, "DoclingDocument"] = LRUCache(maxsize=100)
 
 
-def _get_cached_docling_document(document_id: str, json_str: str) -> "DoclingDocument":
+def _get_cached_docling_document(
+    document_id: str, compressed_data: bytes
+) -> "DoclingDocument":
     """Get or parse DoclingDocument with LRU caching by document ID."""
     if document_id in _docling_document_cache:
         return _docling_document_cache[document_id]
 
     from docling_core.types.doc.document import DoclingDocument
 
+    json_str = decompress_json(compressed_data)
     doc = DoclingDocument.model_validate_json(json_str)
     _docling_document_cache[document_id] = doc
     return doc
@@ -38,7 +43,7 @@ class Document(BaseModel):
     uri: str | None = None
     title: str | None = None
     metadata: dict = {}
-    docling_document_json: str | None = None
+    docling_document: bytes | None = None
     docling_version: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -51,13 +56,14 @@ class Document(BaseModel):
         Returns:
             The parsed DoclingDocument, or None if not stored or no ID.
         """
-        if self.docling_document_json is None:
+        if self.docling_document is None:
             return None
 
         # No caching for documents without ID
         if self.id is None:
             from docling_core.types.doc.document import DoclingDocument
 
-            return DoclingDocument.model_validate_json(self.docling_document_json)
+            json_str = decompress_json(self.docling_document)
+            return DoclingDocument.model_validate_json(json_str)
 
-        return _get_cached_docling_document(self.id, self.docling_document_json)
+        return _get_cached_docling_document(self.id, self.docling_document)

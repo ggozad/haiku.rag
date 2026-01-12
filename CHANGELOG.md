@@ -1,6 +1,19 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Large Document Storage Overflow**: Fixed "byte array offset overflow" panic when vacuuming/rebuilding databases with many large PDF documents ([#225](https://github.com/ggozad/haiku.rag/issues/225))
+  - Root cause: Arrow's 32-bit string column offsets limited to ~2GB per fragment
+  - Changed `docling_document_json` (string) to `docling_document` (bytes) with `large_binary` Arrow type (64-bit offsets)
+  - Added gzip compression for DoclingDocument JSON (~1.4x compression ratio)
+  - Migration automatically compresses existing documents in batches to avoid memory issues
+  - **Breaking**: Migration is destructive - all table version history is lost after upgrade
+
+### Changed
+
+- **Dependencies**: Updated lancedb 0.26.0 → 0.26.1, docling 2.65.0 → 2.67.0
+
 ## [0.24.2] - 2026-01-08
 
 ### Fixed

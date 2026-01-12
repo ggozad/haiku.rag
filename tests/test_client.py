@@ -8,6 +8,7 @@ from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
@@ -790,13 +791,15 @@ async def test_client_create_document_stores_docling_json(temp_db_path):
         )
 
         assert doc.id is not None
-        assert doc.docling_document_json is not None
+        assert doc.docling_document is not None
         assert doc.docling_version is not None
 
         # Verify JSON is valid and can be parsed
         import json
 
-        parsed = json.loads(doc.docling_document_json)
+        from haiku.rag.store.compression import decompress_json
+
+        parsed = json.loads(decompress_json(doc.docling_document))
         assert "version" in parsed
         assert parsed["version"] == doc.docling_version
 
@@ -824,7 +827,8 @@ async def test_client_import_document_stores_docling_data(temp_db_path):
 
         assert doc.id is not None
         assert "Content from docling document" in doc.content
-        assert doc.docling_document_json == docling_doc.model_dump_json()
+        assert doc.docling_document is not None
+        assert decompress_json(doc.docling_document) == docling_doc.model_dump_json()
         assert doc.docling_version == docling_doc.version
 
 
@@ -840,13 +844,13 @@ async def test_client_create_document_from_file_stores_docling_json(temp_db_path
             assert isinstance(doc, Document)
 
             assert doc.id is not None
-            assert doc.docling_document_json is not None
+            assert doc.docling_document is not None
             assert doc.docling_version is not None
 
             # Verify the stored document also has the JSON
             retrieved = await client.get_document_by_id(doc.id)
             assert retrieved is not None
-            assert retrieved.docling_document_json == doc.docling_document_json
+            assert retrieved.docling_document == doc.docling_document
             assert retrieved.docling_version == doc.docling_version
 
 
@@ -857,17 +861,17 @@ async def test_client_update_document_stores_docling_json(temp_db_path):
         # Create initial document
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
-        original_json = doc.docling_document_json
+        original_json = doc.docling_document
 
         # Update content via update_document
         updated_doc = await client.update_document(
             document_id=doc.id, content="New content via fields update"
         )
 
-        assert updated_doc.docling_document_json is not None
+        assert updated_doc.docling_document is not None
         assert updated_doc.docling_version is not None
         # JSON should be different because content changed
-        assert updated_doc.docling_document_json != original_json
+        assert updated_doc.docling_document != original_json
 
 
 @pytest.mark.vcr()
@@ -879,7 +883,7 @@ async def test_client_update_document_with_custom_chunks_no_docling_json(
         # Create initial document
         doc = await client.create_document(content="Initial content")
         assert doc.id is not None
-        original_json = doc.docling_document_json
+        original_json = doc.docling_document
 
         # Update with custom chunks
         custom_chunks = [Chunk(content="Custom chunk", order=0)]
@@ -888,7 +892,7 @@ async def test_client_update_document_with_custom_chunks_no_docling_json(
         )
 
         # Docling JSON should remain unchanged (no conversion when custom chunks provided)
-        assert updated_doc.docling_document_json == original_json
+        assert updated_doc.docling_document == original_json
 
 
 @pytest.mark.vcr()
@@ -942,7 +946,11 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
 
         # Content should be extracted from docling document
         assert "Completely different text" in updated_doc.content
-        assert updated_doc.docling_document_json == docling_doc.model_dump_json()
+        assert updated_doc.docling_document is not None
+        assert (
+            decompress_json(updated_doc.docling_document)
+            == docling_doc.model_dump_json()
+        )
         assert updated_doc.docling_version == docling_doc.version
 
         # Chunks should be regenerated
@@ -981,7 +989,11 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
 
         # Content should be extracted from docling (since content wasn't provided)
         assert "Text from docling" in updated_doc.content
-        assert updated_doc.docling_document_json == docling_doc.model_dump_json()
+        assert updated_doc.docling_document is not None
+        assert (
+            decompress_json(updated_doc.docling_document)
+            == docling_doc.model_dump_json()
+        )
 
         # Custom chunks should be used (not rechunked from docling)
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
@@ -1001,7 +1013,7 @@ async def test_client_file_update_stores_docling_json(temp_db_path):
             # Create initial document
             doc1 = await client.create_document_from_source(temp_path)
             assert isinstance(doc1, Document)
-            original_json = doc1.docling_document_json
+            original_json = doc1.docling_document
             original_version = doc1.docling_version
 
             # Modify file
@@ -1013,8 +1025,8 @@ async def test_client_file_update_stores_docling_json(temp_db_path):
             assert doc2.id == doc1.id  # Same document
 
             # Docling JSON should be updated
-            assert doc2.docling_document_json is not None
-            assert doc2.docling_document_json != original_json
+            assert doc2.docling_document is not None
+            assert doc2.docling_document != original_json
             assert doc2.docling_version == original_version  # Version stays same
 
 
@@ -1038,7 +1050,7 @@ async def test_client_visualize_chunk_no_bounding_boxes(temp_db_path):
         )
 
         assert doc.id is not None
-        assert doc.docling_document_json is not None
+        assert doc.docling_document is not None
 
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks) >= 1
@@ -1095,7 +1107,7 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path):
         doc = await client.create_document_from_source(pdf_path)
         assert isinstance(doc, Document)
         assert doc.id is not None
-        assert doc.docling_document_json is not None
+        assert doc.docling_document is not None
 
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks) > 0
@@ -1345,7 +1357,7 @@ async def test_client_create_document_with_html_format(temp_db_path):
         )
 
         assert doc.id is not None
-        assert doc.docling_document_json is not None
+        assert doc.docling_document is not None
 
         # Verify the DoclingDocument has proper structure
         docling_doc = doc.get_docling_document()
