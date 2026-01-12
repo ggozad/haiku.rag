@@ -35,6 +35,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         ctx: RunContext[ChatDeps],
         query: str,
         document_name: str | None = None,
+        limit: int | None = None,
     ) -> ToolReturn:
         """Search the knowledge base for relevant documents.
 
@@ -43,14 +44,15 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         Args:
             query: The search query (what to search for)
-            document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
+            document_name: Optional document name/title to search within
+            limit: Number of results to return (default: 5)
         """
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
 
         # Use search agent for query expansion and deduplication
         search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
-        results = await search_agent.search(query, filter=doc_filter)
+        results = await search_agent.search(query, filter=doc_filter, limit=limit)
 
         # Store for potential citation resolution
         ctx.deps.search_results = results

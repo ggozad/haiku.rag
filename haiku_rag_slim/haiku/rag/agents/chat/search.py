@@ -27,15 +27,17 @@ class SearchAgent:
         async def run_search(
             ctx: RunContext[SearchDeps],
             query: str,
+            limit: int | None = None,
         ) -> str:
             """Run a single search query against the knowledge base.
 
             Args:
                 query: The search query
+                limit: Number of results to fetch (default: 5)
             """
-            limit = ctx.deps.config.search.limit
+            effective_limit = limit or 5
             results = await ctx.deps.client.search(
-                query, limit=limit, filter=ctx.deps.filter
+                query, limit=effective_limit, filter=ctx.deps.filter
             )
             results = await ctx.deps.client.expand_context(results)
             ctx.deps.search_results.extend(results)
@@ -49,6 +51,7 @@ class SearchAgent:
         query: str,
         context: str | None = None,
         filter: str | None = None,
+        limit: int | None = None,
     ) -> list[SearchResult]:
         """Execute search with query expansion and deduplication.
 
@@ -56,6 +59,7 @@ class SearchAgent:
             query: The user's search request
             context: Optional conversation context
             filter: Optional SQL WHERE clause to filter documents
+            limit: Maximum number of results to return (default: config limit)
 
         Returns:
             Deduplicated list of SearchResult sorted by score
@@ -74,6 +78,8 @@ class SearchAgent:
             if chunk_id not in seen or result.score > seen[chunk_id].score:
                 seen[chunk_id] = result
 
-        # Sort by score descending and limit to config
-        limit = self._config.search.limit
-        return sorted(seen.values(), key=lambda r: r.score, reverse=True)[:limit]
+        # Sort by score descending and apply limit
+        effective_limit = limit or self._config.search.limit
+        return sorted(seen.values(), key=lambda r: r.score, reverse=True)[
+            :effective_limit
+        ]

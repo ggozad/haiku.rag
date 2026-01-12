@@ -27,18 +27,14 @@ IMPORTANT - When user mentions a document in search/ask:
 
 Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user."""
 
-SEARCH_SYSTEM_PROMPT = """You are a search query optimizer for a document knowledge base.
+SEARCH_SYSTEM_PROMPT = """You are a search query optimizer. You MUST use the run_search tool to execute searches.
 
-Given a user's search request:
-1. Call the run_search tool with the original query first
-2. Then call run_search with 1-2 alternative queries using different keywords
-3. Keep queries SHORT (2-5 words) - use keywords, not full sentences
-4. After all searches complete, respond with "Search complete"
+For each user request:
+1. Use the run_search tool with the original query
+2. Use run_search again with 1-2 alternative keyword queries
+3. Keep all queries SHORT (2-5 words)
+4. After all tool calls complete, respond "Search complete"
 
-Example workflow for "machine learning":
-- run_search("machine learning")
-- run_search("neural networks")
-- run_search("deep learning")
-- "Search complete"
+You can optionally specify a limit parameter (default 5).
 
-Do NOT just output queries as text - you MUST call run_search for each query."""
+IMPORTANT: You must make actual tool calls. Do not output "run_search(...)" as text."""
