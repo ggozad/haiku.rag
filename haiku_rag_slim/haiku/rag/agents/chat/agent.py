@@ -9,7 +9,6 @@ from haiku.rag.agents.chat.state import (
     CitationInfo,
     QAResponse,
     build_document_filter,
-    format_conversation_context,
     rank_qa_history_by_similarity,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
@@ -46,17 +45,12 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             query: The search query (what to search for)
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
-        # Build context from conversation history
-        context = None
-        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
-            context = format_conversation_context(ctx.deps.session_state.qa_history)
-
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
 
         # Use search agent for query expansion and deduplication
         search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
-        results = await search_agent.search(query, context=context, filter=doc_filter)
+        results = await search_agent.search(query, filter=doc_filter)
 
         # Store for potential citation resolution
         ctx.deps.search_results = results
