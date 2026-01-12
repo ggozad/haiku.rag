@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import pytest
+
 from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
@@ -8,6 +12,11 @@ from haiku.rag.agents.chat import (
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_chat_agent")
 
 
 def test_create_chat_agent():
@@ -103,3 +112,118 @@ def test_search_agent_initialization(temp_db_path):
     search_agent = SearchAgent(client, Config)
     assert search_agent is not None
     client.close()
+
+
+# DocLayNet content for testing
+DOCLAYNET_CLASS_LABELS = """
+DocLayNet Dataset - Class Labels
+
+DocLayNet defines 11 distinct class labels for document layout analysis:
+1. Caption - Text describing figures or tables
+2. Footnote - Notes at the bottom of pages
+3. Formula - Mathematical expressions
+4. List-item - Items in bulleted or numbered lists
+5. Page-footer - Footer content on pages
+6. Page-header - Header content on pages
+7. Picture - Images and diagrams
+8. Section-header - Headings for document sections
+9. Table - Tabular data
+10. Text - Regular paragraph text (highest count: 510,377 instances)
+11. Title - Document titles
+
+The Text class has the highest count with 510,377 instances in the dataset.
+"""
+
+DOCLAYNET_ANNOTATION = """
+DocLayNet Dataset - Annotation Process
+
+The annotation process was organized into 4 phases:
+- Phase 1: Data selection and preparation by a small team of experts
+- Phase 2: Label selection and guideline definition
+- Phase 3: Annotation by 40 dedicated annotators
+- Phase 4: Quality control and continuous supervision
+
+The Corpus Conversion Service (CCS) was used for annotation, providing a visual interface.
+"""
+
+DOCLAYNET_DATA_SOURCES = """
+DocLayNet Dataset - Data Sources
+
+The data sources for DocLayNet include:
+- Publication repositories such as arXiv
+- Government offices and official documents
+- Company websites and corporate reports
+- Data directory services for financial reports
+- Patent documents
+
+Scanned documents were excluded to avoid rotation and skewing issues.
+"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_with_qa_history_ranking(allow_model_requests, temp_db_path):
+    """Test chat agent uses similarity ranking for qa_history.
+
+    This test verifies that when qa_history has more than 5 entries,
+    the ranking function is applied and the agent can still process requests.
+    """
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add a simple document
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+
+        # Build session state with pre-populated qa_history (>5 items to trigger ranking)
+        session_state = ChatSessionState(
+            session_id="test-ranking",
+            qa_history=[
+                QAResponse(
+                    question="What are the 11 class labels in DocLayNet?",
+                    answer="The 11 class labels are: Caption, Footnote, Formula, List-item, Page-footer, Page-header, Picture, Section-header, Table, Text, and Title.",
+                ),
+                QAResponse(
+                    question="How was the annotation process organized?",
+                    answer="The annotation was organized into 4 phases.",
+                ),
+                QAResponse(
+                    question="What data sources were used?",
+                    answer="Sources include arXiv and government offices.",
+                ),
+                QAResponse(
+                    question="How were pages selected?",
+                    answer="By selective subsampling.",
+                ),
+                QAResponse(
+                    question="What is the agreement metric?",
+                    answer="The mAP metric was used.",
+                ),
+                QAResponse(
+                    question="What is machine learning?",
+                    answer="A field of AI.",
+                ),
+            ],
+        )
+
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Ask a question - the key test is that ranking is applied without error
+        result = await agent.run(
+            "What class labels are defined in the dataset?",
+            deps=deps,
+        )
+
+        # Verify the agent produced a response (ranking didn't break anything)
+        assert result.output is not None
+        assert len(result.output) > 0
+
+        # Verify qa_history was updated (new Q&A was added)
+        assert len(session_state.qa_history) == 7  # 6 original + 1 new

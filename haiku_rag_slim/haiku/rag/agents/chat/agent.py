@@ -10,6 +10,7 @@ from haiku.rag.agents.chat.state import (
     QAResponse,
     build_document_filter,
     format_conversation_context,
+    rank_qa_history_by_similarity,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
@@ -133,10 +134,21 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
 
-        # Convert existing qa_history to SearchAnswers for context seeding
-        existing_qa: list[SearchAnswer] = []
+        # Rank qa_history by similarity to current question
+        ranked_history: list[QAResponse] = []
         if ctx.deps.session_state and ctx.deps.session_state.qa_history:
-            for qa in ctx.deps.session_state.qa_history:
+            embedder = ctx.deps.client.chunk_repository.embedder
+            ranked_history = await rank_qa_history_by_similarity(
+                current_question=question,
+                qa_history=ctx.deps.session_state.qa_history,
+                embedder=embedder,
+                top_k=5,
+            )
+
+        # Convert ranked qa_history to SearchAnswers for context seeding
+        existing_qa: list[SearchAnswer] = []
+        if ranked_history:
+            for qa in ranked_history:
                 citations = [
                     Citation(
                         document_id=c.document_id,

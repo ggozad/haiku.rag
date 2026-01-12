@@ -1,11 +1,20 @@
+import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
+import numpy as np
+from numpy.typing import NDArray
 from pydantic import BaseModel
 from pydantic_ai import format_as_xml
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
+
+if TYPE_CHECKING:
+    from haiku.rag.embeddings import EmbedderWrapper
+
+logger = logging.getLogger(__name__)
 
 
 class CitationInfo(BaseModel):
@@ -61,6 +70,65 @@ def format_conversation_context(qa_history: list[QAResponse]) -> str:
         ],
     }
     return format_as_xml(context_data, root_tag="conversation_context")
+
+
+def _cosine_similarity(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
+    """Compute cosine similarity between two vectors."""
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+async def rank_qa_history_by_similarity(
+    current_question: str,
+    qa_history: list[QAResponse],
+    embedder: "EmbedderWrapper",
+    top_k: int = 5,
+) -> list[QAResponse]:
+    """Rank Q&A history by semantic similarity to current question.
+
+    Embeds question+answer pairs and returns the top-K most similar to the
+    current question. Falls back to returning the last top_k entries if
+    embedding fails.
+
+    Args:
+        current_question: The current question to compare against.
+        qa_history: List of previous Q&A pairs.
+        embedder: Embedder instance to use for embedding.
+        top_k: Maximum number of entries to return.
+
+    Returns:
+        Top-K Q&A pairs ranked by similarity to current question.
+    """
+    if not qa_history:
+        return []
+
+    if len(qa_history) <= top_k:
+        return qa_history
+
+    try:
+        # Embed current question
+        question_embedding = np.array(await embedder.embed_query(current_question))
+
+        # Embed Q&A pairs as "Q: {question}\nA: {answer}"
+        qa_texts = [f"Q: {qa.question}\nA: {qa.answer}" for qa in qa_history]
+        qa_embeddings = await embedder.embed_documents(qa_texts)
+
+        # Compute similarities
+        similarities: list[tuple[int, float]] = []
+        for i, qa_emb in enumerate(qa_embeddings):
+            sim = _cosine_similarity(question_embedding, np.array(qa_emb))
+            similarities.append((i, sim))
+
+        # Sort by similarity (descending) and take top-K
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        top_indices = sorted([idx for idx, _ in similarities[:top_k]])
+
+        # Return in original order
+        return [qa_history[i] for i in top_indices]
+
+    except Exception as e:
+        logger.warning(f"Failed to rank qa_history by similarity: {e}")
+        # Fallback: return last top_k entries
+        return qa_history[-top_k:]
 
 
 @dataclass
