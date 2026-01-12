@@ -227,3 +227,254 @@ async def test_chat_agent_with_qa_history_ranking(allow_model_requests, temp_db_
 
         # Verify qa_history was updated (new Q&A was added)
         assert len(session_state.qa_history) == 7  # 6 original + 1 new
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
+    """Test the chat agent's search tool functionality."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-search")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Ask something that should trigger the search tool
+        result = await agent.run(
+            "Search for documents about class labels",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        assert len(result.output) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_search_tool_with_filter(allow_model_requests, temp_db_path):
+    """Test the chat agent's search tool with document filter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-search-filter")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Ask to search within a specific document
+        result = await agent.run(
+            "Search for information about class labels in the DocLayNet Class Labels document",
+            deps=deps,
+        )
+
+        assert result.output is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_get_document_tool(allow_model_requests, temp_db_path):
+    """Test the chat agent's get_document tool."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add a test document
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask to get a specific document
+        result = await agent.run(
+            "Get me the DocLayNet Class Labels document",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # The response should contain info about the document
+        assert "DocLayNet" in result.output or "class" in result.output.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_get_document_not_found(allow_model_requests, temp_db_path):
+    """Test the chat agent's get_document tool when document is not found."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask for a document that doesn't exist
+        result = await agent.run(
+            "Get me the nonexistent document",
+            deps=deps,
+        )
+
+        assert result.output is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_search_agent_with_context(allow_model_requests, temp_db_path):
+    """Test SearchAgent's search method with context."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+
+        search_agent = SearchAgent(client, Config)
+
+        # Search with context
+        results = await search_agent.search(
+            query="What are the class labels?",
+            context="We're discussing document layout analysis",
+        )
+
+        assert isinstance(results, list)
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_search_agent_with_filter(allow_model_requests, temp_db_path):
+    """Test SearchAgent's search method with document filter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        search_agent = SearchAgent(client, Config)
+
+        # Search with filter - only the labels document
+        results = await search_agent.search(
+            query="What information is available?",
+            filter="uri LIKE '%labels%'",
+        )
+
+        assert isinstance(results, list)
+        # Results should only come from the labels document
+        for r in results:
+            assert "labels" in (r.document_uri or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_search_agent_deduplication(allow_model_requests, temp_db_path):
+    """Test SearchAgent deduplicates results by chunk_id."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        search_agent = SearchAgent(client, Config)
+
+        # Search - the search agent will likely run multiple queries
+        # that could return the same chunk, which should be deduplicated
+        results = await search_agent.search(
+            query="Tell me about class labels and their counts",
+        )
+
+        assert isinstance(results, list)
+
+        # Verify no duplicate chunk_ids
+        chunk_ids = [r.chunk_id for r in results if r.chunk_id]
+        assert len(chunk_ids) == len(set(chunk_ids)), "Found duplicate chunk_ids"
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_search_agent_no_results(allow_model_requests, temp_db_path):
+    """Test SearchAgent handles no results gracefully."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        search_agent = SearchAgent(client, Config)
+
+        # Search in empty database
+        results = await search_agent.search(
+            query="Find information about nonexistent topic xyz123",
+        )
+
+        assert isinstance(results, list)
+        assert len(results) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path):
+    """Test that the ask tool adds citations to the response."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add a document with specific content
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-citations")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Ask a question that should use the ask tool with citations
+        result = await agent.run(
+            "What is the highest count class in the DocLayNet dataset?",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # The qa_history should have been updated with the new Q&A
+        assert len(session_state.qa_history) >= 1

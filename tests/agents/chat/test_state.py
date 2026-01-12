@@ -5,6 +5,8 @@ import pytest
 from haiku.rag.agents.chat.state import (
     CitationInfo,
     QAResponse,
+    build_document_filter,
+    format_conversation_context,
     rank_qa_history_by_similarity,
 )
 from haiku.rag.client import HaikuRAG
@@ -166,3 +168,66 @@ async def test_rank_qa_history_preserves_order(temp_db_path, allow_model_request
         result_questions = [qa.question for qa in result]
         assert "What is Python?" in result_questions
         assert "How to use Python for data science?" in result_questions
+
+
+def test_format_conversation_context_empty():
+    """Test format_conversation_context with empty history."""
+    result = format_conversation_context([])
+    assert result == ""
+
+
+def test_format_conversation_context_with_history():
+    """Test format_conversation_context formats qa_history as XML."""
+    citation = CitationInfo(
+        index=1,
+        document_id="doc-123",
+        chunk_id="chunk-456",
+        document_uri="test.md",
+        document_title="Test Document",
+        content="Test content",
+    )
+    qa_history = [
+        QAResponse(
+            question="What is Python?",
+            answer="A programming language",
+            citations=[citation],
+        ),
+        QAResponse(
+            question="What is Java?",
+            answer="Another programming language",
+        ),
+    ]
+
+    result = format_conversation_context(qa_history)
+
+    assert "<conversation_context>" in result
+    assert "previous_qa" in result
+    assert "What is Python?" in result
+    assert "A programming language" in result
+    assert "What is Java?" in result
+    assert "Another programming language" in result
+    assert "Test Document" in result  # source from first citation
+
+
+def test_build_document_filter_simple():
+    """Test build_document_filter with simple name."""
+    result = build_document_filter("mytest")
+    assert "LOWER(uri) LIKE LOWER('%mytest%')" in result
+    assert "LOWER(title) LIKE LOWER('%mytest%')" in result
+
+
+def test_build_document_filter_with_spaces():
+    """Test build_document_filter handles spaces correctly."""
+    result = build_document_filter("TB MED 593")
+    # Should include both the original (with spaces) and without spaces
+    assert "LOWER(uri) LIKE LOWER('%TB MED 593%')" in result
+    assert "LOWER(uri) LIKE LOWER('%TBMED593%')" in result
+    assert "LOWER(title) LIKE LOWER('%TB MED 593%')" in result
+    assert "LOWER(title) LIKE LOWER('%TBMED593%')" in result
+
+
+def test_build_document_filter_escapes_quotes():
+    """Test build_document_filter escapes single quotes."""
+    result = build_document_filter("O'Reilly")
+    # Single quotes should be doubled for SQL escaping
+    assert "O''Reilly" in result

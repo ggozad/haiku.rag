@@ -1,4 +1,3 @@
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -13,8 +12,6 @@ from haiku.rag.store.models import SearchResult
 
 if TYPE_CHECKING:
     from haiku.rag.embeddings import EmbedderWrapper
-
-logger = logging.getLogger(__name__)
 
 
 class CitationInfo(BaseModel):
@@ -104,31 +101,25 @@ async def rank_qa_history_by_similarity(
     if len(qa_history) <= top_k:
         return qa_history
 
-    try:
-        # Embed current question
-        question_embedding = np.array(await embedder.embed_query(current_question))
+    # Embed current question
+    question_embedding = np.array(await embedder.embed_query(current_question))
 
-        # Embed Q&A pairs as "Q: {question}\nA: {answer}"
-        qa_texts = [f"Q: {qa.question}\nA: {qa.answer}" for qa in qa_history]
-        qa_embeddings = await embedder.embed_documents(qa_texts)
+    # Embed Q&A pairs as "Q: {question}\nA: {answer}"
+    qa_texts = [f"Q: {qa.question}\nA: {qa.answer}" for qa in qa_history]
+    qa_embeddings = await embedder.embed_documents(qa_texts)
 
-        # Compute similarities
-        similarities: list[tuple[int, float]] = []
-        for i, qa_emb in enumerate(qa_embeddings):
-            sim = _cosine_similarity(question_embedding, np.array(qa_emb))
-            similarities.append((i, sim))
+    # Compute similarities
+    similarities: list[tuple[int, float]] = []
+    for i, qa_emb in enumerate(qa_embeddings):
+        sim = _cosine_similarity(question_embedding, np.array(qa_emb))
+        similarities.append((i, sim))
 
-        # Sort by similarity (descending) and take top-K
-        similarities.sort(key=lambda x: x[1], reverse=True)
-        top_indices = sorted([idx for idx, _ in similarities[:top_k]])
+    # Sort by similarity (descending) and take top-K
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    top_indices = sorted([idx for idx, _ in similarities[:top_k]])
 
-        # Return in original order
-        return [qa_history[i] for i in top_indices]
-
-    except Exception as e:
-        logger.warning(f"Failed to rank qa_history by similarity: {e}")
-        # Fallback: return last top_k entries
-        return qa_history[-top_k:]
+    # Return in original order
+    return [qa_history[i] for i in top_indices]
 
 
 @dataclass

@@ -1,0 +1,3042 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '730'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - |-
+        DocLayNet Dataset - Class Labels
+        DocLayNet defines 11 distinct class labels for document layout analysis:
+        1. Caption - Text describing figures or tables
+        2. Footnote - Notes at the bottom of pages
+        3. Formula - Mathematical expressions
+        4. List-item - Items in bulleted or numbered lists
+        5. Page-footer - Footer content on pages
+        6. Page-header - Header content on pages
+        7. Picture - Images and diagrams
+        8. Section-header - Headings for document sections
+        9. Table - Tabular data
+        10. Text - Regular paragraph text (highest count: 510,377 instances)
+        11. Title - Document titles
+        The Text class has the highest count with 510,377 instances in the dataset.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 166
+        total_tokens: 166
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4099'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a helpful research assistant powered by haiku.rag, a knowledge base system.
+
+          You have access to a knowledge base of documents. Use your tools to search and answer questions.
+
+          CRITICAL RULES:
+          1. For greetings or casual chat: respond directly WITHOUT using any tools
+          2. For questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+          3. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
+          4. NEVER call the same tool multiple times for a single user message
+          5. NEVER make up information - always use tools to get facts from the knowledge base
+
+          How to decide which tool to use:
+          - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
+          - "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
+          - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
+
+          IMPORTANT - When user mentions a document in search/ask:
+          - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
+            - Extract the TOPIC as `query`/`question`
+            - Extract the DOCUMENT NAME as `document_name`
+          - Examples for search:
+            - "search for embeddings in the ML paper" → query="embeddings", document_name="ML paper"
+            - "find transformer architecture in 2412.00566" → query="transformer architecture", document_name="2412.00566"
+          - Examples for ask:
+            - "what does the ML paper say about embeddings?" → question="what are the embedding methods?", document_name="ML paper"
+            - "answer from 2412.00566 about model training" → question="how is the model trained?", document_name="2412.00566"
+
+          Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user.
+        role: system
+      - content: What is the highest count class in the DocLayNet dataset?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Use this when you need to find documents or explore the knowledge base.
+            Results are displayed to the user - just list the titles found.
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: 5)'
+              query:
+                description: The search query (what to search for)
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            Answer a specific question using the knowledge base.
+
+            Use this for direct questions that need a focused answer with citations.
+            Uses a research graph for planning, searching, and synthesis.
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within (e.g., "tbmed593", "army manual")
+              question:
+                description: The question to answer
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+      - function:
+          description: |-
+            Retrieve a specific document by title or URI.
+
+            Use this when the user wants to fetch/get/retrieve a specific document.
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '529'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need ask.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"document_name":"DocLayNet","question":"What is the highest count class in the DocLayNet dataset?"}'
+              name: ask
+            id: call_avkrjhyc
+            index: 0
+            type: function
+      created: 1768225953
+      id: chatcmpl-141
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 45
+        prompt_tokens: 850
+        total_tokens: 895
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2118'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are the research orchestrator for a focused, iterative workflow.
+
+          Responsibilities:
+          1. Understand and decompose the main question
+          2. Propose a minimal, high-leverage plan
+          3. Coordinate specialized agents to gather evidence
+          4. Iterate based on gaps and new findings
+
+          Plan requirements:
+          - Produce at most 3 sub_questions that together cover the main question.
+          - sub_questions must be a list of plain strings, where each string is a complete
+            question. Do NOT use objects with nested fields like {question, details}.
+          - Each sub_question must be a standalone, self-contained query that can run
+            without extra context. Include concrete entities, scope, timeframe, and any
+            qualifiers. Avoid ambiguous pronouns (it/they/this/that).
+          - Prioritize the highest-value aspects first; avoid redundancy and overlap.
+          - Prefer questions that are likely answerable from the current knowledge base;
+            if coverage is uncertain, make scopes narrower and specific.
+          - Order sub_questions by execution priority (most valuable first).
+
+          Use the gather_context tool once on the main question before planning.
+
+          Use the gather_context tool once on the main question before planning.
+        role: system
+      - content: |-
+          Plan a focused approach for the main question.
+
+          Main question: What is the highest count class in the DocLayNet dataset?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: ''
+          name: gather_context
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: A structured research plan with sub-questions to explore.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              sub_questions:
+                description: Specific questions to research, phrased as complete questions
+                items:
+                  type: string
+                type: array
+            required:
+            - sub_questions
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '555'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to run gather_context on main question.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":null,"query":"What is the highest count class in the DocLayNet dataset?"}'
+              name: gather_context
+            id: call_0f67xr36
+            index: 0
+            type: function
+      created: 1768225954
+      id: chatcmpl-304
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 50
+        prompt_tokens: 425
+        total_tokens: 475
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '127'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - What is the highest count class in the DocLayNet dataset?
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 15
+        total_tokens: 15
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2912'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are the research orchestrator for a focused, iterative workflow.
+
+          Responsibilities:
+          1. Understand and decompose the main question
+          2. Propose a minimal, high-leverage plan
+          3. Coordinate specialized agents to gather evidence
+          4. Iterate based on gaps and new findings
+
+          Plan requirements:
+          - Produce at most 3 sub_questions that together cover the main question.
+          - sub_questions must be a list of plain strings, where each string is a complete
+            question. Do NOT use objects with nested fields like {question, details}.
+          - Each sub_question must be a standalone, self-contained query that can run
+            without extra context. Include concrete entities, scope, timeframe, and any
+            qualifiers. Avoid ambiguous pronouns (it/they/this/that).
+          - Prioritize the highest-value aspects first; avoid redundancy and overlap.
+          - Prefer questions that are likely answerable from the current knowledge base;
+            if coverage is uncertain, make scopes narrower and specific.
+          - Order sub_questions by execution priority (most valuable first).
+
+          Use the gather_context tool once on the main question before planning.
+
+          Use the gather_context tool once on the main question before planning.
+        role: system
+      - content: |-
+          Plan a focused approach for the main question.
+
+          Main question: What is the highest count class in the DocLayNet dataset?
+        role: user
+      - content: |-
+          <think>
+          Need to run gather_context on main question.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":null,"query":"What is the highest count class in the DocLayNet dataset?"}'
+            name: gather_context
+          id: call_0f67xr36
+          type: function
+      - content: |-
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_0f67xr36
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: ''
+          name: gather_context
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: A structured research plan with sub-questions to explore.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              sub_questions:
+                description: Specific questions to research, phrased as complete questions
+                items:
+                  type: string
+                type: array
+            required:
+            - sub_questions
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1842'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: "**Sub‑questions (in priority order)**  \n\n1. *What are the DocLayNet class labels, and how many instances
+            of each class appear in the training split of the dataset?*  \n\n2. *Which DocLayNet class has the highest number
+            of annotated instances in the training split?*  \n\n3. *What is the exact numeric count of the class identified
+            as highest‑count in the training split of DocLayNet?*"
+          reasoning: |-
+            We have list of classes, but need highest count class. We don't have counts. Need research. Plan 3 sub-questions. Possibly ask for dataset stats, total counts per class. Probably available in documentation. So sub questions: 1) What are the documented class definitions and counts for DocLayNet? 2) Which class has the highest number of instances in the DocLayNet training set? 3) Provide the numeric count of that class.
+
+            But sub-questions must be single. We can combine: 1) What is the count of each class in DocLayNet? 2) Which class has the highest count? 3) Provide count of highest class.
+
+            Alternatively ask: "According to official DocLayNet documentation, which class has the highest frequency in the training set, and how many instances does it contain?" That's one question. But need 3 independent.
+
+            Let's produce 3 queries: (1) "What are the class labels defined in the DocLayNet dataset and how many instances does each have in the training split?" (2) "Which class in DocLayNet has the maximum number of instances in the training split?" (3) "What is the numeric count for that highest-count class in DocLayNet training data?"
+          role: assistant
+      created: 1768225962
+      id: chatcmpl-975
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 355
+        prompt_tokens: 577
+        total_tokens: 932
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '5157'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are the research orchestrator for a focused, iterative workflow.
+
+          Responsibilities:
+          1. Understand and decompose the main question
+          2. Propose a minimal, high-leverage plan
+          3. Coordinate specialized agents to gather evidence
+          4. Iterate based on gaps and new findings
+
+          Plan requirements:
+          - Produce at most 3 sub_questions that together cover the main question.
+          - sub_questions must be a list of plain strings, where each string is a complete
+            question. Do NOT use objects with nested fields like {question, details}.
+          - Each sub_question must be a standalone, self-contained query that can run
+            without extra context. Include concrete entities, scope, timeframe, and any
+            qualifiers. Avoid ambiguous pronouns (it/they/this/that).
+          - Prioritize the highest-value aspects first; avoid redundancy and overlap.
+          - Prefer questions that are likely answerable from the current knowledge base;
+            if coverage is uncertain, make scopes narrower and specific.
+          - Order sub_questions by execution priority (most valuable first).
+
+          Use the gather_context tool once on the main question before planning.
+
+          Use the gather_context tool once on the main question before planning.
+        role: system
+      - content: |-
+          Plan a focused approach for the main question.
+
+          Main question: What is the highest count class in the DocLayNet dataset?
+        role: user
+      - content: |-
+          <think>
+          Need to run gather_context on main question.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":null,"query":"What is the highest count class in the DocLayNet dataset?"}'
+            name: gather_context
+          id: call_0f67xr36
+          type: function
+      - content: |-
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_0f67xr36
+      - content: "<think>\nWe have list of classes, but need highest count class. We don't have counts. Need research. Plan
+          3 sub-questions. Possibly ask for dataset stats, total counts per class. Probably available in documentation. So
+          sub questions: 1) What are the documented class definitions and counts for DocLayNet? 2) Which class has the highest
+          number of instances in the DocLayNet training set? 3) Provide the numeric count of that class.\n\nBut sub-questions
+          must be single. We can combine: 1) What is the count of each class in DocLayNet? 2) Which class has the highest
+          count? 3) Provide count of highest class.\n\nAlternatively ask: \"According to official DocLayNet documentation,
+          which class has the highest frequency in the training set, and how many instances does it contain?\" That's one
+          question. But need 3 independent.\n\nLet's produce 3 queries: (1) \"What are the class labels defined in the DocLayNet
+          dataset and how many instances does each have in the training split?\" (2) \"Which class in DocLayNet has the maximum
+          number of instances in the training split?\" (3) \"What is the numeric count for that highest-count class in DocLayNet
+          training data?\"\n</think>\n\n**Sub‑questions (in priority order)**  \n\n1. *What are the DocLayNet class labels,
+          and how many instances of each class appear in the training split of the dataset?*  \n\n2. *Which DocLayNet class
+          has the highest number of annotated instances in the training split?*  \n\n3. *What is the exact numeric count of
+          the class identified as highest‑count in the training split of DocLayNet?*"
+        role: assistant
+      - content: |-
+          1 validation error:
+          ```json
+          [
+            {
+              "type": "json_invalid",
+              "loc": [],
+              "msg": "Invalid JSON: expected value at line 1 column 1",
+              "input": "**Sub‑questions (in priority order)**  \n\n1. *What are the DocLayNet class labels, and how many instances of each class appear in the training split of the dataset?*  \n\n2. *Which DocLayNet class has the highest number of annotated instances in the training split?*  \n\n3. *What is the exact numeric count of the class identified as highest‑count in the training split of DocLayNet?*"
+            }
+          ]
+          ```
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: ''
+          name: gather_context
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: A structured research plan with sub-questions to explore.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              sub_questions:
+                description: Specific questions to research, phrased as complete questions
+                items:
+                  type: string
+                type: array
+            required:
+            - sub_questions
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '804'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need JSON array of strings.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"sub_questions":["What are the DocLayNet class labels, and how many instances of each class appear
+                in the training split of the dataset?","Which DocLayNet class has the highest number of annotated instances
+                in the training split?","What is the exact numeric count of the class identified as highest‑count in the training
+                split of DocLayNet?"]}'
+              name: final_result
+            id: call_ydun9riz
+            index: 0
+            type: function
+      created: 1768225965
+      id: chatcmpl-329
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 98
+        prompt_tokens: 1094
+        total_tokens: 1192
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2870'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What are the DocLayNet class labels, and how many instances of each class appear in the training split of
+          the dataset?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '516'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"DocLayNet class labels instances training split"}'
+              name: search_and_answer
+            id: call_zcl4gget
+            index: 0
+            type: function
+      created: 1768225967
+      id: chatcmpl-148
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 40
+        prompt_tokens: 627
+        total_tokens: 667
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '117'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet class labels instances training split
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 10
+        total_tokens: 10
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3742'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What are the DocLayNet class labels, and how many instances of each class appear in the training split of
+          the dataset?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet class labels instances training split"}'
+            name: search_and_answer
+          id: call_zcl4gget
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_zcl4gget
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '530'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need counts. Search other chunk.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"DocLayNet training split instances per class"}'
+              name: search_and_answer
+            id: call_eolvl6wl
+            index: 0
+            type: function
+      created: 1768225969
+      id: chatcmpl-912
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 43
+        prompt_tokens: 820
+        total_tokens: 863
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '114'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet training split instances per class
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 10
+        total_tokens: 10
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4628'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What are the DocLayNet class labels, and how many instances of each class appear in the training split of
+          the dataset?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet class labels instances training split"}'
+            name: search_and_answer
+          id: call_zcl4gget
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_zcl4gget
+      - content: |-
+          <think>
+          Need counts. Search other chunk.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet training split instances per class"}'
+            name: search_and_answer
+          id: call_eolvl6wl
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_eolvl6wl
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '428'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: I couldn’t find documents that list the instance count for each class in the training split. The search
+            query returned only the label names.
+          role: assistant
+      created: 1768225970
+      id: chatcmpl-459
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 31
+        prompt_tokens: 1016
+        total_tokens: 1047
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4932'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What are the DocLayNet class labels, and how many instances of each class appear in the training split of
+          the dataset?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet class labels instances training split"}'
+            name: search_and_answer
+          id: call_zcl4gget
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_zcl4gget
+      - content: |-
+          <think>
+          Need counts. Search other chunk.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet training split instances per class"}'
+            name: search_and_answer
+          id: call_eolvl6wl
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_eolvl6wl
+      - content: I couldn’t find documents that list the instance count for each class in the training split. The search query
+          returned only the label names.
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '915'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to do final_result.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"DocLayNet defines 11 class labels: Caption, Footnote, Formula, List‑item, Page‑footer,
+                Page‑header, Picture, Section‑header, and Table. The dataset documentation does not provide per‑class instance
+                counts for the training split.","cited_chunks":["2b9401ae-5311-4bae-8a6e-188fbb6f6d61"],"confidence":0.4,"query":"What
+                are the DocLayNet class labels, and how many instances of each class appear in the training split of the dataset?"}'
+              name: final_result
+            id: call_mek5tlwb
+            index: 0
+            type: function
+      created: 1768225973
+      id: chatcmpl-454
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 146
+        prompt_tokens: 1072
+        total_tokens: 1218
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2842'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: Which DocLayNet class has the highest number of annotated instances in the training split?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '534'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"DocLayNet highest number of annotated instances training split class"}'
+              name: search_and_answer
+            id: call_1ownxxqj
+            index: 0
+            type: function
+      created: 1768225975
+      id: chatcmpl-694
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 42
+        prompt_tokens: 619
+        total_tokens: 661
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '138'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet highest number of annotated instances training split class
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 5wRvueKmmjvzFS883nO+POH1Obqls4g9emtXPfl+EzviopM8+yDHu2vGzTxwEJ887mSGus8LqTyh/O687d1TvX83Kz33YVa8NEKYO0lj3ruKlUy8JmmyO2XlqTw+hZ481y2vvNHzz7wHHaO8Urt1vLPnlDsD9xY9WIemOz1dwbx+8CI9OpBPOmwpMDsSIoy8qLAfvIPvg7u/J7y6g8hjvdX0RDyfN3C7nQUmPEXZhjs6XdY7HPW0Ojqk4jvvRfm8DxnhvKjjo7sPq687hkkaPIEH2bypQ6a84fAgPSpbbbsEphg9NZPnu2+NWbyXxhY9XyvOu8s6Vbtm2qq8yJ9tvLuYILytbK+8ErOQPN1gPbwu5HU87YjyOfHA7rwrmsS6GGs+vNHK6ju8aK08bsDQvBT+b7wtin48eIBTvMXOtjyh0EY8CaS/u5knKLt26m49gu+fO/IBIbyh7w49tiw3PAKFxrzP75I8YrdMPGJyGjwXD9a7eYJsO35uizsV+S48/hZ/vDSBe7xYdYy42U1Du9Woi7yyHH28ine+PCq897uEL0c8SvP/vFyeoLw5dIm77CT4uoAzDTxHQFq7gq/ru88TK7vNQeE6+2+QugkqQ7wHFc+7skTBPA/XbTxG8iA9U/AvvJmdpjwDIGa869wLPAcrkDwXI4u90uRku2K26ryFz8E8JvCau4F34DwUB8K8pbMWPZMNcbz7OYo797e9OgNQJ7yuuYQ7HeFeu9Y4pzxqxDC8NLLZOnxeOTrJxeo8tnSAvPQgar3tmpy7zjn1vCorSjyf5sm7wyHCPC3djbx/H288pnJhu8og3DtWbyU9+SuOvGrcujzEnLg7hBMmPOuCu7v91d08fh6tvP4RDT0alYM6QBMNPD3WDDwkyrG7Vr0AvGYeybzyDdc7bbK1vJAo77t7NrS7qlbDvEqEVLxsk1y8m8liuyrNTbz/gZo8XC5KPJpkFj3X9sQ8pS4iuwFtlTto7Bq8WAdBOa+zFLwzaLY8ozOTO6PZkDztPRg8aQ7AvPcUFjw7via7khRGvPJROLzlAQo6rTfPuigDiTy9QXg8qzWWOwhUBjwbhRa8+OK9u5c7bLuu5uC7VsOWvEgACjxtNw28FsaEO56JO7wTkh68O5YFPNPMTTycaLg830DnvIx1U7zxrf08G7D8u0eDw7kSjr06SmCUu86CfLrcoYG8urgkPBIHZjtE8oq8lJwwPNJHbrzPEQA9/lmQPE++r7u6TAm8La5pO33KhDzeN7q8Bz3EOuW1rDzhvIG8qyGdPOp7iLyDaYC8NagyPM/GZLwB7BG80RPwO+P657wtV6O8BEPavMNnJru6eyy7LoD1PCQgCr1jLK288YoevA+e6Lyioxu9wv8jvKjfvLztNBu7aHdhvDFLjLzGOy68hLCgu5nVrTyokqY7cUWVvOGi+buRTBA84fvfPOiABLtPVNI6dIPjO0WBkjxrJnq80OwWPKLcAzztzME7Sy7+PJuQG7xTTYK7O0+fvI6hnbtja7a7QEIGvHywRj12m7C7NmGtuzLrSTyJFOg8Wo8fvAjtSTyZl7C8XzCjvEX+WjxblZE8HKSQujzUQzwoTYO8zfaHvBReS7vfeEM74Lx4PKLfwbulq/A8U6WVujdPWrxGdZ88wc1ZPJ7e4jueQOS74aMgvMgvDTxb2aY8Ex+6vN0dqboooIu7cuu+vOW/r7w9eDM5KtsqvSclkbwwK3i75zrEu+sBVDx1T6Q8u7qcPIikNDyRUzk6MBrvuwckOz0NB1u9Tg8NvN0c/LqkRNc7cHydu08XAT0TY5A4XIILPIktybs6KNE7tt89O/ksnbxCfaa8bYURu57ReTtcf7G73LGiu8BFLzwMlz28S4/FvMwNaLxGO8y6Z8PuuxGrBDzigha8yY4BPFhTmDw73Au9K8qzvM78HLxP1Ba89HzsO9ocFr16dF28siv5vGcPfzxcwwY9RWU+vAQ2jjy4Rhw8RTEYPTTY4Tp+pBK85ZvEu2Bd5bpkbIu8BSbIuZfRNLuk4/M72JCNPDv+ozvYW7I8Z+4UvcM9FDy0DSe6oAxDvI+Dubsh+T+8XkIJvMUvFz0ZPiQ8kqtlvPx4Mb1iAdU846h8uX7tmzxwdQI9dLAavRcyD7zXpBU8sEHlvJEBUrwLMpA824QsvajRpLz+92k8hfkUvC8fFzv9IkK7a3iPO+FzhTwQKpq89rgzvUCICDscTGs8V7gNvVmPqDt6FLU7kAKUukYSKb2/r0w8AfUdvLCrijued708WDYTPFgm5zz9nby6ipUXvYcuXzv2zG08+MHcPG6agD2JmEq88OQkvFzyQLzXP466FvWRO7Y4ibylKF+78aUSuaKeDDyh66g8XqInvQS+a7wpjko8ZKRLPMBoyjw1Y+i89qKXvPTpubwmmTe8CuYCvNIpubw+r+27mJ8Gu5sws7vtPA69GxIDPHXWsL3w47A8jGa4u2z6mLygjKs6tyahvJ3EiLyig1q8HkImvUkN9zzKeJc6v9mGvPKVsjhTrVw5TaZnPHbxHz2y5zo8+jkCu+DXl7xKT28812L0O+nY9zwfpAI9j6TwPGOzEzwwNSs9mxbDPBn7aTvefdm8Q+NYvD1nAz0xMJy8MZ61vCdJdjqRWm87lNqdPKp3iTzZuwS9oyUevN/+sLvRfNS8gkZrvCVwNDsY9zC89d4wvDybUzxPm/46QXGRu2r787yuX4A8CGJBPDaPvTyIpTa8rGskvZ9PwTyJPdK8LODNu+nSCzz19I07VC+aPE5z2Lw5ldy6TKb6uwIjT7uxzcs7sXKIPGuYvDwRKtG7LO7SOvmHKDxA+HG7X3oauROsvDvOzfu7ZUOqvJ3FBDs39Se7Ns3EPGWfj7iaqAw8cNT0uTZZmjwz66O78h0xPLwUHzsfLJ28/gOsuRZf7bpyThq903AKvDBtPzxG1Q691IEgO+idC7nJGxq8uOLdPGRUtryJl0w9OZxsPLJKXzzNvA69ePyCPHe2SDzXbpo8Avg5uwp4K7yiwAk8DHZZO2V+E70T9kO8T7+uvHX+BrsZVfE79TwovBdwgTzCzpA8t28WvBl7yDobNQK9YHtZO1tVljyUtZQ8nk+LvNyTfDsxMvW6g8kbO+WH7Dsymxm6JCnEPEARdjufEIW742KfukBYbzmbgBq8HcCJuwX0ILxFyI+8szXlvI0NTjnICKS7EViaPGucmrvqZI86sbURPbBDVbtqWzy8J5gFPQLctzzfL468pgKVO9ftbzzOcek7P4icPBpLzzxJ0XI8rc4FvfS+m7xkVLG8lKmOu0Zka7xvAA+9hVOwOzzkMrz8qQs8pNxJPCA+Bb0Ddeu88mYDvSUNzLtMSme8WEKqvGfeH7xTNSk9zusIulCFObxqlq68CK5wvank3DxxRN87wbwQvG+v9Dzl1Cs81K63PEAftbve2Ck9/peEvCGpdr0K0AG9LLpGPA2rn7nzf886oBoDPQ/nN7xBf5A8rvgQvN5fkrvzn9Y8RT0nvFquDj2rS1Q8KvABvPGVwLtW+dS8OHUlPdNW3LvkVvc8stYlvZPdy7t2nL08ErN+vArEjDtSV+08LFUEPW/bn7xdcZQ8X/oBvV/fQTuMATW8ifAKPdygBDuVGiM8dvUcPEAXSjteU3W81dcbu87rubyrrCY85Dpru2XwfzqLHfg8eBMku6oj47ye08q8G/gWPT0Uezohows9NVq4PBgfaTrTpli8ZatlvEwGfryjC227pgHZu3eyDL1XMzI6oo9IPFX1DTy8oni71IzoPInhbTyF+Pc650orvJoWUb0nsKM8Mz1zvCuBUjuUqIK8AflkPOI0nLyxko28pq7xOnYqTzzY0nK8VXL7OzNK2LwY2yY8nS/fuwUiCzxmRWu81OR/PVliOrzjjgg7aW/JO4qEGrvMrvy8r+diO2L2tjxhE547aM7yvHXhyDqAikM9wmMLPP4EIztR2488Tey8u+0V8jxXtRW9zc6iO03KgDy81Bk8iNGcPMpwMbxGIDk7/bldvDCx7rsB/7I8vuKRO9qUXLs6mKU8d3LEPJFhRrtrHIW8wcwDvDejbjwhOsO8oN7WvNFipjzyOQ489L6euwRbaDwecLO8Az6UPP5PwDvJwzq71CRxPcMolDtB9oW8rhGHvE+KDz2UzK+6tYWtvHNJwrx+5r48IZjMvD4xozgDwRa8c6mWvOEOgLwDTAO7ENsCvfuUvLxay9w6DLkdO2mIzDw04yc81S+MvBZ3mDxApEQ88b3lvEX4yjt6IbI8ZE9MO9dIqzzGRZc8MkesvFfzDz2cjRM9dSCHO6F4Xrwripg8CqOKO0xvcbxJhxM6d+cCPSQJ0LvRbHC8t3M7PdeJjbxAIB67D8a9OaUv4DylwOk8hLhdOwNhdrnCL+Q7zNM9PE/b7jzafy28ezEFPbFw/juMpSe8gRaSPHWEarzR34s8L3cVPLpSjTqlebg8Q2I0vSzY4bzISgm9iPpZuw4SD70d6iA90ZN8uijmATtyLqo7H1R2vJ+12TskpoW89uaWO04iODyCOIo9Z7cSPeRDUzwC/xy82XxxPLEdET082WG8dREVPPw1KrzEbCI8Qo9dvJ/EKrxFjGK7FDJtu2PJTLsrBOq7iMfkvMAgfLyF3YG9IwEDPTwrtDtwdlg7J2deO7eJRD3faOa7uoW5vByCujvCMmI8JrEsvIeIXTzM4Hy8AsWoPBVJ8zxF34m81t7XPMfRvbxNdjo8bSd6O2F2VzzKPJq8u+UmPCPjJrzPZ5o7iw0KPJq4YDzFbk+7Ap5rvGAchTy7MXG87sEQO/+oUTwl9zS85Pb0PEErMT0nL+M6aprvvHySvTvxYtI80dW9vDukTL0/B/S80oYjPG2qjDwxBni9xhOEO3yanLx1Au27CTwFvbbHGLzErSU8PXShu5YI07wZx9Y7Ln3YPDqAqLxBRTq8ZNiavETCmbz3o6k71lQHvfYquTyJmXa8PuGRPB4rlzx/0hq8NkEiPBglXDzy7Wk8+p1qvMy5MLzHeKE8a9/qPBnB9DzZ8WE8sd4Xu8SYtjqMXBO8UswJPE9ja70EBRo8PvTdu3J5eLw5sQ28wis/vFisNLzpIxS7/0aMu2fqETowDNe7MdB+PJ+BwTv3cyC9zbkWPIFvQDwGL8+6LgToPMAfmrw16Ai8pdCCOybN87tvDJO8AeGnO8xujrta2ko6GdfeO7Gn1rt72PA8jIbBOvOQETvQAVy8fz6Yu8f9JzzObRc8EkgTPLX7Wb3rfUg8Icx9PBZ9JbxNWQg77HxDvFBIFDz3LYY8LhvAO/EduzzRaEM9WAGbPFZiBD3KYDo8gvqhOikqcL1ODxY9I1huuy/ZMryqtZm8LFDxvFdQ1jxb0Cu7bamsPPZOlrxtmAm8BBwKu0NvQDx3w8Q73VjsvG7E2bxEGjI8DNXwPBub0LvqQQs9znE3vMdsZbqfUli7+YzSPMeBQjwjuHi744ILPQ4RWjxybka7vO8VPaCP0DxmVNY8hdZAvepxKLx3a60895sWvLHXcrzXq028FIn9OX6AvLvJ2JA7JBcGPXDalztbo6a8lG5qvPMjUzzZkYo8ZoSOvFksDrxhBn27qPlTOylFpTyPjfY7p/SaPIQ86Lymp9i8B/YxPHhRwztuux46W3MMPZDKYTwf+ti7A/7cO/9RB7273n47GV8dvf6XIbtbCtg69h0MPNLnWjuOBLa8vzVRPaYUf7tCUtq7cj9kPCBnEr3o8K68rQr1vKwQNbwurDK8H2Hlu7XOMDt7dnS8MECqu8ebpjp1zQ48y1OePLCuNjp5cAe7Hx+XPI1wdjy3rkc7BtiGPJpZt7uKYOs8IWw6vD8PB73zDR68XQkEvaa3C7yixUe86zesun2RPrzQBJw78eD3vDwIaLxnOIY8kdlWPNuMEDqQ1JQ8f5UnvStw+TvUgP6526FqPECVFTuAjki8yTkZvRjsEL31JtK8DgEIvXL6mzw2CI88dHETvGB11jy1CpQ723uNvC1JxTzOLMO4nWZ8OpCq9DybPfC8ukzyO66ICDqGW6O8q38fPBQ7RzxAgJ68ayFGPE58qTxIOpy8Z5WcvCH0RbwzjoM8uirovM319DxM0sw87+AivGE5Cj0o0HA8uhcwPEOaEL3beq47xelPPCyXAT3E1P87/064PFdjYjyRgZo8FPMnPW6WJjxvLha8j/IEPHPGwruPLnK7Vk8EvPT2nDzuiwm8rU1SvLH6FTzcnmO8LQ2Nu5j+3rxx3/483uygPPVP/7qNyHw8/ecfPPmBqrxiy6G77xy8vGLEjrvo5yC6CJJaPVjwgrxlXBy9eV3qPDgBMjw4Su48tOGHvICb7zz/eTA9gyLUua+cODzZJOe8gaeoOr6NabtDkby79yyqvOaeob37c5y8ZMKEu1qJMr3UPk28nI/WvK9nj7syyjk8E+jNvLEJH7wz6cg7s39ZPcXdnDxbzEc8iDu/vPkgUzxWrrG7kRjcO+kKDj0FdGW8uB88PJBBhbyb3eK8gtnfvBdrhjz7HXS8hBy2vJoquLwJmaQ8uAgXPZNK4jx9FB+77PAQPDAODD1uB508efBPPHcU/7zAhgA80ZmCvF6VQrsKock8+YwvvHCbajvVr0Y8CDT7PAJ6ibxx+Sw9ea6eu5InB7yWOTw8JXmGvDo84rsEBUe9vhpFPNU12ry0hnm8P4/ZOg8mSbykH9M7k+sIvL/igLzcvTc9xeuzvL9jCDxcqMa8lEJBO6YcczxD/SQ7zfj/PF/ZK7xZSZ+8pMcnPJ+1hTw1FAq8UUcaPM24qDzq8We75IGivL01zzvtb1e8dM5Yu3kiKr3owR88yLNbOTCOfDxCCiA7DOxgO0eLkzlsVq28jvKZPPevQLxz0AC9t/WNPKJx7DpRZlm9ybKsvHR0D70vPiQ8eNnZOmqAhLtaGhy6+nOku09wn7zl1zE8JL8RO5jMA7vy9No8ePU7vTEG5TyzyBY8I2hHvLRtrjx25ys8NTOrvJ/fCzoyW2Q7hp4kPMtdCL2CPj68FhEFvRdJ4rxfxZS7b7ogvLHWsLpTuyQ7Esq7u+emvbuFTeu7chYUO0R4kbtB6uK8kFnlu+y1Dzx/pJY8ddjmu2PSGT1x76C8qEKOPDrHpDwrNIk7cm86PeyA97zS6A69vnCAvF9k47wlXJM8hQcWvCXDHDvIHGe9/nJ/PK25f7spncK8paOePJFGjzwkVh48bEtaPEUbwTwmcbU8n257uTXP/LmxNzq8dPRvOjfjHzwkst28jqQnPc+ADrtAAlk8t+YHOxNEozxBDgs9y4W9vMIY+DtNpOo8CTxqO0YhuLx8ebC8utdDu3nGaztuUqe8Paf5PBb3Bb1no0a83BBYOtaOvDupHUQ80fn5u2rBfjztky09bt8jvUwWEj0dEfe6lKmRPEaUMrwKl2m7tomevNGAKz2n2QU9XekWvYeyQz04e1E8p3RLvKFKmDyErYQ7gH+eOiPC97xTbFQ8KIIxPC7hlrxk9xs9BCgHPWc3lrx/U5u80Fr5vGRXPj3mAAG92iF8vCAJsrtpaeq8BrOuPOaTLbx/Wge83CxfvPsSIjyW8lS9ywjevFN3wjrqhQA8Bs5cu/qMjjy5+0u8zIsmPPQ2hTtLOae8WES+u4gQ+LxwXUa8oaIbPMMKgDyqz3m6OfHjOwXZxDyNw9A73fLDvLovI7zq4cI8J1hxOsoJWLySeP27xmMpPPwX3bvUcZ08dA1FPEwln7xLkaG83JU1PXvylzuiZru7GN61PFNOkrxwbr28IbEQPTSH9TpVfJ07qrtOPPnC6bzQkpY7oiomPbY06LwSwQK9FCHwvBKElrx1Q4a86ZiBu4X5nTyE8DI8chITvHkBrLwncK88FnwLvCWyzbwNzh87q8rUvNyZsDxPtRu8RB/yPIkIebz/+n+8/CkJPYXfNrtEdfw7MS6sPPj9Vjwv24q8wRStu8y5hDzLAIG8gwTQPLIhvLwqz7O8vmohvWW+ATuM1AW9GnWNO8UQ27yfgP67p7/hOo3MHrwUC8a81GHeO8lrbDs/W5E6hgtaPKBlmry7jVG81M/RPL3dbjwjE3u8Ey48vDbRUDyHwTa7rtEFu9TQUzuBK/e785LfvFlN3jowrA29FdarOyC6mTpaq/s8wDC/us44ozvjaaI8vo+4PAJtejuW+Yg7hBC7vKmnn7ykzZa7EdEavKCQCjyQkPk8EHjku1udeTx/Lzw81t+8OwZShjn2hOa7Vyy0vMZ1wzwDUQU88IP8O2DfHDsGG5s7iS9wvMfRJj2Rvco71hAavb2EtDzm/Kk8/DfpO0UhWTySq108LNIavCypdj10LDi9DE6cuxdUYbtwScG7QXFrvNFdWzxrQ9C6ozKQPO7gFL2+qyU8rVJiOovPtjv+DgE83FdmPOR7BzzRXHK7K+FcPAeKtjviufQ8jcU4umEchLz18Ga8nWwyu9tBkzueP9s8Ww9tPPo20LwLIsy7oHAGPBVmcrvPawy8wHx+PO2xLDzP9ga860J7vEvE8jvTQt087V78PFIZxTmXKai8vZ+Tu7+FbD0SVie91ZkMvMyjNLrm6Au9pShBvGQmx7voYoU7PUUJOn+iQDzJEhw9KgIevHam07ymZOa61iF/PEiE6jxWL4E85v0lPYorgzwT3187lB+bvMirpzxXp+o8HBhpO6Hk6jo+3lY8SDWAO+NFHj0b+8O8xKgOvMK2g7z3JGm8whdNOv/wmbzbGOY8X4msu8VIrrxfsJA8kXewugBKyzz/eDK9c3+8vARgEL38OVK8A/xsPDchETwlTCu6EI4RPeaNljwXVBo9bmqlPJB/iTsz5Q08k1Mku2mmnTxuENU7dI0CPCLsADwlnIS7fRvzPEV7wTyK0qa87osVPIYLdDsuZTQ7DX8FvMEg4bsaGZS8ijr3vED/jzwgl5872qMVPJjP6TusuAq9ZJbEOpnZGLyt/rW8JkYsu6FOI73sZJi8uIvoPPue2Lwjmca8cU42u+aJgLxLM8O7oJxkPNRPgjxDVgg9n/x7u9xwpDxdp0e6YJR6PB0dgjycYRq9eTkTPIFakbqBSwq8/ntzPHc+hzsFUNm878OOO8LjVbs8z7K7jf9/vFz+ZLxDFEq82Bj8u0g1vDxjGVW84aJUvCxtgjvjr8I8nkmUvJJojTwKGkU8VTcBPOaqvDyZY4k8RAihvIT9mTv0S9U63huRPAAaMj1SlWA8NET/u+I8Hjz4Fso7iJITvGLFEzzfkdi6MRmSPNoto7w+Q0u8lJbruzdbmbwdHm68MpSnvNfcUrsvt7a8gV/Vu7oxFDyfeZK8lqQvvNyq3zwOthM980MgO4fAEbw/0148w0LUuzIGzDuPLA+9JJ0EPL8wdLs2Tii8rjclvE+qOzvpcR06imSLvErE8bzdD7S8I4QWvKAKw7ycmzm9heeaOzPLFLsFgiC9yYaduUZ0Ej2FOL67vzAaPbYpFDvfDJa6w0ZUPLEl6juEm4S8+WjXvEx80bt9rX68DHsYvf3gBDwlrhW7Q6oXu5OHULy4aj+66KgMvFU9IrwgaGK9O1XGOgta4zyWrO28YwAHvfep1zz7TAW9GT5QPCkVwrwsIMw8sOydvI8PibwiAcQ7KYn9vDiEsDytxfE81MQAO6tp3rx3ZrY8r+KSOyFx0jyt20Q8F/6nujqOizc0mdM7Ki3DO55tEr3NW6U749n0uphGwTv7RaG8kO1AvFFKEr2ifCY75XcIvelMzLs/sNq8VIEPPJ0zMrwt+3G7Xs2pvDIUBDxoCa+8cuAyvXlQELyKVNK8CQaxPMDM3rxmyr08L3ghvPY/GTwP9FO8rK8fvOshITwGttO7+3laO+meTrw6ehI7hVMGvfw3qTzifm08ZN41vMGKHLowRJ87TidDO/7yITwItXO8x4F5PE2wAbvzQHG8D/favNlJu7zgv8i7/ShjPKaW4Tw9sjW8PTxjPLndMLyF4Im8DUcGvUKNl7ysyvw7NfgqPMnS2LzBnc48raHSPAWHyTw14ZE78nvCPNmfrTt59eY8KD2TO9ArmrqGvtI8NO2JPH7y2zsfz4c8ZV4tPRmDxTymOCC9mgH0u7mrnTznAq482X1wPDRZ7btAcvy7pqnBuzlxRjxY9Ky7LcNFPHmD4Lj9zrO8vplNvaE3azra73u8d4oUPNtUeDxdaC080mXHO65IJbxFPSG6vefIvJVLUzyzNGw6veAwO4QE4TxONDg8n0KDPPhGZjtLFKq8yNoXPH4xizydwq48wD2TPL9msrrWLIe8yorPOwMJVLzFDqQ6PJArO0BhBzoTeqG89TC/OzeUGTw1aMe7I4iJPJuqLLwYiDE9IkjSO3ZB6LtTKKi74b0TPW1J0bsPKjO8IGlqPFQX5rzo7Tq7fA2PPAbDiTy61j87BWufvDTBvDqmxGY7BMEmPU6qGrxiqXq7oT3HO5YJ+rwQ2xK8UOZmPB5/uzzYGvw7OwjSvHRLNL3kJbC8gD63utpALT1r7yG9o/pou/ua2bydEhq8H+hKvOulBzwlE2+8EHmmPG41m7ylA8E7nT5KPARDxbxjnl29mvL3PLOcCDyRChw8fx8iPBmNmzyonpE7OgsaPWzuS70Fk368xdhvPK/8YDtB6/k75FFnu6yHM72uSIM81IFfPC+NKD13IBE9iHb/uqqIDLzuFGu8Nc78vFf6+jxq54O72LrrO5TlLbwXr5C8oECHO/MnKb2unyS8BYWRu2G6eb0armm8vhO/u5yvFb1t9uK8Hy+/O7Q9FDwKeAa82OSkuUsuhTzuIwm8d002u/B0mDyBxxw8K0tzvIB/XzvxLRm78yOouw+Cejwp/qu8Wvlxu9tAVr06Fqg8eFTKPGSRnTtF7UO95mCmOQ5VtjxI4eu88LQXu8kFEz1ILpE8Mq3vOxfHOTwowW47+le1O5wQmLykhNW5PdIku3wyUbxZRa08P16XvIZyvbwSGEW9AHK6vOEd+jw5Zxw7X/bhO5hLjzxHlNa8sM+RPFTXMrwoXf68LkOBPEgVA73NdrW8dGWfPFQU2zzBvim8z3uIvGfWyjp7uFm87bpUOvvSSby3W5c88bbgvO2gpLu570S8xLytuSpwDbyvH8W7jpCiu1kEKj0zrB08kBG7vLrFM7z2EV07b7+Huu81Gr0ntJ05zxkVPMywbDuWzbI8mtcgPQ0/4zyxqyu8lQGju/7toToP+Xy7v4rqu9WFyDmyAlW74K7NPBcNwLwjdpu7SIe2PNNmcbzYcNi72CwGvDGNAL05B7i8CNHJvAt1RrzxuHY6WYcNu7w4NzuB0KC8LwVQPNp7iTvrc0g74F28PMArg7wHwok8zIBZPOCuQLxDroW8QXYIvOf587xaA5K88nUxvNMJL7ycqXg8DMHYu5hcVDveth+9mLSePN8qCT1Ua+s7cCFoPEsg9DuaN468n7BkPNk4ErtLQ5+7e3WDPIbeDbxMyYs8FogtPGPnhjuhmhc7OY7xPNZqt7wArUC8GPw1vOMbl7xrwQM96/EyvKA5+7zb6kg8xsDYPEpqDzxhoI87aVaGvDRdijxyT068Ob/WvNWnI732Dlq8iV2GvBFEZ7uX5b28PdIsvEItfTzyV088Qn6xvD0jPTwamsc7sVYjvNBuCjwbUcG6JPMsOdORAL1nN6Y8bxO0u+DSb7xzEii8uljWu1uJuzxFe0E9Hq1VPGWz3rktKBo9/Ccfvc0hXjuNwaG8BaWJPLd6a71NWwi8Rn8mvNkkEb0GLro8f95nvNFogjz7QNm7Md16vBhvXj1q+aO89KfYPMgtqDtnf/u8tsVePJneGb2HadU8nFGsvLVhLz2Xojc8V4uTusPTIbzMCR84GrQcPVPRKTwEG2k7ll0OvKGMPDzKGHg8OpZWPLsHkjy0kFc8SCKJvO8nnTsm/AG8NT5VPMNwQrpwhiw9ZTPWu7o1C70vVnM8UD0qvH0w9Dv4aKa8wPocO4+jCL0ALeG4RJ6Ou6snPLr1Wpy8jX/eO9p/2TuR4T08CXmuvEmzfLxyHyq7old4PLweuDwwxHe7r8WMvGlJLTw0lHy67sssu3w1ijx/Yjq7M1+luQ3AzzxTPAe8KWYlO2gaND2dnTW7qMdFvEyRs7rRFEK8mTubuwVaubzkR287zGWdPA6gtrxLfOi8PofZOxxrQTxL0A89sUqLPFVC6bvjyF08QUmfu3nT9bveHBm9p8EJvTseU7wfolI8V7HVPFCgqbzMNDo9199gPOTPnTyUPbU8F9lxvPG6Gz3eRRG9lhCTOSAcaDyWrIU74Lymu9h7RryUu1W9cpGKPDLqwzyG9fK8vMvvul4xtTucD0Y8zjlmPAaTL7t8Kl4528MSvanqirx2mwO8//y2PIHXFz2Ku0g8c+FWPLH6Mrs42qo8aw0ru+cuE7tz/ou8piK/uxIE2rt7VUw8OdctvAHCKLvCkU69bp9NuyA2hbwe/4M7zlD6O9dEijyntdE7Df1DvNnALD2giwq8C5sJunRNhbtkO2q7EbwpPJYVRbslnMc7SQ7NvFtPHrzehjK9ENfku+g1irtzbdo5J2COPFn2pbwASh+9w7/ou19dCjo5hUO8WaxEPMA1W7sMaFi8QR7EPF77xTwhpN+6O3wKPO1aTry0efi76lefPKTvwLujwGU7YYb5PF1HuDynBwS9doa7PGXj57vNrRA8WDsfPYUhrrwcPkQ9INSmPPY8ljy5bds8lt/CuvGV4juvRHa8Gqxgu4tnDT1xSES85G+TOWu6sjsq8Ds9rABNPEavUrvN14w8LNDSPI1usTy9NB89hY8uuhDDX7xZQJM6gUsDPePi5LqNceQ5lpsQu/aKjLwIgUA82/S7ul/icDyoIEQ8qCPJuyZWmTstfiO8gfCzvJO+Lzyx39G8C2OgumvG8DuB4Fs8ote9vLDd57mGESK8ZthfvAG+gry/klY9HAprvKnhA719ZqG7Rw0AO4kLEbydvJO8iHneuvq4P7wpjgs92WRyve6yOzzc2OO8vlpNPBRBLrx7sTM8pUvqPIi6NDyDSq46QrRnPFg9BzwX0JO7skl1PBHuabxGQI48reIUvapNBDxIt/27QpQHPaLiuLsg/428FtDLOrvxsrsv0Zg8aCc/vIyrCD2Es5S6dxb+PE7teTrL2xQ9EWWwPLqUlrsmWNk8MgdJPPnON7wNiyI7BLQmvAp9Yzy98Yg8V/hQvR5wBLtjFCC9vPwhvLu+dTz+aPG84lQDvaqmQDz04Ns7ixLLPJOPNDvpd+C8zZAOvI6b0bxJlyG8UCZfvDPdnzwzZTS91HUkvOjt8bx/PFA9OTyxO5TakbnZYWM86yy1vN4GB7zvRCO80EQ1PcQATLyK63I8lEWyvO6em7psSTS8qufyux9zp7uIWRy9QlDoPGkwgDzt72+7M9HePJHntrp/Iv+6qczUvHGUuDxj46s7qEn9vFlUjLzHDqA6+U0RO+KgGbzXvxU7JNgavFxK3TtwAYY8Ba/Wu44zKTxuuGA8w87eOyV5ejx/QzE8rQwovGdvVbwSUg87WfqpvFo/9brvdss8SkAAvIulKruORIu8fRi0vL31cjxI2yo6/zHVu1jvwzsfT5e8olV8vA1TI7tfW5K8UPsFvK1IKDxpkxY85r0lvGTgJTwQVHo8poTaunBIwbzADzW6CumoOw==
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 13
+        total_tokens: 13
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3732'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: Which DocLayNet class has the highest number of annotated instances in the training split?
+        role: user
+      - content: |-
+          <think>
+          Need search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet highest number of annotated instances training split class"}'
+            name: search_and_answer
+          id: call_1ownxxqj
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_1ownxxqj
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '468'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: I couldn’t find reliable information on the specific DocLayNet class that has the most annotated instances
+            in the training split.
+          reasoning: Very low data. Probably cannot answer.
+          role: assistant
+      created: 1768225976
+      id: chatcmpl-820
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 42
+        prompt_tokens: 814
+        total_tokens: 856
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4086'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: Which DocLayNet class has the highest number of annotated instances in the training split?
+        role: user
+      - content: |-
+          <think>
+          Need search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet highest number of annotated instances training split class"}'
+            name: search_and_answer
+          id: call_1ownxxqj
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_1ownxxqj
+      - content: |-
+          <think>
+          Very low data. Probably cannot answer.
+          </think>
+
+          I couldn’t find reliable information on the specific DocLayNet class that has the most annotated instances in the training split.
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '741'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Must use final_result.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"I couldn''t locate a reliable source indicating which DocLayNet class has the highest
+                number of annotated instances in the training split.","cited_chunks":[],"confidence":0.1,"query":"Which DocLayNet
+                class has the highest number of annotated instances in the training split?"}'
+              name: final_result
+            id: call_j7c19s6a
+            index: 0
+            type: function
+      created: 1768225978
+      id: chatcmpl-870
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 82
+        prompt_tokens: 881
+        total_tokens: 963
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2862'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What is the exact numeric count of the class identified as highest‑count in the training split of DocLayNet?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '535'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":null,"query":"DocLayNet training split highest count class exactly numeric count"}'
+              name: search_and_answer
+            id: call_t7ddi37q
+            index: 0
+            type: function
+      created: 1768225979
+      id: chatcmpl-136
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 44
+        prompt_tokens: 625
+        total_tokens: 669
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '136'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet training split highest count class exactly numeric count
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 13
+        total_tokens: 13
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3753'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What is the exact numeric count of the class identified as highest‑count in the training split of DocLayNet?
+        role: user
+      - content: |-
+          <think>
+          Need search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":null,"query":"DocLayNet training split highest count class exactly numeric count"}'
+            name: search_and_answer
+          id: call_t7ddi37q
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_t7ddi37q
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '597'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: |-
+            **Answer**
+
+            I couldn’t find any source in the supplied knowledge base that provides the exact numeric count of the class with the highest frequency in the training split of DocLayNet.
+          reasoning: Only low score. Maybe training split stats not in docs. Maybe not in knowledge base. We could say insufficient.
+          role: assistant
+      created: 1768225981
+      id: chatcmpl-523
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 69
+        prompt_tokens: 820
+        total_tokens: 889
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4236'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results and their relevance scores.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and relevance score
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Higher scores indicate more relevant results.
+        role: system
+      - content: What is the exact numeric count of the class identified as highest‑count in the training split of DocLayNet?
+        role: user
+      - content: |-
+          <think>
+          Need search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":null,"query":"DocLayNet training split highest count class exactly numeric count"}'
+            name: search_and_answer
+          id: call_t7ddi37q
+          type: function
+      - content: |-
+          [2b9401ae-5311-4bae-8a6e-188fbb6f6d61] (score: 0.03)
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_t7ddi37q
+      - content: |-
+          <think>
+          Only low score. Maybe training split stats not in docs. Maybe not in knowledge base. We could say insufficient.
+          </think>
+
+          **Answer**
+
+          I couldn’t find any source in the supplied knowledge base that provides the exact numeric count of the class with the highest frequency in the training split of DocLayNet.
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '816'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: We must use function call final_result.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"I couldn’t find any source in the supplied knowledge base that provides the exact numeric
+                count of the class with the highest frequency in the training split of DocLayNet.","cited_chunks":[],"confidence":0.2,"query":"What
+                is the exact numeric count of the class identified as highest‑count in the training split of DocLayNet?"}'
+              name: final_result
+            id: call_14vxm1dd
+            index: 0
+            type: function
+      created: 1768225984
+      id: chatcmpl-910
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 100
+        prompt_tokens: 914
+        total_tokens: 1014
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3485'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          Generate a direct, conversational answer
+          to the question based on the gathered evidence.
+
+          Output:
+          - answer: Direct, comprehensive answer with a natural, helpful tone.
+            Write the actual answer, not a description of what you found.
+            Use as many sentences as needed to fully address the question.
+          - confidence: Score from 0.0 to 1.0 indicating answer quality.
+
+          Guidelines:
+          - Base your answer solely on the collected evidence in qa_responses.
+          - Be thorough - include all relevant information from the evidence.
+          - Use formatting (bullet points, numbered lists) when it improves clarity.
+          - Do NOT use meta-commentary like "Based on the research..." or "The evidence shows..."
+            Instead, directly state the information.
+          - If the evidence is incomplete, acknowledge limitations briefly.
+        role: system
+      - content: |-
+          Answer the question based on the gathered evidence.
+
+          <context>
+            <question>What is the highest count class in the DocLayNet dataset?</question>
+            <conversation_history>
+              <item>
+                <question>What are the DocLayNet class labels, and how many instances of each class appear in the training split of the dataset?</question>
+                <answer>DocLayNet defines 11 class labels: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, and Table. The dataset documentation does not provide per‑class instance counts for the training split.</answer>
+                <sources>
+                  <item>DocLayNet Class Labels</item>
+                </sources>
+              </item>
+              <item>
+                <question>Which DocLayNet class has the highest number of annotated instances in the training split?</question>
+                <answer>I couldn't locate a reliable source indicating which DocLayNet class has the highest number of annotated instances in the training split.</answer>
+                <sources />
+              </item>
+              <item>
+                <question>What is the exact numeric count of the class identified as highest‑count in the training split of DocLayNet?</question>
+                <answer>I couldn’t find any source in the supplied knowledge base that provides the exact numeric count of the class with the highest frequency in the training split of DocLayNet.</answer>
+                <sources />
+              </item>
+            </conversation_history>
+          </context>
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Conversational answer for chat context.
+          name: final_result
+          parameters:
+            $defs:
+              Citation:
+                additionalProperties: false
+                description: Resolved citation with full metadata for display/visual grounding.
+                properties:
+                  chunk_id:
+                    type: string
+                  content:
+                    type: string
+                  document_id:
+                    type: string
+                  document_title:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                  document_uri:
+                    type: string
+                  headings:
+                    anyOf:
+                    - items:
+                        type: string
+                      type: array
+                    - type: 'null'
+                    default: null
+                  page_numbers:
+                    items:
+                      type: integer
+                    type: array
+                required:
+                - document_id
+                - chunk_id
+                - document_uri
+                - content
+                type: object
+            additionalProperties: false
+            properties:
+              answer:
+                description: Direct answer to the question
+                type: string
+              citations:
+                description: Citations supporting the answer
+                items:
+                  $ref: '#/$defs/Citation'
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+            required:
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '737'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: 'Need answer: highest count class in DocLayNet. Evidence says unknown. So answer: cannot determine.'
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"I’m sorry, but I don’t have any information that tells us which DocLayNet class is the
+                most frequent in the training split, nor the numeric count for that class.","citations":[],"confidence":0.4}'
+              name: final_result
+            id: call_slgy0nwa
+            index: 0
+            type: function
+      created: 1768225986
+      id: chatcmpl-610
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 89
+        prompt_tokens: 624
+        total_tokens: 713
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4607'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a helpful research assistant powered by haiku.rag, a knowledge base system.
+
+          You have access to a knowledge base of documents. Use your tools to search and answer questions.
+
+          CRITICAL RULES:
+          1. For greetings or casual chat: respond directly WITHOUT using any tools
+          2. For questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+          3. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
+          4. NEVER call the same tool multiple times for a single user message
+          5. NEVER make up information - always use tools to get facts from the knowledge base
+
+          How to decide which tool to use:
+          - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
+          - "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
+          - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
+
+          IMPORTANT - When user mentions a document in search/ask:
+          - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
+            - Extract the TOPIC as `query`/`question`
+            - Extract the DOCUMENT NAME as `document_name`
+          - Examples for search:
+            - "search for embeddings in the ML paper" → query="embeddings", document_name="ML paper"
+            - "find transformer architecture in 2412.00566" → query="transformer architecture", document_name="2412.00566"
+          - Examples for ask:
+            - "what does the ML paper say about embeddings?" → question="what are the embedding methods?", document_name="ML paper"
+            - "answer from 2412.00566 about model training" → question="how is the model trained?", document_name="2412.00566"
+
+          Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user.
+        role: system
+      - content: What is the highest count class in the DocLayNet dataset?
+        role: user
+      - content: |-
+          <think>
+          Need ask.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"document_name":"DocLayNet","question":"What is the highest count class in the DocLayNet dataset?"}'
+            name: ask
+          id: call_avkrjhyc
+          type: function
+      - content: |-
+          I’m sorry, but I don’t have any information that tells us which DocLayNet class is the most frequent in the training split, nor the numeric count for that class.
+
+          Sources: [1]
+        role: tool
+        tool_call_id: call_avkrjhyc
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Use this when you need to find documents or explore the knowledge base.
+            Results are displayed to the user - just list the titles found.
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: 5)'
+              query:
+                description: The search query (what to search for)
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            Answer a specific question using the knowledge base.
+
+            Use this for direct questions that need a focused answer with citations.
+            Uses a research graph for planning, searching, and synthesis.
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within (e.g., "tbmed593", "army manual")
+              question:
+                description: The question to answer
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+      - function:
+          description: |-
+            Retrieve a specific document by title or URI.
+
+            Use this when the user wants to fetch/get/retrieve a specific document.
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '387'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: I’m not able to find that specific information in the DocLayNet data available in the knowledge base.
+          role: assistant
+      created: 1768225988
+      id: chatcmpl-722
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 25
+        prompt_tokens: 952
+        total_tokens: 977
+    status:
+      code: 200
+      message: OK
+version: 1
