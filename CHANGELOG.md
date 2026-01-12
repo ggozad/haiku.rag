@@ -1,12 +1,37 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Conversational RAG Application**: Full-stack application (`app/`) with CopilotKit frontend and pydantic-ai AG-UI backend
+  - Next.js frontend with chat interface, citation display, and visual grounding
+  - Starlette backend using pydantic-ai's native `AGUIAdapter` for streaming
+  - Docker Compose setup for development (`docker-compose.dev.yml`) and production
+  - Logfire integration for debugging LLM calls
+  - SSE heartbeat to prevent connection timeouts
+- **Chat Agent** (`haiku.rag.agents.chat`): New conversational RAG agent optimized for multi-turn chat
+  - `create_chat_agent()` factory function for creating chat agents with AG-UI support
+  - `SearchAgent` for internal query expansion with deduplication
+  - `ChatDeps` and `ChatSessionState` for session management
+  - `CitationInfo` and `QAResponse` models for structured responses
+  - Natural language document filtering via `build_document_filter()`
+  - Configurable search limit per agent
+- **Q/A History Management**: Intelligent conversation history with semantic ranking
+  - FIFO queue with 50 max entries
+  - Embedding cache to avoid re-embedding Q/A pairs
+  - `rank_qa_history_by_similarity()` returns top-K most relevant history entries
+  - Confidence filtering to exclude low-confidence answers from context
+- **Conversational Research Graph**: Simplified single-iteration research graph for chat
+  - `build_conversational_graph()` optimized for conversational Q&A
+  - Context-aware planning (generates fewer sub-questions when history exists)
+  - `ConversationalAnswer` output type with direct answer and citations
+
 ### Changed
 
 - **BREAKING: Module Reorganization**: Consolidated all agent code under `haiku.rag.agents`
   - Moved `haiku.rag.qa` → `haiku.rag.agents.qa`
   - Moved `haiku.rag.graph.research` → `haiku.rag.agents.research`
-  - Added `haiku.rag.agents.chat` module with conversational RAG agent (`create_chat_agent`, `SearchAgent`, `ChatDeps`, `ChatSessionState`)
+  - Added `haiku.rag.agents.chat` module with conversational RAG agent
   - Deleted `haiku.rag.graph` module (research graph now at `haiku.rag.agents.research.graph`)
 
 ### Removed
@@ -20,6 +45,7 @@
   - Deleted `cli_chat.py` interactive chat module
   - Research graph now uses `graph.run()` directly instead of `stream_graph()`
   - For AG-UI streaming, use pydantic-ai's native `AGUIAdapter` with `ToolReturn` and `StateSnapshotEvent` (see `app/backend/` for example)
+- **AG-UI Research Example**: Removed `examples/ag-ui-research/` (replaced by `app/`)
 
 ## [0.25.0] - 2026-01-12
 
