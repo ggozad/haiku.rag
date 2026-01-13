@@ -119,7 +119,7 @@ def main():
     ]
 
     example_pyproject_files = [
-        root / "examples" / "ag-ui-research" / "backend" / "pyproject.toml",
+        root / "app" / "backend" / "pyproject.toml",
         root / "examples" / "a2a-server" / "pyproject.toml",
     ]
 
