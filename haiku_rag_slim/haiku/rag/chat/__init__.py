@@ -18,7 +18,7 @@ def run_chat(
         from haiku.rag.chat.app import ChatApp
     except ImportError as e:
         raise ImportError(
-            "Textual is required for the chat TUI. Install with: pip install textual"
+            "textual is not installed. Please install it with `pip install 'haiku.rag-slim[tui]'` or use the full haiku.rag package."
         ) from e
 
     from haiku.rag.config import get_config

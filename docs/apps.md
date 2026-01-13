@@ -6,6 +6,9 @@ Three interactive applications for working with your knowledge base.
 
 Conversational RAG from the terminal with streaming responses and session memory.
 
+!!! note
+    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
+
 ### Usage
 
 ```bash
@@ -111,15 +114,8 @@ docker compose -f docker-compose.dev.yml up -d --build frontend
 
 TUI for browsing documents, chunks, and search results.
 
-### Installation
-
-```bash
-# For haiku.rag-slim
-pip install 'haiku.rag-slim[inspector]'
-
-# Already included in haiku.rag
-pip install haiku.rag
-```
+!!! note
+    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
 
 ### Usage
 

@@ -37,6 +37,7 @@ The slim package has minimal dependencies and lets you install only what you nee
 - `mxbai` - MixedBread AI reranking
 - `cohere` - Cohere reranking
 - `zeroentropy` - Zero Entropy reranking
+- `tui` - Terminal UI for `chat` and `inspect` commands
 
 **Built-in providers** (no extras needed):
 - **Ollama** (default embedding provider)

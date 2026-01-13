@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.0] - 2026-01-13
+
 ### Added
 
 - **Conversational RAG Application**: Full-stack application (`app/`) with CopilotKit frontend and pydantic-ai AG-UI backend

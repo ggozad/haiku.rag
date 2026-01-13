@@ -170,6 +170,9 @@ haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
 ```
 
+!!! note
+    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
+
 The chat interface provides:
 
 - Streaming responses with real-time tool execution
