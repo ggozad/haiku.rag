@@ -741,7 +741,7 @@ wheels = [
 
 [[package]]
 name = "docling"
-version = "2.67.0"
+version = "2.65.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -773,9 +773,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a7/eb/1900eaf576ab935d5b630a5ba6eb0e7063a2e1d36542df2f9ba572505d57/docling-2.67.0.tar.gz", hash = "sha256:d8c1992bbc090cee8c3f602fa63ac0c3127a65e3cabdf509d23ebb4e14feaf38", size = 259923, upload-time = "2026-01-09T08:37:37.984Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/dc/d42fb4dbe39578ff81d9c52b7a1faaf115c014a38a6e335e6db7ced80658/docling-2.65.0.tar.gz", hash = "sha256:64c6feccf808e19f6100aa9e2a6c71c992cd66e897cdfb33ccf15d0b62873b50", size = 257037, upload-time = "2025-12-15T16:56:16.609Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/99/fa9ac2cffaa77cf46b6414d0a32490b2580c8f3753ab1c65d983ee27f3a0/docling-2.67.0-py3-none-any.whl", hash = "sha256:d3ea4c0d7a64fce4b8f8b38415e075f6637384eaadb27acbf5621673e0da7669", size = 277794, upload-time = "2026-01-09T08:37:36.52Z" },
+    { url = "https://files.pythonhosted.org/packages/94/71/ba084670cc4cc3679f7ab650a32ff3ddbf61ad7a1eb559104ee819c028cf/docling-2.65.0-py3-none-any.whl", hash = "sha256:02b00096e2785c08924c9fa89034b918d90f0ee6625aacf20435d1d847c89d09", size = 275389, upload-time = "2025-12-15T16:56:15.003Z" },
 ]
 
 [[package]]
@@ -1289,11 +1289,11 @@ name = "haiku-rag"
 version = "0.26.0"
 source = { editable = "." }
 dependencies = [
-    { name = "haiku-rag-slim", extra = ["cohere", "docling", "inspector", "mxbai", "voyageai", "zeroentropy"] },
+    { name = "haiku-rag-slim", extra = ["cohere", "docling", "mxbai", "tui", "voyageai", "zeroentropy"] },
 ]
 
 [package.optional-dependencies]
-inspector = [
+tui = [
     { name = "textual" },
 ]
 
@@ -1315,10 +1315,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "inspector"], editable = "haiku_rag_slim" },
-    { name = "textual", marker = "extra == 'inspector'", specifier = ">=1.0.0" },
+    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "tui"], editable = "haiku_rag_slim" },
+    { name = "textual", marker = "extra == 'tui'", specifier = ">=1.0.0" },
 ]
-provides-extras = ["inspector"]
+provides-extras = ["tui"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1398,15 +1398,15 @@ google = [
 groq = [
     { name = "pydantic-ai-slim", extra = ["groq"] },
 ]
-inspector = [
-    { name = "textual" },
-    { name = "textual-image" },
-]
 mistral = [
     { name = "pydantic-ai-slim", extra = ["mistral"] },
 ]
 mxbai = [
     { name = "mxbai-rerank" },
+]
+tui = [
+    { name = "textual" },
+    { name = "textual-image" },
 ]
 vertexai = [
     { name = "pydantic-ai-slim", extra = ["vertexai"] },
@@ -1421,7 +1421,7 @@ zeroentropy = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.1" },
-    { name = "docling", marker = "extra == 'docling'", specifier = "==2.67.0" },
+    { name = "docling", marker = "extra == 'docling'", specifier = "==2.65.0" },
     { name = "docling-core", specifier = "==2.57.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lancedb", specifier = "==0.26.1" },
@@ -1439,14 +1439,14 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.2.0" },
-    { name = "textual", marker = "extra == 'inspector'", specifier = ">=7.0.0" },
-    { name = "textual-image", marker = "extra == 'inspector'", specifier = ">=0.8.5" },
+    { name = "textual", marker = "extra == 'tui'", specifier = ">=7.0.0" },
+    { name = "textual-image", marker = "extra == 'tui'", specifier = ">=0.8.5" },
     { name = "typer", specifier = ">=0.19.2,<0.20.0" },
     { name = "voyageai", marker = "extra == 'voyageai'", specifier = ">=0.3.7" },
     { name = "watchfiles", specifier = ">=1.1.1" },
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a7" },
 ]
-provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "inspector", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 
 [[package]]
 name = "hf-xet"
