@@ -28,7 +28,7 @@ from haiku.rag.store.repositories.settings import SettingsRepository
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.graph.research.models import Citation
+    from haiku.rag.agents.research.models import Citation
 
 logger = logging.getLogger(__name__)
 
@@ -1275,7 +1275,7 @@ class HaikuRAG:
         Returns:
             Tuple of (answer text, list of resolved citations).
         """
-        from haiku.rag.qa import get_qa_agent
+        from haiku.rag.agents.qa import get_qa_agent
 
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question, filter=filter)

@@ -1,11 +1,10 @@
 # Agents
 
-Two agentic flows are provided by haiku.rag:
+Three agentic flows are provided by haiku.rag:
 
 - **Simple QA Agent** — a focused question answering agent
+- **Chat Agent** — multi-turn conversational RAG with session memory
 - **Research Graph** — a multi-step research workflow with question decomposition
-
-For an interactive example using Pydantic AI and AG-UI, see the [Interactive Research Assistant](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research) example ([demo video](https://vimeo.com/1128874386)).
 
 See [QA and Research Configuration](configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
 
@@ -35,7 +34,7 @@ haiku-rag ask "What are the main features of haiku.rag?" --deep
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.qa.agent import QuestionAnswerAgent
+from haiku.rag.agents.qa.agent import QuestionAnswerAgent
 
 async with HaikuRAG(path_to_db) as client:
     agent = QuestionAnswerAgent(
@@ -48,6 +47,69 @@ async with HaikuRAG(path_to_db) as client:
     answer = await agent.answer("What is climate change?")
     print(answer)
 ```
+
+## Chat Agent
+
+The chat agent enables multi-turn conversational RAG. It maintains session state including Q/A history and uses that context to improve follow-up answers.
+
+Key features:
+
+- **Session memory**: Previous Q/A pairs are used as context for follow-up questions
+- **Query expansion**: SearchAgent generates multiple query variations for better recall
+- **Document filtering**: Natural language document filtering ("search in document X about...")
+- **Confidence filtering**: Low-confidence answers are flagged
+
+### Tools
+
+The chat agent uses three tools:
+
+- `search` — Hybrid search with optional document filter
+- `ask` — Answer questions using the conversational research graph
+- `get_document` — Retrieve a specific document by title or URI
+
+### CLI Usage
+
+```bash
+haiku-rag chat
+haiku-rag chat --db /path/to/database.lancedb
+```
+
+See [Applications](apps.md#chat-tui) for the full TUI interface guide.
+
+### Python Usage
+
+```python
+from haiku.rag.client import HaikuRAG
+from haiku.rag.agents.chat import create_chat_agent, ChatDeps, ChatSessionState
+
+async with HaikuRAG(path_to_db) as client:
+    # Create agent and session
+    agent = create_chat_agent(config)
+    session = ChatSessionState()
+    deps = ChatDeps(client=client, config=config, session_state=session)
+
+    # First question
+    result = await agent.run("What is haiku.rag?", deps=deps)
+    print(result.output)
+
+    # Follow-up (uses session context)
+    result = await agent.run("How does it handle PDFs?", deps=deps)
+    print(result.output)
+```
+
+### Session State
+
+The `ChatSessionState` maintains:
+
+- `session_id` — Unique identifier for the session
+- `qa_history` — List of previous Q/A pairs (FIFO, max 50)
+- `embedding_cache` — Cached embeddings for semantic ranking
+
+Q/A history is used to:
+
+1. Provide context for follow-up questions
+2. Avoid repeating previous answers
+3. Enable semantic ranking of relevant past answers
 
 ## Research Graph
 
@@ -96,9 +158,6 @@ stateDiagram-v2
 # Basic usage
 haiku-rag research "How does haiku.rag organize and query documents?"
 
-# With verbose output (shows progress)
-haiku-rag research "How does haiku.rag organize and query documents?" --verbose
-
 # With document filter
 haiku-rag research "What are the key findings?" --filter "uri LIKE '%report%'"
 ```
@@ -110,9 +169,9 @@ haiku-rag research "What are the key findings?" --filter "uri LIKE '%report%'"
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 async with HaikuRAG(path_to_db) as client:
     graph = build_research_graph(config=Config)
@@ -131,9 +190,9 @@ async with HaikuRAG(path_to_db) as client:
 ```python
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, ResearchConfig
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 custom_config = AppConfig(
     research=ResearchConfig(
@@ -154,35 +213,6 @@ async with HaikuRAG(path_to_db) as client:
     report = await graph.run(state=state, deps=deps)
 ```
 
-**Streaming AG-UI events:**
-
-```python
-from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
-from haiku.rag.graph.agui import stream_graph
-from haiku.rag.graph.research.dependencies import ResearchContext
-from haiku.rag.graph.research.graph import build_research_graph
-from haiku.rag.graph.research.state import ResearchDeps, ResearchState
-
-async with HaikuRAG(path_to_db) as client:
-    graph = build_research_graph(config=Config)
-    context = ResearchContext(original_question="What are the main features?")
-    state = ResearchState.from_config(context=context, config=Config)
-    deps = ResearchDeps(client=client)
-
-    async for event in stream_graph(graph, state, deps):
-        if event["type"] == "STEP_STARTED":
-            print(f"Starting step: {event['stepName']}")
-        elif event["type"] == "ACTIVITY_SNAPSHOT":
-            content = event["content"]
-            print(f"  {content['message']}")
-            if "confidence" in content:
-                print(f"    Confidence: {content['confidence']:.0%}")
-        elif event["type"] == "RUN_FINISHED":
-            report = event["result"]
-            print(report["executive_summary"])
-```
-
 ### Filtering Documents
 
 Restrict searches to specific documents via the `search_filter` parameter:
@@ -196,35 +226,3 @@ report = await graph.run(state=state, deps=deps)
 ```
 
 The filter applies to all search operations in the graph. See [Filtering Search Results](python.md#filtering-search-results) for available filter columns and syntax.
-
-### Interactive Research Mode
-
-Interactive mode provides human-in-the-loop control over the research process through a conversational interface.
-
-**CLI usage:**
-
-```bash
-# Start interactive research mode
-haiku-rag research --interactive
-
-# Start with a specific question
-haiku-rag research --interactive "How does X work?"
-
-# With document filter
-haiku-rag research --interactive --filter "uri LIKE '%report%'"
-```
-
-In interactive mode, you can:
-
-- Chat with the assistant before starting research
-- Review the generated sub-questions after planning
-- Add, remove, or modify questions through natural conversation
-- Execute searches and review collected answers
-- Continue researching or synthesize when ready
-
-For a web-based interactive experience, see the [AG-UI Research Example](https://github.com/ggozad/haiku.rag/tree/main/examples/ag-ui-research). The example demonstrates AG-UI client-side tool calling:
-
-- Frontend handles `human_decision` tool calls via AG-UI `TOOL_CALL_*` events
-- Decision UI rendered inline in the chat at each decision point
-- Question editing (add/remove) and action buttons (Search, Generate Report)
-- Tool results sent directly to the backend endpoint which queues decisions and continues the graph

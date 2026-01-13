@@ -10,8 +10,8 @@ from packaging.version import Version, parse
 if TYPE_CHECKING:
     from rich.console import RenderableType
 
+    from haiku.rag.agents.research.models import Citation
     from haiku.rag.config.models import AppConfig, ModelConfig
-    from haiku.rag.graph.research.models import Citation
 
 
 def parse_datetime(s: str) -> datetime:

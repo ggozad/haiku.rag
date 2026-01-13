@@ -400,7 +400,6 @@ class TestDoclingLocalConverter:
         assert pic_desc.timeout == 120
 
     @pytest.mark.asyncio
-    @pytest.mark.integration
     @pytest.mark.vcr()
     async def test_picture_description_end_to_end(self, config):
         """End-to-end test: convert PDF with VLM picture descriptions."""
@@ -408,6 +407,8 @@ class TestDoclingLocalConverter:
         if not pdf_path.exists():
             pytest.skip("doclaynet.pdf not found")
 
+        # Disable OCR (not needed for native PDF, avoids model downloads)
+        config.processing.conversion_options.do_ocr = False
         # Enable picture description with Ollama
         config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.model.provider = (

@@ -148,11 +148,6 @@ Use deep QA for complex questions (multi-agent decomposition):
 haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --cite
 ```
 
-Show verbose output with deep QA:
-```bash
-haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --verbose
-```
-
 Filter to specific documents:
 ```bash
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
@@ -164,8 +159,25 @@ Flags:
 
 - `--cite`: Include citations showing which documents were used
 - `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
-- `--verbose`: Show planning, searching, evaluation, and synthesis steps (only with `--deep`)
 - `--filter`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
+
+## Chat
+
+Launch an interactive chat session for multi-turn conversations:
+
+```bash
+haiku-rag chat
+haiku-rag chat --db /path/to/database.lancedb
+```
+
+The chat interface provides:
+
+- Streaming responses with real-time tool execution
+- Expandable citations with source metadata
+- Session memory for context-aware follow-up questions
+- Visual grounding to inspect chunk source locations
+
+See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
 
 ## Research
 
@@ -175,42 +187,17 @@ Run the multi-step research graph:
 haiku-rag research "How does haiku.rag organize and query documents?"
 ```
 
-With verbose output to see progress:
-
-```bash
-haiku-rag research "How does haiku.rag organize and query documents?" --verbose
-```
-
 Filter to specific documents:
 
 ```bash
 haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
 ```
 
-Interactive mode with human-in-the-loop:
-
-```bash
-# Start interactive research mode
-haiku-rag research --interactive
-
-# Start with a specific question
-haiku-rag research --interactive "How does haiku.rag work?"
-
-# With document filter
-haiku-rag research --interactive --filter "uri LIKE '%docs%'"
-```
-
 Flags:
 
-- `--verbose`: Show planning, searching previews, evaluation summary, and stop reason
 - `--filter`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
-- `--interactive` / `-i`: Start interactive research mode with human-in-the-loop decision points
 
 Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
-
-When `--verbose` is set, the CLI consumes the research graph's AG-UI event stream, displaying step events and activity snapshots as agents progress through planning, search, evaluation, and synthesis. Without `--verbose`, only the final research report is displayed.
-
-If you build your own integration, import `stream_graph` from `haiku.rag.graph.agui` to access AG-UI events (`STEP_STARTED`, `ACTIVITY_SNAPSHOT`, `STATE_SNAPSHOT`, `RUN_FINISHED`, etc.) and render them however you like while the graph is running.
 
 ## Server
 
@@ -225,16 +212,8 @@ haiku-rag serve --mcp --stdio
 # File monitoring only
 haiku-rag serve --monitor
 
-# AG-UI server only
-haiku-rag serve --agui
-
-# Multiple services
+# Both services
 haiku-rag serve --monitor --mcp
-haiku-rag serve --monitor --agui
-haiku-rag serve --mcp --agui
-
-# All services
-haiku-rag serve --monitor --mcp --agui
 
 # Custom MCP port
 haiku-rag serve --mcp --mcp-port 9000

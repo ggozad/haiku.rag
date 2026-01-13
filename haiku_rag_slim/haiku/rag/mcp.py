@@ -4,9 +4,9 @@ from typing import Any
 from fastmcp import FastMCP
 from pydantic import BaseModel
 
+from haiku.rag.agents.research.models import ResearchReport
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.graph.research.models import ResearchReport
 from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import format_citations
 
@@ -186,9 +186,9 @@ def create_mcp_server(
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 if deep:
-                    from haiku.rag.graph.research.dependencies import ResearchContext
-                    from haiku.rag.graph.research.graph import build_research_graph
-                    from haiku.rag.graph.research.state import (
+                    from haiku.rag.agents.research.dependencies import ResearchContext
+                    from haiku.rag.agents.research.graph import build_research_graph
+                    from haiku.rag.agents.research.state import (
                         ResearchDeps,
                         ResearchState,
                     )
@@ -230,9 +230,9 @@ def create_mcp_server(
             A research report with findings, or None if an error occurred.
         """
         try:
-            from haiku.rag.graph.research.dependencies import ResearchContext
-            from haiku.rag.graph.research.graph import build_research_graph
-            from haiku.rag.graph.research.state import ResearchDeps, ResearchState
+            from haiku.rag.agents.research.dependencies import ResearchContext
+            from haiku.rag.agents.research.graph import build_research_graph
+            from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 graph = build_research_graph(config=config)

@@ -54,16 +54,15 @@ class TestStoreReadOnly:
         store._assert_writable()  # Should not raise
         store.close()
 
-    def test_vacuum_raises_when_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_vacuum_raises_when_read_only(self, temp_db_path):
         """vacuum() raises ReadOnlyError when read_only=True."""
         store = Store(temp_db_path, create=True)
         store.close()
 
         store = Store(temp_db_path, read_only=True)
         with pytest.raises(ReadOnlyError):
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(store.vacuum())
+            await store.vacuum()
         store.close()
 
     def test_set_haiku_version_raises_when_read_only(self, temp_db_path):
