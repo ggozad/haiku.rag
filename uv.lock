@@ -741,7 +741,7 @@ wheels = [
 
 [[package]]
 name = "docling"
-version = "2.65.0"
+version = "2.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -773,14 +773,14 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/dc/d42fb4dbe39578ff81d9c52b7a1faaf115c014a38a6e335e6db7ced80658/docling-2.65.0.tar.gz", hash = "sha256:64c6feccf808e19f6100aa9e2a6c71c992cd66e897cdfb33ccf15d0b62873b50", size = 257037, upload-time = "2025-12-15T16:56:16.609Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/eb/1900eaf576ab935d5b630a5ba6eb0e7063a2e1d36542df2f9ba572505d57/docling-2.67.0.tar.gz", hash = "sha256:d8c1992bbc090cee8c3f602fa63ac0c3127a65e3cabdf509d23ebb4e14feaf38", size = 259923, upload-time = "2026-01-09T08:37:37.984Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/71/ba084670cc4cc3679f7ab650a32ff3ddbf61ad7a1eb559104ee819c028cf/docling-2.65.0-py3-none-any.whl", hash = "sha256:02b00096e2785c08924c9fa89034b918d90f0ee6625aacf20435d1d847c89d09", size = 275389, upload-time = "2025-12-15T16:56:15.003Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/99/fa9ac2cffaa77cf46b6414d0a32490b2580c8f3753ab1c65d983ee27f3a0/docling-2.67.0-py3-none-any.whl", hash = "sha256:d3ea4c0d7a64fce4b8f8b38415e075f6637384eaadb27acbf5621673e0da7669", size = 277794, upload-time = "2026-01-09T08:37:36.52Z" },
 ]
 
 [[package]]
 name = "docling-core"
-version = "2.57.0"
+version = "2.59.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonref" },
@@ -794,9 +794,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/fa/541931a448ddc9609a3e21ca176baf28bd0a89cbbd7be23380637a87d427/docling_core-2.57.0.tar.gz", hash = "sha256:24b71172e8bc4fbe2b4213b29f51878114f4c13f25fc0bc9920168505c76c1a3", size = 230768, upload-time = "2025-12-18T14:18:14.928Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/ae/b1216598ab2f2a0fbe5fe974bcd65d9407f26fff0ba89cf6d8d760601a0a/docling_core-2.59.0.tar.gz", hash = "sha256:08900edbaf86a0acdd3d1fb5d47284f3826f68638245ba4a03aba1558d0067d9", size = 231580, upload-time = "2026-01-12T16:40:21.321Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/1c/03cc087b360b7815c5472f5cfaaf9b09fa6d0397c05c120a7c623654bf21/docling_core-2.57.0-py3-none-any.whl", hash = "sha256:398768b4d275ad2e11703ad9446fd0315a9a5fc8d09bc45ed207302d844d6ed5", size = 223002, upload-time = "2025-12-18T14:18:13.558Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/e7/27ba60d253b65415e6e709fda5ddfc1baf82fa9f8fbd8ae14b9bbbba5474/docling_core-2.59.0-py3-none-any.whl", hash = "sha256:014e1075c41fdac0932f25226d6c0972cb9772d866efcf8d04ca2abe246797c1", size = 223304, upload-time = "2026-01-12T16:40:19.488Z" },
 ]
 
 [package.optional-dependencies]
@@ -805,7 +805,6 @@ chunking = [
     { name = "transformers" },
     { name = "tree-sitter" },
     { name = "tree-sitter-c" },
-    { name = "tree-sitter-java" },
     { name = "tree-sitter-javascript" },
     { name = "tree-sitter-python" },
     { name = "tree-sitter-typescript" },
@@ -1421,8 +1420,8 @@ zeroentropy = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.1" },
-    { name = "docling", marker = "extra == 'docling'", specifier = "==2.65.0" },
-    { name = "docling-core", specifier = "==2.57.0" },
+    { name = "docling", marker = "extra == 'docling'", specifier = "==2.67.0" },
+    { name = "docling-core", specifier = "==2.59.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lancedb", specifier = "==0.26.1" },
     { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
@@ -4932,21 +4931,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/32/c6/d0563319cae0d5b5780a92e2806074b24afea2a07aa4c10599b899bda3ec/tree_sitter_c-0.24.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:789781afcb710df34144f7e2a20cd80e325114b9119e3956c6bd1dd2d365df98", size = 94148, upload-time = "2025-05-24T17:32:54.855Z" },
     { url = "https://files.pythonhosted.org/packages/50/5a/6361df7f3fa2310c53a0d26b4702a261c332da16fa9d801e381e3a86e25f/tree_sitter_c-0.24.1-cp310-abi3-win_amd64.whl", hash = "sha256:290bff0f9c79c966496ebae45042f77543e6e4aea725f40587a8611d566231a8", size = 84703, upload-time = "2025-05-24T17:32:56.084Z" },
     { url = "https://files.pythonhosted.org/packages/22/6a/210a302e8025ac492cbaea58d3720d66b7d8034c5d747ac5e4d2d235aa25/tree_sitter_c-0.24.1-cp310-abi3-win_arm64.whl", hash = "sha256:d46bbda06f838c2dcb91daf767813671fd366b49ad84ff37db702129267b46e1", size = 82715, upload-time = "2025-05-24T17:32:57.248Z" },
-]
-
-[[package]]
-name = "tree-sitter-java"
-version = "0.23.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fa/dc/eb9c8f96304e5d8ae1663126d89967a622a80937ad2909903569ccb7ec8f/tree_sitter_java-0.23.5.tar.gz", hash = "sha256:f5cd57b8f1270a7f0438878750d02ccc79421d45cca65ff284f1527e9ef02e38", size = 138121, upload-time = "2024-12-21T18:24:26.936Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/21/b3399780b440e1567a11d384d0ebb1aea9b642d0d98becf30fa55c0e3a3b/tree_sitter_java-0.23.5-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:355ce0308672d6f7013ec913dee4a0613666f4cda9044a7824240d17f38209df", size = 58926, upload-time = "2024-12-21T18:24:12.53Z" },
-    { url = "https://files.pythonhosted.org/packages/57/ef/6406b444e2a93bc72a04e802f4107e9ecf04b8de4a5528830726d210599c/tree_sitter_java-0.23.5-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:24acd59c4720dedad80d548fe4237e43ef2b7a4e94c8549b0ca6e4c4d7bf6e69", size = 62288, upload-time = "2024-12-21T18:24:14.634Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/6c/74b1c150d4f69c291ab0b78d5dd1b59712559bbe7e7daf6d8466d483463f/tree_sitter_java-0.23.5-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9401e7271f0b333df39fc8a8336a0caf1b891d9a2b89ddee99fae66b794fc5b7", size = 85533, upload-time = "2024-12-21T18:24:16.695Z" },
-    { url = "https://files.pythonhosted.org/packages/29/09/e0d08f5c212062fd046db35c1015a2621c2631bc8b4aae5740d7adb276ad/tree_sitter_java-0.23.5-cp39-abi3-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:370b204b9500b847f6d0c5ad584045831cee69e9a3e4d878535d39e4a7e4c4f1", size = 84033, upload-time = "2024-12-21T18:24:18.758Z" },
-    { url = "https://files.pythonhosted.org/packages/43/56/7d06b23ddd09bde816a131aa504ee11a1bbe87c6b62ab9b2ed23849a3382/tree_sitter_java-0.23.5-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:aae84449e330363b55b14a2af0585e4e0dae75eb64ea509b7e5b0e1de536846a", size = 82564, upload-time = "2024-12-21T18:24:20.493Z" },
-    { url = "https://files.pythonhosted.org/packages/da/d6/0528c7e1e88a18221dbd8ccee3825bf274b1fa300f745fd74eb343878043/tree_sitter_java-0.23.5-cp39-abi3-win_amd64.whl", hash = "sha256:1ee45e790f8d31d416bc84a09dac2e2c6bc343e89b8a2e1d550513498eedfde7", size = 60650, upload-time = "2024-12-21T18:24:22.902Z" },
-    { url = "https://files.pythonhosted.org/packages/72/57/5bab54d23179350356515526fff3cc0f3ac23bfbc1a1d518a15978d4880e/tree_sitter_java-0.23.5-cp39-abi3-win_arm64.whl", hash = "sha256:402efe136104c5603b429dc26c7e75ae14faaca54cfd319ecc41c8f2534750f4", size = 59059, upload-time = "2024-12-21T18:24:24.934Z" },
 ]
 
 [[package]]

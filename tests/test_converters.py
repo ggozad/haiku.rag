@@ -24,7 +24,7 @@ def create_mock_docling_document(name: str = "test") -> dict:
     """Create a minimal valid DoclingDocument JSON structure for mocking."""
     return {
         "schema_name": "DoclingDocument",
-        "version": "1.8.0",
+        "version": "1.9.0",
         "name": name,
         "origin": {
             "mimetype": "text/markdown",
@@ -506,7 +506,7 @@ class TestDoclingServeConverter:
 
             doc = await converter.convert_text("# Test", name="test.md")
             assert isinstance(doc, DoclingDocument)
-            assert doc.version == "1.8.0"
+            assert doc.version == "1.9.0"
             mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
