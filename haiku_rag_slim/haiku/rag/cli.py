@@ -540,6 +540,21 @@ def inspect(
     run_inspector(db_path, read_only=_read_only, before=_before)
 
 
+@cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
+def chat(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    """Launch the chat TUI for conversational RAG."""
+    from haiku.rag.chat import run_chat
+
+    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+    run_chat(db_path, read_only=_read_only, before=_before)
+
+
 @cli.command(
     "serve",
     help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",

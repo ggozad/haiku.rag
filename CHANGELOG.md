@@ -16,6 +16,11 @@
   - `CitationInfo` and `QAResponse` models for structured responses
   - Natural language document filtering via `build_document_filter()`
   - Configurable search limit per agent
+- **Chat TUI** (`haiku-rag chat`): Terminal-based chat interface using Textual
+  - Single chat window with inline tool calls and expandable citations
+  - Visual grounding (`v` key) reuses inspector's `VisualGroundingModal`
+  - Database info (`i` key) shows document/chunk counts and storage info
+  - Keybindings: `q` quit, `Ctrl+L` clear chat, `Escape` focus input
 - **Q/A History Management**: Intelligent conversation history with semantic ranking
   - FIFO queue with 50 max entries
   - Embedding cache to avoid re-embedding Q/A pairs
