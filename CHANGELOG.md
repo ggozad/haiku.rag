@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.1] - 2026-01-13
+
+### Fixed
+
+- **Docling Schema Version Mismatch**: Fixed incompatibility between `docling` and `docling-core` causing `ValidationError: Doc version 1.9.0 incompatible with SDK schema version 1.8.0` when adding documents ([#229](https://github.com/ggozad/haiku.rag/issues/229))
+  - Root cause: `docling-core` was reverted to 2.57.0 (schema 1.8.0) for docling-serve compatibility, but `docling` remained at 2.67.0 (schema 1.9.0)
+  - Fix: Reverted `docling` from 2.67.0 to 2.65.0 to match `docling-core` schema version
+
 ## [0.26.0] - 2026-01-13
 
 ### Added
