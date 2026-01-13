@@ -253,6 +253,22 @@ class TestDoclingLocalConverter:
         """Create DoclingLocalConverter instance."""
         return DoclingLocalConverter(config)
 
+    @pytest.mark.asyncio
+    async def test_docling_document_serialization_roundtrip(self, converter):
+        """Test that DoclingDocument can be serialized and parsed back.
+
+        This catches version mismatches between docling (which creates documents)
+        and docling-core (which parses them). If their schema versions differ,
+        model_validate_json() will raise a ValidationError.
+        """
+        doc = await converter.convert_text("# Test\n\nContent here", name="test.md")
+
+        json_str = doc.model_dump_json()
+        parsed = DoclingDocument.model_validate_json(json_str)
+
+        assert parsed.name == doc.name
+        assert parsed.version == doc.version
+
     def test_supported_extensions(self, converter):
         """Test that converter reports correct supported extensions."""
         extensions = converter.supported_extensions
