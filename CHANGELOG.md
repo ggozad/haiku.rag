@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.2] - 2026-01-13
+
 ### Changed
 
 - **Dependencies**: Updated docling dependencies for latest docling-serve compatibility ([#229](https://github.com/ggozad/haiku.rag/issues/229))
