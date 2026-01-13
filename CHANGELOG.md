@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies**: Updated docling dependencies for latest docling-serve compatibility ([#229](https://github.com/ggozad/haiku.rag/issues/229))
+  - `docling-core`: 2.57.0 → 2.59.0 (supports schema 1.9.0)
+  - `docling`: 2.65.0 → 2.67.0
+
 ## [0.26.1] - 2026-01-13
 
 ### Fixed

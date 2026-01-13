@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling-core==2.57.0",
+    "docling-core==2.59.0",
     "httpx>=0.28.1",
     "lancedb==0.26.1",
     "pathspec>=0.12.1",
@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling==2.65.0", "opencv-python-headless>=4.12.0.88"]
+docling = ["docling==2.67.0", "opencv-python-headless>=4.12.0.88"]
 # Embedding providers
 voyageai = ["voyageai>=0.3.7"]
 # Rerankers
