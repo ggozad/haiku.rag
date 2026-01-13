@@ -161,6 +161,24 @@ Flags:
 - `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
 - `--filter`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
 
+## Chat
+
+Launch an interactive chat session for multi-turn conversations:
+
+```bash
+haiku-rag chat
+haiku-rag chat --db /path/to/database.lancedb
+```
+
+The chat interface provides:
+
+- Streaming responses with real-time tool execution
+- Expandable citations with source metadata
+- Session memory for context-aware follow-up questions
+- Visual grounding to inspect chunk source locations
+
+See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
+
 ## Research
 
 Run the multi-step research graph:

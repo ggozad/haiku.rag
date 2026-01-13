@@ -8,6 +8,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Question answering** — QA agents with citations (page numbers, section headings)
 - **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
+- **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion and visual grounding
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
@@ -48,17 +49,20 @@ haiku-rag add "Your document content" --meta author=alice
 haiku-rag add-src /path/to/document.pdf --title "Q3 Financial Report" --meta source=manual
 haiku-rag search "query"
 haiku-rag ask "Who is the author of haiku.rag?"
+haiku-rag chat  # Interactive conversation mode
 ```
 
 ## Documentation
 
 - [Getting started](tutorial.md) - Tutorial
 - [Installation](installation.md) - Install haiku.rag with different providers
+- [Architecture](architecture.md) - System overview and data flow
 - [Configuration](configuration/index.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
 - [Python](python.md) - Python API reference
 - [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
-- [Agents](agents.md) - QA agent and multi-agent research
+- [Agents](agents.md) - QA, chat, and research agents
+- [Applications](apps.md) - Chat TUI, web app, and inspector
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration
 - [Remote processing](remote-processing.md) - Remote document processing with docling-serve

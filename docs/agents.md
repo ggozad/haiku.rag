@@ -1,8 +1,9 @@
 # Agents
 
-Two agentic flows are provided by haiku.rag:
+Three agentic flows are provided by haiku.rag:
 
 - **Simple QA Agent** — a focused question answering agent
+- **Chat Agent** — multi-turn conversational RAG with session memory
 - **Research Graph** — a multi-step research workflow with question decomposition
 
 See [QA and Research Configuration](configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
@@ -46,6 +47,69 @@ async with HaikuRAG(path_to_db) as client:
     answer = await agent.answer("What is climate change?")
     print(answer)
 ```
+
+## Chat Agent
+
+The chat agent enables multi-turn conversational RAG. It maintains session state including Q/A history and uses that context to improve follow-up answers.
+
+Key features:
+
+- **Session memory**: Previous Q/A pairs are used as context for follow-up questions
+- **Query expansion**: SearchAgent generates multiple query variations for better recall
+- **Document filtering**: Natural language document filtering ("search in document X about...")
+- **Confidence filtering**: Low-confidence answers are flagged
+
+### Tools
+
+The chat agent uses three tools:
+
+- `search` — Hybrid search with optional document filter
+- `ask` — Answer questions using the conversational research graph
+- `get_document` — Retrieve a specific document by title or URI
+
+### CLI Usage
+
+```bash
+haiku-rag chat
+haiku-rag chat --db /path/to/database.lancedb
+```
+
+See [Applications](apps.md#chat-tui) for the full TUI interface guide.
+
+### Python Usage
+
+```python
+from haiku.rag.client import HaikuRAG
+from haiku.rag.agents.chat import create_chat_agent, ChatDeps, ChatSessionState
+
+async with HaikuRAG(path_to_db) as client:
+    # Create agent and session
+    agent = create_chat_agent(config)
+    session = ChatSessionState()
+    deps = ChatDeps(client=client, config=config, session_state=session)
+
+    # First question
+    result = await agent.run("What is haiku.rag?", deps=deps)
+    print(result.output)
+
+    # Follow-up (uses session context)
+    result = await agent.run("How does it handle PDFs?", deps=deps)
+    print(result.output)
+```
+
+### Session State
+
+The `ChatSessionState` maintains:
+
+- `session_id` — Unique identifier for the session
+- `qa_history` — List of previous Q/A pairs (FIFO, max 50)
+- `embedding_cache` — Cached embeddings for semantic ranking
+
+Q/A history is used to:
+
+1. Provide context for follow-up questions
+2. Avoid repeating previous answers
+3. Enable semantic ranking of relevant past answers
 
 ## Research Graph
 

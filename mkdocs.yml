@@ -59,6 +59,7 @@ nav:
       - index.md
       - Getting started: tutorial.md
       - Installation: installation.md
+      - Architecture: architecture.md
       - Configuration:
           - configuration/index.md
           - Providers: configuration/providers.md
@@ -71,10 +72,10 @@ nav:
       - Custom Pipelines: custom-pipelines.md
       - Tuning: tuning.md
       - Agents: agents.md
+      - Applications: apps.md
       - Server: server.md
       - Remote processing: remote-processing.md
       - MCP: mcp.md
-      - Inspector: inspector.md
       - Benchmarks: benchmarks.md
       - Development: development.md
       - Changelog: changelog.md
