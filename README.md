@@ -11,6 +11,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Question answering** — QA agents with citations (page numbers, section headings)
 - **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
+- **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Visual grounding** — View chunks highlighted on original page images
 - **Time travel** — Query the database at any historical point with `--before`
@@ -57,10 +58,10 @@ haiku-rag ask "What datasets were used for evaluation?" --cite
 haiku-rag ask "How does the proposed method compare to the baseline on MMLU?" --deep
 
 # Research mode — iterative planning and search
-haiku-rag research "What are the limitations of the approach?" --verbose
+haiku-rag research "What are the limitations of the approach?"
 
-# Interactive research — human-in-the-loop with decision points
-haiku-rag research "Compare the approaches discussed" --interactive
+# Interactive chat — multi-turn conversations with memory
+haiku-rag chat
 
 # Watch a directory for changes
 haiku-rag serve --monitor
@@ -90,7 +91,7 @@ async with HaikuRAG("research.lancedb", create=True) as rag:
         print(f"  [{cite.chunk_id}] p.{cite.page_numbers}: {cite.content[:80]}")
 ```
 
-For research agents and streaming with [AG-UI](https://docs.ag-ui.com/), see the [Agents docs](https://ggozad.github.io/haiku.rag/agents/).
+For research agents and chat, see the [Agents docs](https://ggozad.github.io/haiku.rag/agents/).
 
 ## MCP Server
 
@@ -119,22 +120,23 @@ Provides tools for document management, search, QA, and research directly in you
 
 See the [examples directory](examples/) for working examples:
 
-- **[Interactive Research Assistant](examples/ag-ui-research/)** - Full-stack research assistant with Pydantic AI and AG-UI featuring human-in-the-loop approval and real-time state synchronization
 - **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring and MCP server
 - **[A2A Server](examples/a2a-server/)** - Self-contained A2A protocol server package with conversational agent interface
+- **[Web Application](app/)** - Full-stack conversational RAG with CopilotKit frontend
 
 ## Documentation
 
 Full documentation at: https://ggozad.github.io/haiku.rag/
 
 - [Installation](https://ggozad.github.io/haiku.rag/installation/) - Provider setup
+- [Architecture](https://ggozad.github.io/haiku.rag/architecture/) - System overview
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA agent and multi-agent research
-- [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring, MCP, and AG-UI
+- [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA, chat, and research agents
+- [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
+- [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring and MCP
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
-- [Inspector](https://ggozad.github.io/haiku.rag/inspector/) - Database browser TUI
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance benchmarks
 - [Changelog](https://ggozad.github.io/haiku.rag/changelog/) - Version history
 
