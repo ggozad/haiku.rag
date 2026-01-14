@@ -289,6 +289,40 @@ async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
+async def test_chat_agent_search_with_state_key(allow_model_requests, temp_db_path):
+    """Test search tool emits keyed state when state_key is set."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-search")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+            state_key="haiku_rag",
+        )
+
+        result = await agent.run(
+            "Search for documents about class labels",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        assert len(result.output) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chat_agent_search_tool_with_filter(allow_model_requests, temp_db_path):
     """Test the chat agent's search tool with document filter."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -500,6 +534,35 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
 
         assert result.output is not None
         # The qa_history should have been updated with the new Q&A
+        assert len(session_state.qa_history) >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path):
+    """Test ask tool emits keyed state when state_key is set."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-ask-keyed")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+            state_key="haiku_rag",
+        )
+
+        result = await agent.run(
+            "What is the highest count class in the DocLayNet dataset?",
+            deps=deps,
+        )
+
+        assert result.output is not None
         assert len(session_state.qa_history) >= 1
 
 
