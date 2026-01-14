@@ -3,6 +3,7 @@
 
 ### Added
 
+- **Enhanced Database Info**: `haiku-rag info` now displays `pydantic-ai` version and `docling-document schema` version
 - **Keyed State Emission for Chat Agent**: New `state_key` parameter in `ChatDeps` for namespaced AG-UI state snapshots
   - When set, tools emit `{state_key: snapshot}` instead of bare state, enabling state merging when multiple agents share state
   - Default `None` preserves backwards compatibility (bare state emission)

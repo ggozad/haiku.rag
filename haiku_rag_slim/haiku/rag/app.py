@@ -98,6 +98,10 @@ class HaikuRAGApp:
             docling_version = pkg_version("docling")
         except Exception:
             docling_version = "unknown"
+        pydantic_ai_version = pkg_version("pydantic-ai-slim")
+        from docling_core.types.doc.document import DoclingDocument
+
+        docling_document_version = DoclingDocument.model_construct().version
 
         # Get comprehensive table statistics (this also runs migrations)
         from haiku.rag.store.engine import Store
@@ -218,6 +222,12 @@ class HaikuRAGApp:
         )
         self.console.print(
             f"  [repr.attrib_name]docling[/repr.attrib_name]: {docling_version}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]pydantic-ai[/repr.attrib_name]: {pydantic_ai_version}"
+        )
+        self.console.print(
+            f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {docling_document_version}"
         )
 
     async def history(self, table: str | None = None, limit: int | None = None):

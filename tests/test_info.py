@@ -81,6 +81,8 @@ async def test_app_info_outputs(temp_db_path, capsys):
     # Package versions section
     assert "lancedb:" in out
     assert "haiku.rag:" in out
+    assert "docling-document schema:" in out
+    assert "pydantic-ai:" in out
 
 
 @pytest.mark.asyncio
