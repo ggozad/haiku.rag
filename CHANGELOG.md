@@ -3,6 +3,9 @@
 
 ### Added
 
+- **Keyed State Emission for Chat Agent**: New `state_key` parameter in `ChatDeps` for namespaced AG-UI state snapshots
+  - When set, tools emit `{state_key: snapshot}` instead of bare state, enabling state merging when multiple agents share state
+  - Default `None` preserves backwards compatibility (bare state emission)
 - **Page Image Generation Control**: New `generate_page_images` option in `ConversionOptions` to control PDF page image extraction
   - `generate_page_images: bool = True` - Enable/disable rendered page images (used by `visualize_chunk()`)
   - Works with both `docling-local` and `docling-serve` converters

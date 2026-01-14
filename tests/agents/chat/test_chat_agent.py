@@ -40,6 +40,28 @@ def test_chat_deps_initialization(temp_db_path):
     client.close()
 
 
+def test_chat_deps_with_state_key(temp_db_path):
+    """Test ChatDeps can be initialized with state_key for keyed state emission."""
+    client = HaikuRAG(temp_db_path, create=True)
+    deps = ChatDeps(client=client, config=Config, state_key="my_state")
+
+    assert deps.client is client
+    assert deps.config is Config
+    assert deps.state_key == "my_state"
+
+    client.close()
+
+
+def test_chat_deps_state_key_default_none(temp_db_path):
+    """Test ChatDeps state_key defaults to None."""
+    client = HaikuRAG(temp_db_path, create=True)
+    deps = ChatDeps(client=client, config=Config)
+
+    assert deps.state_key is None
+
+    client.close()
+
+
 def test_chat_session_state():
     """Test ChatSessionState model."""
     state = ChatSessionState(session_id="test-session")
@@ -267,6 +289,40 @@ async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
+async def test_chat_agent_search_with_state_key(allow_model_requests, temp_db_path):
+    """Test search tool emits keyed state when state_key is set."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-search")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+            state_key="haiku_rag",
+        )
+
+        result = await agent.run(
+            "Search for documents about class labels",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        assert len(result.output) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chat_agent_search_tool_with_filter(allow_model_requests, temp_db_path):
     """Test the chat agent's search tool with document filter."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -478,6 +534,35 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
 
         assert result.output is not None
         # The qa_history should have been updated with the new Q&A
+        assert len(session_state.qa_history) >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path):
+    """Test ask tool emits keyed state when state_key is set."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-ask-keyed")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+            state_key="haiku_rag",
+        )
+
+        result = await agent.run(
+            "What is the highest count class in the DocLayNet dataset?",
+            deps=deps,
+        )
+
+        assert result.output is not None
         assert len(session_state.qa_history) >= 1
 
 
