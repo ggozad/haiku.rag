@@ -1415,57 +1415,53 @@ class HaikuRAG:
         """Re-embed all chunks without changing chunk boundaries."""
         from haiku.rag.embeddings import contextualize
 
-        batch_size = 50
-        pending_records: list = []
-        pending_doc_ids: list[str] = []
+        # Collect all chunks with new embeddings
+        all_chunk_data: list[tuple[str, dict]] = []
 
         for doc in documents:
             assert doc.id is not None
-
-            # Get existing chunks
             chunks = await self.chunk_repository.get_by_document_id(doc.id)
             if not chunks:
-                yield doc.id
                 continue
 
-            # Generate new embeddings using contextualize for consistency
             texts = contextualize(chunks)
             embeddings = await self.chunk_repository.embedder.embed_documents(texts)
 
-            # Build updated records
             for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
-                pending_records.append(
-                    self.store.ChunkRecord(
-                        id=chunk.id,  # type: ignore[arg-type]
-                        document_id=chunk.document_id,  # type: ignore[arg-type]
-                        content=chunk.content,
-                        content_fts=content_fts,
-                        metadata=json.dumps(chunk.metadata),
-                        order=chunk.order,
-                        vector=embedding,
+                all_chunk_data.append(
+                    (
+                        doc.id,
+                        {
+                            "id": chunk.id,
+                            "document_id": chunk.document_id,
+                            "content": chunk.content,
+                            "content_fts": content_fts,
+                            "metadata": json.dumps(chunk.metadata),
+                            "order": chunk.order,
+                            "vector": embedding,
+                        },
                     )
                 )
 
-            pending_doc_ids.append(doc.id)
+        # Recreate chunks table (handles dimension changes)
+        self.store.recreate_embeddings_table()
 
-            # Flush batch when size reached
-            if len(pending_doc_ids) >= batch_size:
-                if pending_records:
-                    self.store.chunks_table.merge_insert(
-                        "id"
-                    ).when_matched_update_all().execute(pending_records)
-                for doc_id in pending_doc_ids:
-                    yield doc_id
-                pending_records = []
-                pending_doc_ids = []
+        # Insert all chunks
+        if all_chunk_data:
+            records = [self.store.ChunkRecord(**data) for _, data in all_chunk_data]
+            self.store.chunks_table.add(records)
 
-        # Flush remaining
-        if pending_records:
-            self.store.chunks_table.merge_insert(
-                "id"
-            ).when_matched_update_all().execute(pending_records)
-        for doc_id in pending_doc_ids:
-            yield doc_id
+        # Yield all processed doc IDs
+        yielded_docs: set[str] = set()
+        for doc_id, _ in all_chunk_data:
+            if doc_id not in yielded_docs:
+                yielded_docs.add(doc_id)
+                yield doc_id
+
+        # Yield docs with no chunks
+        for doc in documents:
+            if doc.id and doc.id not in yielded_docs:
+                yield doc.id
 
     async def _flush_rebuild_batch(
         self, documents: list[Document], chunks: list[Chunk]
