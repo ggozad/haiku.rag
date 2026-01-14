@@ -90,11 +90,7 @@ class Store:
         self._before = before
         # Time-travel mode is always read-only
         self._read_only = read_only or (before is not None)
-        self.embedder = get_embedder(config=self._config)
         self._vacuum_lock = asyncio.Lock()
-
-        # Create the ChunkRecord model with the correct vector dimension
-        self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
 
         # Check if database exists (for local filesystem only)
         is_new_db = False
@@ -112,6 +108,19 @@ class Store:
 
         # Connect to LanceDB
         self.db = self._connect_to_lancedb(db_path)
+
+        # For existing databases, read stored vector dimension to create ChunkRecord
+        # that can read existing chunks. For new databases, use config's dimension.
+        stored_vector_dim = None
+        if not is_new_db:
+            stored_vector_dim = self._get_stored_vector_dim()
+
+        # Create embedder with config's dimension (for generating new embeddings)
+        self.embedder = get_embedder(config=self._config)
+
+        # Create ChunkRecord with stored dimension (for reading) or config dimension (for new DB)
+        chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
+        self.ChunkRecord = create_chunk_model(chunk_vector_dim)
 
         # Initialize tables (creates them if they don't exist)
         self._init_tables()
@@ -136,6 +145,35 @@ class Store:
     def is_read_only(self) -> bool:
         """Whether the store is in read-only mode."""
         return self._read_only
+
+    def _get_stored_vector_dim(self) -> int | None:
+        """Read the stored vector dimension from the settings table.
+
+        Returns:
+            The stored vector dimension, or None if not found.
+        """
+        try:
+            existing_tables = self.db.table_names()
+            if "settings" not in existing_tables:
+                return None
+
+            settings_table = self.db.open_table("settings")
+            rows = (
+                settings_table.search()
+                .where("id = 'settings'")
+                .limit(1)
+                .to_arrow()
+                .to_pylist()
+            )
+            if not rows or not rows[0].get("settings"):
+                return None
+
+            settings = json.loads(rows[0]["settings"])
+            embeddings = settings.get("embeddings", {})
+            model = embeddings.get("model", {})
+            return model.get("vector_dim")
+        except Exception:
+            return None
 
     def _assert_writable(self) -> None:
         """Raise ReadOnlyError if the store is in read-only mode."""

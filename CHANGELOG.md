@@ -7,6 +7,12 @@
   - When set, tools emit `{state_key: snapshot}` instead of bare state, enabling state merging when multiple agents share state
   - Default `None` preserves backwards compatibility (bare state emission)
 - **Page Image Generation Control**: New `generate_page_images` option in `ConversionOptions` to control PDF page image extraction
+
+### Fixed
+
+- **Embed-only rebuild with changed vector dimensions**: Fixed `haiku-rag rebuild --embed-only` failing when the configured embedding model has different dimensions than the database
+  - Store now reads stored vector dimension when opening existing databases, allowing chunks to be read regardless of current config
+  - `_rebuild_embed_only` recreates the chunks table to handle dimension changes
   - `generate_page_images: bool = True` - Enable/disable rendered page images (used by `visualize_chunk()`)
   - Works with both `docling-local` and `docling-serve` converters
   - For `docling-serve`, maps to `image_export_mode` API parameter (`embedded`/`placeholder`)
