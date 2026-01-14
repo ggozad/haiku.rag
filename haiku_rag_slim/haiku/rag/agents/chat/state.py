@@ -159,6 +159,7 @@ class ChatDeps:
     config: AppConfig
     search_results: list[SearchResult] | None = None
     session_state: ChatSessionState | None = None
+    state_key: str | None = None
 
 
 @dataclass

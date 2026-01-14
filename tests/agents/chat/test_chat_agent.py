@@ -40,6 +40,28 @@ def test_chat_deps_initialization(temp_db_path):
     client.close()
 
 
+def test_chat_deps_with_state_key(temp_db_path):
+    """Test ChatDeps can be initialized with state_key for keyed state emission."""
+    client = HaikuRAG(temp_db_path, create=True)
+    deps = ChatDeps(client=client, config=Config, state_key="my_state")
+
+    assert deps.client is client
+    assert deps.config is Config
+    assert deps.state_key == "my_state"
+
+    client.close()
+
+
+def test_chat_deps_state_key_default_none(temp_db_path):
+    """Test ChatDeps state_key defaults to None."""
+    client = HaikuRAG(temp_db_path, create=True)
+    deps = ChatDeps(client=client, config=Config)
+
+    assert deps.state_key is None
+
+    client.close()
+
+
 def test_chat_session_state():
     """Test ChatSessionState model."""
     state = ChatSessionState(session_id="test-session")

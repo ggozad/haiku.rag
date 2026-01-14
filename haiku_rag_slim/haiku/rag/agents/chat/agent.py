@@ -102,13 +102,17 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             line += f"\n    {snippet}"
             result_lines.append(line)
 
+        snapshot = new_state.model_dump()
+        if ctx.deps.state_key:
+            snapshot = {ctx.deps.state_key: snapshot}
+
         return ToolReturn(
             return_value=f"Found {len(results)} results:\n\n"
             + "\n\n".join(result_lines),
             metadata=[
                 StateSnapshotEvent(
                     type=EventType.STATE_SNAPSHOT,
-                    snapshot=new_state.model_dump(),
+                    snapshot=snapshot,
                 )
             ],
         )
@@ -241,12 +245,16 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citation_infos)))
             answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
+        snapshot = new_state.model_dump()
+        if ctx.deps.state_key:
+            snapshot = {ctx.deps.state_key: snapshot}
+
         return ToolReturn(
             return_value=answer_text,
             metadata=[
                 StateSnapshotEvent(
                     type=EventType.STATE_SNAPSHOT,
-                    snapshot=new_state.model_dump(),
+                    snapshot=snapshot,
                 )
             ],
         )
