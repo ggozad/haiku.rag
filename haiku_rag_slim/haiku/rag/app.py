@@ -86,18 +86,12 @@ class HaikuRAGApp:
             self.console.print(f"[red]Failed to open database: {e}[/red]")
             return
 
-        try:
-            ldb_version = pkg_version("lancedb")
-        except Exception:
-            ldb_version = "unknown"
-        try:
-            hr_version = pkg_version("haiku.rag-slim")
-        except Exception:
-            hr_version = "unknown"
+        ldb_version = pkg_version("lancedb")
+        hr_version = pkg_version("haiku.rag-slim")
         try:
             docling_version = pkg_version("docling")
         except Exception:
-            docling_version = "unknown"
+            docling_version = "not installed"
         pydantic_ai_version = pkg_version("pydantic-ai-slim")
         from docling_core.types.doc.document import DoclingDocument
 
