@@ -35,7 +35,8 @@ processing:
 
     # Image settings
     images_scale: 2.0                        # Image scale factor
-    generate_picture_images: false           # Include embedded images in output
+    generate_page_images: true               # Include rendered page images (for visualize_chunk)
+    generate_picture_images: false           # Include embedded figure/diagram images
 
     # VLM picture description (optional)
     picture_description:
@@ -82,11 +83,15 @@ conversion_options:
 ```yaml
 conversion_options:
   images_scale: 2.0               # Image resolution scale factor
-  generate_picture_images: false  # Include embedded images in output
+  generate_page_images: true      # Include rendered page images
+  generate_picture_images: false  # Include embedded figure/diagram images
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
+- **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
 - **generate_picture_images**: When `true`, embedded images (figures, diagrams) are included as base64-encoded data in the document. When `false` (default), images are excluded to reduce chunk size and avoid context bloat.
+
+**Note:** With `docling-serve`, `generate_picture_images` has limited support - picture image data may not be returned in the JSON response. Page images work correctly with both local and remote converters.
 
 #### Picture Description (VLM)
 

@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Page Image Generation Control**: New `generate_page_images` option in `ConversionOptions` to control PDF page image extraction
+  - `generate_page_images: bool = True` - Enable/disable rendered page images (used by `visualize_chunk()`)
+  - Works with both `docling-local` and `docling-serve` converters
+  - For `docling-serve`, maps to `image_export_mode` API parameter (`embedded`/`placeholder`)
+  - Note: `generate_picture_images` (embedded figures/diagrams) works with local converter but has limited support in docling-serve
+
 ## [0.26.2] - 2026-01-13
 
 ### Changed
