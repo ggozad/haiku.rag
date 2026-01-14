@@ -353,6 +353,44 @@ class TestDoclingLocalConverter:
                 "Pictures should have image data when generate_picture_images=True"
             )
 
+    @pytest.mark.asyncio
+    async def test_convert_pdf_without_page_images(self, config):
+        """Test PDF conversion excludes page images when disabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_page_images = False
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that pages don't have image data
+        for page in doc.pages.values():
+            assert page.image is None, (
+                "Pages should not have image data when generate_page_images=False"
+            )
+
+    @pytest.mark.asyncio
+    async def test_convert_pdf_with_page_images(self, config):
+        """Test PDF conversion includes page images when enabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_page_images = True
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that pages have image data
+        pages_with_images = [p for p in doc.pages.values() if p.image is not None]
+        assert len(pages_with_images) > 0, (
+            "Pages should have image data when generate_page_images=True"
+        )
+
     def test_get_vlm_api_url_with_ollama(self, config):
         """Test VLM API URL construction for Ollama provider."""
         converter = DoclingLocalConverter(config)
@@ -546,7 +584,7 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.table_cell_matching = False
         config.processing.conversion_options.do_table_structure = False
         config.processing.conversion_options.images_scale = 3.0
-        config.processing.conversion_options.generate_page_images = False
+        config.processing.conversion_options.generate_picture_images = False
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
@@ -572,7 +610,8 @@ class TestDoclingServeConverter:
             assert data["table_cell_matching"] == "false"
             assert data["do_table_structure"] == "false"
             assert data["images_scale"] == "3.0"
-            assert data["generate_page_images"] == "false"
+            assert data["include_images"] == "false"
+            assert data["image_export_mode"] == "embedded"
 
     @pytest.mark.asyncio
     async def test_convert_text_connection_error(self, converter):
@@ -775,7 +814,7 @@ class TestDoclingServeConverterPictureDescription:
             data = call_kwargs["data"]
 
             assert data["do_picture_description"] == "true"
-            assert data["generate_picture_images"] == "true"
+            assert data["include_images"] == "true"
             assert "picture_description_api" in data
 
             api_config = json.loads(data["picture_description_api"])
@@ -890,3 +929,89 @@ class TestDoclingServeConverterIntegration:
         assert pictures_with_descriptions, (
             "At least one picture should have a VLM description"
         )
+
+    @pytest.mark.vcr()
+    @pytest.mark.asyncio
+    async def test_convert_pdf_without_page_images(self, config):
+        """Test PDF conversion excludes page images when disabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_page_images = False
+        converter = DoclingServeConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that pages don't have image data
+        for page in doc.pages.values():
+            assert page.image is None, (
+                "Pages should not have image data when generate_page_images=False"
+            )
+
+    @pytest.mark.vcr()
+    @pytest.mark.asyncio
+    async def test_convert_pdf_with_page_images(self, config):
+        """Test PDF conversion includes page images when enabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_page_images = True
+        converter = DoclingServeConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that pages have image data
+        pages_with_images = [p for p in doc.pages.values() if p.image is not None]
+        assert len(pages_with_images) > 0, (
+            "Pages should have image data when generate_page_images=True"
+        )
+
+    @pytest.mark.vcr()
+    @pytest.mark.asyncio
+    async def test_convert_pdf_without_picture_images(self, config):
+        """Test PDF conversion excludes picture images when disabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_picture_images = False
+        converter = DoclingServeConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that pictures don't have image data
+        for picture in doc.pictures:
+            assert picture.image is None, (
+                "Pictures should not have image data when generate_picture_images=False"
+            )
+
+    @pytest.mark.xfail(
+        reason="docling-serve does not return picture image data in JSON response "
+        "even with include_images=true. Page images work, but extracted picture/figure "
+        "images are not included. This is a docling-serve limitation."
+    )
+    @pytest.mark.vcr()
+    @pytest.mark.asyncio
+    async def test_convert_pdf_with_picture_images(self, config):
+        """Test PDF conversion includes picture images when enabled."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        if not pdf_path.exists():
+            pytest.skip("doclaynet.pdf not found")
+
+        config.processing.conversion_options.generate_picture_images = True
+        converter = DoclingServeConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
+        # Check that at least some pictures have image data
+        pictures_with_images = [p for p in doc.pictures if p.image is not None]
+        if doc.pictures:
+            assert len(pictures_with_images) > 0, (
+                "Pictures should have image data when generate_picture_images=True"
+            )
