@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,7 +28,7 @@ from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
-from haiku.rag.utils import format_bytes, format_citations_rich
+from haiku.rag.utils import format_bytes, format_citations_rich, get_package_versions
 
 logger = logging.getLogger(__name__)
 
@@ -86,16 +85,7 @@ class HaikuRAGApp:
             self.console.print(f"[red]Failed to open database: {e}[/red]")
             return
 
-        ldb_version = pkg_version("lancedb")
-        hr_version = pkg_version("haiku.rag-slim")
-        try:
-            docling_version = pkg_version("docling")
-        except Exception:
-            docling_version = "not installed"
-        pydantic_ai_version = pkg_version("pydantic-ai-slim")
-        from docling_core.types.doc.document import DoclingDocument
-
-        docling_document_version = DoclingDocument.model_construct().version
+        versions = get_package_versions()
 
         # Get comprehensive table statistics (this also runs migrations)
         from haiku.rag.store.engine import Store
@@ -209,19 +199,19 @@ class HaikuRAGApp:
         self.console.rule()
         self.console.print("[bold]Versions[/bold]")
         self.console.print(
-            f"  [repr.attrib_name]haiku.rag[/repr.attrib_name]: {hr_version}"
+            f"  [repr.attrib_name]haiku.rag[/repr.attrib_name]: {versions['haiku_rag']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {ldb_version}"
+            f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {versions['lancedb']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]docling[/repr.attrib_name]: {docling_version}"
+            f"  [repr.attrib_name]docling[/repr.attrib_name]: {versions['docling']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]pydantic-ai[/repr.attrib_name]: {pydantic_ai_version}"
+            f"  [repr.attrib_name]pydantic-ai[/repr.attrib_name]: {versions['pydantic_ai']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {docling_document_version}"
+            f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {versions['docling_document_schema']}"
         )
 
     async def history(self, table: str | None = None, limit: int | None = None):

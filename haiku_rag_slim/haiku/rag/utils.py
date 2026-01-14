@@ -419,6 +419,27 @@ def build_prompt(base_prompt: str, config: "AppConfig") -> str:
     return base_prompt
 
 
+def get_package_versions() -> dict[str, str]:
+    """Get versions of haiku.rag and its dependencies.
+
+    Returns:
+        Dict with keys: haiku_rag, lancedb, docling, pydantic_ai, docling_document_schema
+    """
+    from docling_core.types.doc.document import DoclingDocument
+
+    versions = {
+        "haiku_rag": metadata.version("haiku.rag-slim"),
+        "lancedb": metadata.version("lancedb"),
+        "pydantic_ai": metadata.version("pydantic-ai-slim"),
+        "docling_document_schema": DoclingDocument.model_construct().version,
+    }
+    try:
+        versions["docling"] = metadata.version("docling")
+    except metadata.PackageNotFoundError:
+        versions["docling"] = "not installed"
+    return versions
+
+
 async def is_up_to_date() -> tuple[bool, Version, Version]:
     """Check whether haiku.rag is current.
 

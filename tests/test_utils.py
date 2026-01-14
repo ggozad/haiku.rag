@@ -300,3 +300,21 @@ def test_get_model_with_all_settings():
     )
     result = get_model(model_config)
     assert isinstance(result, OpenAIChatModel)
+
+
+def test_get_package_versions():
+    """Test get_package_versions returns expected keys."""
+    from haiku.rag.utils import get_package_versions
+
+    versions = get_package_versions()
+
+    assert "haiku_rag" in versions
+    assert "lancedb" in versions
+    assert "docling" in versions
+    assert "pydantic_ai" in versions
+    assert "docling_document_schema" in versions
+
+    # All should be non-empty strings
+    for key, value in versions.items():
+        assert isinstance(value, str)
+        assert len(value) > 0

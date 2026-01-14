@@ -1,5 +1,4 @@
 import json
-from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,7 +8,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from haiku.rag.utils import format_bytes
+from haiku.rag.utils import format_bytes, get_package_versions
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -84,18 +83,7 @@ class InfoModal(ModalScreen):  # pragma: no cover
             return
 
         # Get versions
-        try:
-            ldb_version = pkg_version("lancedb")
-        except Exception:
-            ldb_version = "unknown"
-        try:
-            hr_version = pkg_version("haiku.rag-slim")
-        except Exception:
-            hr_version = "unknown"
-        try:
-            docling_version = pkg_version("docling")
-        except Exception:
-            docling_version = "unknown"
+        versions = get_package_versions()
 
         # Get stats from store
         table_stats = self.client.store.get_stats()
@@ -199,9 +187,15 @@ class InfoModal(ModalScreen):  # pragma: no cover
 
         lines.append("")
         lines.append("[bold]Versions[/bold]")
-        lines.append(f"[bold $accent]haiku.rag[/bold $accent]: {hr_version}")
-        lines.append(f"[bold $accent]lancedb[/bold $accent]: {ldb_version}")
-        lines.append(f"[bold $accent]docling[/bold $accent]: {docling_version}")
+        lines.append(f"[bold $accent]haiku.rag[/bold $accent]: {versions['haiku_rag']}")
+        lines.append(f"[bold $accent]lancedb[/bold $accent]: {versions['lancedb']}")
+        lines.append(f"[bold $accent]docling[/bold $accent]: {versions['docling']}")
+        lines.append(
+            f"[bold $accent]pydantic-ai[/bold $accent]: {versions['pydantic_ai']}"
+        )
+        lines.append(
+            f"[bold $accent]docling-document schema[/bold $accent]: {versions['docling_document_schema']}"
+        )
 
         self._content_widget.update("\n".join(lines))
 
