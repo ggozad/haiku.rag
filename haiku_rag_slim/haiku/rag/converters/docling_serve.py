@@ -93,6 +93,7 @@ class DoclingServeConverter(DocumentConverter):
             "table_mode": opts.table_mode,
             "table_cell_matching": str(opts.table_cell_matching).lower(),
             "images_scale": str(opts.images_scale),
+            "generate_page_images": str(opts.generate_page_images).lower(),
             "generate_picture_images": str(
                 opts.generate_picture_images or pic_desc.enabled
             ).lower(),

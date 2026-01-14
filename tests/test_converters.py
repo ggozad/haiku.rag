@@ -304,11 +304,15 @@ class TestDoclingLocalConverter:
         config.processing.conversion_options.do_ocr = False
         config.processing.conversion_options.table_mode = "fast"
         config.processing.conversion_options.images_scale = 3.0
+        config.processing.conversion_options.generate_page_images = False
         converter = DoclingLocalConverter(config)
 
         assert converter.config.processing.conversion_options.do_ocr is False
         assert converter.config.processing.conversion_options.table_mode == "fast"
         assert converter.config.processing.conversion_options.images_scale == 3.0
+        assert (
+            converter.config.processing.conversion_options.generate_page_images is False
+        )
 
     @pytest.mark.asyncio
     async def test_convert_pdf_without_picture_images(self, config):
@@ -542,6 +546,7 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.table_cell_matching = False
         config.processing.conversion_options.do_table_structure = False
         config.processing.conversion_options.images_scale = 3.0
+        config.processing.conversion_options.generate_page_images = False
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
@@ -567,6 +572,7 @@ class TestDoclingServeConverter:
             assert data["table_cell_matching"] == "false"
             assert data["do_table_structure"] == "false"
             assert data["images_scale"] == "3.0"
+            assert data["generate_page_images"] == "false"
 
     @pytest.mark.asyncio
     async def test_convert_text_connection_error(self, converter):

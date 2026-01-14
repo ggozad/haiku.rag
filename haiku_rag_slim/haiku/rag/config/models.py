@@ -125,6 +125,7 @@ class ConversionOptions(BaseModel):
 
     # Image options
     images_scale: float = 2.0
+    generate_page_images: bool = True
     generate_picture_images: bool = False
 
     # VLM picture description
