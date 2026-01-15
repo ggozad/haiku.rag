@@ -17,7 +17,12 @@ from pydantic_ai import (
 from pydantic_ai.messages import ModelMessage
 
 from haiku.rag.agents.chat.agent import create_chat_agent
-from haiku.rag.agents.chat.state import ChatDeps, ChatSessionState, CitationInfo
+from haiku.rag.agents.chat.state import (
+    AGUI_STATE_KEY,
+    ChatDeps,
+    ChatSessionState,
+    CitationInfo,
+)
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 
@@ -153,10 +158,10 @@ class ChatApp(App):  # type: ignore[misc]
                         and meta_event.type == EventType.STATE_SNAPSHOT
                     ):
                         snapshot = getattr(meta_event, "snapshot", {})
-                        if "citations" in snapshot:
-                            self._last_citations = [
-                                CitationInfo(**c) for c in snapshot["citations"]
-                            ]
+                        chat_state = snapshot.get(AGUI_STATE_KEY, snapshot)
+                        self._last_citations = [
+                            CitationInfo(**c) for c in chat_state["citations"]
+                        ]
 
     async def _event_stream_handler(
         self,
@@ -212,6 +217,7 @@ class ChatApp(App):  # type: ignore[misc]
                 client=self.client,
                 config=self.config,
                 session_state=self.session_state,
+                state_key=AGUI_STATE_KEY,
             )
 
             async with self.agent.run_stream(

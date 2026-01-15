@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.agents.chat import (
+    AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
     QAResponse,
@@ -79,11 +80,15 @@ async def stream_chat(request: Request) -> Response:
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    # Restore qa_history from incoming state
+    # Restore qa_history from incoming state (look under namespaced key)
     initial_qa_history: list[QAResponse] = []
     state = getattr(run_input, "state", None)
-    if state and "qa_history" in state:
-        initial_qa_history = [QAResponse(**qa) for qa in state.get("qa_history", [])]
+    if state:
+        chat_state = state.get(AGUI_STATE_KEY, state)
+        if "qa_history" in chat_state:
+            initial_qa_history = [
+                QAResponse(**qa) for qa in chat_state.get("qa_history", [])
+            ]
 
     # Build deps with session state
     thread_id = getattr(run_input, "thread_id", None)
@@ -94,6 +99,7 @@ async def stream_chat(request: Request) -> Response:
             session_id=thread_id or "",
             qa_history=initial_qa_history,
         ),
+        state_key=AGUI_STATE_KEY,
     )
 
     # Use AGUIAdapter for streaming

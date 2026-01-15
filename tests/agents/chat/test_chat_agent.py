@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.agents.chat import (
+    AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
     CitationInfo,
@@ -38,6 +39,11 @@ def test_chat_deps_initialization(temp_db_path):
     assert deps.session_state is None
 
     client.close()
+
+
+def test_agui_state_key_constant():
+    """Test AGUI_STATE_KEY is exported with correct value."""
+    assert AGUI_STATE_KEY == "haiku.rag.chat"
 
 
 def test_chat_deps_with_state_key(temp_db_path):
@@ -309,7 +315,7 @@ async def test_chat_agent_search_with_state_key(allow_model_requests, temp_db_pa
             client=client,
             config=Config,
             session_state=session_state,
-            state_key="haiku_rag",
+            state_key=AGUI_STATE_KEY,
         )
 
         result = await agent.run(
@@ -554,7 +560,7 @@ async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path)
             client=client,
             config=Config,
             session_state=session_state,
-            state_key="haiku_rag",
+            state_key=AGUI_STATE_KEY,
         )
 
         result = await agent.run(
