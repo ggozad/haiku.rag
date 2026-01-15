@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.4] - 2026-01-15
+
 ### Added
 
 - **AGUI_STATE_KEY Constant**: Exported `AGUI_STATE_KEY` (`"haiku.rag.chat"`) from `haiku.rag.agents.chat` for namespaced AG-UI state emission

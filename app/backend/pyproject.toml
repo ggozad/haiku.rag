@@ -8,7 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.40.0",
     "pydantic-ai-slim[ag-ui,anthropic,openai]>=1.39.0",
     "python-dotenv>=1.2.1",
-    "haiku.rag-slim[agui]>=0.26.3",
+    "haiku.rag-slim[agui]>=0.26.4",
     "logfire[pydantic-ai]>=3.17.0",
 ]
 
