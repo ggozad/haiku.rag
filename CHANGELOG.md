@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.3] - 2026-01-15
+
 ### Added
 
 - **Enhanced Database Info**: `haiku-rag info` now displays `pydantic-ai` version and `docling-document schema` version

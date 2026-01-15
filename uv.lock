@@ -1285,7 +1285,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.26.2"
+version = "0.26.3"
 source = { editable = "." }
 dependencies = [
     { name = "haiku-rag-slim", extra = ["cohere", "docling", "mxbai", "tui", "voyageai", "zeroentropy"] },
@@ -1340,7 +1340,7 @@ dev = [
 
 [[package]]
 name = "haiku-rag-evals"
-version = "0.26.2"
+version = "0.26.3"
 source = { editable = "evaluations" }
 dependencies = [
     { name = "datasets" },
@@ -1361,7 +1361,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-slim"
-version = "0.26.2"
+version = "0.26.3"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "docling-core" },
