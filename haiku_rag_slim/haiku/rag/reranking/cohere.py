@@ -3,7 +3,7 @@ from haiku.rag.store.models.chunk import Chunk
 
 try:
     import cohere
-except ImportError as e:
+except ImportError as e:  # pragma: no cover
     raise ImportError(
         "cohere is not installed. Please install it with `pip install cohere` or use the cohere optional dependency."
     ) from e
