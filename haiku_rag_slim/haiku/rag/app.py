@@ -79,7 +79,6 @@ class HaikuRAGApp:
 
         # Connect without going through Store to avoid upgrades/validation writes
         db = lancedb.connect(self.db_path)
-        table_names = set(db.table_names())
 
         versions = get_package_versions()
 
@@ -90,24 +89,17 @@ class HaikuRAGApp:
         table_stats = store.get_stats()
 
         # Read settings after Store init (migrations have run)
-        stored_version = "unknown"
-        embed_provider: str | None = None
-        embed_model: str | None = None
-        vector_dim: int | None = None
-
-        if "settings" in table_names:
-            settings_tbl = db.open_table("settings")
-            arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
-            rows = arrow.to_pylist() if arrow is not None else []
-            if rows:
-                raw = rows[0].get("settings") or "{}"
-                data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-                stored_version = str(data.get("version", stored_version))
-                embeddings = data.get("embeddings", {})
-                embed_model_obj = embeddings.get("model", {})
-                embed_provider = embed_model_obj.get("provider")
-                embed_model = embed_model_obj.get("name")
-                vector_dim = embed_model_obj.get("vector_dim")
+        settings_tbl = db.open_table("settings")
+        arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
+        rows = arrow.to_pylist()
+        raw = rows[0].get("settings") or "{}"
+        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        stored_version = str(data.get("version", "unknown"))
+        embeddings = data.get("embeddings", {})
+        embed_model_obj = embeddings.get("model", {})
+        embed_provider = embed_model_obj.get("provider", "unknown")
+        embed_model = embed_model_obj.get("name", "unknown")
+        vector_dim = embed_model_obj.get("vector_dim")
 
         store.close()
 
@@ -122,32 +114,17 @@ class HaikuRAGApp:
         num_unindexed_rows = table_stats["chunks"].get("num_unindexed_rows", 0)
 
         # Table versions per table (direct API)
-        doc_versions = (
-            len(list(db.open_table("documents").list_versions()))
-            if "documents" in table_names
-            else 0
-        )
-        chunk_versions = (
-            len(list(db.open_table("chunks").list_versions()))
-            if "chunks" in table_names
-            else 0
-        )
+        doc_versions = len(list(db.open_table("documents").list_versions()))
+        chunk_versions = len(list(db.open_table("chunks").list_versions()))
 
         self.console.print(
             f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
         )
-        if embed_provider or embed_model or vector_dim:
-            provider_part = embed_provider or "unknown"
-            model_part = embed_model or "unknown"
-            dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
-            self.console.print(
-                "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
-                f"{provider_part}/{model_part} (dim: {dim_part})"
-            )
-        else:
-            self.console.print(
-                "  [repr.attrib_name]embeddings[/repr.attrib_name]: unknown"
-            )
+        dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
+        self.console.print(
+            "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
+            f"{embed_provider}/{embed_model} (dim: {dim_part})"
+        )
         self.console.print(
             f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs} "
             f"({format_bytes(doc_bytes)})"

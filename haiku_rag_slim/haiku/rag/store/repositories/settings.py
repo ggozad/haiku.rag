@@ -85,12 +85,7 @@ class SettingsRepository:
 
         if existing:
             # Preserve existing version if present to avoid interfering with upgrade flow
-            try:
-                existing_settings = (
-                    json.loads(existing[0].settings) if existing[0].settings else {}
-                )
-            except Exception:
-                existing_settings = {}
+            existing_settings = json.loads(existing[0].settings)
             if "version" in existing_settings:
                 current_config["version"] = existing_settings["version"]
 
