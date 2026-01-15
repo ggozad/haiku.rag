@@ -29,6 +29,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         deps_type=ChatDeps,
         output_type=str,
         instructions=CHAT_SYSTEM_PROMPT,
+        retries=3,
     )
 
     @agent.tool

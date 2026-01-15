@@ -21,6 +21,7 @@ class SearchAgent:
             deps_type=SearchDeps,
             output_type=str,
             instructions=SEARCH_SYSTEM_PROMPT,
+            retries=3,
         )
 
         @self._agent.tool
