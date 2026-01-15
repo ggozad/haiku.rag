@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 MAX_QA_HISTORY = 50
 
+AGUI_STATE_KEY = "haiku.rag.chat"
+
 _embedding_cache: dict[str, list[float]] = {}
 
 

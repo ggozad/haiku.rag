@@ -111,6 +111,37 @@ Q/A history is used to:
 2. Avoid repeating previous answers
 3. Enable semantic ranking of relevant past answers
 
+### AG-UI Integration
+
+When using the chat agent with AG-UI streaming, state is emitted under a namespaced key to avoid conflicts with other agents:
+
+```python
+from haiku.rag.agents.chat import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+# AGUI_STATE_KEY = "haiku.rag.chat"
+
+deps = ChatDeps(
+    client=client,
+    config=config,
+    session_state=ChatSessionState(),
+    state_key=AGUI_STATE_KEY,  # Enables namespaced state emission
+)
+```
+
+The emitted state structure:
+
+```json
+{
+  "haiku.rag.chat": {
+    "session_id": "",
+    "citations": [...],
+    "qa_history": [...]
+  }
+}
+```
+
+Frontend clients should extract state from under this key. See the [Conversational RAG App](apps.md#conversational-rag-app) for a complete implementation example.
+
 ## Research Graph
 
 The research workflow is implemented as a typed pydantic-graph. It plans, searches (in parallel batches), evaluates, and synthesizes into a final report.

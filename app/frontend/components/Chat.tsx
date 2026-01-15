@@ -11,6 +11,9 @@ import "@copilotkit/react-ui/styles.css";
 import CitationBlock from "./CitationBlock";
 import DbInfo from "./DbInfo";
 
+// Must match AGUI_STATE_KEY from haiku.rag.agents.chat
+const AGUI_STATE_KEY = "haiku.rag.chat";
+
 interface Citation {
 	index: number;
 	document_id: string;
@@ -33,6 +36,11 @@ interface ChatSessionState {
 	session_id: string;
 	citations: Citation[];
 	qa_history: QAResponse[];
+}
+
+// AG-UI state is namespaced under AGUI_STATE_KEY
+interface AgentState {
+	[AGUI_STATE_KEY]?: ChatSessionState;
 }
 
 function SpinnerIcon() {
@@ -329,20 +337,23 @@ function ToolCallIndicator({
 }
 
 function ChatContent() {
-	useCoAgent<ChatSessionState>({
+	useCoAgent<AgentState>({
 		name: "chat_agent",
 		initialState: {
-			session_id: "",
-			citations: [],
-			qa_history: [],
+			[AGUI_STATE_KEY]: {
+				session_id: "",
+				citations: [],
+				qa_history: [],
+			},
 		},
 	});
 
-	useCoAgentStateRender<ChatSessionState>({
+	useCoAgentStateRender<AgentState>({
 		name: "chat_agent",
 		render: ({ state }) => {
-			if (state.citations && state.citations.length > 0) {
-				return <CitationBlock citations={state.citations} />;
+			const chatState = state[AGUI_STATE_KEY];
+			if (chatState?.citations.length) {
+				return <CitationBlock citations={chatState.citations} />;
 			}
 			return null;
 		},

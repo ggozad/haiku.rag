@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **AGUI_STATE_KEY Constant**: Exported `AGUI_STATE_KEY` (`"haiku.rag.chat"`) from `haiku.rag.agents.chat` for namespaced AG-UI state emission
+  - Enables integrators to use a consistent key when combining haiku.rag with other agents
+  - Backend, TUI, and frontend now use this key for state emission and extraction
+
 ## [0.26.3] - 2026-01-15
 
 ### Added
