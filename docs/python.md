@@ -120,7 +120,7 @@ See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines wi
 
 By ID:
 ```python
-doc = await client.get_document_by_id(1)
+doc = await client.get_document_by_id("document-id-string")
 ```
 
 By URI:
@@ -367,6 +367,15 @@ Be concise and helpful."""
 answer, citations = await client.ask(
     "How do I create a blog?",
     system_prompt=custom_prompt
+)
+```
+
+Filter to specific documents:
+
+```python
+answer, citations = await client.ask(
+    "What are the main findings?",
+    filter="uri LIKE '%paper%'"
 )
 ```
 
