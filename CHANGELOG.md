@@ -9,6 +9,10 @@
   - Default `None` preserves backwards compatibility (bare state emission)
 - **Page Image Generation Control**: New `generate_page_images` option in `ConversionOptions` to control PDF page image extraction
 
+### Changed
+
+- **CLI Error Handling**: Commands (`rebuild`, `vacuum`, `create-index`, `ask`, `research`) now propagate errors with proper exit codes instead of swallowing exceptions
+
 ### Fixed
 
 - **Embed-only rebuild with changed vector dimensions**: Fixed `haiku-rag rebuild --embed-only` failing when the configured embedding model has different dimensions than the database

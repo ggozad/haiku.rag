@@ -30,7 +30,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
 
             os.environ["TOKENIZERS_PARALLELISM"] = "true"
             reranker = MxBAIReranker()
-        except ImportError:
+        except ImportError:  # pragma: no cover
             reranker = None
 
     elif config.reranking.model and config.reranking.model.provider == "cohere":
@@ -38,7 +38,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
             from haiku.rag.reranking.cohere import CohereReranker
 
             reranker = CohereReranker()
-        except ImportError:
+        except ImportError:  # pragma: no cover
             reranker = None
 
     elif config.reranking.model and config.reranking.model.provider == "vllm":
@@ -49,7 +49,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
             if not base_url:
                 raise ValueError("vLLM reranker requires base_url in reranking.model")
             reranker = VLLMReranker(config.reranking.model.name, base_url)
-        except ImportError:
+        except ImportError:  # pragma: no cover
             reranker = None
 
     elif config.reranking.model and config.reranking.model.provider == "zeroentropy":
@@ -59,7 +59,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
             # Use configured model or default to zerank-1
             model = config.reranking.model.name or "zerank-1"
             reranker = ZeroEntropyReranker(model)
-        except ImportError:
+        except ImportError:  # pragma: no cover
             reranker = None
 
     _reranker_cache[config_id] = reranker

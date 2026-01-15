@@ -506,3 +506,95 @@ async def test_history_nonexistent_db(tmp_path, monkeypatch):
 
     calls = [str(c) for c in mock_print.call_args_list]
     assert any("does not exist" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_init_creates_database(tmp_path, monkeypatch):
+    """Test init creates a new database."""
+    db_path = tmp_path / "new.lancedb"
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    assert not db_path.exists()
+    await app.init()
+
+    assert db_path.exists()
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("initialized" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_init_existing_database(tmp_path, monkeypatch):
+    """Test init with existing database shows warning."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "existing.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.init()
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("already exists" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_vacuum(tmp_path, monkeypatch):
+    """Test vacuum operation."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.vacuum()
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Vacuum completed" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_create_index_insufficient_chunks(tmp_path, monkeypatch):
+    """Test create_index with insufficient chunks shows warning."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.create_index()
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Need at least 256 chunks" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_rebuild_empty_database(tmp_path, monkeypatch):
+    """Test rebuild with empty database shows warning."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    await app.rebuild()
+
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("No documents found" in c for c in calls)

@@ -128,7 +128,7 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
     if provider == "voyageai":
         try:
             from haiku.rag.embeddings.voyageai import VoyageAIEmbeddingModel
-        except ImportError:
+        except ImportError:  # pragma: no cover
             raise ImportError(
                 "VoyageAI embedder requires the 'voyageai' package. "
                 "Please install haiku.rag with the 'voyageai' extra: "

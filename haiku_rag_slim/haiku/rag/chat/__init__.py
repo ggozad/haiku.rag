@@ -16,7 +16,7 @@ def run_chat(
     """
     try:
         from haiku.rag.chat.app import ChatApp
-    except ImportError as e:
+    except ImportError as e:  # pragma: no cover
         raise ImportError(
             "textual is not installed. Please install it with `pip install 'haiku.rag-slim[tui]'` or use the full haiku.rag package."
         ) from e

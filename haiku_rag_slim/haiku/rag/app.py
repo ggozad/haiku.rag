@@ -78,12 +78,7 @@ class HaikuRAGApp:
             return
 
         # Connect without going through Store to avoid upgrades/validation writes
-        try:
-            db = lancedb.connect(self.db_path)
-            table_names = set(db.table_names())
-        except Exception as e:
-            self.console.print(f"[red]Failed to open database: {e}[/red]")
-            return
+        db = lancedb.connect(self.db_path)
 
         versions = get_package_versions()
 
@@ -94,24 +89,17 @@ class HaikuRAGApp:
         table_stats = store.get_stats()
 
         # Read settings after Store init (migrations have run)
-        stored_version = "unknown"
-        embed_provider: str | None = None
-        embed_model: str | None = None
-        vector_dim: int | None = None
-
-        if "settings" in table_names:
-            settings_tbl = db.open_table("settings")
-            arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
-            rows = arrow.to_pylist() if arrow is not None else []
-            if rows:
-                raw = rows[0].get("settings") or "{}"
-                data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-                stored_version = str(data.get("version", stored_version))
-                embeddings = data.get("embeddings", {})
-                embed_model_obj = embeddings.get("model", {})
-                embed_provider = embed_model_obj.get("provider")
-                embed_model = embed_model_obj.get("name")
-                vector_dim = embed_model_obj.get("vector_dim")
+        settings_tbl = db.open_table("settings")
+        arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
+        rows = arrow.to_pylist()
+        raw = rows[0].get("settings") or "{}"
+        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        stored_version = str(data.get("version", "unknown"))
+        embeddings = data.get("embeddings", {})
+        embed_model_obj = embeddings.get("model", {})
+        embed_provider = embed_model_obj.get("provider", "unknown")
+        embed_model = embed_model_obj.get("name", "unknown")
+        vector_dim = embed_model_obj.get("vector_dim")
 
         store.close()
 
@@ -126,32 +114,17 @@ class HaikuRAGApp:
         num_unindexed_rows = table_stats["chunks"].get("num_unindexed_rows", 0)
 
         # Table versions per table (direct API)
-        doc_versions = (
-            len(list(db.open_table("documents").list_versions()))
-            if "documents" in table_names
-            else 0
-        )
-        chunk_versions = (
-            len(list(db.open_table("chunks").list_versions()))
-            if "chunks" in table_names
-            else 0
-        )
+        doc_versions = len(list(db.open_table("documents").list_versions()))
+        chunk_versions = len(list(db.open_table("chunks").list_versions()))
 
         self.console.print(
             f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
         )
-        if embed_provider or embed_model or vector_dim:
-            provider_part = embed_provider or "unknown"
-            model_part = embed_model or "unknown"
-            dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
-            self.console.print(
-                "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
-                f"{provider_part}/{model_part} (dim: {dim_part})"
-            )
-        else:
-            self.console.print(
-                "  [repr.attrib_name]embeddings[/repr.attrib_name]: unknown"
-            )
+        dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
+        self.console.print(
+            "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
+            f"{embed_provider}/{embed_model} (dim: {dim_part})"
+        )
         self.console.print(
             f"  [repr.attrib_name]documents[/repr.attrib_name]: {num_docs} "
             f"({format_bytes(doc_bytes)})"
@@ -418,50 +391,47 @@ class HaikuRAGApp:
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            try:
-                citations = []
-                if deep:
-                    graph = build_research_graph(config=self.config)
-                    context = ResearchContext(original_question=question)
-                    state = ResearchState.from_config(
-                        context=context,
-                        config=self.config,
-                        max_iterations=2,
-                        confidence_threshold=0.0,
-                    )
-                    state.search_filter = filter
-                    deps = ResearchDeps(client=self.client)
+            citations = []
+            if deep:
+                graph = build_research_graph(config=self.config)
+                context = ResearchContext(original_question=question)
+                state = ResearchState.from_config(
+                    context=context,
+                    config=self.config,
+                    max_iterations=2,
+                    confidence_threshold=0.0,
+                )
+                state.search_filter = filter
+                deps = ResearchDeps(client=self.client)
 
-                    report = await graph.run(state=state, deps=deps)
+                report = await graph.run(state=state, deps=deps)
 
-                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                    self.console.print()
-                    if report:
-                        self.console.print("[bold green]Answer:[/bold green]")
-                        self.console.print(Markdown(report.executive_summary))
-                        if report.main_findings:
-                            self.console.print()
-                            self.console.print("[bold cyan]Key Findings:[/bold cyan]")
-                            for finding in report.main_findings:
-                                self.console.print(f"• {finding}")
-                        if report.sources_summary:
-                            self.console.print()
-                            self.console.print("[bold cyan]Sources:[/bold cyan]")
-                            self.console.print(report.sources_summary)
-                    else:
-                        self.console.print("[yellow]No answer generated.[/yellow]")
-                else:
-                    answer, citations = await self.client.ask(question, filter=filter)
-
-                    self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                    self.console.print()
+                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                self.console.print()
+                if report:
                     self.console.print("[bold green]Answer:[/bold green]")
-                    self.console.print(Markdown(answer))
-                    if cite and citations:
-                        for renderable in format_citations_rich(citations):
-                            self.console.print(renderable)
-            except Exception as e:
-                self.console.print(f"[red]Error: {e}[/red]")
+                    self.console.print(Markdown(report.executive_summary))
+                    if report.main_findings:
+                        self.console.print()
+                        self.console.print("[bold cyan]Key Findings:[/bold cyan]")
+                        for finding in report.main_findings:
+                            self.console.print(f"• {finding}")
+                    if report.sources_summary:
+                        self.console.print()
+                        self.console.print("[bold cyan]Sources:[/bold cyan]")
+                        self.console.print(report.sources_summary)
+                else:
+                    self.console.print("[yellow]No answer generated.[/yellow]")
+            else:
+                answer, citations = await self.client.ask(question, filter=filter)
+
+                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+                self.console.print()
+                self.console.print("[bold green]Answer:[/bold green]")
+                self.console.print(Markdown(answer))
+                if cite and citations:
+                    for renderable in format_citations_rich(citations):
+                        self.console.print(renderable)
 
     async def research(self, question: str, filter: str | None = None):
         """Run research via the pydantic-graph pipeline.
@@ -476,77 +446,73 @@ class HaikuRAGApp:
             read_only=self.read_only,
             before=self.before,
         ) as client:
-            try:
-                self.console.print("[bold cyan]Starting research[/bold cyan]")
-                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+            self.console.print("[bold cyan]Starting research[/bold cyan]")
+            self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+            self.console.print()
+
+            graph = build_research_graph(config=self.config)
+            context = ResearchContext(original_question=question)
+            state = ResearchState.from_config(context=context, config=self.config)
+            state.search_filter = filter
+            deps = ResearchDeps(client=client)
+
+            report = await graph.run(state=state, deps=deps)
+
+            if report is None:
+                self.console.print("[red]Research did not produce a report.[/red]")
+                return
+
+            # Display the report
+            self.console.print("[bold green]Research Report[/bold green]")
+            self.console.rule()
+
+            # Title and Executive Summary
+            self.console.print(f"[bold]{report.title}[/bold]")
+            self.console.print()
+            self.console.print("[bold cyan]Executive Summary:[/bold cyan]")
+            self.console.print(report.executive_summary)
+            self.console.print()
+
+            # Confidence (from last evaluation)
+            if state.last_eval:
+                conf = state.last_eval.confidence_score  # type: ignore[attr-defined]
+                self.console.print(f"[bold cyan]Confidence:[/bold cyan] {conf:.1%}")
                 self.console.print()
 
-                graph = build_research_graph(config=self.config)
-                context = ResearchContext(original_question=question)
-                state = ResearchState.from_config(context=context, config=self.config)
-                state.search_filter = filter
-                deps = ResearchDeps(client=client)
-
-                report = await graph.run(state=state, deps=deps)
-
-                if report is None:
-                    self.console.print("[red]Research did not produce a report.[/red]")
-                    return
-
-                # Display the report
-                self.console.print("[bold green]Research Report[/bold green]")
-                self.console.rule()
-
-                # Title and Executive Summary
-                self.console.print(f"[bold]{report.title}[/bold]")
-                self.console.print()
-                self.console.print("[bold cyan]Executive Summary:[/bold cyan]")
-                self.console.print(report.executive_summary)
+            # Main Findings
+            if report.main_findings:
+                self.console.print("[bold cyan]Main Findings:[/bold cyan]")
+                for finding in report.main_findings:
+                    self.console.print(f"• {finding}")
                 self.console.print()
 
-                # Confidence (from last evaluation)
-                if state.last_eval:
-                    conf = state.last_eval.confidence_score  # type: ignore[attr-defined]
-                    self.console.print(f"[bold cyan]Confidence:[/bold cyan] {conf:.1%}")
-                    self.console.print()
+            # (Themes section removed)
 
-                # Main Findings
-                if report.main_findings:
-                    self.console.print("[bold cyan]Main Findings:[/bold cyan]")
-                    for finding in report.main_findings:
-                        self.console.print(f"• {finding}")
-                    self.console.print()
+            # Conclusions
+            if report.conclusions:
+                self.console.print("[bold cyan]Conclusions:[/bold cyan]")
+                for conclusion in report.conclusions:
+                    self.console.print(f"• {conclusion}")
+                self.console.print()
 
-                # (Themes section removed)
+            # Recommendations
+            if report.recommendations:
+                self.console.print("[bold cyan]Recommendations:[/bold cyan]")
+                for rec in report.recommendations:
+                    self.console.print(f"• {rec}")
+                self.console.print()
 
-                # Conclusions
-                if report.conclusions:
-                    self.console.print("[bold cyan]Conclusions:[/bold cyan]")
-                    for conclusion in report.conclusions:
-                        self.console.print(f"• {conclusion}")
-                    self.console.print()
+            # Limitations
+            if report.limitations:
+                self.console.print("[bold yellow]Limitations:[/bold yellow]")
+                for limitation in report.limitations:
+                    self.console.print(f"• {limitation}")
+                self.console.print()
 
-                # Recommendations
-                if report.recommendations:
-                    self.console.print("[bold cyan]Recommendations:[/bold cyan]")
-                    for rec in report.recommendations:
-                        self.console.print(f"• {rec}")
-                    self.console.print()
-
-                # Limitations
-                if report.limitations:
-                    self.console.print("[bold yellow]Limitations:[/bold yellow]")
-                    for limitation in report.limitations:
-                        self.console.print(f"• {limitation}")
-                    self.console.print()
-
-                # Sources Summary
-                if report.sources_summary:
-                    self.console.print("[bold cyan]Sources:[/bold cyan]")
-                    self.console.print(report.sources_summary)
-
-            except Exception as e:
-                self.console.print(f"[red]Error during research: {e}[/red]")
+            # Sources Summary
+            if report.sources_summary:
+                self.console.print("[bold cyan]Sources:[/bold cyan]")
+                self.console.print(report.sources_summary)
 
     async def rebuild(self, mode: RebuildMode = RebuildMode.FULL):
         async with HaikuRAG(
@@ -556,89 +522,76 @@ class HaikuRAGApp:
             read_only=self.read_only,
             before=self.before,
         ) as client:
-            try:
-                documents = await client.list_documents()
-                total_docs = len(documents)
+            documents = await client.list_documents()
+            total_docs = len(documents)
 
-                if total_docs == 0:
-                    self.console.print(
-                        "[yellow]No documents found in database.[/yellow]"
-                    )
-                    return
+            if total_docs == 0:
+                self.console.print("[yellow]No documents found in database.[/yellow]")
+                return
 
-                mode_desc = {
-                    RebuildMode.FULL: "full rebuild",
-                    RebuildMode.RECHUNK: "rechunk",
-                    RebuildMode.EMBED_ONLY: "embed only",
-                }[mode]
+            mode_desc = {
+                RebuildMode.FULL: "full rebuild",
+                RebuildMode.RECHUNK: "rechunk",
+                RebuildMode.EMBED_ONLY: "embed only",
+            }[mode]
 
-                self.console.print(
-                    f"[bold cyan]Rebuilding database ({mode_desc}) with {total_docs} documents...[/bold cyan]"
-                )
-                with Progress() as progress:
-                    task = progress.add_task("Rebuilding...", total=total_docs)
-                    async for _ in client.rebuild_database(mode=mode):
-                        progress.update(task, advance=1)
+            self.console.print(
+                f"[bold cyan]Rebuilding database ({mode_desc}) with {total_docs} documents...[/bold cyan]"
+            )
+            with Progress() as progress:
+                task = progress.add_task("Rebuilding...", total=total_docs)
+                async for _ in client.rebuild_database(mode=mode):
+                    progress.update(task, advance=1)
 
-                self.console.print(
-                    "[bold green]Database rebuild completed successfully.[/bold green]"
-                )
-            except Exception as e:
-                self.console.print(f"[red]Error rebuilding database: {e}[/red]")
+            self.console.print(
+                "[bold green]Database rebuild completed successfully.[/bold green]"
+            )
 
     async def vacuum(self):
         """Run database maintenance: optimize and cleanup table history."""
-        try:
-            async with HaikuRAG(
-                db_path=self.db_path,
-                config=self.config,
-                skip_validation=True,
-                read_only=self.read_only,
-                before=self.before,
-            ) as client:
-                await client.vacuum()
-            self.console.print(
-                "[bold green]Vacuum completed successfully.[/bold green]"
-            )
-        except Exception as e:
-            self.console.print(f"[red]Error during vacuum: {e}[/red]")
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            skip_validation=True,
+            read_only=self.read_only,
+            before=self.before,
+        ) as client:
+            await client.vacuum()
+        self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
 
     async def create_index(self):
         """Create vector index on the chunks table."""
-        try:
-            async with HaikuRAG(
-                db_path=self.db_path,
-                config=self.config,
-                skip_validation=True,
-                read_only=self.read_only,
-                before=self.before,
-            ) as client:
-                row_count = client.store.chunks_table.count_rows()
-                self.console.print(f"Chunks in database: {row_count}")
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            skip_validation=True,
+            read_only=self.read_only,
+            before=self.before,
+        ) as client:
+            row_count = client.store.chunks_table.count_rows()
+            self.console.print(f"Chunks in database: {row_count}")
 
-                if row_count < 256:
-                    self.console.print(
-                        f"[yellow]Warning: Need at least 256 chunks to create an index (have {row_count})[/yellow]"
-                    )
-                    return
-
-                # Check if index already exists
-                indices = client.store.chunks_table.list_indices()
-                has_vector_index = any("vector" in str(idx).lower() for idx in indices)
-
-                if has_vector_index:
-                    self.console.print(
-                        "[yellow]Rebuilding existing vector index...[/yellow]"
-                    )
-                else:
-                    self.console.print("[bold]Creating vector index...[/bold]")
-
-                client.store._ensure_vector_index()
+            if row_count < 256:
                 self.console.print(
-                    "[bold green]Vector index created successfully.[/bold green]"
+                    f"[yellow]Warning: Need at least 256 chunks to create an index (have {row_count})[/yellow]"
                 )
-        except Exception as e:
-            self.console.print(f"[red]Error creating index: {e}[/red]")
+                return
+
+            # Check if index already exists
+            indices = client.store.chunks_table.list_indices()
+            has_vector_index = any("vector" in str(idx).lower() for idx in indices)
+
+            if has_vector_index:
+                self.console.print(
+                    "[yellow]Rebuilding existing vector index...[/yellow]"
+                )
+            else:
+                self.console.print("[bold]Creating vector index...[/bold]")
+
+            client.store._ensure_vector_index()
+            self.console.print(
+                "[bold green]Vector index created successfully.[/bold green]"
+            )
 
     async def download_models(self):
         """Download Docling, HuggingFace tokenizer, and Ollama models per config."""
