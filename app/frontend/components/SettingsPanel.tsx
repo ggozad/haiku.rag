@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useId, useState } from "react";
 
-const STORAGE_KEY = "haiku.rag.settings.initial_context";
+const STORAGE_KEY = "haiku.rag.settings.background_context";
 
 interface SettingsPanelProps {
 	isOpen: boolean;
 	onClose: () => void;
-	onSave: (initialContext: string) => void;
+	onSave: (backgroundContext: string) => void;
 	currentValue: string;
 }
 

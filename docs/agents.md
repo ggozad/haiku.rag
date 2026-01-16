@@ -103,7 +103,7 @@ The `ChatSessionState` maintains:
 
 - `session_id` — Unique identifier for the session
 - `qa_history` — List of previous Q/A pairs (FIFO, max 50)
-- `initial_context` — Optional background context for the conversation
+- `background_context` — Optional background context for the conversation
 - `embedding_cache` — Cached embeddings for semantic ranking
 
 Q/A history is used to:
@@ -118,7 +118,7 @@ You can provide background context that persists throughout the conversation:
 
 ```python
 session = ChatSessionState(
-    initial_context="Focus on Python programming concepts and best practices."
+    background_context="Focus on Python programming concepts and best practices."
 )
 deps = ChatDeps(client=client, config=config, session_state=session)
 ```
@@ -235,12 +235,12 @@ async with HaikuRAG(path_to_db) as client:
 ```python
 context = ResearchContext(
     original_question="What are the safety protocols?",
-    initial_context="Industrial manufacturing and workplace safety domain."
+    background_context="Industrial manufacturing and workplace safety domain."
 )
 state = ResearchState.from_config(context=context, config=Config)
 ```
 
-The `initial_context` provides domain background that helps the planning and synthesis agents understand the context of the research question.
+The `background_context` provides domain background that helps the planning and synthesis agents understand the context of the research question.
 
 **With custom config:**
 

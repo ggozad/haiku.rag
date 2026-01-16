@@ -350,11 +350,11 @@ def ask(
     ),
 ):
     # Resolve initial context from flag or file
-    initial_context: str | None = None
+    background_context: str | None = None
     if context_file:
-        initial_context = context_file.read_text()
+        background_context = context_file.read_text()
     elif context:
-        initial_context = context
+        background_context = context
 
     app = create_app(db)
     asyncio.run(
@@ -363,7 +363,7 @@ def ask(
             cite=cite,
             deep=deep,
             filter=filter,
-            initial_context=initial_context,
+            background_context=background_context,
         )
     )
 
@@ -394,15 +394,17 @@ def research(
     ),
 ):
     # Resolve initial context from flag or file
-    initial_context: str | None = None
+    background_context: str | None = None
     if context_file:
-        initial_context = context_file.read_text()
+        background_context = context_file.read_text()
     elif context:
-        initial_context = context
+        background_context = context
 
     app = create_app(db)
     asyncio.run(
-        app.research(question=question, filter=filter, initial_context=initial_context)
+        app.research(
+            question=question, filter=filter, background_context=background_context
+        )
     )
 
 
@@ -608,14 +610,17 @@ def chat(
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
 
     # Resolve initial context from flag or file
-    initial_context: str | None = None
+    background_context: str | None = None
     if context_file:
-        initial_context = context_file.read_text()
+        background_context = context_file.read_text()
     elif context:
-        initial_context = context
+        background_context = context
 
     run_chat(
-        db_path, read_only=_read_only, before=_before, initial_context=initial_context
+        db_path,
+        read_only=_read_only,
+        before=_before,
+        background_context=background_context,
     )
 
 

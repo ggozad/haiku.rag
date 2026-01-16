@@ -46,19 +46,19 @@ async def test_graph_end_to_end(allow_model_requests, temp_db_path, qa_corpus):
     client.close()
 
 
-def test_research_context_initial_context():
-    """Test ResearchContext accepts initial_context."""
+def test_research_context_background_context():
+    """Test ResearchContext accepts background_context."""
     context = ResearchContext(
         original_question="What is X?",
-        initial_context="Background: X is a concept in domain Y.",
+        background_context="Background: X is a concept in domain Y.",
     )
-    assert context.initial_context == "Background: X is a concept in domain Y."
+    assert context.background_context == "Background: X is a concept in domain Y."
 
 
-def test_research_context_initial_context_defaults_to_none():
-    """Test ResearchContext initial_context defaults to None."""
+def test_research_context_background_context_defaults_to_none():
+    """Test ResearchContext background_context defaults to None."""
     context = ResearchContext(original_question="What is X?")
-    assert context.initial_context is None
+    assert context.background_context is None
 
 
 def test_format_context_for_prompt_includes_background():
@@ -67,7 +67,7 @@ def test_format_context_for_prompt_includes_background():
 
     context = ResearchContext(
         original_question="What is X?",
-        initial_context="X is a concept in domain Y.",
+        background_context="X is a concept in domain Y.",
     )
     result = format_context_for_prompt(context)
     assert "X is a concept in domain Y." in result
@@ -89,7 +89,7 @@ def test_format_conversational_context_for_prompt_includes_background():
 
     context = ResearchContext(
         original_question="What is X?",
-        initial_context="X is a concept in domain Y.",
+        background_context="X is a concept in domain Y.",
     )
     result = format_conversational_context_for_prompt(context)
     assert "X is a concept in domain Y." in result

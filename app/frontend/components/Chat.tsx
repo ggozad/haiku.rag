@@ -38,7 +38,7 @@ interface ChatSessionState {
 	session_id: string;
 	citations: Citation[];
 	qa_history: QAResponse[];
-	initial_context: string | null;
+	background_context: string | null;
 }
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
@@ -358,24 +358,24 @@ function ToolCallIndicator({
 }
 
 function ChatContentInner({
-	initialContext,
-	setInitialContext,
+	backgroundContext,
+	setBackgroundContext,
 }: {
-	initialContext: string;
-	setInitialContext: (value: string) => void;
+	backgroundContext: string;
+	setBackgroundContext: (value: string) => void;
 }) {
 	const [settingsOpen, setSettingsOpen] = useState(false);
 
 	const handleSaveContext = useCallback(
 		(value: string) => {
-			setInitialContext(value);
+			setBackgroundContext(value);
 			if (value) {
 				localStorage.setItem(STORAGE_KEY, value);
 			} else {
 				localStorage.removeItem(STORAGE_KEY);
 			}
 		},
-		[setInitialContext],
+		[setBackgroundContext],
 	);
 
 	useCoAgent<AgentState>({
@@ -385,7 +385,7 @@ function ChatContentInner({
 				session_id: "",
 				citations: [],
 				qa_history: [],
-				initial_context: initialContext || null,
+				background_context: backgroundContext || null,
 			},
 		},
 	});
@@ -517,10 +517,10 @@ function ChatContentInner({
 					<div className="chat-header">
 						<button
 							type="button"
-							className={`settings-btn ${initialContext ? "has-context" : ""}`}
+							className={`settings-btn ${backgroundContext ? "has-context" : ""}`}
 							onClick={() => setSettingsOpen(true)}
 							title={
-								initialContext
+								backgroundContext
 									? "Background context is set"
 									: "Set background context"
 							}
@@ -545,28 +545,30 @@ function ChatContentInner({
 				isOpen={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
 				onSave={handleSaveContext}
-				currentValue={initialContext}
+				currentValue={backgroundContext}
 			/>
 		</>
 	);
 }
 
 function ChatContent() {
-	const [initialContext, setInitialContext] = useState<string | null>(null);
+	const [backgroundContext, setBackgroundContext] = useState<string | null>(
+		null,
+	);
 
 	useEffect(() => {
 		const stored = localStorage.getItem(STORAGE_KEY);
-		setInitialContext(stored || "");
+		setBackgroundContext(stored || "");
 	}, []);
 
-	if (initialContext === null) {
+	if (backgroundContext === null) {
 		return null;
 	}
 
 	return (
 		<ChatContentInner
-			initialContext={initialContext}
-			setInitialContext={setInitialContext}
+			backgroundContext={backgroundContext}
+			setBackgroundContext={setBackgroundContext}
 		/>
 	);
 }

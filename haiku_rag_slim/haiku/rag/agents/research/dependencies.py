@@ -19,7 +19,7 @@ class ResearchContext(BaseModel):
     qa_responses: list[Any] = Field(
         default_factory=list, description="Structured QA pairs used during research"
     )
-    initial_context: str | None = Field(
+    background_context: str | None = Field(
         default=None,
         description="Optional background context provided at session start",
     )

@@ -33,8 +33,8 @@ def format_context_for_prompt(context: ResearchContext) -> str:
     """Format the research context as XML for planning prompts."""
     context_data: dict[str, object] = {}
 
-    if context.initial_context:
-        context_data["background"] = context.initial_context
+    if context.background_context:
+        context_data["background"] = context.background_context
 
     context_data["question"] = context.original_question
 
@@ -61,8 +61,8 @@ def format_conversational_context_for_prompt(context: ResearchContext) -> str:
     """Format context for synthesis prompts."""
     context_data: dict[str, object] = {}
 
-    if context.initial_context:
-        context_data["background"] = context.initial_context
+    if context.background_context:
+        context_data["background"] = context.background_context
 
     context_data["question"] = context.original_question
 
@@ -98,7 +98,7 @@ async def _plan_step_logic(
 
     # Use context-aware prompt if we have existing qa_responses
     has_prior_answers = bool(state.context.qa_responses)
-    has_background = bool(state.context.initial_context)
+    has_background = bool(state.context.background_context)
     effective_plan_prompt = (
         build_prompt(PLAN_PROMPT_WITH_CONTEXT, config)
         if has_prior_answers

@@ -89,13 +89,13 @@ class ChatApp(App):  # type: ignore[misc]
         db_path: Path,
         read_only: bool = False,
         before: datetime | None = None,
-        initial_context: str | None = None,
+        background_context: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self.read_only = read_only
         self.before = before
-        self.initial_context = initial_context
+        self.background_context = background_context
         self.client: HaikuRAG | None = None
         self.config = get_config()
         self.agent: Agent[ChatDeps, str] | None = None
@@ -128,7 +128,7 @@ class ChatApp(App):  # type: ignore[misc]
         self.agent = create_chat_agent(self.config)
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
-            initial_context=self.initial_context,
+            background_context=self.background_context,
         )
 
         # Focus the input field
@@ -274,10 +274,10 @@ class ChatApp(App):  # type: ignore[misc]
         self._last_citations.clear()
         self._selected_citation_idx = None
         self._message_history.clear()
-        # Reset session state for fresh conversation (preserve initial_context)
+        # Reset session state for fresh conversation (preserve background_context)
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
-            initial_context=self.initial_context,
+            background_context=self.background_context,
         )
 
     def action_focus_input(self) -> None:

@@ -250,23 +250,23 @@ def test_max_qa_history_constant():
     assert MAX_QA_HISTORY == 50
 
 
-def test_chat_session_state_initial_context():
-    """Test ChatSessionState accepts initial_context."""
+def test_chat_session_state_background_context():
+    """Test ChatSessionState accepts background_context."""
     from haiku.rag.agents.chat.state import ChatSessionState
 
     state = ChatSessionState(
         session_id="test-session",
-        initial_context="This is background knowledge about the topic.",
+        background_context="This is background knowledge about the topic.",
     )
-    assert state.initial_context == "This is background knowledge about the topic."
+    assert state.background_context == "This is background knowledge about the topic."
 
 
-def test_chat_session_state_initial_context_defaults_to_none():
-    """Test ChatSessionState initial_context defaults to None."""
+def test_chat_session_state_background_context_defaults_to_none():
+    """Test ChatSessionState background_context defaults to None."""
     from haiku.rag.agents.chat.state import ChatSessionState
 
     state = ChatSessionState(session_id="test-session")
-    assert state.initial_context is None
+    assert state.background_context is None
 
 
 def test_chat_deps_state_getter_returns_namespaced_state():
@@ -283,7 +283,7 @@ def test_chat_deps_state_getter_returns_namespaced_state():
         qa_history=[
             QAResponse(question="Q1", answer="A1", confidence=0.9),
         ],
-        initial_context="Background info",
+        background_context="Background info",
     )
 
     deps = ChatDeps(
@@ -299,7 +299,7 @@ def test_chat_deps_state_getter_returns_namespaced_state():
     assert state[AGUI_STATE_KEY]["session_id"] == "test-123"
     assert len(state[AGUI_STATE_KEY]["qa_history"]) == 1
     assert state[AGUI_STATE_KEY]["qa_history"][0]["question"] == "Q1"
-    assert state[AGUI_STATE_KEY]["initial_context"] == "Background info"
+    assert state[AGUI_STATE_KEY]["background_context"] == "Background info"
 
 
 def test_chat_deps_state_getter_without_namespace():
@@ -368,7 +368,7 @@ def test_chat_deps_state_setter_updates_from_namespaced_state():
                 {"question": "Q1", "answer": "A1", "confidence": 0.9, "citations": []}
             ],
             "citations": [],
-            "initial_context": "New context",
+            "background_context": "New context",
         }
     }
 
@@ -378,7 +378,7 @@ def test_chat_deps_state_setter_updates_from_namespaced_state():
     assert deps.session_state.session_id == "updated-123"
     assert len(deps.session_state.qa_history) == 1
     assert deps.session_state.qa_history[0].question == "Q1"
-    assert deps.session_state.initial_context == "New context"
+    assert deps.session_state.background_context == "New context"
 
 
 def test_chat_deps_state_setter_handles_none():
@@ -458,7 +458,7 @@ def test_chat_deps_state_setter_with_citation_dicts():
                     "content": "Test content",
                 }
             ],
-            "initial_context": None,
+            "background_context": None,
         }
     }
 

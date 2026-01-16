@@ -61,7 +61,7 @@ class ChatSessionState(BaseModel):
     session_id: str = ""
     citations: list[CitationInfo] = []
     qa_history: list[QAResponse] = []
-    initial_context: str | None = None
+    background_context: str | None = None
 
 
 def format_conversation_context(qa_history: list[QAResponse]) -> str:
@@ -200,8 +200,10 @@ class ChatDeps:
                     CitationInfo(**c) if isinstance(c, dict) else c
                     for c in state_data.get("citations", [])
                 ]
-            if "initial_context" in state_data:
-                self.session_state.initial_context = state_data.get("initial_context")
+            if "background_context" in state_data:
+                self.session_state.background_context = state_data.get(
+                    "background_context"
+                )
             if "session_id" in state_data:
                 self.session_state.session_id = state_data.get("session_id", "")
 
