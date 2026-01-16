@@ -103,6 +103,7 @@ The `ChatSessionState` maintains:
 
 - `session_id` — Unique identifier for the session
 - `qa_history` — List of previous Q/A pairs (FIFO, max 50)
+- `initial_context` — Optional background context for the conversation
 - `embedding_cache` — Cached embeddings for semantic ranking
 
 Q/A history is used to:
@@ -110,6 +111,19 @@ Q/A history is used to:
 1. Provide context for follow-up questions
 2. Avoid repeating previous answers
 3. Enable semantic ranking of relevant past answers
+
+### Background Context
+
+You can provide background context that persists throughout the conversation:
+
+```python
+session = ChatSessionState(
+    initial_context="Focus on Python programming concepts and best practices."
+)
+deps = ChatDeps(client=client, config=config, session_state=session)
+```
+
+The context is included in the agent's system prompt and passed to the research graph when answering questions.
 
 ### AG-UI Integration
 
@@ -215,6 +229,18 @@ async with HaikuRAG(path_to_db) as client:
     print(report.title)
     print(report.executive_summary)
 ```
+
+**With background context:**
+
+```python
+context = ResearchContext(
+    original_question="What are the safety protocols?",
+    initial_context="Industrial manufacturing and workplace safety domain."
+)
+state = ResearchState.from_config(context=context, config=Config)
+```
+
+The `initial_context` provides domain background that helps the planning and synthesis agents understand the context of the research question.
 
 **With custom config:**
 
