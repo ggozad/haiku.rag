@@ -44,3 +44,62 @@ async def test_graph_end_to_end(allow_model_requests, temp_db_path, qa_corpus):
     assert result.executive_summary
 
     client.close()
+
+
+def test_research_context_background_context():
+    """Test ResearchContext accepts background_context."""
+    context = ResearchContext(
+        original_question="What is X?",
+        background_context="Background: X is a concept in domain Y.",
+    )
+    assert context.background_context == "Background: X is a concept in domain Y."
+
+
+def test_research_context_background_context_defaults_to_none():
+    """Test ResearchContext background_context defaults to None."""
+    context = ResearchContext(original_question="What is X?")
+    assert context.background_context is None
+
+
+def test_format_context_for_prompt_includes_background():
+    """Test format_context_for_prompt includes background in output."""
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+
+    context = ResearchContext(
+        original_question="What is X?",
+        background_context="X is a concept in domain Y.",
+    )
+    result = format_context_for_prompt(context)
+    assert "X is a concept in domain Y." in result
+    assert "<background>" in result
+
+
+def test_format_context_for_prompt_excludes_background_when_none():
+    """Test format_context_for_prompt excludes background when None."""
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+
+    context = ResearchContext(original_question="What is X?")
+    result = format_context_for_prompt(context)
+    assert "<background>" not in result
+
+
+def test_format_conversational_context_for_prompt_includes_background():
+    """Test format_conversational_context_for_prompt includes background."""
+    from haiku.rag.agents.research.graph import format_conversational_context_for_prompt
+
+    context = ResearchContext(
+        original_question="What is X?",
+        background_context="X is a concept in domain Y.",
+    )
+    result = format_conversational_context_for_prompt(context)
+    assert "X is a concept in domain Y." in result
+    assert "<background>" in result
+
+
+def test_format_conversational_context_for_prompt_excludes_background_when_none():
+    """Test format_conversational_context_for_prompt excludes background when None."""
+    from haiku.rag.agents.research.graph import format_conversational_context_for_prompt
+
+    context = ResearchContext(original_question="What is X?")
+    result = format_conversational_context_for_prompt(context)
+    assert "<background>" not in result

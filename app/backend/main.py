@@ -80,8 +80,9 @@ async def stream_chat(request: Request) -> Response:
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    # Restore qa_history from incoming state (look under namespaced key)
+    # Restore session state from incoming AG-UI state (look under namespaced key)
     initial_qa_history: list[QAResponse] = []
+    background_context: str | None = None
     state = getattr(run_input, "state", None)
     if state:
         chat_state = state.get(AGUI_STATE_KEY, state)
@@ -89,6 +90,7 @@ async def stream_chat(request: Request) -> Response:
             initial_qa_history = [
                 QAResponse(**qa) for qa in chat_state.get("qa_history", [])
             ]
+        background_context = chat_state.get("background_context")
 
     # Build deps with session state
     thread_id = getattr(run_input, "thread_id", None)
@@ -98,6 +100,7 @@ async def stream_chat(request: Request) -> Response:
         session_state=ChatSessionState(
             session_id=thread_id or "",
             qa_history=initial_qa_history,
+            background_context=background_context,
         ),
         state_key=AGUI_STATE_KEY,
     )

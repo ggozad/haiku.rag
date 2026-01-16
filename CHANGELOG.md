@@ -1,6 +1,19 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Background Context Support**: Pass background context to agents via CLI or Python API
+  - `haiku-rag ask --context "..." --context-file path` for Q&A with background context
+  - `haiku-rag research --context "..." --context-file path` for research with background context
+  - `haiku-rag chat --context "..." --context-file path` for chat sessions with persistent context
+  - `ResearchContext(background_context="...")` for Python API usage
+  - `ChatSessionState(background_context="...")` for chat agent sessions
+  - Context is included in agent system prompts and research graph planning
+- **Frontend Background Context**: Settings panel in the chat app to configure persistent background context
+  - Context is stored in localStorage and sent with each conversation
+- **Frontend Linting**: Added Biome for linting and formatting the frontend codebase
+
 ## [0.26.4] - 2026-01-15
 
 ### Added

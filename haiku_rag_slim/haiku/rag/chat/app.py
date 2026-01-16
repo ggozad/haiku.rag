@@ -85,12 +85,17 @@ class ChatApp(App):  # type: ignore[misc]
     ]
 
     def __init__(
-        self, db_path: Path, read_only: bool = False, before: datetime | None = None
+        self,
+        db_path: Path,
+        read_only: bool = False,
+        before: datetime | None = None,
+        background_context: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self.read_only = read_only
         self.before = before
+        self.background_context = background_context
         self.client: HaikuRAG | None = None
         self.config = get_config()
         self.agent: Agent[ChatDeps, str] | None = None
@@ -121,7 +126,10 @@ class ChatApp(App):  # type: ignore[misc]
 
         # Create agent and session state
         self.agent = create_chat_agent(self.config)
-        self.session_state = ChatSessionState(session_id=str(uuid.uuid4()))
+        self.session_state = ChatSessionState(
+            session_id=str(uuid.uuid4()),
+            background_context=self.background_context,
+        )
 
         # Focus the input field
         self.query_one(Input).focus()
@@ -266,8 +274,11 @@ class ChatApp(App):  # type: ignore[misc]
         self._last_citations.clear()
         self._selected_citation_idx = None
         self._message_history.clear()
-        # Reset session state for fresh conversation
-        self.session_state = ChatSessionState(session_id=str(uuid.uuid4()))
+        # Reset session state for fresh conversation (preserve background_context)
+        self.session_state = ChatSessionState(
+            session_id=str(uuid.uuid4()),
+            background_context=self.background_context,
+        )
 
     def action_focus_input(self) -> None:
         """Focus the input field, or cancel if processing."""

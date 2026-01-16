@@ -29,7 +29,15 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         deps_type=ChatDeps,
         output_type=str,
         instructions=CHAT_SYSTEM_PROMPT,
+        retries=3,
     )
+
+    @agent.system_prompt
+    async def add_background_context(ctx: RunContext[ChatDeps]) -> str:
+        """Add background_context to system prompt when available."""
+        if ctx.deps.session_state and ctx.deps.session_state.background_context:
+            return f"\nBACKGROUND CONTEXT:\n{ctx.deps.session_state.background_context}"
+        return ""
 
     @agent.tool
     async def search(
@@ -84,6 +92,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
+            ),
+            background_context=(
+                ctx.deps.session_state.background_context
+                if ctx.deps.session_state
+                else None
             ),
         )
 
@@ -181,9 +194,16 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
 
+        background_context = (
+            ctx.deps.session_state.background_context
+            if ctx.deps.session_state
+            else None
+        )
+
         context = ResearchContext(
             original_question=question,
             qa_responses=existing_qa,
+            background_context=background_context,
         )
         state = ResearchState(
             context=context,
@@ -236,6 +256,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
+            ),
+            background_context=(
+                ctx.deps.session_state.background_context
+                if ctx.deps.session_state
+                else None
             ),
         )
 

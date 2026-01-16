@@ -153,6 +153,12 @@ Filter to specific documents:
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
 ```
 
+Provide background context for the question:
+```bash
+haiku-rag ask "What are the protocols?" --context "Focus on security best practices"
+haiku-rag ask "Summarize the findings" --context-file background.txt
+```
+
 The QA agent searches your documents for relevant information and provides a comprehensive answer. When available, citations use the document title; otherwise they fall back to the URI.
 
 Flags:
@@ -160,6 +166,8 @@ Flags:
 - `--cite`: Include citations showing which documents were used
 - `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
+- `--context`: Background context for the question (passed to the agent as system context)
+- `--context-file`: Path to a file containing background context
 
 ## Chat
 
@@ -168,6 +176,12 @@ Launch an interactive chat session for multi-turn conversations:
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
+```
+
+Provide background context for the conversation:
+```bash
+haiku-rag chat --context "Focus on Python programming concepts"
+haiku-rag chat --context-file domain-context.txt
 ```
 
 !!! note
@@ -179,6 +193,12 @@ The chat interface provides:
 - Expandable citations with source metadata
 - Session memory for context-aware follow-up questions
 - Visual grounding to inspect chunk source locations
+- Background context that persists across the entire conversation
+
+Flags:
+
+- `--context`: Background context for the conversation
+- `--context-file`: Path to a file containing background context
 
 See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
 
@@ -217,9 +237,18 @@ Filter to specific documents:
 haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
 ```
 
+Provide background context for the research:
+
+```bash
+haiku-rag research "What are the safety protocols?" --context "Industrial manufacturing context"
+haiku-rag research "Analyze the methodology" --context-file research-background.txt
+```
+
 Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
+- `--context`: Background context for the research
+- `--context-file`: Path to a file containing background context
 
 Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 

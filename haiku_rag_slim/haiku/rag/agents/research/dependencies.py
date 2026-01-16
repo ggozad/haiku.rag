@@ -19,6 +19,10 @@ class ResearchContext(BaseModel):
     qa_responses: list[Any] = Field(
         default_factory=list, description="Structured QA pairs used during research"
     )
+    background_context: str | None = Field(
+        default=None,
+        description="Optional background context provided at session start",
+    )
 
     def add_qa_response(self, qa: "SearchAnswer") -> None:
         """Add a structured QA response."""

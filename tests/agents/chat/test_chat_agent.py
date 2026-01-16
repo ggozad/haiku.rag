@@ -76,6 +76,17 @@ def test_chat_session_state():
     assert state.qa_history == []
 
 
+def test_chat_agent_has_dynamic_system_prompt():
+    """Test that chat agent registers a dynamic system prompt for background_context."""
+    agent = create_chat_agent(Config)
+    # The agent should have at least one system prompt function registered
+    # (the add_background_context function)
+    assert len(agent._system_prompt_functions) >= 1
+    # Verify it's the add_background_context function
+    func_names = [r.function.__name__ for r in agent._system_prompt_functions]
+    assert "add_background_context" in func_names
+
+
 def test_citation_info():
     """Test CitationInfo model."""
     citation = CitationInfo(

@@ -20,3 +20,12 @@ repos:
     rev: v1.1.407
     hooks:
       - id: pyright
+
+  - repo: local
+    hooks:
+      - id: biome
+        name: biome check
+        entry: bash -c 'cd app/frontend && npm run check'
+        language: system
+        files: ^app/frontend/
+        types_or: [javascript, jsx, ts, tsx, json]

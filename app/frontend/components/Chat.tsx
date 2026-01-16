@@ -7,9 +7,11 @@ import {
 	useCopilotAction,
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
+import { useCallback, useEffect, useState } from "react";
 import "@copilotkit/react-ui/styles.css";
 import CitationBlock from "./CitationBlock";
 import DbInfo from "./DbInfo";
+import SettingsPanel, { STORAGE_KEY } from "./SettingsPanel";
 
 // Must match AGUI_STATE_KEY from haiku.rag.agents.chat
 const AGUI_STATE_KEY = "haiku.rag.chat";
@@ -36,6 +38,7 @@ interface ChatSessionState {
 	session_id: string;
 	citations: Citation[];
 	qa_history: QAResponse[];
+	background_context: string | null;
 }
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
@@ -127,6 +130,24 @@ function FileIcon() {
 		>
 			<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
 			<path d="M14 2v4a2 2 0 0 0 2 2h4" />
+		</svg>
+	);
+}
+
+function SettingsIcon() {
+	return (
+		<svg
+			width="18"
+			height="18"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+			<circle cx="12" cy="12" r="3" />
 		</svg>
 	);
 }
@@ -336,7 +357,27 @@ function ToolCallIndicator({
 	);
 }
 
-function ChatContent() {
+function ChatContentInner({
+	backgroundContext,
+	setBackgroundContext,
+}: {
+	backgroundContext: string;
+	setBackgroundContext: (value: string) => void;
+}) {
+	const [settingsOpen, setSettingsOpen] = useState(false);
+
+	const handleSaveContext = useCallback(
+		(value: string) => {
+			setBackgroundContext(value);
+			if (value) {
+				localStorage.setItem(STORAGE_KEY, value);
+			} else {
+				localStorage.removeItem(STORAGE_KEY);
+			}
+		},
+		[setBackgroundContext],
+	);
+
 	useCoAgent<AgentState>({
 		name: "chat_agent",
 		initialState: {
@@ -344,6 +385,7 @@ function ChatContent() {
 				session_id: "",
 				citations: [],
 				qa_history: [],
+				background_context: backgroundContext || null,
 			},
 		},
 	});
@@ -425,6 +467,40 @@ function ChatContent() {
 					display: flex;
 					flex-direction: column;
 				}
+				.chat-header {
+					display: flex;
+					justify-content: flex-end;
+					padding: 0.5rem 0.75rem;
+					border-bottom: 1px solid #e2e8f0;
+					background: #f8fafc;
+				}
+				.settings-btn {
+					display: flex;
+					align-items: center;
+					gap: 0.375rem;
+					padding: 0.375rem 0.625rem;
+					background: white;
+					border: 1px solid #e2e8f0;
+					border-radius: 6px;
+					cursor: pointer;
+					color: #64748b;
+					font-size: 0.8125rem;
+					transition: all 0.15s;
+				}
+				.settings-btn:hover {
+					background: #f1f5f9;
+					border-color: #cbd5e1;
+					color: #475569;
+				}
+				.settings-btn.has-context {
+					background: #eff6ff;
+					border-color: #bfdbfe;
+					color: #2563eb;
+				}
+				.settings-btn.has-context:hover {
+					background: #dbeafe;
+					border-color: #93c5fd;
+				}
 				.chat-content {
 					flex: 1;
 					min-height: 0;
@@ -438,6 +514,21 @@ function ChatContent() {
 			`}</style>
 			<div className="chat-wrapper">
 				<div className="chat-container">
+					<div className="chat-header">
+						<button
+							type="button"
+							className={`settings-btn ${backgroundContext ? "has-context" : ""}`}
+							onClick={() => setSettingsOpen(true)}
+							title={
+								backgroundContext
+									? "Background context is set"
+									: "Set background context"
+							}
+						>
+							<SettingsIcon />
+							Context
+						</button>
+					</div>
 					<div className="chat-content">
 						<CopilotChat
 							labels={{
@@ -450,7 +541,35 @@ function ChatContent() {
 					<DbInfo />
 				</div>
 			</div>
+			<SettingsPanel
+				isOpen={settingsOpen}
+				onClose={() => setSettingsOpen(false)}
+				onSave={handleSaveContext}
+				currentValue={backgroundContext}
+			/>
 		</>
+	);
+}
+
+function ChatContent() {
+	const [backgroundContext, setBackgroundContext] = useState<string | null>(
+		null,
+	);
+
+	useEffect(() => {
+		const stored = localStorage.getItem(STORAGE_KEY);
+		setBackgroundContext(stored || "");
+	}, []);
+
+	if (backgroundContext === null) {
+		return null;
+	}
+
+	return (
+		<ChatContentInner
+			backgroundContext={backgroundContext}
+			setBackgroundContext={setBackgroundContext}
+		/>
 	);
 }
 
