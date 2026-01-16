@@ -30,49 +30,51 @@ from haiku.rag.utils import build_prompt, get_model
 
 
 def format_context_for_prompt(context: ResearchContext) -> str:
-    """Format the research context as XML for inclusion in prompts."""
-    context_data: dict[str, object] = {
-        "original_question": context.original_question,
-        "unanswered_questions": context.sub_questions,
-        "qa_responses": [
+    """Format the research context as XML for planning prompts."""
+    context_data: dict[str, object] = {}
+
+    if context.initial_context:
+        context_data["background"] = context.initial_context
+
+    context_data["question"] = context.original_question
+
+    if context.sub_questions:
+        context_data["pending_questions"] = context.sub_questions
+
+    if context.qa_responses:
+        context_data["prior_answers"] = [
             {
                 "question": qa.query,
                 "answer": qa.answer,
                 "confidence": qa.confidence,
-                "sources": [
-                    {
-                        "document_uri": c.document_uri,
-                        "document_title": c.document_title,
-                        "page_numbers": c.page_numbers,
-                        "headings": c.headings,
-                    }
-                    for c in qa.citations
-                ],
+                "source": qa.citations[0].document_title or qa.citations[0].document_uri
+                if qa.citations
+                else None,
             }
             for qa in context.qa_responses
-        ],
-    }
-    if context.initial_context:
-        context_data["initial_context"] = context.initial_context
-    return format_as_xml(context_data, root_tag="research_context")
+        ]
+
+    return format_as_xml(context_data, root_tag="context")
 
 
 def format_conversational_context_for_prompt(context: ResearchContext) -> str:
-    """Format context for conversational mode - excludes unanswered_questions."""
-    context_data: dict[str, object] = {
-        "question": context.original_question,
-    }
+    """Format context for synthesis prompts."""
+    context_data: dict[str, object] = {}
 
     if context.initial_context:
-        context_data["initial_context"] = context.initial_context
+        context_data["background"] = context.initial_context
 
-    # Only include conversation_history if there are qa_responses
+    context_data["question"] = context.original_question
+
     if context.qa_responses:
-        context_data["conversation_history"] = [
+        context_data["prior_answers"] = [
             {
                 "question": qa.query,
                 "answer": qa.answer,
-                "sources": [c.document_title or c.document_uri for c in qa.citations],
+                "confidence": qa.confidence,
+                "source": qa.citations[0].document_title or qa.citations[0].document_uri
+                if qa.citations
+                else None,
             }
             for qa in context.qa_responses
         ]
@@ -95,9 +97,12 @@ async def _plan_step_logic(
     model_config = config.research.model
 
     # Use context-aware prompt if we have existing qa_responses
-    has_context = bool(state.context.qa_responses)
+    has_prior_answers = bool(state.context.qa_responses)
+    has_background = bool(state.context.initial_context)
     effective_plan_prompt = (
-        build_prompt(PLAN_PROMPT_WITH_CONTEXT, config) if has_context else plan_prompt
+        build_prompt(PLAN_PROMPT_WITH_CONTEXT, config)
+        if has_prior_answers
+        else plan_prompt
     )
 
     plan_agent = Agent(
@@ -124,10 +129,17 @@ async def _plan_step_logic(
         return "\n\n".join(r.content for r in results)
 
     # Build prompt with existing context if available
-    if has_context:
+    if has_prior_answers:
         context_xml = format_context_for_prompt(state.context)
         prompt = (
             f"Review existing context and plan additional research if needed.\n\n"
+            f"{context_xml}\n\n"
+            f"Main question: {state.context.original_question}"
+        )
+    elif has_background:
+        context_xml = format_context_for_prompt(state.context)
+        prompt = (
+            f"Plan a focused approach for the main question.\n\n"
             f"{context_xml}\n\n"
             f"Main question: {state.context.original_question}"
         )

@@ -1,10 +1,11 @@
-PLAN_PROMPT = """You are the research orchestrator for a focused, iterative workflow.
+PLAN_PROMPT = """You are the research orchestrator for a focused workflow.
+
+If a <background> section is provided, use it to understand the domain context.
 
 Responsibilities:
 1. Understand and decompose the main question
 2. Propose a minimal, high-leverage plan
 3. Coordinate specialized agents to gather evidence
-4. Iterate based on gaps and new findings
 
 Plan requirements:
 - Produce at most 3 sub_questions that together cover the main question.
@@ -22,19 +23,22 @@ Use the gather_context tool once on the main question before planning."""
 
 PLAN_PROMPT_WITH_CONTEXT = """You are the research orchestrator for a focused workflow.
 
-You have access to PREVIOUS CONVERSATION CONTEXT in the qa_responses section below.
-Review this context first - if it already answers the question, generate minimal
-or no sub-questions. Only create sub-questions to fill gaps in the existing context.
+You have access to context that may include:
+- <background>: Domain context for the conversation
+- <prior_answers>: Previous Q&A pairs with confidence scores
+
+Review this first - if prior answers already answer the question completely,
+you may return an empty sub_questions list. Only create sub-questions to
+fill genuine gaps.
 
 Responsibilities:
-1. Review existing qa_responses to understand what's already known
+1. Review prior_answers to understand what's already known
 2. Identify gaps that need additional research
 3. Propose minimal sub-questions only for missing information
 
 Plan requirements:
-- If existing context fully answers the question, return a SINGLE sub-question
-  to verify or slightly expand the answer.
-- Only create new sub-questions for genuine gaps in the existing knowledge.
+- If prior answers fully answer the question, return an empty sub_questions list.
+- Only create new sub-questions for genuine gaps in existing knowledge.
 - sub_questions must be a list of plain strings (max 3).
 - Each sub_question must be standalone and self-contained.
 - Prioritize the highest-value gaps first.
@@ -145,7 +149,8 @@ Output:
 - confidence: Score from 0.0 to 1.0 indicating answer quality.
 
 Guidelines:
-- Base your answer solely on the collected evidence in qa_responses.
+- Base your answer solely on the evidence provided in the context.
+- If a <background> section is provided, use it to frame your answer appropriately.
 - Be thorough - include all relevant information from the evidence.
 - Use formatting (bullet points, numbered lists) when it improves clarity.
 - Do NOT use meta-commentary like "Based on the research..." or "The evidence shows..."
