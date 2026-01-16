@@ -133,7 +133,6 @@ export default function SettingsPanel({
 					background: #2563eb;
 				}
 			`}</style>
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: handled via onKeyDown on overlay */}
 			<div
 				className="settings-modal-overlay"
 				onClick={onClose}

@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import {
 	CopilotKit,
 	useCoAgent,
@@ -8,6 +7,7 @@ import {
 	useCopilotAction,
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
+import { useCallback, useEffect, useState } from "react";
 import "@copilotkit/react-ui/styles.css";
 import CitationBlock from "./CitationBlock";
 import DbInfo from "./DbInfo";
@@ -519,7 +519,11 @@ function ChatContentInner({
 							type="button"
 							className={`settings-btn ${initialContext ? "has-context" : ""}`}
 							onClick={() => setSettingsOpen(true)}
-							title={initialContext ? "Background context is set" : "Set background context"}
+							title={
+								initialContext
+									? "Background context is set"
+									: "Set background context"
+							}
 						>
 							<SettingsIcon />
 							Context
