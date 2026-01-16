@@ -34,7 +34,7 @@ haiku-rag list
 
 Filter documents by properties:
 ```bash
-# Filter by URI pattern
+# Filter by URI pattern (--filter or -f)
 haiku-rag list --filter "uri LIKE '%arxiv%'"
 
 # Filter by exact title
@@ -116,10 +116,10 @@ haiku-rag search "machine learning"
 
 With options:
 ```bash
-haiku-rag search "python programming" --limit 10
+haiku-rag search "python programming" --limit 10  # or -l 10
 ```
 
-With filters (filter by document properties):
+With filters (filter by document properties, use `--filter` or `-f`):
 ```bash
 # Filter by URI pattern
 haiku-rag search "neural networks" --filter "uri LIKE '%arxiv%'"
@@ -159,7 +159,7 @@ Flags:
 
 - `--cite`: Include citations showing which documents were used
 - `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
-- `--filter`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
+- `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
 
 ## Chat
 
@@ -182,6 +182,27 @@ The chat interface provides:
 
 See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
 
+## Inspect
+
+Launch the interactive inspector TUI for browsing documents and chunks:
+
+```bash
+haiku-rag inspect
+haiku-rag inspect --db /path/to/database.lancedb
+```
+
+!!! note
+    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
+
+The inspector provides:
+
+- Browse all documents in the database
+- View document metadata and content
+- Explore individual chunks
+- Search and filter results
+
+See [Applications](apps.md#inspector) for details.
+
 ## Research
 
 Run the multi-step research graph:
@@ -198,7 +219,7 @@ haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
 
 Flags:
 
-- `--filter`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
+- `--filter` / `-f`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
 
 Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 
@@ -233,6 +254,15 @@ View current configuration settings:
 ```bash
 haiku-rag settings
 ```
+
+### Generate Configuration File
+
+Generate a YAML configuration file with defaults:
+```bash
+haiku-rag init-config [output_path]
+```
+
+If no path is specified, creates `haiku.rag.yaml` in the current directory.
 
 ## Database Management
 

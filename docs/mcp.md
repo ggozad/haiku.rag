@@ -37,7 +37,7 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
 
 - **`search_documents`** - Search using hybrid search (vector + full-text)
   - `query` (required): Search query
-  - `limit` (optional): Maximum results (default: 5)
+  - `limit` (optional): Maximum results (uses config default if not specified)
 
 ### Question Answering
 
