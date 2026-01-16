@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
 const STORAGE_KEY = "haiku.rag.settings.initial_context";
 
@@ -18,6 +18,7 @@ export default function SettingsPanel({
 	currentValue,
 }: SettingsPanelProps) {
 	const [value, setValue] = useState(currentValue);
+	const titleId = useId();
 
 	useEffect(() => {
 		if (isOpen) {
@@ -139,7 +140,7 @@ export default function SettingsPanel({
 				onKeyDown={handleKeyDown}
 				role="dialog"
 				aria-modal="true"
-				aria-labelledby="settings-title"
+				aria-labelledby={titleId}
 			>
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: modal content wrapper */}
 				<div
@@ -147,7 +148,7 @@ export default function SettingsPanel({
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 id="settings-title" className="settings-modal-title">
+					<h2 id={titleId} className="settings-modal-title">
 						Background Context
 					</h2>
 					<p className="settings-modal-description">
