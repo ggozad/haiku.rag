@@ -248,3 +248,22 @@ def test_build_document_filter_escapes_quotes():
 def test_max_qa_history_constant():
     """Test MAX_QA_HISTORY constant value."""
     assert MAX_QA_HISTORY == 50
+
+
+def test_chat_session_state_initial_context():
+    """Test ChatSessionState accepts initial_context."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    state = ChatSessionState(
+        session_id="test-session",
+        initial_context="This is background knowledge about the topic.",
+    )
+    assert state.initial_context == "This is background knowledge about the topic."
+
+
+def test_chat_session_state_initial_context_defaults_to_none():
+    """Test ChatSessionState initial_context defaults to None."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    state = ChatSessionState(session_id="test-session")
+    assert state.initial_context is None

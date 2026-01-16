@@ -31,7 +31,7 @@ from haiku.rag.utils import build_prompt, get_model
 
 def format_context_for_prompt(context: ResearchContext) -> str:
     """Format the research context as XML for inclusion in prompts."""
-    context_data = {
+    context_data: dict[str, object] = {
         "original_question": context.original_question,
         "unanswered_questions": context.sub_questions,
         "qa_responses": [
@@ -52,6 +52,8 @@ def format_context_for_prompt(context: ResearchContext) -> str:
             for qa in context.qa_responses
         ],
     }
+    if context.initial_context:
+        context_data["initial_context"] = context.initial_context
     return format_as_xml(context_data, root_tag="research_context")
 
 
@@ -60,6 +62,9 @@ def format_conversational_context_for_prompt(context: ResearchContext) -> str:
     context_data: dict[str, object] = {
         "question": context.original_question,
     }
+
+    if context.initial_context:
+        context_data["initial_context"] = context.initial_context
 
     # Only include conversation_history if there are qa_responses
     if context.qa_responses:

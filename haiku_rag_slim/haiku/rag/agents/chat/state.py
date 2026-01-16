@@ -61,6 +61,7 @@ class ChatSessionState(BaseModel):
     session_id: str = ""
     citations: list[CitationInfo] = []
     qa_history: list[QAResponse] = []
+    initial_context: str | None = None
 
 
 def format_conversation_context(qa_history: list[QAResponse]) -> str:

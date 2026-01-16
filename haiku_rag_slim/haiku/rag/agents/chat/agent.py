@@ -32,6 +32,13 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         retries=3,
     )
 
+    @agent.system_prompt
+    async def add_initial_context(ctx: RunContext[ChatDeps]) -> str:
+        """Add initial_context to system prompt when available."""
+        if ctx.deps.session_state and ctx.deps.session_state.initial_context:
+            return f"\nBACKGROUND CONTEXT:\n{ctx.deps.session_state.initial_context}"
+        return ""
+
     @agent.tool
     async def search(
         ctx: RunContext[ChatDeps],
@@ -85,6 +92,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
+            ),
+            initial_context=(
+                ctx.deps.session_state.initial_context
+                if ctx.deps.session_state
+                else None
             ),
         )
 
@@ -182,9 +194,14 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
 
+        initial_context = (
+            ctx.deps.session_state.initial_context if ctx.deps.session_state else None
+        )
+
         context = ResearchContext(
             original_question=question,
             qa_responses=existing_qa,
+            initial_context=initial_context,
         )
         state = ResearchState(
             context=context,
@@ -237,6 +254,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
+            ),
+            initial_context=(
+                ctx.deps.session_state.initial_context
+                if ctx.deps.session_state
+                else None
             ),
         )
 
