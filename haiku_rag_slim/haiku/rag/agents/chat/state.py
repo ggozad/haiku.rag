@@ -1,6 +1,6 @@
 import hashlib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -156,13 +156,54 @@ async def rank_qa_history_by_similarity(
 
 @dataclass
 class ChatDeps:
-    """Dependencies for chat agent."""
+    """Dependencies for chat agent.
+
+    Implements StateHandler protocol for AG-UI state management.
+    """
 
     client: HaikuRAG
     config: AppConfig
     search_results: list[SearchResult] | None = None
     session_state: ChatSessionState | None = None
     state_key: str | None = None
+
+    @property
+    def state(self) -> dict[str, Any] | None:
+        """Get current state for AG-UI protocol."""
+        if self.session_state is None:
+            return None
+        snapshot = self.session_state.model_dump()
+        if self.state_key:
+            return {self.state_key: snapshot}
+        return snapshot
+
+    @state.setter
+    def state(self, value: dict[str, Any] | None) -> None:
+        """Set state from AG-UI protocol."""
+        if value is None:
+            return
+        # Extract from namespaced key if present
+        state_data: dict[str, Any] = value
+        if self.state_key and self.state_key in value:
+            nested = value[self.state_key]
+            if isinstance(nested, dict):
+                state_data = nested
+        # Update session_state from incoming state
+        if self.session_state is not None:
+            if "qa_history" in state_data:
+                self.session_state.qa_history = [
+                    QAResponse(**qa) if isinstance(qa, dict) else qa
+                    for qa in state_data.get("qa_history", [])
+                ]
+            if "citations" in state_data:
+                self.session_state.citations = [
+                    CitationInfo(**c) if isinstance(c, dict) else c
+                    for c in state_data.get("citations", [])
+                ]
+            if "initial_context" in state_data:
+                self.session_state.initial_context = state_data.get("initial_context")
+            if "session_id" in state_data:
+                self.session_state.session_id = state_data.get("session_id", "")
 
 
 @dataclass

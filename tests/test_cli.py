@@ -283,6 +283,7 @@ def test_ask():
             cite=False,
             deep=False,
             filter=None,
+            initial_context=None,
         )
 
 
@@ -300,6 +301,7 @@ def test_ask_with_cite():
             cite=True,
             deep=False,
             filter=None,
+            initial_context=None,
         )
 
 
@@ -317,6 +319,7 @@ def test_ask_with_deep():
             cite=False,
             deep=True,
             filter=None,
+            initial_context=None,
         )
 
 
@@ -334,6 +337,7 @@ def test_ask_with_deep_and_cite():
             cite=True,
             deep=True,
             filter=None,
+            initial_context=None,
         )
 
 
