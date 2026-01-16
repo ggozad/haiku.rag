@@ -338,9 +338,34 @@ def ask(
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    context: str | None = typer.Option(
+        None,
+        "--context",
+        help="Background context for the question",
+    ),
+    context_file: Path | None = typer.Option(
+        None,
+        "--context-file",
+        help="Path to a file containing background context",
+    ),
 ):
+    # Resolve initial context from flag or file
+    initial_context: str | None = None
+    if context_file:
+        initial_context = context_file.read_text()
+    elif context:
+        initial_context = context
+
     app = create_app(db)
-    asyncio.run(app.ask(question=question, cite=cite, deep=deep, filter=filter))
+    asyncio.run(
+        app.ask(
+            question=question,
+            cite=cite,
+            deep=deep,
+            filter=filter,
+            initial_context=initial_context,
+        )
+    )
 
 
 @cli.command("research", help="Run multi-agent research and output a concise report")
@@ -357,9 +382,28 @@ def research(
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    context: str | None = typer.Option(
+        None,
+        "--context",
+        help="Background context for the research",
+    ),
+    context_file: Path | None = typer.Option(
+        None,
+        "--context-file",
+        help="Path to a file containing background context",
+    ),
 ):
+    # Resolve initial context from flag or file
+    initial_context: str | None = None
+    if context_file:
+        initial_context = context_file.read_text()
+    elif context:
+        initial_context = context
+
     app = create_app(db)
-    asyncio.run(app.research(question=question, filter=filter))
+    asyncio.run(
+        app.research(question=question, filter=filter, initial_context=initial_context)
+    )
 
 
 @cli.command("settings", help="Display current configuration settings")
@@ -547,12 +591,32 @@ def chat(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    context: str | None = typer.Option(
+        None,
+        "--context",
+        help="Initial context/background information for the conversation",
+    ),
+    context_file: Path | None = typer.Option(
+        None,
+        "--context-file",
+        help="Path to a file containing initial context",
+    ),
 ):
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_chat(db_path, read_only=_read_only, before=_before)
+
+    # Resolve initial context from flag or file
+    initial_context: str | None = None
+    if context_file:
+        initial_context = context_file.read_text()
+    elif context:
+        initial_context = context
+
+    run_chat(
+        db_path, read_only=_read_only, before=_before, initial_context=initial_context
+    )
 
 
 @cli.command(

@@ -376,6 +376,7 @@ class HaikuRAGApp:
         cite: bool = False,
         deep: bool = False,
         filter: str | None = None,
+        initial_context: str | None = None,
     ):
         """Ask a question using the RAG system.
 
@@ -384,6 +385,7 @@ class HaikuRAGApp:
             cite: Include citations in the answer
             deep: Use deep QA mode (multi-step reasoning)
             filter: SQL WHERE clause to filter documents
+            initial_context: Optional background context for the question
         """
         async with HaikuRAG(
             db_path=self.db_path,
@@ -394,7 +396,9 @@ class HaikuRAGApp:
             citations = []
             if deep:
                 graph = build_research_graph(config=self.config)
-                context = ResearchContext(original_question=question)
+                context = ResearchContext(
+                    original_question=question, initial_context=initial_context
+                )
                 state = ResearchState.from_config(
                     context=context,
                     config=self.config,
@@ -423,7 +427,14 @@ class HaikuRAGApp:
                 else:
                     self.console.print("[yellow]No answer generated.[/yellow]")
             else:
-                answer, citations = await self.client.ask(question, filter=filter)
+                system_prompt = (
+                    f"BACKGROUND CONTEXT:\n{initial_context}"
+                    if initial_context
+                    else None
+                )
+                answer, citations = await self.client.ask(
+                    question, system_prompt=system_prompt, filter=filter
+                )
 
                 self.console.print(f"[bold blue]Question:[/bold blue] {question}")
                 self.console.print()
@@ -433,12 +444,18 @@ class HaikuRAGApp:
                     for renderable in format_citations_rich(citations):
                         self.console.print(renderable)
 
-    async def research(self, question: str, filter: str | None = None):
+    async def research(
+        self,
+        question: str,
+        filter: str | None = None,
+        initial_context: str | None = None,
+    ):
         """Run research via the pydantic-graph pipeline.
 
         Args:
             question: The research question
             filter: SQL WHERE clause to filter documents
+            initial_context: Optional background context for the research
         """
         async with HaikuRAG(
             db_path=self.db_path,
@@ -451,7 +468,9 @@ class HaikuRAGApp:
             self.console.print()
 
             graph = build_research_graph(config=self.config)
-            context = ResearchContext(original_question=question)
+            context = ResearchContext(
+                original_question=question, initial_context=initial_context
+            )
             state = ResearchState.from_config(context=context, config=self.config)
             state.search_filter = filter
             deps = ResearchDeps(client=client)
