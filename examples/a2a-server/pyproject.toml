@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 keywords = ["RAG", "a2a", "agent", "conversational-ai"]
 
 dependencies = [
-    "haiku.rag>=0.26.4",
+    "haiku.rag>=0.26.5",
     "fasta2a>=0.6.0",
     "pydantic-ai-slim[a2a]>=1.39.0",
     "rich>=14.2.0",

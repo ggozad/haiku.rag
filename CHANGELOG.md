@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.5] - 2026-01-16
+
 ### Added
 
 - **Background Context Support**: Pass background context to agents via CLI or Python API
