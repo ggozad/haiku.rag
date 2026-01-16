@@ -154,7 +154,7 @@ The emitted state structure:
 }
 ```
 
-Frontend clients should extract state from under this key. See the [Conversational RAG App](apps.md#conversational-rag-app) for a complete implementation example.
+Frontend clients should extract state from under this key. See the [Web Application](apps.md#web-application) for a complete implementation example.
 
 ## Research Graph
 
