@@ -16,10 +16,14 @@ repos:
       # Run the formatter.
       - id: ruff-format
 
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.407
+  - repo: local
     hooks:
-      - id: pyright
+      - id: ty
+        name: ty check
+        entry: uvx ty check
+        language: system
+        types: [python]
+        pass_filenames: false
 
   - repo: local
     hooks:

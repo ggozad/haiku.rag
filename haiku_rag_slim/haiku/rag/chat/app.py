@@ -51,7 +51,7 @@ except ImportError:
     App = object  # type: ignore
 
 
-class ChatApp(App):  # type: ignore[misc]
+class ChatApp(App):
     """Textual TUI for conversational RAG."""
 
     TITLE = "haiku.rag Chat"

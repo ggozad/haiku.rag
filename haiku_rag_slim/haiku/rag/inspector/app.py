@@ -26,7 +26,7 @@ except ImportError:
     App = object  # type: ignore
 
 
-class InspectorApp(App):  # type: ignore[misc]  # pragma: no cover
+class InspectorApp(App):  # pragma: no cover
     """Textual TUI for inspecting LanceDB data."""
 
     TITLE = "haiku.rag DB Inspector"

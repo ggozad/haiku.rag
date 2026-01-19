@@ -30,8 +30,7 @@ async def test_mcp_add_document_from_file():
                 t for t in tools.values() if t.name == "add_document_from_file"
             )
 
-            result = await add_file_tool.fn(file_path="/test.txt")  # type: ignore[attr-defined]
-
+            result = await add_file_tool.fn(file_path="/test.txt")
             assert result == "doc123"
             mock_rag.create_document_from_source.assert_called_once()
 
@@ -52,9 +51,7 @@ async def test_mcp_ask_question():
             tools = await mcp.get_tools()
             ask_tool = next(t for t in tools.values() if t.name == "ask_question")
 
-            result = await ask_tool.fn(  # type: ignore[attr-defined]
-                question="What is this?", cite=False, deep=False
-            )
+            result = await ask_tool.fn(question="What is this?", cite=False, deep=False)
 
             assert result == "This is the answer"
             mock_rag.ask.assert_called_once_with("What is this?")
@@ -81,8 +78,7 @@ async def test_mcp_add_document_from_url():
                 t for t in tools.values() if t.name == "add_document_from_url"
             )
 
-            result = await add_url_tool.fn(url="https://example.com")  # type: ignore[attr-defined]
-
+            result = await add_url_tool.fn(url="https://example.com")
             assert result == "doc456"
             mock_rag.create_document_from_source.assert_called_once()
 
@@ -108,9 +104,7 @@ async def test_mcp_add_document_from_text():
                 t for t in tools.values() if t.name == "add_document_from_text"
             )
 
-            result = await add_text_tool.fn(  # type: ignore[attr-defined]
-                content="test content", uri="text://test"
-            )
+            result = await add_text_tool.fn(content="test content", uri="text://test")
 
             assert result == "doc789"
             mock_rag.create_document.assert_called_once()
@@ -141,8 +135,7 @@ async def test_mcp_search_documents():
                 t for t in tools.values() if t.name == "search_documents"
             )
 
-            result = await search_tool.fn(query="test query", limit=5)  # type: ignore[attr-defined]
-
+            result = await search_tool.fn(query="test query", limit=5)
             assert len(result) == 2
             assert result[0].document_id == "doc1"
             assert result[0].content == "Result 1"
@@ -174,8 +167,7 @@ async def test_mcp_get_document():
             tools = await mcp.get_tools()
             get_tool = next(t for t in tools.values() if t.name == "get_document")
 
-            result = await get_tool.fn(document_id="doc123")  # type: ignore[attr-defined]
-
+            result = await get_tool.fn(document_id="doc123")
             assert result is not None
             assert result.id == "doc123"
             assert result.content == "test"
@@ -211,8 +203,7 @@ async def test_mcp_list_documents():
             tools = await mcp.get_tools()
             list_tool = next(t for t in tools.values() if t.name == "list_documents")
 
-            result = await list_tool.fn(limit=10, offset=0)  # type: ignore[attr-defined]
-
+            result = await list_tool.fn(limit=10, offset=0)
             assert len(result) == 2
             assert result[0].id == "doc1"
             assert result[1].id == "doc2"
@@ -235,8 +226,7 @@ async def test_mcp_delete_document():
             tools = await mcp.get_tools()
             delete_tool = next(t for t in tools.values() if t.name == "delete_document")
 
-            result = await delete_tool.fn(document_id="doc123")  # type: ignore[attr-defined]
-
+            result = await delete_tool.fn(document_id="doc123")
             assert result is True
             mock_rag.delete_document.assert_called_once_with("doc123")
 
@@ -268,9 +258,7 @@ async def test_mcp_ask_question_deep():
             ask_tool = next(t for t in tools.values() if t.name == "ask_question")
 
             # cite=False to avoid citation formatting in output
-            result = await ask_tool.fn(  # type: ignore[attr-defined]
-                question="Deep question?", cite=False, deep=True
-            )
+            result = await ask_tool.fn(question="Deep question?", cite=False, deep=True)
 
             assert result == "Deep answer from research"
             mock_graph.run.assert_called_once()
@@ -311,7 +299,7 @@ async def test_mcp_research_question():
                 t for t in tools.values() if t.name == "research_question"
             )
 
-            result = await research_tool.fn(  # type: ignore[attr-defined]
+            result = await research_tool.fn(
                 question="Research question?",
             )
 

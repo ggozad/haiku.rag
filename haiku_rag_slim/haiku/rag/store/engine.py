@@ -258,7 +258,7 @@ class Store:
         }
 
         # Documents table stats
-        doc_stats: dict = self.documents_table.stats()  # type: ignore[assignment]
+        doc_stats: dict = self.documents_table.stats()
         stats_dict["documents"] = {
             "exists": True,
             "num_rows": doc_stats.get("num_rows", 0),
@@ -266,7 +266,7 @@ class Store:
         }
 
         # Chunks table stats
-        chunk_stats: dict = self.chunks_table.stats()  # type: ignore[assignment]
+        chunk_stats: dict = self.chunks_table.stats()
         stats_dict["chunks"] = {
             "exists": True,
             "num_rows": chunk_stats.get("num_rows", 0),

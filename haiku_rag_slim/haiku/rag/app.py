@@ -494,7 +494,7 @@ class HaikuRAGApp:
 
             # Confidence (from last evaluation)
             if state.last_eval:
-                conf = state.last_eval.confidence_score  # type: ignore[attr-defined]
+                conf = state.last_eval.confidence_score
                 self.console.print(f"[bold cyan]Confidence:[/bold cyan] {conf:.1%}")
                 self.console.print()
 

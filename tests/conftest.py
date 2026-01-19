@@ -2,7 +2,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 # Prevent tests from loading user's local haiku.rag.yaml by setting env var
 # to a test config file BEFORE any haiku.rag imports.
@@ -26,7 +26,7 @@ from datasets import Dataset, load_dataset, load_from_disk  # noqa: E402
 if TYPE_CHECKING:
     from vcr import VCR
 
-pydantic_ai.models.ALLOW_MODEL_REQUESTS = False
+setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
 
@@ -35,10 +35,9 @@ def qa_corpus() -> Dataset:
     ds_path = Path(__file__).parent / "data" / "dataset"
     ds_path.mkdir(parents=True, exist_ok=True)
     try:
-        ds: Dataset = load_from_disk(ds_path)  # type: ignore
-        return ds
+        return cast(Dataset, load_from_disk(ds_path))
     except FileNotFoundError:
-        ds: Dataset = load_dataset("ServiceNow/repliqa")["repliqa_3"]  # type: ignore
+        ds: Dataset = load_dataset("ServiceNow/repliqa")["repliqa_3"]
         corpus = ds.filter(lambda doc: doc["document_topic"] == "News Stories")
         corpus.save_to_disk(ds_path)
         return corpus

@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import Any, cast
 
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, load_dataset
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
@@ -9,8 +9,8 @@ from evaluations.evaluators import MAPEvaluator
 
 
 def load_hotpotqa_validation() -> Dataset:
-    dataset_dict = cast(DatasetDict, load_dataset("hotpotqa/hotpot_qa", "distractor"))
-    return cast(Dataset, dataset_dict["validation"])
+    dataset_dict = load_dataset("hotpotqa/hotpot_qa", "distractor")
+    return dataset_dict["validation"]
 
 
 def extract_unique_documents(dataset: Dataset) -> list[dict[str, Any]]:

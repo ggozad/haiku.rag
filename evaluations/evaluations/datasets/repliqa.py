@@ -1,7 +1,7 @@
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, load_dataset
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
@@ -9,8 +9,8 @@ from evaluations.evaluators import MRREvaluator
 
 
 def load_repliqa_corpus() -> Dataset:
-    dataset_dict = cast(DatasetDict, load_dataset("ServiceNow/repliqa"))
-    dataset = cast(Dataset, dataset_dict["repliqa_3"])
+    dataset_dict = load_dataset("ServiceNow/repliqa")
+    dataset = dataset_dict["repliqa_3"]
     return dataset.filter(lambda doc: doc["document_topic"] == "News Stories")
 
 

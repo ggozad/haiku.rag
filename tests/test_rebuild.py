@@ -1,7 +1,18 @@
+from typing import TypedDict
+
 import pytest
 from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG, RebuildMode
+
+
+class ChunkData(TypedDict):
+    id: str
+    document_id: str
+    content: str
+    content_fts: str
+    metadata: str
+    order: int
 
 
 @pytest.mark.vcr()
@@ -132,15 +143,15 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
 
         chunks_before = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks_before) > 0
-        chunk_data = [
-            {
-                "id": c.id,
-                "document_id": c.document_id,
-                "content": c.content,
-                "content_fts": c.content,
-                "metadata": json.dumps(c.metadata),
-                "order": c.order,
-            }
+        chunk_data: list[ChunkData] = [
+            ChunkData(
+                id=c.id or "",
+                document_id=c.document_id or "",
+                content=c.content,
+                content_fts=c.content,
+                metadata=json.dumps(c.metadata),
+                order=c.order,
+            )
             for c in chunks_before
         ]
 

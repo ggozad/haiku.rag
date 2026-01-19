@@ -226,7 +226,7 @@ app = Starlette(
     ],
     middleware=[
         Middleware(
-            CORSMiddleware,
+            CORSMiddleware,  # type: ignore[invalid-argument-type]
             allow_origins=["http://localhost:3000", "http://frontend:3000"],
             allow_credentials=True,
             allow_methods=["*"],

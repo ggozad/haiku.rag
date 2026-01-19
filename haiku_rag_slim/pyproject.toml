@@ -25,9 +25,9 @@ dependencies = [
     "docling-core==2.59.0",
     "httpx>=0.28.1",
     "lancedb==0.26.1",
-    "pathspec>=0.12.1",
+    "pathspec>=1.0.3",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.39.0",
+    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.44.0",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.3",
     "rich>=14.2.0",
@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling==2.67.0", "opencv-python-headless>=4.12.0.88"]
+docling = ["docling==2.68.0", "opencv-python-headless>=4.13.0.90"]
 # Embedding providers
 voyageai = ["voyageai>=0.3.7"]
 # Rerankers
@@ -45,7 +45,7 @@ mxbai = ["mxbai-rerank>=0.1.6"]
 cohere = ["cohere>=5.20.1"]
 zeroentropy = ["zeroentropy>=0.1.0a7"]
 # TUI (chat and inspect commands)
-tui = ["textual>=7.0.0", "textual-image>=0.8.5"]
+tui = ["textual>=7.3.0", "textual-image>=0.8.5"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]

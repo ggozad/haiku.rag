@@ -177,6 +177,10 @@ def get_model(
         return OpenAIChatModel(model_name=model, settings=openai_settings)
 
     elif provider == "anthropic":
+        from anthropic.types.beta import (
+            BetaThinkingConfigDisabledParam,
+            BetaThinkingConfigEnabledParam,
+        )
         from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 
         anthropic_settings: Any = None
@@ -184,12 +188,19 @@ def get_model(
         # Apply thinking control
         if model_config.enable_thinking is not None:
             if model_config.enable_thinking:
+                thinking_config: BetaThinkingConfigEnabledParam = {
+                    "type": "enabled",
+                    "budget_tokens": 4096,
+                }
                 anthropic_settings = AnthropicModelSettings(
-                    anthropic_thinking={"type": "enabled", "budget_tokens": 4096}
+                    anthropic_thinking=thinking_config
                 )
             else:
+                thinking_disabled: BetaThinkingConfigDisabledParam = {
+                    "type": "disabled"
+                }
                 anthropic_settings = AnthropicModelSettings(
-                    anthropic_thinking={"type": "disabled"}
+                    anthropic_thinking=thinking_disabled
                 )
 
         anthropic_settings = apply_common_settings(

@@ -67,7 +67,7 @@ members = ["haiku_rag_slim", "evaluations"]
 [dependency-groups]
 dev = [
     "haiku.rag-evals",
-    "datasets>=4.4.2",
+    "datasets>=4.5.0",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.1",
     "pre-commit>=4.5.1",
@@ -75,12 +75,12 @@ dev = [
     "pydantic-ai-slim[bedrock]",
     "pydantic-ai-slim[google]",
     "pydantic-ai-slim[groq]",
-    "pyright>=1.1.408",
+    "ty>=0.0.12",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
     "pytest-recording>=0.13.4",
-    "ruff>=0.14.11",
+    "ruff>=0.14.13",
 ]
 
 [tool.ruff]
@@ -110,10 +110,12 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
-pythonVersion = "3.12"
+[tool.ty.src]
+exclude = ["examples/**"]
+
+[tool.ty.environment]
+python-version = "3.12"
+python = ".venv"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "session"

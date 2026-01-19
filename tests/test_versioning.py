@@ -14,7 +14,7 @@ async def test_version_rollback_on_create_failure(temp_db_path):
             await orig_create(chunks)
             raise RuntimeError("boom")
 
-        client.chunk_repository.create = succeed_then_fail  # type: ignore[method-assign]
+        client.chunk_repository.create = succeed_then_fail
 
         # Attempt to create document; expect failure and rollback
         content = "Hello, rollback!"
@@ -43,20 +43,20 @@ async def test_version_rollback_on_update_failure(temp_db_path):
             await orig_create(chunks)
             raise RuntimeError("update fail")
 
-        client.chunk_repository.create = succeed_then_fail  # type: ignore[method-assign]
+        client.chunk_repository.create = succeed_then_fail
 
         # Attempt update
         with pytest.raises(RuntimeError):
             await client.update_document(
-                document_id=created.id,  # type: ignore[arg-type]
+                document_id=created.id,
                 content="Updated content",
             )
 
         # Content and chunks should remain the original
-        persisted = await client.get_document_by_id(created.id)  # type: ignore[arg-type]
+        persisted = await client.get_document_by_id(created.id)
         assert persisted is not None
         assert persisted.content == base_content
-        original_chunks = await client.chunk_repository.get_by_document_id(created.id)  # type: ignore[arg-type]
+        original_chunks = await client.chunk_repository.get_by_document_id(created.id)
         assert len(original_chunks) > 0
 
 

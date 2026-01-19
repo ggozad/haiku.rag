@@ -81,9 +81,10 @@ def test_chat_agent_has_dynamic_system_prompt():
     agent = create_chat_agent(Config)
     # The agent should have at least one system prompt function registered
     # (the add_background_context function)
-    assert len(agent._system_prompt_functions) >= 1
+    system_prompt_functions = getattr(agent, "_system_prompt_functions")
+    assert len(system_prompt_functions) >= 1
     # Verify it's the add_background_context function
-    func_names = [r.function.__name__ for r in agent._system_prompt_functions]
+    func_names = [r.function.__name__ for r in system_prompt_functions]
     assert "add_background_context" in func_names
 
 
