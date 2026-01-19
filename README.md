@@ -121,7 +121,6 @@ Provides tools for document management, search, QA, and research directly in you
 See the [examples directory](examples/) for working examples:
 
 - **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring and MCP server
-- **[A2A Server](examples/a2a-server/)** - Self-contained A2A protocol server package with conversational agent interface
 - **[Web Application](app/)** - Full-stack conversational RAG with CopilotKit frontend
 
 ## Documentation

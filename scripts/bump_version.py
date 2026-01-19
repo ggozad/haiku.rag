@@ -120,7 +120,6 @@ def main():
 
     example_pyproject_files = [
         root / "app" / "backend" / "pyproject.toml",
-        root / "examples" / "a2a-server" / "pyproject.toml",
     ]
 
     changelog_file = root / "CHANGELOG.md"
