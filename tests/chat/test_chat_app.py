@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from haiku.rag.cli import cli
+from haiku.rag.cli import _cli as cli
 
 runner = CliRunner()
 

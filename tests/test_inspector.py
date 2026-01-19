@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from haiku.rag.cli import cli
+from haiku.rag.cli import _cli as cli
 from haiku.rag.store.models import Document
 
 runner = CliRunner()
