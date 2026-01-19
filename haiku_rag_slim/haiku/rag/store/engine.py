@@ -14,7 +14,7 @@ from pydantic import Field
 
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.store.exceptions import ReadOnlyError
+from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ class Store:
         create: bool = False,
         read_only: bool = False,
         before: datetime | None = None,
+        skip_migration_check: bool = False,
     ):
         self.db_path: Path = db_path
         self._config = config
@@ -129,13 +130,12 @@ class Store:
         if before is not None:
             self._checkout_tables_before(before)
 
-        # Run upgrades only on existing databases, set version for new ones
-        # Skip upgrades in read-only mode (they would fail anyway)
-        if not self._read_only:
-            if is_new_db:
+        # Set version for new databases, check migrations for existing ones
+        if is_new_db:
+            if not self._read_only:
                 self._set_initial_version()
-            else:
-                self._run_upgrades()
+        elif not skip_migration_check:
+            self._check_migrations()
 
         # Validate config compatibility after connection is established
         if not skip_validation:
@@ -371,25 +371,54 @@ class Store:
         """Set the initial version for a new database."""
         self.set_haiku_version(metadata.version("haiku.rag-slim"))
 
-    def _run_upgrades(self):
-        """Run pending database upgrades."""
-        try:
-            from haiku.rag.store.upgrades import run_pending_upgrades
+    def _check_migrations(self) -> None:
+        """Check if migrations are pending and error or update version accordingly.
 
-            current_version = metadata.version("haiku.rag-slim")
-            db_version = self.get_haiku_version()
+        Raises:
+            MigrationRequiredError: If migrations are pending.
+        """
+        from haiku.rag.store.upgrades import get_pending_upgrades
 
-            run_pending_upgrades(self, db_version, current_version)
+        current_version = metadata.version("haiku.rag-slim")
+        db_version = self.get_haiku_version()
 
-            self.set_haiku_version(current_version)
-        except Exception as e:
-            # Avoid hard failure on initial connection; log and continue so CLI remains usable.
-            logger.warning(
-                "Skipping upgrade due to error (db=%s -> pkg=%s): %s",
-                self.get_haiku_version(),
-                metadata.version("haiku.rag-slim"),
-                e,
+        pending = get_pending_upgrades(db_version)
+
+        if pending:
+            # Migrations are pending - require explicit migrate command
+            raise MigrationRequiredError(
+                f"Database requires migration from {db_version} to {current_version}. "
+                f"{len(pending)} migration(s) pending. "
+                "Run 'haiku-rag migrate' to upgrade."
             )
+
+        # No pending migrations - update version silently if needed (writable only)
+        if not self._read_only and db_version != current_version:
+            self.set_haiku_version(current_version)
+
+    def migrate(self) -> list[str]:
+        """Run pending database migrations.
+
+        Returns:
+            List of descriptions of applied upgrades.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+        """
+        self._assert_writable()
+
+        from haiku.rag.store.upgrades import run_pending_upgrades
+
+        db_version = self.get_haiku_version()
+        current_version = metadata.version("haiku.rag-slim")
+
+        applied = run_pending_upgrades(self, db_version)
+
+        # Update version after successful migration
+        if applied or db_version != current_version:
+            self.set_haiku_version(current_version)
+
+        return applied
 
     def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""

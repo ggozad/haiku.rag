@@ -72,20 +72,24 @@ def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
     Store(temp_db_path, create=True)
 
 
-def test_existing_database_runs_upgrades(monkeypatch, temp_db_path):
+def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
     Store(temp_db_path, create=True)
 
-    called = {"value": False}
+    from haiku.rag.store import upgrades
 
-    def mark_called(*_args, **_kwargs):
+    called = {"value": False}
+    original_get_pending = upgrades.get_pending_upgrades
+
+    def mark_called(*args, **kwargs):
         called["value"] = True
+        return original_get_pending(*args, **kwargs)
 
     monkeypatch.setattr(
-        "haiku.rag.store.upgrades.run_pending_upgrades",
+        "haiku.rag.store.upgrades.get_pending_upgrades",
         mark_called,
     )
 
-    # Opening an existing database should trigger upgrades
+    # Opening an existing database should check for pending migrations
     Store(temp_db_path)
 
     assert called["value"]

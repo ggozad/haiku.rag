@@ -1,10 +1,12 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from packaging.version import Version, parse
 
-from haiku.rag.store.engine import Store
+if TYPE_CHECKING:
+    from haiku.rag.store.engine import Store
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ class Upgrade:
     """Represents a database upgrade step."""
 
     version: str
-    apply: Callable[[Store], None]
+    apply: Callable[["Store"], None]
     description: str = ""
 
 
@@ -22,23 +24,30 @@ class Upgrade:
 upgrades: list[Upgrade] = []
 
 
-def run_pending_upgrades(store: Store, from_version: str, to_version: str) -> None:
-    """Run upgrades where from_version < step.version <= to_version."""
+def get_pending_upgrades(from_version: str) -> list[Upgrade]:
+    """Get pending upgrades from the given version.
+
+    Returns:
+        List of Upgrade objects where from_version < upgrade.version,
+        sorted by version in ascending order.
+    """
     v_from: Version = parse(from_version)
-    v_to: Version = parse(to_version)
-
-    # Ensure that tests/development run available code upgrades even if the
-    # installed package version hasn't been bumped to include them yet.
-    if upgrades:
-        highest_step_version: Version = max(parse(u.version) for u in upgrades)
-        if highest_step_version > v_to:
-            v_to = highest_step_version
-
-    # Determine applicable steps
     sorted_steps = sorted(upgrades, key=lambda u: parse(u.version))
-    applicable = [s for s in sorted_steps if v_from < parse(s.version) <= v_to]
+    return [s for s in sorted_steps if v_from < parse(s.version)]
+
+
+def run_pending_upgrades(store: "Store", from_version: str) -> list[str]:
+    """Run upgrades where from_version < step.version.
+
+    Returns:
+        List of descriptions of applied upgrades.
+    """
+    applicable = get_pending_upgrades(from_version)
+
     if applicable:
         logger.info("%d upgrade step(s) pending", len(applicable))
+
+    applied: list[str] = []
 
     # Apply in ascending order
     for idx, step in enumerate(applicable, start=1):
@@ -51,6 +60,11 @@ def run_pending_upgrades(store: Store, from_version: str, to_version: str) -> No
         )
         step.apply(store)
         logger.info("Completed upgrade %s", step.version)
+        applied.append(
+            f"{step.version}: {step.description}" if step.description else step.version
+        )
+
+    return applied
 
 
 # Import upgrade modules AFTER Upgrade class is defined to avoid circular imports

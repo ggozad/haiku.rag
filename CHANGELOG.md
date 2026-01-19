@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Explicit Database Migrations**: Database migrations are no longer applied automatically on open
+  - Opening a database with pending migrations now raises `MigrationRequiredError` with a clear message
+  - New `haiku-rag migrate` command to explicitly apply pending migrations
+  - Version-only updates (no schema changes) are applied silently in writable mode
+  - New `skip_migration_check` parameter on `Store` for tools that need to bypass the check
+  - `Store.migrate()` method returns list of applied migration descriptions
+
 ## [0.26.5] - 2026-01-16
 
 ### Added
