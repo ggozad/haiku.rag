@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.6] - 2026-01-19
+
 ### Changed
 
 - **Explicit Database Migrations**: Database migrations are no longer applied automatically on open
