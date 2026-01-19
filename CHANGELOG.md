@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Removed
+
+- **A2A Example**: Removed `examples/a2a-server/` A2A protocol server example
+- **Stale Example References**: Cleaned up references to removed `ag-ui-research` example from documentation
+
 ### Changed
 
 - **Type Checker**: Replaced pyright with [ty](https://github.com/astral-sh/ty), Astral's extremely fast Python type checker
