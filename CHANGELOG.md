@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Type Checker**: Replaced pyright with [ty](https://github.com/astral-sh/ty), Astral's extremely fast Python type checker
+  - Added explicit `Agent[Deps, Output]` type annotations to all pydantic-ai agents for better type inference
+  - Removed ~24 unnecessary `# type: ignore` comments that ty correctly infers
+
 ## [0.26.6] - 2026-01-19
 
 ### Changed

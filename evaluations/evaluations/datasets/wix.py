@@ -1,8 +1,8 @@
 import json
 from collections.abc import Iterable, Mapping
-from typing import Any, cast
+from typing import Any
 
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, load_dataset
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
@@ -10,8 +10,8 @@ from evaluations.evaluators import MAPEvaluator
 
 
 def load_wix_corpus() -> Dataset:
-    dataset_dict = cast(DatasetDict, load_dataset("Wix/WixQA", "wix_kb_corpus"))
-    return cast(Dataset, dataset_dict["train"])
+    dataset_dict = load_dataset("Wix/WixQA", "wix_kb_corpus")
+    return dataset_dict["train"]
 
 
 def map_wix_document(doc: Mapping[str, Any]) -> DocumentPayload:
@@ -35,8 +35,8 @@ def map_wix_document(doc: Mapping[str, Any]) -> DocumentPayload:
 
 
 def load_wix_qa() -> Dataset:
-    dataset_dict = cast(DatasetDict, load_dataset("Wix/WixQA", "wixqa_expertwritten"))
-    return cast(Dataset, dataset_dict["train"])
+    dataset_dict = load_dataset("Wix/WixQA", "wixqa_expertwritten")
+    return dataset_dict["train"]
 
 
 def map_wix_retrieval(doc: Mapping[str, Any]) -> RetrievalSample | None:

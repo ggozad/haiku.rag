@@ -26,7 +26,7 @@ from datasets import Dataset, load_dataset, load_from_disk  # noqa: E402
 if TYPE_CHECKING:
     from vcr import VCR
 
-pydantic_ai.models.ALLOW_MODEL_REQUESTS = False
+pydantic_ai.models.ALLOW_MODEL_REQUESTS = False  # ty: ignore[invalid-assignment]
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
 
@@ -35,10 +35,10 @@ def qa_corpus() -> Dataset:
     ds_path = Path(__file__).parent / "data" / "dataset"
     ds_path.mkdir(parents=True, exist_ok=True)
     try:
-        ds: Dataset = load_from_disk(ds_path)  # type: ignore
+        ds: Dataset = load_from_disk(ds_path)  # ty: ignore[invalid-assignment]
         return ds
     except FileNotFoundError:
-        ds: Dataset = load_dataset("ServiceNow/repliqa")["repliqa_3"]  # type: ignore
+        ds: Dataset = load_dataset("ServiceNow/repliqa")["repliqa_3"]
         corpus = ds.filter(lambda doc: doc["document_topic"] == "News Stories")
         corpus.save_to_disk(ds_path)
         return corpus

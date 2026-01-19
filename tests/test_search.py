@@ -19,8 +19,8 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     for doc_data in qa_corpus:
         if len(seen_documents) >= 10:
             break
-        document_text = doc_data["document_extracted"]  # type: ignore
-        document_id = doc_data.get("document_id", "")  # type: ignore
+        document_text = doc_data["document_extracted"]
+        document_id = doc_data.get("document_id", "")
 
         if document_id in seen_documents:
             continue

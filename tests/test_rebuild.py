@@ -167,7 +167,7 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
             content=c["content"],
             content_fts=c["content_fts"],
             metadata=c["metadata"],
-            order=c["order"],
+            order=c["order"],  # ty: ignore[invalid-argument-type]
             vector=[0.1] * 4096,
         )
         for c in chunk_data

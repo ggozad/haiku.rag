@@ -105,7 +105,7 @@ async def _plan_step_logic(
         else plan_prompt
     )
 
-    plan_agent = Agent(
+    plan_agent: Agent[ResearchDependencies, ResearchPlan] = Agent(
         model=get_model(model_config, config),
         output_type=ResearchPlan,
         instructions=effective_plan_prompt,
@@ -151,7 +151,8 @@ async def _plan_step_logic(
 
     agent_deps = ResearchDependencies(client=deps.client, context=state.context)
     plan_result = await plan_agent.run(prompt, deps=agent_deps)
-    state.context.sub_questions = list(plan_result.output.sub_questions)
+    output = plan_result.output
+    state.context.sub_questions = list(output.sub_questions)
 
 
 async def _search_one_step_logic(
@@ -168,7 +169,7 @@ async def _search_one_step_logic(
         deps.semaphore = asyncio.Semaphore(state.max_concurrency)
 
     async with deps.semaphore:
-        agent = Agent(
+        agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(
             model=get_model(model_config, config),
             output_type=ToolOutput(RawSearchAnswer, max_retries=3),
             instructions=search_prompt,
@@ -289,7 +290,7 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        agent = Agent(
+        agent: Agent[ResearchDependencies, EvaluationResult] = Agent(
             model=get_model(model_config, config),
             output_type=EvaluationResult,
             instructions=decision_prompt,
@@ -350,7 +351,7 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        agent = Agent(
+        agent: Agent[ResearchDependencies, ResearchReport] = Agent(
             model=get_model(model_config, config),
             output_type=ResearchReport,
             instructions=synthesis_prompt,
@@ -488,7 +489,7 @@ def build_conversational_graph(
         state = ctx.state
         deps = ctx.deps
 
-        agent = Agent(
+        agent: Agent[ResearchDependencies, ConversationalAnswer] = Agent(
             model=get_model(config.research.model, config),
             output_type=ConversationalAnswer,
             instructions=conversational_prompt,

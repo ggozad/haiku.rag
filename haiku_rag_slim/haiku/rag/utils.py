@@ -185,11 +185,11 @@ def get_model(
         if model_config.enable_thinking is not None:
             if model_config.enable_thinking:
                 anthropic_settings = AnthropicModelSettings(
-                    anthropic_thinking={"type": "enabled", "budget_tokens": 4096}
+                    anthropic_thinking={"type": "enabled", "budget_tokens": 4096}  # ty: ignore[invalid-argument-type]
                 )
             else:
                 anthropic_settings = AnthropicModelSettings(
-                    anthropic_thinking={"type": "disabled"}
+                    anthropic_thinking={"type": "disabled"}  # ty: ignore[invalid-argument-type]
                 )
 
         anthropic_settings = apply_common_settings(

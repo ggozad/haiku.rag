@@ -58,7 +58,7 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
 
         # Test update_document
         updated_doc = await client.update_document(
-            document_id=retrieved_doc.id,  # type: ignore[arg-type]
+            document_id=retrieved_doc.id,
             content="Updated content",
         )
         assert updated_doc.content == "Updated content"

@@ -32,7 +32,7 @@ class QuestionAnswerAgent:
         self._client = client
         model_obj = get_model(model_config, config)
 
-        self._agent = Agent(
+        self._agent: Agent[Dependencies, RawSearchAnswer] = Agent(
             model=model_obj,
             deps_type=Dependencies,
             output_type=ToolOutput(RawSearchAnswer, max_retries=3),
@@ -75,5 +75,6 @@ class QuestionAnswerAgent:
         """
         deps = Dependencies(client=self._client, search_filter=filter)
         result = await self._agent.run(question, deps=deps)
-        citations = resolve_citations(result.output.cited_chunks, deps.search_results)
-        return result.output.answer, citations
+        output = result.output
+        citations = resolve_citations(output.cited_chunks, deps.search_results)
+        return output.answer, citations
