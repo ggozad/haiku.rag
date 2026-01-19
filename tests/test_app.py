@@ -602,3 +602,74 @@ async def test_rebuild_empty_database(tmp_path, monkeypatch):
 
     calls = [str(c) for c in mock_print.call_args_list]
     assert any("No documents found" in c for c in calls)
+
+
+def test_migrate_with_pending_migrations(tmp_path):
+    """Test migrate method when migrations are applied."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+
+    with patch("haiku.rag.store.engine.Store") as mock_store_class:
+        mock_store = MagicMock()
+        mock_store.migrate.return_value = ["Migration 1", "Migration 2"]
+        mock_store_class.return_value = mock_store
+
+        result = app.migrate()
+
+        mock_store_class.assert_called_once_with(
+            db_path,
+            config=app.config,
+            skip_validation=True,
+            skip_migration_check=True,
+        )
+        mock_store.migrate.assert_called_once()
+        mock_store.close.assert_called_once()
+        assert result == ["Migration 1", "Migration 2"]
+
+
+def test_migrate_no_pending_migrations(tmp_path):
+    """Test migrate method when no migrations are pending."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+
+    with patch("haiku.rag.store.engine.Store") as mock_store_class:
+        mock_store = MagicMock()
+        mock_store.migrate.return_value = []
+        mock_store_class.return_value = mock_store
+
+        result = app.migrate()
+
+        mock_store.migrate.assert_called_once()
+        mock_store.close.assert_called_once()
+        assert result == []
+
+
+def test_migrate_closes_store_on_exception(tmp_path):
+    """Test migrate method closes store even if migration fails."""
+    from haiku.rag.store.engine import Store
+
+    db_path = tmp_path / "test.lancedb"
+    store = Store(db_path, create=True)
+    store.close()
+
+    app = HaikuRAGApp(db_path=db_path)
+
+    with patch("haiku.rag.store.engine.Store") as mock_store_class:
+        mock_store = MagicMock()
+        mock_store.migrate.side_effect = Exception("Migration error")
+        mock_store_class.return_value = mock_store
+
+        with pytest.raises(Exception, match="Migration error"):
+            app.migrate()
+
+        mock_store.close.assert_called_once()

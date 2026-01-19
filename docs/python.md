@@ -18,7 +18,7 @@ async with HaikuRAG("path/to/database.lancedb") as client:
     # Your code here
     pass
 
-# Open in read-only mode (blocks writes, skips upgrades)
+# Open in read-only mode (blocks writes)
 async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     results = await client.search("query")  # Read operations work
     # await client.create_document(...)  # Would raise ReadOnlyError
@@ -28,7 +28,10 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Operations on non-existent databases will raise `FileNotFoundError`.
 
 !!! note
-    Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations, skips database upgrades on open, and prevents settings from being saved.
+    Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations and prevents settings from being saved.
+
+!!! warning "Database Migrations"
+    When upgrading haiku.rag to a version with schema changes, opening an existing database will raise `MigrationRequiredError`. Run `haiku-rag migrate` to apply pending migrations before using the database. See [CLI Database Management](cli.md#migrate-database) for details.
 
 ## Document Management
 

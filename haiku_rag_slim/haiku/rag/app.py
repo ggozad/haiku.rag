@@ -578,6 +578,26 @@ class HaikuRAGApp:
             await client.vacuum()
         self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
 
+    def migrate(self) -> list[str]:
+        """Run pending database migrations.
+
+        Returns:
+            List of descriptions of applied migrations.
+        """
+        from haiku.rag.store.engine import Store
+
+        store = Store(
+            self.db_path,
+            config=self.config,
+            skip_validation=True,
+            skip_migration_check=True,
+        )
+        try:
+            applied = store.migrate()
+            return applied
+        finally:
+            store.close()
+
     async def create_index(self):
         """Create vector index on the chunks table."""
         async with HaikuRAG(

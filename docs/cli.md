@@ -305,6 +305,33 @@ haiku-rag init [--db /path/to/your.lancedb]
 
 This creates the database with the configured settings. **All other commands require an existing database** - they will fail with an informative error if the database doesn't exist.
 
+### Migrate Database
+
+Apply pending database migrations:
+
+```bash
+haiku-rag migrate [--db /path/to/your.lancedb]
+```
+
+When you upgrade haiku.rag to a new version that includes schema changes, the database requires migration. Opening a database with pending migrations will display an error:
+
+```
+Error: Database requires migration from 0.19.0 to 0.26.5. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
+```
+
+Run `haiku-rag migrate` to apply the pending migrations. The command shows which migrations were applied:
+
+```
+Applied 3 migration(s):
+  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns
+  - 0.23.1: Add content_fts column for contextualized FTS search
+  - 0.25.0: Compress docling_document with gzip
+Migration completed successfully.
+```
+
+!!! tip
+    Back up your database before running migrations. While migrations are designed to be safe, having a backup provides peace of mind for production databases.
+
 ### Info
 
 Display database metadata:

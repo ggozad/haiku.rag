@@ -1,5 +1,5 @@
 from .engine import Store
-from .exceptions import ReadOnlyError
+from .exceptions import MigrationRequiredError, ReadOnlyError
 from .models import Chunk, Document
 
-__all__ = ["Store", "Chunk", "Document", "ReadOnlyError"]
+__all__ = ["Store", "Chunk", "Document", "MigrationRequiredError", "ReadOnlyError"]

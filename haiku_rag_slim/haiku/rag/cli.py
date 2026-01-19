@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 import warnings
 from datetime import datetime
 from importlib.metadata import version
@@ -18,14 +19,24 @@ from haiku.rag.config import (
     set_config,
 )
 from haiku.rag.logging import configure_cli_logging
+from haiku.rag.store.exceptions import MigrationRequiredError
 from haiku.rag.utils import is_up_to_date
 
 # Load environment variables from .env file for API keys and service URLs
 load_dotenv()
 
-cli = typer.Typer(
+_cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
 )
+
+
+def cli():
+    try:
+        _cli()
+    except MigrationRequiredError as e:
+        typer.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
 
 # Module-level flags set by callback
 _read_only: bool = False
@@ -65,7 +76,7 @@ def version_callback(value: bool):
         raise typer.Exit()
 
 
-@cli.callback()
+@_cli.callback()
 def main(
     _version: bool = typer.Option(
         False,
@@ -141,7 +152,7 @@ def main(
         pass
 
 
-@cli.command("list", help="List all stored documents")
+@_cli.command("list", help="List all stored documents")
 def list_documents(
     db: Path | None = typer.Option(
         None,
@@ -183,7 +194,7 @@ def _parse_meta_options(meta: list[str] | None) -> dict[str, Any]:
     return result
 
 
-@cli.command("add", help="Add a document from text input")
+@_cli.command("add", help="Add a document from text input")
 def add_document_text(
     text: str = typer.Argument(
         help="The text content of the document to add",
@@ -205,7 +216,7 @@ def add_document_text(
     asyncio.run(app.add_document_from_text(text=text, metadata=metadata or None))
 
 
-@cli.command("add-src", help="Add a document from a file path, directory, or URL")
+@_cli.command("add-src", help="Add a document from a file path, directory, or URL")
 def add_document_src(
     source: str = typer.Argument(
         help="The file path, directory, or URL of the document(s) to add",
@@ -236,7 +247,7 @@ def add_document_src(
     )
 
 
-@cli.command("get", help="Get and display a document by its ID")
+@_cli.command("get", help="Get and display a document by its ID")
 def get_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to get",
@@ -251,7 +262,7 @@ def get_document(
     asyncio.run(app.get_document(doc_id=doc_id))
 
 
-@cli.command("delete", help="Delete a document by its ID")
+@_cli.command("delete", help="Delete a document by its ID")
 def delete_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to delete",
@@ -267,10 +278,12 @@ def delete_document(
 
 
 # Add alias `rm` for delete
-cli.command("rm", help="Alias for delete: remove a document by its ID")(delete_document)
+_cli.command("rm", help="Alias for delete: remove a document by its ID")(
+    delete_document
+)
 
 
-@cli.command("search", help="Search for documents by a query")
+@_cli.command("search", help="Search for documents by a query")
 def search(
     query: str = typer.Argument(
         help="The search query to use",
@@ -297,7 +310,7 @@ def search(
     asyncio.run(app.search(query=query, limit=limit, filter=filter))
 
 
-@cli.command("visualize", help="Show visual grounding for a chunk")
+@_cli.command("visualize", help="Show visual grounding for a chunk")
 def visualize(
     chunk_id: str = typer.Argument(
         help="The ID of the chunk to visualize",
@@ -312,7 +325,7 @@ def visualize(
     asyncio.run(app.visualize_chunk(chunk_id=chunk_id))
 
 
-@cli.command("ask", help="Ask a question using the QA agent")
+@_cli.command("ask", help="Ask a question using the QA agent")
 def ask(
     question: str = typer.Argument(
         help="The question to ask",
@@ -368,7 +381,7 @@ def ask(
     )
 
 
-@cli.command("research", help="Run multi-agent research and output a concise report")
+@_cli.command("research", help="Run multi-agent research and output a concise report")
 def research(
     question: str = typer.Argument(..., help="The research question to investigate"),
     db: Path | None = typer.Option(
@@ -408,14 +421,14 @@ def research(
     )
 
 
-@cli.command("settings", help="Display current configuration settings")
+@_cli.command("settings", help="Display current configuration settings")
 def settings():
     config = get_config()
     app = HaikuRAGApp(db_path=Path(), config=config)
     app.show_settings()
 
 
-@cli.command("init-config", help="Generate a YAML configuration file")
+@_cli.command("init-config", help="Generate a YAML configuration file")
 def init_config(
     output: Path = typer.Argument(
         Path("haiku.rag.yaml"),
@@ -447,7 +460,7 @@ def init_config(
     typer.echo("Edit the file to customize your settings.")
 
 
-@cli.command(
+@_cli.command(
     "rebuild",
     help="Rebuild the database by deleting all chunks and re-indexing all documents",
 )
@@ -485,7 +498,7 @@ def rebuild(
     asyncio.run(app.rebuild(mode=mode))
 
 
-@cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
+@_cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
 def vacuum(
     db: Path | None = typer.Option(
         None,
@@ -497,7 +510,32 @@ def vacuum(
     asyncio.run(app.vacuum())
 
 
-@cli.command("create-index", help="Create vector index for efficient similarity search")
+@_cli.command("migrate", help="Run pending database migrations")
+def migrate(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    try:
+        applied = app.migrate()
+        if applied:
+            typer.echo(f"Applied {len(applied)} migration(s):")
+            for desc in applied:
+                typer.echo(f"  - {desc}")
+            typer.echo("Migration completed successfully.")
+        else:
+            typer.echo("No migrations pending. Database is up to date.")
+    except Exception as e:
+        typer.echo(f"Migration failed: {e}")
+        raise typer.Exit(1)
+
+
+@_cli.command(
+    "create-index", help="Create vector index for efficient similarity search"
+)
 def create_index(
     db: Path | None = typer.Option(
         None,
@@ -509,7 +547,7 @@ def create_index(
     asyncio.run(app.create_index())
 
 
-@cli.command("init", help="Initialize a new database")
+@_cli.command("init", help="Initialize a new database")
 def init_db(
     db: Path | None = typer.Option(
         None,
@@ -521,7 +559,7 @@ def init_db(
     asyncio.run(app.init())
 
 
-@cli.command("info", help="Show database info")
+@_cli.command("info", help="Show database info")
 def info(
     db: Path | None = typer.Option(
         None,
@@ -533,7 +571,7 @@ def info(
     asyncio.run(app.info())
 
 
-@cli.command("history", help="Show version history for database tables")
+@_cli.command("history", help="Show version history for database tables")
 def history(
     db: Path | None = typer.Option(
         None,
@@ -557,7 +595,7 @@ def history(
     asyncio.run(app.history(table=table, limit=limit))
 
 
-@cli.command("download-models", help="Download Docling and Ollama models per config")
+@_cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():
     app = HaikuRAGApp(db_path=Path(), config=get_config())
     try:
@@ -567,7 +605,7 @@ def download_models_cmd():
         raise typer.Exit(1)
 
 
-@cli.command("inspect", help="Launch interactive TUI to inspect database contents")
+@_cli.command("inspect", help="Launch interactive TUI to inspect database contents")
 def inspect(
     db: Path | None = typer.Option(
         None,
@@ -586,7 +624,7 @@ def inspect(
     run_inspector(db_path, read_only=_read_only, before=_before)
 
 
-@cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
+@_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
 def chat(
     db: Path | None = typer.Option(
         None,
@@ -624,7 +662,7 @@ def chat(
     )
 
 
-@cli.command(
+@_cli.command(
     "serve",
     help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",
 )

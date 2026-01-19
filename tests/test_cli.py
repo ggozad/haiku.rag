@@ -2,7 +2,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
-from haiku.rag.cli import cli
+from haiku.rag.cli import _cli as cli
+from haiku.rag.cli import cli as cli_wrapper
+from haiku.rag.store.exceptions import MigrationRequiredError
 
 runner = CliRunner()
 
@@ -386,3 +388,63 @@ def test_add_document_src_directory(tmp_path):
         mock_app_instance.add_document_from_source.assert_called_once()
         call_args = mock_app_instance.add_document_from_source.call_args
         assert call_args[1]["source"] == str(test_dir)
+
+
+def test_migrate_with_applied_migrations():
+    """Test migrate command when migrations are applied."""
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.migrate.return_value = [
+            "Add full-text search index",
+            "Add metadata column",
+        ]
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["migrate"])
+
+        assert result.exit_code == 0
+        mock_app_instance.migrate.assert_called_once()
+        assert "Applied 2 migration(s)" in result.output
+        assert "Add full-text search index" in result.output
+        assert "Add metadata column" in result.output
+        assert "Migration completed successfully" in result.output
+
+
+def test_migrate_no_pending_migrations():
+    """Test migrate command when no migrations are pending."""
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.migrate.return_value = []
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["migrate"])
+
+        assert result.exit_code == 0
+        mock_app_instance.migrate.assert_called_once()
+        assert "No migrations pending" in result.output
+        assert "Database is up to date" in result.output
+
+
+def test_migrate_failure():
+    """Test migrate command when migration fails."""
+    with patch("haiku.rag.cli.HaikuRAGApp") as mock_app:
+        mock_app_instance = MagicMock()
+        mock_app_instance.migrate.side_effect = Exception("Migration failed")
+        mock_app.return_value = mock_app_instance
+
+        result = runner.invoke(cli, ["migrate"])
+
+        assert result.exit_code == 1
+        assert "Migration failed" in result.output
+
+
+def test_cli_wrapper_catches_migration_required_error():
+    """Test that cli() wrapper catches MigrationRequiredError and exits with code 1."""
+    with patch("haiku.rag.cli._cli") as mock_cli:
+        mock_cli.side_effect = MigrationRequiredError(
+            "Database requires migration. Run 'haiku-rag migrate' to upgrade."
+        )
+
+        with patch("sys.exit") as mock_exit:
+            cli_wrapper()
+            mock_exit.assert_called_once_with(1)
