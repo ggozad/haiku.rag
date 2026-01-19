@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pathspec
-from pathspec.patterns.gitwildmatch import GitWildMatchPattern
 from watchfiles import Change, DefaultFilter, awatch
 
 from haiku.rag.client import HaikuRAG
@@ -37,12 +36,12 @@ class FileFilter(DefaultFilter):
 
         self.extensions = tuple(supported_extensions)
         self.ignore_spec = (
-            pathspec.PathSpec.from_lines(GitWildMatchPattern, ignore_patterns)
+            pathspec.PathSpec.from_lines("gitwildmatch", ignore_patterns)
             if ignore_patterns
             else None
         )
         self.include_spec = (
-            pathspec.PathSpec.from_lines(GitWildMatchPattern, include_patterns)
+            pathspec.PathSpec.from_lines("gitwildmatch", include_patterns)
             if include_patterns
             else None
         )

@@ -9,8 +9,8 @@ requires-python = ">=3.12"
 
 dependencies = [
     "haiku.rag-slim",
-    "pydantic-ai-slim[evals,logfire]>=1.39.0",
-    "datasets>=4.4.2",
+    "pydantic-ai-slim[evals,logfire]>=1.44.0",
+    "datasets>=4.5.0",
     "typer>=0.19.2,<0.20.0",
     "python-dotenv>=1.2.1",
 ]
