@@ -92,7 +92,13 @@ async def populate_db(
                     progress.advance(task)
                     continue
 
-                existing = await rag.get_document_by_uri(payload.uri)
+                # Use the actual URI that will be stored in the database
+                if payload.source_path is not None:
+                    lookup_uri = payload.source_path.absolute().as_uri()
+                else:
+                    lookup_uri = payload.uri
+
+                existing = await rag.get_document_by_uri(lookup_uri)
                 if existing is not None:
                     assert existing.id
                     chunks = await rag.chunk_repository.get_by_document_id(existing.id)
