@@ -116,6 +116,9 @@ class ConversionOptions(BaseModel):
     # OCR options
     do_ocr: bool = True
     force_ocr: bool = False
+    ocr_engine: Literal[
+        "auto", "easyocr", "ocrmac", "rapidocr", "tesserocr", "tesseract"
+    ] = "auto"
     ocr_lang: list[str] = []
 
     # Table options

@@ -89,6 +89,7 @@ class DoclingServeConverter(DocumentConverter):
             "to_formats": "json",
             "do_ocr": str(opts.do_ocr).lower(),
             "force_ocr": str(opts.force_ocr).lower(),
+            "ocr_engine": opts.ocr_engine,
             "do_table_structure": str(opts.do_table_structure).lower(),
             "table_mode": opts.table_mode,
             "table_cell_matching": str(opts.table_cell_matching).lower(),

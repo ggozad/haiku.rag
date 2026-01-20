@@ -318,9 +318,6 @@ class TestDoclingLocalConverter:
     async def test_convert_pdf_without_picture_images(self, config):
         """Test PDF conversion excludes embedded images by default."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_picture_images = False
         converter = DoclingLocalConverter(config)
 
@@ -337,9 +334,6 @@ class TestDoclingLocalConverter:
     async def test_convert_pdf_with_picture_images(self, config):
         """Test PDF conversion includes embedded images when enabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_picture_images = True
         converter = DoclingLocalConverter(config)
 
@@ -357,9 +351,6 @@ class TestDoclingLocalConverter:
     async def test_convert_pdf_without_page_images(self, config):
         """Test PDF conversion excludes page images when disabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_page_images = False
         converter = DoclingLocalConverter(config)
 
@@ -376,9 +367,6 @@ class TestDoclingLocalConverter:
     async def test_convert_pdf_with_page_images(self, config):
         """Test PDF conversion includes page images when enabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_page_images = True
         converter = DoclingLocalConverter(config)
 
@@ -429,6 +417,76 @@ class TestDoclingLocalConverter:
         with pytest.raises(ValueError, match="Unsupported VLM provider"):
             converter._get_vlm_api_url(model)
 
+    def test_ocr_engine_config_applied(self, config):
+        """Test that ocr_engine config is stored correctly."""
+        config.processing.conversion_options.ocr_engine = "rapidocr"
+        converter = DoclingLocalConverter(config)
+        assert converter.config.processing.conversion_options.ocr_engine == "rapidocr"
+
+    def test_get_ocr_options_auto(self, config):
+        """Test that _get_ocr_options returns OcrAutoOptions for 'auto'."""
+        from docling.datamodel.pipeline_options import OcrAutoOptions
+
+        config.processing.conversion_options.ocr_engine = "auto"
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert isinstance(opts, OcrAutoOptions)
+
+    def test_get_ocr_options_rapidocr(self, config):
+        """Test that _get_ocr_options returns RapidOcrOptions for 'rapidocr'."""
+        from docling.datamodel.pipeline_options import RapidOcrOptions
+
+        config.processing.conversion_options.ocr_engine = "rapidocr"
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert isinstance(opts, RapidOcrOptions)
+
+    def test_get_ocr_options_easyocr(self, config):
+        """Test that _get_ocr_options returns EasyOcrOptions for 'easyocr'."""
+        from docling.datamodel.pipeline_options import EasyOcrOptions
+
+        config.processing.conversion_options.ocr_engine = "easyocr"
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert isinstance(opts, EasyOcrOptions)
+
+    def test_get_ocr_options_tesseract(self, config):
+        """Test that _get_ocr_options returns TesseractOcrOptions for 'tesseract'."""
+        from docling.datamodel.pipeline_options import TesseractOcrOptions
+
+        config.processing.conversion_options.ocr_engine = "tesseract"
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert isinstance(opts, TesseractOcrOptions)
+
+    def test_get_ocr_options_tesserocr(self, config):
+        """Test that _get_ocr_options returns TesseractCliOcrOptions for 'tesserocr'."""
+        from docling.datamodel.pipeline_options import TesseractCliOcrOptions
+
+        config.processing.conversion_options.ocr_engine = "tesserocr"
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert isinstance(opts, TesseractCliOcrOptions)
+
+    def test_get_ocr_options_ocrmac(self, config):
+        """Test that _get_ocr_options returns OcrMacOptions for 'ocrmac'."""
+        from docling.datamodel.pipeline_options import OcrMacOptions
+
+        config.processing.conversion_options.ocr_engine = "ocrmac"
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert isinstance(opts, OcrMacOptions)
+
+    def test_get_ocr_options_passes_force_ocr_and_lang(self, config):
+        """Test that _get_ocr_options passes force_ocr and ocr_lang."""
+        config.processing.conversion_options.ocr_engine = "rapidocr"
+        config.processing.conversion_options.force_ocr = True
+        config.processing.conversion_options.ocr_lang = ["en", "de"]
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert opts.force_full_page_ocr is True
+        assert opts.lang == ["en", "de"]
+
     def test_picture_description_config_defaults(self, config):
         """Test that picture description config has correct defaults."""
         assert config.processing.conversion_options.picture_description.enabled is False
@@ -462,8 +520,6 @@ class TestDoclingLocalConverter:
     async def test_picture_description_end_to_end(self, config):
         """End-to-end test: convert PDF with VLM picture descriptions."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
 
         # Disable OCR (not needed for native PDF, avoids model downloads)
         config.processing.conversion_options.do_ocr = False
@@ -612,6 +668,29 @@ class TestDoclingServeConverter:
             assert data["images_scale"] == "3.0"
             assert data["include_images"] == "false"
             assert data["image_export_mode"] == "embedded"
+
+    @pytest.mark.asyncio
+    async def test_ocr_engine_passed_to_api(self, config):
+        """Test that ocr_engine is passed to docling-serve API."""
+        config.processing.conversion_options.ocr_engine = "rapidocr"
+        converter = DoclingServeConverter(config)
+
+        doc_json = create_mock_docling_document("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_text("# Test")
+
+            call_kwargs = mock_client.post.call_args.kwargs
+            data = call_kwargs["data"]
+            assert data["ocr_engine"] == "rapidocr"
 
     @pytest.mark.asyncio
     async def test_convert_text_connection_error(self, converter):
@@ -893,9 +972,6 @@ class TestDoclingServeConverterIntegration:
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
@@ -935,9 +1011,6 @@ class TestDoclingServeConverterIntegration:
     async def test_convert_pdf_without_page_images(self, config):
         """Test PDF conversion excludes page images when disabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_page_images = False
         converter = DoclingServeConverter(config)
 
@@ -955,9 +1028,6 @@ class TestDoclingServeConverterIntegration:
     async def test_convert_pdf_with_page_images(self, config):
         """Test PDF conversion includes page images when enabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_page_images = True
         converter = DoclingServeConverter(config)
 
@@ -975,9 +1045,6 @@ class TestDoclingServeConverterIntegration:
     async def test_convert_pdf_without_picture_images(self, config):
         """Test PDF conversion excludes picture images when disabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_picture_images = False
         converter = DoclingServeConverter(config)
 
@@ -990,6 +1057,17 @@ class TestDoclingServeConverterIntegration:
                 "Pictures should not have image data when generate_picture_images=False"
             )
 
+    @pytest.mark.vcr()
+    @pytest.mark.asyncio
+    async def test_convert_pdf_with_ocr_engine(self, config):
+        """Test PDF conversion with explicit OCR engine selection."""
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        config.processing.conversion_options.ocr_engine = "easyocr"
+        converter = DoclingServeConverter(config)
+
+        doc = await converter.convert_file(pdf_path)
+        assert isinstance(doc, DoclingDocument)
+
     @pytest.mark.xfail(
         reason="docling-serve does not return picture image data in JSON response "
         "even with include_images=true. Page images work, but extracted picture/figure "
@@ -1000,9 +1078,6 @@ class TestDoclingServeConverterIntegration:
     async def test_convert_pdf_with_picture_images(self, config):
         """Test PDF conversion includes picture images when enabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        if not pdf_path.exists():
-            pytest.skip("doclaynet.pdf not found")
-
         config.processing.conversion_options.generate_picture_images = True
         converter = DoclingServeConverter(config)
 
