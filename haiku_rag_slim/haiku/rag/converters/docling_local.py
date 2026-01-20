@@ -11,7 +11,7 @@ from haiku.rag.converters.text_utils import TextFileHandler
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.config.models import ModelConfig
+    from haiku.rag.config.models import ConversionOptions, ModelConfig
 
 
 class DoclingLocalConverter(DocumentConverter):
@@ -71,12 +71,39 @@ class DoclingLocalConverter(DocumentConverter):
 
         raise ValueError(f"Unsupported VLM provider: {model.provider}")
 
+    def _get_ocr_options(self, opts: "ConversionOptions"):
+        """Get OCR options based on configuration."""
+        from docling.datamodel.pipeline_options import (
+            EasyOcrOptions,
+            OcrAutoOptions,
+            OcrMacOptions,
+            RapidOcrOptions,
+            TesseractCliOcrOptions,
+            TesseractOcrOptions,
+        )
+
+        force_ocr = opts.force_ocr
+        lang = opts.ocr_lang if opts.ocr_lang else []
+
+        match opts.ocr_engine:
+            case "easyocr":
+                return EasyOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+            case "rapidocr":
+                return RapidOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+            case "tesseract":
+                return TesseractOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+            case "tesserocr":
+                return TesseractCliOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+            case "ocrmac":
+                return OcrMacOptions(force_full_page_ocr=force_ocr, lang=lang)
+            case _:  # "auto" or any other value
+                return OcrAutoOptions(force_full_page_ocr=force_ocr, lang=lang)
+
     def _sync_convert_docling_file(self, path: Path) -> "DoclingDocument":
         """Synchronous conversion of docling-supported files."""
         from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
-            OcrAutoOptions,
             PdfPipelineOptions,
             PictureDescriptionApiOptions,
             TableFormerMode,
@@ -107,10 +134,7 @@ class DoclingLocalConverter(DocumentConverter):
                     else TableFormerMode.ACCURATE
                 ),
             ),
-            ocr_options=OcrAutoOptions(
-                force_full_page_ocr=opts.force_ocr,
-                lang=opts.ocr_lang if opts.ocr_lang else [],
-            ),
+            ocr_options=self._get_ocr_options(opts),
             do_picture_description=pic_desc.enabled,
         )
 

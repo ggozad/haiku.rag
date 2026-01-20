@@ -1101,9 +1101,6 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path):
     from haiku.rag.config import AppConfig
 
     pdf_path = Path("tests/data/doclaynet.pdf")
-    if not pdf_path.exists():
-        pytest.skip("doclaynet.pdf not found")
-
     config = AppConfig()
     config.processing.conversion_options.do_ocr = False
 

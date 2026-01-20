@@ -26,6 +26,7 @@ processing:
     # OCR settings
     do_ocr: true                             # Enable OCR for bitmap content
     force_ocr: false                         # Replace existing text with OCR
+    ocr_engine: auto                         # OCR engine: auto, easyocr, rapidocr, tesseract, tesserocr, ocrmac
     ocr_lang: []                             # OCR languages (e.g., ["en", "fr", "de"])
 
     # Table extraction
@@ -56,11 +57,19 @@ The `conversion_options` section allows fine-grained control over document conve
 conversion_options:
   do_ocr: true          # Enable OCR for bitmap/scanned content
   force_ocr: false      # Replace all text with OCR output
+  ocr_engine: auto      # OCR engine selection
   ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
 ```
 
 - **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable for faster processing if documents contain only native text.
 - **force_ocr**: When `true`, replaces existing text layers with OCR output. Useful for documents with poor text extraction.
+- **ocr_engine**: Select the OCR engine to use. Options:
+  - `auto` (default): Automatically select the best available engine
+  - `easyocr`: EasyOCR - supports many languages, good accuracy
+  - `rapidocr`: RapidOCR - fast processing
+  - `tesseract`: Tesseract OCR
+  - `tesserocr`: Tesseract via tesserocr Python binding
+  - `ocrmac`: macOS native OCR (macOS only)
 - **ocr_lang**: List of language codes for OCR. Empty list uses default language detection. Examples: `["en"]`, `["en", "fr", "de"]`.
 
 #### Table Extraction

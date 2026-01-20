@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **OCR Engine Selection**: New `ocr_engine` option in `conversion_options` to explicitly select OCR backend ([#246](https://github.com/ggozad/haiku.rag/issues/246))
+  - Supported engines: `auto` (default), `easyocr`, `rapidocr`, `tesseract`, `tesserocr`, `ocrmac`
+  - Works with both `docling-local` and `docling-serve` converters
+  - Fixes inconsistent OCR engine selection between docling-serve startup and conversion requests
+
 ### Removed
 
 - **A2A Example**: Removed `examples/a2a-server/` A2A protocol server example
