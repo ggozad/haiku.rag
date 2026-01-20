@@ -20,6 +20,10 @@
   - `ruff`: 0.14.11 → 0.14.13
   - `opencv-python-headless`: 4.12.0.88 → 4.13.0.90
 
+### Fixed
+
+- **Chat TUI**: Fixed crash when logfire is installed but user is not authenticated ([#247](https://github.com/ggozad/haiku.rag/issues/247))
+
 ## [0.26.6] - 2026-01-19
 
 ### Changed

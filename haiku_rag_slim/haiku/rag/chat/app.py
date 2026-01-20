@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 try:
     import logfire
 
-    logfire.configure(console=False)
+    logfire.configure(send_to_logfire="if-token-present", console=False)
 except ImportError:
     pass
 
