@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
-from haiku.rag.reranking import _reranker_cache, get_reranker
+from haiku.rag.reranking import get_reranker
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
@@ -11,14 +11,6 @@ from haiku.rag.store.models.chunk import Chunk
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_reranker")
-
-
-@pytest.fixture(autouse=True)
-def clear_reranker_cache():
-    """Clear the reranker cache before each test."""
-    _reranker_cache.clear()
-    yield
-    _reranker_cache.clear()
 
 
 chunks = [
@@ -201,24 +193,6 @@ class TestGetReranker:
             assert result._model == "zerank-1"
         except ImportError:
             pytest.skip("Zero Entropy package not installed")
-
-    def test_caching_returns_same_instance(self):
-        config = AppConfig(reranking=RerankingConfig(model=None))
-        result1 = get_reranker(config)
-        result2 = get_reranker(config)
-        assert result1 is result2
-
-    def test_different_configs_get_separate_cache_entries(self):
-        config1 = AppConfig(reranking=RerankingConfig(model=None))
-        config2 = AppConfig(reranking=RerankingConfig(model=None))
-
-        result1 = get_reranker(config1)
-        result2 = get_reranker(config2)
-
-        # Both return None, but they should be cached separately
-        assert result1 is None
-        assert result2 is None
-        assert len(_reranker_cache) == 2
 
     def test_unknown_provider_returns_none(self):
         config = AppConfig(

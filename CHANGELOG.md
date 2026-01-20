@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+- **Reranker Factory**: Removed unreliable `id(config)`-based caching from `get_reranker()`; factory now always instantiates fresh
+
 ## [0.26.7] - 2026-01-20
 
 ### Added
@@ -17,6 +19,8 @@
 
 ### Changed
 
+- **MCP Error Handling**: MCP tools now let exceptions propagate naturally; FastMCP converts them to proper MCP error responses
+- **Chunk Contextualization**: Consolidated duplicate `contextualize` logic into `Chunk.contextualize_content()` method
 - **Type Checker**: Replaced pyright with [ty](https://github.com/astral-sh/ty), Astral's extremely fast Python type checker
   - Added explicit `Agent[Deps, Output]` type annotations to all pydantic-ai agents for better type inference
   - Removed ~24 unnecessary `# type: ignore` comments that ty correctly infers
