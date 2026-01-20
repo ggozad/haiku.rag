@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
+
+# Load environment variables from .env file for API keys and service URLs.
+# Env loading needs to be before config import; usecwd=True searches from cwd, not this .py file's location
+load_dotenv(find_dotenv(usecwd=True))
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config import (
@@ -21,9 +25,6 @@ from haiku.rag.config import (
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.store.exceptions import MigrationRequiredError
 from haiku.rag.utils import is_up_to_date
-
-# Load environment variables from .env file for API keys and service URLs
-load_dotenv()
 
 _cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
