@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.7] - 2026-01-20
+
 ### Added
 
 - **OCR Engine Selection**: New `ocr_engine` option in `conversion_options` to explicitly select OCR backend ([#246](https://github.com/ggozad/haiku.rag/issues/246))
