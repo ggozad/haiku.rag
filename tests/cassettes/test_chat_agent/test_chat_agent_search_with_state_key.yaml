@@ -227,7 +227,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '493'
+      - '502'
       content-type:
       - application/json
     parsed_body:
@@ -236,17 +236,17 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need search.
+          reasoning: Need to use search once.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"document_name":null,"limit":null,"query":"class labels"}'
+              arguments: '{"query":"class labels","document_name":null,"limit":5}'
               name: search
-            id: call_bji3vk31
+            id: call_m70fxfgn
             index: 0
             type: function
-      created: 1768403358
-      id: chatcmpl-424
+      created: 1768998240
+      id: chatcmpl-236
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
@@ -317,7 +317,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '565'
+      - '478'
       content-type:
       - application/json
     parsed_body:
@@ -326,24 +326,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to search "class labels". Likely referring to machine learning classification labels. Provide search.
+          reasoning: Need to run search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"limit":5,"query":"class labels"}'
+              arguments: '{"query":"class labels","limit":5}'
               name: run_search
-            id: call_gcwrxbl4
+            id: call_6dvnsbzh
             index: 0
             type: function
-      created: 1768403359
-      id: chatcmpl-9
+      created: 1768998241
+      id: chatcmpl-107
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 48
+        completion_tokens: 34
         prompt_tokens: 263
-        total_tokens: 311
+        total_tokens: 297
     status:
       code: 200
       message: OK
@@ -396,7 +396,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1457'
+      - '1368'
       content-type:
       - application/json
       host:
@@ -421,18 +421,18 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need to search "class labels". Likely referring to machine learning classification labels. Provide search.
+          Need to run search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"class labels"}'
+            arguments: '{"query":"class labels","limit":5}'
             name: run_search
-          id: call_gcwrxbl4
+          id: call_6dvnsbzh
           type: function
       - content: 'Found 2 results for: class labels'
         role: tool
-        tool_call_id: call_gcwrxbl4
+        tool_call_id: call_6dvnsbzh
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -461,7 +461,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '452'
+      - '524'
       content-type:
       - application/json
     parsed_body:
@@ -470,23 +470,24 @@ interactions:
         index: 0
         message:
           content: ''
+          reasoning: 'Now an alternative query: maybe "label classification".'
           role: assistant
           tool_calls:
           - function:
               arguments: '{"limit":5,"query":"label classification"}'
               name: run_search
-            id: call_di042ewg
+            id: call_eonlxxeh
             index: 0
             type: function
-      created: 1768403360
-      id: chatcmpl-890
+      created: 1768998242
+      id: chatcmpl-552
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 23
-        prompt_tokens: 336
-        total_tokens: 359
+        completion_tokens: 39
+        prompt_tokens: 322
+        total_tokens: 361
     status:
       code: 200
       message: OK
@@ -539,7 +540,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1746'
+      - '1731'
       content-type:
       - application/json
       host:
@@ -564,29 +565,32 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need to search "class labels". Likely referring to machine learning classification labels. Provide search.
+          Need to run search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"class labels"}'
+            arguments: '{"query":"class labels","limit":5}'
             name: run_search
-          id: call_gcwrxbl4
+          id: call_6dvnsbzh
           type: function
       - content: 'Found 2 results for: class labels'
         role: tool
-        tool_call_id: call_gcwrxbl4
-      - content: null
+        tool_call_id: call_6dvnsbzh
+      - content: |-
+          <think>
+          Now an alternative query: maybe "label classification".
+          </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"limit":5,"query":"label classification"}'
             name: run_search
-          id: call_di042ewg
+          id: call_eonlxxeh
           type: function
       - content: 'Found 2 results for: label classification'
         role: tool
-        tool_call_id: call_di042ewg
+        tool_call_id: call_eonlxxeh
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -615,7 +619,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '297'
+      - '298'
       content-type:
       - application/json
     parsed_body:
@@ -625,15 +629,15 @@ interactions:
         message:
           content: Search complete
           role: assistant
-      created: 1768403361
-      id: chatcmpl-58
+      created: 1768998242
+      id: chatcmpl-801
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
         completion_tokens: 6
-        prompt_tokens: 378
-        total_tokens: 384
+        prompt_tokens: 386
+        total_tokens: 392
     status:
       code: 200
       message: OK
@@ -646,7 +650,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '5071'
+      - '5080'
       content-type:
       - application/json
       host:
@@ -688,14 +692,14 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need search.
+          Need to use search once.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"document_name":null,"limit":null,"query":"class labels"}'
+            arguments: '{"query":"class labels","document_name":null,"limit":5}'
             name: search
-          id: call_bji3vk31
+          id: call_m70fxfgn
           type: function
       - content: |-
           Found 2 results:
@@ -706,7 +710,7 @@ interactions:
           [2] **DocLayNet Annotation**
               DocLayNet Dataset - Annotation Process  The annotation process was organized into 4 phases:  Phase 1: Data selection and preparation by a small team of experts  Phase 2: Label selection and guideline definition  Phase 3: Annotation by 40 dedicated annotators  Phase 4: Quality control and continuous...
         role: tool
-        tool_call_id: call_bji3vk31
+        tool_call_id: call_m70fxfgn
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -785,7 +789,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '660'
+      - '700'
       content-type:
       - application/json
     parsed_body:
@@ -793,22 +797,20 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: |-
-            Here are the documents that mention **class labels**:
-
-            1. **DocLayNet Class Labels** – Describes the 11 distinct class labels used for document layout analysis, such as Caption, Footnote, Formula, etc.
-
-            2. **DocLayNet Annotation** – Discusses the annotation process for the DocLayNet dataset, including how the class labels were selected and applied during labeling.
+          content: "Here are two documents that discuss class labels:\n\n1. **DocLayNet Class Labels**  \n   - Describes the
+            11 distinct class labels used for document layout analysis (e.g., Caption, Footnote, Formula, List‑item, Page‑footer,
+            Page‑header, etc.).\n\n2. **DocLayNet Annotation**  \n   - Covers the annotation process, including how labels
+            were selected and guided during the construction of the DocLayNet dataset."
           role: assistant
-      created: 1768403363
-      id: chatcmpl-294
+      created: 1768998245
+      id: chatcmpl-955
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 83
-        prompt_tokens: 1048
-        total_tokens: 1131
+        completion_tokens: 96
+        prompt_tokens: 1051
+        total_tokens: 1147
     status:
       code: 200
       message: OK

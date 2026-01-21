@@ -40,63 +40,6 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: !!binary |
-      H4sIAJMwUGkC/61VzY8URRTf5XOpAXa315UFJZZNTBbCNt0zs8wMCTGIFycxGkATA5tOTXf1TLHd
-      1W1VNcu4mYMHEjxw8eBFOZsQEv8AD/g3eCGakHg0Xr34ERNf9cdM77ArHJzLVL/v+r3fe4WeLqMn
-      +1EHLUkq7jCPWoxLRbg++IaJcIO2HUKdTrPZoU3bbnWcDm1f9HqNdiOwfa+BTPSqoiGNqBJDS/qb
-      Vkh4PyV9asyhQ8lQDWKO3kLGThtOImrMo2NxQvlYg95EyzvN7lAhWcx1JMdqdCwHTI6WhWYxFtF8
-      yjd5vMXdQo6WUC0RsUeltBK4w4GV777dD36vlEKRcsWiwv8IOuwVRZ5BJ6ZNKvkbltOwWugj9Nq0
-      kU+lJ1iitOFF1MwN8WpEGD+Pr9MEO21ct+vr53G9fmm9fqnRPItvXtUogdhyrCbeQJfRfHmtMuc5
-      tLrebjZ9u+Wt+806sQN/HbC32831estptr1O3Sa+0wpIz/jSQMtw66FPoCRvjTAjx8s2HuxDC7Nf
-      k8tP+I8Ljw9+8feFn68+M+Y6vyU/Pf5zuGXOPfgrceQ7vz89dwQ6xhWGS9mzneSPt8X91XsrV8pD
-      9wRCUezT0C1R6ydqLZayu4xQ5pkrDqOD2Vf3dbQI/y5hVvZt7dSeQrUw7gdMUCuSfaOGJtm7Z9Bi
-      qZMJ4a4aJtQ4jo4CU3zG+64Wdi+gk6VRKU+I0GVAxw20YE/9Ppu5NzszOzNj/Dq/Gx7vz37D9h36
-      +Ctz7nvj4eenFn94dO6oNyAKF7cESO4/PCIzSMpD9w20XFwRWCyI7n9+zUPogHbunkTHCgM5lIpG
-      mkZxGJKIdIGOhUrQT1MqlZWhWwX2NDquKUGFRXxfAOE0TGHskXAQS9U1UK1QJ7FQxv6VR590/6mh
-      lbxLRVQNClSkgFLGLzX0rLZtBin3dKmuiuNQmpfwzW1TVw0nU1IivIHrx14aAZbSPI/NSQT3tgQ3
-      6Q1oRMB624S6mA5Fwg+FhkAxqgMGJJRUe1aF2yYUJIbZSXc0S6cENM4cgW3IIqYypU8Dkob6zNMw
-      BBXhww+CvM7SkcHO6FOhPSdCbW6ONkY6nL4+cMPXbkXiDRCXpnHvNvVUlrgyvFpzPUMAqwHFeqmE
-      1O9T3COS4iAWWMByugMjhscIWbf4LX6NqlRwCWoJlUu8xdQAewPYS/i9dyUm3C89PYqlF4Odpb0C
-      CowFUenXG+rETOS+wGTMOPaYor6bSaSlGxKn0IxsKnzXZ55yN+lwgpbG1FOVLkjNBNgKJKwINxnX
-      2IzJoONCk4lPFJnE0tsNshWCkUawl7JQsQp5NvKKklS5mnk6qNaZE3EB9jhqId6FfgEDKrk5Gi+g
-      3p7cmurnDWhkNgnwDeDCRG8R3RG5RTU9KpyokDFX7xUu12IVZywpg+8Rqtq93QJqfsRB3nCJU0l9
-      HRi4FmXRi0ogEMSJ5F7TU4qIEGSY5415wHzNrqmhciz7edZfHVvn9MzIrgasRAqv2mvO2Ywk5C6L
-      0mgcKGK8+Laz78kwRj09oHsM4wTkXcZSK/9js+wytVfGLSE432E4y1OdRFGO2/8/RTmjX3qGgLtR
-      omlRTgKNkpAoWll5YRhvgfyuKmwqSXMdi+DBnFKOuptoqXwVKwNj3EDXtncBeWqG9no4dpCu3Jyj
-      0cu906d3PvSgrj6rL3zG235AWnbDaTWa9aDht7rm+M2FNZHEXNLnHs7yqf8XMrooUNoKAAA=
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-encoding:
-      - gzip
-      content-length:
-      - '1307'
-      content-type:
-      - application/x-protobuf
-    method: POST
-    uri: https://logfire-eu.pydantic.dev/v1/traces
-  response:
-    body:
-      string: ''
-    headers:
-      connection:
-      - keep-alive
-      content-length:
-      - '0'
-      nel:
-      - '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'
-      report-to:
-      - '{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=mCozVqidqvTBt1g2DayKq8ombI9t7flItid4fd%2FjD%2FuxzCWRX%2FJ%2B8A2RaiZms8Btosj5mYmlsr4jYgoEnIPDu%2B5TkzrpLfdunaX%2B0BFbPLlp2gqt"}]}'
-      vary:
-      - origin, access-control-request-method, access-control-request-headers
-    status:
-      code: 200
-      message: OK
-- request:
     headers:
       accept:
       - application/json
@@ -105,7 +48,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2630'
+      - '2668'
       content-type:
       - application/json
       host:
@@ -118,18 +61,18 @@ interactions:
 
           Process:
           1. Call search_documents with relevant keywords from the question
-          2. Review the results and their relevance scores
+          2. Review the results ordered by relevance
           3. If needed, perform follow-up searches with different keywords (max 3 total)
           4. Provide a concise answer based strictly on the retrieved content
 
           The search tool returns results like:
-          [chunk_abc123] (score: 0.85)
+          [chunk_abc123] [rank 1 of 5]
           Source: "Document Title" > Section > Subsection
           Type: paragraph
           Content:
           The actual text content here...
 
-          [chunk_def456] (score: 0.72)
+          [chunk_def456] [rank 2 of 5]
           Source: "Another Document"
           Type: table
           Content:
@@ -137,7 +80,7 @@ interactions:
           ...
 
           Each result includes:
-          - chunk_id in brackets and relevance score
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
           - Source: document title and section hierarchy (when available)
           - Type: content type like paragraph, table, code, list_item (when available)
           - Content: the actual text
@@ -150,7 +93,7 @@ interactions:
           - If multiple results are relevant, synthesize them coherently
           - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
           - Be concise and direct - avoid elaboration unless asked
-          - Higher scores indicate more relevant results
+          - Results are ordered by relevance, with rank 1 being most relevant
         role: system
       - content: What is Python?
         role: user
@@ -212,7 +155,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '482'
+      - '484'
       content-type:
       - application/json
     parsed_body:
@@ -221,101 +164,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need search.
+          reasoning: Need to search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"limit":5,"query":"Python definition"}'
+              arguments: '{"query":"Python definition","limit":5}'
               name: search_documents
-            id: call_snyo88ta
+            id: call_zzot5v63
             index: 0
             type: function
-      created: 1766862998
-      id: chatcmpl-511
+      created: 1768998999
+      id: chatcmpl-36
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 32
-        prompt_tokens: 532
-        total_tokens: 564
-    status:
-      code: 200
-      message: OK
-- request:
-    body: !!binary |
-      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
-      IBUAAA==
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-encoding:
-      - gzip
-      content-length:
-      - '2398'
-      content-type:
-      - application/x-protobuf
-    method: POST
-    uri: https://logfire-eu.pydantic.dev/v1/traces
-  response:
-    body:
-      string: ''
-    headers:
-      connection:
-      - keep-alive
-      content-length:
-      - '0'
-      nel:
-      - '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'
-      report-to:
-      - '{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=FU9znOmvL1vinIEsd7b2RUqQ01rUYjwmY39v06KsjlLZsINKwrK%2FSMQQGGJ5a0kdVF9sSY0cTX5cb3B9X7UHiqXfqhvzZ7xuELCcPThBVvNPLEm%2F"}]}'
-      vary:
-      - origin, access-control-request-method, access-control-request-headers
+        completion_tokens: 33
+        prompt_tokens: 545
+        total_tokens: 578
     status:
       code: 200
       message: OK
@@ -360,68 +226,6 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: !!binary |
-      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
-      VNDyjYJZqsm9nZu8gnYtzmTV/wfevCNH9AwAAA==
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-encoding:
-      - gzip
-      content-length:
-      - '1567'
-      content-type:
-      - application/x-protobuf
-    method: POST
-    uri: https://logfire-eu.pydantic.dev/v1/traces
-  response:
-    body:
-      string: ''
-    headers:
-      connection:
-      - keep-alive
-      content-length:
-      - '0'
-      nel:
-      - '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'
-      report-to:
-      - '{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=trOojjczzFXOqFvhWkkr%2BrMvxMbEH3hz%2FkGJP3CvoEJw8auFEMv%2Fmzm8oMmxMcpedH4EdA%2BTkzVPk5ECNP%2ByhN6FjH2W2XXLHAn%2Bwh9lVJH7H8DG"}]}'
-      vary:
-      - origin, access-control-request-method, access-control-request-headers
-    status:
-      code: 200
-      message: OK
-- request:
     headers:
       accept:
       - application/json
@@ -430,7 +234,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '3030'
+      - '3071'
       content-type:
       - application/json
       host:
@@ -443,18 +247,18 @@ interactions:
 
           Process:
           1. Call search_documents with relevant keywords from the question
-          2. Review the results and their relevance scores
+          2. Review the results ordered by relevance
           3. If needed, perform follow-up searches with different keywords (max 3 total)
           4. Provide a concise answer based strictly on the retrieved content
 
           The search tool returns results like:
-          [chunk_abc123] (score: 0.85)
+          [chunk_abc123] [rank 1 of 5]
           Source: "Document Title" > Section > Subsection
           Type: paragraph
           Content:
           The actual text content here...
 
-          [chunk_def456] (score: 0.72)
+          [chunk_def456] [rank 2 of 5]
           Source: "Another Document"
           Type: table
           Content:
@@ -462,7 +266,7 @@ interactions:
           ...
 
           Each result includes:
-          - chunk_id in brackets and relevance score
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
           - Source: document title and section hierarchy (when available)
           - Type: content type like paragraph, table, code, list_item (when available)
           - Content: the actual text
@@ -475,28 +279,28 @@ interactions:
           - If multiple results are relevant, synthesize them coherently
           - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
           - Be concise and direct - avoid elaboration unless asked
-          - Higher scores indicate more relevant results
+          - Results are ordered by relevance, with rank 1 being most relevant
         role: system
       - content: What is Python?
         role: user
       - content: |-
           <think>
-          Need search.
+          Need to search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"Python definition"}'
+            arguments: '{"query":"Python definition","limit":5}'
             name: search_documents
-          id: call_snyo88ta
+          id: call_zzot5v63
           type: function
       - content: |-
-          [498e6ed4-ac67-4752-899e-45a97bd3a0a8] (score: 0.03)
+          [8c03f6b5-b9e5-47fa-b785-83f659ff9198] [rank 1 of 1]
           Type: text
           Content:
           Python is a high-level programming language.
         role: tool
-        tool_call_id: call_snyo88ta
+        tool_call_id: call_zzot5v63
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -555,7 +359,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '422'
+      - '457'
       content-type:
       - application/json
     parsed_body:
@@ -563,94 +367,18 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: I cannot find enough information in the knowledge base to answer this question.
-          reasoning: Only result very low. Probably insufficient.
+          content: '{"answer":"Python is a high‑level programming language.","cited_chunks":["8c03f6b5-b9e5-47fa-b785-83f659ff9198"],"confidence":0.93,"query":"What
+            is Python?"}'
           role: assistant
-      created: 1766863000
-      id: chatcmpl-320
+      created: 1768999000
+      id: chatcmpl-740
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 32
-        prompt_tokens: 628
-        total_tokens: 660
-    status:
-      code: 200
-      message: OK
-- request:
-    body: !!binary |
-      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
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-encoding:
-      - gzip
-      content-length:
-      - '2376'
-      content-type:
-      - application/x-protobuf
-    method: POST
-    uri: https://logfire-eu.pydantic.dev/v1/traces
-  response:
-    body:
-      string: ''
-    headers:
-      connection:
-      - keep-alive
-      content-length:
-      - '0'
-      nel:
-      - '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'
-      report-to:
-      - '{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=u%2BdL5dvWixKrvXzzRkOqXalpRKpO2vLrtO1mg0NftN4VQ%2FhXvZ7%2B7v3RsAUrwkhx4rTftKfylbnqzzqNAsifN%2BkXJmwDtblzab4q25CJdU1VVTtU"}]}'
-      vary:
-      - origin, access-control-request-method, access-control-request-headers
+        completion_tokens: 62
+        prompt_tokens: 642
+        total_tokens: 704
     status:
       code: 200
       message: OK
@@ -663,7 +391,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '3338'
+      - '3406'
       content-type:
       - application/json
       host:
@@ -676,18 +404,18 @@ interactions:
 
           Process:
           1. Call search_documents with relevant keywords from the question
-          2. Review the results and their relevance scores
+          2. Review the results ordered by relevance
           3. If needed, perform follow-up searches with different keywords (max 3 total)
           4. Provide a concise answer based strictly on the retrieved content
 
           The search tool returns results like:
-          [chunk_abc123] (score: 0.85)
+          [chunk_abc123] [rank 1 of 5]
           Source: "Document Title" > Section > Subsection
           Type: paragraph
           Content:
           The actual text content here...
 
-          [chunk_def456] (score: 0.72)
+          [chunk_def456] [rank 2 of 5]
           Source: "Another Document"
           Type: table
           Content:
@@ -695,7 +423,7 @@ interactions:
           ...
 
           Each result includes:
-          - chunk_id in brackets and relevance score
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
           - Source: document title and section hierarchy (when available)
           - Type: content type like paragraph, table, code, list_item (when available)
           - Content: the actual text
@@ -708,34 +436,30 @@ interactions:
           - If multiple results are relevant, synthesize them coherently
           - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
           - Be concise and direct - avoid elaboration unless asked
-          - Higher scores indicate more relevant results
+          - Results are ordered by relevance, with rank 1 being most relevant
         role: system
       - content: What is Python?
         role: user
       - content: |-
           <think>
-          Need search.
+          Need to search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"Python definition"}'
+            arguments: '{"query":"Python definition","limit":5}'
             name: search_documents
-          id: call_snyo88ta
+          id: call_zzot5v63
           type: function
       - content: |-
-          [498e6ed4-ac67-4752-899e-45a97bd3a0a8] (score: 0.03)
+          [8c03f6b5-b9e5-47fa-b785-83f659ff9198] [rank 1 of 1]
           Type: text
           Content:
           Python is a high-level programming language.
         role: tool
-        tool_call_id: call_snyo88ta
-      - content: |-
-          <think>
-          Only result very low. Probably insufficient.
-          </think>
-
-          I cannot find enough information in the knowledge base to answer this question.
+        tool_call_id: call_zzot5v63
+      - content: '{"answer":"Python is a high‑level programming language.","cited_chunks":["8c03f6b5-b9e5-47fa-b785-83f659ff9198"],"confidence":0.93,"query":"What
+          is Python?"}'
         role: assistant
       - content: |-
           Validation feedback:
@@ -801,7 +525,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '609'
+      - '628'
       content-type:
       - application/json
     parsed_body:
@@ -810,25 +534,25 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to use final_result.
+          reasoning: We need final result via function.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"answer":"I cannot find enough information in the knowledge base to answer this question.","cited_chunks":[],"confidence":0,"query":"What
+              arguments: '{"answer":"Python is a high‑level programming language.","cited_chunks":["8c03f6b5-b9e5-47fa-b785-83f659ff9198"],"confidence":0.93,"query":"What
                 is Python?"}'
               name: final_result
-            id: call_l8rd7d7f
+            id: call_sn6do4tl
             index: 0
             type: function
-      created: 1766863002
-      id: chatcmpl-578
+      created: 1768999002
+      id: chatcmpl-226
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 60
-        prompt_tokens: 685
-        total_tokens: 745
+        completion_tokens: 80
+        prompt_tokens: 725
+        total_tokens: 805
     status:
       code: 200
       message: OK

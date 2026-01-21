@@ -5,6 +5,19 @@
 - **Model Downloads**: `download-models` now pre-downloads HuggingFace models for `sentence-transformers`, `mxbai`, and `jina-local`
 - **Reranker Factory**: Removed unreliable `id(config)`-based caching from `get_reranker()`; factory now always instantiates fresh
 
+### Changed
+
+- **Agent Search Result Display**: Search results now show rank position instead of raw scores
+  - `SearchResult.format_for_agent()` accepts optional `rank` and `total` parameters
+  - Output changes from `(score: 0.02)` to `[rank 1 of 5]` when rank is provided
+  - Prevents LLMs from misinterpreting low RRF hybrid search scores as "2% relevant"
+  - QA and Research agents updated to pass rank/total to formatted results
+  - Agent prompts updated to reference rank-based ordering instead of scores
+
+### Fixed
+
+- **Test Cassette Organization**: Consolidated all VCR cassettes to `tests/cassettes/`
+
 ## [0.26.7] - 2026-01-20
 
 ### Added

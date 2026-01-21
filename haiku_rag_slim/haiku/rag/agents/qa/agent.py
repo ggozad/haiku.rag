@@ -57,8 +57,12 @@ class QuestionAnswerAgent:
             results = await ctx.deps.client.expand_context(results)
             # Store results for citation resolution
             ctx.deps.search_results = results
-            # Format with metadata for agent context
-            parts = [r.format_for_agent() for r in results]
+            # Format with rank instead of raw score to avoid confusing LLMs
+            total = len(results)
+            parts = [
+                r.format_for_agent(rank=i + 1, total=total)
+                for i, r in enumerate(results)
+            ]
             return "\n\n".join(parts) if parts else "No results found."
 
     async def answer(

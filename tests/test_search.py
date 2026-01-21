@@ -258,11 +258,12 @@ async def test_search_result_format_includes_metadata(temp_db_path):
         results = await client.search("machine learning", limit=1)
         assert len(results) > 0
 
-        formatted = results[0].format_for_agent()
+        # Format with rank (the way agents use it)
+        formatted = results[0].format_for_agent(rank=1, total=1)
 
-        # Should include chunk ID and score
+        # Should include chunk ID and rank
         assert "[" in formatted and "]" in formatted
-        assert "score:" in formatted
+        assert "[rank 1 of 1]" in formatted
 
         # Should include document title in Source
         assert "ML Guide" in formatted

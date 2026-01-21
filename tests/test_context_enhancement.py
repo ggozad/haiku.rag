@@ -298,10 +298,11 @@ async def test_format_for_agent_output(temp_db_path, small_chunk_config):
         assert len(table_results) > 0
 
         expanded = await client.expand_context(table_results[:1])
-        formatted = expanded[0].format_for_agent()
+        # Format with rank (the way agents use it)
+        formatted = expanded[0].format_for_agent(rank=1, total=1)
 
         # Check format structure
-        assert "score:" in formatted
+        assert "[rank 1 of 1]" in formatted
         assert 'Source: "Format Test"' in formatted
         assert "Type: table" in formatted
         assert "Content:" in formatted

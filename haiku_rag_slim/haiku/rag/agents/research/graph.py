@@ -191,7 +191,12 @@ async def _search_one_step_logic(
             )
             results = await ctx2.deps.client.expand_context(results)
             ctx2.deps.search_results = results
-            parts = [r.format_for_agent() for r in results]
+            # Format with rank instead of raw score to avoid confusing LLMs
+            total = len(results)
+            parts = [
+                r.format_for_agent(rank=i + 1, total=total)
+                for i, r in enumerate(results)
+            ]
             if not parts:
                 return f"No relevant information found for: {query}"
             return "\n\n".join(parts)
