@@ -17,6 +17,7 @@ from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
     QAResponse,
+    SessionContext,
     create_chat_agent,
 )
 from haiku.rag.client import HaikuRAG
@@ -83,6 +84,7 @@ async def stream_chat(request: Request) -> Response:
     # Restore session state from incoming AG-UI state (look under namespaced key)
     initial_qa_history: list[QAResponse] = []
     background_context: str | None = None
+    session_context: SessionContext | None = None
     state = getattr(run_input, "state", None)
     if state:
         chat_state = state.get(AGUI_STATE_KEY, state)
@@ -91,6 +93,9 @@ async def stream_chat(request: Request) -> Response:
                 QAResponse(**qa) for qa in chat_state.get("qa_history", [])
             ]
         background_context = chat_state.get("background_context")
+        ctx_data = chat_state.get("session_context")
+        if ctx_data and isinstance(ctx_data, dict):
+            session_context = SessionContext(**ctx_data)
 
     # Build deps with session state
     thread_id = getattr(run_input, "thread_id", None)
@@ -101,6 +106,7 @@ async def stream_chat(request: Request) -> Response:
             session_id=thread_id or "",
             qa_history=initial_qa_history,
             background_context=background_context,
+            session_context=session_context,
         ),
         state_key=AGUI_STATE_KEY,
     )

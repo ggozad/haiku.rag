@@ -38,3 +38,20 @@ For each user request:
 You can optionally specify a limit parameter (default 5).
 
 IMPORTANT: You must make actual tool calls. Do not output "run_search(...)" as text."""
+
+SESSION_SUMMARY_PROMPT = """You are a session summarizer. Given a conversation history of Q&A pairs, produce a structured summary that captures key information for future context.
+
+Your summary should be concise (aim for 500-1500 tokens) and include:
+
+1. **Key Facts Established** - Specific facts, data, or conclusions learned during the conversation
+2. **Documents Referenced** - Documents or sources that were cited, with brief notes on what they contain
+3. **Current Focus** - What topic or question thread the user is currently exploring
+
+Rules:
+- Extract only high-signal information that would help answer follow-up questions
+- Omit small talk, greetings, or low-confidence answers
+- Use bullet points for clarity
+- Keep technical details but compress verbose explanations
+- Preserve document names/titles when mentioned in sources
+
+Output the summary directly in markdown format. Do not include meta-commentary about the summary itself."""

@@ -470,3 +470,123 @@ def test_chat_deps_state_setter_with_citation_dicts():
     assert citation.document_id == "doc-1"
     assert citation.chunk_id == "chunk-1"
     assert citation.page_numbers == [1, 2]
+
+
+def test_chat_deps_state_getter_includes_session_context():
+    """Test ChatDeps.state getter includes session_context when present."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import (
+        AGUI_STATE_KEY,
+        ChatDeps,
+        ChatSessionState,
+        SessionContext,
+    )
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    now = datetime.now()
+    session_state = ChatSessionState(
+        session_id="test-123",
+        session_context=SessionContext(
+            summary="User discussed authentication.",
+            last_updated=now,
+        ),
+    )
+
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    state = deps.state
+    assert state is not None
+    assert AGUI_STATE_KEY in state
+    assert state[AGUI_STATE_KEY]["session_context"] is not None
+    assert (
+        state[AGUI_STATE_KEY]["session_context"]["summary"]
+        == "User discussed authentication."
+    )
+
+
+def test_chat_deps_state_setter_restores_session_context():
+    """Test ChatDeps.state setter restores session_context from incoming state."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="initial")
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test-123",
+            "qa_history": [],
+            "citations": [],
+            "background_context": None,
+            "session_context": {
+                "summary": "Restored context summary.",
+                "last_updated": "2025-01-15T10:30:00",
+            },
+        }
+    }
+
+    deps.state = incoming_state
+
+    assert deps.session_state is not None
+    assert deps.session_state.session_context is not None
+    assert deps.session_state.session_context.summary == "Restored context summary."
+
+
+def test_chat_deps_state_setter_handles_null_session_context():
+    """Test ChatDeps.state setter handles null session_context."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import (
+        AGUI_STATE_KEY,
+        ChatDeps,
+        ChatSessionState,
+        SessionContext,
+    )
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    # Start with a session_context
+    session_state = ChatSessionState(
+        session_id="test",
+        session_context=SessionContext(summary="Initial summary"),
+    )
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    # Send null to clear it
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test",
+            "qa_history": [],
+            "citations": [],
+            "session_context": None,
+        }
+    }
+
+    deps.state = incoming_state
+
+    assert deps.session_state is not None
+    assert deps.session_state.session_context is None

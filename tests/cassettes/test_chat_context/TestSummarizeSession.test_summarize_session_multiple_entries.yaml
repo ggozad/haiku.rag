@@ -1,0 +1,94 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1493'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a session summarizer. Given a conversation history of Q&A pairs, produce a structured summary that captures key information for future context.
+
+          Your summary should be concise (aim for 500-1500 tokens) and include:
+
+          1. **Key Facts Established** - Specific facts, data, or conclusions learned during the conversation
+          2. **Documents Referenced** - Documents or sources that were cited, with brief notes on what they contain
+          3. **Current Focus** - What topic or question thread the user is currently exploring
+
+          Rules:
+          - Extract only high-signal information that would help answer follow-up questions
+          - Omit small talk, greetings, or low-confidence answers
+          - Use bullet points for clarity
+          - Keep technical details but compress verbose explanations
+          - Preserve document names/titles when mentioned in sources
+
+          Output the summary directly in markdown format. Do not include meta-commentary about the summary itself.
+        role: system
+      - content: |
+          ## Q1: What is the authentication method?
+          **Answer** (confidence: 95%):
+          The API uses JWT tokens for authentication.
+          **Sources:** Auth Guide
+
+          ## Q2: What is the rate limit?
+          **Answer** (confidence: 90%):
+          Rate limiting is set to 100 requests per minute.
+          **Sources:** API Reference
+
+          ## Q3: How do I refresh tokens?
+          **Answer** (confidence: 85%):
+          Use the /refresh endpoint with your refresh token.
+          **Sources:** Auth Guide
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '865'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: |-
+            ## Key Facts Established
+            - **Authentication method**: JWT tokens.
+            - **Rate limit**: 100 requests per minute.
+            - **Token refresh**: use `/refresh` endpoint with a refresh token.
+
+            ## Documents Referenced
+            - **Auth Guide** – contains details on JWT usage, token issuance, and refresh mechanism.
+            - **API Reference** – includes rate limiting policy and endpoint descriptions.
+
+            ## Current Focus
+            The user is currently gathering foundational API usage details, specifically authentication methods, rate limits, and token refresh procedures.
+          reasoning: We need to summarize.
+          role: assistant
+      created: 1769007514
+      id: chatcmpl-760
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 121
+        prompt_tokens: 365
+        total_tokens: 486
+    status:
+      code: 200
+      message: OK
+version: 1

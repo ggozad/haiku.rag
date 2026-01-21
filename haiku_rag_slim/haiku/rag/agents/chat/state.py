@@ -1,5 +1,6 @@
 import hashlib
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -55,6 +56,19 @@ class QAResponse(BaseModel):
         )
 
 
+class SessionContext(BaseModel):
+    """Compressed summary of conversation history for research graph."""
+
+    summary: str = ""
+    last_updated: datetime | None = None
+
+    def render_markdown(self) -> str:
+        """Render context for injection into research graph."""
+        if not self.summary:
+            return ""
+        return f"## Prior Conversation Context\n\n{self.summary}"
+
+
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
@@ -62,6 +76,7 @@ class ChatSessionState(BaseModel):
     citations: list[CitationInfo] = []
     qa_history: list[QAResponse] = []
     background_context: str | None = None
+    session_context: SessionContext | None = None
 
 
 def format_conversation_context(qa_history: list[QAResponse]) -> str:
@@ -206,6 +221,14 @@ class ChatDeps:
                 )
             if "session_id" in state_data:
                 self.session_state.session_id = state_data.get("session_id", "")
+            if "session_context" in state_data:
+                ctx_data = state_data.get("session_context")
+                if ctx_data is None:
+                    self.session_state.session_context = None
+                elif isinstance(ctx_data, dict):
+                    self.session_state.session_context = SessionContext(**ctx_data)
+                else:
+                    self.session_state.session_context = ctx_data
 
 
 @dataclass

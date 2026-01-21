@@ -1,6 +1,10 @@
+import asyncio
+import logging
+
 from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent, RunContext, ToolReturn
 
+from haiku.rag.agents.chat.context import update_session_context
 from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
 from haiku.rag.agents.chat.search import SearchAgent
 from haiku.rag.agents.chat.state import (
@@ -18,6 +22,25 @@ from haiku.rag.agents.research.models import Citation, SearchAnswer
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
+
+logger = logging.getLogger(__name__)
+
+
+async def _update_context_background(
+    qa_history: list[QAResponse],
+    config: AppConfig,
+    session_state: ChatSessionState,
+) -> None:
+    """Background task to update session context after an ask."""
+    try:
+        await update_session_context(
+            qa_history=qa_history,
+            config=config,
+            session_state=session_state,
+        )
+        logger.debug("Session context updated successfully")
+    except Exception:
+        logger.exception("Failed to update session context")
 
 
 def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
@@ -95,6 +118,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             ),
             background_context=(
                 ctx.deps.session_state.background_context
+                if ctx.deps.session_state
+                else None
+            ),
+            session_context=(
+                ctx.deps.session_state.session_context
                 if ctx.deps.session_state
                 else None
             ),
@@ -194,11 +222,20 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
 
-        background_context = (
-            ctx.deps.session_state.background_context
-            if ctx.deps.session_state
-            else None
-        )
+        # Determine background context:
+        # 1. Use session_context summary if available (compressed history)
+        # 2. Fall back to explicit background_context if set
+        background_context: str | None = None
+        if ctx.deps.session_state:
+            if (
+                ctx.deps.session_state.session_context
+                and ctx.deps.session_state.session_context.summary
+            ):
+                background_context = (
+                    ctx.deps.session_state.session_context.render_markdown()
+                )
+            elif ctx.deps.session_state.background_context:
+                background_context = ctx.deps.session_state.background_context
 
         context = ResearchContext(
             original_question=question,
@@ -248,6 +285,15 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                     -MAX_QA_HISTORY:
                 ]
 
+            # Spawn background task to update session context
+            asyncio.create_task(
+                _update_context_background(
+                    qa_history=list(ctx.deps.session_state.qa_history),
+                    config=ctx.deps.config,
+                    session_state=ctx.deps.session_state,
+                )
+            )
+
         # Build new state with citations AND accumulated qa_history
         new_state = ChatSessionState(
             session_id=(
@@ -259,6 +305,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             ),
             background_context=(
                 ctx.deps.session_state.background_context
+                if ctx.deps.session_state
+                else None
+            ),
+            session_context=(
+                ctx.deps.session_state.session_context
                 if ctx.deps.session_state
                 else None
             ),
