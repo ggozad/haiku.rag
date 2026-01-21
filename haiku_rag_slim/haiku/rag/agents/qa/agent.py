@@ -48,7 +48,7 @@ class QuestionAnswerAgent:
         ) -> str:
             """Search the knowledge base for relevant documents.
 
-            Returns results with chunk IDs and relevance scores.
+            Returns results with chunk IDs and rank positions.
             Reference results by their chunk_id in cited_chunks.
             """
             results = await ctx.deps.client.search(

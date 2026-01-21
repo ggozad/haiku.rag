@@ -86,7 +86,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2780'
+      - '2778'
       content-type:
       - application/json
       host:
@@ -145,7 +145,7 @@ interactions:
           description: |-
             Search the knowledge base for relevant documents.
 
-            Returns results with chunk IDs and relevance scores.
+            Returns results with chunk IDs and rank positions.
             Reference results by their chunk_id in cited_chunks.
           name: search_documents
           parameters:
@@ -194,7 +194,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1139'
+      - '1430'
       content-type:
       - application/json
     parsed_body:
@@ -204,27 +204,27 @@ interactions:
         message:
           content: ''
           reasoning: |-
-            The user asks: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" We need to find info about Bintang (someone) who introduced an innovative form of civic engagement for gathering feedback from citizens during Jakarta's election. Likely from a document about social or political context in Jakarta. We need to search the knowledge base. Use search_documents function.
+            We need to answer: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" This is a specific question about some innovative civic engagement introduced by "Bintang" for gathering feedback from citizens during Jakarta's election. Bintang could refer to a person or a company. Might be a brand? Or maybe it's a short for Bintang, maybe a government official? The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" So the answer: likely something like "interactive polling booth", "online civic engagement platform", "live voting kiosks" or something.
 
-            Let's call search with query: "Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta election".
+            We need to search the knowledge base. Use search_documents with query: 'Bintang innovative form of civic engagement gathering feedback citizens Jakarta election'.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"query":"Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta
-                election","limit":5}'
+              arguments: '{"limit":5,"query":"Bintang innovative form of civic engagement gathering feedback citizens Jakarta
+                election"}'
               name: search_documents
-            id: call_y4w5orma
+            id: call_pg1twsq1
             index: 0
             type: function
-      created: 1768995991
-      id: chatcmpl-547
+      created: 1769001375
+      id: chatcmpl-679
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 143
+        completion_tokens: 203
         prompt_tokens: 561
-        total_tokens: 704
+        total_tokens: 764
     status:
       code: 200
       message: OK
@@ -237,7 +237,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '170'
+      - '158'
       content-type:
       - application/json
       host:
@@ -246,7 +246,7 @@ interactions:
     parsed_body:
       encoding_format: base64
       input:
-      - Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta election
+      - Bintang innovative form of civic engagement gathering feedback citizens Jakarta election
       model: qwen3-embedding:4b
     uri: http://localhost:11434/v1/embeddings
   response:
@@ -257,14 +257,14 @@ interactions:
       - chunked
     parsed_body:
       data:
-      - embedding: 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
+      - embedding: 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
         index: 0
         object: embedding
       model: qwen3-embedding:4b
       object: list
       usage:
-        prompt_tokens: 16
-        total_tokens: 16
+        prompt_tokens: 14
+        total_tokens: 14
     status:
       code: 200
       message: OK
@@ -277,7 +277,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8609'
+      - '8898'
       content-type:
       - application/json
       host:
@@ -329,20 +329,20 @@ interactions:
         role: user
       - content: |-
           <think>
-          The user asks: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" We need to find info about Bintang (someone) who introduced an innovative form of civic engagement for gathering feedback from citizens during Jakarta's election. Likely from a document about social or political context in Jakarta. We need to search the knowledge base. Use search_documents function.
+          We need to answer: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" This is a specific question about some innovative civic engagement introduced by "Bintang" for gathering feedback from citizens during Jakarta's election. Bintang could refer to a person or a company. Might be a brand? Or maybe it's a short for Bintang, maybe a government official? The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" So the answer: likely something like "interactive polling booth", "online civic engagement platform", "live voting kiosks" or something.
 
-          Let's call search with query: "Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta election".
+          We need to search the knowledge base. Use search_documents with query: 'Bintang innovative form of civic engagement gathering feedback citizens Jakarta election'.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"query":"Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta
-              election","limit":5}'
+            arguments: '{"limit":5,"query":"Bintang innovative form of civic engagement gathering feedback citizens Jakarta
+              election"}'
             name: search_documents
-          id: call_y4w5orma
+          id: call_pg1twsq1
           type: function
       - content: |-
-          [33635a00-3e8a-4d08-a76e-833cf37878e5] [rank 1 of 1]
+          [e6d3622c-0d09-4caa-a7ab-ef01949233c8] [rank 1 of 1]
           Type: text
           Content:
           Jakarta Election Campaigns Heat Up: Here's How to Understand the System
@@ -387,7 +387,7 @@ interactions:
 
           Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
         role: tool
-        tool_call_id: call_y4w5orma
+        tool_call_id: call_pg1twsq1
       model: gpt-oss
       reasoning_effort: high
       stream: false
@@ -397,7 +397,7 @@ interactions:
           description: |-
             Search the knowledge base for relevant documents.
 
-            Returns results with chunk IDs and relevance scores.
+            Returns results with chunk IDs and rank positions.
             Reference results by their chunk_id in cited_chunks.
           name: search_documents
           parameters:
@@ -446,608 +446,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1144'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: |+
-            We have a chunk: "Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement". The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" It appears to be exactly that: Bintang introduced an interactive app for gathering real-time feedback.
-
-            Thus answer: she introduced an interactive app.
-
-            But we need to be careful: maybe there is also another similar chunk. Let's search again with other keyword "interactive app" and "Bintang" to see.
-
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"limit":5,"query":"Bintang interactive app feedback citizens Jakarta"}'
-              name: search_documents
-            id: call_av46l6b1
-            index: 0
-            type: function
-      created: 1768996005
-      id: chatcmpl-980
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 152
-        prompt_tokens: 1600
-        total_tokens: 1752
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '119'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      encoding_format: base64
-      input:
-      - Bintang interactive app feedback citizens Jakarta
-      model: qwen3-embedding:4b
-    uri: http://localhost:11434/v1/embeddings
-  response:
-    headers:
-      content-type:
-      - application/json
-      transfer-encoding:
-      - chunked
-    parsed_body:
-      data:
-      - embedding: 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
-        index: 0
-        object: embedding
-      model: qwen3-embedding:4b
-      object: list
-      usage:
-        prompt_tokens: 9
-        total_tokens: 9
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '14441'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a knowledgeable assistant that answers questions using a document knowledge base.
-
-          Process:
-          1. Call search_documents with relevant keywords from the question
-          2. Review the results ordered by relevance
-          3. If needed, perform follow-up searches with different keywords (max 3 total)
-          4. Provide a concise answer based strictly on the retrieved content
-
-          The search tool returns results like:
-          [chunk_abc123] [rank 1 of 5]
-          Source: "Document Title" > Section > Subsection
-          Type: paragraph
-          Content:
-          The actual text content here...
-
-          [chunk_def456] [rank 2 of 5]
-          Source: "Another Document"
-          Type: table
-          Content:
-          | Column 1 | Column 2 |
-          ...
-
-          Each result includes:
-          - chunk_id in brackets and rank position (rank 1 = most relevant)
-          - Source: document title and section hierarchy (when available)
-          - Type: content type like paragraph, table, code, list_item (when available)
-          - Content: the actual text
-
-          In your response, include the chunk IDs you used in cited_chunks.
-
-          Guidelines:
-          - Base answers strictly on retrieved content - do not use external knowledge
-          - Use the Source and Type metadata to understand context
-          - If multiple results are relevant, synthesize them coherently
-          - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
-          - Be concise and direct - avoid elaboration unless asked
-          - Results are ordered by relevance, with rank 1 being most relevant
-        role: system
-      - content: What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during
-          Jakarta's election?
-        role: user
-      - content: |-
-          <think>
-          The user asks: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" We need to find info about Bintang (someone) who introduced an innovative form of civic engagement for gathering feedback from citizens during Jakarta's election. Likely from a document about social or political context in Jakarta. We need to search the knowledge base. Use search_documents function.
-
-          Let's call search with query: "Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta election".
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"query":"Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta
-              election","limit":5}'
-            name: search_documents
-          id: call_y4w5orma
-          type: function
-      - content: |-
-          [33635a00-3e8a-4d08-a76e-833cf37878e5] [rank 1 of 1]
-          Type: text
-          Content:
-          Jakarta Election Campaigns Heat Up: Here's How to Understand the System
-
-          As election day in Jakarta draws nearer, candidates are out in force using various strategies to woo voters and prepare to exercise their democratic rights. Citizens make their voices heard as the city vibrates with life. This coverage offers valuable insight into campaign activities while offering an in-depth guide for understanding electoral processes in Jakarta.
-
-          Initial Launch of Candidates' Campaign Plans on September 1
-
-          After September 1st, when campaign season officially kicked off, candidates have moved swiftly to engage their bases. Amira Bintang, an upstart candidate with extensive social activism experience and promising urban development and public transportation reform as key platforms of her candidacy speech in Jakarta; incumbent Rizal Harahap relies heavily on his track record and highlights all infrastructure projects completed during his term.
-
-          Campaign Strategies: From Digital Battlegrounds to Door-toDoor Outreach
-
-          Campaign strategies have taken an advanced turn as candidates leverage digital media to reach a wider audience. Hashtags, viral videos, targeted ads and targeted messaging can all play an influential role in changing public opinion with just a tweet or meme. At the grassroots level candidates engage in door-to-door campaigns personalized for individual voters in an attempt to connect.
-
-          Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement, while Harahap launched a series of webinars featuring experts discussing economic growth under his administration.
-
-          Rallies and Persuasion
-
-          Jakartan politicians know the power of an impassioned speech cannot be underrated, and candidates have been taking full advantage of its effectiveness at rallies. Rallies feature vibrant colors, banners and impassioned discourse in an attempt to win converts over. At one high-spirited rally on October 22, Bintang outlined her policy plans for improving education and healthcare to an appreciative crowd while Harahap's rallies often consist of shows of solidarity from various political allies united behind his plea for continuity and stability.
-
-          Debates: Clashes Between Visions and Policies
-
-          Debates are one of the highlights of Jakarta election campaigns, allowing candidates to outline their platforms and discuss critical issues. On November 5th, citizens witnessed an exhilarating debate between candidates Bintang and Harahap over whether the city was prepared for digital transformation in public services; Bintang advocated an aggressive move toward smart city model while Harahap advocated a more measured approach so as not to alienate less tech-savvy residents.
-
-          Voter Engagement: Making Every Vote Count
-
-          Ensuring every eligible voter is engaged and informed remains an ongoing challenge for Jakartans. Civil society groups and independent bodies host workshops and publish voter guides to inform voters of their rights and choices, while an annual democracy festival such as that held on November 20 featured interactive exhibits on Jakarta's electoral history as well as mock voting booths for first-time voters.
-
-          Campaign Financing: Transparency and Accountability
-
-          Campaign financing has always been a contentious topic in elections, and this election cycle is no exception. Bintang's campaign, funded largely through crowdfunders online supporters, stands in stark contrast with Harahap's sophisticated machine backed by both private donors and party funds. To protect democratic decision making processes from any
-
-          undue influences on decision-making processes, Jakarta Election Commission mandated strict reporting and transparency measures during campaign financing decisions.
-
-          Before Election Day: Submit Final Appeals Now
-
-          As election day nears, candidates make their last appeals to voters. Bintang plans a visit through key neighborhoods while Harahap plans a final rally scheduled for late November. Both camps are honing their messaging and policy proposals while encouraging supporters to make an appearance at polling booths on November 8th.
-
-          Polling Day: The Final Act of Campaign Activities
-
-          On December 6th, voting booths across Jakarta will open their doors, signalling the culmination of weeks of intense campaigning. Voters will cast their vote and candidates await results that depend on how effective their strategies, speeches and outreach initiatives have been.
-
-          Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
-        role: tool
-        tool_call_id: call_y4w5orma
-      - content: |-
-          <think>
-          We have a chunk: "Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement". The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" It appears to be exactly that: Bintang introduced an interactive app for gathering real-time feedback.
-
-          Thus answer: she introduced an interactive app.
-
-          But we need to be careful: maybe there is also another similar chunk. Let's search again with other keyword "interactive app" and "Bintang" to see.
-
-
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"Bintang interactive app feedback citizens Jakarta"}'
-            name: search_documents
-          id: call_av46l6b1
-          type: function
-      - content: |-
-          [33635a00-3e8a-4d08-a76e-833cf37878e5] [rank 1 of 1]
-          Type: text
-          Content:
-          Jakarta Election Campaigns Heat Up: Here's How to Understand the System
-
-          As election day in Jakarta draws nearer, candidates are out in force using various strategies to woo voters and prepare to exercise their democratic rights. Citizens make their voices heard as the city vibrates with life. This coverage offers valuable insight into campaign activities while offering an in-depth guide for understanding electoral processes in Jakarta.
-
-          Initial Launch of Candidates' Campaign Plans on September 1
-
-          After September 1st, when campaign season officially kicked off, candidates have moved swiftly to engage their bases. Amira Bintang, an upstart candidate with extensive social activism experience and promising urban development and public transportation reform as key platforms of her candidacy speech in Jakarta; incumbent Rizal Harahap relies heavily on his track record and highlights all infrastructure projects completed during his term.
-
-          Campaign Strategies: From Digital Battlegrounds to Door-toDoor Outreach
-
-          Campaign strategies have taken an advanced turn as candidates leverage digital media to reach a wider audience. Hashtags, viral videos, targeted ads and targeted messaging can all play an influential role in changing public opinion with just a tweet or meme. At the grassroots level candidates engage in door-to-door campaigns personalized for individual voters in an attempt to connect.
-
-          Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement, while Harahap launched a series of webinars featuring experts discussing economic growth under his administration.
-
-          Rallies and Persuasion
-
-          Jakartan politicians know the power of an impassioned speech cannot be underrated, and candidates have been taking full advantage of its effectiveness at rallies. Rallies feature vibrant colors, banners and impassioned discourse in an attempt to win converts over. At one high-spirited rally on October 22, Bintang outlined her policy plans for improving education and healthcare to an appreciative crowd while Harahap's rallies often consist of shows of solidarity from various political allies united behind his plea for continuity and stability.
-
-          Debates: Clashes Between Visions and Policies
-
-          Debates are one of the highlights of Jakarta election campaigns, allowing candidates to outline their platforms and discuss critical issues. On November 5th, citizens witnessed an exhilarating debate between candidates Bintang and Harahap over whether the city was prepared for digital transformation in public services; Bintang advocated an aggressive move toward smart city model while Harahap advocated a more measured approach so as not to alienate less tech-savvy residents.
-
-          Voter Engagement: Making Every Vote Count
-
-          Ensuring every eligible voter is engaged and informed remains an ongoing challenge for Jakartans. Civil society groups and independent bodies host workshops and publish voter guides to inform voters of their rights and choices, while an annual democracy festival such as that held on November 20 featured interactive exhibits on Jakarta's electoral history as well as mock voting booths for first-time voters.
-
-          Campaign Financing: Transparency and Accountability
-
-          Campaign financing has always been a contentious topic in elections, and this election cycle is no exception. Bintang's campaign, funded largely through crowdfunders online supporters, stands in stark contrast with Harahap's sophisticated machine backed by both private donors and party funds. To protect democratic decision making processes from any
-
-          undue influences on decision-making processes, Jakarta Election Commission mandated strict reporting and transparency measures during campaign financing decisions.
-
-          Before Election Day: Submit Final Appeals Now
-
-          As election day nears, candidates make their last appeals to voters. Bintang plans a visit through key neighborhoods while Harahap plans a final rally scheduled for late November. Both camps are honing their messaging and policy proposals while encouraging supporters to make an appearance at polling booths on November 8th.
-
-          Polling Day: The Final Act of Campaign Activities
-
-          On December 6th, voting booths across Jakarta will open their doors, signalling the culmination of weeks of intense campaigning. Voters will cast their vote and candidates await results that depend on how effective their strategies, speeches and outreach initiatives have been.
-
-          Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
-        role: tool
-        tool_call_id: call_av46l6b1
-      model: gpt-oss
-      reasoning_effort: high
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            Search the knowledge base for relevant documents.
-
-            Returns results with chunk IDs and relevance scores.
-            Reference results by their chunk_id in cited_chunks.
-          name: search_documents
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
-          description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the question
-                type: string
-              cited_chunks:
-                description: IDs of chunks used to form the answer
-                items:
-                  type: string
-                type: array
-              confidence:
-                default: 1.0
-                description: Confidence score for this answer (0-1)
-                maximum: 1.0
-                minimum: 0.0
-                type: number
-              query:
-                description: The question that was answered
-                type: string
-            required:
-            - query
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '1019'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: stop
-        index: 0
-        message:
-          content: "Bintang introduced an **interactive mobile app** that lets citizens give real‑time feedback on daily commute
-            challenges during the Jakarta election.  \n\n**Cited chunk:** [33635a00-3e8a-4d08-a76e-833cf37878e5]"
-          reasoning: |-
-            We've got only one chunk. It's consistent with the answer. The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" So answer: The interactive app for real-time feedback about daily commute challenges.
-
-            Thus: "Bintang introduced an interactive app for real-time feedback from citizens about daily commute challenges." Provide chunk_id [33635a00-3e8a-4d08-a76e-833cf37878e5] as cited_chunks. Provide concise answer.
-          role: assistant
-      created: 1768996019
-      id: chatcmpl-178
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 174
-        prompt_tokens: 2648
-        total_tokens: 2822
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '15343'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a knowledgeable assistant that answers questions using a document knowledge base.
-
-          Process:
-          1. Call search_documents with relevant keywords from the question
-          2. Review the results ordered by relevance
-          3. If needed, perform follow-up searches with different keywords (max 3 total)
-          4. Provide a concise answer based strictly on the retrieved content
-
-          The search tool returns results like:
-          [chunk_abc123] [rank 1 of 5]
-          Source: "Document Title" > Section > Subsection
-          Type: paragraph
-          Content:
-          The actual text content here...
-
-          [chunk_def456] [rank 2 of 5]
-          Source: "Another Document"
-          Type: table
-          Content:
-          | Column 1 | Column 2 |
-          ...
-
-          Each result includes:
-          - chunk_id in brackets and rank position (rank 1 = most relevant)
-          - Source: document title and section hierarchy (when available)
-          - Type: content type like paragraph, table, code, list_item (when available)
-          - Content: the actual text
-
-          In your response, include the chunk IDs you used in cited_chunks.
-
-          Guidelines:
-          - Base answers strictly on retrieved content - do not use external knowledge
-          - Use the Source and Type metadata to understand context
-          - If multiple results are relevant, synthesize them coherently
-          - If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
-          - Be concise and direct - avoid elaboration unless asked
-          - Results are ordered by relevance, with rank 1 being most relevant
-        role: system
-      - content: What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during
-          Jakarta's election?
-        role: user
-      - content: |-
-          <think>
-          The user asks: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" We need to find info about Bintang (someone) who introduced an innovative form of civic engagement for gathering feedback from citizens during Jakarta's election. Likely from a document about social or political context in Jakarta. We need to search the knowledge base. Use search_documents function.
-
-          Let's call search with query: "Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta election".
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"query":"Bintang innovative form of civic engagement gathering feedback from citizens during Jakarta
-              election","limit":5}'
-            name: search_documents
-          id: call_y4w5orma
-          type: function
-      - content: |-
-          [33635a00-3e8a-4d08-a76e-833cf37878e5] [rank 1 of 1]
-          Type: text
-          Content:
-          Jakarta Election Campaigns Heat Up: Here's How to Understand the System
-
-          As election day in Jakarta draws nearer, candidates are out in force using various strategies to woo voters and prepare to exercise their democratic rights. Citizens make their voices heard as the city vibrates with life. This coverage offers valuable insight into campaign activities while offering an in-depth guide for understanding electoral processes in Jakarta.
-
-          Initial Launch of Candidates' Campaign Plans on September 1
-
-          After September 1st, when campaign season officially kicked off, candidates have moved swiftly to engage their bases. Amira Bintang, an upstart candidate with extensive social activism experience and promising urban development and public transportation reform as key platforms of her candidacy speech in Jakarta; incumbent Rizal Harahap relies heavily on his track record and highlights all infrastructure projects completed during his term.
-
-          Campaign Strategies: From Digital Battlegrounds to Door-toDoor Outreach
-
-          Campaign strategies have taken an advanced turn as candidates leverage digital media to reach a wider audience. Hashtags, viral videos, targeted ads and targeted messaging can all play an influential role in changing public opinion with just a tweet or meme. At the grassroots level candidates engage in door-to-door campaigns personalized for individual voters in an attempt to connect.
-
-          Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement, while Harahap launched a series of webinars featuring experts discussing economic growth under his administration.
-
-          Rallies and Persuasion
-
-          Jakartan politicians know the power of an impassioned speech cannot be underrated, and candidates have been taking full advantage of its effectiveness at rallies. Rallies feature vibrant colors, banners and impassioned discourse in an attempt to win converts over. At one high-spirited rally on October 22, Bintang outlined her policy plans for improving education and healthcare to an appreciative crowd while Harahap's rallies often consist of shows of solidarity from various political allies united behind his plea for continuity and stability.
-
-          Debates: Clashes Between Visions and Policies
-
-          Debates are one of the highlights of Jakarta election campaigns, allowing candidates to outline their platforms and discuss critical issues. On November 5th, citizens witnessed an exhilarating debate between candidates Bintang and Harahap over whether the city was prepared for digital transformation in public services; Bintang advocated an aggressive move toward smart city model while Harahap advocated a more measured approach so as not to alienate less tech-savvy residents.
-
-          Voter Engagement: Making Every Vote Count
-
-          Ensuring every eligible voter is engaged and informed remains an ongoing challenge for Jakartans. Civil society groups and independent bodies host workshops and publish voter guides to inform voters of their rights and choices, while an annual democracy festival such as that held on November 20 featured interactive exhibits on Jakarta's electoral history as well as mock voting booths for first-time voters.
-
-          Campaign Financing: Transparency and Accountability
-
-          Campaign financing has always been a contentious topic in elections, and this election cycle is no exception. Bintang's campaign, funded largely through crowdfunders online supporters, stands in stark contrast with Harahap's sophisticated machine backed by both private donors and party funds. To protect democratic decision making processes from any
-
-          undue influences on decision-making processes, Jakarta Election Commission mandated strict reporting and transparency measures during campaign financing decisions.
-
-          Before Election Day: Submit Final Appeals Now
-
-          As election day nears, candidates make their last appeals to voters. Bintang plans a visit through key neighborhoods while Harahap plans a final rally scheduled for late November. Both camps are honing their messaging and policy proposals while encouraging supporters to make an appearance at polling booths on November 8th.
-
-          Polling Day: The Final Act of Campaign Activities
-
-          On December 6th, voting booths across Jakarta will open their doors, signalling the culmination of weeks of intense campaigning. Voters will cast their vote and candidates await results that depend on how effective their strategies, speeches and outreach initiatives have been.
-
-          Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
-        role: tool
-        tool_call_id: call_y4w5orma
-      - content: |-
-          <think>
-          We have a chunk: "Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement". The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" It appears to be exactly that: Bintang introduced an interactive app for gathering real-time feedback.
-
-          Thus answer: she introduced an interactive app.
-
-          But we need to be careful: maybe there is also another similar chunk. Let's search again with other keyword "interactive app" and "Bintang" to see.
-
-
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"Bintang interactive app feedback citizens Jakarta"}'
-            name: search_documents
-          id: call_av46l6b1
-          type: function
-      - content: |-
-          [33635a00-3e8a-4d08-a76e-833cf37878e5] [rank 1 of 1]
-          Type: text
-          Content:
-          Jakarta Election Campaigns Heat Up: Here's How to Understand the System
-
-          As election day in Jakarta draws nearer, candidates are out in force using various strategies to woo voters and prepare to exercise their democratic rights. Citizens make their voices heard as the city vibrates with life. This coverage offers valuable insight into campaign activities while offering an in-depth guide for understanding electoral processes in Jakarta.
-
-          Initial Launch of Candidates' Campaign Plans on September 1
-
-          After September 1st, when campaign season officially kicked off, candidates have moved swiftly to engage their bases. Amira Bintang, an upstart candidate with extensive social activism experience and promising urban development and public transportation reform as key platforms of her candidacy speech in Jakarta; incumbent Rizal Harahap relies heavily on his track record and highlights all infrastructure projects completed during his term.
-
-          Campaign Strategies: From Digital Battlegrounds to Door-toDoor Outreach
-
-          Campaign strategies have taken an advanced turn as candidates leverage digital media to reach a wider audience. Hashtags, viral videos, targeted ads and targeted messaging can all play an influential role in changing public opinion with just a tweet or meme. At the grassroots level candidates engage in door-to-door campaigns personalized for individual voters in an attempt to connect.
-
-          Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement, while Harahap launched a series of webinars featuring experts discussing economic growth under his administration.
-
-          Rallies and Persuasion
-
-          Jakartan politicians know the power of an impassioned speech cannot be underrated, and candidates have been taking full advantage of its effectiveness at rallies. Rallies feature vibrant colors, banners and impassioned discourse in an attempt to win converts over. At one high-spirited rally on October 22, Bintang outlined her policy plans for improving education and healthcare to an appreciative crowd while Harahap's rallies often consist of shows of solidarity from various political allies united behind his plea for continuity and stability.
-
-          Debates: Clashes Between Visions and Policies
-
-          Debates are one of the highlights of Jakarta election campaigns, allowing candidates to outline their platforms and discuss critical issues. On November 5th, citizens witnessed an exhilarating debate between candidates Bintang and Harahap over whether the city was prepared for digital transformation in public services; Bintang advocated an aggressive move toward smart city model while Harahap advocated a more measured approach so as not to alienate less tech-savvy residents.
-
-          Voter Engagement: Making Every Vote Count
-
-          Ensuring every eligible voter is engaged and informed remains an ongoing challenge for Jakartans. Civil society groups and independent bodies host workshops and publish voter guides to inform voters of their rights and choices, while an annual democracy festival such as that held on November 20 featured interactive exhibits on Jakarta's electoral history as well as mock voting booths for first-time voters.
-
-          Campaign Financing: Transparency and Accountability
-
-          Campaign financing has always been a contentious topic in elections, and this election cycle is no exception. Bintang's campaign, funded largely through crowdfunders online supporters, stands in stark contrast with Harahap's sophisticated machine backed by both private donors and party funds. To protect democratic decision making processes from any
-
-          undue influences on decision-making processes, Jakarta Election Commission mandated strict reporting and transparency measures during campaign financing decisions.
-
-          Before Election Day: Submit Final Appeals Now
-
-          As election day nears, candidates make their last appeals to voters. Bintang plans a visit through key neighborhoods while Harahap plans a final rally scheduled for late November. Both camps are honing their messaging and policy proposals while encouraging supporters to make an appearance at polling booths on November 8th.
-
-          Polling Day: The Final Act of Campaign Activities
-
-          On December 6th, voting booths across Jakarta will open their doors, signalling the culmination of weeks of intense campaigning. Voters will cast their vote and candidates await results that depend on how effective their strategies, speeches and outreach initiatives have been.
-
-          Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
-        role: tool
-        tool_call_id: call_av46l6b1
-      - content: "<think>\nWe've got only one chunk. It's consistent with the answer. The question: \"What innovative form
-          of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?\" So answer:
-          The interactive app for real-time feedback about daily commute challenges.\n\nThus: \"Bintang introduced an interactive
-          app for real-time feedback from citizens about daily commute challenges.\" Provide chunk_id [33635a00-3e8a-4d08-a76e-833cf37878e5]
-          as cited_chunks. Provide concise answer.\n</think>\n\nBintang introduced an **interactive mobile app** that lets
-          citizens give real‑time feedback on daily commute challenges during the Jakarta election.  \n\n**Cited chunk:**
-          [33635a00-3e8a-4d08-a76e-833cf37878e5]"
-        role: assistant
-      - content: |-
-          Validation feedback:
-          Please include your response in a tool call.
-
-          Fix the errors and try again.
-        role: user
-      model: gpt-oss
-      reasoning_effort: high
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            Search the knowledge base for relevant documents.
-
-            Returns results with chunk IDs and relevance scores.
-            Reference results by their chunk_id in cited_chunks.
-          name: search_documents
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
-          description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the question
-                type: string
-              cited_chunks:
-                description: IDs of chunks used to form the answer
-                items:
-                  type: string
-                type: array
-              confidence:
-                default: 1.0
-                description: Confidence score for this answer (0-1)
-                maximum: 1.0
-                minimum: 0.0
-                type: number
-              query:
-                description: The question that was answered
-                type: string
-            required:
-            - query
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '1332'
+      - '1666'
       content-type:
       - application/json
     parsed_body:
@@ -1057,39 +456,29 @@ interactions:
         message:
           content: ''
           reasoning: |-
-            The response was not in a tool call. We need to use the final_result tool to provide the answer.
+            We have the chunk from source: "Jakarta Election Campaigns Heat Up: Here's How to Understand the System". It mentions "Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement". That appears to be the answer: Bintang introduced an interactive app for gathering real-time feedback from citizens about daily commute challenges. The question: "What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?" The answer: an interactive app for collecting real-time feedback about daily commute challenges.
 
-            We can call final_result. Let's produce final_result with answer, cited_chunks, confidence, query.
-
-            We'll include answer: "Bintang introduced an interactive mobile app for real-time feedback from citizens about daily commute challenges."
-
-            Cited_chunks: ["33635a00-3e8a-4d08-a76e-833cf37878e5"].
-
-            Confidence: 0.95.
-
-            Also include query that was answered.
-
-            Thus we need to produce a final_result tool call.
+            We need to format answer with cited_chunks: chunk id e6d3622c-0d09-4caa-a7ab-ef01949233c8. The answer: Bintang introduced an interactive app. Provide answer concise. Use final_result.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"answer":"Bintang introduced an interactive mobile app that lets citizens submit real‑time feedback
-                on daily commute challenges during Jakarta’s election cycle.","cited_chunks":["33635a00-3e8a-4d08-a76e-833cf37878e5"],"confidence":0.95,"query":"What
+              arguments: '{"answer":"Bintang introduced an interactive app that allowed voters to give real‑time feedback
+                on daily commute challenges during the Jakarta election.","cited_chunks":["e6d3622c-0d09-4caa-a7ab-ef01949233c8"],"confidence":0.93,"query":"What
                 innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta''s
                 election?"}'
               name: final_result
-            id: call_tesqa24k
+            id: call_2tcii5ad
             index: 0
             type: function
-      created: 1768996031
-      id: chatcmpl-73
+      created: 1769001382
+      id: chatcmpl-355
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 225
-        prompt_tokens: 2847
-        total_tokens: 3072
+        completion_tokens: 278
+        prompt_tokens: 1657
+        total_tokens: 1935
     status:
       code: 200
       message: OK
@@ -1102,7 +491,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1834'
+      - '1823'
       content-type:
       - application/json
       host:
@@ -1136,7 +525,7 @@ interactions:
       - content: |-
           QUESTION: What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?
 
-          GENERATED ANSWER: Bintang introduced an interactive mobile app that lets citizens submit real‑time feedback on daily commute challenges during Jakarta’s election cycle.
+          GENERATED ANSWER: Bintang introduced an interactive app that allowed voters to give real‑time feedback on daily commute challenges during the Jakarta election.
 
           EXPECTED ANSWER: Bintang introduced an interactive app for real-time feedback on daily commute challenges.
         role: user
@@ -1162,7 +551,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '705'
+      - '571'
       content-type:
       - application/json
     parsed_body:
@@ -1171,26 +560,25 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: 'We compare. Generated says interactive mobile app that lets citizens submit real-time feedback on daily
-            commute challenges during Jakarta’s election cycle. Expected: interactive app for real-time feedback on daily
-            commute challenges. Same core info. Equivalent.'
+          reasoning: Need to evaluate equivalence. Both mention interactive app for real-time feedback on daily commute challenges.
+            So yes equivalent.
           role: assistant
           tool_calls:
           - function:
               arguments: '{"equivalent":true}'
               name: final_result
-            id: call_bqvqea3x
+            id: call_hvd0sams
             index: 0
             type: function
-      created: 1768996033
-      id: chatcmpl-493
+      created: 1769001384
+      id: chatcmpl-355
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 69
-        prompt_tokens: 388
-        total_tokens: 457
+        completion_tokens: 48
+        prompt_tokens: 387
+        total_tokens: 435
     status:
       code: 200
       message: OK

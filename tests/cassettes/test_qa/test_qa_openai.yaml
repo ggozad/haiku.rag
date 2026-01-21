@@ -86,7 +86,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2762'
+      - '2760'
       content-type:
       - application/json
       host:
@@ -144,7 +144,7 @@ interactions:
           description: |-
             Search the knowledge base for relevant documents.
 
-            Returns results with chunk IDs and relevance scores.
+            Returns results with chunk IDs and rank positions.
             Reference results by their chunk_id in cited_chunks.
           name: search_documents
           parameters:
@@ -199,13 +199,13 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1148'
+      - '1157'
       content-type:
       - application/json
       openai-organization:
       - enfold-systems
       openai-processing-ms:
-      - '824'
+      - '854'
       openai-project:
       - proj_XYweeUJpJHbbRSNsezto5Wfh
       openai-version:
@@ -226,18 +226,18 @@ interactions:
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"query":"Bintang innovative civic engagement feedback Jakarta election"}'
+              arguments: '{"query":"Bintang innovative civic engagement feedback citizens Jakarta election"}'
               name: search_documents
-            id: call_pBK3fkvRJH9zWFCzRwNvqLlW
+            id: call_KJ0lkxmRRzDYnJw7mFWHlwQ9
             type: function
-      created: 1768996037
-      id: chatcmpl-D0Qy5rGZkDYno9mPz2k0oplxrpE4F
+      created: 1769001388
+      id: chatcmpl-D0SMOLCHuJI24tOe3j2GdQXAVwWax
       model: gpt-4o-mini-2024-07-18
       object: chat.completion
       service_tier: default
-      system_fingerprint: fp_29330a9688
+      system_fingerprint: fp_c4585b5b9c
       usage:
-        completion_tokens: 21
+        completion_tokens: 22
         completion_tokens_details:
           accepted_prediction_tokens: 0
           audio_tokens: 0
@@ -247,7 +247,7 @@ interactions:
         prompt_tokens_details:
           audio_tokens: 0
           cached_tokens: 0
-        total_tokens: 519
+        total_tokens: 520
     status:
       code: 200
       message: OK
@@ -260,7 +260,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '131'
+      - '140'
       content-type:
       - application/json
       host:
@@ -269,7 +269,7 @@ interactions:
     parsed_body:
       encoding_format: base64
       input:
-      - Bintang innovative civic engagement feedback Jakarta election
+      - Bintang innovative civic engagement feedback citizens Jakarta election
       model: qwen3-embedding:4b
     uri: http://localhost:11434/v1/embeddings
   response:
@@ -280,14 +280,14 @@ interactions:
       - chunked
     parsed_body:
       data:
-      - embedding: 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
+      - embedding: 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
         index: 0
         object: embedding
       model: qwen3-embedding:4b
       object: list
       usage:
-        prompt_tokens: 10
-        total_tokens: 10
+        prompt_tokens: 11
+        total_tokens: 11
     status:
       code: 200
       message: OK
@@ -300,12 +300,12 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7970'
+      - '7977'
       content-type:
       - application/json
       cookie:
-      - __cf_bm=zPRjPdR2vAuTIgGZxLAsLIk_ASzLwNT8lTm81DzkI_w-1768996038-1.0.1.1-Yb55H59XZju2zkw3tE6Xo0q_.6fIbxJIxn3LvuBeDwAQPGCs.vaiBHLfYd_orCyV7sEq2aFLCQjr8rcWm3WYWrLaMkgOa0j1LELACwFQPPI;
-        _cfuvid=QAkRIxDYvoKU5Yx_a14V3COK2g9MAuO_Ymft2EmSe0Y-1768996038788-0.0.1.1-604800000
+      - __cf_bm=108bG22zp7CfRbsoTon0Y7gdKTNzGRDyQlxDt1UckcM-1769001389-1.0.1.1-iOVL5b63uCO82cfii245ExHhy0wsHN5qYGfAQ25xlnfsSjS_QjetPxu1LMlpVNoAbPPn_9MyRRiCyWvXn3HsuPc20rni7HkA9rGwYQCXEd0;
+        _cfuvid=FOK8eKwc4R_UPlI1U1m2RwZMQH.KdP3vAmUQ_AJrWWY-1769001389377-0.0.1.1-604800000
       host:
       - api.openai.com
     method: POST
@@ -357,12 +357,12 @@ interactions:
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"query":"Bintang innovative civic engagement feedback Jakarta election"}'
+            arguments: '{"query":"Bintang innovative civic engagement feedback citizens Jakarta election"}'
             name: search_documents
-          id: call_pBK3fkvRJH9zWFCzRwNvqLlW
+          id: call_KJ0lkxmRRzDYnJw7mFWHlwQ9
           type: function
       - content: |-
-          [5d743cd9-3ec4-4499-ba6f-ad69ed85f271] [rank 1 of 1]
+          [6429d519-77af-4097-b2d6-b2060d67ab25] [rank 1 of 1]
           Type: text
           Content:
           Jakarta Election Campaigns Heat Up: Here's How to Understand the System
@@ -407,7 +407,7 @@ interactions:
 
           Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
         role: tool
-        tool_call_id: call_pBK3fkvRJH9zWFCzRwNvqLlW
+        tool_call_id: call_KJ0lkxmRRzDYnJw7mFWHlwQ9
       model: gpt-4o-mini
       stream: false
       tool_choice: required
@@ -416,7 +416,7 @@ interactions:
           description: |-
             Search the knowledge base for relevant documents.
 
-            Returns results with chunk IDs and relevance scores.
+            Returns results with chunk IDs and rank positions.
             Reference results by their chunk_id in cited_chunks.
           name: search_documents
           parameters:
@@ -471,13 +471,13 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1516'
+      - '1513'
       content-type:
       - application/json
       openai-organization:
       - enfold-systems
       openai-processing-ms:
-      - '1881'
+      - '2534'
       openai-project:
       - proj_XYweeUJpJHbbRSNsezto5Wfh
       openai-version:
@@ -499,30 +499,30 @@ interactions:
           tool_calls:
           - function:
               arguments: '{"query":"What innovative form of civic engagement did Bintang introduce for gathering feedback
-                from citizens during Jakarta''s election?","answer":"Amira Bintang introduced an interactive app for gathering
-                real-time feedback from citizens about daily commute challenges, which was praised as an innovative form of
-                civic engagement during Jakarta''s election.","cited_chunks":["5d743cd9-3ec4-4499-ba6f-ad69ed85f271"],"confidence":1.0}'
+                from citizens during Jakarta''s election?","answer":"Bintang introduced an interactive app for gathering real-time
+                feedback from citizens about daily commute challenges, which was recognized as an innovative form of civic
+                engagement during Jakarta''s election.","cited_chunks":["6429d519-77af-4097-b2d6-b2060d67ab25"],"confidence":1.0}'
               name: final_result
-            id: call_6XCiKTGWcCe5l1Vsp0xYdlCG
+            id: call_xdN8TNZZHFQSL0tRWTaIHf4G
             type: function
-      created: 1768996040
-      id: chatcmpl-D0Qy8diPzSydOeie7hTBi2LQX99yz
+      created: 1769001390
+      id: chatcmpl-D0SMQ7hzSkBJXPCVsxaDtcnMXBClQ
       model: gpt-4o-mini-2024-07-18
       object: chat.completion
       service_tier: default
-      system_fingerprint: fp_c4585b5b9c
+      system_fingerprint: fp_29330a9688
       usage:
-        completion_tokens: 103
+        completion_tokens: 101
         completion_tokens_details:
           accepted_prediction_tokens: 0
           audio_tokens: 0
           reasoning_tokens: 0
           rejected_prediction_tokens: 0
-        prompt_tokens: 1404
+        prompt_tokens: 1405
         prompt_tokens_details:
           audio_tokens: 0
           cached_tokens: 0
-        total_tokens: 1507
+        total_tokens: 1506
     status:
       code: 200
       message: OK
@@ -535,7 +535,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1889'
+      - '1886'
       content-type:
       - application/json
       host:
@@ -569,7 +569,7 @@ interactions:
       - content: |-
           QUESTION: What innovative form of civic engagement did Bintang introduce for gathering feedback from citizens during Jakarta's election?
 
-          GENERATED ANSWER: Amira Bintang introduced an interactive app for gathering real-time feedback from citizens about daily commute challenges, which was praised as an innovative form of civic engagement during Jakarta's election.
+          GENERATED ANSWER: Bintang introduced an interactive app for gathering real-time feedback from citizens about daily commute challenges, which was recognized as an innovative form of civic engagement during Jakarta's election.
 
           EXPECTED ANSWER: Bintang introduced an interactive app for real-time feedback on daily commute challenges.
         role: user
@@ -595,7 +595,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '704'
+      - '845'
       content-type:
       - application/json
     parsed_body:
@@ -604,26 +604,27 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: 'We compare: both mention interactive app real-time feedback on daily commute challenges. Both mention
-            innovation civic engagement. The first says "praised as innovative form of civic engagement during Jakarta''s
-            election." That''s same gist. They are equivalent.'
+          reasoning: 'We need to compare. Both say interactive app for real-time feedback on daily commute challenges. The
+            first says during Jakarta''s election and recognized as innovative. The question: "What innovative form of civic
+            engagement did Bintang introduce for gathering feedback from citizens during Jakarta''s election?" The expected
+            answer: the app. Both answers mention same core factual info. Yes equivalent.'
           role: assistant
           tool_calls:
           - function:
               arguments: '{"equivalent":true}'
               name: final_result
-            id: call_p70niqa3
+            id: call_u9kj2xm2
             index: 0
             type: function
-      created: 1768996048
-      id: chatcmpl-250
+      created: 1769001395
+      id: chatcmpl-845
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 71
-        prompt_tokens: 398
-        total_tokens: 469
+        completion_tokens: 97
+        prompt_tokens: 396
+        total_tokens: 493
     status:
       code: 200
       message: OK

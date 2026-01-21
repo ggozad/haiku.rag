@@ -57,7 +57,7 @@ prompts:
 
     Process:
     1. Search for relevant documents using the search_documents tool
-    2. Review results and their relevance scores
+    2. Review results ordered by relevance (rank 1 = most relevant)
     3. Provide a brief, direct answer based on retrieved content
 
     Guidelines:
