@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
-from haiku.rag.reranking import _reranker_cache, get_reranker
+from haiku.rag.reranking import get_reranker
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
@@ -11,14 +11,6 @@ from haiku.rag.store.models.chunk import Chunk
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_reranker")
-
-
-@pytest.fixture(autouse=True)
-def clear_reranker_cache():
-    """Clear the reranker cache before each test."""
-    _reranker_cache.clear()
-    yield
-    _reranker_cache.clear()
 
 
 chunks = [
@@ -202,24 +194,6 @@ class TestGetReranker:
         except ImportError:
             pytest.skip("Zero Entropy package not installed")
 
-    def test_caching_returns_same_instance(self):
-        config = AppConfig(reranking=RerankingConfig(model=None))
-        result1 = get_reranker(config)
-        result2 = get_reranker(config)
-        assert result1 is result2
-
-    def test_different_configs_get_separate_cache_entries(self):
-        config1 = AppConfig(reranking=RerankingConfig(model=None))
-        config2 = AppConfig(reranking=RerankingConfig(model=None))
-
-        result1 = get_reranker(config1)
-        result2 = get_reranker(config2)
-
-        # Both return None, but they should be cached separately
-        assert result1 is None
-        assert result2 is None
-        assert len(_reranker_cache) == 2
-
     def test_unknown_provider_returns_none(self):
         config = AppConfig(
             reranking=RerankingConfig(
@@ -228,3 +202,97 @@ class TestGetReranker:
         )
         result = get_reranker(config)
         assert result is None
+
+    def test_jina_provider(self, monkeypatch):
+        monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+
+        from haiku.rag.reranking.jina import JinaReranker
+
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="jina", name="jina-reranker-v3")
+            )
+        )
+        result = get_reranker(config)
+        assert isinstance(result, JinaReranker)
+        assert result._model == "jina-reranker-v3"
+
+    def test_jina_local_provider(self):
+        try:
+            from haiku.rag.reranking.jina_local import JinaLocalReranker
+
+            config = AppConfig(
+                reranking=RerankingConfig(
+                    model=ModelConfig(
+                        provider="jina-local", name="jinaai/jina-reranker-v3"
+                    )
+                )
+            )
+            result = get_reranker(config)
+            assert isinstance(result, JinaLocalReranker)
+            assert result._model == "jinaai/jina-reranker-v3"
+        except ImportError:
+            pytest.skip("Jina local dependencies not installed")
+
+
+def test_jina_reranker_missing_api_key(monkeypatch):
+    monkeypatch.delenv("JINA_API_KEY", raising=False)
+
+    from haiku.rag.reranking.jina import JinaReranker
+
+    with pytest.raises(ValueError, match="JINA_API_KEY environment variable required"):
+        JinaReranker("jina-reranker-v3")
+
+
+@pytest.mark.asyncio
+async def test_jina_reranker_empty_chunks(monkeypatch):
+    monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+
+    from haiku.rag.reranking.jina import JinaReranker
+
+    reranker = JinaReranker("jina-reranker-v3")
+    result = await reranker.rerank("query", [], top_n=2)
+    assert result == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_jina_reranker(monkeypatch):
+    import os
+
+    # Only set dummy key if real key not present (for VCR playback)
+    if not os.environ.get("JINA_API_KEY"):
+        monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+
+    from haiku.rag.reranking.jina import JinaReranker
+
+    reranker = JinaReranker("jina-reranker-v3")
+
+    reranked = await reranker.rerank(
+        "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+    )
+    assert len(reranked) == 2
+    assert all(isinstance(score, float) for chunk, score in reranked)
+    # Check that the top results are relevant to Harper Lee / To Kill a Mockingbird
+    top_ids = [chunk.document_id for chunk, score in reranked]
+    assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_jina_local_reranker():
+    try:
+        from haiku.rag.reranking.jina_local import JinaLocalReranker
+
+        reranker = JinaLocalReranker("jinaai/jina-reranker-v3")
+
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert len(reranked) == 2
+        assert all(isinstance(score, float) for chunk, score in reranked)
+        # Check that the top results are relevant to Harper Lee / To Kill a Mockingbird
+        top_ids = [chunk.document_id for chunk, score in reranked]
+        assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
+    except ImportError:
+        pytest.skip("Jina local dependencies not installed")

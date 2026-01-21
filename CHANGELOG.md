@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+- **Jina Reranker v3**: Added support for Jina reranking with API mode (`provider: jina`) and local inference (`provider: jina-local`, requires `[jina]` extra)
+- **Model Downloads**: `download-models` now pre-downloads HuggingFace models for `sentence-transformers`, `mxbai`, and `jina-local`
+- **Reranker Factory**: Removed unreliable `id(config)`-based caching from `get_reranker()`; factory now always instantiates fresh
+
 ## [0.26.7] - 2026-01-20
 
 ### Added
@@ -17,6 +21,8 @@
 
 ### Changed
 
+- **MCP Error Handling**: MCP tools now let exceptions propagate naturally; FastMCP converts them to proper MCP error responses
+- **Chunk Contextualization**: Consolidated duplicate `contextualize` logic into `Chunk.contextualize_content()` method
 - **Type Checker**: Replaced pyright with [ty](https://github.com/astral-sh/ty), Astral's extremely fast Python type checker
   - Added explicit `Agent[Deps, Output]` type annotations to all pydantic-ai agents for better type inference
   - Removed ~24 unnecessary `# type: ignore` comments that ty correctly infers
