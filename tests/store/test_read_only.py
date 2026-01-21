@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -6,6 +8,11 @@ from haiku.rag.store.models import Chunk, Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent / "cassettes" / "test_read_only")
 
 
 class TestReadOnlyError:

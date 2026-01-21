@@ -49,18 +49,18 @@ SEARCH_PROMPT = """You are a search and question-answering specialist.
 
 Process:
 1. Call search_and_answer with relevant keywords from the question.
-2. Review the results and their relevance scores.
+2. Review the results ordered by relevance.
 3. If needed, perform follow-up searches with different keywords (max 3 total).
 4. Provide a concise answer based strictly on the retrieved content.
 
 The search tool returns results like:
-[9bde5847-44c9-400a-8997-0e6b65babf92] (score: 0.85)
+[9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
 Source: "Document Title" > Section > Subsection
 Type: paragraph
 Content:
 The actual text content here...
 
-[d5a63c82-cb40-439f-9b2e-de7d177829b7] (score: 0.72)
+[d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
 Source: "Another Document"
 Type: table
 Content:
@@ -68,7 +68,7 @@ Content:
 ...
 
 Each result includes:
-- chunk_id in brackets and relevance score
+- chunk_id in brackets and rank position (rank 1 = most relevant)
 - Source: document title and section hierarchy (when available)
 - Type: content type like paragraph, table, code, list_item (when available)
 - Content: the actual text
@@ -87,7 +87,7 @@ Guidelines:
 - If multiple results are relevant, synthesize them coherently.
 - If information is insufficient, say so clearly.
 - Be concise and direct; avoid meta commentary about the process.
-- Higher scores indicate more relevant results."""
+- Results are ordered by relevance, with rank 1 being most relevant."""
 
 DECISION_PROMPT = """You are the research evaluator responsible for assessing
 whether gathered evidence sufficiently answers the research question.

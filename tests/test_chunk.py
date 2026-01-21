@@ -254,8 +254,50 @@ def test_chunk_metadata_resolve_empty_refs():
     assert doc_items == []
 
 
-def test_search_result_format_for_agent_full():
-    """Test format_for_agent with all metadata present."""
+def test_search_result_format_for_agent_with_rank():
+    """Test format_for_agent with rank and total parameters."""
+    result = SearchResult(
+        content="This is the chunk content about elections.",
+        score=0.02,  # Low RRF score that would confuse agents
+        chunk_id="chunk-123",
+        document_id="doc-456",
+        document_uri="file:///docs/report.pdf",
+        document_title="Annual Report 2024",
+        headings=["Chapter 1", "Section 1.1", "Elections"],
+        labels=["paragraph", "table"],
+        page_numbers=[1, 2],
+    )
+
+    formatted = result.format_for_agent(rank=1, total=5)
+
+    assert "[chunk-123]" in formatted
+    assert "[rank 1 of 5]" in formatted
+    assert "score:" not in formatted  # Score should NOT appear when rank is provided
+    assert (
+        'Source: "Annual Report 2024" > Chapter 1 > Section 1.1 > Elections'
+        in formatted
+    )
+    assert "Type: table" in formatted
+    assert "Content:\nThis is the chunk content about elections." in formatted
+
+
+def test_search_result_format_for_agent_rank_only():
+    """Test format_for_agent with rank but no total."""
+    result = SearchResult(
+        content="Some content.",
+        score=0.03,
+        chunk_id="chunk-abc",
+    )
+
+    formatted = result.format_for_agent(rank=2)
+
+    assert "[chunk-abc]" in formatted
+    assert "[rank 2]" in formatted
+    assert "score:" not in formatted
+
+
+def test_search_result_format_for_agent_fallback():
+    """Test format_for_agent falls back to score when no rank provided."""
     result = SearchResult(
         content="This is the chunk content about elections.",
         score=0.85,

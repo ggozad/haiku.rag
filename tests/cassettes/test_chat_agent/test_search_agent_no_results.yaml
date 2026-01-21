@@ -59,7 +59,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '587'
+      - '590'
       content-type:
       - application/json
     parsed_body:
@@ -68,24 +68,25 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: 'Need 3 searches: original "nonexistent topic xyz123", alternate queries: "xyz123 topic", "xyz123 nonexistent".'
+          reasoning: We need to run search queries. Use original query "nonexistent topic xyz123" then alternative query "xyz123
+            topic".
           role: assistant
           tool_calls:
           - function:
               arguments: '{"limit":5,"query":"nonexistent topic xyz123"}'
               name: run_search
-            id: call_s7mq0lun
+            id: call_lqcbl0tk
             index: 0
             type: function
-      created: 1768225948
-      id: chatcmpl-854
+      created: 1768998280
+      id: chatcmpl-310
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 58
+        completion_tokens: 57
         prompt_tokens: 268
-        total_tokens: 326
+        total_tokens: 325
     status:
       code: 200
       message: OK
@@ -138,7 +139,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1519'
+      - '1522'
       content-type:
       - application/json
       host:
@@ -163,18 +164,18 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need 3 searches: original "nonexistent topic xyz123", alternate queries: "xyz123 topic", "xyz123 nonexistent".
+          We need to run search queries. Use original query "nonexistent topic xyz123" then alternative query "xyz123 topic".
           </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"limit":5,"query":"nonexistent topic xyz123"}'
             name: run_search
-          id: call_s7mq0lun
+          id: call_lqcbl0tk
           type: function
       - content: 'No results for: nonexistent topic xyz123'
         role: tool
-        tool_call_id: call_s7mq0lun
+        tool_call_id: call_lqcbl0tk
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -217,18 +218,18 @@ interactions:
           - function:
               arguments: '{"limit":5,"query":"xyz123 topic"}'
               name: run_search
-            id: call_56qze9cq
+            id: call_rwikrtdi
             index: 0
             type: function
-      created: 1768225949
-      id: chatcmpl-484
+      created: 1768998281
+      id: chatcmpl-870
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
         completion_tokens: 24
-        prompt_tokens: 351
-        total_tokens: 375
+        prompt_tokens: 350
+        total_tokens: 374
     status:
       code: 200
       message: OK
@@ -281,7 +282,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1787'
+      - '1790'
       content-type:
       - application/json
       host:
@@ -306,194 +307,29 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need 3 searches: original "nonexistent topic xyz123", alternate queries: "xyz123 topic", "xyz123 nonexistent".
+          We need to run search queries. Use original query "nonexistent topic xyz123" then alternative query "xyz123 topic".
           </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"limit":5,"query":"nonexistent topic xyz123"}'
             name: run_search
-          id: call_s7mq0lun
+          id: call_lqcbl0tk
           type: function
       - content: 'No results for: nonexistent topic xyz123'
         role: tool
-        tool_call_id: call_s7mq0lun
+        tool_call_id: call_lqcbl0tk
       - content: null
         role: assistant
         tool_calls:
         - function:
             arguments: '{"limit":5,"query":"xyz123 topic"}'
             name: run_search
-          id: call_56qze9cq
+          id: call_rwikrtdi
           type: function
       - content: 'No results for: xyz123 topic'
         role: tool
-        tool_call_id: call_56qze9cq
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Run a single search query against the knowledge base.
-          name: run_search
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-                description: 'Number of results to fetch (default: 5)'
-              query:
-                description: The search query
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '450'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"limit":5,"query":"xyz123 nonexistent"}'
-              name: run_search
-            id: call_a0m6goro
-            index: 0
-            type: function
-      created: 1768225949
-      id: chatcmpl-119
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 24
-        prompt_tokens: 393
-        total_tokens: 417
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '88'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      encoding_format: base64
-      input:
-      - xyz123 nonexistent
-      model: qwen3-embedding:4b
-    uri: http://localhost:11434/v1/embeddings
-  response:
-    headers:
-      content-type:
-      - application/json
-      transfer-encoding:
-      - chunked
-    parsed_body:
-      data:
-      - embedding: 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
-        index: 0
-        object: embedding
-      model: qwen3-embedding:4b
-      object: list
-      usage:
-        prompt_tokens: 6
-        total_tokens: 6
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '2067'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a search query optimizer. You MUST use the run_search tool to execute searches.
-
-          For each user request:
-          1. Use the run_search tool with the original query
-          2. Use run_search again with 1-2 alternative keyword queries
-          3. Keep all queries SHORT (2-5 words)
-          4. After all tool calls complete, respond "Search complete"
-
-          You can optionally specify a limit parameter (default 5).
-
-          IMPORTANT: You must make actual tool calls. Do not output "run_search(...)" as text.
-        role: system
-      - content: Find information about nonexistent topic xyz123
-        role: user
-      - content: |-
-          <think>
-          Need 3 searches: original "nonexistent topic xyz123", alternate queries: "xyz123 topic", "xyz123 nonexistent".
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"nonexistent topic xyz123"}'
-            name: run_search
-          id: call_s7mq0lun
-          type: function
-      - content: 'No results for: nonexistent topic xyz123'
-        role: tool
-        tool_call_id: call_s7mq0lun
-      - content: null
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"xyz123 topic"}'
-            name: run_search
-          id: call_56qze9cq
-          type: function
-      - content: 'No results for: xyz123 topic'
-        role: tool
-        tool_call_id: call_56qze9cq
-      - content: null
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"xyz123 nonexistent"}'
-            name: run_search
-          id: call_a0m6goro
-          type: function
-      - content: 'No results for: xyz123 nonexistent'
-        role: tool
-        tool_call_id: call_a0m6goro
+        tool_call_id: call_rwikrtdi
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -532,15 +368,15 @@ interactions:
         message:
           content: Search complete
           role: assistant
-      created: 1768225950
-      id: chatcmpl-251
+      created: 1768998282
+      id: chatcmpl-149
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
         completion_tokens: 6
-        prompt_tokens: 435
-        total_tokens: 441
+        prompt_tokens: 392
+        total_tokens: 398
     status:
       code: 200
       message: OK

@@ -143,13 +143,25 @@ class SearchResult(BaseModel):
             labels=meta.labels,
         )
 
-    def format_for_agent(self) -> str:
+    def format_for_agent(
+        self, rank: int | None = None, total: int | None = None
+    ) -> str:
         """Format this search result for inclusion in agent context.
 
+        Args:
+            rank: 1-based position in results (1 = most relevant)
+            total: Total number of results returned
+
         Produces a structured format with metadata that helps LLMs understand
-        the source and nature of the content.
+        the source and nature of the content. When rank is provided, shows
+        position instead of raw score to avoid confusing LLMs with low RRF scores.
         """
-        parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
+        if rank is not None and total is not None:
+            parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
+        elif rank is not None:
+            parts = [f"[{self.chunk_id}] [rank {rank}]"]
+        else:
+            parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
 
         # Document source info
         source_parts = []

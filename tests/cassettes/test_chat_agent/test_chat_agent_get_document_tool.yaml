@@ -195,11 +195,11 @@ interactions:
           - function:
               arguments: '{"query":"DocLayNet Class Labels"}'
               name: get_document
-            id: call_geowshoi
+            id: call_m5izt73j
             index: 0
             type: function
-      created: 1768225921
-      id: chatcmpl-162
+      created: 1768998258
+      id: chatcmpl-390
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
@@ -268,14 +268,14 @@ interactions:
         - function:
             arguments: '{"query":"DocLayNet Class Labels"}'
             name: get_document
-          id: call_geowshoi
+          id: call_m5izt73j
           type: function
       - content: |-
           **DocLayNet Class Labels**
 
-          - ID: 50eeb7f5-49be-47d4-b1bd-19d221da9794
+          - ID: cd0fc5b8-ec16-4f1c-99fe-20979ecaab1c
           - URI: doclaynet-labels
-          - Created: 2026-01-12 15:52
+          - Created: 2026-01-21 14:24
 
           **Content:**
           DocLayNet Dataset - Class Labels
@@ -296,7 +296,7 @@ interactions:
 
           The Text class has the highest count with 510,377 instances in the dataset.
         role: tool
-        tool_call_id: call_geowshoi
+        tool_call_id: call_m5izt73j
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -375,7 +375,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1105'
+      - '1131'
       content-type:
       - application/json
     parsed_body:
@@ -383,23 +383,24 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: "Here’s the document you requested:\n\n**DocLayNet Class Labels**\n\nDocLayNet defines 11 distinct class
-            labels for document layout analysis:\n\n1. **Caption** – Text describing figures or tables  \n2. **Footnote**
-            – Notes at the bottom of pages  \n3. **Formula** – Mathematical expressions  \n4. **List‑item** – Items in bulleted
-            or numbered lists  \n5. **Page‑footer** – Footer content on pages  \n6. **Page‑header** – Header content on pages
-            \ \n7. **Picture** – Images and diagrams  \n8. **Section‑header** – Headings for document sections  \n9. **Table**
-            – Tabular data  \n10. **Text** – Regular paragraph text (highest count: 510,377 instances)  \n11. **Title** –
-            Document titles  \n\nThat’s the full list of labels used in DocLayNet. Let me know if you’d like any more details!"
+          content: "Here’s the full **DocLayNet Class Labels** document:\n\n---\n\n## DocLayNet Dataset – Class Labels\n\nDocLayNet
+            defines **11 distinct class labels** for document layout analysis:\n\n1. **Caption** – Text describing figures
+            or tables  \n2. **Footnote** – Notes at the bottom of pages  \n3. **Formula** – Mathematical expressions  \n4.
+            **List‑item** – Items in bulleted or numbered lists  \n5. **Page‑footer** – Footer content on pages  \n6. **Page‑header**
+            – Header content on pages  \n7. **Picture** – Images and diagrams  \n8. **Section‑header** – Headings for document
+            sections  \n9. **Table** – Tabular data  \n10. **Text** – Regular paragraph text (highest count: **510,377** instances)
+            \ \n11. **Title** – Document titles  \n\nThe **Text** class has the highest count with 510,377 instances in the
+            dataset."
           role: assistant
-      created: 1768225925
-      id: chatcmpl-313
+      created: 1768998262
+      id: chatcmpl-746
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 196
+        completion_tokens: 202
         prompt_tokens: 1110
-        total_tokens: 1306
+        total_tokens: 1312
     status:
       code: 200
       message: OK

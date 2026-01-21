@@ -48,7 +48,7 @@ class QuestionAnswerAgent:
         ) -> str:
             """Search the knowledge base for relevant documents.
 
-            Returns results with chunk IDs and relevance scores.
+            Returns results with chunk IDs and rank positions.
             Reference results by their chunk_id in cited_chunks.
             """
             results = await ctx.deps.client.search(
@@ -57,8 +57,12 @@ class QuestionAnswerAgent:
             results = await ctx.deps.client.expand_context(results)
             # Store results for citation resolution
             ctx.deps.search_results = results
-            # Format with metadata for agent context
-            parts = [r.format_for_agent() for r in results]
+            # Format with rank instead of raw score to avoid confusing LLMs
+            total = len(results)
+            parts = [
+                r.format_for_agent(rank=i + 1, total=total)
+                for i, r in enumerate(results)
+            ]
             return "\n\n".join(parts) if parts else "No results found."
 
     async def answer(
