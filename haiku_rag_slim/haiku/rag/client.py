@@ -1715,11 +1715,11 @@ class HaikuRAG:
 
             elif provider == "jina-local":
                 try:
-                    from transformers import AutoModelForSequenceClassification
+                    from transformers import AutoModel
 
                     yield DownloadProgress(model=model_name, status="start")
                     await asyncio.to_thread(
-                        AutoModelForSequenceClassification.from_pretrained,
+                        AutoModel.from_pretrained,
                         model_name,
                         trust_remote_code=True,
                     )

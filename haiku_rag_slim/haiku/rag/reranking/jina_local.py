@@ -1,6 +1,6 @@
 try:
     from transformers import (
-        AutoModelForSequenceClassification,  # pyright: ignore[reportMissingImports]
+        AutoModel,  # pyright: ignore[reportMissingImports]
     )
 except ImportError as e:
     raise ImportError(
@@ -21,9 +21,8 @@ class JinaLocalReranker(RerankerBase):  # pragma: no cover
 
     def __init__(self, model: str = "jinaai/jina-reranker-v3"):
         self._model = model
-        self._reranker = AutoModelForSequenceClassification.from_pretrained(
-            model, trust_remote_code=True
-        )
+        self._reranker = AutoModel.from_pretrained(model, trust_remote_code=True)
+        self._reranker.eval()
 
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
@@ -32,15 +31,7 @@ class JinaLocalReranker(RerankerBase):  # pragma: no cover
             return []
 
         documents = [chunk.content for chunk in chunks]
-        sentence_pairs = [[query, doc] for doc in documents]
 
-        scores = self._reranker.compute_score(sentence_pairs)
+        results = self._reranker.rerank(query, documents, top_n=top_n)
 
-        # Handle both single score and list of scores
-        if isinstance(scores, (int, float)):
-            scores = [scores]
-
-        scored_chunks = list(zip(chunks, scores, strict=False))
-        scored_chunks.sort(key=lambda x: x[1], reverse=True)
-
-        return [(chunk, float(score)) for chunk, score in scored_chunks[:top_n]]
+        return [(chunks[r["index"]], float(r["relevance_score"])) for r in results]
