@@ -259,6 +259,7 @@ async def test_jina_reranker(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_jina_local_reranker():
     try:
         from haiku.rag.reranking.jina_local import JinaLocalReranker

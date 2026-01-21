@@ -1656,9 +1656,11 @@ class HaikuRAG:
         """Download required models, yielding progress events.
 
         Yields DownloadProgress events for:
-        - Docling models (status="docling_start", "docling_done")
-        - HuggingFace tokenizer (status="tokenizer_start", "tokenizer_done")
-        - Ollama models (status="pulling", "downloading", "done", or other Ollama statuses)
+        - Docling models
+        - HuggingFace tokenizer
+        - Sentence-transformers embedder (if configured)
+        - HuggingFace reranker models (mxbai, jina-local)
+        - Ollama models
         """
         # Docling models
         try:
@@ -1677,6 +1679,51 @@ class HaikuRAG:
         yield DownloadProgress(model=tokenizer_name, status="start")
         await asyncio.to_thread(AutoTokenizer.from_pretrained, tokenizer_name)
         yield DownloadProgress(model=tokenizer_name, status="done")
+
+        # Sentence-transformers embedder
+        if self._config.embeddings.model.provider == "sentence-transformers":
+            try:
+                from sentence_transformers import (  # type: ignore[import-not-found]
+                    SentenceTransformer,
+                )
+
+                model_name = self._config.embeddings.model.name
+                yield DownloadProgress(model=model_name, status="start")
+                await asyncio.to_thread(SentenceTransformer, model_name)
+                yield DownloadProgress(model=model_name, status="done")
+            except ImportError:
+                pass
+
+        # HuggingFace reranker models
+        if self._config.reranking.model:
+            provider = self._config.reranking.model.provider
+            model_name = self._config.reranking.model.name
+
+            if provider == "mxbai":
+                try:
+                    from mxbai_rerank import MxbaiRerankV2
+
+                    yield DownloadProgress(model=model_name, status="start")
+                    await asyncio.to_thread(
+                        MxbaiRerankV2, model_name, disable_transformers_warnings=True
+                    )
+                    yield DownloadProgress(model=model_name, status="done")
+                except ImportError:
+                    pass
+
+            elif provider == "jina-local":
+                try:
+                    from transformers import AutoModelForSequenceClassification
+
+                    yield DownloadProgress(model=model_name, status="start")
+                    await asyncio.to_thread(
+                        AutoModelForSequenceClassification.from_pretrained,
+                        model_name,
+                        trust_remote_code=True,
+                    )
+                    yield DownloadProgress(model=model_name, status="done")
+                except ImportError:
+                    pass
 
         # Collect Ollama models from config
         required_models: set[str] = set()

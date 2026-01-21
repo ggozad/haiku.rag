@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+- **Jina Reranker v3**: Added support for Jina reranking with API mode (`provider: jina`) and local inference (`provider: jina-local`, requires `[jina]` extra)
+- **Model Downloads**: `download-models` now pre-downloads HuggingFace models for `sentence-transformers`, `mxbai`, and `jina-local`
 - **Reranker Factory**: Removed unreliable `id(config)`-based caching from `get_reranker()`; factory now always instantiates fresh
 
 ## [0.26.7] - 2026-01-20
