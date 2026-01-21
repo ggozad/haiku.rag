@@ -9,6 +9,13 @@
   - Supports `all` argument to download/upload all datasets at once
   - Use `--force` flag to overwrite existing databases
   - Avoids lengthy database rebuild times for users running benchmarks
+- **Dynamic Session Context**: Compressed conversation history for multi-turn chat
+  - New `SessionContext` model stores summarized conversation state instead of raw Q&A history
+  - Background LLM-based summarization runs after each `ask` tool call (non-blocking)
+  - Previous summarization tasks are cancelled when new ones start
+  - Research graph receives compact context (~1,000-2,000 tokens) instead of raw qa_history (potentially thousands of tokens)
+  - New `session_context` field on `ChatSessionState` synced via AG-UI state protocol
+  - Chat TUI: New context modal (`Ctrl+O`) to view current session context
 
 ### Changed
 
@@ -28,7 +35,6 @@
 - **v0.25.0 Migration Failure**: Fixed "Table 'documents' already exists" error during migration caused by held table references preventing `drop_table()` from succeeding. Added recovery logic to restore documents from staging table if a previous migration attempt failed mid-way.
 
 ## [0.26.8] - 2026-01-22
-
 - **Jina Reranker v3**: Added support for Jina reranking with API mode (`provider: jina`) and local inference (`provider: jina-local`, requires `[jina]` extra)
 - **Model Downloads**: `download-models` now pre-downloads HuggingFace models for `sentence-transformers`, `mxbai`, and `jina-local`
 - **Reranker Factory**: Removed unreliable `id(config)`-based caching from `get_reranker()`; factory now always instantiates fresh

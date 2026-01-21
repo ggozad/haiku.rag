@@ -25,8 +25,8 @@ from haiku.rag.utils import get_model
 
 logger = logging.getLogger(__name__)
 
-# Track background tasks to prevent garbage collection
-_background_tasks: set[asyncio.Task[None]] = set()
+# Track summarization tasks per session to allow cancellation
+_summarization_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 async def _update_context_background(
@@ -42,6 +42,8 @@ async def _update_context_background(
             session_state=session_state,
         )
         logger.debug("Session context updated")
+    except asyncio.CancelledError:
+        logger.debug("Session context summarization cancelled")
     except Exception:
         logger.exception("Failed to update session context")
 
@@ -289,6 +291,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 ]
 
             # Spawn background task to update session context
+            # Cancel any previous summarization for this session
+            session_id = ctx.deps.session_state.session_id
+            if session_id in _summarization_tasks:
+                _summarization_tasks[session_id].cancel()
+
             task = asyncio.create_task(
                 _update_context_background(
                     qa_history=list(ctx.deps.session_state.qa_history),
@@ -296,8 +303,8 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                     session_state=ctx.deps.session_state,
                 )
             )
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+            _summarization_tasks[session_id] = task
+            task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
 
         # Build new state with citations AND accumulated qa_history
         new_state = ChatSessionState(
