@@ -1,0 +1,76 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1266'
+      content-type:
+      - application/json
+      host:
+      - api.jina.ai
+    method: POST
+    parsed_body:
+      documents:
+      - To Kill a Mockingbird is a novel by Harper Lee published in 1960. It was immediately successful, winning the Pulitzer
+        Prize, and has become a classic of modern American literature.
+      - The novel Moby-Dick was written by Herman Melville and first published in 1851. It is considered a masterpiece of
+        American literature and deals with complex themes of obsession, revenge, and the conflict between good and evil.
+      - Harper Lee, an American novelist widely known for her novel To Kill a Mockingbird, was born in 1926 in Monroeville,
+        Alabama. She received the Pulitzer Prize for Fiction in 1961.
+      - Jane Austen was an English novelist known primarily for her six major novels, which interpret, critique and comment
+        upon the British landed gentry at the end of the 18th century.
+      - The Harry Potter series, which consists of seven fantasy novels written by British author J.K. Rowling, is among the
+        most popular and critically acclaimed books of the modern era.
+      - The Great Gatsby, a novel written by American author F. Scott Fitzgerald, was published in 1925. The story is set
+        in the Jazz Age and follows the life of millionaire Jay Gatsby and his pursuit of Daisy Buchanan.
+      model: jina-reranker-v3
+      query: Who wrote 'To Kill a Mockingbird'?
+      top_n: 2
+    uri: https://api.jina.ai/v1/rerank
+  response:
+    headers:
+      alt-svc:
+      - h3=":443"; ma=86400
+      cache-control:
+      - private
+      connection:
+      - keep-alive
+      content-length:
+      - '570'
+      content-type:
+      - application/json
+      expires:
+      - Wed, 21 Jan 2026 08:21:12 GMT
+      nel:
+      - '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'
+      report-to:
+      - '{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=TX0p0eBpMlJ8P0KA1iF7CLglvZSaumFNwZXrU%2BYgFDRyrC0xrRB3NyaekMeKtZQKWf8GpGD%2Bb5WCh4vN67uaCzgah3QbrVh3PvU%2FSEMF6BZcfFMY"}]}'
+      transfer-encoding:
+      - chunked
+      vary:
+      - Accept-Encoding
+    parsed_body:
+      model: jina-reranker-v3
+      object: list
+      results:
+      - document:
+          text: To Kill a Mockingbird is a novel by Harper Lee published in 1960. It was immediately successful, winning the
+            Pulitzer Prize, and has become a classic of modern American literature.
+        index: 0
+        relevance_score: 0.42858967
+      - document:
+          text: Harper Lee, an American novelist widely known for her novel To Kill a Mockingbird, was born in 1926 in Monroeville,
+            Alabama. She received the Pulitzer Prize for Fiction in 1961.
+        index: 2
+        relevance_score: 0.07394931
+      usage:
+        total_tokens: 490
+    status:
+      code: 200
+      message: OK
+version: 1

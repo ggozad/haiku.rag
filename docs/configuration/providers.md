@@ -382,3 +382,43 @@ reranking:
 ```
 
 **Note:** vLLM reranking uses the `/v1/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded.
+
+### Jina AI
+
+Jina provides high-quality reranking with two deployment options: API mode and local inference.
+
+#### API Mode
+
+Use the Jina Reranker API for cloud-based reranking:
+
+```yaml
+reranking:
+  model:
+    provider: jina
+    name: jina-reranker-v3
+```
+
+Set your API key via environment variable:
+
+```bash
+export JINA_API_KEY=your-api-key
+```
+
+#### Local Mode
+
+For local inference, install the jina extra:
+
+```bash
+uv pip install haiku.rag-slim[jina]
+```
+
+Then configure:
+
+```yaml
+reranking:
+  model:
+    provider: jina-local
+    name: jinaai/jina-reranker-v3
+```
+
+**Note:** The Jina Reranker v3 local model is licensed under CC BY-NC 4.0, which restricts commercial use. For commercial applications, use the API mode instead.

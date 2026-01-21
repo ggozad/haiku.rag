@@ -52,4 +52,19 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         except ImportError:  # pragma: no cover
             return None
 
+    if config.reranking.model and config.reranking.model.provider == "jina":
+        from haiku.rag.reranking.jina import JinaReranker
+
+        model = config.reranking.model.name or "jina-reranker-v3"
+        return JinaReranker(model)
+
+    if config.reranking.model and config.reranking.model.provider == "jina-local":
+        try:
+            from haiku.rag.reranking.jina_local import JinaLocalReranker
+
+            model = config.reranking.model.name or "jinaai/jina-reranker-v3"
+            return JinaLocalReranker(model)
+        except ImportError:  # pragma: no cover
+            return None
+
     return None

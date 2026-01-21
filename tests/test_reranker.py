@@ -202,3 +202,76 @@ class TestGetReranker:
         )
         result = get_reranker(config)
         assert result is None
+
+    def test_jina_provider(self, monkeypatch):
+        monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+
+        from haiku.rag.reranking.jina import JinaReranker
+
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="jina", name="jina-reranker-v3")
+            )
+        )
+        result = get_reranker(config)
+        assert isinstance(result, JinaReranker)
+        assert result._model == "jina-reranker-v3"
+
+    def test_jina_local_provider(self):
+        try:
+            from haiku.rag.reranking.jina_local import JinaLocalReranker
+
+            config = AppConfig(
+                reranking=RerankingConfig(
+                    model=ModelConfig(
+                        provider="jina-local", name="jinaai/jina-reranker-v3"
+                    )
+                )
+            )
+            result = get_reranker(config)
+            assert isinstance(result, JinaLocalReranker)
+            assert result._model == "jinaai/jina-reranker-v3"
+        except ImportError:
+            pytest.skip("Jina local dependencies not installed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_jina_reranker(monkeypatch):
+    import os
+
+    # Only set dummy key if real key not present (for VCR playback)
+    if not os.environ.get("JINA_API_KEY"):
+        monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+
+    from haiku.rag.reranking.jina import JinaReranker
+
+    reranker = JinaReranker("jina-reranker-v3")
+
+    reranked = await reranker.rerank(
+        "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+    )
+    assert len(reranked) == 2
+    assert all(isinstance(score, float) for chunk, score in reranked)
+    # Check that the top results are relevant to Harper Lee / To Kill a Mockingbird
+    top_ids = [chunk.document_id for chunk, score in reranked]
+    assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
+
+
+@pytest.mark.asyncio
+async def test_jina_local_reranker():
+    try:
+        from haiku.rag.reranking.jina_local import JinaLocalReranker
+
+        reranker = JinaLocalReranker("jinaai/jina-reranker-v3")
+
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert len(reranked) == 2
+        assert all(isinstance(score, float) for chunk, score in reranked)
+        # Check that the top results are relevant to Harper Lee / To Kill a Mockingbird
+        top_ids = [chunk.document_id for chunk, score in reranked]
+        assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
+    except ImportError:
+        pytest.skip("Jina local dependencies not installed")

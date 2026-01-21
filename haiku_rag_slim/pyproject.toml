@@ -44,6 +44,7 @@ voyageai = ["voyageai>=0.3.7"]
 mxbai = ["mxbai-rerank>=0.1.6"]
 cohere = ["cohere>=5.20.1"]
 zeroentropy = ["zeroentropy>=0.1.0a7"]
+jina = ["transformers>=4.40.0", "torch>=2.0.0"]
 # TUI (chat and inspect commands)
 tui = ["textual>=7.3.0", "textual-image>=0.8.5"]
 # Model providers (delegated to pydantic-ai-slim)
