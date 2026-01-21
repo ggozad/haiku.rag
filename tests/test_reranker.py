@@ -235,6 +235,26 @@ class TestGetReranker:
             pytest.skip("Jina local dependencies not installed")
 
 
+def test_jina_reranker_missing_api_key(monkeypatch):
+    monkeypatch.delenv("JINA_API_KEY", raising=False)
+
+    from haiku.rag.reranking.jina import JinaReranker
+
+    with pytest.raises(ValueError, match="JINA_API_KEY environment variable required"):
+        JinaReranker("jina-reranker-v3")
+
+
+@pytest.mark.asyncio
+async def test_jina_reranker_empty_chunks(monkeypatch):
+    monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+
+    from haiku.rag.reranking.jina import JinaReranker
+
+    reranker = JinaReranker("jina-reranker-v3")
+    result = await reranker.rerank("query", [], top_n=2)
+    assert result == []
+
+
 @pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_jina_reranker(monkeypatch):

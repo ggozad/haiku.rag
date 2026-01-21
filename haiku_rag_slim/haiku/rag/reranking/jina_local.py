@@ -12,7 +12,7 @@ from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
 
 
-class JinaLocalReranker(RerankerBase):
+class JinaLocalReranker(RerankerBase):  # pragma: no cover
     """Jina reranker using local model inference via transformers.
 
     Note: The Jina Reranker v3 model is licensed under CC BY-NC 4.0,

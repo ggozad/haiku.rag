@@ -1681,7 +1681,9 @@ class HaikuRAG:
         yield DownloadProgress(model=tokenizer_name, status="done")
 
         # Sentence-transformers embedder
-        if self._config.embeddings.model.provider == "sentence-transformers":
+        if (
+            self._config.embeddings.model.provider == "sentence-transformers"
+        ):  # pragma: no cover
             try:
                 from sentence_transformers import (  # type: ignore[import-not-found]
                     SentenceTransformer,
@@ -1695,7 +1697,7 @@ class HaikuRAG:
                 pass
 
         # HuggingFace reranker models
-        if self._config.reranking.model:
+        if self._config.reranking.model:  # pragma: no cover
             provider = self._config.reranking.model.provider
             model_name = self._config.reranking.model.name
 
