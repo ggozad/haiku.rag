@@ -25,14 +25,17 @@ class InfoModal(ModalScreen):  # pragma: no cover
     CSS = """
     InfoModal {
         align: center middle;
+        background: rgba(0, 0, 0, 0.5);
     }
 
     #info-container {
-        width: 80;
+        width: auto;
+        min-width: 40;
+        max-width: 80;
         height: auto;
-        max-height: 80%;
+        max-height: 20;
         background: $surface;
-        border: solid $primary;
+        border: tall $primary;
         padding: 1 2;
     }
 
@@ -42,8 +45,8 @@ class InfoModal(ModalScreen):  # pragma: no cover
     }
 
     #info-content {
-        height: auto;
-        max-height: 100%;
+        height: 1fr;
+        scrollbar-gutter: stable;
     }
     """
 

@@ -25,6 +25,9 @@ from haiku.rag.utils import get_model
 
 logger = logging.getLogger(__name__)
 
+# Track background tasks to prevent garbage collection
+_background_tasks: set[asyncio.Task[None]] = set()
+
 
 async def _update_context_background(
     qa_history: list[QAResponse],
@@ -38,7 +41,7 @@ async def _update_context_background(
             config=config,
             session_state=session_state,
         )
-        logger.debug("Session context updated successfully")
+        logger.debug("Session context updated")
     except Exception:
         logger.exception("Failed to update session context")
 
@@ -286,13 +289,15 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 ]
 
             # Spawn background task to update session context
-            asyncio.create_task(
+            task = asyncio.create_task(
                 _update_context_background(
                     qa_history=list(ctx.deps.session_state.qa_history),
                     config=ctx.deps.config,
                     session_state=ctx.deps.session_state,
                 )
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
         # Build new state with citations AND accumulated qa_history
         new_state = ChatSessionState(

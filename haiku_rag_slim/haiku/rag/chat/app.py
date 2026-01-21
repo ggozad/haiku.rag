@@ -33,6 +33,7 @@ try:
     import logfire
 
     logfire.configure(send_to_logfire="if-token-present", console=False)
+    logfire.instrument_pydantic_ai()
 except ImportError:
     pass
 
@@ -81,6 +82,7 @@ class ChatApp(App):
         Binding("ctrl+l", "clear_chat", "Clear", show=True),
         Binding("ctrl+g", "show_visual", "Visual", show=True),
         Binding("ctrl+i", "show_info", "Info", show=True),
+        Binding("ctrl+o", "show_context", "Context", show=True),
         Binding("escape", "focus_input", "Focus Input", show=False),
     ]
 
@@ -325,6 +327,12 @@ class ChatApp(App):
         from haiku.rag.inspector.widgets.info_modal import InfoModal
 
         await self.push_screen(InfoModal(self.client, self.db_path))
+
+    async def action_show_context(self) -> None:
+        """Show current session context in a modal."""
+        from haiku.rag.chat.widgets.context_modal import ContextModal
+
+        await self.push_screen(ContextModal(self.session_state))
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""

@@ -584,6 +584,54 @@ async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path)
         assert len(session_state.qa_history) >= 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_ask_triggers_background_summarization(
+    allow_model_requests, temp_db_path
+):
+    """Test that the ask tool triggers background session context summarization."""
+    import asyncio
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-summarization")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Initially no session_context
+        assert session_state.session_context is None
+
+        # Ask a question
+        result = await agent.run(
+            "What is the highest count class in the DocLayNet dataset?",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        assert len(session_state.qa_history) >= 1
+
+        # Wait for background task to complete
+        # The task should update session_state.session_context
+        for _ in range(50):  # Wait up to 5 seconds
+            if session_state.session_context is not None:
+                break
+            await asyncio.sleep(0.1)
+
+        # Verify session_context was populated by background task
+        assert session_state.session_context is not None
+        assert session_state.session_context.summary != ""
+        assert session_state.session_context.last_updated is not None
+
+
 def test_fifo_limit_enforcement():
     """Test that FIFO limit enforcement logic works correctly.
 
