@@ -10,6 +10,7 @@ import { CopilotChat } from "@copilotkit/react-ui";
 import { useCallback, useEffect, useState } from "react";
 import "@copilotkit/react-ui/styles.css";
 import CitationBlock from "./CitationBlock";
+import ContextPanel from "./ContextPanel";
 import DbInfo from "./DbInfo";
 import SettingsPanel, { STORAGE_KEY } from "./SettingsPanel";
 
@@ -34,11 +35,17 @@ interface QAResponse {
 	citations: Citation[];
 }
 
+interface SessionContext {
+	summary: string;
+	last_updated: string | null;
+}
+
 interface ChatSessionState {
 	session_id: string;
 	citations: Citation[];
 	qa_history: QAResponse[];
 	background_context: string | null;
+	session_context: SessionContext | null;
 }
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
@@ -148,6 +155,31 @@ function SettingsIcon() {
 		>
 			<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
 			<circle cx="12" cy="12" r="3" />
+		</svg>
+	);
+}
+
+function BrainIcon() {
+	return (
+		<svg
+			width="18"
+			height="18"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+			<path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+			<path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+			<path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
+			<path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+			<path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
+			<path d="M19.938 10.5a4 4 0 0 1 .585.396" />
+			<path d="M6 18a4 4 0 0 1-1.967-.516" />
+			<path d="M19.967 17.484A4 4 0 0 1 18 18" />
 		</svg>
 	);
 }
@@ -365,6 +397,7 @@ function ChatContentInner({
 	setBackgroundContext: (value: string) => void;
 }) {
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [contextOpen, setContextOpen] = useState(false);
 
 	const handleSaveContext = useCallback(
 		(value: string) => {
@@ -378,7 +411,7 @@ function ChatContentInner({
 		[setBackgroundContext],
 	);
 
-	useCoAgent<AgentState>({
+	const { state: agentState } = useCoAgent<AgentState>({
 		name: "chat_agent",
 		initialState: {
 			[AGUI_STATE_KEY]: {
@@ -386,9 +419,13 @@ function ChatContentInner({
 				citations: [],
 				qa_history: [],
 				background_context: backgroundContext || null,
+				session_context: null,
 			},
 		},
 	});
+
+	// Extract session context from agent state
+	const sessionContext = agentState?.[AGUI_STATE_KEY]?.session_context ?? null;
 
 	useCoAgentStateRender<AgentState>({
 		name: "chat_agent",
@@ -470,11 +507,12 @@ function ChatContentInner({
 				.chat-header {
 					display: flex;
 					justify-content: flex-end;
+					gap: 0.5rem;
 					padding: 0.5rem 0.75rem;
 					border-bottom: 1px solid #e2e8f0;
 					background: #f8fafc;
 				}
-				.settings-btn {
+				.header-btn {
 					display: flex;
 					align-items: center;
 					gap: 0.375rem;
@@ -487,17 +525,17 @@ function ChatContentInner({
 					font-size: 0.8125rem;
 					transition: all 0.15s;
 				}
-				.settings-btn:hover {
+				.header-btn:hover {
 					background: #f1f5f9;
 					border-color: #cbd5e1;
 					color: #475569;
 				}
-				.settings-btn.has-context {
+				.header-btn.has-content {
 					background: #eff6ff;
 					border-color: #bfdbfe;
 					color: #2563eb;
 				}
-				.settings-btn.has-context:hover {
+				.header-btn.has-content:hover {
 					background: #dbeafe;
 					border-color: #93c5fd;
 				}
@@ -517,7 +555,20 @@ function ChatContentInner({
 					<div className="chat-header">
 						<button
 							type="button"
-							className={`settings-btn ${backgroundContext ? "has-context" : ""}`}
+							className={`header-btn ${sessionContext?.summary ? "has-content" : ""}`}
+							onClick={() => setContextOpen(true)}
+							title={
+								sessionContext?.summary
+									? "View session context"
+									: "No session context yet"
+							}
+						>
+							<BrainIcon />
+							Memory
+						</button>
+						<button
+							type="button"
+							className={`header-btn ${backgroundContext ? "has-content" : ""}`}
 							onClick={() => setSettingsOpen(true)}
 							title={
 								backgroundContext
@@ -526,7 +577,7 @@ function ChatContentInner({
 							}
 						>
 							<SettingsIcon />
-							Context
+							Settings
 						</button>
 					</div>
 					<div className="chat-content">
@@ -546,6 +597,11 @@ function ChatContentInner({
 				onClose={() => setSettingsOpen(false)}
 				onSave={handleSaveContext}
 				currentValue={backgroundContext}
+			/>
+			<ContextPanel
+				isOpen={contextOpen}
+				onClose={() => setContextOpen(false)}
+				sessionContext={sessionContext}
 			/>
 		</>
 	);
