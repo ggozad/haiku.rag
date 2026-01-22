@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import logfire
 import typer
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
@@ -23,7 +23,7 @@ from haiku.rag.logging import configure_cli_logging
 from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model
 
-load_dotenv()
+load_dotenv(find_dotenv(usecwd=True))
 
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()

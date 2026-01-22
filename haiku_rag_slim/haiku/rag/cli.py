@@ -14,17 +14,17 @@ from dotenv import find_dotenv, load_dotenv
 # Env loading needs to be before config import; usecwd=True searches from cwd, not this .py file's location
 load_dotenv(find_dotenv(usecwd=True))
 
-from haiku.rag.app import HaikuRAGApp
-from haiku.rag.config import (
+from haiku.rag.app import HaikuRAGApp  # noqa: E402
+from haiku.rag.config import (  # noqa: E402
     AppConfig,
     find_config_file,
     get_config,
     load_yaml_config,
     set_config,
 )
-from haiku.rag.logging import configure_cli_logging
-from haiku.rag.store.exceptions import MigrationRequiredError
-from haiku.rag.utils import is_up_to_date
+from haiku.rag.logging import configure_cli_logging  # noqa: E402
+from haiku.rag.store.exceptions import MigrationRequiredError  # noqa: E402
+from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 _cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
