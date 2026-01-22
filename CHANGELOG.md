@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **v0.25.0 Migration Failure**: Fixed "Table 'documents' already exists" error during migration caused by held table references preventing `drop_table()` from succeeding. Added recovery logic to restore documents from staging table if a previous migration attempt failed mid-way.
+
 ## [0.26.8] - 2026-01-22
 
 - **Jina Reranker v3**: Added support for Jina reranking with API mode (`provider: jina`) and local inference (`provider: jina-local`, requires `[jina]` extra)
