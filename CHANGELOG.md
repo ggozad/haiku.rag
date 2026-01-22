@@ -17,6 +17,7 @@
 ### Fixed
 
 - **Test Cassette Organization**: Consolidated all VCR cassettes to `tests/cassettes/`
+- **Environment Loading**: Fixed `.env` file loading to search from current working directory instead of source file directory ([#250](https://github.com/ggozad/haiku.rag/pull/250)) - thanks @tianyicui
 
 ## [0.26.7] - 2026-01-20
 

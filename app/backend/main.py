@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.applications import Starlette
@@ -23,7 +23,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
 
-load_dotenv()
+load_dotenv(find_dotenv(usecwd=True))
 
 # Configure logfire (only sends data if LOGFIRE_TOKEN is present)
 try:
