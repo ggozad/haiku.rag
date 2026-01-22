@@ -123,3 +123,17 @@ QA accuracy is evaluated over 2000 "hard" questions from the validation dataset.
 | Embedding Model      | QA Model                 | Accuracy |
 |----------------------|--------------------------|----------|
 | `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
+
+## OpenRAG Bench (ORB)
+
+[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval over visual content like figures, charts, and diagrams. We use MAP for retrieval evaluation since each query maps to one relevant document.
+
+**Multimodal processing**: Picture descriptions are generated using a Vision Language Model (VLM) during document conversion, making embedded images searchable via text queries. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
+
+*Results from v0.26.8*
+
+### Retrieval (MAP)
+
+| Embedding Model      | MAP    | VLM                  |
+|----------------------|--------|----------------------|
+| `qwen3-embedding:4b` | 0.9626 | Ollama / ministral-3 |
