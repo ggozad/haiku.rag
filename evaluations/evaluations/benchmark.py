@@ -83,7 +83,7 @@ async def populate_db(
 
     with Progress() as progress:
         task = progress.add_task("[green]Populating database...", total=len(corpus))
-        async with HaikuRAG(db, config=config) as rag:
+        async with HaikuRAG(db, config=config, create=True) as rag:
             docs_since_vacuum = 0
             for doc in corpus:
                 doc_mapping = cast(Mapping[str, Any], doc)
@@ -92,7 +92,13 @@ async def populate_db(
                     progress.advance(task)
                     continue
 
-                existing = await rag.get_document_by_uri(payload.uri)
+                # Use the actual URI that will be stored in the database
+                if payload.source_path is not None:
+                    lookup_uri = payload.source_path.absolute().as_uri()
+                else:
+                    lookup_uri = payload.uri
+
+                existing = await rag.get_document_by_uri(lookup_uri)
                 if existing is not None:
                     assert existing.id
                     chunks = await rag.chunk_repository.get_by_document_id(existing.id)
@@ -101,13 +107,21 @@ async def populate_db(
                         continue
                     await rag.document_repository.delete(existing.id)
 
-                await rag.create_document(
-                    content=payload.content,
-                    uri=payload.uri,
-                    title=payload.title,
-                    metadata=payload.metadata,
-                    format=payload.format,
-                )
+                if payload.source_path is not None:
+                    await rag.create_document_from_source(
+                        source=payload.source_path,
+                        title=payload.title,
+                        metadata=payload.metadata,
+                    )
+                else:
+                    assert payload.content is not None
+                    await rag.create_document(
+                        content=payload.content,
+                        uri=payload.uri,
+                        title=payload.title,
+                        metadata=payload.metadata,
+                        format=payload.format,
+                    )
                 docs_since_vacuum += 1
                 progress.advance(task)
 
@@ -126,6 +140,7 @@ async def run_retrieval_benchmark(
     limit: int | None = None,
     name: str | None = None,
     db_path: Path | None = None,
+    multimodal_only: bool = False,
 ) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
@@ -145,9 +160,18 @@ async def run_retrieval_benchmark(
                 progress.advance(task)
                 continue
 
+            # Filter for multimodal queries if requested
+            if multimodal_only:
+                if sample.source_type is None or "image" not in sample.source_type:
+                    progress.advance(task)
+                    continue
+
             case = Case(
                 inputs=sample.question,
-                metadata={"relevant_uris": sample.expected_uris},
+                metadata={
+                    "relevant_uris": sample.expected_uris,
+                    "source_type": sample.source_type,
+                },
             )
             cases.append(case)
             progress.advance(task)
@@ -174,16 +198,22 @@ async def run_retrieval_benchmark(
             chunks = await rag.search(query=question, limit=5)
 
             seen = set()
-            uris = []
+            identifiers = []
             for result in chunks:
                 if result.document_id is None:
                     continue
                 doc = await rag.get_document_by_id(result.document_id)
-                if doc and doc.uri and doc.uri not in seen:
-                    uris.append(doc.uri)
-                    seen.add(doc.uri)
+                if doc is None:
+                    continue
+                # Use arxiv_id from metadata if present, otherwise use URI
+                doc_id = doc.metadata.get("arxiv_id") if doc.metadata else None
+                if doc_id is None:
+                    doc_id = doc.uri
+                if doc_id and doc_id not in seen:
+                    identifiers.append(doc_id)
+                    seen.add(doc_id)
 
-            return uris
+            return identifiers
 
         eval_name = name if name is not None else f"{spec.key}_retrieval_evaluation"
 
@@ -326,6 +356,7 @@ async def evaluate_dataset(
     name: str | None,
     db_path: Path | None,
     vacuum_interval: int = 100,
+    multimodal_only: bool = False,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -336,7 +367,12 @@ async def evaluate_dataset(
     if not skip_retrieval:
         console.print("Running retrieval benchmarks...", style="bold blue")
         await run_retrieval_benchmark(
-            spec, config, limit=limit, name=name, db_path=db_path
+            spec,
+            config,
+            limit=limit,
+            name=name,
+            db_path=db_path,
+            multimodal_only=multimodal_only,
         )
 
     if not skip_qa:
@@ -367,6 +403,11 @@ def run(
     name: str | None = typer.Option(None, "--name", help="Override evaluation name."),
     vacuum_interval: int = typer.Option(
         100, "--vacuum-interval", help="Vacuum every N documents during DB population."
+    ),
+    multimodal_only: bool = typer.Option(
+        False,
+        "--multimodal-only",
+        help="Only evaluate queries requiring image understanding.",
     ),
 ) -> None:
     spec = DATASETS.get(dataset.lower())
@@ -405,6 +446,7 @@ def run(
             name=name,
             db_path=db,
             vacuum_interval=vacuum_interval,
+            multimodal_only=multimodal_only,
         )
     )
 
