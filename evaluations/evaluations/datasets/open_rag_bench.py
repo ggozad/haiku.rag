@@ -52,7 +52,7 @@ def load_qrels() -> dict[str, dict[str, Any]]:
         return json.load(f)
 
 
-def load_answers() -> dict[str, dict[str, Any]]:
+def load_answers() -> dict[str, str]:
     path = download_metadata_file("answers.json")
     with open(path) as f:
         return json.load(f)
@@ -90,7 +90,7 @@ def download_all_pdfs(pdf_urls: dict[str, str]) -> dict[str, Path]:
 _pdf_urls: dict[str, str] | None = None
 _queries: dict[str, dict[str, str]] | None = None
 _qrels: dict[str, dict[str, Any]] | None = None
-_answers: dict[str, dict[str, Any]] | None = None
+_answers: dict[str, str] | None = None
 
 
 def ensure_metadata_loaded() -> None:
@@ -143,14 +143,14 @@ def load_orb_qa() -> Dataset:
 
     records = []
     for query_id, query_data in _queries.items():
-        answer_data = _answers.get(query_id, {})
+        answer = _answers.get(query_id, "")
         records.append(
             {
                 "query_id": query_id,
                 "query": query_data["query"],
                 "type": query_data["type"],
                 "source": query_data["source"],
-                "answer": answer_data.get("answer", ""),
+                "answer": answer,
             }
         )
 
