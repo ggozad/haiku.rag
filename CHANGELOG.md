@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.26.9] - 2026-01-22
+
 ### Fixed
 
 - **v0.25.0 Migration Failure**: Fixed "Table 'documents' already exists" error during migration caused by held table references preventing `drop_table()` from succeeding. Added recovery logic to restore documents from staging table if a previous migration attempt failed mid-way.
