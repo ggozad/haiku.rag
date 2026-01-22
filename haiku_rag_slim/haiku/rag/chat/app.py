@@ -21,8 +21,8 @@ from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
-    CitationInfo,
 )
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 
@@ -104,7 +104,7 @@ class ChatApp(App):
         self.session_state: ChatSessionState | None = None
         self._is_processing = False
         self._tool_call_widgets: dict[str, Any] = {}
-        self._last_citations: list[CitationInfo] = []
+        self._last_citations: list[Citation] = []
         self._selected_citation_idx: int | None = None
         self._current_worker: Worker[None] | None = None
         self._message_history: list[ModelMessage] = []
@@ -170,7 +170,7 @@ class ChatApp(App):
                         snapshot = getattr(meta_event, "snapshot", {})
                         chat_state = snapshot.get(AGUI_STATE_KEY, snapshot)
                         self._last_citations = [
-                            CitationInfo(**c) for c in chat_state["citations"]
+                            Citation(**c) for c in chat_state["citations"]
                         ]
 
     async def _event_stream_handler(

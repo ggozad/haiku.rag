@@ -6,12 +6,12 @@ from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
-    CitationInfo,
     QAResponse,
     SearchAgent,
     create_chat_agent,
 )
 from haiku.rag.agents.chat.state import MAX_QA_HISTORY
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 
@@ -88,9 +88,9 @@ def test_chat_agent_has_dynamic_system_prompt():
     assert "add_background_context" in func_names
 
 
-def test_citation_info():
-    """Test CitationInfo model."""
-    citation = CitationInfo(
+def test_citation():
+    """Test Citation model."""
+    citation = Citation(
         index=1,
         document_id="doc-123",
         chunk_id="chunk-456",
@@ -108,7 +108,7 @@ def test_citation_info():
 
 def test_qa_response():
     """Test QAResponse model."""
-    citation = CitationInfo(
+    citation = Citation(
         index=1,
         document_id="doc-123",
         chunk_id="chunk-456",
@@ -131,7 +131,7 @@ def test_qa_response():
 
 def test_qa_response_sources_with_uri_fallback():
     """Test QAResponse.sources falls back to URI when title is None."""
-    citation = CitationInfo(
+    citation = Citation(
         index=1,
         document_id="doc-123",
         chunk_id="chunk-456",

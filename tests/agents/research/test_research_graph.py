@@ -83,25 +83,25 @@ def test_format_context_for_prompt_excludes_background_when_none():
     assert "<background>" not in result
 
 
-def test_format_conversational_context_for_prompt_includes_background():
-    """Test format_conversational_context_for_prompt includes background."""
-    from haiku.rag.agents.research.graph import format_conversational_context_for_prompt
+def test_format_context_for_prompt_without_pending_includes_background():
+    """Test format_context_for_prompt with include_pending_questions=False includes background."""
+    from haiku.rag.agents.research.graph import format_context_for_prompt
 
     context = ResearchContext(
         original_question="What is X?",
         background_context="X is a concept in domain Y.",
     )
-    result = format_conversational_context_for_prompt(context)
+    result = format_context_for_prompt(context, include_pending_questions=False)
     assert "X is a concept in domain Y." in result
     assert "<background>" in result
 
 
-def test_format_conversational_context_for_prompt_excludes_background_when_none():
-    """Test format_conversational_context_for_prompt excludes background when None."""
-    from haiku.rag.agents.research.graph import format_conversational_context_for_prompt
+def test_format_context_for_prompt_without_pending_excludes_background_when_none():
+    """Test format_context_for_prompt with include_pending_questions=False excludes background when None."""
+    from haiku.rag.agents.research.graph import format_context_for_prompt
 
     context = ResearchContext(original_question="What is X?")
-    result = format_conversational_context_for_prompt(context)
+    result = format_context_for_prompt(context, include_pending_questions=False)
     assert "<background>" not in result
 
 

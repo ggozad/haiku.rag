@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.agents.chat.state import (
-    CitationInfo,
     QAResponse,
     SessionContext,
 )
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.config import Config
 
 
@@ -88,7 +88,7 @@ class TestSummarizeSession:
                 answer="The API uses JWT tokens for authentication.",
                 confidence=0.95,
                 citations=[
-                    CitationInfo(
+                    Citation(
                         index=1,
                         document_id="doc-1",
                         chunk_id="chunk-1",
@@ -121,7 +121,7 @@ class TestSummarizeSession:
                 answer="The API uses JWT tokens for authentication.",
                 confidence=0.95,
                 citations=[
-                    CitationInfo(
+                    Citation(
                         index=1,
                         document_id="doc-1",
                         chunk_id="chunk-1",
@@ -136,7 +136,7 @@ class TestSummarizeSession:
                 answer="Rate limiting is set to 100 requests per minute.",
                 confidence=0.9,
                 citations=[
-                    CitationInfo(
+                    Citation(
                         index=1,
                         document_id="doc-2",
                         chunk_id="chunk-2",
@@ -151,7 +151,7 @@ class TestSummarizeSession:
                 answer="Use the /refresh endpoint with your refresh token.",
                 confidence=0.85,
                 citations=[
-                    CitationInfo(
+                    Citation(
                         index=1,
                         document_id="doc-1",
                         chunk_id="chunk-3",

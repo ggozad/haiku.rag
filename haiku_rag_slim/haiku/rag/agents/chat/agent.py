@@ -11,12 +11,12 @@ from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
     ChatDeps,
     ChatSessionState,
-    CitationInfo,
     QAResponse,
     build_document_filter,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
@@ -97,7 +97,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         # Build citation infos for frontend display
         citation_infos = [
-            CitationInfo(
+            Citation(
                 index=i + 1,
                 document_id=r.document_id or "",
                 chunk_id=r.chunk_id or "",
@@ -217,7 +217,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         # Build citation infos for frontend and history
         citation_infos = [
-            CitationInfo(
+            Citation(
                 index=i + 1,
                 document_id=c.document_id,
                 chunk_id=c.chunk_id,

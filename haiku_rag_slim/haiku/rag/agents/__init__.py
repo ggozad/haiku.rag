@@ -1,7 +1,6 @@
 from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
-    CitationInfo,
     QAResponse,
     SearchAgent,
     SearchDeps,
@@ -9,6 +8,7 @@ from haiku.rag.agents.chat import (
 )
 from haiku.rag.agents.qa import QuestionAnswerAgent, get_qa_agent
 from haiku.rag.agents.research import (
+    Citation,
     EvaluationResult,
     ResearchContext,
     ResearchDependencies,
@@ -19,7 +19,6 @@ from haiku.rag.agents.research.graph import (
     build_conversational_graph,
     build_research_graph,
 )
-from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 __all__ = [
@@ -42,7 +41,6 @@ __all__ = [
     "SearchAgent",
     "ChatDeps",
     "ChatSessionState",
-    "CitationInfo",
     "QAResponse",
     "SearchDeps",
 ]

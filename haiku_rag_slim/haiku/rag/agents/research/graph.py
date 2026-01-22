@@ -29,8 +29,17 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import build_prompt, get_model
 
 
-def format_context_for_prompt(context: ResearchContext) -> str:
-    """Format the research context as XML for planning prompts."""
+def format_context_for_prompt(
+    context: ResearchContext,
+    include_pending_questions: bool = True,
+) -> str:
+    """Format the research context as XML for prompts.
+
+    Args:
+        context: The research context to format.
+        include_pending_questions: Whether to include pending sub-questions.
+            Set to False for synthesis prompts where pending questions aren't relevant.
+    """
     context_data: dict[str, object] = {}
 
     if context.background_context:
@@ -38,7 +47,7 @@ def format_context_for_prompt(context: ResearchContext) -> str:
 
     context_data["question"] = context.original_question
 
-    if context.sub_questions:
+    if include_pending_questions and context.sub_questions:
         context_data["pending_questions"] = context.sub_questions
 
     if context.qa_responses:
@@ -47,34 +56,7 @@ def format_context_for_prompt(context: ResearchContext) -> str:
                 "question": qa.query,
                 "answer": qa.answer,
                 "confidence": qa.confidence,
-                "source": qa.citations[0].document_title or qa.citations[0].document_uri
-                if qa.citations
-                else None,
-            }
-            for qa in context.qa_responses
-        ]
-
-    return format_as_xml(context_data, root_tag="context")
-
-
-def format_conversational_context_for_prompt(context: ResearchContext) -> str:
-    """Format context for synthesis prompts."""
-    context_data: dict[str, object] = {}
-
-    if context.background_context:
-        context_data["background"] = context.background_context
-
-    context_data["question"] = context.original_question
-
-    if context.qa_responses:
-        context_data["prior_answers"] = [
-            {
-                "question": qa.query,
-                "answer": qa.answer,
-                "confidence": qa.confidence,
-                "source": qa.citations[0].document_title or qa.citations[0].document_uri
-                if qa.citations
-                else None,
+                "source": qa.primary_source,
             }
             for qa in context.qa_responses
         ]
@@ -503,7 +485,9 @@ def build_conversational_graph(
             deps_type=ResearchDependencies,
         )
 
-        context_xml = format_conversational_context_for_prompt(state.context)
+        context_xml = format_context_for_prompt(
+            state.context, include_pending_questions=False
+        )
         prompt = f"Answer the question based on the gathered evidence.\n\n{context_xml}"
         agent_deps = ResearchDependencies(
             client=deps.client,

@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
@@ -13,26 +14,13 @@ MAX_QA_HISTORY = 50
 AGUI_STATE_KEY = "haiku.rag.chat"
 
 
-class CitationInfo(BaseModel):
-    """Citation info for frontend display."""
-
-    index: int
-    document_id: str
-    chunk_id: str
-    document_uri: str
-    document_title: str | None = None
-    page_numbers: list[int] = []
-    headings: list[str] | None = None
-    content: str
-
-
 class QAResponse(BaseModel):
     """A Q&A pair from conversation history with citations."""
 
     question: str
     answer: str
     confidence: float = 0.9
-    citations: list[CitationInfo] = []
+    citations: list[Citation] = []
 
     @property
     def sources(self) -> list[str]:
@@ -57,7 +45,7 @@ class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
     session_id: str = ""
-    citations: list[CitationInfo] = []
+    citations: list[Citation] = []
     qa_history: list[QAResponse] = []
     background_context: str | None = None
     session_context: SessionContext | None = None
@@ -106,7 +94,7 @@ class ChatDeps:
                 ]
             if "citations" in state_data:
                 self.session_state.citations = [
-                    CitationInfo(**c) if isinstance(c, dict) else c
+                    Citation(**c) if isinstance(c, dict) else c
                     for c in state_data.get("citations", [])
                 ]
             if "background_context" in state_data:

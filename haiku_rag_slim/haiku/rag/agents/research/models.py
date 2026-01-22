@@ -23,8 +23,13 @@ class ResearchPlan(BaseModel):
 
 
 class Citation(BaseModel):
-    """Resolved citation with full metadata for display/visual grounding."""
+    """Resolved citation with full metadata for display/visual grounding.
 
+    Used by both research graph and chat agent. The optional index field
+    supports UI display ordering in chat contexts.
+    """
+
+    index: int | None = None
     document_id: str
     chunk_id: str
     document_uri: str
@@ -58,6 +63,14 @@ class SearchAnswer(RawSearchAnswer):
         default_factory=list,
         description="Resolved citations with full metadata",
     )
+
+    @property
+    def primary_source(self) -> str | None:
+        """Get primary source title from citations."""
+        if not self.citations:
+            return None
+        first = self.citations[0]
+        return first.document_title or first.document_uri
 
     @classmethod
     def from_raw(

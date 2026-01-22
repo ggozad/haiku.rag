@@ -173,7 +173,7 @@ async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_chat_history_can_add_citations(temp_db_path: Path):
     """Test that ChatHistory can display inline citations."""
-    from haiku.rag.agents.chat.state import CitationInfo
+    from haiku.rag.agents.research.models import Citation
     from haiku.rag.chat.app import ChatApp
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 
@@ -188,7 +188,7 @@ async def test_chat_history_can_add_citations(temp_db_path: Path):
             chat_history = app.query_one(ChatHistory)
 
             test_citations = [
-                CitationInfo(
+                Citation(
                     index=1,
                     document_id="doc1",
                     chunk_id="chunk1",
@@ -198,7 +198,7 @@ async def test_chat_history_can_add_citations(temp_db_path: Path):
                     headings=["Section 1"],
                     content="This is some test content from doc 1",
                 ),
-                CitationInfo(
+                Citation(
                     index=2,
                     document_id="doc2",
                     chunk_id="chunk2",
@@ -285,7 +285,7 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
     """Test that pressing Enter on a focused citation toggles expand/collapse."""
-    from haiku.rag.agents.chat.state import CitationInfo
+    from haiku.rag.agents.research.models import Citation
     from haiku.rag.chat.app import ChatApp
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 
@@ -300,7 +300,7 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
             chat_history = app.query_one(ChatHistory)
 
             # Add a citation
-            test_citation = CitationInfo(
+            test_citation = Citation(
                 index=1,
                 document_id="doc1",
                 chunk_id="chunk1",

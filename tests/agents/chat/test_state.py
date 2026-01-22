@@ -210,7 +210,7 @@ def test_chat_deps_state_setter_without_session_state():
 
 
 def test_chat_deps_state_setter_with_citation_dicts():
-    """Test ChatDeps.state setter converts citation dicts to CitationInfo."""
+    """Test ChatDeps.state setter converts citation dicts to Citation."""
     from unittest.mock import MagicMock
 
     from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
