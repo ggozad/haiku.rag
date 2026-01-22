@@ -14,11 +14,9 @@ from haiku.rag.agents.chat.state import (
     CitationInfo,
     QAResponse,
     build_document_filter,
-    rank_qa_history_by_similarity,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
-from haiku.rag.agents.research.models import Citation, SearchAnswer
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
@@ -181,61 +179,19 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Build filter from document_name
         doc_filter = build_document_filter(document_name) if document_name else None
 
-        # Filter and rank qa_history
-        ranked_history: list[QAResponse] = []
-        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
-            # Step 1: Filter out low-confidence responses
-            filtered_history = [
-                qa for qa in ctx.deps.session_state.qa_history if qa.confidence >= 0.3
-            ]
-
-            # Step 2: Rank filtered history by similarity to current question
-            embedder = ctx.deps.client.chunk_repository.embedder
-            ranked_history = await rank_qa_history_by_similarity(
-                current_question=question,
-                qa_history=filtered_history,
-                embedder=embedder,
-                top_k=5,
-            )
-
-        # Convert ranked qa_history to SearchAnswers for context seeding
-        existing_qa: list[SearchAnswer] = []
-        if ranked_history:
-            for qa in ranked_history:
-                citations = [
-                    Citation(
-                        document_id=c.document_id,
-                        chunk_id=c.chunk_id,
-                        document_uri=c.document_uri,
-                        document_title=c.document_title,
-                        page_numbers=c.page_numbers,
-                        headings=c.headings,
-                        content=c.content,
-                    )
-                    for c in qa.citations
-                ]
-                existing_qa.append(
-                    SearchAnswer(
-                        query=qa.question,
-                        answer=qa.answer,
-                        confidence=qa.confidence,
-                        cited_chunks=[c.chunk_id for c in qa.citations],
-                        citations=citations,
-                    )
-                )
-
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
 
-        # Determine background context:
-        # 1. Use session_context summary if available (compressed history)
-        # 2. Fall back to explicit background_context if set
+        # Determine context strategy:
+        # 1. If session_context exists, use compressed summary (skip raw qa_history)
+        # 2. Otherwise, fall back to explicit background_context
         background_context: str | None = None
         if ctx.deps.session_state:
             if (
                 ctx.deps.session_state.session_context
                 and ctx.deps.session_state.session_context.summary
             ):
+                # Use compressed SessionContext - no need for raw qa_history
                 background_context = (
                     ctx.deps.session_state.session_context.render_markdown()
                 )
@@ -244,7 +200,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         context = ResearchContext(
             original_question=question,
-            qa_responses=existing_qa,
             background_context=background_context,
         )
         state = ResearchState(

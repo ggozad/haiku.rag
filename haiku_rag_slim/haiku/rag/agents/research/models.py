@@ -17,8 +17,6 @@ class ResearchPlan(BaseModel):
     @field_validator("sub_questions")
     @classmethod
     def validate_sub_questions(cls, v: list[str]) -> list[str]:
-        if len(v) < 1:
-            raise ValueError("Must have at least 1 sub-question")
         if len(v) > 12:
             raise ValueError("Cannot have more than 12 sub-questions")
         return v

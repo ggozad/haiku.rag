@@ -41,14 +41,10 @@ class TestSessionContext:
         assert ctx.render_markdown() == ""
 
     def test_render_markdown_with_summary(self):
-        """Test render_markdown returns formatted markdown."""
-        ctx = SessionContext(
-            summary="## Key Facts\n- Authentication uses JWT\n- Rate limit is 100/min"
-        )
-        result = ctx.render_markdown()
-        assert "## Prior Conversation Context" in result
-        assert "Authentication uses JWT" in result
-        assert "Rate limit is 100/min" in result
+        """Test render_markdown returns the summary directly."""
+        summary = "## Key Facts\n- Authentication uses JWT\n- Rate limit is 100/min"
+        ctx = SessionContext(summary=summary)
+        assert ctx.render_markdown() == summary
 
     def test_session_context_serialization_roundtrip(self):
         """Test SessionContext serializes and deserializes correctly."""

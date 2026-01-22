@@ -103,3 +103,21 @@ def test_format_conversational_context_for_prompt_excludes_background_when_none(
     context = ResearchContext(original_question="What is X?")
     result = format_conversational_context_for_prompt(context)
     assert "<background>" not in result
+
+
+def test_research_plan_allows_empty_sub_questions():
+    """Test ResearchPlan accepts empty sub_questions when context is sufficient."""
+    from haiku.rag.agents.research.models import ResearchPlan
+
+    plan = ResearchPlan(sub_questions=[])
+    assert plan.sub_questions == []
+
+
+def test_research_plan_rejects_too_many_sub_questions():
+    """Test ResearchPlan rejects more than 12 sub_questions."""
+    from pydantic import ValidationError
+
+    from haiku.rag.agents.research.models import ResearchPlan
+
+    with pytest.raises(ValidationError, match="Cannot have more than 12"):
+        ResearchPlan(sub_questions=[f"q{i}" for i in range(13)])

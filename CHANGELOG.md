@@ -16,6 +16,7 @@
   - Research graph receives compact context (~1,000-2,000 tokens) instead of raw qa_history (potentially thousands of tokens)
   - New `session_context` field on `ChatSessionState` synced via AG-UI state protocol
   - Chat TUI: New context modal (`Ctrl+O`) to view current session context
+  - Planner can now return empty sub_questions when context is sufficient to answer directly
 
 ### Changed
 
@@ -28,6 +29,13 @@
   - Removed `haiku.rag.embeddings.voyageai` module
   - The `voyageai` extra now delegates to `pydantic-ai-slim[voyageai]`
 
+### Removed
+
+- **Q&A History Functions**: Removed unused conversation history utilities
+  - `rank_qa_history_by_similarity()` - chat agent now uses `SessionContext` instead of ranked Q&A pairs
+  - `format_conversation_context()` - no longer needed with SessionContext approach
+  - Associated embedding cache and helper functions also removed
+
 ## [0.26.9] - 2026-01-22
 
 ### Fixed
@@ -35,6 +43,9 @@
 - **v0.25.0 Migration Failure**: Fixed "Table 'documents' already exists" error during migration caused by held table references preventing `drop_table()` from succeeding. Added recovery logic to restore documents from staging table if a previous migration attempt failed mid-way.
 
 ## [0.26.8] - 2026-01-22
+
+### Added
+
 - **Jina Reranker v3**: Added support for Jina reranking with API mode (`provider: jina`) and local inference (`provider: jina-local`, requires `[jina]` extra)
 - **Model Downloads**: `download-models` now pre-downloads HuggingFace models for `sentence-transformers`, `mxbai`, and `jina-local`
 - **Reranker Factory**: Removed unreliable `id(config)`-based caching from `get_reranker()`; factory now always instantiates fresh
