@@ -87,21 +87,71 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
         ids = []
 
     if not ids:
-        # No documents, just recreate table with new schema
-        try:
+        # Check if there's a staging table from a failed migration to recover from
+        if "documents_v4_staging" in store.db.table_names():
+            staging_table = store.db.open_table("documents_v4_staging")
+            staging_ids = [
+                row["id"]
+                for row in staging_table.search().select(["id"]).to_arrow().to_pylist()
+            ]
+            if staging_ids:
+                logger.info(
+                    "Recovering %d documents from failed migration", len(staging_ids)
+                )
+                # Create new documents table and copy from staging
+                store.documents_table = None
+                if "documents" in store.db.table_names():
+                    store.db.drop_table("documents")
+                store.documents_table = store.db.create_table(
+                    "documents", schema=get_documents_arrow_schema_v4()
+                )
+                # Copy data from staging (reuse the copy logic below by jumping there)
+                total_batches = (len(staging_ids) + BATCH_SIZE - 1) // BATCH_SIZE
+                for batch_num, i in enumerate(
+                    range(0, len(staging_ids), BATCH_SIZE), 1
+                ):
+                    batch_ids = staging_ids[i : i + BATCH_SIZE]
+                    id_list = ", ".join(f"'{id}'" for id in batch_ids)
+                    batch = (
+                        staging_table.search()
+                        .where(f"id IN ({id_list})")
+                        .to_arrow()
+                        .to_pylist()
+                    )
+                    records = [
+                        DocumentRecordV4(
+                            id=row["id"],
+                            content=row["content"],
+                            uri=row["uri"],
+                            title=row["title"],
+                            metadata=row["metadata"],
+                            docling_document=row["docling_document"],
+                            docling_version=row["docling_version"],
+                            created_at=row["created_at"],
+                            updated_at=row["updated_at"],
+                        )
+                        for row in batch
+                    ]
+                    if records:
+                        store.documents_table.add(records)
+                        logger.info("Recovered batch %d/%d", batch_num, total_batches)
+                # Cleanup staging
+                store.db.drop_table("documents_v4_staging")
+                logger.info("Recovery complete")
+                return
+
+        # No documents and no staging to recover, just recreate table with new schema
+        store.documents_table = None
+        if "documents" in store.db.table_names():
             store.db.drop_table("documents")
-        except Exception:
-            pass
         store.documents_table = store.db.create_table(
             "documents", schema=get_documents_arrow_schema_v4()
         )
         return
 
     # Create staging table with new schema
-    try:
+    if "documents_v4_staging" in store.db.table_names():
         store.db.drop_table("documents_v4_staging")
-    except Exception:
-        pass
     staging_table = store.db.create_table(
         "documents_v4_staging", schema=get_documents_arrow_schema_v4()
     )
@@ -134,11 +184,9 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
         )
 
     # Replace old table with staging table
-    try:
+    store.documents_table = None
+    if "documents" in store.db.table_names():
         store.db.drop_table("documents")
-    except Exception:
-        pass
-
     store.documents_table = store.db.create_table(
         "documents", schema=get_documents_arrow_schema_v4()
     )
@@ -177,10 +225,8 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
             logger.info("Copied batch %d/%d", batch_num, total_batches)
 
     # Cleanup staging table
-    try:
+    if "documents_v4_staging" in store.db.table_names():
         store.db.drop_table("documents_v4_staging")
-    except Exception:
-        pass
 
     # Vacuum all tables (destructive migration, no history preserved)
     logger.info("Vacuuming database")
