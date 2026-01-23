@@ -11,12 +11,15 @@ from haiku.rag.utils import get_model
 async def summarize_session(
     qa_history: list[QAResponse],
     config: AppConfig,
+    current_context: str | None = None,
 ) -> str:
     """Summarize qa_history into compact context.
 
     Args:
         qa_history: List of Q&A pairs from the conversation.
         config: AppConfig for model selection.
+        current_context: Previous context to incorporate (background_context or
+            previous session_context.summary). The summarizer will build upon this.
 
     Returns:
         Markdown summary of the conversation history.
@@ -33,6 +36,8 @@ async def summarize_session(
     )
 
     history_text = _format_qa_history(qa_history)
+    if current_context:
+        history_text = f"## Current Context\n{current_context}\n\n{history_text}"
     result = await agent.run(history_text)
     return result.output
 
@@ -49,7 +54,18 @@ async def update_session_context(
         config: AppConfig for model selection.
         session_state: The session state to update.
     """
-    summary = await summarize_session(qa_history, config)
+    # Determine current context to incorporate:
+    # 1. If session_context already exists, use its summary
+    # 2. Otherwise, use background_context (if available)
+    current_context: str | None = None
+    if session_state.session_context and session_state.session_context.summary:
+        current_context = session_state.session_context.summary
+    elif session_state.background_context:
+        current_context = session_state.background_context
+
+    summary = await summarize_session(
+        qa_history, config, current_context=current_context
+    )
     session_state.session_context = SessionContext(
         summary=summary,
         last_updated=datetime.now(),

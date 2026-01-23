@@ -39,7 +39,9 @@ You can optionally specify a limit parameter (default 5).
 
 IMPORTANT: You must make actual tool calls. Do not output "run_search(...)" as text."""
 
-SESSION_SUMMARY_PROMPT = """You are a session summarizer. Given a conversation history of Q&A pairs, produce a structured summary that captures key information for future context.
+SESSION_SUMMARY_PROMPT = """You are a session summarizer. Given a conversation history of Q&A pairs (and optionally existing context), produce a structured summary that captures key information for future context.
+
+If a "Current Context" section is provided at the start of the input, incorporate that context into your summary. This might be initial background context from the user or a previous summary - build upon it rather than discard it.
 
 Your summary should be concise (aim for 500-1500 tokens) and include:
 
@@ -49,6 +51,7 @@ Your summary should be concise (aim for 500-1500 tokens) and include:
 
 Rules:
 - Extract only high-signal information that would help answer follow-up questions
+- When building on existing context, merge new information with prior context
 - Omit small talk, greetings, or low-confidence answers
 - Use bullet points for clarity
 - Keep technical details but compress verbose explanations

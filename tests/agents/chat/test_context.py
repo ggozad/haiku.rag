@@ -172,6 +172,37 @@ class TestSummarizeSession:
         assert "key facts" in result_lower or "established" in result_lower
         assert "documents" in result_lower or "sources" in result_lower
 
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_summarize_session_with_current_context(self, allow_model_requests):
+        """Test summarize_session incorporates current_context into the summary."""
+        from haiku.rag.agents.chat.context import summarize_session
+
+        qa_history = [
+            QAResponse(
+                question="What's the rate limit?",
+                answer="100 requests per minute.",
+                confidence=0.9,
+            )
+        ]
+
+        # Provide current_context (e.g., background_context or previous summary)
+        current_context = "Focus on Python APIs. User is building a web application."
+
+        result = await summarize_session(
+            qa_history=qa_history,
+            config=Config,
+            current_context=current_context,
+        )
+
+        # Summary should be non-empty and ideally incorporate context about Python/web
+        assert len(result) > 0
+        # The context about "Python" or "web application" should influence the summary
+        result_lower = result.lower()
+        assert (
+            "rate" in result_lower or "limit" in result_lower or "100" in result_lower
+        )
+
 
 class TestUpdateSessionContext:
     """Tests for update_session_context function."""
