@@ -53,8 +53,8 @@ async def summarize_session(
     Args:
         qa_history: List of Q&A pairs from the conversation.
         config: AppConfig for model selection.
-        current_context: Previous context to incorporate (background_context or
-            previous session_context.summary). The summarizer will build upon this.
+        current_context: Previous session_context.summary to incorporate.
+            The summarizer will build upon this.
 
     Returns:
         Markdown summary of the conversation history.
@@ -89,14 +89,10 @@ async def update_session_context(
         config: AppConfig for model selection.
         session_state: The session state to update.
     """
-    # Determine current context to incorporate:
-    # 1. If session_context already exists, use its summary
-    # 2. Otherwise, use background_context (if available)
+    # Use existing session_context summary if available
     current_context: str | None = None
     if session_state.session_context and session_state.session_context.summary:
         current_context = session_state.session_context.summary
-    elif session_state.background_context:
-        current_context = session_state.background_context
 
     summary = await summarize_session(
         qa_history, config, current_context=current_context

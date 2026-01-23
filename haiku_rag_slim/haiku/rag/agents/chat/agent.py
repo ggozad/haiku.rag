@@ -57,13 +57,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         retries=3,
     )
 
-    @agent.system_prompt
-    async def add_background_context(ctx: RunContext[ChatDeps]) -> str:
-        """Add background_context to system prompt when available."""
-        if ctx.deps.session_state and ctx.deps.session_state.background_context:
-            return f"\nBACKGROUND CONTEXT:\n{ctx.deps.session_state.background_context}"
-        return ""
-
     @agent.tool
     async def search(
         ctx: RunContext[ChatDeps],
@@ -116,11 +109,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
-            ),
-            background_context=(
-                ctx.deps.session_state.background_context
-                if ctx.deps.session_state
-                else None
             ),
             session_context=get_cached_session_context(session_id)
             if session_id
@@ -177,27 +165,19 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
-
-        # Determine context strategy:
-        # 1. Read from server cache (ignoring client state)
-        # 2. Fall back to explicit background_context (first request)
-        background_context: str | None = None
         session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
-        if ctx.deps.session_state:
-            cached_context = (
-                get_cached_session_context(session_id) if session_id else None
-            )
 
-            if cached_context and cached_context.summary:
-                # Use cached SessionContext from previous summarization
-                background_context = cached_context.render_markdown()
-            elif ctx.deps.session_state.background_context:
-                # Fall back to explicit background_context (first request)
-                background_context = ctx.deps.session_state.background_context
+        # Get session context from server cache for planning
+        cached_context = get_cached_session_context(session_id) if session_id else None
+        session_context = (
+            cached_context.render_markdown()
+            if cached_context and cached_context.summary
+            else None
+        )
 
         context = ResearchContext(
             original_question=question,
-            background_context=background_context,
+            session_context=session_context,
         )
         state = ResearchState(
             context=context,
@@ -263,11 +243,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
-            ),
-            background_context=(
-                ctx.deps.session_state.background_context
-                if ctx.deps.session_state
-                else None
             ),
             session_context=get_cached_session_context(session_id)
             if session_id

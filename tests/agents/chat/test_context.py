@@ -186,7 +186,7 @@ class TestSummarizeSession:
             )
         ]
 
-        # Provide current_context (e.g., background_context or previous summary)
+        # Provide current_context (e.g., previous summary)
         current_context = "Focus on Python APIs. User is building a web application."
 
         result = await summarize_session(
@@ -362,6 +362,7 @@ class TestSessionContextCache:
         cached = get_cached_session_context("cache-test-session")
         assert cached is not None
         assert cached.summary == "Mocked summary"
+        assert session_state.session_context is not None
         assert cached.summary == session_state.session_context.summary
 
     @pytest.mark.asyncio

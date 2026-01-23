@@ -47,7 +47,6 @@ class ChatSessionState(BaseModel):
     session_id: str = ""
     citations: list[Citation] = []
     qa_history: list[QAResponse] = []
-    background_context: str | None = None
     session_context: SessionContext | None = None
 
 
@@ -97,10 +96,6 @@ class ChatDeps:
                     Citation(**c) if isinstance(c, dict) else c
                     for c in state_data.get("citations", [])
                 ]
-            if "background_context" in state_data:
-                self.session_state.background_context = state_data.get(
-                    "background_context"
-                )
             if state_data.get("session_id"):
                 self.session_state.session_id = state_data["session_id"]
             # NOTE: session_context intentionally NOT updated from client

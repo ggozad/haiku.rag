@@ -82,7 +82,6 @@ async def stream_chat(request: Request) -> Response:
 
     # Restore session state from incoming AG-UI state (look under namespaced key)
     initial_qa_history: list[QAResponse] = []
-    background_context: str | None = None
     session_id: str | None = None
     state = getattr(run_input, "state", None)
     if state:
@@ -91,7 +90,6 @@ async def stream_chat(request: Request) -> Response:
             initial_qa_history = [
                 QAResponse(**qa) for qa in chat_state.get("qa_history", [])
             ]
-        background_context = chat_state.get("background_context")
         session_id = chat_state.get("session_id")
 
     # Determine session_id: prefer state, fall back to thread_id, generate UUID if neither
@@ -105,8 +103,6 @@ async def stream_chat(request: Request) -> Response:
         session_state=ChatSessionState(
             session_id=session_id,
             qa_history=initial_qa_history,
-            background_context=background_context,
-            # session_context intentionally NOT set - agent will fetch from cache
         ),
         state_key=AGUI_STATE_KEY,
     )

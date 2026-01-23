@@ -7,12 +7,11 @@ import {
 	useCopilotAction,
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import "@copilotkit/react-ui/styles.css";
 import CitationBlock from "./CitationBlock";
 import ContextPanel from "./ContextPanel";
 import DbInfo from "./DbInfo";
-import SettingsPanel, { STORAGE_KEY } from "./SettingsPanel";
 
 // Must match AGUI_STATE_KEY from haiku.rag.agents.chat
 const AGUI_STATE_KEY = "haiku.rag.chat";
@@ -44,7 +43,6 @@ interface ChatSessionState {
 	session_id: string;
 	citations: Citation[];
 	qa_history: QAResponse[];
-	background_context: string | null;
 	session_context: SessionContext | null;
 }
 
@@ -137,24 +135,6 @@ function FileIcon() {
 		>
 			<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
 			<path d="M14 2v4a2 2 0 0 0 2 2h4" />
-		</svg>
-	);
-}
-
-function SettingsIcon() {
-	return (
-		<svg
-			width="18"
-			height="18"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-			<circle cx="12" cy="12" r="3" />
 		</svg>
 	);
 }
@@ -389,27 +369,8 @@ function ToolCallIndicator({
 	);
 }
 
-function ChatContentInner({
-	backgroundContext,
-	setBackgroundContext,
-}: {
-	backgroundContext: string;
-	setBackgroundContext: (value: string) => void;
-}) {
-	const [settingsOpen, setSettingsOpen] = useState(false);
+function ChatContentInner() {
 	const [contextOpen, setContextOpen] = useState(false);
-
-	const handleSaveContext = useCallback(
-		(value: string) => {
-			setBackgroundContext(value);
-			if (value) {
-				localStorage.setItem(STORAGE_KEY, value);
-			} else {
-				localStorage.removeItem(STORAGE_KEY);
-			}
-		},
-		[setBackgroundContext],
-	);
 
 	const { state: agentState } = useCoAgent<AgentState>({
 		name: "chat_agent",
@@ -418,7 +379,6 @@ function ChatContentInner({
 				session_id: "",
 				citations: [],
 				qa_history: [],
-				background_context: backgroundContext || null,
 				session_context: null,
 			},
 		},
@@ -566,19 +526,6 @@ function ChatContentInner({
 							<BrainIcon />
 							Memory
 						</button>
-						<button
-							type="button"
-							className={`header-btn ${backgroundContext ? "has-content" : ""}`}
-							onClick={() => setSettingsOpen(true)}
-							title={
-								backgroundContext
-									? "Background context is set"
-									: "Set background context"
-							}
-						>
-							<SettingsIcon />
-							Settings
-						</button>
 					</div>
 					<div className="chat-content">
 						<CopilotChat
@@ -592,12 +539,6 @@ function ChatContentInner({
 					<DbInfo />
 				</div>
 			</div>
-			<SettingsPanel
-				isOpen={settingsOpen}
-				onClose={() => setSettingsOpen(false)}
-				onSave={handleSaveContext}
-				currentValue={backgroundContext}
-			/>
 			<ContextPanel
 				isOpen={contextOpen}
 				onClose={() => setContextOpen(false)}
@@ -608,25 +549,7 @@ function ChatContentInner({
 }
 
 function ChatContent() {
-	const [backgroundContext, setBackgroundContext] = useState<string | null>(
-		null,
-	);
-
-	useEffect(() => {
-		const stored = localStorage.getItem(STORAGE_KEY);
-		setBackgroundContext(stored || "");
-	}, []);
-
-	if (backgroundContext === null) {
-		return null;
-	}
-
-	return (
-		<ChatContentInner
-			backgroundContext={backgroundContext}
-			setBackgroundContext={setBackgroundContext}
-		/>
-	);
+	return <ChatContentInner />;
 }
 
 export default function Chat() {

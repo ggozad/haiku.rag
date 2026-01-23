@@ -42,8 +42,8 @@ def format_context_for_prompt(
     """
     context_data: dict[str, object] = {}
 
-    if context.background_context:
-        context_data["background"] = context.background_context
+    if context.session_context:
+        context_data["background"] = context.session_context
 
     context_data["question"] = context.original_question
 
@@ -78,9 +78,9 @@ async def _plan_step_logic(
     """Shared logic for the plan step."""
     model_config = config.research.model
 
-    # Use context-aware prompt if we have existing qa_responses
+    # Use context-aware prompt if we have existing qa_responses or session_context
     has_prior_answers = bool(state.context.qa_responses)
-    has_background = bool(state.context.background_context)
+    has_session_context = bool(state.context.session_context)
     effective_plan_prompt = (
         build_prompt(PLAN_PROMPT_WITH_CONTEXT, config)
         if has_prior_answers
@@ -118,7 +118,7 @@ async def _plan_step_logic(
             f"{context_xml}\n\n"
             f"Main question: {state.context.original_question}"
         )
-    elif has_background:
+    elif has_session_context:
         context_xml = format_context_for_prompt(state.context)
         prompt = (
             f"Plan a focused approach for the main question.\n\n"
