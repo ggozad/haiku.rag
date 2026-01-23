@@ -83,7 +83,7 @@ async def _plan_step_logic(
     has_session_context = bool(state.context.session_context)
     effective_plan_prompt = (
         build_prompt(PLAN_PROMPT_WITH_CONTEXT, config)
-        if has_prior_answers
+        if has_prior_answers or has_session_context
         else plan_prompt
     )
 
@@ -98,17 +98,20 @@ async def _plan_step_logic(
 
     search_filter = state.search_filter
 
-    @plan_agent.tool
-    async def gather_context(
-        ctx2: RunContext[ResearchDependencies],
-        query: str,
-        limit: int | None = None,
-    ) -> str:
-        results = await ctx2.deps.client.search(
-            query, limit=limit, filter=search_filter
-        )
-        results = await ctx2.deps.client.expand_context(results)
-        return "\n\n".join(r.content for r in results)
+    # Only register gather_context tool when we don't have existing context
+    if not has_prior_answers and not has_session_context:
+
+        @plan_agent.tool
+        async def gather_context(
+            ctx2: RunContext[ResearchDependencies],
+            query: str,
+            limit: int | None = None,
+        ) -> str:
+            results = await ctx2.deps.client.search(
+                query, limit=limit, filter=search_filter
+            )
+            results = await ctx2.deps.client.expand_context(results)
+            return "\n\n".join(r.content for r in results)
 
     # Build prompt with existing context if available
     if has_prior_answers:
