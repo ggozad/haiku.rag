@@ -1,6 +1,17 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies**: Updated core dependencies
+  - `pydantic-ai-slim`: 1.44.0 → 1.46.0
+  - `lancedb`: 0.26.1 → 0.27.0
+  - `docling`: 2.68.0 → 2.69.1
+  - `docling-core`: 2.59.0 → 2.60.1
+- **VoyageAI Embeddings**: Now uses pydantic-ai-slim's native VoyageAI support instead of custom implementation
+  - Removed `haiku.rag.embeddings.voyageai` module
+  - The `voyageai` extra now delegates to `pydantic-ai-slim[voyageai]`
+
 ## [0.26.9] - 2026-01-22
 
 ### Fixed
