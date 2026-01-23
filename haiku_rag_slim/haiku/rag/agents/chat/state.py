@@ -101,16 +101,10 @@ class ChatDeps:
                 self.session_state.background_context = state_data.get(
                     "background_context"
                 )
-            if "session_id" in state_data:
-                self.session_state.session_id = state_data.get("session_id", "")
-            if "session_context" in state_data:
-                ctx_data = state_data.get("session_context")
-                if ctx_data is None:
-                    self.session_state.session_context = None
-                elif isinstance(ctx_data, dict):
-                    self.session_state.session_context = SessionContext(**ctx_data)
-                else:
-                    self.session_state.session_context = ctx_data
+            if state_data.get("session_id"):
+                self.session_state.session_id = state_data["session_id"]
+            # NOTE: session_context intentionally NOT updated from client
+            # The agent owns this via server-side cache
 
 
 @dataclass

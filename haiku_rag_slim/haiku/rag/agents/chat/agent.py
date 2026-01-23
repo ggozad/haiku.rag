@@ -1,10 +1,12 @@
 import asyncio
-import logging
 
 from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent, RunContext, ToolReturn
 
-from haiku.rag.agents.chat.context import update_session_context
+from haiku.rag.agents.chat.context import (
+    get_cached_session_context,
+    update_session_context,
+)
 from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
 from haiku.rag.agents.chat.search import SearchAgent
 from haiku.rag.agents.chat.state import (
@@ -20,8 +22,6 @@ from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
-
-logger = logging.getLogger(__name__)
 
 # Track summarization tasks per session to allow cancellation
 _summarization_tasks: dict[str, asyncio.Task[None]] = {}
@@ -39,11 +39,10 @@ async def _update_context_background(
             config=config,
             session_state=session_state,
         )
-        logger.debug("Session context updated")
     except asyncio.CancelledError:
-        logger.debug("Session context summarization cancelled")
+        pass
     except Exception:
-        logger.exception("Failed to update session context")
+        pass
 
 
 def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
@@ -111,10 +110,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         ]
 
         # Build new state with citations
+        session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
         new_state = ChatSessionState(
-            session_id=(
-                ctx.deps.session_state.session_id if ctx.deps.session_state else ""
-            ),
+            session_id=session_id,
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
@@ -124,11 +122,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 if ctx.deps.session_state
                 else None
             ),
-            session_context=(
-                ctx.deps.session_state.session_context
-                if ctx.deps.session_state
-                else None
-            ),
+            session_context=get_cached_session_context(session_id)
+            if session_id
+            else None,
         )
 
         # Return detailed results for the agent to present
@@ -183,19 +179,20 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         graph = build_conversational_graph(config=ctx.deps.config)
 
         # Determine context strategy:
-        # 1. If session_context exists, use compressed summary (skip raw qa_history)
-        # 2. Otherwise, fall back to explicit background_context
+        # 1. Read from server cache (ignoring client state)
+        # 2. Fall back to explicit background_context (first request)
         background_context: str | None = None
+        session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
         if ctx.deps.session_state:
-            if (
-                ctx.deps.session_state.session_context
-                and ctx.deps.session_state.session_context.summary
-            ):
-                # Use compressed SessionContext - no need for raw qa_history
-                background_context = (
-                    ctx.deps.session_state.session_context.render_markdown()
-                )
+            cached_context = (
+                get_cached_session_context(session_id) if session_id else None
+            )
+
+            if cached_context and cached_context.summary:
+                # Use cached SessionContext from previous summarization
+                background_context = cached_context.render_markdown()
             elif ctx.deps.session_state.background_context:
+                # Fall back to explicit background_context (first request)
                 background_context = ctx.deps.session_state.background_context
 
         context = ResearchContext(
@@ -247,7 +244,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
             # Spawn background task to update session context
             # Cancel any previous summarization for this session
-            session_id = ctx.deps.session_state.session_id
             if session_id in _summarization_tasks:
                 _summarization_tasks[session_id].cancel()
 
@@ -263,9 +259,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         # Build new state with citations AND accumulated qa_history
         new_state = ChatSessionState(
-            session_id=(
-                ctx.deps.session_state.session_id if ctx.deps.session_state else ""
-            ),
+            session_id=session_id,
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
@@ -275,11 +269,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 if ctx.deps.session_state
                 else None
             ),
-            session_context=(
-                ctx.deps.session_state.session_context
-                if ctx.deps.session_state
-                else None
-            ),
+            session_context=get_cached_session_context(session_id)
+            if session_id
+            else None,
         )
 
         # Format answer with citation references and confidence

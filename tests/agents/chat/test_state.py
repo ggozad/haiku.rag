@@ -297,45 +297,12 @@ def test_chat_deps_state_getter_includes_session_context():
     )
 
 
-def test_chat_deps_state_setter_restores_session_context():
-    """Test ChatDeps.state setter restores session_context from incoming state."""
-    from unittest.mock import MagicMock
+def test_chat_deps_state_setter_ignores_session_context():
+    """Test ChatDeps.state setter ignores session_context from client.
 
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="initial")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "test-123",
-            "qa_history": [],
-            "citations": [],
-            "background_context": None,
-            "session_context": {
-                "summary": "Restored context summary.",
-                "last_updated": "2025-01-15T10:30:00",
-            },
-        }
-    }
-
-    deps.state = incoming_state
-
-    assert deps.session_state is not None
-    assert deps.session_state.session_context is not None
-    assert deps.session_state.session_context.summary == "Restored context summary."
-
-
-def test_chat_deps_state_setter_handles_null_session_context():
-    """Test ChatDeps.state setter handles null session_context."""
+    The agent owns session_context via server-side cache, so client-provided
+    session_context should be ignored to prevent stale state overwriting.
+    """
     from unittest.mock import MagicMock
 
     from haiku.rag.agents.chat.state import (
@@ -348,10 +315,10 @@ def test_chat_deps_state_setter_handles_null_session_context():
     mock_client = MagicMock()
     mock_config = MagicMock()
 
-    # Start with a session_context
+    # Start with a session_context (e.g., from cache)
     session_state = ChatSessionState(
         session_id="test",
-        session_context=SessionContext(summary="Initial summary"),
+        session_context=SessionContext(summary="Server-side context"),
     )
     deps = ChatDeps(
         client=mock_client,
@@ -360,17 +327,22 @@ def test_chat_deps_state_setter_handles_null_session_context():
         state_key=AGUI_STATE_KEY,
     )
 
-    # Send null to clear it
+    # Client sends different session_context (stale)
     incoming_state = {
         AGUI_STATE_KEY: {
             "session_id": "test",
             "qa_history": [],
             "citations": [],
-            "session_context": None,
+            "session_context": {
+                "summary": "Client-provided stale context",
+                "last_updated": "2025-01-15T10:30:00",
+            },
         }
     }
 
     deps.state = incoming_state
 
+    # session_context should NOT be overwritten
     assert deps.session_state is not None
-    assert deps.session_state.session_context is None
+    assert deps.session_state.session_context is not None
+    assert deps.session_state.session_context.summary == "Server-side context"

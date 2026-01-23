@@ -21,6 +21,7 @@ from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
+    SessionContext,
 )
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
@@ -128,9 +129,15 @@ class ChatApp(App):
 
         # Create agent and session state
         self.agent = create_chat_agent(self.config)
+        initial_context = (
+            SessionContext(summary=self.background_context, last_updated=datetime.now())
+            if self.background_context
+            else None
+        )
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
             background_context=self.background_context,
+            session_context=initial_context,
         )
 
         # Focus the input field
@@ -277,9 +284,15 @@ class ChatApp(App):
         self._selected_citation_idx = None
         self._message_history.clear()
         # Reset session state for fresh conversation (preserve background_context)
+        initial_context = (
+            SessionContext(summary=self.background_context, last_updated=datetime.now())
+            if self.background_context
+            else None
+        )
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
             background_context=self.background_context,
+            session_context=initial_context,
         )
 
     def action_focus_input(self) -> None:

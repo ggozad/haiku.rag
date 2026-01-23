@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pydantic_ai import Agent
 
@@ -6,6 +6,41 @@ from haiku.rag.agents.chat.prompts import SESSION_SUMMARY_PROMPT
 from haiku.rag.agents.chat.state import ChatSessionState, QAResponse, SessionContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
+
+# Cache for session contexts (session_id -> SessionContext)
+# Used to persist async summarization results between requests
+_session_context_cache: dict[str, SessionContext] = {}
+_cache_timestamps: dict[str, datetime] = {}
+_CACHE_TTL = timedelta(hours=1)
+
+
+def _cleanup_stale_cache() -> None:
+    """Remove cache entries older than TTL."""
+    now = datetime.now()
+    stale = [sid for sid, ts in _cache_timestamps.items() if now - ts > _CACHE_TTL]
+    for sid in stale:
+        _session_context_cache.pop(sid, None)
+        _cache_timestamps.pop(sid, None)
+
+
+def cache_session_context(session_id: str, context: SessionContext) -> None:
+    """Store session context in cache."""
+    _cleanup_stale_cache()
+    _session_context_cache[session_id] = context
+    _cache_timestamps[session_id] = datetime.now()
+
+
+def get_cached_session_context(session_id: str) -> SessionContext | None:
+    """Get session context from server cache.
+
+    Args:
+        session_id: The session identifier.
+
+    Returns:
+        Cached SessionContext, or None if not cached.
+    """
+    _cleanup_stale_cache()
+    return _session_context_cache.get(session_id)
 
 
 async def summarize_session(
@@ -70,6 +105,9 @@ async def update_session_context(
         summary=summary,
         last_updated=datetime.now(),
     )
+    # Also cache for next-run delivery in stateless contexts
+    if session_state.session_id:
+        cache_session_context(session_state.session_id, session_state.session_context)
 
 
 def _format_qa_history(qa_history: list[QAResponse]) -> str:

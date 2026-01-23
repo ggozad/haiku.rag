@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -17,7 +18,6 @@ from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
     QAResponse,
-    SessionContext,
     create_chat_agent,
 )
 from haiku.rag.client import HaikuRAG
@@ -75,7 +75,6 @@ def get_client(effective_db_path: Path) -> HaikuRAG:
 async def stream_chat(request: Request) -> Response:
     """Chat streaming endpoint with AG-UI protocol."""
     body = await request.body()
-    logger.info("Received chat request")
 
     # Parse request to build run_input
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
@@ -84,7 +83,7 @@ async def stream_chat(request: Request) -> Response:
     # Restore session state from incoming AG-UI state (look under namespaced key)
     initial_qa_history: list[QAResponse] = []
     background_context: str | None = None
-    session_context: SessionContext | None = None
+    session_id: str | None = None
     state = getattr(run_input, "state", None)
     if state:
         chat_state = state.get(AGUI_STATE_KEY, state)
@@ -93,20 +92,21 @@ async def stream_chat(request: Request) -> Response:
                 QAResponse(**qa) for qa in chat_state.get("qa_history", [])
             ]
         background_context = chat_state.get("background_context")
-        ctx_data = chat_state.get("session_context")
-        if ctx_data and isinstance(ctx_data, dict):
-            session_context = SessionContext(**ctx_data)
+        session_id = chat_state.get("session_id")
 
-    # Build deps with session state
+    # Determine session_id: prefer state, fall back to thread_id, generate UUID if neither
     thread_id = getattr(run_input, "thread_id", None)
+    if not session_id:
+        session_id = thread_id or str(uuid.uuid4())
+
     deps = ChatDeps(
         client=get_client(db_path),
         config=Config,
         session_state=ChatSessionState(
-            session_id=thread_id or "",
+            session_id=session_id,
             qa_history=initial_qa_history,
             background_context=background_context,
-            session_context=session_context,
+            # session_context intentionally NOT set - agent will fetch from cache
         ),
         state_key=AGUI_STATE_KEY,
     )
