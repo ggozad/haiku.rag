@@ -126,16 +126,7 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
         return EmbedderWrapper(Embedder(f"openai:{model_name}"), vector_dim)
 
     if provider == "voyageai":
-        try:
-            from haiku.rag.embeddings.voyageai import VoyageAIEmbeddingModel
-        except ImportError:  # pragma: no cover
-            raise ImportError(
-                "VoyageAI embedder requires the 'voyageai' package. "
-                "Please install haiku.rag with the 'voyageai' extra: "
-                "uv pip install haiku.rag[voyageai]"
-            )
-        model = VoyageAIEmbeddingModel(model_name)
-        return EmbedderWrapper(Embedder(model), vector_dim)
+        return EmbedderWrapper(Embedder(f"voyageai:{model_name}"), vector_dim)
 
     if provider == "cohere":
         return EmbedderWrapper(Embedder(f"cohere:{model_name}"), vector_dim)

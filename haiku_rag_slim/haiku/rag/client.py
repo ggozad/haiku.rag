@@ -514,7 +514,9 @@ class HaikuRAG:
             raise ValueError(f"File does not exist: {source_path}")
 
         uri = source_path.absolute().as_uri()
-        md5_hash = hashlib.md5(source_path.read_bytes(), usedforsecurity=False).hexdigest()
+        md5_hash = hashlib.md5(
+            source_path.read_bytes(), usedforsecurity=False
+        ).hexdigest()
 
         # Get content type from file extension (do before early return)
         content_type, _ = mimetypes.guess_type(str(source_path))
