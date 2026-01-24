@@ -45,6 +45,7 @@ class DatasetSpec:
     retrieval_mapper: RetrievalMapper | None = None
     retrieval_evaluator: Evaluator | None = None
     document_limit: int | None = None
+    system_prompt: str | None = None
 
     def db_path(self, override_path: Path | None = None) -> Path:
         """Get the database path.

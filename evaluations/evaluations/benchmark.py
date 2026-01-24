@@ -15,7 +15,6 @@ from rich.progress import Progress
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
-from evaluations.prompts import WIX_SUPPORT_PROMPT
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -294,8 +293,7 @@ async def run_qa_benchmark(
 
     db = spec.db_path(db_path)
     async with HaikuRAG(db, config=config) as rag:
-        system_prompt = WIX_SUPPORT_PROMPT if spec.key == "wix" else None
-        qa = get_qa_agent(rag, system_prompt=system_prompt)
+        qa = get_qa_agent(rag, system_prompt=spec.system_prompt)
 
         async def answer_question(question: str) -> str:
             answer, _ = await qa.answer(question)
