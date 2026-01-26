@@ -2,6 +2,8 @@ from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
     QAResponse,
     build_document_filter,
+    build_multi_document_filter,
+    combine_filters,
 )
 
 
@@ -27,6 +29,56 @@ def test_build_document_filter_escapes_quotes():
     result = build_document_filter("O'Reilly")
     # Single quotes should be doubled for SQL escaping
     assert "O''Reilly" in result
+
+
+def test_build_multi_document_filter_empty():
+    """Test build_multi_document_filter returns None for empty list."""
+    result = build_multi_document_filter([])
+    assert result is None
+
+
+def test_build_multi_document_filter_single():
+    """Test build_multi_document_filter with single document."""
+    result = build_multi_document_filter(["mytest"])
+    assert result is not None
+    assert "LOWER(uri) LIKE LOWER('%mytest%')" in result
+    assert "LOWER(title) LIKE LOWER('%mytest%')" in result
+    # Single document should not have extra wrapping parentheses
+    assert " OR (" not in result
+
+
+def test_build_multi_document_filter_multiple():
+    """Test build_multi_document_filter with multiple documents."""
+    result = build_multi_document_filter(["doc1", "doc2"])
+    assert result is not None
+    # Should have OR-combined filters
+    assert "doc1" in result
+    assert "doc2" in result
+    assert " OR (" in result
+
+
+def test_combine_filters_both_none():
+    """Test combine_filters with both None."""
+    result = combine_filters(None, None)
+    assert result is None
+
+
+def test_combine_filters_first_only():
+    """Test combine_filters with only first filter."""
+    result = combine_filters("uri = 'test'", None)
+    assert result == "uri = 'test'"
+
+
+def test_combine_filters_second_only():
+    """Test combine_filters with only second filter."""
+    result = combine_filters(None, "title = 'doc'")
+    assert result == "title = 'doc'"
+
+
+def test_combine_filters_both():
+    """Test combine_filters combines with AND."""
+    result = combine_filters("uri = 'test'", "title = 'doc'")
+    assert result == "(uri = 'test') AND (title = 'doc')"
 
 
 def test_max_qa_history_constant():
@@ -322,3 +374,62 @@ def test_chat_deps_state_setter_ignores_session_context():
     assert deps.session_state is not None
     assert deps.session_state.session_context is not None
     assert deps.session_state.session_context.summary == "Server-side context"
+
+
+def test_chat_deps_state_setter_restores_document_filter():
+    """Test ChatDeps.state setter restores document_filter from incoming state."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="test")
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test",
+            "qa_history": [],
+            "citations": [],
+            "document_filter": ["doc1.pdf", "doc2.pdf"],
+        }
+    }
+
+    deps.state = incoming_state
+
+    assert deps.session_state is not None
+    assert deps.session_state.document_filter == ["doc1.pdf", "doc2.pdf"]
+
+
+def test_chat_deps_state_getter_includes_document_filter():
+    """Test ChatDeps.state getter includes document_filter."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(
+        session_id="test-123",
+        document_filter=["doc1.pdf", "doc2.pdf"],
+    )
+
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    state = deps.state
+    assert state is not None
+    assert AGUI_STATE_KEY in state
+    assert state[AGUI_STATE_KEY]["document_filter"] == ["doc1.pdf", "doc2.pdf"]

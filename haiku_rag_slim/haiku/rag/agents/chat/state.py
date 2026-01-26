@@ -48,6 +48,7 @@ class ChatSessionState(BaseModel):
     citations: list[Citation] = []
     qa_history: list[QAResponse] = []
     session_context: SessionContext | None = None
+    document_filter: list[str] = []
 
 
 @dataclass
@@ -98,6 +99,10 @@ class ChatDeps:
                 ]
             if state_data.get("session_id"):
                 self.session_state.session_id = state_data["session_id"]
+            if "document_filter" in state_data:
+                self.session_state.document_filter = state_data.get(
+                    "document_filter", []
+                )
             # NOTE: session_context intentionally NOT updated from client
             # The agent owns this via server-side cache
 
@@ -120,3 +125,23 @@ def build_document_filter(document_name: str) -> str:
         f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
         f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
     )
+
+
+def build_multi_document_filter(document_names: list[str]) -> str | None:
+    """Build SQL filter for multiple document names (OR combined)."""
+    if not document_names:
+        return None
+    filters = [build_document_filter(name) for name in document_names]
+    if len(filters) == 1:
+        return filters[0]
+    return " OR ".join(f"({f})" for f in filters)
+
+
+def combine_filters(filter1: str | None, filter2: str | None) -> str | None:
+    """Combine two SQL filters with AND logic."""
+    filters = [f for f in [filter1, filter2] if f]
+    if not filters:
+        return None
+    if len(filters) == 1:
+        return filters[0]
+    return f"({filters[0]}) AND ({filters[1]})"
