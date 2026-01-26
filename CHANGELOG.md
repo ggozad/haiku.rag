@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.27.0] - 2026-01-26
+
 ### Added
 
 - **Evaluation Database Hosting**: Pre-built evaluation databases available on HuggingFace
