@@ -385,7 +385,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
     async def recall(
         ctx: RunContext[ChatDeps],
         topic: str,
-    ) -> str:
+    ) -> ToolReturn:
         """Search conversation history for a previous answer on this topic.
 
         Use this FIRST when the user asks about something that may have been
@@ -396,11 +396,11 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             topic: The topic or question to search for in conversation history
         """
         if ctx.deps.session_state is None:
-            return "No conversation history available."
+            return ToolReturn(return_value="No conversation history available.")
 
         qa_history = ctx.deps.session_state.qa_history
         if not qa_history:
-            return "No previous answers found."
+            return ToolReturn(return_value="No previous answers found.")
 
         # Get embedder and embed the topic
         embedder = get_embedder(ctx.deps.config)
@@ -421,9 +421,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         # Check if similarity exceeds threshold
         if best_similarity < RECALL_SIMILARITY_THRESHOLD:
-            return "No previous answer found on this topic."
+            return ToolReturn(return_value="No previous answer found on this topic.")
 
-        # Return the matching answer with citations
+        # Build result with the matching answer
         matched_qa = qa_history[best_match_idx]
         result = f"**Previous answer found** (similarity: {best_similarity:.2f}):\n\n"
         result += f"**Question:** {matched_qa.question}\n\n"
@@ -433,6 +433,31 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citation_refs = " ".join(f"[{c.index}]" for c in matched_qa.citations)
             result += f"Sources: {citation_refs}"
 
-        return result
+        # Emit state with citations so frontend can display them
+        session_id = ctx.deps.session_state.session_id
+        new_state = ChatSessionState(
+            session_id=session_id,
+            citations=matched_qa.citations,
+            qa_history=ctx.deps.session_state.qa_history,
+            session_context=get_cached_session_context(session_id)
+            if session_id
+            else None,
+            document_filter=ctx.deps.session_state.document_filter,
+            citation_registry=ctx.deps.session_state.citation_registry,
+        )
+
+        snapshot = new_state.model_dump()
+        if ctx.deps.state_key:
+            snapshot = {ctx.deps.state_key: snapshot}
+
+        return ToolReturn(
+            return_value=result,
+            metadata=[
+                StateSnapshotEvent(
+                    type=EventType.STATE_SNAPSHOT,
+                    snapshot=snapshot,
+                )
+            ],
+        )
 
     return agent

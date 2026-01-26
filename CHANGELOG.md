@@ -9,6 +9,17 @@
   - Supports `all` argument to download/upload all datasets at once
   - Use `--force` flag to overwrite existing databases
   - Avoids lengthy database rebuild times for users running benchmarks
+- **Stable Citation Registry**: Citation indices now persist across tool calls within a session
+  - Same `chunk_id` always returns the same citation index (first-occurrence-wins)
+  - New `citation_registry: dict[str, int]` field on `ChatSessionState`
+  - New `get_or_assign_index(chunk_id)` method for stable index assignment
+  - Registry serialized/restored via AG-UI state protocol
+- **Recall Tool**: Check conversation history before running research
+  - New `recall` tool on chat agent searches previous Q&A pairs by semantic similarity
+  - Uses embedding similarity matching with 0.8 cosine similarity threshold
+  - Returns previous answer with citations if found, avoiding redundant research calls
+  - Emits `StateSnapshotEvent` so frontend can display recalled citations
+  - Updated system prompt with routing guidance: use `recall` FIRST for follow-up questions
 - **Dynamic Session Context**: Compressed conversation history for multi-turn chat
   - New `SessionContext` model stores summarized conversation state instead of raw Q&A history
   - Background LLM-based summarization runs after each `ask` tool call (non-blocking)

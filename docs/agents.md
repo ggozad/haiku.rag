@@ -61,11 +61,14 @@ Key features:
 
 ### Tools
 
-The chat agent uses three tools:
+The chat agent uses four tools:
 
+- `recall` — Search conversation history for previous answers (use FIRST for follow-up questions)
 - `search` — Hybrid search with optional document filter
 - `ask` — Answer questions using the conversational research graph
 - `get_document` — Retrieve a specific document by title or URI
+
+The `recall` tool uses embedding similarity to find semantically matching questions from conversation history. If a match is found (above 0.8 cosine similarity threshold), it returns the previous answer with citations, avoiding redundant research calls.
 
 ### CLI Usage
 
@@ -104,11 +107,24 @@ The `ChatSessionState` maintains:
 - `session_id` — Unique identifier for the session
 - `qa_history` — List of previous Q/A pairs (FIFO, max 50)
 - `session_context` — Automatically maintained session context summary
+- `document_filter` — List of document titles/URIs to restrict searches
+- `citation_registry` — Stable mapping of chunk IDs to citation indices
+
+**Citation Registry**: Citation indices persist across tool calls within a session. The same `chunk_id` always returns the same citation index (first-occurrence-wins). This ensures consistent citation numbering in multi-turn conversations — `[1]` always refers to the same source.
+
+```python
+# Example: citation indices are stable across calls
+state = ChatSessionState()
+
+# First call returns citations [1], [2], [3]
+# Second call reuses [1] if same chunk, assigns [4], [5] for new chunks
+# User can reference [1] in follow-up and it still refers to original source
+```
 
 Q/A history is used to:
 
 1. Provide context for follow-up questions
-2. Avoid repeating previous answers
+2. Avoid repeating previous answers via the `recall` tool
 3. Enable semantic ranking of relevant past answers
 
 ### AG-UI Integration
@@ -135,7 +151,9 @@ The emitted state structure:
   "haiku.rag.chat": {
     "session_id": "",
     "citations": [...],
-    "qa_history": [...]
+    "qa_history": [...],
+    "document_filter": [...],
+    "citation_registry": {"chunk-id-1": 1, "chunk-id-2": 2}
   }
 }
 ```
