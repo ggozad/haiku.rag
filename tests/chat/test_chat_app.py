@@ -270,8 +270,8 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             assert app.session_state is not None
             original_session_id = app.session_state.session_id
 
-            # Clear chat
-            await pilot.press("ctrl+l")
+            # Clear chat via action (available through command palette)
+            await app.action_clear_chat()
             await pilot.pause()
 
             # Verify messages cleared
