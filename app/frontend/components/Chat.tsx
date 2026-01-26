@@ -12,6 +12,7 @@ import "@copilotkit/react-ui/styles.css";
 import CitationBlock from "./CitationBlock";
 import ContextPanel from "./ContextPanel";
 import DbInfo from "./DbInfo";
+import DocumentFilter from "./DocumentFilter";
 
 // Must match AGUI_STATE_KEY from haiku.rag.agents.chat
 const AGUI_STATE_KEY = "haiku.rag.chat";
@@ -44,6 +45,7 @@ interface ChatSessionState {
 	citations: Citation[];
 	qa_history: QAResponse[];
 	session_context: SessionContext | null;
+	document_filter: string[];
 }
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
@@ -369,23 +371,59 @@ function ToolCallIndicator({
 	);
 }
 
+function FilterIcon() {
+	return (
+		<svg
+			width="18"
+			height="18"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+		</svg>
+	);
+}
+
 function ChatContentInner() {
 	const [contextOpen, setContextOpen] = useState(false);
+	const [filterOpen, setFilterOpen] = useState(false);
 
-	const { state: agentState } = useCoAgent<AgentState>({
-		name: "chat_agent",
-		initialState: {
-			[AGUI_STATE_KEY]: {
-				session_id: "",
-				citations: [],
-				qa_history: [],
-				session_context: null,
+	const { state: agentState, setState: setAgentState } = useCoAgent<AgentState>(
+		{
+			name: "chat_agent",
+			initialState: {
+				[AGUI_STATE_KEY]: {
+					session_id: "",
+					citations: [],
+					qa_history: [],
+					session_context: null,
+					document_filter: [],
+				},
 			},
 		},
-	});
+	);
 
-	// Extract session context from agent state
+	// Extract session context and document filter from agent state
 	const sessionContext = agentState?.[AGUI_STATE_KEY]?.session_context ?? null;
+	const documentFilter = agentState?.[AGUI_STATE_KEY]?.document_filter ?? [];
+
+	const handleFilterApply = (selected: string[]) => {
+		setAgentState({
+			...agentState,
+			[AGUI_STATE_KEY]: {
+				...agentState?.[AGUI_STATE_KEY],
+				session_id: agentState?.[AGUI_STATE_KEY]?.session_id ?? "",
+				citations: agentState?.[AGUI_STATE_KEY]?.citations ?? [],
+				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
+				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
+				document_filter: selected,
+			},
+		});
+	};
 
 	useCoAgentStateRender<AgentState>({
 		name: "chat_agent",
@@ -515,6 +553,21 @@ function ChatContentInner() {
 					<div className="chat-header">
 						<button
 							type="button"
+							className={`header-btn ${documentFilter.length > 0 ? "has-content" : ""}`}
+							onClick={() => setFilterOpen(true)}
+							title={
+								documentFilter.length > 0
+									? `Filtering: ${documentFilter.length} document(s)`
+									: "Filter documents"
+							}
+						>
+							<FilterIcon />
+							{documentFilter.length > 0
+								? `Filter (${documentFilter.length})`
+								: "Filter"}
+						</button>
+						<button
+							type="button"
 							className={`header-btn ${sessionContext?.summary ? "has-content" : ""}`}
 							onClick={() => setContextOpen(true)}
 							title={
@@ -543,6 +596,12 @@ function ChatContentInner() {
 				isOpen={contextOpen}
 				onClose={() => setContextOpen(false)}
 				sessionContext={sessionContext}
+			/>
+			<DocumentFilter
+				isOpen={filterOpen}
+				onClose={() => setFilterOpen(false)}
+				selected={documentFilter}
+				onApply={handleFilterApply}
 			/>
 		</>
 	);
