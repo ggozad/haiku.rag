@@ -135,6 +135,33 @@ def test_qa_response_sources_with_uri_fallback():
     assert qa.sources == ["test.md"]
 
 
+def test_qa_response_to_search_answer():
+    """Test QAResponse.to_search_answer() converts to SearchAnswer for research graph."""
+    citation = Citation(
+        index=1,
+        document_id="doc-123",
+        chunk_id="chunk-456",
+        document_uri="test.md",
+        document_title="Test Document",
+        content="Test content",
+    )
+    qa = QAResponse(
+        question="What is the answer?",
+        answer="The answer is 42",
+        confidence=0.95,
+        citations=[citation],
+    )
+
+    search_answer = qa.to_search_answer()
+
+    assert search_answer.query == "What is the answer?"
+    assert search_answer.answer == "The answer is 42"
+    assert search_answer.confidence == 0.95
+    assert search_answer.cited_chunks == ["chunk-456"]
+    assert len(search_answer.citations) == 1
+    assert search_answer.citations[0].chunk_id == "chunk-456"
+
+
 def test_search_agent_initialization(temp_db_path):
     """Test SearchAgent can be initialized."""
     client = HaikuRAG(temp_db_path, create=True)
@@ -774,91 +801,3 @@ def test_search_tool_citation_registry_logic():
         "chunk-c": 3,
         "chunk-d": 4,
     }
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_recall_tool_finds_previous_answer(allow_model_requests, temp_db_path):
-    """Test recall tool finds a previous answer on similar topic."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        agent = create_chat_agent(Config)
-
-        # Pre-populate qa_history with a previous answer
-        session_state = ChatSessionState(
-            session_id="test-recall",
-            qa_history=[
-                QAResponse(
-                    question="What are the class labels in DocLayNet?",
-                    answer="DocLayNet defines 11 class labels including Caption, Footnote, Formula, List-item, Page-footer, Page-header, Picture, Section-header, Table, Text, and Title.",
-                    confidence=0.9,
-                    citations=[
-                        Citation(
-                            index=1,
-                            document_id="doc-1",
-                            chunk_id="chunk-1",
-                            document_uri="doclaynet.md",
-                            document_title="DocLayNet",
-                            content="DocLayNet class labels...",
-                        )
-                    ],
-                ),
-            ],
-        )
-        deps = ChatDeps(
-            client=client,
-            config=Config,
-            session_state=session_state,
-        )
-
-        # Ask about a similar topic - should find the previous answer
-        result = await agent.run(
-            "Remind me about the DocLayNet class labels",
-            deps=deps,
-        )
-
-        # The agent should use recall and find the previous answer
-        assert result.output is not None
-        # Should mention the class labels from the cached answer
-        assert "11" in result.output or "class" in result.output.lower()
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_recall_tool_no_match(allow_model_requests, temp_db_path):
-    """Test recall tool returns no match for unrelated topic."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        agent = create_chat_agent(Config)
-
-        # Pre-populate qa_history with an unrelated answer
-        session_state = ChatSessionState(
-            session_id="test-recall-nomatch",
-            qa_history=[
-                QAResponse(
-                    question="What is the capital of France?",
-                    answer="The capital of France is Paris.",
-                    confidence=0.9,
-                    citations=[],
-                ),
-            ],
-        )
-        deps = ChatDeps(
-            client=client,
-            config=Config,
-            session_state=session_state,
-        )
-
-        # Add a document so ask tool can find something
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-
-        # Ask about an unrelated topic - recall should not match
-        result = await agent.run(
-            "What are the class labels in DocLayNet?",
-            deps=deps,
-        )
-
-        # The agent should use ask (not recall) since no match
-        assert result.output is not None
