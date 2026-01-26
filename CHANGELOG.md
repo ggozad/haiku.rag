@@ -17,6 +17,13 @@
   - New `session_context` field on `ChatSessionState` synced via AG-UI state protocol
   - Chat TUI: New context modal (`Ctrl+O`) to view current session context
   - Planner can now return empty sub_questions when context is sufficient to answer directly
+- **Session Document Filter**: Restrict all search/ask operations to selected documents
+  - New `document_filter` field on `ChatSessionState` stores list of document titles/URIs
+  - Session filter combines with per-tool `document_name` filter using AND logic
+  - Multi-document selection uses OR logic within the session filter
+  - Filter persists across tool calls and chat clears via AG-UI state protocol
+  - Chat TUI: Access via command palette ("Filter documents" command)
+  - Web Application: Filter button in header shows count of selected documents
 
 ### Changed
 
