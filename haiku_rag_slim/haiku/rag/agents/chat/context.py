@@ -31,14 +31,7 @@ def cache_session_context(session_id: str, context: SessionContext) -> None:
 
 
 def get_cached_session_context(session_id: str) -> SessionContext | None:
-    """Get session context from server cache.
-
-    Args:
-        session_id: The session identifier.
-
-    Returns:
-        Cached SessionContext, or None if not cached.
-    """
+    """Get session context from server cache."""
     _cleanup_stale_cache()
     return _session_context_cache.get(session_id)
 

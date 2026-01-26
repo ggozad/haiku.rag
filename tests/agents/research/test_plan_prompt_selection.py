@@ -15,21 +15,14 @@ def test_plan_prompt_instructs_gather_context():
 
 
 def test_prompt_selection_uses_context_prompt_with_session_context():
-    """When session_context exists, should use PLAN_PROMPT_WITH_CONTEXT.
-
-    This tests the logic pattern used in _plan_step_logic.
-    """
-    # Simulate the selection logic from graph.py
+    """When session_context exists, should use PLAN_PROMPT_WITH_CONTEXT."""
     has_prior_answers = False
     has_session_context = True
 
-    # Current buggy behavior would select plan_prompt (the one with gather_context)
-    # Expected behavior: use PLAN_PROMPT_WITH_CONTEXT when session_context exists
     effective_plan_prompt = (
         PLAN_PROMPT_WITH_CONTEXT
         if has_prior_answers or has_session_context
         else PLAN_PROMPT
     )
 
-    # Since session_context exists, we should use PLAN_PROMPT_WITH_CONTEXT
     assert effective_plan_prompt == PLAN_PROMPT_WITH_CONTEXT

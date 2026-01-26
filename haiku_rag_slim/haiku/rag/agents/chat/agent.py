@@ -41,8 +41,6 @@ async def _update_context_background(
         )
     except asyncio.CancelledError:
         pass
-    except Exception:
-        pass
 
 
 def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
