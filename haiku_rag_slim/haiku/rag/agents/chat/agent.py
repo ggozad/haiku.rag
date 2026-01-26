@@ -27,8 +27,8 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.utils import get_model
 
-# Similarity threshold for recall matching
-RECALL_SIMILARITY_THRESHOLD = 0.8
+# Similarity threshold for finding relevant prior answers
+PRIOR_ANSWER_RELEVANCE_THRESHOLD = 0.7
 
 
 def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
@@ -225,9 +225,41 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             else None
         )
 
+        # Find relevant prior answers from qa_history
+        prior_answers = []
+        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
+            embedder = get_embedder(ctx.deps.config)
+            question_embedding = await embedder.embed_query(question)
+
+            # Collect questions that need embedding (not cached)
+            to_embed = []
+            to_embed_indices = []
+            for i, qa in enumerate(ctx.deps.session_state.qa_history):
+                if qa.question_embedding is None:
+                    to_embed.append(qa.question)
+                    to_embed_indices.append(i)
+
+            # Batch embed uncached questions
+            if to_embed:
+                new_embeddings = await embedder.embed_documents(to_embed)
+                for i, idx in enumerate(to_embed_indices):
+                    ctx.deps.session_state.qa_history[
+                        idx
+                    ].question_embedding = new_embeddings[i]
+
+            # Compare against all questions and collect relevant prior answers
+            for qa in ctx.deps.session_state.qa_history:
+                if qa.question_embedding is not None:
+                    similarity = _cosine_similarity(
+                        question_embedding, qa.question_embedding
+                    )
+                    if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
+                        prior_answers.append(qa.to_search_answer())
+
         context = ResearchContext(
             original_question=question,
             session_context=session_context,
+            qa_responses=prior_answers,
         )
         state = ResearchState(
             context=context,
@@ -379,85 +411,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             f"- URI: {doc.uri or 'N/A'}\n"
             f"- Created: {doc.created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
             f"**Content:**\n{doc.content}"
-        )
-
-    @agent.tool
-    async def recall(
-        ctx: RunContext[ChatDeps],
-        topic: str,
-    ) -> ToolReturn:
-        """Search conversation history for a previous answer on this topic.
-
-        Use this FIRST when the user asks about something that may have been
-        discussed before. Returns the previous answer with citations if found,
-        or indicates no match exists.
-
-        Args:
-            topic: The topic or question to search for in conversation history
-        """
-        if ctx.deps.session_state is None:
-            return ToolReturn(return_value="No conversation history available.")
-
-        qa_history = ctx.deps.session_state.qa_history
-        if not qa_history:
-            return ToolReturn(return_value="No previous answers found.")
-
-        # Get embedder and embed the topic
-        embedder = get_embedder(ctx.deps.config)
-        topic_embedding = await embedder.embed_query(topic)
-
-        # Embed all previous questions
-        questions = [qa.question for qa in qa_history]
-        question_embeddings = await embedder.embed_documents(questions)
-
-        # Find best match by cosine similarity
-        best_match_idx = -1
-        best_similarity = 0.0
-        for i, q_embedding in enumerate(question_embeddings):
-            similarity = _cosine_similarity(topic_embedding, q_embedding)
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match_idx = i
-
-        # Check if similarity exceeds threshold
-        if best_similarity < RECALL_SIMILARITY_THRESHOLD:
-            return ToolReturn(return_value="No previous answer found on this topic.")
-
-        # Build result with the matching answer
-        matched_qa = qa_history[best_match_idx]
-        result = f"**Previous answer found** (similarity: {best_similarity:.2f}):\n\n"
-        result += f"**Question:** {matched_qa.question}\n\n"
-        result += f"**Answer:** {matched_qa.answer}\n\n"
-
-        if matched_qa.citations:
-            citation_refs = " ".join(f"[{c.index}]" for c in matched_qa.citations)
-            result += f"Sources: {citation_refs}"
-
-        # Emit state with citations so frontend can display them
-        session_id = ctx.deps.session_state.session_id
-        new_state = ChatSessionState(
-            session_id=session_id,
-            citations=matched_qa.citations,
-            qa_history=ctx.deps.session_state.qa_history,
-            session_context=get_cached_session_context(session_id)
-            if session_id
-            else None,
-            document_filter=ctx.deps.session_state.document_filter,
-            citation_registry=ctx.deps.session_state.citation_registry,
-        )
-
-        snapshot = new_state.model_dump()
-        if ctx.deps.state_key:
-            snapshot = {ctx.deps.state_key: snapshot}
-
-        return ToolReturn(
-            return_value=result,
-            metadata=[
-                StateSnapshotEvent(
-                    type=EventType.STATE_SNAPSHOT,
-                    snapshot=snapshot,
-                )
-            ],
         )
 
     return agent
