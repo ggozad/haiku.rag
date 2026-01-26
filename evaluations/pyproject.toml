@@ -11,6 +11,7 @@ dependencies = [
     "haiku.rag-slim",
     "pydantic-ai-slim[evals,logfire]>=1.46.0",
     "datasets>=4.5.0",
+    "huggingface_hub>=0.20.0",
     "typer>=0.19.2,<0.20.0",
     "python-dotenv>=1.2.1",
 ]

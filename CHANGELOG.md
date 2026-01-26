@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Evaluation Database Hosting**: Pre-built evaluation databases available on HuggingFace
+  - `evaluations download <dataset>` downloads pre-built databases from `ggozad/haiku-rag-eval-dbs`
+  - `evaluations upload <dataset>` uploads databases to HuggingFace (maintainer only)
+  - Supports `all` argument to download/upload all datasets at once
+  - Use `--force` flag to overwrite existing databases
+  - Avoids lengthy database rebuild times for users running benchmarks
+
 ### Changed
 
 - **Dependencies**: Updated core dependencies

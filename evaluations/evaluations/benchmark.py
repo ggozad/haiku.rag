@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -6,6 +7,7 @@ from typing import Any, cast
 import logfire
 import typer
 from dotenv import find_dotenv, load_dotenv
+from huggingface_hub import HfApi, snapshot_download
 from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
@@ -23,6 +25,8 @@ from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model
 
 load_dotenv(find_dotenv(usecwd=True))
+
+HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
@@ -447,6 +451,90 @@ def run(
             multimodal_only=multimodal_only,
         )
     )
+
+
+@app.command()
+def download(
+    dataset: str = typer.Argument(..., help="Dataset key or 'all' to download all."),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing database."),
+) -> None:
+    """Download pre-built evaluation database from HuggingFace."""
+    if dataset.lower() == "all":
+        specs = list(DATASETS.values())
+    else:
+        spec = DATASETS.get(dataset.lower())
+        if spec is None:
+            valid_datasets = ", ".join(sorted(DATASETS))
+            raise typer.BadParameter(
+                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
+            )
+        specs = [spec]
+
+    for spec in specs:
+        db = spec.db_path()
+        if db.exists() and not force:
+            console.print(
+                f"[yellow]Skipping {spec.key}: database already exists at {db}[/yellow]"
+            )
+            console.print("Use --force to overwrite.")
+            continue
+
+        console.print(f"[blue]Downloading {spec.key}...[/blue]")
+
+        try:
+            downloaded_path = snapshot_download(
+                repo_id=HF_REPO_ID,
+                repo_type="dataset",
+                allow_patterns=f"{spec.db_filename}/*",
+            )
+        except Exception as e:
+            console.print(f"[red]Failed to download {spec.key}: {e}[/red]")
+            continue
+
+        # Remove existing database if force is set
+        if db.exists():
+            shutil.rmtree(db)
+
+        # Copy from cache to target location
+        db.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(Path(downloaded_path) / spec.db_filename, db)
+
+        console.print(f"[green]Downloaded {spec.key} to {db}[/green]")
+
+
+@app.command()
+def upload(
+    dataset: str = typer.Argument(..., help="Dataset key or 'all' to upload all."),
+) -> None:
+    """Upload evaluation database to HuggingFace (maintainer only)."""
+    if dataset.lower() == "all":
+        specs = list(DATASETS.values())
+    else:
+        spec = DATASETS.get(dataset.lower())
+        if spec is None:
+            valid_datasets = ", ".join(sorted(DATASETS))
+            raise typer.BadParameter(
+                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
+            )
+        specs = [spec]
+
+    api = HfApi()
+
+    for spec in specs:
+        db = spec.db_path()
+        if not db.exists():
+            console.print(f"[red]Database not found at {db}[/red]")
+            continue
+
+        console.print(f"[blue]Uploading {spec.key}...[/blue]")
+        api.upload_folder(
+            folder_path=str(db),
+            path_in_repo=spec.db_filename,
+            repo_id=HF_REPO_ID,
+            repo_type="dataset",
+        )
+
+        console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
 
 
 if __name__ == "__main__":
