@@ -317,8 +317,8 @@ class ChatApp(App):
             widget.remove_class("selected")
 
     def on_descendant_focus(self, _event: object) -> None:
-        """Clear citation selection when input is focused."""
-        if isinstance(self.focused, Input):
+        """Clear citation selection when chat input is focused."""
+        if isinstance(self.focused, Input) and self.focused.id == "chat-input":
             self._clear_citation_selection()
 
     async def action_show_visual(self) -> None:
@@ -364,10 +364,8 @@ class ChatApp(App):
         for widget in chat_history.query(CitationWidget):
             widget.remove_class("selected")
 
-        # Add selected class to the newly selected citation
-        citation_widgets = list(chat_history.query(CitationWidget))
-        if 0 <= event.citation_index < len(citation_widgets):
-            citation_widgets[event.citation_index].add_class("selected")
+        # Add selected class to the widget that was focused
+        event.widget.add_class("selected")
 
     async def action_show_filter(self) -> None:
         """Show document filter modal."""

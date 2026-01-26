@@ -90,9 +90,9 @@ class CitationWidget(Collapsible):
     class Selected(Message):
         """Message sent when a citation is selected."""
 
-        def __init__(self, citation_index: int) -> None:
+        def __init__(self, widget: "CitationWidget") -> None:
             super().__init__()
-            self.citation_index = citation_index
+            self.widget = widget
 
     def __init__(self, citation: Citation, **kwargs) -> None:
         title = f"[{citation.index}] {citation.document_title or citation.document_uri}"
@@ -120,8 +120,7 @@ class CitationWidget(Collapsible):
 
     def on_focus(self) -> None:
         """When focused, mark as selected."""
-        index = self.citation.index or 1
-        self.post_message(self.Selected(index - 1))
+        self.post_message(self.Selected(self))
 
     def on_key(self, event: "Key") -> None:
         """Handle Enter to toggle expand/collapse."""
