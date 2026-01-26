@@ -15,6 +15,8 @@ from haiku.rag.agents.chat.state import (
     ChatSessionState,
     QAResponse,
     build_document_filter,
+    build_multi_document_filter,
+    combine_filters,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
@@ -72,8 +74,18 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             document_name: Optional document name/title to search within
             limit: Number of results to return (default: 5)
         """
-        # Build filter from document_name
-        doc_filter = build_document_filter(document_name) if document_name else None
+        # Build session filter from document_filter
+        session_filter = None
+        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
+            session_filter = build_multi_document_filter(
+                ctx.deps.session_state.document_filter
+            )
+
+        # Build tool filter from document_name parameter
+        tool_filter = build_document_filter(document_name) if document_name else None
+
+        # Combine filters: session AND tool
+        doc_filter = combine_filters(session_filter, tool_filter)
 
         # Use search agent for query expansion and deduplication
         search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
@@ -111,6 +123,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             session_context=get_cached_session_context(session_id)
             if session_id
             else None,
+            document_filter=(
+                ctx.deps.session_state.document_filter if ctx.deps.session_state else []
+            ),
         )
 
         # Return detailed results for the agent to present
@@ -158,8 +173,18 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             question: The question to answer
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
-        # Build filter from document_name
-        doc_filter = build_document_filter(document_name) if document_name else None
+        # Build session filter from document_filter
+        session_filter = None
+        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
+            session_filter = build_multi_document_filter(
+                ctx.deps.session_state.document_filter
+            )
+
+        # Build tool filter from document_name parameter
+        tool_filter = build_document_filter(document_name) if document_name else None
+
+        # Combine filters: session AND tool
+        doc_filter = combine_filters(session_filter, tool_filter)
 
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
@@ -245,6 +270,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             session_context=get_cached_session_context(session_id)
             if session_id
             else None,
+            document_filter=(
+                ctx.deps.session_state.document_filter if ctx.deps.session_state else []
+            ),
         )
 
         # Format answer with citation references and confidence

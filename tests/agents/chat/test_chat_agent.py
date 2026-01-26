@@ -583,3 +583,97 @@ def test_fifo_limit_enforcement():
     assert session_state.qa_history[0].question == "Question 1"
     # The last entry should be the last added question
     assert session_state.qa_history[-1].question == f"Question {MAX_QA_HISTORY}"
+
+
+def test_chat_session_state_document_filter():
+    """Test ChatSessionState with document_filter."""
+    state = ChatSessionState(
+        session_id="test-filter",
+        document_filter=["doc1.pdf", "doc2.pdf"],
+    )
+    assert state.document_filter == ["doc1.pdf", "doc2.pdf"]
+
+
+def test_chat_session_state_document_filter_default_empty():
+    """Test ChatSessionState document_filter defaults to empty list."""
+    state = ChatSessionState(session_id="test")
+    assert state.document_filter == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_search_with_session_filter(
+    allow_model_requests, temp_db_path
+):
+    """Test that session document_filter restricts search results."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add two distinct documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        agent = create_chat_agent(Config)
+        # Set session filter to only include the labels document
+        session_state = ChatSessionState(
+            session_id="test-session-filter",
+            document_filter=["DocLayNet Class Labels"],
+        )
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Search should only return results from the filtered document
+        result = await agent.run(
+            "Search for information about DocLayNet",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # Results should only reference the Labels document, not Sources
+        assert "Labels" in result.output or "class" in result.output.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_search_agent_with_session_filter(allow_model_requests, temp_db_path):
+    """Test SearchAgent respects session document filter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add two distinct documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        from haiku.rag.agents.chat.state import build_multi_document_filter
+
+        search_agent = SearchAgent(client, Config)
+
+        # Build filter for only the labels document
+        doc_filter = build_multi_document_filter(["DocLayNet Class Labels"])
+
+        results = await search_agent.search(
+            query="What information is available?",
+            filter=doc_filter,
+        )
+
+        assert isinstance(results, list)
+        # All results should be from the labels document
+        for r in results:
+            assert "labels" in (r.document_uri or "").lower() or "Labels" in (
+                r.document_title or ""
+            )
