@@ -1,42 +1,17 @@
-import hashlib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from datetime import datetime
+from typing import Any
 
-import numpy as np
-from numpy.typing import NDArray
-from pydantic import BaseModel
-from pydantic_ai import format_as_xml
+from pydantic import BaseModel, Field
 
+from haiku.rag.agents.research.models import Citation, SearchAnswer
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 
-if TYPE_CHECKING:
-    from haiku.rag.embeddings import EmbedderWrapper
-
 MAX_QA_HISTORY = 50
 
 AGUI_STATE_KEY = "haiku.rag.chat"
-
-_embedding_cache: dict[str, list[float]] = {}
-
-
-def _qa_cache_key(question: str, answer: str) -> str:
-    """Generate cache key from Q/A content."""
-    return hashlib.sha256(f"Q: {question}\nA: {answer}".encode()).hexdigest()
-
-
-class CitationInfo(BaseModel):
-    """Citation info for frontend display."""
-
-    index: int
-    document_id: str
-    chunk_id: str
-    document_uri: str
-    document_title: str | None = None
-    page_numbers: list[int] = []
-    headings: list[str] | None = None
-    content: str
 
 
 class QAResponse(BaseModel):
@@ -45,7 +20,8 @@ class QAResponse(BaseModel):
     question: str
     answer: str
     confidence: float = 0.9
-    citations: list[CitationInfo] = []
+    citations: list[Citation] = []
+    question_embedding: list[float] | None = Field(default=None, exclude=True)
 
     @property
     def sources(self) -> list[str]:
@@ -54,104 +30,51 @@ class QAResponse(BaseModel):
             dict.fromkeys(c.document_title or c.document_uri for c in self.citations)
         )
 
+    def to_search_answer(self) -> SearchAnswer:
+        """Convert to SearchAnswer for research graph context."""
+        return SearchAnswer(
+            query=self.question,
+            answer=self.answer,
+            confidence=self.confidence,
+            cited_chunks=[c.chunk_id for c in self.citations],
+            citations=self.citations,
+        )
+
+
+class SessionContext(BaseModel):
+    """Compressed summary of conversation history for research graph."""
+
+    summary: str = ""
+    last_updated: datetime | None = None
+
+    def render_markdown(self) -> str:
+        """Render context for injection into research graph."""
+        return self.summary
+
 
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
     session_id: str = ""
-    citations: list[CitationInfo] = []
+    citations: list[Citation] = []
     qa_history: list[QAResponse] = []
-    background_context: str | None = None
+    session_context: SessionContext | None = None
+    document_filter: list[str] = []
+    citation_registry: dict[str, int] = {}
 
+    def get_or_assign_index(self, chunk_id: str) -> int:
+        """Get or assign a stable citation index for a chunk_id.
 
-def format_conversation_context(qa_history: list[QAResponse]) -> str:
-    """Format conversation history as XML for inclusion in prompts."""
-    if not qa_history:
-        return ""
+        Citation indices persist across tool calls within a session.
+        The first chunk gets index 1, subsequent new chunks get incrementing indices.
+        Same chunk_id always returns the same index.
+        """
+        if chunk_id in self.citation_registry:
+            return self.citation_registry[chunk_id]
 
-    context_data = {
-        "previous_qa": [
-            {
-                "question": qa.question,
-                "answer": qa.answer,
-                "sources": qa.sources,
-            }
-            for qa in qa_history
-        ],
-    }
-    return format_as_xml(context_data, root_tag="conversation_context")
-
-
-def _cosine_similarity(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
-    """Compute cosine similarity between two vectors."""
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
-
-
-async def rank_qa_history_by_similarity(
-    current_question: str,
-    qa_history: list[QAResponse],
-    embedder: "EmbedderWrapper",
-    top_k: int = 5,
-) -> list[QAResponse]:
-    """Rank Q&A history by semantic similarity to current question.
-
-    Embeds question+answer pairs and returns the top-K most similar to the
-    current question. Falls back to returning the last top_k entries if
-    embedding fails.
-
-    Args:
-        current_question: The current question to compare against.
-        qa_history: List of previous Q&A pairs.
-        embedder: Embedder instance to use for embedding.
-        top_k: Maximum number of entries to return.
-
-    Returns:
-        Top-K Q&A pairs ranked by similarity to current question.
-    """
-    if not qa_history:
-        return []
-
-    if len(qa_history) <= top_k:
-        return qa_history
-
-    # Embed current question
-    question_embedding = np.array(await embedder.embed_query(current_question))
-
-    # Check cache and collect uncached entries
-    qa_embeddings: list[list[float]] = []
-    uncached_indices: list[int] = []
-    uncached_texts: list[str] = []
-
-    for i, qa in enumerate(qa_history):
-        cache_key = _qa_cache_key(qa.question, qa.answer)
-        if cache_key in _embedding_cache:
-            qa_embeddings.append(_embedding_cache[cache_key])
-        else:
-            qa_embeddings.append([])  # placeholder
-            uncached_indices.append(i)
-            uncached_texts.append(f"Q: {qa.question}\nA: {qa.answer}")
-
-    # Embed only uncached entries
-    if uncached_texts:
-        new_embeddings = await embedder.embed_documents(uncached_texts)
-        for idx, embedding in zip(uncached_indices, new_embeddings):
-            qa = qa_history[idx]
-            cache_key = _qa_cache_key(qa.question, qa.answer)
-            _embedding_cache[cache_key] = embedding
-            qa_embeddings[idx] = embedding
-
-    # Compute similarities
-    similarities: list[tuple[int, float]] = []
-    for i, qa_emb in enumerate(qa_embeddings):
-        sim = _cosine_similarity(question_embedding, np.array(qa_emb))
-        similarities.append((i, sim))
-
-    # Sort by similarity (descending) and take top-K
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    top_indices = sorted([idx for idx, _ in similarities[:top_k]])
-
-    # Return in original order
-    return [qa_history[i] for i in top_indices]
+        new_index = len(self.citation_registry) + 1
+        self.citation_registry[chunk_id] = new_index
+        return new_index
 
 
 @dataclass
@@ -197,15 +120,19 @@ class ChatDeps:
                 ]
             if "citations" in state_data:
                 self.session_state.citations = [
-                    CitationInfo(**c) if isinstance(c, dict) else c
+                    Citation(**c) if isinstance(c, dict) else c
                     for c in state_data.get("citations", [])
                 ]
-            if "background_context" in state_data:
-                self.session_state.background_context = state_data.get(
-                    "background_context"
+            if state_data.get("session_id"):
+                self.session_state.session_id = state_data["session_id"]
+            if "document_filter" in state_data:
+                self.session_state.document_filter = state_data.get(
+                    "document_filter", []
                 )
-            if "session_id" in state_data:
-                self.session_state.session_id = state_data.get("session_id", "")
+            if "citation_registry" in state_data:
+                self.session_state.citation_registry = state_data["citation_registry"]
+            # NOTE: session_context intentionally NOT updated from client
+            # The agent owns this via server-side cache
 
 
 @dataclass
@@ -226,3 +153,23 @@ def build_document_filter(document_name: str) -> str:
         f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
         f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
     )
+
+
+def build_multi_document_filter(document_names: list[str]) -> str | None:
+    """Build SQL filter for multiple document names (OR combined)."""
+    if not document_names:
+        return None
+    filters = [build_document_filter(name) for name in document_names]
+    if len(filters) == 1:
+        return filters[0]
+    return " OR ".join(f"({f})" for f in filters)
+
+
+def combine_filters(filter1: str | None, filter2: str | None) -> str | None:
+    """Combine two SQL filters with AND logic."""
+    filters = [f for f in [filter1, filter2] if f]
+    if not filters:
+        return None
+    if len(filters) == 1:
+        return filters[0]
+    return f"({filters[0]}) AND ({filters[1]})"

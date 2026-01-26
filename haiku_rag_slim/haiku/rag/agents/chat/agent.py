@@ -1,23 +1,64 @@
+import asyncio
+import math
+
 from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent, RunContext, ToolReturn
 
+from haiku.rag.agents.chat.context import (
+    get_cached_session_context,
+    update_session_context,
+)
 from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
 from haiku.rag.agents.chat.search import SearchAgent
 from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
     ChatDeps,
     ChatSessionState,
-    CitationInfo,
     QAResponse,
     build_document_filter,
-    rank_qa_history_by_similarity,
+    build_multi_document_filter,
+    combine_filters,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
-from haiku.rag.agents.research.models import Citation, SearchAnswer
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
+from haiku.rag.embeddings import get_embedder
 from haiku.rag.utils import get_model
+
+# Similarity threshold for finding relevant prior answers
+PRIOR_ANSWER_RELEVANCE_THRESHOLD = 0.7
+
+
+def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    norm1 = math.sqrt(sum(a * a for a in vec1))
+    norm2 = math.sqrt(sum(b * b for b in vec2))
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return dot_product / (norm1 * norm2)
+
+
+# Track summarization tasks per session to allow cancellation
+_summarization_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+async def _update_context_background(
+    qa_history: list[QAResponse],
+    config: AppConfig,
+    session_state: ChatSessionState,
+) -> None:
+    """Background task to update session context after an ask."""
+    try:
+        await update_session_context(
+            qa_history=qa_history,
+            config=config,
+            session_state=session_state,
+        )
+    except asyncio.CancelledError:
+        pass
 
 
 def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
@@ -31,13 +72,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         instructions=CHAT_SYSTEM_PROMPT,
         retries=3,
     )
-
-    @agent.system_prompt
-    async def add_background_context(ctx: RunContext[ChatDeps]) -> str:
-        """Add background_context to system prompt when available."""
-        if ctx.deps.session_state and ctx.deps.session_state.background_context:
-            return f"\nBACKGROUND CONTEXT:\n{ctx.deps.session_state.background_context}"
-        return ""
 
     @agent.tool
     async def search(
@@ -56,8 +90,18 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             document_name: Optional document name/title to search within
             limit: Number of results to return (default: 5)
         """
-        # Build filter from document_name
-        doc_filter = build_document_filter(document_name) if document_name else None
+        # Build session filter from document_filter
+        session_filter = None
+        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
+            session_filter = build_multi_document_filter(
+                ctx.deps.session_state.document_filter
+            )
+
+        # Build tool filter from document_name parameter
+        tool_filter = build_document_filter(document_name) if document_name else None
+
+        # Combine filters: session AND tool
+        doc_filter = combine_filters(session_filter, tool_filter)
 
         # Use search agent for query expansion and deduplication
         search_agent = SearchAgent(ctx.deps.client, ctx.deps.config)
@@ -69,49 +113,60 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         if not results:
             return ToolReturn(return_value="No results found.")
 
-        # Build citation infos for frontend display
-        citation_infos = [
-            CitationInfo(
-                index=i + 1,
-                document_id=r.document_id or "",
-                chunk_id=r.chunk_id or "",
-                document_uri=r.document_uri or "",
-                document_title=r.document_title,
-                page_numbers=r.page_numbers or [],
-                headings=r.headings,
-                content=r.content,
+        # Build citation infos using stable registry indices
+        citation_infos = []
+        for r in results:
+            chunk_id = r.chunk_id or ""
+            if ctx.deps.session_state is not None and chunk_id:
+                index = ctx.deps.session_state.get_or_assign_index(chunk_id)
+            else:
+                index = len(citation_infos) + 1
+            citation_infos.append(
+                Citation(
+                    index=index,
+                    document_id=r.document_id or "",
+                    chunk_id=chunk_id,
+                    document_uri=r.document_uri or "",
+                    document_title=r.document_title,
+                    page_numbers=r.page_numbers or [],
+                    headings=r.headings,
+                    content=r.content,
+                )
             )
-            for i, r in enumerate(results)
-        ]
 
-        # Build new state with citations
+        # Build new state with citations and registry
+        session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
         new_state = ChatSessionState(
-            session_id=(
-                ctx.deps.session_state.session_id if ctx.deps.session_state else ""
-            ),
+            session_id=session_id,
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
             ),
-            background_context=(
-                ctx.deps.session_state.background_context
+            session_context=get_cached_session_context(session_id)
+            if session_id
+            else None,
+            document_filter=(
+                ctx.deps.session_state.document_filter if ctx.deps.session_state else []
+            ),
+            citation_registry=(
+                ctx.deps.session_state.citation_registry
                 if ctx.deps.session_state
-                else None
+                else {}
             ),
         )
 
         # Return detailed results for the agent to present
         result_lines = []
-        for i, r in enumerate(results):
-            title = r.document_title or r.document_uri or "Unknown"
+        for c in citation_infos:
+            title = c.document_title or c.document_uri or "Unknown"
             # Truncate content for display
-            snippet = r.content[:300].replace("\n", " ").strip()
-            if len(r.content) > 300:
+            snippet = c.content[:300].replace("\n", " ").strip()
+            if len(c.content) > 300:
                 snippet += "..."
 
-            line = f"[{i + 1}] **{title}**"
-            if r.page_numbers:
-                line += f" (pages {', '.join(map(str, r.page_numbers))})"
+            line = f"[{c.index}] **{title}**"
+            if c.page_numbers:
+                line += f" (pages {', '.join(map(str, c.page_numbers))})"
             line += f"\n    {snippet}"
             result_lines.append(line)
 
@@ -145,65 +200,66 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             question: The question to answer
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
-        # Build filter from document_name
-        doc_filter = build_document_filter(document_name) if document_name else None
-
-        # Filter and rank qa_history
-        ranked_history: list[QAResponse] = []
-        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
-            # Step 1: Filter out low-confidence responses
-            filtered_history = [
-                qa for qa in ctx.deps.session_state.qa_history if qa.confidence >= 0.3
-            ]
-
-            # Step 2: Rank filtered history by similarity to current question
-            embedder = ctx.deps.client.chunk_repository.embedder
-            ranked_history = await rank_qa_history_by_similarity(
-                current_question=question,
-                qa_history=filtered_history,
-                embedder=embedder,
-                top_k=5,
+        # Build session filter from document_filter
+        session_filter = None
+        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
+            session_filter = build_multi_document_filter(
+                ctx.deps.session_state.document_filter
             )
 
-        # Convert ranked qa_history to SearchAnswers for context seeding
-        existing_qa: list[SearchAnswer] = []
-        if ranked_history:
-            for qa in ranked_history:
-                citations = [
-                    Citation(
-                        document_id=c.document_id,
-                        chunk_id=c.chunk_id,
-                        document_uri=c.document_uri,
-                        document_title=c.document_title,
-                        page_numbers=c.page_numbers,
-                        headings=c.headings,
-                        content=c.content,
-                    )
-                    for c in qa.citations
-                ]
-                existing_qa.append(
-                    SearchAnswer(
-                        query=qa.question,
-                        answer=qa.answer,
-                        confidence=qa.confidence,
-                        cited_chunks=[c.chunk_id for c in qa.citations],
-                        citations=citations,
-                    )
-                )
+        # Build tool filter from document_name parameter
+        tool_filter = build_document_filter(document_name) if document_name else None
+
+        # Combine filters: session AND tool
+        doc_filter = combine_filters(session_filter, tool_filter)
 
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
+        session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
 
-        background_context = (
-            ctx.deps.session_state.background_context
-            if ctx.deps.session_state
+        # Get session context from server cache for planning
+        cached_context = get_cached_session_context(session_id) if session_id else None
+        session_context = (
+            cached_context.render_markdown()
+            if cached_context and cached_context.summary
             else None
         )
 
+        # Find relevant prior answers from qa_history
+        prior_answers = []
+        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
+            embedder = get_embedder(ctx.deps.config)
+            question_embedding = await embedder.embed_query(question)
+
+            # Collect questions that need embedding (not cached)
+            to_embed = []
+            to_embed_indices = []
+            for i, qa in enumerate(ctx.deps.session_state.qa_history):
+                if qa.question_embedding is None:
+                    to_embed.append(qa.question)
+                    to_embed_indices.append(i)
+
+            # Batch embed uncached questions
+            if to_embed:
+                new_embeddings = await embedder.embed_documents(to_embed)
+                for i, idx in enumerate(to_embed_indices):
+                    ctx.deps.session_state.qa_history[
+                        idx
+                    ].question_embedding = new_embeddings[i]
+
+            # Compare against all questions and collect relevant prior answers
+            for qa in ctx.deps.session_state.qa_history:
+                if qa.question_embedding is not None:
+                    similarity = _cosine_similarity(
+                        question_embedding, qa.question_embedding
+                    )
+                    if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
+                        prior_answers.append(qa.to_search_answer())
+
         context = ResearchContext(
             original_question=question,
-            qa_responses=existing_qa,
-            background_context=background_context,
+            session_context=session_context,
+            qa_responses=prior_answers,
         )
         state = ResearchState(
             context=context,
@@ -218,20 +274,26 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         result = await graph.run(state=state, deps=deps)
 
-        # Build citation infos for frontend and history
-        citation_infos = [
-            CitationInfo(
-                index=i + 1,
-                document_id=c.document_id,
-                chunk_id=c.chunk_id,
-                document_uri=c.document_uri,
-                document_title=c.document_title,
-                page_numbers=c.page_numbers,
-                headings=c.headings,
-                content=c.content,
+        # Build citation infos using stable registry indices
+        citation_infos = []
+        for c in result.citations:
+            # Use registry for stable indices across calls
+            if ctx.deps.session_state is not None:
+                index = ctx.deps.session_state.get_or_assign_index(c.chunk_id)
+            else:
+                index = len(citation_infos) + 1
+            citation_infos.append(
+                Citation(
+                    index=index,
+                    document_id=c.document_id,
+                    chunk_id=c.chunk_id,
+                    document_uri=c.document_uri,
+                    document_title=c.document_title,
+                    page_numbers=c.page_numbers,
+                    headings=c.headings,
+                    content=c.content,
+                )
             )
-            for i, c in enumerate(result.citations)
-        ]
 
         # Accumulate Q&A in session state with full citation metadata
         if ctx.deps.session_state is not None:
@@ -248,26 +310,45 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                     -MAX_QA_HISTORY:
                 ]
 
-        # Build new state with citations AND accumulated qa_history
+            # Spawn background task to update session context
+            # Cancel any previous summarization for this session
+            if session_id in _summarization_tasks:
+                _summarization_tasks[session_id].cancel()
+
+            task = asyncio.create_task(
+                _update_context_background(
+                    qa_history=list(ctx.deps.session_state.qa_history),
+                    config=ctx.deps.config,
+                    session_state=ctx.deps.session_state,
+                )
+            )
+            _summarization_tasks[session_id] = task
+            task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
+
+        # Build new state with citations, qa_history, and registry
         new_state = ChatSessionState(
-            session_id=(
-                ctx.deps.session_state.session_id if ctx.deps.session_state else ""
-            ),
+            session_id=session_id,
             citations=citation_infos,
             qa_history=(
                 ctx.deps.session_state.qa_history if ctx.deps.session_state else []
             ),
-            background_context=(
-                ctx.deps.session_state.background_context
+            session_context=get_cached_session_context(session_id)
+            if session_id
+            else None,
+            document_filter=(
+                ctx.deps.session_state.document_filter if ctx.deps.session_state else []
+            ),
+            citation_registry=(
+                ctx.deps.session_state.citation_registry
                 if ctx.deps.session_state
-                else None
+                else {}
             ),
         )
 
-        # Format answer with citation references and confidence
+        # Format answer with citation references using stable indices
         answer_text = result.answer
         if citation_infos:
-            citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citation_infos)))
+            citation_refs = " ".join(f"[{c.index}]" for c in citation_infos)
             answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
         snapshot = new_state.model_dump()

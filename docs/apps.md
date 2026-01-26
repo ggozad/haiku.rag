@@ -25,25 +25,38 @@ The chat interface provides:
 - Session memory for context-aware follow-up questions
 - Visual grounding to inspect chunk source locations
 
-### Keyboard Shortcuts
+### Command Palette
 
-| Key | Action |
-|-----|--------|
-| `Ctrl+L` | Clear chat history and reset session |
-| `Ctrl+G` | Show visual grounding for selected citation |
-| `Ctrl+I` | Show database info (document/chunk counts) |
-| `Escape` | Focus input field or cancel processing |
+Press `Ctrl+P` to open the command palette:
+
+| Command | Description |
+|---------|-------------|
+| Filter documents | Select documents to restrict searches |
+| Show context | View current session context |
+| Show database info | View document/chunk counts and storage info |
+| Visual grounding | View chunk source location in document |
+| Clear chat | Clear chat history and reset session |
 
 ### Session Management
 
 - Conversation history is maintained in memory for the session
 - Previous Q/A pairs are used as context for follow-up questions
 - Citations are tracked per response and can be inspected
-- Clearing chat (`Ctrl+L`) resets the session state
+- Document filter restricts all searches to selected documents
+- Clearing chat resets session state but preserves document filter
 
 ## Web Application
 
 Browser-based conversational RAG with a CopilotKit frontend.
+
+### Features
+
+- Streaming chat with real-time tool execution visibility
+- Expandable citations with source documents, pages, and headings
+- Visual grounding to view chunk source locations in documents
+- Document filter to restrict searches to selected documents
+- Session context that summarizes conversation history
+- Settings panel for background context configuration
 
 ### Quick Start
 

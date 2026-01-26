@@ -7,6 +7,7 @@ from evaluations.evaluators import LLMJudge
 
 from haiku.rag.agents.qa.agent import QuestionAnswerAgent
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.config.models import ModelConfig
 
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
@@ -15,6 +16,38 @@ HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
     return str(Path(__file__).parent.parent.parent / "cassettes" / "test_qa")
+
+
+def test_get_qa_agent_factory(temp_db_path):
+    """Test get_qa_agent factory function creates a properly configured agent."""
+    from haiku.rag.agents.qa import get_qa_agent
+
+    client = HaikuRAG(temp_db_path, create=True)
+    agent = get_qa_agent(client, Config)
+
+    assert agent is not None
+    assert isinstance(agent, QuestionAnswerAgent)
+    # Verify internal client is set correctly
+    assert agent._client is client
+
+    client.close()
+
+
+def test_get_qa_agent_with_custom_prompt(temp_db_path):
+    """Test get_qa_agent factory with custom system prompt."""
+    from haiku.rag.agents.qa import get_qa_agent
+
+    client = HaikuRAG(temp_db_path, create=True)
+    custom_prompt = "You are a custom QA assistant."
+    agent = get_qa_agent(client, Config, system_prompt=custom_prompt)
+
+    assert agent is not None
+    assert isinstance(agent, QuestionAnswerAgent)
+    # The internal pydantic-ai agent should have instructions set
+    # (pydantic-ai wraps the string in an Instructions object)
+    assert agent._agent.instructions is not None
+
+    client.close()
 
 
 @pytest.mark.vcr()

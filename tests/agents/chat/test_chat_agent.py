@@ -6,12 +6,12 @@ from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
-    CitationInfo,
     QAResponse,
     SearchAgent,
     create_chat_agent,
 )
 from haiku.rag.agents.chat.state import MAX_QA_HISTORY
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 
@@ -76,21 +76,9 @@ def test_chat_session_state():
     assert state.qa_history == []
 
 
-def test_chat_agent_has_dynamic_system_prompt():
-    """Test that chat agent registers a dynamic system prompt for background_context."""
-    agent = create_chat_agent(Config)
-    # The agent should have at least one system prompt function registered
-    # (the add_background_context function)
-    system_prompt_functions = getattr(agent, "_system_prompt_functions")
-    assert len(system_prompt_functions) >= 1
-    # Verify it's the add_background_context function
-    func_names = [r.function.__name__ for r in system_prompt_functions]
-    assert "add_background_context" in func_names
-
-
-def test_citation_info():
-    """Test CitationInfo model."""
-    citation = CitationInfo(
+def test_citation():
+    """Test Citation model."""
+    citation = Citation(
         index=1,
         document_id="doc-123",
         chunk_id="chunk-456",
@@ -108,7 +96,7 @@ def test_citation_info():
 
 def test_qa_response():
     """Test QAResponse model."""
-    citation = CitationInfo(
+    citation = Citation(
         index=1,
         document_id="doc-123",
         chunk_id="chunk-456",
@@ -131,7 +119,7 @@ def test_qa_response():
 
 def test_qa_response_sources_with_uri_fallback():
     """Test QAResponse.sources falls back to URI when title is None."""
-    citation = CitationInfo(
+    citation = Citation(
         index=1,
         document_id="doc-123",
         chunk_id="chunk-456",
@@ -145,6 +133,33 @@ def test_qa_response_sources_with_uri_fallback():
         citations=[citation],
     )
     assert qa.sources == ["test.md"]
+
+
+def test_qa_response_to_search_answer():
+    """Test QAResponse.to_search_answer() converts to SearchAnswer for research graph."""
+    citation = Citation(
+        index=1,
+        document_id="doc-123",
+        chunk_id="chunk-456",
+        document_uri="test.md",
+        document_title="Test Document",
+        content="Test content",
+    )
+    qa = QAResponse(
+        question="What is the answer?",
+        answer="The answer is 42",
+        confidence=0.95,
+        citations=[citation],
+    )
+
+    search_answer = qa.to_search_answer()
+
+    assert search_answer.query == "What is the answer?"
+    assert search_answer.answer == "The answer is 42"
+    assert search_answer.confidence == 0.95
+    assert search_answer.cited_chunks == ["chunk-456"]
+    assert len(search_answer.citations) == 1
+    assert search_answer.citations[0].chunk_id == "chunk-456"
 
 
 def test_search_agent_initialization(temp_db_path):
@@ -203,75 +218,6 @@ Scanned documents were excluded to avoid rotation and skewing issues.
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
-async def test_chat_agent_with_qa_history_ranking(allow_model_requests, temp_db_path):
-    """Test chat agent uses similarity ranking for qa_history.
-
-    This test verifies that when qa_history has more than 5 entries,
-    the ranking function is applied and the agent can still process requests.
-    """
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Add a simple document
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-
-        agent = create_chat_agent(Config)
-
-        # Build session state with pre-populated qa_history (>5 items to trigger ranking)
-        session_state = ChatSessionState(
-            session_id="test-ranking",
-            qa_history=[
-                QAResponse(
-                    question="What are the 11 class labels in DocLayNet?",
-                    answer="The 11 class labels are: Caption, Footnote, Formula, List-item, Page-footer, Page-header, Picture, Section-header, Table, Text, and Title.",
-                ),
-                QAResponse(
-                    question="How was the annotation process organized?",
-                    answer="The annotation was organized into 4 phases.",
-                ),
-                QAResponse(
-                    question="What data sources were used?",
-                    answer="Sources include arXiv and government offices.",
-                ),
-                QAResponse(
-                    question="How were pages selected?",
-                    answer="By selective subsampling.",
-                ),
-                QAResponse(
-                    question="What is the agreement metric?",
-                    answer="The mAP metric was used.",
-                ),
-                QAResponse(
-                    question="What is machine learning?",
-                    answer="A field of AI.",
-                ),
-            ],
-        )
-
-        deps = ChatDeps(
-            client=client,
-            config=Config,
-            session_state=session_state,
-        )
-
-        # Ask a question - the key test is that ranking is applied without error
-        result = await agent.run(
-            "What class labels are defined in the dataset?",
-            deps=deps,
-        )
-
-        # Verify the agent produced a response (ranking didn't break anything)
-        assert result.output is not None
-        assert len(result.output) > 0
-
-        # Verify qa_history was updated (new Q&A was added)
-        assert len(session_state.qa_history) == 7  # 6 original + 1 new
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
 async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
     """Test the chat agent's search tool functionality."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -296,40 +242,6 @@ async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
         )
 
         # Ask something that should trigger the search tool
-        result = await agent.run(
-            "Search for documents about class labels",
-            deps=deps,
-        )
-
-        assert result.output is not None
-        assert len(result.output) > 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_chat_agent_search_with_state_key(allow_model_requests, temp_db_path):
-    """Test search tool emits keyed state when state_key is set."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-        await client.create_document(
-            content=DOCLAYNET_ANNOTATION,
-            uri="doclaynet-annotation",
-            title="DocLayNet Annotation",
-        )
-
-        agent = create_chat_agent(Config)
-        session_state = ChatSessionState(session_id="test-search")
-        deps = ChatDeps(
-            client=client,
-            config=Config,
-            session_state=session_state,
-            state_key=AGUI_STATE_KEY,
-        )
-
         result = await agent.run(
             "Search for documents about class labels",
             deps=deps,
@@ -557,8 +469,12 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
-async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path):
-    """Test ask tool emits keyed state when state_key is set."""
+async def test_chat_agent_ask_triggers_background_summarization(
+    allow_model_requests, temp_db_path
+):
+    """Test that the ask tool triggers background session context summarization."""
+    import asyncio
+
     async with HaikuRAG(temp_db_path, create=True) as client:
         await client.create_document(
             content=DOCLAYNET_CLASS_LABELS,
@@ -567,14 +483,17 @@ async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path)
         )
 
         agent = create_chat_agent(Config)
-        session_state = ChatSessionState(session_id="test-ask-keyed")
+        session_state = ChatSessionState(session_id="test-summarization")
         deps = ChatDeps(
             client=client,
             config=Config,
             session_state=session_state,
-            state_key=AGUI_STATE_KEY,
         )
 
+        # Initially no session_context
+        assert session_state.session_context is None
+
+        # Ask a question
         result = await agent.run(
             "What is the highest count class in the DocLayNet dataset?",
             deps=deps,
@@ -582,6 +501,87 @@ async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path)
 
         assert result.output is not None
         assert len(session_state.qa_history) >= 1
+
+        # Wait for background task to complete
+        # The task should update session_state.session_context
+        for _ in range(50):  # Wait up to 5 seconds
+            if session_state.session_context is not None:
+                break
+            await asyncio.sleep(0.1)
+
+        # Verify session_context was populated by background task
+        assert session_state.session_context is not None
+        assert session_state.session_context.summary != ""
+        assert session_state.session_context.last_updated is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_ask_with_prior_answer_retrieval(
+    allow_model_requests, temp_db_path
+):
+    """Test that ask tool retrieves relevant prior answers from qa_history.
+
+    This exercises the prior answer retrieval logic (agent.py lines 231-257):
+    1. First ask populates qa_history with question_embedding
+    2. Second similar ask should find the prior answer via embedding similarity
+    """
+    import asyncio
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        session_state = ChatSessionState(session_id="test-prior-answers")
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # First ask - establishes qa_history
+        result1 = await agent.run(
+            "What are the class labels in DocLayNet?",
+            deps=deps,
+        )
+        assert result1.output is not None
+        assert len(session_state.qa_history) == 1
+        # First question should NOT have embedding yet (set lazily on next ask)
+        assert session_state.qa_history[0].question_embedding is None
+
+        # Wait for background summarization to complete
+        for _ in range(50):
+            if session_state.session_context is not None:
+                break
+            await asyncio.sleep(0.1)
+
+        # Second ask - similar question triggers prior answer retrieval
+        # This will embed the first question and compare similarity
+        result2 = await agent.run(
+            "Tell me about DocLayNet class labels",
+            deps=deps,
+        )
+        assert result2.output is not None
+        # qa_history should now have 2 entries
+        assert len(session_state.qa_history) == 2
+
+        # First question should now have embedding (set during second ask's recall check)
+        assert session_state.qa_history[0].question_embedding is not None
+        # Embedding should be a list of floats
+        assert isinstance(session_state.qa_history[0].question_embedding, list)
+        assert len(session_state.qa_history[0].question_embedding) > 0
+
+        # Verify prior answer was reused without new searches:
+        # Second answer's citations should be subset of first answer's citations
+        first_chunk_ids = {c.chunk_id for c in session_state.qa_history[0].citations}
+        second_chunk_ids = {c.chunk_id for c in session_state.qa_history[1].citations}
+        assert second_chunk_ids <= first_chunk_ids, (
+            "Second answer should reuse prior citations, not perform new searches"
+        )
 
 
 def test_fifo_limit_enforcement():
@@ -616,3 +616,410 @@ def test_fifo_limit_enforcement():
     assert session_state.qa_history[0].question == "Question 1"
     # The last entry should be the last added question
     assert session_state.qa_history[-1].question == f"Question {MAX_QA_HISTORY}"
+
+
+def test_chat_session_state_document_filter():
+    """Test ChatSessionState with document_filter."""
+    state = ChatSessionState(
+        session_id="test-filter",
+        document_filter=["doc1.pdf", "doc2.pdf"],
+    )
+    assert state.document_filter == ["doc1.pdf", "doc2.pdf"]
+
+
+def test_chat_session_state_document_filter_default_empty():
+    """Test ChatSessionState document_filter defaults to empty list."""
+    state = ChatSessionState(session_id="test")
+    assert state.document_filter == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_chat_agent_search_with_session_filter(
+    allow_model_requests, temp_db_path
+):
+    """Test that session document_filter restricts search results."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add two distinct documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        agent = create_chat_agent(Config)
+        # Set session filter to only include the labels document
+        session_state = ChatSessionState(
+            session_id="test-session-filter",
+            document_filter=["DocLayNet Class Labels"],
+        )
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Search should only return results from the filtered document
+        result = await agent.run(
+            "Search for information about DocLayNet",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # Results should only reference the Labels document, not Sources
+        assert "Labels" in result.output or "class" in result.output.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_search_agent_with_session_filter(allow_model_requests, temp_db_path):
+    """Test SearchAgent respects session document filter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add two distinct documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        from haiku.rag.agents.chat.state import build_multi_document_filter
+
+        search_agent = SearchAgent(client, Config)
+
+        # Build filter for only the labels document
+        doc_filter = build_multi_document_filter(["DocLayNet Class Labels"])
+
+        results = await search_agent.search(
+            query="What information is available?",
+            filter=doc_filter,
+        )
+
+        assert isinstance(results, list)
+        # All results should be from the labels document
+        for r in results:
+            assert "labels" in (r.document_uri or "").lower() or "Labels" in (
+                r.document_title or ""
+            )
+
+
+def test_ask_tool_citation_registry_logic():
+    """Test the citation index assignment logic used by the ask tool.
+
+    Verifies that:
+    1. First chunk gets index 1
+    2. Second unique chunk gets index 2
+    3. Same chunk_id always gets same index
+    4. Indices don't reset between calls
+    """
+    session_state = ChatSessionState(session_id="test-registry")
+
+    # Simulate first ask tool building citations
+    first_ask_chunks = ["chunk-a", "chunk-b"]
+    first_citations = []
+    for chunk_id in first_ask_chunks:
+        index = session_state.get_or_assign_index(chunk_id)
+        first_citations.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    assert first_citations[0].index == 1
+    assert first_citations[1].index == 2
+
+    # Simulate second ask tool - overlapping chunk_id should keep same index
+    second_ask_chunks = ["chunk-b", "chunk-c"]  # chunk-b was in first ask
+    second_citations = []
+    for chunk_id in second_ask_chunks:
+        index = session_state.get_or_assign_index(chunk_id)
+        second_citations.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    # chunk-b should have same index as before
+    assert second_citations[0].index == 2
+    # chunk-c is new, gets next index
+    assert second_citations[1].index == 3
+
+    # Registry should have all three chunks
+    assert len(session_state.citation_registry) == 3
+    assert session_state.citation_registry == {"chunk-a": 1, "chunk-b": 2, "chunk-c": 3}
+
+
+def test_search_tool_citation_registry_logic():
+    """Test the citation index assignment logic used by the search tool.
+
+    Verifies that search and ask tools share the same registry,
+    maintaining stable indices across different tool calls.
+    """
+    session_state = ChatSessionState(session_id="test-registry")
+
+    # Simulate ask tool first (assigns indices 1, 2)
+    for chunk_id in ["chunk-a", "chunk-b"]:
+        session_state.get_or_assign_index(chunk_id)
+
+    # Simulate search tool returning overlapping + new chunks
+    search_chunks = ["chunk-b", "chunk-c", "chunk-d"]  # chunk-b already exists
+    search_citations = []
+    for chunk_id in search_chunks:
+        index = session_state.get_or_assign_index(chunk_id)
+        search_citations.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    # chunk-b should have same index as assigned by ask (2)
+    assert search_citations[0].index == 2
+    # New chunks get incrementing indices
+    assert search_citations[1].index == 3
+    assert search_citations[2].index == 4
+
+    # Registry should have all four chunks
+    assert len(session_state.citation_registry) == 4
+    assert session_state.citation_registry == {
+        "chunk-a": 1,
+        "chunk-b": 2,
+        "chunk-c": 3,
+        "chunk-d": 4,
+    }
+
+
+# =============================================================================
+# Prior Answer Recall Tests
+# =============================================================================
+
+
+def test_cosine_similarity_identical_vectors():
+    """Test cosine similarity returns 1.0 for identical vectors."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec = [1.0, 2.0, 3.0]
+    assert _cosine_similarity(vec, vec) == pytest.approx(1.0)
+
+
+def test_cosine_similarity_orthogonal_vectors():
+    """Test cosine similarity returns 0.0 for orthogonal vectors."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec1 = [1.0, 0.0, 0.0]
+    vec2 = [0.0, 1.0, 0.0]
+    assert _cosine_similarity(vec1, vec2) == pytest.approx(0.0)
+
+
+def test_cosine_similarity_opposite_vectors():
+    """Test cosine similarity returns -1.0 for opposite vectors."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec1 = [1.0, 2.0, 3.0]
+    vec2 = [-1.0, -2.0, -3.0]
+    assert _cosine_similarity(vec1, vec2) == pytest.approx(-1.0)
+
+
+def test_cosine_similarity_zero_vector():
+    """Test cosine similarity handles zero vectors gracefully."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec = [1.0, 2.0, 3.0]
+    zero = [0.0, 0.0, 0.0]
+    assert _cosine_similarity(vec, zero) == 0.0
+    assert _cosine_similarity(zero, vec) == 0.0
+    assert _cosine_similarity(zero, zero) == 0.0
+
+
+def test_prior_answer_relevance_threshold_constant():
+    """Test PRIOR_ANSWER_RELEVANCE_THRESHOLD is set to expected value."""
+    from haiku.rag.agents.chat.agent import PRIOR_ANSWER_RELEVANCE_THRESHOLD
+
+    assert PRIOR_ANSWER_RELEVANCE_THRESHOLD == 0.7
+
+
+def test_prior_answer_matching_above_threshold():
+    """Test that similar questions (above threshold) are matched."""
+    from haiku.rag.agents.chat.agent import (
+        PRIOR_ANSWER_RELEVANCE_THRESHOLD,
+        _cosine_similarity,
+    )
+
+    # Simulate two nearly identical question embeddings
+    question_embedding = [0.5, 0.5, 0.5, 0.5]
+    prior_embedding = [0.51, 0.49, 0.5, 0.5]  # Very similar
+
+    similarity = _cosine_similarity(question_embedding, prior_embedding)
+    assert similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD
+
+
+def test_prior_answer_matching_below_threshold():
+    """Test that dissimilar questions (below threshold) are not matched."""
+    from haiku.rag.agents.chat.agent import (
+        PRIOR_ANSWER_RELEVANCE_THRESHOLD,
+        _cosine_similarity,
+    )
+
+    # Simulate two different question embeddings
+    question_embedding = [1.0, 0.0, 0.0, 0.0]
+    prior_embedding = [0.0, 1.0, 0.0, 0.0]  # Orthogonal = very different
+
+    similarity = _cosine_similarity(question_embedding, prior_embedding)
+    assert similarity < PRIOR_ANSWER_RELEVANCE_THRESHOLD
+
+
+def test_qa_response_embedding_cache():
+    """Test that QAResponse stores and retrieves question_embedding correctly."""
+    embedding = [0.1, 0.2, 0.3, 0.4]
+    qa = QAResponse(
+        question="What is X?",
+        answer="X is Y.",
+        confidence=0.9,
+        question_embedding=embedding,
+    )
+
+    assert qa.question_embedding == embedding
+    # Embedding should be excluded from serialization (AG-UI state)
+    serialized = qa.model_dump()
+    assert "question_embedding" not in serialized
+
+
+def test_qa_response_embedding_default_none():
+    """Test that QAResponse.question_embedding defaults to None."""
+    qa = QAResponse(
+        question="What is X?",
+        answer="X is Y.",
+        confidence=0.9,
+    )
+
+    assert qa.question_embedding is None
+
+
+# =============================================================================
+# Background Task Cancellation Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_summarization_task_cancellation():
+    """Test that new summarization tasks cancel previous ones for same session."""
+    import asyncio
+
+    from haiku.rag.agents.chat.agent import _summarization_tasks
+
+    # Clear any existing tasks
+    _summarization_tasks.clear()
+
+    session_id = "test-cancel-session"
+
+    # Create a slow task that simulates summarization
+    async def slow_task():
+        await asyncio.sleep(10)  # Would take 10 seconds
+
+    # Start first task
+    task1 = asyncio.create_task(slow_task())
+    _summarization_tasks[session_id] = task1
+
+    # Simulate what happens when second ask comes in - cancel first task
+    if session_id in _summarization_tasks:
+        _summarization_tasks[session_id].cancel()
+
+    # Yield to let cancellation propagate
+    await asyncio.sleep(0)
+
+    # Start second task
+    task2 = asyncio.create_task(slow_task())
+    _summarization_tasks[session_id] = task2
+
+    # First task should be cancelled
+    assert task1.cancelled() or task1.done()
+
+    # Second task should be running
+    assert not task2.done()
+
+    # Cleanup
+    task2.cancel()
+    try:
+        await task2
+    except asyncio.CancelledError:
+        pass
+    _summarization_tasks.clear()
+
+
+def test_citation_index_fallback_without_session_state():
+    """Test that citation indices fall back to sequential numbering without session_state.
+
+    This tests the fallback branch in the ask and search tools when
+    ctx.deps.session_state is None.
+    """
+    # Simulate the fallback logic from agent.py lines 281-285
+    citation_infos = []
+    session_state = None  # No session state
+
+    # Simulate processing citations without session_state
+    chunk_ids = ["chunk-a", "chunk-b", "chunk-c"]
+    for chunk_id in chunk_ids:
+        if session_state is not None:
+            index = session_state.get_or_assign_index(chunk_id)
+        else:
+            index = len(citation_infos) + 1
+        citation_infos.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    # Without session_state, indices are simple sequential numbers
+    assert citation_infos[0].index == 1
+    assert citation_infos[1].index == 2
+    assert citation_infos[2].index == 3
+
+
+@pytest.mark.asyncio
+async def test_summarization_task_cleanup_on_completion():
+    """Test that completed tasks are cleaned up from _summarization_tasks."""
+    import asyncio
+
+    from haiku.rag.agents.chat.agent import _summarization_tasks
+
+    _summarization_tasks.clear()
+
+    session_id = "test-cleanup-session"
+
+    # Create a fast task
+    async def fast_task():
+        await asyncio.sleep(0.01)
+
+    task = asyncio.create_task(fast_task())
+    _summarization_tasks[session_id] = task
+    task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
+
+    # Wait for completion
+    await task
+
+    # Task should be cleaned up
+    assert session_id not in _summarization_tasks

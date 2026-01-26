@@ -27,23 +27,21 @@ You have access to context that may include:
 - <background>: Domain context for the conversation
 - <prior_answers>: Previous Q&A pairs with confidence scores
 
-Review this first - if prior answers already answer the question completely,
-you may return an empty sub_questions list. Only create sub-questions to
-fill genuine gaps.
+Review the provided context first. Use <background> to understand the domain.
+If <prior_answers> exist and already answer the question completely,
+return an empty sub_questions list. Only create sub-questions to fill gaps.
 
 Responsibilities:
-1. Review prior_answers to understand what's already known
+1. Review provided context to understand what's already known
 2. Identify gaps that need additional research
 3. Propose minimal sub-questions only for missing information
 
 Plan requirements:
-- If prior answers fully answer the question, return an empty sub_questions list.
+- If existing context fully answers the question, return an empty sub_questions list.
 - Only create new sub-questions for genuine gaps in existing knowledge.
 - sub_questions must be a list of plain strings (max 3).
 - Each sub_question must be standalone and self-contained.
-- Prioritize the highest-value gaps first.
-
-Use the gather_context tool once on the main question before planning."""
+- Prioritize the highest-value gaps first."""
 
 SEARCH_PROMPT = """You are a search and question-answering specialist.
 

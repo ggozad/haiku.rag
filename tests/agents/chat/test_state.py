@@ -1,224 +1,10 @@
-from pathlib import Path
-
-import pytest
-
 from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
-    CitationInfo,
     QAResponse,
-    _embedding_cache,
-    _qa_cache_key,
     build_document_filter,
-    format_conversation_context,
-    rank_qa_history_by_similarity,
+    build_multi_document_filter,
+    combine_filters,
 )
-from haiku.rag.client import HaikuRAG
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_chat_state")
-
-
-@pytest.mark.asyncio
-async def test_rank_qa_history_empty():
-    """Test empty history returns empty list."""
-    # Create a mock embedder - we won't actually call it
-    result = await rank_qa_history_by_similarity(
-        current_question="What is this?",
-        qa_history=[],
-        embedder=None,  # type: ignore - won't be called for empty list
-        top_k=5,
-    )
-    assert result == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_rank_qa_history_small_list(temp_db_path, allow_model_requests):
-    """Test with history smaller than top_k returns all entries."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        embedder = client.chunk_repository.embedder
-
-        # Create 3 Q&A pairs (less than top_k=5)
-        qa_history = [
-            QAResponse(question="What is Python?", answer="A programming language"),
-            QAResponse(question="What is Java?", answer="Another programming language"),
-            QAResponse(
-                question="What is Rust?", answer="A systems programming language"
-            ),
-        ]
-
-        result = await rank_qa_history_by_similarity(
-            current_question="Tell me about Python",
-            qa_history=qa_history,
-            embedder=embedder,
-            top_k=5,
-        )
-
-        # Should return all 3 entries since history < top_k
-        assert len(result) == 3
-        # All original entries should be present
-        assert set(qa.question for qa in result) == {
-            "What is Python?",
-            "What is Java?",
-            "What is Rust?",
-        }
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_rank_qa_history_returns_top_k(temp_db_path, allow_model_requests):
-    """Test ranking returns top-K most similar entries and populates cache."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        embedder = client.chunk_repository.embedder
-
-        # Create 10 Q&A pairs on different topics
-        qa_history = [
-            QAResponse(
-                question="What are the 11 class labels in DocLayNet?",
-                answer="Caption, Footnote, Formula, List-item, Page-footer, Page-header, Picture, Section-header, Table, Text, and Title",
-            ),
-            QAResponse(
-                question="How was the annotation process organized?",
-                answer="The process had 4 phases with 40 dedicated annotators",
-            ),
-            QAResponse(
-                question="What data sources were used?",
-                answer="arXiv, government offices, company websites, financial reports and patents",
-            ),
-            QAResponse(
-                question="How were pages selected?",
-                answer="By selective subsampling with bias towards pages with figures or tables",
-            ),
-            QAResponse(
-                question="What is the inter-annotator agreement?",
-                answer="Computed as mAP@0.5-0.95 metric between pairwise annotations",
-            ),
-            QAResponse(
-                question="What is machine learning?",
-                answer="A field of AI that enables systems to learn from data",
-            ),
-            QAResponse(
-                question="How does neural network training work?",
-                answer="Through backpropagation and gradient descent",
-            ),
-            QAResponse(
-                question="What is deep learning?",
-                answer="A subset of ML using neural networks with many layers",
-            ),
-        ]
-
-        # Clear cache to verify it gets populated
-        _embedding_cache.clear()
-
-        # Ask a question related to class labels (Q1)
-        result = await rank_qa_history_by_similarity(
-            current_question="Which class label has the highest count in DocLayNet?",
-            qa_history=qa_history,
-            embedder=embedder,
-            top_k=5,
-        )
-
-        # Should return exactly 5 entries
-        assert len(result) == 5
-
-        # The class labels Q&A should be in the top 5 (it's most semantically similar)
-        result_questions = [qa.question for qa in result]
-        assert "What are the 11 class labels in DocLayNet?" in result_questions
-
-        # Verify cache is populated for all Q/A pairs
-        for qa in qa_history:
-            cache_key = _qa_cache_key(qa.question, qa.answer)
-            assert cache_key in _embedding_cache
-            assert len(_embedding_cache[cache_key]) > 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_rank_qa_history_preserves_order(temp_db_path, allow_model_requests):
-    """Test that ranking preserves original order among selected items."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        embedder = client.chunk_repository.embedder
-
-        # Create Q&A pairs where multiple are similar
-        qa_history = [
-            QAResponse(
-                question="What is Python?",
-                answer="A programming language",
-                citations=[
-                    CitationInfo(
-                        index=1,
-                        document_id="doc1",
-                        chunk_id="chunk1",
-                        document_uri="python.md",
-                        content="Python content",
-                    )
-                ],
-            ),
-            QAResponse(
-                question="What is Java?",
-                answer="Another programming language",
-            ),
-            QAResponse(
-                question="How to use Python for data science?",
-                answer="Use pandas, numpy, and scikit-learn",
-            ),
-        ]
-
-        result = await rank_qa_history_by_similarity(
-            current_question="Tell me about Python programming",
-            qa_history=qa_history,
-            embedder=embedder,
-            top_k=3,
-        )
-
-        # All should be returned
-        assert len(result) == 3
-
-        # The two Python-related questions should be in the results
-        result_questions = [qa.question for qa in result]
-        assert "What is Python?" in result_questions
-        assert "How to use Python for data science?" in result_questions
-
-
-def test_format_conversation_context_empty():
-    """Test format_conversation_context with empty history."""
-    result = format_conversation_context([])
-    assert result == ""
-
-
-def test_format_conversation_context_with_history():
-    """Test format_conversation_context formats qa_history as XML."""
-    citation = CitationInfo(
-        index=1,
-        document_id="doc-123",
-        chunk_id="chunk-456",
-        document_uri="test.md",
-        document_title="Test Document",
-        content="Test content",
-    )
-    qa_history = [
-        QAResponse(
-            question="What is Python?",
-            answer="A programming language",
-            citations=[citation],
-        ),
-        QAResponse(
-            question="What is Java?",
-            answer="Another programming language",
-        ),
-    ]
-
-    result = format_conversation_context(qa_history)
-
-    assert "<conversation_context>" in result
-    assert "previous_qa" in result
-    assert "What is Python?" in result
-    assert "A programming language" in result
-    assert "What is Java?" in result
-    assert "Another programming language" in result
-    assert "Test Document" in result  # source from first citation
 
 
 def test_build_document_filter_simple():
@@ -245,28 +31,59 @@ def test_build_document_filter_escapes_quotes():
     assert "O''Reilly" in result
 
 
+def test_build_multi_document_filter_empty():
+    """Test build_multi_document_filter returns None for empty list."""
+    result = build_multi_document_filter([])
+    assert result is None
+
+
+def test_build_multi_document_filter_single():
+    """Test build_multi_document_filter with single document."""
+    result = build_multi_document_filter(["mytest"])
+    assert result is not None
+    assert "LOWER(uri) LIKE LOWER('%mytest%')" in result
+    assert "LOWER(title) LIKE LOWER('%mytest%')" in result
+    # Single document should not have extra wrapping parentheses
+    assert " OR (" not in result
+
+
+def test_build_multi_document_filter_multiple():
+    """Test build_multi_document_filter with multiple documents."""
+    result = build_multi_document_filter(["doc1", "doc2"])
+    assert result is not None
+    # Should have OR-combined filters
+    assert "doc1" in result
+    assert "doc2" in result
+    assert " OR (" in result
+
+
+def test_combine_filters_both_none():
+    """Test combine_filters with both None."""
+    result = combine_filters(None, None)
+    assert result is None
+
+
+def test_combine_filters_first_only():
+    """Test combine_filters with only first filter."""
+    result = combine_filters("uri = 'test'", None)
+    assert result == "uri = 'test'"
+
+
+def test_combine_filters_second_only():
+    """Test combine_filters with only second filter."""
+    result = combine_filters(None, "title = 'doc'")
+    assert result == "title = 'doc'"
+
+
+def test_combine_filters_both():
+    """Test combine_filters combines with AND."""
+    result = combine_filters("uri = 'test'", "title = 'doc'")
+    assert result == "(uri = 'test') AND (title = 'doc')"
+
+
 def test_max_qa_history_constant():
     """Test MAX_QA_HISTORY constant value."""
     assert MAX_QA_HISTORY == 50
-
-
-def test_chat_session_state_background_context():
-    """Test ChatSessionState accepts background_context."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
-    state = ChatSessionState(
-        session_id="test-session",
-        background_context="This is background knowledge about the topic.",
-    )
-    assert state.background_context == "This is background knowledge about the topic."
-
-
-def test_chat_session_state_background_context_defaults_to_none():
-    """Test ChatSessionState background_context defaults to None."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
-    state = ChatSessionState(session_id="test-session")
-    assert state.background_context is None
 
 
 def test_chat_deps_state_getter_returns_namespaced_state():
@@ -283,7 +100,6 @@ def test_chat_deps_state_getter_returns_namespaced_state():
         qa_history=[
             QAResponse(question="Q1", answer="A1", confidence=0.9),
         ],
-        background_context="Background info",
     )
 
     deps = ChatDeps(
@@ -299,7 +115,6 @@ def test_chat_deps_state_getter_returns_namespaced_state():
     assert state[AGUI_STATE_KEY]["session_id"] == "test-123"
     assert len(state[AGUI_STATE_KEY]["qa_history"]) == 1
     assert state[AGUI_STATE_KEY]["qa_history"][0]["question"] == "Q1"
-    assert state[AGUI_STATE_KEY]["background_context"] == "Background info"
 
 
 def test_chat_deps_state_getter_without_namespace():
@@ -368,7 +183,6 @@ def test_chat_deps_state_setter_updates_from_namespaced_state():
                 {"question": "Q1", "answer": "A1", "confidence": 0.9, "citations": []}
             ],
             "citations": [],
-            "background_context": "New context",
         }
     }
 
@@ -378,7 +192,6 @@ def test_chat_deps_state_setter_updates_from_namespaced_state():
     assert deps.session_state.session_id == "updated-123"
     assert len(deps.session_state.qa_history) == 1
     assert deps.session_state.qa_history[0].question == "Q1"
-    assert deps.session_state.background_context == "New context"
 
 
 def test_chat_deps_state_setter_handles_none():
@@ -426,7 +239,7 @@ def test_chat_deps_state_setter_without_session_state():
 
 
 def test_chat_deps_state_setter_with_citation_dicts():
-    """Test ChatDeps.state setter converts citation dicts to CitationInfo."""
+    """Test ChatDeps.state setter converts citation dicts to Citation."""
     from unittest.mock import MagicMock
 
     from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
@@ -458,7 +271,6 @@ def test_chat_deps_state_setter_with_citation_dicts():
                     "content": "Test content",
                 }
             ],
-            "background_context": None,
         }
     }
 
@@ -470,3 +282,286 @@ def test_chat_deps_state_setter_with_citation_dicts():
     assert citation.document_id == "doc-1"
     assert citation.chunk_id == "chunk-1"
     assert citation.page_numbers == [1, 2]
+
+
+def test_chat_deps_state_getter_includes_session_context():
+    """Test ChatDeps.state getter includes session_context when present."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import (
+        AGUI_STATE_KEY,
+        ChatDeps,
+        ChatSessionState,
+        SessionContext,
+    )
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    now = datetime.now()
+    session_state = ChatSessionState(
+        session_id="test-123",
+        session_context=SessionContext(
+            summary="User discussed authentication.",
+            last_updated=now,
+        ),
+    )
+
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    state = deps.state
+    assert state is not None
+    assert AGUI_STATE_KEY in state
+    assert state[AGUI_STATE_KEY]["session_context"] is not None
+    assert (
+        state[AGUI_STATE_KEY]["session_context"]["summary"]
+        == "User discussed authentication."
+    )
+
+
+def test_chat_deps_state_setter_ignores_session_context():
+    """Test ChatDeps.state setter ignores session_context from client.
+
+    The agent owns session_context via server-side cache, so client-provided
+    session_context should be ignored to prevent stale state overwriting.
+    """
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import (
+        AGUI_STATE_KEY,
+        ChatDeps,
+        ChatSessionState,
+        SessionContext,
+    )
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    # Start with a session_context (e.g., from cache)
+    session_state = ChatSessionState(
+        session_id="test",
+        session_context=SessionContext(summary="Server-side context"),
+    )
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    # Client sends different session_context (stale)
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test",
+            "qa_history": [],
+            "citations": [],
+            "session_context": {
+                "summary": "Client-provided stale context",
+                "last_updated": "2025-01-15T10:30:00",
+            },
+        }
+    }
+
+    deps.state = incoming_state
+
+    # session_context should NOT be overwritten
+    assert deps.session_state is not None
+    assert deps.session_state.session_context is not None
+    assert deps.session_state.session_context.summary == "Server-side context"
+
+
+def test_citation_registry_index_assignment():
+    """Test get_or_assign_index basic index assignment behavior.
+
+    Verifies:
+    - First chunk gets index 1
+    - Second unique chunk gets index 2
+    - Same chunk_id always returns same index
+    """
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+
+    # First chunk gets index 1
+    index1 = session_state.get_or_assign_index("chunk-abc")
+    assert index1 == 1
+
+    # Second unique chunk gets index 2
+    index2 = session_state.get_or_assign_index("chunk-def")
+    assert index2 == 2
+
+    # Same chunk_id returns same index (not incremented)
+    index1_again = session_state.get_or_assign_index("chunk-abc")
+    assert index1_again == 1
+
+
+def test_citation_registry_stability():
+    """Test citation indices are stable across multiple calls in any order."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+
+    # First round assigns indices 1, 2, 3
+    idx_a = session_state.get_or_assign_index("chunk-a")
+    idx_b = session_state.get_or_assign_index("chunk-b")
+    idx_c = session_state.get_or_assign_index("chunk-c")
+
+    # Second round - existing chunks keep their indices regardless of order
+    assert session_state.get_or_assign_index("chunk-b") == idx_b
+    assert session_state.get_or_assign_index("chunk-a") == idx_a
+    assert session_state.get_or_assign_index("chunk-c") == idx_c
+
+    # New chunk gets next index
+    idx_d = session_state.get_or_assign_index("chunk-d")
+    assert idx_d == 4
+
+
+def test_citation_registry_serialization_roundtrip():
+    """Test citation_registry serializes and deserializes correctly for AG-UI state."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    # Create state and assign indices
+    original = ChatSessionState(session_id="test")
+    original.get_or_assign_index("chunk-a")
+    original.get_or_assign_index("chunk-b")
+
+    # Serialize
+    state_dict = original.model_dump()
+    assert "citation_registry" in state_dict
+    assert state_dict["citation_registry"] == {"chunk-a": 1, "chunk-b": 2}
+
+    # Deserialize (simulating AG-UI state restoration)
+    restored = ChatSessionState.model_validate(state_dict)
+
+    # Existing chunks should return their persisted indices
+    assert restored.get_or_assign_index("chunk-a") == 1
+    assert restored.get_or_assign_index("chunk-b") == 2
+    # New chunk should get next index
+    assert restored.get_or_assign_index("chunk-c") == 3
+
+
+def test_chat_deps_state_getter_includes_citation_registry():
+    """Test ChatDeps.state getter includes citation_registry."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="test")
+    session_state.get_or_assign_index("chunk-a")
+
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    state = deps.state
+    assert state is not None
+    assert AGUI_STATE_KEY in state
+    assert state[AGUI_STATE_KEY]["citation_registry"] == {"chunk-a": 1}
+
+
+def test_chat_deps_state_setter_restores_citation_registry():
+    """Test ChatDeps.state setter restores citation_registry from incoming state."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="test")
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    # Simulate incoming AG-UI state with citation_registry
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test",
+            "qa_history": [],
+            "citations": [],
+            "citation_registry": {"chunk-x": 1, "chunk-y": 2},
+        }
+    }
+
+    deps.state = incoming_state
+
+    assert deps.session_state is not None
+    # Registry should be restored
+    assert deps.session_state.get_or_assign_index("chunk-x") == 1
+    assert deps.session_state.get_or_assign_index("chunk-y") == 2
+    # New chunk gets next index
+    assert deps.session_state.get_or_assign_index("chunk-z") == 3
+
+
+def test_chat_deps_state_setter_restores_document_filter():
+    """Test ChatDeps.state setter restores document_filter from incoming state."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="test")
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test",
+            "qa_history": [],
+            "citations": [],
+            "document_filter": ["doc1.pdf", "doc2.pdf"],
+        }
+    }
+
+    deps.state = incoming_state
+
+    assert deps.session_state is not None
+    assert deps.session_state.document_filter == ["doc1.pdf", "doc2.pdf"]
+
+
+def test_chat_deps_state_getter_includes_document_filter():
+    """Test ChatDeps.state getter includes document_filter."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(
+        session_id="test-123",
+        document_filter=["doc1.pdf", "doc2.pdf"],
+    )
+
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    state = deps.state
+    assert state is not None
+    assert AGUI_STATE_KEY in state
+    assert state[AGUI_STATE_KEY]["document_filter"] == ["doc1.pdf", "doc2.pdf"]

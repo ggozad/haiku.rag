@@ -46,60 +46,141 @@ async def test_graph_end_to_end(allow_model_requests, temp_db_path, qa_corpus):
     client.close()
 
 
-def test_research_context_background_context():
-    """Test ResearchContext accepts background_context."""
-    context = ResearchContext(
-        original_question="What is X?",
-        background_context="Background: X is a concept in domain Y.",
+def test_research_plan_allows_empty_sub_questions():
+    """Test ResearchPlan accepts empty sub_questions when context is sufficient."""
+    from haiku.rag.agents.research.models import ResearchPlan
+
+    plan = ResearchPlan(sub_questions=[])
+    assert plan.sub_questions == []
+
+
+def test_research_plan_rejects_too_many_sub_questions():
+    """Test ResearchPlan rejects more than 12 sub_questions."""
+    from pydantic import ValidationError
+
+    from haiku.rag.agents.research.models import ResearchPlan
+
+    with pytest.raises(ValidationError, match="Cannot have more than 12"):
+        ResearchPlan(sub_questions=[f"q{i}" for i in range(13)])
+
+
+# =============================================================================
+# Conversational Graph Tests
+# =============================================================================
+
+
+def test_build_conversational_graph_returns_graph():
+    """Test build_conversational_graph returns a valid Graph instance."""
+    from pydantic_graph.beta import Graph
+
+    from haiku.rag.agents.research.graph import build_conversational_graph
+
+    graph = build_conversational_graph()
+    assert graph is not None
+    assert isinstance(graph, Graph)
+
+
+def test_conversational_answer_model():
+    """Test ConversationalAnswer model can be created with all fields."""
+    from haiku.rag.agents.research.models import Citation, ConversationalAnswer
+
+    citation = Citation(
+        index=1,
+        document_id="doc-1",
+        chunk_id="chunk-1",
+        document_uri="test.md",
+        document_title="Test Doc",
+        content="Test content",
     )
-    assert context.background_context == "Background: X is a concept in domain Y."
+
+    answer = ConversationalAnswer(
+        answer="The answer is 42.",
+        citations=[citation],
+        confidence=0.95,
+    )
+
+    assert answer.answer == "The answer is 42."
+    assert len(answer.citations) == 1
+    assert answer.confidence == 0.95
 
 
-def test_research_context_background_context_defaults_to_none():
-    """Test ResearchContext background_context defaults to None."""
+def test_conversational_answer_default_values():
+    """Test ConversationalAnswer uses correct default values."""
+    from haiku.rag.agents.research.models import ConversationalAnswer
+
+    answer = ConversationalAnswer(answer="Just the answer.")
+
+    assert answer.answer == "Just the answer."
+    assert answer.citations == []
+    assert answer.confidence == 1.0
+
+
+def test_format_context_for_prompt_basic():
+    """Test format_context_for_prompt with basic context."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+
     context = ResearchContext(original_question="What is X?")
-    assert context.background_context is None
+    result = format_context_for_prompt(context)
+
+    assert "<context>" in result
+    assert "What is X?" in result
 
 
-def test_format_context_for_prompt_includes_background():
-    """Test format_context_for_prompt includes background in output."""
+def test_format_context_for_prompt_with_session_context():
+    """Test format_context_for_prompt includes session_context as background."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
     from haiku.rag.agents.research.graph import format_context_for_prompt
 
     context = ResearchContext(
-        original_question="What is X?",
-        background_context="X is a concept in domain Y.",
+        original_question="What is Y?",
+        session_context="Previous discussion about topic Z.",
     )
     result = format_context_for_prompt(context)
-    assert "X is a concept in domain Y." in result
+
     assert "<background>" in result
+    assert "Previous discussion" in result
+    assert "What is Y?" in result
 
 
-def test_format_context_for_prompt_excludes_background_when_none():
-    """Test format_context_for_prompt excludes background when None."""
+def test_format_context_for_prompt_excludes_pending_questions():
+    """Test format_context_for_prompt can exclude pending questions."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
     from haiku.rag.agents.research.graph import format_context_for_prompt
 
-    context = ResearchContext(original_question="What is X?")
-    result = format_context_for_prompt(context)
-    assert "<background>" not in result
-
-
-def test_format_conversational_context_for_prompt_includes_background():
-    """Test format_conversational_context_for_prompt includes background."""
-    from haiku.rag.agents.research.graph import format_conversational_context_for_prompt
-
     context = ResearchContext(
-        original_question="What is X?",
-        background_context="X is a concept in domain Y.",
+        original_question="Main question?",
+        sub_questions=["Sub Q1?", "Sub Q2?"],
     )
-    result = format_conversational_context_for_prompt(context)
-    assert "X is a concept in domain Y." in result
-    assert "<background>" in result
+
+    # With pending questions (default)
+    with_pending = format_context_for_prompt(context, include_pending_questions=True)
+    assert "Sub Q1?" in with_pending
+
+    # Without pending questions (for synthesis)
+    without_pending = format_context_for_prompt(
+        context, include_pending_questions=False
+    )
+    assert "Sub Q1?" not in without_pending
 
 
-def test_format_conversational_context_for_prompt_excludes_background_when_none():
-    """Test format_conversational_context_for_prompt excludes background when None."""
-    from haiku.rag.agents.research.graph import format_conversational_context_for_prompt
+def test_format_context_for_prompt_with_prior_answers():
+    """Test format_context_for_prompt includes prior_answers."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+    from haiku.rag.agents.research.models import SearchAnswer
 
-    context = ResearchContext(original_question="What is X?")
-    result = format_conversational_context_for_prompt(context)
-    assert "<background>" not in result
+    context = ResearchContext(original_question="Main question?")
+    context.add_qa_response(
+        SearchAnswer(
+            query="Sub question?",
+            answer="The answer is here.",
+            confidence=0.9,
+        )
+    )
+
+    result = format_context_for_prompt(context)
+
+    assert "<prior_answers>" in result
+    assert "Sub question?" in result
+    assert "The answer is here." in result

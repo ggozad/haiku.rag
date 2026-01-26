@@ -9,6 +9,29 @@
   - Supports `all` argument to download/upload all datasets at once
   - Use `--force` flag to overwrite existing databases
   - Avoids lengthy database rebuild times for users running benchmarks
+- **Stable Citation Registry**: Citation indices now persist across tool calls within a session
+  - Same `chunk_id` always returns the same citation index (first-occurrence-wins)
+  - New `citation_registry: dict[str, int]` field on `ChatSessionState`
+  - New `get_or_assign_index(chunk_id)` method for stable index assignment
+  - Registry serialized/restored via AG-UI state protocol
+- **Prior Answer Recall**: The `ask` tool automatically checks conversation history before research
+  - Finds semantically similar prior answers using embedding similarity (0.7 cosine threshold)
+  - Relevant prior answers are passed to the research planner as context
+  - Planner can return empty sub_questions when context is sufficient, avoiding redundant searches
+- **Dynamic Session Context**: Compressed conversation history for multi-turn chat
+  - New `SessionContext` model stores summarized conversation state instead of raw Q&A history
+  - Background LLM-based summarization runs after each `ask` tool call (non-blocking)
+  - Previous summarization tasks are cancelled when new ones start
+  - Research graph receives compact context (~1,000-2,000 tokens) instead of raw qa_history (potentially thousands of tokens)
+  - New `session_context` field on `ChatSessionState` synced via AG-UI state protocol
+  - Chat TUI: New context modal (`Ctrl+O`) to view current session context
+- **Session Document Filter**: Restrict all search/ask operations to selected documents
+  - New `document_filter` field on `ChatSessionState` stores list of document titles/URIs
+  - Session filter combines with per-tool `document_name` filter using AND logic
+  - Multi-document selection uses OR logic within the session filter
+  - Filter persists across tool calls and chat clears via AG-UI state protocol
+  - Chat TUI: Access via command palette ("Filter documents" command)
+  - Web Application: Filter button in header shows count of selected documents
 
 ### Changed
 
@@ -21,6 +44,13 @@
   - Removed `haiku.rag.embeddings.voyageai` module
   - The `voyageai` extra now delegates to `pydantic-ai-slim[voyageai]`
 
+### Removed
+
+- **Q&A History Functions**: Removed standalone conversation history utilities
+  - `rank_qa_history_by_similarity()` - similarity matching now integrated into `ask` tool
+  - `format_conversation_context()` - replaced by `SessionContext` summarization
+  - Associated embedding cache and helper functions also removed
+
 ## [0.26.9] - 2026-01-22
 
 ### Fixed
@@ -28,6 +58,8 @@
 - **v0.25.0 Migration Failure**: Fixed "Table 'documents' already exists" error during migration caused by held table references preventing `drop_table()` from succeeding. Added recovery logic to restore documents from staging table if a previous migration attempt failed mid-way.
 
 ## [0.26.8] - 2026-01-22
+
+### Added
 
 - **Jina Reranker v3**: Added support for Jina reranking with API mode (`provider: jina`) and local inference (`provider: jina-local`, requires `[jina]` extra)
 - **Model Downloads**: `download-models` now pre-downloads HuggingFace models for `sentence-transformers`, `mxbai`, and `jina-local`

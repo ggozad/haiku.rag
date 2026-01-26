@@ -64,8 +64,10 @@ Key features:
 The chat agent uses three tools:
 
 - `search` — Hybrid search with optional document filter
-- `ask` — Answer questions using the conversational research graph
+- `ask` — Answer questions using the conversational research graph (automatically recalls prior answers)
 - `get_document` — Retrieve a specific document by title or URI
+
+The `ask` tool automatically checks conversation history before running research. It uses embedding similarity (0.7 cosine threshold) to find semantically matching prior answers, which are passed to the research planner as context. When prior answers are sufficient, the planner can skip searching entirely.
 
 ### CLI Usage
 
@@ -103,27 +105,26 @@ The `ChatSessionState` maintains:
 
 - `session_id` — Unique identifier for the session
 - `qa_history` — List of previous Q/A pairs (FIFO, max 50)
-- `background_context` — Optional background context for the conversation
-- `embedding_cache` — Cached embeddings for semantic ranking
+- `session_context` — Automatically maintained session context summary
+- `document_filter` — List of document titles/URIs to restrict searches
+- `citation_registry` — Stable mapping of chunk IDs to citation indices
+
+**Citation Registry**: Citation indices persist across tool calls within a session. The same `chunk_id` always returns the same citation index (first-occurrence-wins). This ensures consistent citation numbering in multi-turn conversations — `[1]` always refers to the same source.
+
+```python
+# Example: citation indices are stable across calls
+state = ChatSessionState()
+
+# First call returns citations [1], [2], [3]
+# Second call reuses [1] if same chunk, assigns [4], [5] for new chunks
+# User can reference [1] in follow-up and it still refers to original source
+```
 
 Q/A history is used to:
 
 1. Provide context for follow-up questions
-2. Avoid repeating previous answers
+2. Avoid repeating previous answers (the `ask` tool automatically recalls relevant prior answers)
 3. Enable semantic ranking of relevant past answers
-
-### Background Context
-
-You can provide background context that persists throughout the conversation:
-
-```python
-session = ChatSessionState(
-    background_context="Focus on Python programming concepts and best practices."
-)
-deps = ChatDeps(client=client, config=config, session_state=session)
-```
-
-The context is included in the agent's system prompt and passed to the research graph when answering questions.
 
 ### AG-UI Integration
 
@@ -149,7 +150,9 @@ The emitted state structure:
   "haiku.rag.chat": {
     "session_id": "",
     "citations": [...],
-    "qa_history": [...]
+    "qa_history": [...],
+    "document_filter": [...],
+    "citation_registry": {"chunk-id-1": 1, "chunk-id-2": 2}
   }
 }
 ```
@@ -229,18 +232,6 @@ async with HaikuRAG(path_to_db) as client:
     print(report.title)
     print(report.executive_summary)
 ```
-
-**With background context:**
-
-```python
-context = ResearchContext(
-    original_question="What are the safety protocols?",
-    background_context="Industrial manufacturing and workplace safety domain."
-)
-state = ResearchState.from_config(context=context, config=Config)
-```
-
-The `background_context` provides domain background that helps the planning and synthesis agents understand the context of the research question.
 
 **With custom config:**
 

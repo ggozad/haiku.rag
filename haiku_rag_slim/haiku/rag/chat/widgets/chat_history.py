@@ -4,7 +4,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
 from textual.widgets import Collapsible, LoadingIndicator, Markdown, Static
 
-from haiku.rag.agents.chat.state import CitationInfo
+from haiku.rag.agents.research.models import Citation
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -90,11 +90,11 @@ class CitationWidget(Collapsible):
     class Selected(Message):
         """Message sent when a citation is selected."""
 
-        def __init__(self, citation_index: int) -> None:
+        def __init__(self, widget: "CitationWidget") -> None:
             super().__init__()
-            self.citation_index = citation_index
+            self.widget = widget
 
-    def __init__(self, citation: CitationInfo, **kwargs) -> None:
+    def __init__(self, citation: Citation, **kwargs) -> None:
         title = f"[{citation.index}] {citation.document_title or citation.document_uri}"
         if citation.page_numbers:
             pages = ", ".join(map(str, citation.page_numbers[:3]))
@@ -120,7 +120,7 @@ class CitationWidget(Collapsible):
 
     def on_focus(self) -> None:
         """When focused, mark as selected."""
-        self.post_message(self.Selected(self.citation.index - 1))
+        self.post_message(self.Selected(self))
 
     def on_key(self, event: "Key") -> None:
         """Handle Enter to toggle expand/collapse."""
@@ -326,7 +326,7 @@ class ChatHistory(VerticalScroll):
         widget.mark_complete()
         widget.add_class("complete")
 
-    async def add_citations(self, citations: list[CitationInfo]) -> None:
+    async def add_citations(self, citations: list[Citation]) -> None:
         """Add citations inline after a response."""
         if not citations:
             return

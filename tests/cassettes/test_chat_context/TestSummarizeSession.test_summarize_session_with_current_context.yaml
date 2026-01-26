@@ -1,0 +1,89 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1581'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a session summarizer. Given a conversation history of Q&A pairs (and optionally existing context), produce a structured summary that captures key information for future context.
+
+          If a "Current Context" section is provided at the start of the input, incorporate that context into your summary. This might be initial background context from the user or a previous summary - build upon it rather than discard it.
+
+          Your summary should be concise (aim for 500-1500 tokens) and include:
+
+          1. **Key Facts Established** - Specific facts, data, or conclusions learned during the conversation
+          2. **Documents Referenced** - Documents or sources that were cited, with brief notes on what they contain
+          3. **Current Focus** - What topic or question thread the user is currently exploring
+
+          Rules:
+          - Extract only high-signal information that would help answer follow-up questions
+          - When building on existing context, merge new information with prior context
+          - Omit small talk, greetings, or low-confidence answers
+          - Use bullet points for clarity
+          - Keep technical details but compress verbose explanations
+          - Preserve document names/titles when mentioned in sources
+
+          Output the summary directly in markdown format. Do not include meta-commentary about the summary itself.
+        role: system
+      - content: |
+          ## Current Context
+          Focus on Python APIs. User is building a web application.
+
+          ## Q1: What's the rate limit?
+          **Answer** (confidence: 90%):
+          100 requests per minute.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '682'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: |-
+            ## Summary
+
+            - **Key Facts Established**
+              - The user is building a web application and is focused on Python APIs.
+              - The relevant rate limit is **100 requests per minute** (confidence 90%).
+
+            - **Documents Referenced**
+              - None cited in this exchange.
+
+            - **Current Focus**
+              - Understanding and managing API rate limits for the Python-based web application.
+          reasoning: We need summary.
+          role: assistant
+      created: 1769164539
+      id: chatcmpl-369
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 91
+        prompt_tokens: 362
+        total_tokens: 453
+    status:
+      code: 200
+      message: OK
+version: 1
