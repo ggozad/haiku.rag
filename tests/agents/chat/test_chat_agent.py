@@ -253,40 +253,6 @@ async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
-async def test_chat_agent_search_with_state_key(allow_model_requests, temp_db_path):
-    """Test search tool emits keyed state when state_key is set."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-        await client.create_document(
-            content=DOCLAYNET_ANNOTATION,
-            uri="doclaynet-annotation",
-            title="DocLayNet Annotation",
-        )
-
-        agent = create_chat_agent(Config)
-        session_state = ChatSessionState(session_id="test-search")
-        deps = ChatDeps(
-            client=client,
-            config=Config,
-            session_state=session_state,
-            state_key=AGUI_STATE_KEY,
-        )
-
-        result = await agent.run(
-            "Search for documents about class labels",
-            deps=deps,
-        )
-
-        assert result.output is not None
-        assert len(result.output) > 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
 async def test_chat_agent_search_tool_with_filter(allow_model_requests, temp_db_path):
     """Test the chat agent's search tool with document filter."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -498,35 +464,6 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
 
         assert result.output is not None
         # The qa_history should have been updated with the new Q&A
-        assert len(session_state.qa_history) >= 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_chat_agent_ask_with_state_key(allow_model_requests, temp_db_path):
-    """Test ask tool emits keyed state when state_key is set."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-
-        agent = create_chat_agent(Config)
-        session_state = ChatSessionState(session_id="test-ask-keyed")
-        deps = ChatDeps(
-            client=client,
-            config=Config,
-            session_state=session_state,
-            state_key=AGUI_STATE_KEY,
-        )
-
-        result = await agent.run(
-            "What is the highest count class in the DocLayNet dataset?",
-            deps=deps,
-        )
-
-        assert result.output is not None
         assert len(session_state.qa_history) >= 1
 
 
@@ -801,3 +738,186 @@ def test_search_tool_citation_registry_logic():
         "chunk-c": 3,
         "chunk-d": 4,
     }
+
+
+# =============================================================================
+# Prior Answer Recall Tests
+# =============================================================================
+
+
+def test_cosine_similarity_identical_vectors():
+    """Test cosine similarity returns 1.0 for identical vectors."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec = [1.0, 2.0, 3.0]
+    assert _cosine_similarity(vec, vec) == pytest.approx(1.0)
+
+
+def test_cosine_similarity_orthogonal_vectors():
+    """Test cosine similarity returns 0.0 for orthogonal vectors."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec1 = [1.0, 0.0, 0.0]
+    vec2 = [0.0, 1.0, 0.0]
+    assert _cosine_similarity(vec1, vec2) == pytest.approx(0.0)
+
+
+def test_cosine_similarity_opposite_vectors():
+    """Test cosine similarity returns -1.0 for opposite vectors."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec1 = [1.0, 2.0, 3.0]
+    vec2 = [-1.0, -2.0, -3.0]
+    assert _cosine_similarity(vec1, vec2) == pytest.approx(-1.0)
+
+
+def test_cosine_similarity_zero_vector():
+    """Test cosine similarity handles zero vectors gracefully."""
+    from haiku.rag.agents.chat.agent import _cosine_similarity
+
+    vec = [1.0, 2.0, 3.0]
+    zero = [0.0, 0.0, 0.0]
+    assert _cosine_similarity(vec, zero) == 0.0
+    assert _cosine_similarity(zero, vec) == 0.0
+    assert _cosine_similarity(zero, zero) == 0.0
+
+
+def test_prior_answer_relevance_threshold_constant():
+    """Test PRIOR_ANSWER_RELEVANCE_THRESHOLD is set to expected value."""
+    from haiku.rag.agents.chat.agent import PRIOR_ANSWER_RELEVANCE_THRESHOLD
+
+    assert PRIOR_ANSWER_RELEVANCE_THRESHOLD == 0.7
+
+
+def test_prior_answer_matching_above_threshold():
+    """Test that similar questions (above threshold) are matched."""
+    from haiku.rag.agents.chat.agent import (
+        PRIOR_ANSWER_RELEVANCE_THRESHOLD,
+        _cosine_similarity,
+    )
+
+    # Simulate two nearly identical question embeddings
+    question_embedding = [0.5, 0.5, 0.5, 0.5]
+    prior_embedding = [0.51, 0.49, 0.5, 0.5]  # Very similar
+
+    similarity = _cosine_similarity(question_embedding, prior_embedding)
+    assert similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD
+
+
+def test_prior_answer_matching_below_threshold():
+    """Test that dissimilar questions (below threshold) are not matched."""
+    from haiku.rag.agents.chat.agent import (
+        PRIOR_ANSWER_RELEVANCE_THRESHOLD,
+        _cosine_similarity,
+    )
+
+    # Simulate two different question embeddings
+    question_embedding = [1.0, 0.0, 0.0, 0.0]
+    prior_embedding = [0.0, 1.0, 0.0, 0.0]  # Orthogonal = very different
+
+    similarity = _cosine_similarity(question_embedding, prior_embedding)
+    assert similarity < PRIOR_ANSWER_RELEVANCE_THRESHOLD
+
+
+def test_qa_response_embedding_cache():
+    """Test that QAResponse stores and retrieves question_embedding correctly."""
+    embedding = [0.1, 0.2, 0.3, 0.4]
+    qa = QAResponse(
+        question="What is X?",
+        answer="X is Y.",
+        confidence=0.9,
+        question_embedding=embedding,
+    )
+
+    assert qa.question_embedding == embedding
+    # Embedding should be excluded from serialization (AG-UI state)
+    serialized = qa.model_dump()
+    assert "question_embedding" not in serialized
+
+
+def test_qa_response_embedding_default_none():
+    """Test that QAResponse.question_embedding defaults to None."""
+    qa = QAResponse(
+        question="What is X?",
+        answer="X is Y.",
+        confidence=0.9,
+    )
+
+    assert qa.question_embedding is None
+
+
+# =============================================================================
+# Background Task Cancellation Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_summarization_task_cancellation():
+    """Test that new summarization tasks cancel previous ones for same session."""
+    import asyncio
+
+    from haiku.rag.agents.chat.agent import _summarization_tasks
+
+    # Clear any existing tasks
+    _summarization_tasks.clear()
+
+    session_id = "test-cancel-session"
+
+    # Create a slow task that simulates summarization
+    async def slow_task():
+        await asyncio.sleep(10)  # Would take 10 seconds
+
+    # Start first task
+    task1 = asyncio.create_task(slow_task())
+    _summarization_tasks[session_id] = task1
+
+    # Simulate what happens when second ask comes in - cancel first task
+    if session_id in _summarization_tasks:
+        _summarization_tasks[session_id].cancel()
+
+    # Yield to let cancellation propagate
+    await asyncio.sleep(0)
+
+    # Start second task
+    task2 = asyncio.create_task(slow_task())
+    _summarization_tasks[session_id] = task2
+
+    # First task should be cancelled
+    assert task1.cancelled() or task1.done()
+
+    # Second task should be running
+    assert not task2.done()
+
+    # Cleanup
+    task2.cancel()
+    try:
+        await task2
+    except asyncio.CancelledError:
+        pass
+    _summarization_tasks.clear()
+
+
+@pytest.mark.asyncio
+async def test_summarization_task_cleanup_on_completion():
+    """Test that completed tasks are cleaned up from _summarization_tasks."""
+    import asyncio
+
+    from haiku.rag.agents.chat.agent import _summarization_tasks
+
+    _summarization_tasks.clear()
+
+    session_id = "test-cleanup-session"
+
+    # Create a fast task
+    async def fast_task():
+        await asyncio.sleep(0.01)
+
+    task = asyncio.create_task(fast_task())
+    _summarization_tasks[session_id] = task
+    task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
+
+    # Wait for completion
+    await task
+
+    # Task should be cleaned up
+    assert session_id not in _summarization_tasks

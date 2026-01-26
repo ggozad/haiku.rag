@@ -66,8 +66,7 @@ class TestSummarizeSession:
     """Tests for summarize_session function."""
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
-    async def test_summarize_session_empty_history(self, allow_model_requests):
+    async def test_summarize_session_empty_history(self):
         """Test summarize_session with empty qa_history returns empty string."""
         from haiku.rag.agents.chat.context import summarize_session
 

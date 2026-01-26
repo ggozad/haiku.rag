@@ -62,3 +62,125 @@ def test_research_plan_rejects_too_many_sub_questions():
 
     with pytest.raises(ValidationError, match="Cannot have more than 12"):
         ResearchPlan(sub_questions=[f"q{i}" for i in range(13)])
+
+
+# =============================================================================
+# Conversational Graph Tests
+# =============================================================================
+
+
+def test_build_conversational_graph_returns_graph():
+    """Test build_conversational_graph returns a valid Graph instance."""
+    from pydantic_graph.beta import Graph
+
+    from haiku.rag.agents.research.graph import build_conversational_graph
+
+    graph = build_conversational_graph()
+    assert graph is not None
+    assert isinstance(graph, Graph)
+
+
+def test_conversational_answer_model():
+    """Test ConversationalAnswer model can be created with all fields."""
+    from haiku.rag.agents.research.models import Citation, ConversationalAnswer
+
+    citation = Citation(
+        index=1,
+        document_id="doc-1",
+        chunk_id="chunk-1",
+        document_uri="test.md",
+        document_title="Test Doc",
+        content="Test content",
+    )
+
+    answer = ConversationalAnswer(
+        answer="The answer is 42.",
+        citations=[citation],
+        confidence=0.95,
+    )
+
+    assert answer.answer == "The answer is 42."
+    assert len(answer.citations) == 1
+    assert answer.confidence == 0.95
+
+
+def test_conversational_answer_default_values():
+    """Test ConversationalAnswer uses correct default values."""
+    from haiku.rag.agents.research.models import ConversationalAnswer
+
+    answer = ConversationalAnswer(answer="Just the answer.")
+
+    assert answer.answer == "Just the answer."
+    assert answer.citations == []
+    assert answer.confidence == 1.0
+
+
+def test_format_context_for_prompt_basic():
+    """Test format_context_for_prompt with basic context."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+
+    context = ResearchContext(original_question="What is X?")
+    result = format_context_for_prompt(context)
+
+    assert "<context>" in result
+    assert "What is X?" in result
+
+
+def test_format_context_for_prompt_with_session_context():
+    """Test format_context_for_prompt includes session_context as background."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+
+    context = ResearchContext(
+        original_question="What is Y?",
+        session_context="Previous discussion about topic Z.",
+    )
+    result = format_context_for_prompt(context)
+
+    assert "<background>" in result
+    assert "Previous discussion" in result
+    assert "What is Y?" in result
+
+
+def test_format_context_for_prompt_excludes_pending_questions():
+    """Test format_context_for_prompt can exclude pending questions."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+
+    context = ResearchContext(
+        original_question="Main question?",
+        sub_questions=["Sub Q1?", "Sub Q2?"],
+    )
+
+    # With pending questions (default)
+    with_pending = format_context_for_prompt(context, include_pending_questions=True)
+    assert "Sub Q1?" in with_pending
+
+    # Without pending questions (for synthesis)
+    without_pending = format_context_for_prompt(
+        context, include_pending_questions=False
+    )
+    assert "Sub Q1?" not in without_pending
+
+
+def test_format_context_for_prompt_with_prior_answers():
+    """Test format_context_for_prompt includes prior_answers."""
+    from haiku.rag.agents.research.dependencies import ResearchContext
+    from haiku.rag.agents.research.graph import format_context_for_prompt
+    from haiku.rag.agents.research.models import SearchAnswer
+
+    context = ResearchContext(original_question="Main question?")
+    context.add_qa_response(
+        SearchAnswer(
+            query="Sub question?",
+            answer="The answer is here.",
+            confidence=0.9,
+        )
+    )
+
+    result = format_context_for_prompt(context)
+
+    assert "<prior_answers>" in result
+    assert "Sub question?" in result
+    assert "The answer is here." in result

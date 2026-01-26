@@ -376,48 +376,43 @@ def test_chat_deps_state_setter_ignores_session_context():
     assert deps.session_state.session_context.summary == "Server-side context"
 
 
-def test_citation_registry_get_or_assign_index_first_chunk():
-    """Test get_or_assign_index assigns index 1 to first chunk."""
+def test_citation_registry_index_assignment():
+    """Test get_or_assign_index basic index assignment behavior.
+
+    Verifies:
+    - First chunk gets index 1
+    - Second unique chunk gets index 2
+    - Same chunk_id always returns same index
+    """
     from haiku.rag.agents.chat.state import ChatSessionState
 
     session_state = ChatSessionState(session_id="test")
-    index = session_state.get_or_assign_index("chunk-abc")
-    assert index == 1
 
-
-def test_citation_registry_get_or_assign_index_second_chunk():
-    """Test get_or_assign_index assigns incremental indices to new chunks."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
-    session_state = ChatSessionState(session_id="test")
+    # First chunk gets index 1
     index1 = session_state.get_or_assign_index("chunk-abc")
-    index2 = session_state.get_or_assign_index("chunk-def")
     assert index1 == 1
+
+    # Second unique chunk gets index 2
+    index2 = session_state.get_or_assign_index("chunk-def")
     assert index2 == 2
 
-
-def test_citation_registry_get_or_assign_index_same_chunk():
-    """Test get_or_assign_index returns same index for same chunk_id."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
-    session_state = ChatSessionState(session_id="test")
-    index1 = session_state.get_or_assign_index("chunk-abc")
-    index2 = session_state.get_or_assign_index("chunk-abc")
-    assert index1 == index2 == 1
+    # Same chunk_id returns same index (not incremented)
+    index1_again = session_state.get_or_assign_index("chunk-abc")
+    assert index1_again == 1
 
 
-def test_citation_registry_get_or_assign_index_stability():
-    """Test citation indices are stable across multiple calls."""
+def test_citation_registry_stability():
+    """Test citation indices are stable across multiple calls in any order."""
     from haiku.rag.agents.chat.state import ChatSessionState
 
     session_state = ChatSessionState(session_id="test")
 
-    # First call assigns indices 1, 2, 3
+    # First round assigns indices 1, 2, 3
     idx_a = session_state.get_or_assign_index("chunk-a")
     idx_b = session_state.get_or_assign_index("chunk-b")
     idx_c = session_state.get_or_assign_index("chunk-c")
 
-    # Second round - existing chunks keep their indices
+    # Second round - existing chunks keep their indices regardless of order
     assert session_state.get_or_assign_index("chunk-b") == idx_b
     assert session_state.get_or_assign_index("chunk-a") == idx_a
     assert session_state.get_or_assign_index("chunk-c") == idx_c
@@ -427,38 +422,28 @@ def test_citation_registry_get_or_assign_index_stability():
     assert idx_d == 4
 
 
-def test_citation_registry_serialization():
-    """Test citation_registry is included in model_dump for AG-UI state."""
+def test_citation_registry_serialization_roundtrip():
+    """Test citation_registry serializes and deserializes correctly for AG-UI state."""
     from haiku.rag.agents.chat.state import ChatSessionState
 
-    session_state = ChatSessionState(session_id="test")
-    session_state.get_or_assign_index("chunk-a")
-    session_state.get_or_assign_index("chunk-b")
+    # Create state and assign indices
+    original = ChatSessionState(session_id="test")
+    original.get_or_assign_index("chunk-a")
+    original.get_or_assign_index("chunk-b")
 
-    state_dict = session_state.model_dump()
+    # Serialize
+    state_dict = original.model_dump()
     assert "citation_registry" in state_dict
     assert state_dict["citation_registry"] == {"chunk-a": 1, "chunk-b": 2}
 
-
-def test_citation_registry_deserialization():
-    """Test citation_registry is restored from dict."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
-    # Simulate state from AG-UI using model_validate (proper Pydantic deserialization)
-    session_state = ChatSessionState.model_validate(
-        {
-            "session_id": "test",
-            "citations": [],
-            "qa_history": [],
-            "citation_registry": {"chunk-a": 1, "chunk-b": 2},
-        }
-    )
+    # Deserialize (simulating AG-UI state restoration)
+    restored = ChatSessionState.model_validate(state_dict)
 
     # Existing chunks should return their persisted indices
-    assert session_state.get_or_assign_index("chunk-a") == 1
-    assert session_state.get_or_assign_index("chunk-b") == 2
+    assert restored.get_or_assign_index("chunk-a") == 1
+    assert restored.get_or_assign_index("chunk-b") == 2
     # New chunk should get next index
-    assert session_state.get_or_assign_index("chunk-c") == 3
+    assert restored.get_or_assign_index("chunk-c") == 3
 
 
 def test_chat_deps_state_getter_includes_citation_registry():
