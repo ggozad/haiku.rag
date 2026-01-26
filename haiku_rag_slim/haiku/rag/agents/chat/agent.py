@@ -1,4 +1,5 @@
 import asyncio
+import math
 
 from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent, RunContext, ToolReturn
@@ -23,7 +24,22 @@ from haiku.rag.agents.research.graph import build_conversational_graph
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config.models import AppConfig
+from haiku.rag.embeddings import get_embedder
 from haiku.rag.utils import get_model
+
+# Similarity threshold for recall matching
+RECALL_SIMILARITY_THRESHOLD = 0.8
+
+
+def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    norm1 = math.sqrt(sum(a * a for a in vec1))
+    norm2 = math.sqrt(sum(b * b for b in vec2))
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return dot_product / (norm1 * norm2)
+
 
 # Track summarization tasks per session to allow cancellation
 _summarization_tasks: dict[str, asyncio.Task[None]] = {}
@@ -364,5 +380,59 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             f"- Created: {doc.created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
             f"**Content:**\n{doc.content}"
         )
+
+    @agent.tool
+    async def recall(
+        ctx: RunContext[ChatDeps],
+        topic: str,
+    ) -> str:
+        """Search conversation history for a previous answer on this topic.
+
+        Use this FIRST when the user asks about something that may have been
+        discussed before. Returns the previous answer with citations if found,
+        or indicates no match exists.
+
+        Args:
+            topic: The topic or question to search for in conversation history
+        """
+        if ctx.deps.session_state is None:
+            return "No conversation history available."
+
+        qa_history = ctx.deps.session_state.qa_history
+        if not qa_history:
+            return "No previous answers found."
+
+        # Get embedder and embed the topic
+        embedder = get_embedder(ctx.deps.config)
+        topic_embedding = await embedder.embed_query(topic)
+
+        # Embed all previous questions
+        questions = [qa.question for qa in qa_history]
+        question_embeddings = await embedder.embed_documents(questions)
+
+        # Find best match by cosine similarity
+        best_match_idx = -1
+        best_similarity = 0.0
+        for i, q_embedding in enumerate(question_embeddings):
+            similarity = _cosine_similarity(topic_embedding, q_embedding)
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match_idx = i
+
+        # Check if similarity exceeds threshold
+        if best_similarity < RECALL_SIMILARITY_THRESHOLD:
+            return "No previous answer found on this topic."
+
+        # Return the matching answer with citations
+        matched_qa = qa_history[best_match_idx]
+        result = f"**Previous answer found** (similarity: {best_similarity:.2f}):\n\n"
+        result += f"**Question:** {matched_qa.question}\n\n"
+        result += f"**Answer:** {matched_qa.answer}\n\n"
+
+        if matched_qa.citations:
+            citation_refs = " ".join(f"[{c.index}]" for c in matched_qa.citations)
+            result += f"Sources: {citation_refs}"
+
+        return result
 
     return agent

@@ -1,0 +1,468 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '5001'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a helpful research assistant powered by haiku.rag, a knowledge base system.
+
+          You have access to a knowledge base of documents. Use your tools to search and answer questions.
+
+          CRITICAL RULES:
+          1. For greetings or casual chat: respond directly WITHOUT using any tools
+          2. For follow-up questions about topics already discussed: Use "recall" FIRST to check conversation history
+          3. For new questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+          4. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
+          5. NEVER call the same tool multiple times for a single user message
+          6. NEVER make up information - always use tools to get facts from the knowledge base
+
+          How to decide which tool to use:
+          - "recall" - Use FIRST when the user asks about a topic that may have been discussed before (e.g., "remind me about X", "what did you say about Y", "tell me again about Z"). If recall finds a previous answer, use it directly. If recall returns "no match", proceed with "ask".
+          - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
+          - "ask" - Use for NEW questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
+          - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
+
+          IMPORTANT - When user mentions a document in search/ask:
+          - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
+            - Extract the TOPIC as `query`/`question`
+            - Extract the DOCUMENT NAME as `document_name`
+          - Examples for search:
+            - "search for embeddings in the ML paper" → query="embeddings", document_name="ML paper"
+            - "find transformer architecture in 2412.00566" → query="transformer architecture", document_name="2412.00566"
+          - Examples for ask:
+            - "what does the ML paper say about embeddings?" → question="what are the embedding methods?", document_name="ML paper"
+            - "answer from 2412.00566 about model training" → question="how is the model trained?", document_name="2412.00566"
+
+          Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user.
+        role: system
+      - content: Remind me about the DocLayNet class labels
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Use this when you need to find documents or explore the knowledge base.
+            Results are displayed to the user - just list the titles found.
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: 5)'
+              query:
+                description: The search query (what to search for)
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            Answer a specific question using the knowledge base.
+
+            Use this for direct questions that need a focused answer with citations.
+            Uses a research graph for planning, searching, and synthesis.
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within (e.g., "tbmed593", "army manual")
+              question:
+                description: The question to answer
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+      - function:
+          description: |-
+            Retrieve a specific document by title or URI.
+
+            Use this when the user wants to fetch/get/retrieve a specific document.
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            Search conversation history for a previous answer on this topic.
+
+            Use this FIRST when the user asks about something that may have been
+            discussed before. Returns the previous answer with citations if found,
+            or indicates no match exists.
+          name: recall
+          parameters:
+            additionalProperties: false
+            properties:
+              topic:
+                description: The topic or question to search for in conversation history
+                type: string
+            required:
+            - topic
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '467'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need recall.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"topic":"DocLayNet class labels"}'
+              name: recall
+            id: call_oijissv6
+            index: 0
+            type: function
+      created: 1769422802
+      id: chatcmpl-381
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 31
+        prompt_tokens: 1013
+        total_tokens: 1044
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '92'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet class labels
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 7
+        total_tokens: 7
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '109'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - What are the class labels in DocLayNet?
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 12
+        total_tokens: 12
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '5555'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a helpful research assistant powered by haiku.rag, a knowledge base system.
+
+          You have access to a knowledge base of documents. Use your tools to search and answer questions.
+
+          CRITICAL RULES:
+          1. For greetings or casual chat: respond directly WITHOUT using any tools
+          2. For follow-up questions about topics already discussed: Use "recall" FIRST to check conversation history
+          3. For new questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+          4. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
+          5. NEVER call the same tool multiple times for a single user message
+          6. NEVER make up information - always use tools to get facts from the knowledge base
+
+          How to decide which tool to use:
+          - "recall" - Use FIRST when the user asks about a topic that may have been discussed before (e.g., "remind me about X", "what did you say about Y", "tell me again about Z"). If recall finds a previous answer, use it directly. If recall returns "no match", proceed with "ask".
+          - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
+          - "ask" - Use for NEW questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
+          - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
+
+          IMPORTANT - When user mentions a document in search/ask:
+          - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
+            - Extract the TOPIC as `query`/`question`
+            - Extract the DOCUMENT NAME as `document_name`
+          - Examples for search:
+            - "search for embeddings in the ML paper" → query="embeddings", document_name="ML paper"
+            - "find transformer architecture in 2412.00566" → query="transformer architecture", document_name="2412.00566"
+          - Examples for ask:
+            - "what does the ML paper say about embeddings?" → question="what are the embedding methods?", document_name="ML paper"
+            - "answer from 2412.00566 about model training" → question="how is the model trained?", document_name="2412.00566"
+
+          Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user.
+        role: system
+      - content: Remind me about the DocLayNet class labels
+        role: user
+      - content: |-
+          <think>
+          Need recall.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"topic":"DocLayNet class labels"}'
+            name: recall
+          id: call_oijissv6
+          type: function
+      - content: |-
+          **Previous answer found** (similarity: 0.89):
+
+          **Question:** What are the class labels in DocLayNet?
+
+          **Answer:** DocLayNet defines 11 class labels including Caption, Footnote, Formula, List-item, Page-footer, Page-header, Picture, Section-header, Table, Text, and Title.
+
+          Sources: [1]
+        role: tool
+        tool_call_id: call_oijissv6
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            Search the knowledge base for relevant documents.
+
+            Use this when you need to find documents or explore the knowledge base.
+            Results are displayed to the user - just list the titles found.
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: 5)'
+              query:
+                description: The search query (what to search for)
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            Answer a specific question using the knowledge base.
+
+            Use this for direct questions that need a focused answer with citations.
+            Uses a research graph for planning, searching, and synthesis.
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within (e.g., "tbmed593", "army manual")
+              question:
+                description: The question to answer
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+      - function:
+          description: |-
+            Retrieve a specific document by title or URI.
+
+            Use this when the user wants to fetch/get/retrieve a specific document.
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            Search conversation history for a previous answer on this topic.
+
+            Use this FIRST when the user asks about something that may have been
+            discussed before. Returns the previous answer with citations if found,
+            or indicates no match exists.
+          name: recall
+          parameters:
+            additionalProperties: false
+            properties:
+              topic:
+                description: The topic or question to search for in conversation history
+                type: string
+            required:
+            - topic
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '749'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: |-
+            DocLayNet defines **11** class labels for document layout elements:
+
+            | # | Class label |
+            |---|-------------|
+            | 1 | **Caption** |
+            | 2 | **Footnote** |
+            | 3 | **Formula** |
+            | 4 | **List‑item** |
+            | 5 | **Page‑footer** |
+            | 6 | **Page‑header** |
+            | 7 | **Picture** |
+            | 8 | **Section‑header** |
+            | 9 | **Table** |
+            |10 | **Text** |
+            |11 | **Title** |
+
+            These labels cover the common visual components you’ll find in academic and technical documents.
+          role: assistant
+      created: 1769422805
+      id: chatcmpl-20
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 140
+        prompt_tokens: 1133
+        total_tokens: 1273
+    status:
+      code: 200
+      message: OK
+version: 1
