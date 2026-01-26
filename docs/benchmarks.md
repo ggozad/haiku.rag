@@ -7,18 +7,48 @@ We evaluate `haiku.rag` on several datasets to measure both retrieval quality an
 You can run evaluations with the `evaluations` CLI:
 
 ```bash
-evaluations repliqa
-evaluations wix
+evaluations run repliqa
+evaluations run wix
 ```
 
 The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we leverage for dataset management, scoring, and report generation.
+
+### Pre-built Databases
+
+Building evaluation databases from scratch can take a long time, especially for large datasets like OpenRAG Bench. Pre-built databases are available on HuggingFace:
+
+```bash
+# Download a specific dataset
+evaluations download repliqa
+
+# Download all datasets
+evaluations download all
+
+# Force re-download (overwrite existing)
+evaluations download repliqa --force
+```
+
+Available datasets:
+
+| Dataset | Size |
+|---------|------|
+| `repliqa` | ~18MB |
+| `hotpotqa` | ~331MB |
+| `wix` | ~511MB |
+| `open_rag_bench` | ~14GB |
+
+After downloading, run benchmarks with `--skip-db` to use the pre-built database:
+
+```bash
+evaluations run repliqa --skip-db
+```
 
 ### Configuration
 
 The benchmark script accepts several options:
 
 ```bash
-evaluations repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
+evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
 ```
 
 **Options:**

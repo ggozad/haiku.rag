@@ -1,4 +1,7 @@
 import asyncio
+import shutil
+import tempfile
+import zipfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -6,6 +9,7 @@ from typing import Any, cast
 import logfire
 import typer
 from dotenv import find_dotenv, load_dotenv
+from huggingface_hub import HfApi, hf_hub_download
 from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
@@ -23,6 +27,8 @@ from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model
 
 load_dotenv(find_dotenv(usecwd=True))
+
+HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
@@ -447,6 +453,104 @@ def run(
             multimodal_only=multimodal_only,
         )
     )
+
+
+@app.command()
+def download(
+    dataset: str = typer.Argument(..., help="Dataset key or 'all' to download all."),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing database."),
+) -> None:
+    """Download pre-built evaluation database from HuggingFace."""
+    if dataset.lower() == "all":
+        specs = list(DATASETS.values())
+    else:
+        spec = DATASETS.get(dataset.lower())
+        if spec is None:
+            valid_datasets = ", ".join(sorted(DATASETS))
+            raise typer.BadParameter(
+                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
+            )
+        specs = [spec]
+
+    for spec in specs:
+        db = spec.db_path()
+        if db.exists() and not force:
+            console.print(
+                f"[yellow]Skipping {spec.key}: database already exists at {db}[/yellow]"
+            )
+            console.print("Use --force to overwrite.")
+            continue
+
+        console.print(f"[blue]Downloading {spec.key}...[/blue]")
+        zip_filename = f"{spec.db_filename}.zip"
+
+        try:
+            zip_path = hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=zip_filename,
+                repo_type="dataset",
+            )
+        except Exception as e:
+            console.print(f"[red]Failed to download {spec.key}: {e}[/red]")
+            continue
+
+        # Remove existing database if force is set
+        if db.exists():
+            shutil.rmtree(db)
+
+        # Extract to the parent directory
+        db.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(db.parent)
+
+        console.print(f"[green]Downloaded {spec.key} to {db}[/green]")
+
+
+@app.command()
+def upload(
+    dataset: str = typer.Argument(..., help="Dataset key or 'all' to upload all."),
+) -> None:
+    """Upload evaluation database to HuggingFace (maintainer only)."""
+    if dataset.lower() == "all":
+        specs = list(DATASETS.values())
+    else:
+        spec = DATASETS.get(dataset.lower())
+        if spec is None:
+            valid_datasets = ", ".join(sorted(DATASETS))
+            raise typer.BadParameter(
+                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
+            )
+        specs = [spec]
+
+    api = HfApi()
+
+    for spec in specs:
+        db = spec.db_path()
+        if not db.exists():
+            console.print(f"[red]Database not found at {db}[/red]")
+            continue
+
+        console.print(f"[blue]Uploading {spec.key}...[/blue]")
+        zip_filename = f"{spec.db_filename}.zip"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / zip_filename
+            console.print("[dim]Creating zip archive...[/dim]")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file in db.rglob("*"):
+                    if file.is_file():
+                        arcname = f"{spec.db_filename}/{file.relative_to(db)}"
+                        zf.write(file, arcname)
+
+            console.print("[dim]Uploading to HuggingFace...[/dim]")
+            api.upload_file(
+                path_or_fileobj=str(zip_path),
+                path_in_repo=zip_filename,
+                repo_id=HF_REPO_ID,
+                repo_type="dataset",
+            )
+
+        console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
 
 
 if __name__ == "__main__":

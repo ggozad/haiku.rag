@@ -1345,6 +1345,7 @@ source = { editable = "evaluations" }
 dependencies = [
     { name = "datasets" },
     { name = "haiku-rag-slim" },
+    { name = "huggingface-hub" },
     { name = "pydantic-ai-slim", extra = ["evals", "logfire"] },
     { name = "python-dotenv" },
     { name = "typer" },
@@ -1354,6 +1355,7 @@ dependencies = [
 requires-dist = [
     { name = "datasets", specifier = ">=4.5.0" },
     { name = "haiku-rag-slim", editable = "haiku_rag_slim" },
+    { name = "huggingface-hub", specifier = ">=0.20.0" },
     { name = "pydantic-ai-slim", extras = ["evals", "logfire"], specifier = ">=1.46.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "typer", specifier = ">=0.19.2,<0.20.0" },
