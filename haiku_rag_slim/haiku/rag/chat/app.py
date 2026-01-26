@@ -1,7 +1,7 @@
 # pyright: reportPossiblyUnboundVariable=false
 import asyncio
 import uuid
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,7 +39,7 @@ except ImportError:
 
 try:
     import textual_image.widget  # noqa: F401 - import early for renderer detection
-    from textual.app import App
+    from textual.app import App, SystemCommand
     from textual.binding import Binding
     from textual.widgets import Footer, Header, Input
     from textual.worker import Worker
@@ -50,6 +50,7 @@ try:
 except ImportError:
     TEXTUAL_AVAILABLE = False
     App = object  # type: ignore
+    SystemCommand = object  # type: ignore
 
 
 class ChatApp(App):
@@ -79,10 +80,6 @@ class ChatApp(App):
     """
 
     BINDINGS = [
-        Binding("ctrl+l", "clear_chat", "Clear", show=True),
-        Binding("ctrl+g", "show_visual", "Visual", show=True),
-        Binding("ctrl+i", "show_info", "Info", show=True),
-        Binding("ctrl+o", "show_context", "Context", show=True),
         Binding("escape", "focus_input", "Focus Input", show=False),
     ]
 
@@ -105,6 +102,7 @@ class ChatApp(App):
         self._last_citations: list[Citation] = []
         self._current_worker: Worker[None] | None = None
         self._message_history: list[ModelMessage] = []
+        self._document_filter: list[str] = []
 
     def compose(self) -> "ComposeResult":
         """Compose the UI layout."""
@@ -112,6 +110,35 @@ class ChatApp(App):
         yield ChatHistory(id="chat-history")
         yield Input(placeholder="Ask a question...", id="chat-input")
         yield Footer()
+
+    def get_system_commands(self, screen: Any) -> Iterable[SystemCommand]:
+        """Add commands to the command palette."""
+        yield from super().get_system_commands(screen)
+        yield SystemCommand(
+            "Clear chat",
+            "Clear the chat history and reset session",
+            self.action_clear_chat,
+        )
+        yield SystemCommand(
+            "Filter documents",
+            "Select documents to filter searches",
+            self.action_show_filter,
+        )
+        yield SystemCommand(
+            "Show visual grounding",
+            "Show visual grounding for selected citation",
+            self.action_show_visual,
+        )
+        yield SystemCommand(
+            "Database info",
+            "Show database information",
+            self.action_show_info,
+        )
+        yield SystemCommand(
+            "Session context",
+            "Show current session context",
+            self.action_show_context,
+        )
 
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
@@ -127,6 +154,7 @@ class ChatApp(App):
         self.agent = create_chat_agent(self.config)
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
+            document_filter=self._document_filter,
         )
 
         # Focus the input field
@@ -270,9 +298,10 @@ class ChatApp(App):
         await chat_history.clear_messages()
         self._last_citations.clear()
         self._message_history.clear()
-        # Reset session state for fresh conversation
+        # Reset session state for fresh conversation (preserve document filter)
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
+            document_filter=self._document_filter,
         )
 
     def action_focus_input(self) -> None:
@@ -339,3 +368,23 @@ class ChatApp(App):
         citation_widgets = list(chat_history.query(CitationWidget))
         if 0 <= event.citation_index < len(citation_widgets):
             citation_widgets[event.citation_index].add_class("selected")
+
+    async def action_show_filter(self) -> None:
+        """Show document filter modal."""
+        if not self.client:
+            return
+
+        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+
+        await self.push_screen(
+            DocumentFilterModal(
+                client=self.client,
+                selected=self._document_filter,
+            )
+        )
+
+    def on_document_filter_modal_filter_changed(self, event: Any) -> None:
+        """Handle document filter changes from modal."""
+        self._document_filter = event.selected
+        if self.session_state:
+            self.session_state.document_filter = self._document_filter
