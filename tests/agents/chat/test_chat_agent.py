@@ -677,3 +677,100 @@ async def test_search_agent_with_session_filter(allow_model_requests, temp_db_pa
             assert "labels" in (r.document_uri or "").lower() or "Labels" in (
                 r.document_title or ""
             )
+
+
+def test_ask_tool_citation_registry_logic():
+    """Test the citation index assignment logic used by the ask tool.
+
+    Verifies that:
+    1. First chunk gets index 1
+    2. Second unique chunk gets index 2
+    3. Same chunk_id always gets same index
+    4. Indices don't reset between calls
+    """
+    session_state = ChatSessionState(session_id="test-registry")
+
+    # Simulate first ask tool building citations
+    first_ask_chunks = ["chunk-a", "chunk-b"]
+    first_citations = []
+    for chunk_id in first_ask_chunks:
+        index = session_state.get_or_assign_index(chunk_id)
+        first_citations.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    assert first_citations[0].index == 1
+    assert first_citations[1].index == 2
+
+    # Simulate second ask tool - overlapping chunk_id should keep same index
+    second_ask_chunks = ["chunk-b", "chunk-c"]  # chunk-b was in first ask
+    second_citations = []
+    for chunk_id in second_ask_chunks:
+        index = session_state.get_or_assign_index(chunk_id)
+        second_citations.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    # chunk-b should have same index as before
+    assert second_citations[0].index == 2
+    # chunk-c is new, gets next index
+    assert second_citations[1].index == 3
+
+    # Registry should have all three chunks
+    assert len(session_state.citation_registry) == 3
+    assert session_state.citation_registry == {"chunk-a": 1, "chunk-b": 2, "chunk-c": 3}
+
+
+def test_search_tool_citation_registry_logic():
+    """Test the citation index assignment logic used by the search tool.
+
+    Verifies that search and ask tools share the same registry,
+    maintaining stable indices across different tool calls.
+    """
+    session_state = ChatSessionState(session_id="test-registry")
+
+    # Simulate ask tool first (assigns indices 1, 2)
+    for chunk_id in ["chunk-a", "chunk-b"]:
+        session_state.get_or_assign_index(chunk_id)
+
+    # Simulate search tool returning overlapping + new chunks
+    search_chunks = ["chunk-b", "chunk-c", "chunk-d"]  # chunk-b already exists
+    search_citations = []
+    for chunk_id in search_chunks:
+        index = session_state.get_or_assign_index(chunk_id)
+        search_citations.append(
+            Citation(
+                index=index,
+                document_id="doc-1",
+                chunk_id=chunk_id,
+                document_uri="test.md",
+                content="test",
+            )
+        )
+
+    # chunk-b should have same index as assigned by ask (2)
+    assert search_citations[0].index == 2
+    # New chunks get incrementing indices
+    assert search_citations[1].index == 3
+    assert search_citations[2].index == 4
+
+    # Registry should have all four chunks
+    assert len(session_state.citation_registry) == 4
+    assert session_state.citation_registry == {
+        "chunk-a": 1,
+        "chunk-b": 2,
+        "chunk-c": 3,
+        "chunk-d": 4,
+    }

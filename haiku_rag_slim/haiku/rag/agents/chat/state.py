@@ -49,6 +49,21 @@ class ChatSessionState(BaseModel):
     qa_history: list[QAResponse] = []
     session_context: SessionContext | None = None
     document_filter: list[str] = []
+    citation_registry: dict[str, int] = {}
+
+    def get_or_assign_index(self, chunk_id: str) -> int:
+        """Get or assign a stable citation index for a chunk_id.
+
+        Citation indices persist across tool calls within a session.
+        The first chunk gets index 1, subsequent new chunks get incrementing indices.
+        Same chunk_id always returns the same index.
+        """
+        if chunk_id in self.citation_registry:
+            return self.citation_registry[chunk_id]
+
+        new_index = len(self.citation_registry) + 1
+        self.citation_registry[chunk_id] = new_index
+        return new_index
 
 
 @dataclass
@@ -103,6 +118,8 @@ class ChatDeps:
                 self.session_state.document_filter = state_data.get(
                     "document_filter", []
                 )
+            if "citation_registry" in state_data:
+                self.session_state.citation_registry = state_data["citation_registry"]
             # NOTE: session_context intentionally NOT updated from client
             # The agent owns this via server-side cache
 

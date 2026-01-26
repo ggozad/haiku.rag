@@ -376,6 +376,153 @@ def test_chat_deps_state_setter_ignores_session_context():
     assert deps.session_state.session_context.summary == "Server-side context"
 
 
+def test_citation_registry_get_or_assign_index_first_chunk():
+    """Test get_or_assign_index assigns index 1 to first chunk."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+    index = session_state.get_or_assign_index("chunk-abc")
+    assert index == 1
+
+
+def test_citation_registry_get_or_assign_index_second_chunk():
+    """Test get_or_assign_index assigns incremental indices to new chunks."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+    index1 = session_state.get_or_assign_index("chunk-abc")
+    index2 = session_state.get_or_assign_index("chunk-def")
+    assert index1 == 1
+    assert index2 == 2
+
+
+def test_citation_registry_get_or_assign_index_same_chunk():
+    """Test get_or_assign_index returns same index for same chunk_id."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+    index1 = session_state.get_or_assign_index("chunk-abc")
+    index2 = session_state.get_or_assign_index("chunk-abc")
+    assert index1 == index2 == 1
+
+
+def test_citation_registry_get_or_assign_index_stability():
+    """Test citation indices are stable across multiple calls."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+
+    # First call assigns indices 1, 2, 3
+    idx_a = session_state.get_or_assign_index("chunk-a")
+    idx_b = session_state.get_or_assign_index("chunk-b")
+    idx_c = session_state.get_or_assign_index("chunk-c")
+
+    # Second round - existing chunks keep their indices
+    assert session_state.get_or_assign_index("chunk-b") == idx_b
+    assert session_state.get_or_assign_index("chunk-a") == idx_a
+    assert session_state.get_or_assign_index("chunk-c") == idx_c
+
+    # New chunk gets next index
+    idx_d = session_state.get_or_assign_index("chunk-d")
+    assert idx_d == 4
+
+
+def test_citation_registry_serialization():
+    """Test citation_registry is included in model_dump for AG-UI state."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    session_state = ChatSessionState(session_id="test")
+    session_state.get_or_assign_index("chunk-a")
+    session_state.get_or_assign_index("chunk-b")
+
+    state_dict = session_state.model_dump()
+    assert "citation_registry" in state_dict
+    assert state_dict["citation_registry"] == {"chunk-a": 1, "chunk-b": 2}
+
+
+def test_citation_registry_deserialization():
+    """Test citation_registry is restored from dict."""
+    from haiku.rag.agents.chat.state import ChatSessionState
+
+    # Simulate state from AG-UI using model_validate (proper Pydantic deserialization)
+    session_state = ChatSessionState.model_validate(
+        {
+            "session_id": "test",
+            "citations": [],
+            "qa_history": [],
+            "citation_registry": {"chunk-a": 1, "chunk-b": 2},
+        }
+    )
+
+    # Existing chunks should return their persisted indices
+    assert session_state.get_or_assign_index("chunk-a") == 1
+    assert session_state.get_or_assign_index("chunk-b") == 2
+    # New chunk should get next index
+    assert session_state.get_or_assign_index("chunk-c") == 3
+
+
+def test_chat_deps_state_getter_includes_citation_registry():
+    """Test ChatDeps.state getter includes citation_registry."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="test")
+    session_state.get_or_assign_index("chunk-a")
+
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    state = deps.state
+    assert state is not None
+    assert AGUI_STATE_KEY in state
+    assert state[AGUI_STATE_KEY]["citation_registry"] == {"chunk-a": 1}
+
+
+def test_chat_deps_state_setter_restores_citation_registry():
+    """Test ChatDeps.state setter restores citation_registry from incoming state."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+
+    mock_client = MagicMock()
+    mock_config = MagicMock()
+
+    session_state = ChatSessionState(session_id="test")
+    deps = ChatDeps(
+        client=mock_client,
+        config=mock_config,
+        session_state=session_state,
+        state_key=AGUI_STATE_KEY,
+    )
+
+    # Simulate incoming AG-UI state with citation_registry
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_id": "test",
+            "qa_history": [],
+            "citations": [],
+            "citation_registry": {"chunk-x": 1, "chunk-y": 2},
+        }
+    }
+
+    deps.state = incoming_state
+
+    assert deps.session_state is not None
+    # Registry should be restored
+    assert deps.session_state.get_or_assign_index("chunk-x") == 1
+    assert deps.session_state.get_or_assign_index("chunk-y") == 2
+    # New chunk gets next index
+    assert deps.session_state.get_or_assign_index("chunk-z") == 3
+
+
 def test_chat_deps_state_setter_restores_document_filter():
     """Test ChatDeps.state setter restores document_filter from incoming state."""
     from unittest.mock import MagicMock

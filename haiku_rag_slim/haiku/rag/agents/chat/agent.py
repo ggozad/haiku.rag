@@ -97,22 +97,28 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         if not results:
             return ToolReturn(return_value="No results found.")
 
-        # Build citation infos for frontend display
-        citation_infos = [
-            Citation(
-                index=i + 1,
-                document_id=r.document_id or "",
-                chunk_id=r.chunk_id or "",
-                document_uri=r.document_uri or "",
-                document_title=r.document_title,
-                page_numbers=r.page_numbers or [],
-                headings=r.headings,
-                content=r.content,
+        # Build citation infos using stable registry indices
+        citation_infos = []
+        for r in results:
+            chunk_id = r.chunk_id or ""
+            if ctx.deps.session_state is not None and chunk_id:
+                index = ctx.deps.session_state.get_or_assign_index(chunk_id)
+            else:
+                index = len(citation_infos) + 1
+            citation_infos.append(
+                Citation(
+                    index=index,
+                    document_id=r.document_id or "",
+                    chunk_id=chunk_id,
+                    document_uri=r.document_uri or "",
+                    document_title=r.document_title,
+                    page_numbers=r.page_numbers or [],
+                    headings=r.headings,
+                    content=r.content,
+                )
             )
-            for i, r in enumerate(results)
-        ]
 
-        # Build new state with citations
+        # Build new state with citations and registry
         session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
         new_state = ChatSessionState(
             session_id=session_id,
@@ -126,20 +132,25 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             document_filter=(
                 ctx.deps.session_state.document_filter if ctx.deps.session_state else []
             ),
+            citation_registry=(
+                ctx.deps.session_state.citation_registry
+                if ctx.deps.session_state
+                else {}
+            ),
         )
 
         # Return detailed results for the agent to present
         result_lines = []
-        for i, r in enumerate(results):
-            title = r.document_title or r.document_uri or "Unknown"
+        for c in citation_infos:
+            title = c.document_title or c.document_uri or "Unknown"
             # Truncate content for display
-            snippet = r.content[:300].replace("\n", " ").strip()
-            if len(r.content) > 300:
+            snippet = c.content[:300].replace("\n", " ").strip()
+            if len(c.content) > 300:
                 snippet += "..."
 
-            line = f"[{i + 1}] **{title}**"
-            if r.page_numbers:
-                line += f" (pages {', '.join(map(str, r.page_numbers))})"
+            line = f"[{c.index}] **{title}**"
+            if c.page_numbers:
+                line += f" (pages {', '.join(map(str, c.page_numbers))})"
             line += f"\n    {snippet}"
             result_lines.append(line)
 
@@ -215,20 +226,26 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         result = await graph.run(state=state, deps=deps)
 
-        # Build citation infos for frontend and history
-        citation_infos = [
-            Citation(
-                index=i + 1,
-                document_id=c.document_id,
-                chunk_id=c.chunk_id,
-                document_uri=c.document_uri,
-                document_title=c.document_title,
-                page_numbers=c.page_numbers,
-                headings=c.headings,
-                content=c.content,
+        # Build citation infos using stable registry indices
+        citation_infos = []
+        for c in result.citations:
+            # Use registry for stable indices across calls
+            if ctx.deps.session_state is not None:
+                index = ctx.deps.session_state.get_or_assign_index(c.chunk_id)
+            else:
+                index = len(citation_infos) + 1
+            citation_infos.append(
+                Citation(
+                    index=index,
+                    document_id=c.document_id,
+                    chunk_id=c.chunk_id,
+                    document_uri=c.document_uri,
+                    document_title=c.document_title,
+                    page_numbers=c.page_numbers,
+                    headings=c.headings,
+                    content=c.content,
+                )
             )
-            for i, c in enumerate(result.citations)
-        ]
 
         # Accumulate Q&A in session state with full citation metadata
         if ctx.deps.session_state is not None:
@@ -260,7 +277,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             _summarization_tasks[session_id] = task
             task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
 
-        # Build new state with citations AND accumulated qa_history
+        # Build new state with citations, qa_history, and registry
         new_state = ChatSessionState(
             session_id=session_id,
             citations=citation_infos,
@@ -273,12 +290,17 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             document_filter=(
                 ctx.deps.session_state.document_filter if ctx.deps.session_state else []
             ),
+            citation_registry=(
+                ctx.deps.session_state.citation_registry
+                if ctx.deps.session_state
+                else {}
+            ),
         )
 
-        # Format answer with citation references and confidence
+        # Format answer with citation references using stable indices
         answer_text = result.answer
         if citation_infos:
-            citation_refs = " ".join(f"[{i + 1}]" for i in range(len(citation_infos)))
+            citation_refs = " ".join(f"[{c.index}]" for c in citation_infos)
             answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
         snapshot = new_state.model_dump()
