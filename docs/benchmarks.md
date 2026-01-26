@@ -32,7 +32,7 @@ Available datasets:
 
 | Dataset | Size |
 |---------|------|
-| `repliqa` | ~18MB |
+| `repliqa` | ~30MB |
 | `hotpotqa` | ~331MB |
 | `wix` | ~511MB |
 | `open_rag_bench` | ~14GB |

@@ -1,7 +1,5 @@
 import asyncio
 import shutil
-import tempfile
-import zipfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -9,7 +7,7 @@ from typing import Any, cast
 import logfire
 import typer
 from dotenv import find_dotenv, load_dotenv
-from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub import HfApi, snapshot_download
 from pydantic_evals import Case, Dataset as EvalDataset
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
@@ -482,13 +480,12 @@ def download(
             continue
 
         console.print(f"[blue]Downloading {spec.key}...[/blue]")
-        zip_filename = f"{spec.db_filename}.zip"
 
         try:
-            zip_path = hf_hub_download(
+            downloaded_path = snapshot_download(
                 repo_id=HF_REPO_ID,
-                filename=zip_filename,
                 repo_type="dataset",
+                allow_patterns=f"{spec.db_filename}/*",
             )
         except Exception as e:
             console.print(f"[red]Failed to download {spec.key}: {e}[/red]")
@@ -498,10 +495,9 @@ def download(
         if db.exists():
             shutil.rmtree(db)
 
-        # Extract to the parent directory
+        # Copy from cache to target location
         db.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(db.parent)
+        shutil.copytree(Path(downloaded_path) / spec.db_filename, db)
 
         console.print(f"[green]Downloaded {spec.key} to {db}[/green]")
 
@@ -531,24 +527,12 @@ def upload(
             continue
 
         console.print(f"[blue]Uploading {spec.key}...[/blue]")
-        zip_filename = f"{spec.db_filename}.zip"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            zip_path = Path(tmpdir) / zip_filename
-            console.print("[dim]Creating zip archive...[/dim]")
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for file in db.rglob("*"):
-                    if file.is_file():
-                        arcname = f"{spec.db_filename}/{file.relative_to(db)}"
-                        zf.write(file, arcname)
-
-            console.print("[dim]Uploading to HuggingFace...[/dim]")
-            api.upload_file(
-                path_or_fileobj=str(zip_path),
-                path_in_repo=zip_filename,
-                repo_id=HF_REPO_ID,
-                repo_type="dataset",
-            )
+        api.upload_folder(
+            folder_path=str(db),
+            path_in_repo=spec.db_filename,
+            repo_id=HF_REPO_ID,
+            repo_type="dataset",
+        )
 
         console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
 
