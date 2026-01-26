@@ -103,7 +103,6 @@ class ChatApp(App):
         self._is_processing = False
         self._tool_call_widgets: dict[str, Any] = {}
         self._last_citations: list[Citation] = []
-        self._selected_citation_idx: int | None = None
         self._current_worker: Worker[None] | None = None
         self._message_history: list[ModelMessage] = []
 
@@ -200,7 +199,6 @@ class ChatApp(App):
         # Clear for new query
         self._tool_call_widgets.clear()
         self._last_citations.clear()
-        self._selected_citation_idx = None
 
         # Run agent in a worker to keep UI responsive
         self._is_processing = True
@@ -271,7 +269,6 @@ class ChatApp(App):
         chat_history = self.query_one(ChatHistory)
         await chat_history.clear_messages()
         self._last_citations.clear()
-        self._selected_citation_idx = None
         self._message_history.clear()
         # Reset session state for fresh conversation
         self.session_state = ChatSessionState(
@@ -289,7 +286,6 @@ class ChatApp(App):
         chat_history = self.query_one(ChatHistory)
         for widget in chat_history.query(CitationWidget):
             widget.remove_class("selected")
-        self._selected_citation_idx = None
 
     def on_descendant_focus(self, _event: object) -> None:
         """Clear citation selection when input is focused."""
@@ -298,15 +294,16 @@ class ChatApp(App):
 
     async def action_show_visual(self) -> None:
         """Show visual grounding for the selected citation."""
-        if not self.client or not self._last_citations:
+        if not self.client:
             return
 
-        idx = (
-            self._selected_citation_idx
-            if self._selected_citation_idx is not None
-            else 0
-        )
-        citation = self._last_citations[idx]
+        # Get citation from selected widget directly
+        chat_history = self.query_one(ChatHistory)
+        selected_widgets = list(chat_history.query(CitationWidget).filter(".selected"))
+        if not selected_widgets:
+            return
+
+        citation = selected_widgets[0].citation
         chunk = await self.client.chunk_repository.get_by_id(citation.chunk_id)
         if not chunk:
             return
@@ -342,4 +339,3 @@ class ChatApp(App):
         citation_widgets = list(chat_history.query(CitationWidget))
         if 0 <= event.citation_index < len(citation_widgets):
             citation_widgets[event.citation_index].add_class("selected")
-            self._selected_citation_idx = event.citation_index
