@@ -123,7 +123,7 @@ state = ChatSessionState()
 Q/A history is used to:
 
 1. Provide context for follow-up questions
-2. Avoid repeating previous answers via the `recall` tool
+2. Avoid repeating previous answers (the `ask` tool automatically recalls relevant prior answers)
 3. Enable semantic ranking of relevant past answers
 
 ### AG-UI Integration
