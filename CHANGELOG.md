@@ -14,12 +14,10 @@
   - New `citation_registry: dict[str, int]` field on `ChatSessionState`
   - New `get_or_assign_index(chunk_id)` method for stable index assignment
   - Registry serialized/restored via AG-UI state protocol
-- **Recall Tool**: Check conversation history before running research
-  - New `recall` tool on chat agent searches previous Q&A pairs by semantic similarity
-  - Uses embedding similarity matching with 0.8 cosine similarity threshold
-  - Returns previous answer with citations if found, avoiding redundant research calls
-  - Emits `StateSnapshotEvent` so frontend can display recalled citations
-  - Updated system prompt with routing guidance: use `recall` FIRST for follow-up questions
+- **Prior Answer Recall**: The `ask` tool automatically checks conversation history before research
+  - Finds semantically similar prior answers using embedding similarity (0.7 cosine threshold)
+  - Relevant prior answers are passed to the research planner as context
+  - Planner can return empty sub_questions when context is sufficient, avoiding redundant searches
 - **Dynamic Session Context**: Compressed conversation history for multi-turn chat
   - New `SessionContext` model stores summarized conversation state instead of raw Q&A history
   - Background LLM-based summarization runs after each `ask` tool call (non-blocking)
@@ -27,7 +25,6 @@
   - Research graph receives compact context (~1,000-2,000 tokens) instead of raw qa_history (potentially thousands of tokens)
   - New `session_context` field on `ChatSessionState` synced via AG-UI state protocol
   - Chat TUI: New context modal (`Ctrl+O`) to view current session context
-  - Planner can now return empty sub_questions when context is sufficient to answer directly
 - **Session Document Filter**: Restrict all search/ask operations to selected documents
   - New `document_filter` field on `ChatSessionState` stores list of document titles/URIs
   - Session filter combines with per-tool `document_name` filter using AND logic
@@ -49,9 +46,9 @@
 
 ### Removed
 
-- **Q&A History Functions**: Removed unused conversation history utilities
-  - `rank_qa_history_by_similarity()` - chat agent now uses `SessionContext` instead of ranked Q&A pairs
-  - `format_conversation_context()` - no longer needed with SessionContext approach
+- **Q&A History Functions**: Removed standalone conversation history utilities
+  - `rank_qa_history_by_similarity()` - similarity matching now integrated into `ask` tool
+  - `format_conversation_context()` - replaced by `SessionContext` summarization
   - Associated embedding cache and helper functions also removed
 
 ## [0.26.9] - 2026-01-22

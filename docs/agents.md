@@ -61,14 +61,13 @@ Key features:
 
 ### Tools
 
-The chat agent uses four tools:
+The chat agent uses three tools:
 
-- `recall` — Search conversation history for previous answers (use FIRST for follow-up questions)
 - `search` — Hybrid search with optional document filter
-- `ask` — Answer questions using the conversational research graph
+- `ask` — Answer questions using the conversational research graph (automatically recalls prior answers)
 - `get_document` — Retrieve a specific document by title or URI
 
-The `recall` tool uses embedding similarity to find semantically matching questions from conversation history. If a match is found (above 0.8 cosine similarity threshold), it returns the previous answer with citations, avoiding redundant research calls.
+The `ask` tool automatically checks conversation history before running research. It uses embedding similarity (0.7 cosine threshold) to find semantically matching prior answers, which are passed to the research planner as context. When prior answers are sufficient, the planner can skip searching entirely.
 
 ### CLI Usage
 
