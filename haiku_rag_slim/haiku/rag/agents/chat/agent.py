@@ -170,7 +170,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             line += f"\n    {snippet}"
             result_lines.append(line)
 
-        snapshot = new_state.model_dump()
+        snapshot = new_state.model_dump(mode="json")
         if ctx.deps.state_key:
             snapshot = {ctx.deps.state_key: snapshot}
 
@@ -355,7 +355,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citation_refs = " ".join(f"[{c.index}]" for c in citation_infos)
             answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
-        snapshot = new_state.model_dump()
+        snapshot = new_state.model_dump(mode="json")
         if ctx.deps.state_key:
             snapshot = {ctx.deps.state_key: snapshot}
 

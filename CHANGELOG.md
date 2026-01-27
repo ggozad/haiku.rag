@@ -9,6 +9,11 @@
   - Eliminates need for clients to import and call internal cache functions (`cache_session_context`, `get_cached_session_context`)
   - `session_id` now auto-generates a UUID if not provided (previously defaulted to empty string)
 
+### Fixed
+
+- **AG-UI StateSnapshotEvent JSON Serialization**: Chat agent tools now use `model_dump(mode="json")` when creating `StateSnapshotEvent`
+  - Fixes `TypeError: Object of type datetime is not JSON serializable` when external clients persist AG-UI state to database JSON columns
+
 ## [0.27.0] - 2026-01-26
 
 ### Added

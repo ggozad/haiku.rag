@@ -4,6 +4,7 @@ from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
     ChatSessionState,
     QAResponse,
+    SessionContext,
     build_document_filter,
     build_multi_document_filter,
     combine_filters,
@@ -615,3 +616,28 @@ def test_chat_session_state_initial_context_serialization():
 
     restored = ChatSessionState.model_validate(state_dict)
     assert restored.initial_context == "User is working on authentication"
+
+
+def test_chat_session_state_model_dump_json_serializes_datetime():
+    """model_dump(mode='json') should serialize datetime to ISO string.
+
+    Agent tools use model_dump(mode='json') when creating StateSnapshotEvent
+    to ensure datetime fields are JSON-serializable for external clients
+    persisting AG-UI state to database JSON columns.
+    """
+    from datetime import datetime
+
+    session_state = ChatSessionState(
+        session_id="test",
+        session_context=SessionContext(
+            summary="Test summary",
+            last_updated=datetime(2025, 1, 27, 12, 0, 0),
+        ),
+    )
+
+    # This is how agent.py creates snapshots for StateSnapshotEvent
+    snapshot = session_state.model_dump(mode="json")
+
+    # datetime should be serialized as ISO string, not datetime object
+    assert isinstance(snapshot["session_context"]["last_updated"], str)
+    assert snapshot["session_context"]["last_updated"] == "2025-01-27T12:00:00"
