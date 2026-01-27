@@ -8,7 +8,7 @@ from haiku.rag.agents.chat.context import (
     get_cached_session_context,
     update_session_context,
 )
-from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
+from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT, DOCUMENT_SUMMARY_PROMPT
 from haiku.rag.agents.chat.search import SearchAgent
 from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
@@ -23,6 +23,7 @@ from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.utils import get_model
@@ -370,6 +371,72 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         )
 
     @agent.tool
+    async def list_documents(
+        ctx: RunContext[ChatDeps],
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> str:
+        """List available documents in the knowledge base.
+
+        Use this when the user wants to browse or see what documents are available.
+
+        Args:
+            limit: Maximum number of documents to return
+            offset: Number of documents to skip (for pagination)
+        """
+        # Build session filter from document_filter
+        doc_filter = None
+        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
+            doc_filter = build_multi_document_filter(
+                ctx.deps.session_state.document_filter
+            )
+
+        docs = await ctx.deps.client.list_documents(
+            limit=limit, offset=offset, filter=doc_filter
+        )
+
+        if not docs:
+            return "No documents found in the knowledge base."
+
+        lines = [f"Found {len(docs)} document(s):\n"]
+        for doc in docs:
+            title = doc.title or "Untitled"
+            uri = doc.uri or "N/A"
+            created = doc.created_at.strftime("%Y-%m-%d")
+            lines.append(f"- **{title}** (URI: {uri}, Created: {created})")
+
+        return "\n".join(lines)
+
+    async def _find_document(client: HaikuRAG, query: str):
+        """Find a document by exact URI, partial URI, or partial title match."""
+        # Try exact URI match first
+        doc = await client.get_document_by_uri(query)
+        if doc is not None:
+            return doc
+
+        escaped_query = query.replace("'", "''")
+        # Also try without spaces for matching "TB MED 593" to "tbmed593"
+        no_spaces = escaped_query.replace(" ", "")
+
+        # Try partial URI match (with and without spaces)
+        docs = await client.list_documents(
+            limit=1,
+            filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%') OR LOWER(uri) LIKE LOWER('%{no_spaces}%')",
+        )
+        if docs:
+            return docs[0]
+
+        # Try partial title match (with and without spaces)
+        docs = await client.list_documents(
+            limit=1,
+            filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')",
+        )
+        if docs:
+            return docs[0]
+
+        return None
+
+    @agent.tool
     async def get_document(
         ctx: RunContext[ChatDeps],
         query: str,
@@ -381,30 +448,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         Args:
             query: The document title or URI to look up
         """
-        # Try exact URI match first
-        doc = await ctx.deps.client.get_document_by_uri(query)
-
-        escaped_query = query.replace("'", "''")
-        # Also try without spaces for matching "TB MED 593" to "tbmed593"
-        no_spaces = escaped_query.replace(" ", "")
-
-        # If not found, try partial URI match (with and without spaces)
-        if doc is None:
-            docs = await ctx.deps.client.list_documents(
-                limit=1,
-                filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%') OR LOWER(uri) LIKE LOWER('%{no_spaces}%')",
-            )
-            if docs:
-                doc = docs[0]
-
-        # If still not found, try partial title match (with and without spaces)
-        if doc is None:
-            docs = await ctx.deps.client.list_documents(
-                limit=1,
-                filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')",
-            )
-            if docs:
-                doc = docs[0]
+        doc = await _find_document(ctx.deps.client, query)
 
         if doc is None:
             return f"Document not found: {query}"
@@ -412,9 +456,38 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         return (
             f"**{doc.title or 'Untitled'}**\n\n"
             f"- ID: {doc.id}\n"
-            f"- URI: {doc.uri or 'N/A'}\n"
+            f"- URI: {doc.uri}\n"
             f"- Created: {doc.created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
             f"**Content:**\n{doc.content}"
         )
+
+    @agent.tool
+    async def summarize_document(
+        ctx: RunContext[ChatDeps],
+        query: str,
+    ) -> str:
+        """Generate a summary of a specific document.
+
+        Use this when the user wants an overview or summary of a document's content.
+
+        Args:
+            query: The document title or URI to summarize
+        """
+        doc = await _find_document(ctx.deps.client, query)
+
+        if doc is None:
+            return f"Document not found: {query}"
+
+        # Use LLM to generate summary
+        summary_model = get_model(ctx.deps.config.qa.model, ctx.deps.config)
+        summary_agent: Agent[None, str] = Agent(
+            summary_model,
+            output_type=str,
+        )
+        result = await summary_agent.run(
+            DOCUMENT_SUMMARY_PROMPT.format(content=doc.content or "")
+        )
+
+        return f"**Summary of {doc.title or doc.uri}:**\n\n{result.output}"
 
     return agent

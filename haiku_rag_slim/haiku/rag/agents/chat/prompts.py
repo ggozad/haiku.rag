@@ -10,7 +10,9 @@ CRITICAL RULES:
 5. NEVER make up information - always use tools to get facts from the knowledge base
 
 How to decide which tool to use:
-- "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
+- "list_documents" - Use when the user wants to browse or see what documents are available (e.g., "what documents are available?", "show me the documents", "list available docs").
+- "summarize_document" - Use when the user wants an overview or summary of a specific document (e.g., "summarize document X", "what does Y cover?", "give me an overview of Z").
+- "get_document" - Use when the user wants the FULL content of a specific document (e.g., "get the paper about Y", "fetch 2412.00566", "show me the full document").
 - "ask" - Use for questions about topics in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across documents to return answers with citations.
 - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
 
@@ -58,3 +60,16 @@ Rules:
 - Preserve document names/titles when mentioned in sources
 
 Output the summary directly in markdown format. Do not include meta-commentary about the summary itself."""
+
+DOCUMENT_SUMMARY_PROMPT = """Generate a summary of the document content provided below.
+
+Start with a one-paragraph overview, then list the main topics covered, and highlight any key findings or conclusions.
+
+Guidelines:
+- Aim for 1-2 paragraphs for short documents, 3-4 paragraphs for longer ones
+- Focus on factual content and key information
+- Do not include meta-commentary like "This document discusses..." or "The document covers..."
+- Do not speculate beyond what's in the content
+
+Document content:
+{content}"""
