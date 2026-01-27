@@ -14,6 +14,8 @@ from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
     ChatDeps,
     ChatSessionState,
+    DocumentInfo,
+    DocumentListResponse,
     QAResponse,
     build_document_filter,
     build_multi_document_filter,
@@ -373,17 +375,18 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
     @agent.tool
     async def list_documents(
         ctx: RunContext[ChatDeps],
-        limit: int | None = None,
-        offset: int | None = None,
-    ) -> str:
+        page: int = 1,
+    ) -> DocumentListResponse:
         """List available documents in the knowledge base.
 
         Use this when the user wants to browse or see what documents are available.
 
         Args:
-            limit: Maximum number of documents to return
-            offset: Number of documents to skip (for pagination)
+            page: Page number (default: 1, 50 documents per page)
         """
+        page_size = 50
+        offset = (page - 1) * page_size
+
         # Build session filter from document_filter
         doc_filter = None
         if ctx.deps.session_state and ctx.deps.session_state.document_filter:
@@ -392,20 +395,24 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             )
 
         docs = await ctx.deps.client.list_documents(
-            limit=limit, offset=offset, filter=doc_filter
+            limit=page_size, offset=offset, filter=doc_filter
         )
+        total = await ctx.deps.client.count_documents(filter=doc_filter)
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
-        if not docs:
-            return "No documents found in the knowledge base."
-
-        lines = [f"Found {len(docs)} document(s):\n"]
-        for doc in docs:
-            title = doc.title or "Untitled"
-            uri = doc.uri or "N/A"
-            created = doc.created_at.strftime("%Y-%m-%d")
-            lines.append(f"- **{title}** (URI: {uri}, Created: {created})")
-
-        return "\n".join(lines)
+        return DocumentListResponse(
+            documents=[
+                DocumentInfo(
+                    title=doc.title or "Untitled",
+                    uri=doc.uri or "",
+                    created=doc.created_at.strftime("%Y-%m-%d"),
+                )
+                for doc in docs
+            ],
+            page=page,
+            total_pages=total_pages,
+            total_documents=total,
+        )
 
     async def _find_document(client: HaikuRAG, query: str):
         """Find a document by exact URI, partial URI, or partial title match."""

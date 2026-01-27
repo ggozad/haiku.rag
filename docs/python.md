@@ -151,6 +151,15 @@ docs = await client.list_documents(
 )
 ```
 
+Count documents:
+```python
+# Count all documents
+total = await client.count_documents()
+
+# Count with filter
+pdf_count = await client.count_documents(filter="uri LIKE '%.pdf'")
+```
+
 ### Updating Documents
 
 ```python

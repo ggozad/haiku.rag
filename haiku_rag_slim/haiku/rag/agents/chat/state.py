@@ -42,6 +42,23 @@ class QAResponse(BaseModel):
         )
 
 
+class DocumentInfo(BaseModel):
+    """Document info for list_documents response."""
+
+    title: str
+    uri: str
+    created: str
+
+
+class DocumentListResponse(BaseModel):
+    """Response from list_documents tool."""
+
+    documents: list[DocumentInfo]
+    page: int
+    total_pages: int
+    total_documents: int
+
+
 class SessionContext(BaseModel):
     """Compressed summary of conversation history for research graph."""
 

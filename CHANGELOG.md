@@ -4,8 +4,9 @@
 ### Added
 
 - **Chat Agent Document Awareness Tools**: Two new tools for browsing and understanding the knowledge base
-  - `list_documents` — Browse available documents with title, URI, and creation date; respects session document filter
+  - `list_documents` — Browse available documents with title, URI, and creation date; respects session document filter; paginated with total count
   - `summarize_document` — Generate LLM-powered summaries of specific documents
+- **Document Count API**: New `count_documents(filter)` method on `HaikuRAG` client for efficient document counting
 - **Read-Only Initial Context**: Initial context is now locked after the first message, providing consistent session context
   - Chat TUI: `--initial-context` CLI option sets background context for the session
   - Context can be edited via command palette before the first message is sent
