@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.27.1] - 2026-01-27
+
 ### Added
 
 - **Initial Context for Chat Sessions**: New `initial_context` field on `ChatSessionState` allows external clients to seed sessions with background context
