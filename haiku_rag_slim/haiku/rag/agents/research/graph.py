@@ -87,7 +87,7 @@ async def _plan_step_logic(
         else plan_prompt
     )
 
-    plan_agent: Agent[ResearchDependencies, ResearchPlan] = Agent(
+    plan_agent: Agent[ResearchDependencies, ResearchPlan] = Agent(  # type: ignore[assignment]
         model=get_model(model_config, config),
         output_type=ResearchPlan,
         instructions=effective_plan_prompt,
@@ -154,7 +154,7 @@ async def _search_one_step_logic(
         deps.semaphore = asyncio.Semaphore(state.max_concurrency)
 
     async with deps.semaphore:
-        agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(
+        agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(  # type: ignore[assignment]
             model=get_model(model_config, config),
             output_type=ToolOutput(RawSearchAnswer, max_retries=3),
             instructions=search_prompt,
@@ -280,7 +280,7 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        agent: Agent[ResearchDependencies, EvaluationResult] = Agent(
+        agent: Agent[ResearchDependencies, EvaluationResult] = Agent(  # type: ignore[assignment]
             model=get_model(model_config, config),
             output_type=EvaluationResult,
             instructions=decision_prompt,
@@ -341,7 +341,7 @@ def build_research_graph(
         state = ctx.state
         deps = ctx.deps
 
-        agent: Agent[ResearchDependencies, ResearchReport] = Agent(
+        agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
             model=get_model(model_config, config),
             output_type=ResearchReport,
             instructions=synthesis_prompt,
@@ -479,7 +479,7 @@ def build_conversational_graph(
         state = ctx.state
         deps = ctx.deps
 
-        agent: Agent[ResearchDependencies, ConversationalAnswer] = Agent(
+        agent: Agent[ResearchDependencies, ConversationalAnswer] = Agent(  # type: ignore[assignment]
             model=get_model(config.research.model, config),
             output_type=ConversationalAnswer,
             instructions=conversational_prompt,

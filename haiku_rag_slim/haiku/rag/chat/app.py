@@ -153,7 +153,6 @@ class ChatApp(App):
         # Create agent and session state
         self.agent = create_chat_agent(self.config)
         self.session_state = ChatSessionState(
-            session_id=str(uuid.uuid4()),
             document_filter=self._document_filter,
         )
 
@@ -300,7 +299,6 @@ class ChatApp(App):
         self._message_history.clear()
         # Reset session state for fresh conversation (preserve document filter)
         self.session_state = ChatSessionState(
-            session_id=str(uuid.uuid4()),
             document_filter=self._document_filter,
         )
 

@@ -1,6 +1,5 @@
 import logging
 import os
-import uuid
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -94,18 +93,13 @@ async def stream_chat(request: Request) -> Response:
         session_id = chat_state.get("session_id")
         document_filter = chat_state.get("document_filter", [])
 
-    # Determine session_id: prefer state, fall back to thread_id, generate UUID if neither
-    thread_id = getattr(run_input, "thread_id", None)
-    if not session_id:
-        session_id = thread_id or str(uuid.uuid4())
-
     deps = ChatDeps(
         client=get_client(db_path),
         config=Config,
         session_state=ChatSessionState(
-            session_id=session_id,
             qa_history=initial_qa_history,
             document_filter=document_filter,
+            **({"session_id": session_id} if session_id else {}),
         ),
         state_key=AGUI_STATE_KEY,
     )

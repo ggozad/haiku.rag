@@ -388,3 +388,103 @@ class TestSessionContextCache:
         # Nothing should be cached (empty session_id)
         cached = get_cached_session_context("")
         assert cached is None
+
+    @pytest.mark.asyncio
+    async def test_update_session_context_uses_initial_context_as_fallback(self):
+        """Test update_session_context uses initial_context when no session_context exists."""
+        from unittest.mock import patch
+
+        from haiku.rag.agents.chat.context import (
+            _session_context_cache,
+            update_session_context,
+        )
+        from haiku.rag.agents.chat.state import ChatSessionState
+
+        _session_context_cache.clear()
+
+        # Create session_state with initial_context but no session_context
+        session_state = ChatSessionState(
+            session_id="initial-context-test",
+            initial_context="User is working on a Python web application with FastAPI.",
+        )
+
+        qa_history = [
+            QAResponse(
+                question="What is JWT?",
+                answer="JSON Web Token for authentication.",
+                confidence=0.95,
+            )
+        ]
+
+        # Mock summarize_session to capture what gets passed as current_context
+        captured_current_context = []
+
+        async def mock_summarize(qa_history, config, current_context=None):
+            captured_current_context.append(current_context)
+            return "Mocked summary"
+
+        with patch(
+            "haiku.rag.agents.chat.context.summarize_session",
+            new=mock_summarize,
+        ):
+            await update_session_context(
+                qa_history=qa_history,
+                config=Config,
+                session_state=session_state,
+            )
+
+        # initial_context should have been passed as current_context
+        assert len(captured_current_context) == 1
+        assert (
+            captured_current_context[0]
+            == "User is working on a Python web application with FastAPI."
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_session_context_session_context_takes_precedence(self):
+        """Test session_context.summary takes precedence over initial_context."""
+        from unittest.mock import patch
+
+        from haiku.rag.agents.chat.context import (
+            _session_context_cache,
+            update_session_context,
+        )
+        from haiku.rag.agents.chat.state import ChatSessionState, SessionContext
+
+        _session_context_cache.clear()
+
+        # Create session_state with BOTH initial_context and session_context
+        session_state = ChatSessionState(
+            session_id="precedence-test",
+            initial_context="Initial background info",
+            session_context=SessionContext(summary="Evolved session summary"),
+        )
+
+        qa_history = [
+            QAResponse(
+                question="What is JWT?",
+                answer="JSON Web Token.",
+                confidence=0.95,
+            )
+        ]
+
+        # Mock summarize_session to capture what gets passed as current_context
+        captured_current_context = []
+
+        async def mock_summarize(qa_history, config, current_context=None):
+            captured_current_context.append(current_context)
+            return "Mocked summary"
+
+        with patch(
+            "haiku.rag.agents.chat.context.summarize_session",
+            new=mock_summarize,
+        ):
+            await update_session_context(
+                qa_history=qa_history,
+                config=Config,
+                session_state=session_state,
+            )
+
+        # session_context.summary should take precedence over initial_context
+        assert len(captured_current_context) == 1
+        assert captured_current_context[0] == "Evolved session summary"

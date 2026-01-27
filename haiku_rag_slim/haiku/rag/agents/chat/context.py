@@ -82,10 +82,12 @@ async def update_session_context(
         config: AppConfig for model selection.
         session_state: The session state to update.
     """
-    # Use existing session_context summary if available
+    # Use existing session_context summary if available, else initial_context
     current_context: str | None = None
     if session_state.session_context and session_state.session_context.summary:
         current_context = session_state.session_context.summary
+    elif session_state.initial_context:
+        current_context = session_state.initial_context
 
     summary = await summarize_session(
         qa_history, config, current_context=current_context
