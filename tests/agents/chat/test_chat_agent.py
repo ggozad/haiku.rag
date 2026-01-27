@@ -1143,6 +1143,7 @@ async def test_summarize_document_not_found(allow_model_requests, temp_db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_count_documents(temp_db_path):
     """Test count_documents method."""
     async with HaikuRAG(temp_db_path, create=True) as client:
