@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
 interface SessionContext {
 	summary: string;
@@ -11,6 +11,9 @@ interface ContextPanelProps {
 	isOpen: boolean;
 	onClose: () => void;
 	sessionContext: SessionContext | null;
+	initialContext?: string;
+	onInitialContextChange?: (value: string) => void;
+	isLocked?: boolean;
 }
 
 function formatRelativeTime(isoString: string): string {
@@ -62,8 +65,18 @@ export default function ContextPanel({
 	isOpen,
 	onClose,
 	sessionContext,
+	initialContext = "",
+	onInitialContextChange,
+	isLocked = false,
 }: ContextPanelProps) {
 	const titleId = useId();
+	const [localValue, setLocalValue] = useState(initialContext);
+
+	useEffect(() => {
+		if (isOpen) {
+			setLocalValue(initialContext);
+		}
+	}, [isOpen, initialContext]);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent) => {
@@ -74,11 +87,18 @@ export default function ContextPanel({
 		[onClose],
 	);
 
+	const handleSave = useCallback(() => {
+		onInitialContextChange?.(localValue);
+		onClose();
+	}, [localValue, onInitialContextChange, onClose]);
+
 	if (!isOpen) {
 		return null;
 	}
 
-	const hasContext = sessionContext?.summary && sessionContext.summary.trim();
+	const hasSessionContext = sessionContext?.summary?.trim();
+	// Show edit mode when: not locked AND no session context yet
+	const isEditMode = !isLocked && !hasSessionContext;
 
 	return (
 		<>
@@ -146,6 +166,24 @@ export default function ContextPanel({
 					max-height: 400px;
 					overflow-y: auto;
 				}
+				.context-textarea {
+					width: 100%;
+					min-height: 200px;
+					padding: 1rem;
+					font-size: 0.875rem;
+					line-height: 1.6;
+					color: #334155;
+					background: white;
+					border: 1px solid #e2e8f0;
+					border-radius: 8px;
+					resize: vertical;
+					font-family: inherit;
+				}
+				.context-textarea:focus {
+					outline: none;
+					border-color: #3b82f6;
+					box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+				}
 				.context-empty {
 					display: flex;
 					flex-direction: column;
@@ -175,13 +213,15 @@ export default function ContextPanel({
 					font-size: 0.75rem;
 					color: #94a3b8;
 				}
-				.context-btn-close {
+				.context-btn {
 					padding: 0.5rem 1rem;
 					font-size: 0.875rem;
 					font-weight: 500;
 					border-radius: 6px;
 					cursor: pointer;
 					transition: all 0.15s;
+				}
+				.context-btn-close {
 					background: white;
 					color: #475569;
 					border: 1px solid #e2e8f0;
@@ -189,6 +229,20 @@ export default function ContextPanel({
 				.context-btn-close:hover {
 					background: #f8fafc;
 					border-color: #cbd5e1;
+				}
+				.context-btn-save {
+					background: #3b82f6;
+					color: white;
+					border: 1px solid #3b82f6;
+					margin-left: 0.5rem;
+				}
+				.context-btn-save:hover {
+					background: #2563eb;
+					border-color: #2563eb;
+				}
+				.context-footer-buttons {
+					display: flex;
+					gap: 0.5rem;
 				}
 			`}</style>
 			<div
@@ -210,14 +264,22 @@ export default function ContextPanel({
 							<BrainIcon />
 						</div>
 						<h2 id={titleId} className="context-modal-title">
-							Session Context
+							{isEditMode ? "Initial Context" : "Session Context"}
 						</h2>
 					</div>
 					<p className="context-modal-description">
-						This is what the assistant has learned from your conversation so
-						far. It uses this context to provide more relevant answers.
+						{isEditMode
+							? "Set background context to guide the conversation. This will be locked after you send your first message."
+							: "This is what the assistant has learned from your conversation so far. It uses this context to provide more relevant answers."}
 					</p>
-					{hasContext ? (
+					{isEditMode ? (
+						<textarea
+							className="context-textarea"
+							placeholder="Enter any background context or instructions for the assistant..."
+							value={localValue}
+							onChange={(e) => setLocalValue(e.target.value)}
+						/>
+					) : hasSessionContext ? (
 						<div className="context-content">{sessionContext.summary}</div>
 					) : (
 						<div className="context-empty">
@@ -235,13 +297,24 @@ export default function ContextPanel({
 								? `Last updated: ${formatRelativeTime(sessionContext.last_updated)}`
 								: ""}
 						</span>
-						<button
-							type="button"
-							className="context-btn-close"
-							onClick={onClose}
-						>
-							Close
-						</button>
+						<div className="context-footer-buttons">
+							<button
+								type="button"
+								className="context-btn context-btn-close"
+								onClick={onClose}
+							>
+								{isEditMode ? "Cancel" : "Close"}
+							</button>
+							{isEditMode && (
+								<button
+									type="button"
+									className="context-btn context-btn-save"
+									onClick={handleSave}
+								>
+									Save
+								</button>
+							)}
+						</div>
 					</div>
 				</div>
 			</div>

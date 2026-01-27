@@ -133,8 +133,10 @@ class ChatDeps:
                 )
             if "citation_registry" in state_data:
                 self.session_state.citation_registry = state_data["citation_registry"]
-            # NOTE: session_context intentionally NOT updated from client
-            # The agent owns this via server-side cache
+            if "initial_context" in state_data:
+                self.session_state.initial_context = state_data.get("initial_context")
+            # NOTE: session_context is server-managed; we don't accept it from the client
+            # to maintain server-side ownership of conversation summarization
 
 
 @dataclass

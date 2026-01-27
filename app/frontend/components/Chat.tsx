@@ -42,6 +42,7 @@ interface SessionContext {
 
 interface ChatSessionState {
 	session_id: string;
+	initial_context: string | null;
 	citations: Citation[];
 	qa_history: QAResponse[];
 	session_context: SessionContext | null;
@@ -398,6 +399,7 @@ function ChatContentInner() {
 			initialState: {
 				[AGUI_STATE_KEY]: {
 					session_id: "",
+					initial_context: null,
 					citations: [],
 					qa_history: [],
 					session_context: null,
@@ -407,9 +409,14 @@ function ChatContentInner() {
 		},
 	);
 
-	// Extract session context and document filter from agent state
+	// Extract session context, document filter, and initial context from agent state
 	const sessionContext = agentState?.[AGUI_STATE_KEY]?.session_context ?? null;
 	const documentFilter = agentState?.[AGUI_STATE_KEY]?.document_filter ?? [];
+	const initialContext = agentState?.[AGUI_STATE_KEY]?.initial_context ?? "";
+
+	// Context is locked after first message (qa_history has entries)
+	const isContextLocked =
+		(agentState?.[AGUI_STATE_KEY]?.qa_history?.length ?? 0) > 0;
 
 	const handleFilterApply = (selected: string[]) => {
 		setAgentState({
@@ -417,10 +424,27 @@ function ChatContentInner() {
 			[AGUI_STATE_KEY]: {
 				...agentState?.[AGUI_STATE_KEY],
 				session_id: agentState?.[AGUI_STATE_KEY]?.session_id ?? "",
+				initial_context: agentState?.[AGUI_STATE_KEY]?.initial_context ?? null,
 				citations: agentState?.[AGUI_STATE_KEY]?.citations ?? [],
 				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
 				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
 				document_filter: selected,
+			},
+		});
+	};
+
+	const handleInitialContextChange = (value: string) => {
+		if (isContextLocked) return;
+		setAgentState({
+			...agentState,
+			[AGUI_STATE_KEY]: {
+				...agentState?.[AGUI_STATE_KEY],
+				session_id: agentState?.[AGUI_STATE_KEY]?.session_id ?? "",
+				initial_context: value || null,
+				citations: agentState?.[AGUI_STATE_KEY]?.citations ?? [],
+				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
+				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
+				document_filter: agentState?.[AGUI_STATE_KEY]?.document_filter ?? [],
 			},
 		});
 	};
@@ -568,12 +592,16 @@ function ChatContentInner() {
 						</button>
 						<button
 							type="button"
-							className={`header-btn ${sessionContext?.summary ? "has-content" : ""}`}
+							className={`header-btn ${initialContext || sessionContext?.summary ? "has-content" : ""}`}
 							onClick={() => setContextOpen(true)}
 							title={
-								sessionContext?.summary
-									? "View session context"
-									: "No session context yet"
+								isContextLocked
+									? sessionContext?.summary
+										? "View session context"
+										: "No session context yet"
+									: initialContext
+										? "Edit initial context"
+										: "Set initial context"
 							}
 						>
 							<BrainIcon />
@@ -596,6 +624,9 @@ function ChatContentInner() {
 				isOpen={contextOpen}
 				onClose={() => setContextOpen(false)}
 				sessionContext={sessionContext}
+				initialContext={initialContext}
+				onInitialContextChange={handleInitialContextChange}
+				isLocked={isContextLocked}
 			/>
 			<DocumentFilter
 				isOpen={filterOpen}

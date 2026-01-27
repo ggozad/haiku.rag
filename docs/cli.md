@@ -178,10 +178,9 @@ haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
 ```
 
-Provide background context for the conversation:
+Provide initial background context for the conversation:
 ```bash
-haiku-rag chat --context "Focus on Python programming concepts"
-haiku-rag chat --context-file domain-context.txt
+haiku-rag chat --initial-context "Focus on Python programming concepts"
 ```
 
 !!! note
@@ -193,12 +192,18 @@ The chat interface provides:
 - Expandable citations with source metadata
 - Session memory for context-aware follow-up questions
 - Visual grounding to inspect chunk source locations
-- Background context that persists across the entire conversation
+- Initial context that can be edited before the first message
+
+**Initial Context Behavior:**
+
+- Edit initial context via command palette before sending your first message
+- Once you send a message, initial context becomes read-only
+- The agent uses initial context as a starting point for session summarization
+- Clearing chat resets to the CLI-provided context and unlocks editing
 
 Flags:
 
-- `--context`: Background context for the conversation
-- `--context-file`: Path to a file containing background context
+- `--initial-context`: Initial background context for the conversation (editable until first message)
 
 See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
 

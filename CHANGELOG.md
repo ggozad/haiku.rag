@@ -1,6 +1,16 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Read-Only Initial Context**: Initial context is now locked after the first message, providing consistent session context
+  - Chat TUI: `--initial-context` CLI option sets background context for the session
+  - Context can be edited via command palette before the first message is sent
+  - After first message, context becomes read-only (view only)
+  - Clearing chat resets context to CLI value and unlocks editing
+  - Web app: Memory panel now serves dual purpose - edit initial context before first message, view session context after
+  - Agent uses `initial_context` as fallback when `session_context` is empty
+
 ## [0.27.1] - 2026-01-27
 
 ### Added

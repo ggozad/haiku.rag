@@ -88,11 +88,14 @@ class ChatApp(App):
         db_path: Path,
         read_only: bool = False,
         before: datetime | None = None,
+        initial_context: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self.read_only = read_only
         self.before = before
+        self._initial_context = initial_context
+        self._context_locked = False
         self.client: HaikuRAG | None = None
         self.config = get_config()
         self.agent: Agent[ChatDeps, str] | None = None
@@ -135,8 +138,8 @@ class ChatApp(App):
             self.action_show_info,
         )
         yield SystemCommand(
-            "Session context",
-            "Show current session context",
+            "Memory",
+            "View/edit context (editable before first message)",
             self.action_show_context,
         )
 
@@ -153,6 +156,7 @@ class ChatApp(App):
         # Create agent and session state
         self.agent = create_chat_agent(self.config)
         self.session_state = ChatSessionState(
+            initial_context=self._initial_context,
             document_filter=self._document_filter,
         )
 
@@ -215,6 +219,9 @@ class ChatApp(App):
 
         if not self.client or not self.agent:
             return
+
+        # Lock context after first message
+        self._context_locked = True
 
         # Clear the input
         event.input.clear()
@@ -297,8 +304,10 @@ class ChatApp(App):
         await chat_history.clear_messages()
         self._last_citations.clear()
         self._message_history.clear()
-        # Reset session state for fresh conversation (preserve document filter)
+        # Reset context lock and session state (reset to CLI value)
+        self._context_locked = False
         self.session_state = ChatSessionState(
+            initial_context=self._initial_context,
             document_filter=self._document_filter,
         )
 
@@ -349,10 +358,17 @@ class ChatApp(App):
         await self.push_screen(InfoModal(self.client, self.db_path))
 
     async def action_show_context(self) -> None:
-        """Show current session context in a modal."""
+        """Show context modal (edit initial context or view session context)."""
         from haiku.rag.chat.widgets.context_modal import ContextModal
 
-        await self.push_screen(ContextModal(self.session_state))
+        await self.push_screen(
+            ContextModal(self.session_state, is_locked=self._context_locked)
+        )
+
+    def on_context_modal_context_updated(self, event: Any) -> None:
+        """Handle context updates from modal."""
+        if self.session_state and not self._context_locked:
+            self.session_state.initial_context = event.context or None
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""
