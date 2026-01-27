@@ -11,6 +11,13 @@
   - Web app: Memory panel now serves dual purpose - edit initial context before first message, view session context after
   - Agent uses `initial_context` as fallback when `session_context` is empty
 
+### Changed
+
+- **Selective Citation Filtering**: Synthesis steps now select only relevant citations instead of including all
+  - LLM receives `<available_citations>` with chunk IDs and content previews
+  - LLM populates `cited_chunks` with only chunks that directly support the answer
+  - `ResearchReport` now has `cited_chunks` and `citations` fields; removed `sources_summary`
+
 ## [0.27.1] - 2026-01-27
 
 ### Added

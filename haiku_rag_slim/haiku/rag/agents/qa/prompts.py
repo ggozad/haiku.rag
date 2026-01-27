@@ -26,7 +26,11 @@ Each result includes:
 - Type: content type like paragraph, table, code, list_item (when available)
 - Content: the actual text
 
-In your response, include the chunk IDs you used in cited_chunks.
+Citation guidelines:
+- In cited_chunks, include ONLY chunk IDs that directly support your answer.
+- Do NOT cite chunks that are merely related or that you reviewed but did not use.
+- Quality over quantity: fewer relevant citations are better than many marginal ones.
+- Use the EXACT, COMPLETE chunk IDs (full UUIDs).
 
 Guidelines:
 - Base answers strictly on retrieved content - do not use external knowledge
