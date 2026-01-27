@@ -1137,6 +1137,31 @@ async def test_summarize_document_not_found(allow_model_requests, temp_db_path):
         # Should indicate the document wasn't found
 
 
+# =============================================================================
+# count_documents Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_count_documents(temp_db_path):
+    """Test count_documents method."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Empty database
+        assert await client.count_documents() == 0
+
+        # Add documents
+        await client.create_document(content="Doc 1", uri="test/doc1.pdf")
+        await client.create_document(content="Doc 2", uri="test/doc2.pdf")
+        await client.create_document(content="Doc 3", uri="other/doc3.txt")
+
+        # Count all
+        assert await client.count_documents() == 3
+
+        # Count with filter
+        assert await client.count_documents(filter="uri LIKE '%.pdf'") == 2
+        assert await client.count_documents(filter="uri LIKE '%.txt'") == 1
+
+
 def test_citation_index_fallback_without_session_state():
     """Test that citation indices fall back to sequential numbering without session_state.
 
