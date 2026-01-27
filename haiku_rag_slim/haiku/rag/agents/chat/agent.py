@@ -217,12 +217,16 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         graph = build_conversational_graph(config=ctx.deps.config)
         session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
 
-        # Get session context from server cache for planning
+        # Get session context from server cache for planning, fallback to initial_context
         cached_context = get_cached_session_context(session_id) if session_id else None
         session_context = (
             cached_context.render_markdown()
             if cached_context and cached_context.summary
-            else None
+            else (
+                ctx.deps.session_state.initial_context
+                if ctx.deps.session_state
+                else None
+            )
         )
 
         # Find relevant prior answers from qa_history
