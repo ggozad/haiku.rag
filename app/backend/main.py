@@ -79,38 +79,71 @@ async def stream_chat(request: Request) -> Response:
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    # Restore session state from incoming AG-UI state (look under namespaced key)
-    initial_qa_history: list[QAResponse] = []
-    session_id: str | None = None
-    document_filter: list[str] = []
-    initial_context: str | None = None
+    # Restore session state from incoming AG-UI state
+    session_state = ChatSessionState(session_id="")  # New session: empty session_id
     state = getattr(run_input, "state", None)
-    if state:
-        chat_state = state.get(AGUI_STATE_KEY, state)
-        if "qa_history" in chat_state:
-            initial_qa_history = [
-                QAResponse(**qa) for qa in chat_state.get("qa_history", [])
-            ]
-        session_id = chat_state.get("session_id")
-        document_filter = chat_state.get("document_filter", [])
-        initial_context = chat_state.get("initial_context")
+    if state and AGUI_STATE_KEY in state:
+        chat_state = state[AGUI_STATE_KEY]
+        if chat_state and chat_state.get("session_id"):
+            session_state = ChatSessionState(
+                session_id=chat_state["session_id"],
+                qa_history=[
+                    QAResponse(**qa) for qa in chat_state.get("qa_history", [])
+                ],
+                document_filter=chat_state.get("document_filter", []),
+                initial_context=chat_state.get("initial_context"),
+                citation_registry=chat_state.get("citation_registry", {}),
+            )
+            logger.info(
+                f"Incoming state: session={session_state.session_id[:8]}, "
+                f"qa_history={len(session_state.qa_history)}, "
+                f"citations={len(session_state.citation_registry)}"
+            )
+        else:
+            logger.info("Incoming state: new session")
+    else:
+        logger.info("Incoming state: new session")
 
     deps = ChatDeps(
         client=get_client(db_path),
         config=Config,
-        session_state=ChatSessionState(
-            qa_history=initial_qa_history,
-            document_filter=document_filter,
-            initial_context=initial_context,
-            **({"session_id": session_id} if session_id else {}),
-        ),
+        session_state=session_state,
         state_key=AGUI_STATE_KEY,
     )
 
     # Use AGUIAdapter for streaming
     adapter = AGUIAdapter(agent=chat_agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(deps=deps)
-    sse_event_stream = adapter.encode_stream(event_stream)
+
+    async def logged_event_stream():
+        async for event in event_stream:
+            event_type = getattr(event, "type", None)
+            if event_type and "state" in str(event_type).lower():
+                delta = getattr(event, "delta", None)
+                snapshot = getattr(event, "snapshot", None)
+                if delta is not None:
+                    logger.info(f"Outgoing StateDeltaEvent: {len(delta)} ops")
+                    for op in delta:
+                        # Extract key from path like /haiku.rag.chat/qa_history/0
+                        parts = op["path"].split("/")
+                        key = "/".join(parts[2:]) if len(parts) > 2 else op["path"]
+                        logger.info(f"  {op['op']} {key}")
+                elif snapshot is not None:
+                    chat_state = snapshot.get(AGUI_STATE_KEY, {})
+                    sid = chat_state.get("session_id", "")[:8] if chat_state else ""
+                    qa_len = len(chat_state.get("qa_history", [])) if chat_state else 0
+                    reg_len = (
+                        len(chat_state.get("citation_registry", {}))
+                        if chat_state
+                        else 0
+                    )
+                    logger.info(
+                        f"Outgoing StateSnapshotEvent: session={sid}, "
+                        f"qa={qa_len}, keys={reg_len}"
+                    )
+            yield event
+
+    sse_event_stream = adapter.encode_stream(logged_event_stream())
 
     return StreamingResponse(
         sse_event_stream,

@@ -71,7 +71,7 @@ prompts:
 
 Replace the research report synthesis prompt by setting `prompts.synthesis`. This controls how the multi-agent research workflow generates its final report.
 
-The prompt should produce a `ResearchReport` with: `title`, `executive_summary`, `main_findings`, `conclusions`, `recommendations`, `limitations`, and `cited_chunks`.
+The prompt should produce a `ResearchReport` with: `title`, `executive_summary`, `main_findings`, `conclusions`, `recommendations`, `limitations`, and `sources_summary`.
 
 **Example:**
 
@@ -87,13 +87,12 @@ prompts:
     - conclusions: 2-4 bullet points
     - recommendations: 2-5 actionable recommendations
     - limitations: 1-3 limitations or gaps
-    - cited_chunks: List of chunk IDs that directly support the report
+    - sources_summary: Brief description of sources used
 
     Guidelines:
     - Base all content strictly on collected evidence
     - Be specific and objective
     - Avoid meta-commentary like "This report covers..."
-    - Only include chunks in cited_chunks that directly support claims in the report
 ```
 
 ## Picture Description Prompt

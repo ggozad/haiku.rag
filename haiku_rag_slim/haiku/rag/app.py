@@ -416,9 +416,10 @@ class HaikuRAGApp:
                         self.console.print("[bold cyan]Key Findings:[/bold cyan]")
                         for finding in report.main_findings:
                             self.console.print(f"• {finding}")
-                    if report.citations:
-                        for renderable in format_citations_rich(report.citations):
-                            self.console.print(renderable)
+                    if report.sources_summary:
+                        self.console.print()
+                        self.console.print("[bold cyan]Sources:[/bold cyan]")
+                        self.console.print(report.sources_summary)
                 else:
                     self.console.print("[yellow]No answer generated.[/yellow]")
             else:
@@ -512,10 +513,10 @@ class HaikuRAGApp:
                     self.console.print(f"• {limitation}")
                 self.console.print()
 
-            # Sources
-            if report.citations:
-                for renderable in format_citations_rich(report.citations):
-                    self.console.print(renderable)
+            # Sources Summary
+            if report.sources_summary:
+                self.console.print("[bold cyan]Sources:[/bold cyan]")
+                self.console.print(report.sources_summary)
 
     async def rebuild(self, mode: RebuildMode = RebuildMode.FULL):
         async with HaikuRAG(

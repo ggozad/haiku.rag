@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+import jsonpatch
+from ag_ui.core import EventType, StateDeltaEvent
 from pydantic import BaseModel, Field
 
 from haiku.rag.agents.research.models import Citation, SearchAnswer
@@ -106,14 +108,14 @@ class ChatDeps:
     client: HaikuRAG
     config: AppConfig
     search_results: list[SearchResult] | None = None
-    session_state: ChatSessionState | None = None
+    session_state: ChatSessionState = field(
+        default_factory=lambda: ChatSessionState(session_id="")
+    )
     state_key: str | None = None
 
     @property
-    def state(self) -> dict[str, Any] | None:
+    def state(self) -> dict[str, Any]:
         """Get current state for AG-UI protocol."""
-        if self.session_state is None:
-            return None
         snapshot = self.session_state.model_dump()
         if self.state_key:
             return {self.state_key: snapshot}
@@ -131,29 +133,24 @@ class ChatDeps:
             if isinstance(nested, dict):
                 state_data = nested
         # Update session_state from incoming state
-        if self.session_state is not None:
-            if "qa_history" in state_data:
-                self.session_state.qa_history = [
-                    QAResponse(**qa) if isinstance(qa, dict) else qa
-                    for qa in state_data.get("qa_history", [])
-                ]
-            if "citations" in state_data:
-                self.session_state.citations = [
-                    Citation(**c) if isinstance(c, dict) else c
-                    for c in state_data.get("citations", [])
-                ]
-            if state_data.get("session_id"):
-                self.session_state.session_id = state_data["session_id"]
-            if "document_filter" in state_data:
-                self.session_state.document_filter = state_data.get(
-                    "document_filter", []
-                )
-            if "citation_registry" in state_data:
-                self.session_state.citation_registry = state_data["citation_registry"]
-            if "initial_context" in state_data:
-                self.session_state.initial_context = state_data.get("initial_context")
-            # NOTE: session_context is server-managed; we don't accept it from the client
-            # to maintain server-side ownership of conversation summarization
+        if "qa_history" in state_data:
+            self.session_state.qa_history = [
+                QAResponse(**qa) if isinstance(qa, dict) else qa
+                for qa in state_data.get("qa_history", [])
+            ]
+        if "citations" in state_data:
+            self.session_state.citations = [
+                Citation(**c) if isinstance(c, dict) else c
+                for c in state_data.get("citations", [])
+            ]
+        if state_data.get("session_id"):
+            self.session_state.session_id = state_data["session_id"]
+        if "document_filter" in state_data:
+            self.session_state.document_filter = state_data.get("document_filter", [])
+        if "citation_registry" in state_data:
+            self.session_state.citation_registry = state_data["citation_registry"]
+        if "initial_context" in state_data:
+            self.session_state.initial_context = state_data.get("initial_context")
 
 
 @dataclass
@@ -194,3 +191,26 @@ def combine_filters(filter1: str | None, filter2: str | None) -> str | None:
     if len(filters) == 1:
         return filters[0]
     return f"({filters[0]}) AND ({filters[1]})"
+
+
+def emit_state_event(
+    current_state: ChatSessionState,
+    new_state: ChatSessionState,
+    state_key: str | None = None,
+) -> StateDeltaEvent | None:
+    """Emit state delta against current state, or None if no changes."""
+    new_snapshot = new_state.model_dump(mode="json")
+    wrapped_new = {state_key: new_snapshot} if state_key else new_snapshot
+
+    current_snapshot = current_state.model_dump(mode="json")
+    wrapped_current = {state_key: current_snapshot} if state_key else current_snapshot
+
+    patch = jsonpatch.make_patch(wrapped_current, wrapped_new)
+
+    if not patch.patch:
+        return None
+
+    return StateDeltaEvent(
+        type=EventType.STATE_DELTA,
+        delta=patch.patch,
+    )

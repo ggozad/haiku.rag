@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "docling-core==2.60.1",
     "httpx>=0.28.1",
+    "jsonpatch>=1.33",
     "lancedb==0.27.0",
     "pathspec>=1.0.3",
     "pydantic>=2.12.5",
