@@ -1,5 +1,7 @@
 import uuid
 
+from ag_ui.core import StateDeltaEvent
+
 from haiku.rag.agents.chat.state import (
     MAX_QA_HISTORY,
     ChatSessionState,
@@ -750,6 +752,7 @@ def test_emit_state_event_delta_produces_valid_patch():
     )
 
     event = emit_state_event(current_state, new_state)
+    assert isinstance(event, StateDeltaEvent)
 
     # Apply patch to current state and verify it produces new state
     current_snapshot = current_state.model_dump(mode="json")
