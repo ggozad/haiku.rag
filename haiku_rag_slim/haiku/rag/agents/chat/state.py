@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+import jsonpatch
+from ag_ui.core import EventType, StateDeltaEvent, StateSnapshotEvent
 from pydantic import BaseModel, Field
 
 from haiku.rag.agents.research.models import Citation, SearchAnswer
@@ -194,3 +196,32 @@ def combine_filters(filter1: str | None, filter2: str | None) -> str | None:
     if len(filters) == 1:
         return filters[0]
     return f"({filters[0]}) AND ({filters[1]})"
+
+
+def emit_state_event(
+    current_state: ChatSessionState | None,
+    new_state: ChatSessionState,
+    state_key: str | None = None,
+) -> StateSnapshotEvent | StateDeltaEvent | None:
+    """Emit state delta against current state, or full snapshot if no current state."""
+    new_snapshot = new_state.model_dump(mode="json")
+    wrapped_new = {state_key: new_snapshot} if state_key else new_snapshot
+
+    if current_state is None:
+        return StateSnapshotEvent(
+            type=EventType.STATE_SNAPSHOT,
+            snapshot=wrapped_new,
+        )
+
+    current_snapshot = current_state.model_dump(mode="json")
+    wrapped_current = {state_key: current_snapshot} if state_key else current_snapshot
+
+    patch = jsonpatch.make_patch(wrapped_current, wrapped_new)
+
+    if not patch.patch:
+        return None
+
+    return StateDeltaEvent(
+        type=EventType.STATE_DELTA,
+        delta=patch.patch,
+    )

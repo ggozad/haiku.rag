@@ -1368,6 +1368,7 @@ source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "docling-core" },
     { name = "httpx" },
+    { name = "jsonpatch" },
     { name = "lancedb" },
     { name = "pathspec" },
     { name = "pydantic" },
@@ -1429,6 +1430,7 @@ requires-dist = [
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.69.1" },
     { name = "docling-core", specifier = "==2.60.1" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.27.0" },
     { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
     { name = "opencv-python-headless", marker = "extra == 'docling'", specifier = ">=4.13.0.90" },

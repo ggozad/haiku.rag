@@ -1,7 +1,6 @@
 import asyncio
 import math
 
-from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent, RunContext, ToolReturn
 
 from haiku.rag.agents.chat.context import (
@@ -20,6 +19,7 @@ from haiku.rag.agents.chat.state import (
     build_document_filter,
     build_multi_document_filter,
     combine_filters,
+    emit_state_event,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_conversational_graph
@@ -173,19 +173,14 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             line += f"\n    {snippet}"
             result_lines.append(line)
 
-        snapshot = new_state.model_dump(mode="json")
-        if ctx.deps.state_key:
-            snapshot = {ctx.deps.state_key: snapshot}
+        state_event = emit_state_event(
+            ctx.deps.session_state, new_state, ctx.deps.state_key
+        )
 
         return ToolReturn(
             return_value=f"Found {len(results)} results:\n\n"
             + "\n\n".join(result_lines),
-            metadata=[
-                StateSnapshotEvent(
-                    type=EventType.STATE_SNAPSHOT,
-                    snapshot=snapshot,
-                )
-            ],
+            metadata=[state_event] if state_event else None,
         )
 
     @agent.tool
@@ -358,18 +353,13 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             citation_refs = " ".join(f"[{c.index}]" for c in citation_infos)
             answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
-        snapshot = new_state.model_dump(mode="json")
-        if ctx.deps.state_key:
-            snapshot = {ctx.deps.state_key: snapshot}
+        state_event = emit_state_event(
+            ctx.deps.session_state, new_state, ctx.deps.state_key
+        )
 
         return ToolReturn(
             return_value=answer_text,
-            metadata=[
-                StateSnapshotEvent(
-                    type=EventType.STATE_SNAPSHOT,
-                    snapshot=snapshot,
-                )
-            ],
+            metadata=[state_event] if state_event else None,
         )
 
     @agent.tool

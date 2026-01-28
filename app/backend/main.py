@@ -110,7 +110,26 @@ async def stream_chat(request: Request) -> Response:
     # Use AGUIAdapter for streaming
     adapter = AGUIAdapter(agent=chat_agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(deps=deps)
-    sse_event_stream = adapter.encode_stream(event_stream)
+
+    # Wrap to log state events
+    async def logged_event_stream():
+        async for event in event_stream:
+            event_type = getattr(event, "type", None)
+            if event_type and "state" in str(event_type).lower():
+                delta: list[dict[str, str]] | None = getattr(event, "delta", None)
+                snapshot: dict[str, object] | None = getattr(event, "snapshot", None)
+                if delta is not None:
+                    logger.info(f"StateDeltaEvent: {len(delta)} ops")
+                    for op in delta[:3]:  # Log first 3 ops
+                        logger.info(f"  {op['op']} {op['path']}")
+                    if len(delta) > 3:
+                        logger.info(f"  ... and {len(delta) - 3} more ops")
+                elif snapshot is not None:
+                    snapshot_keys = list(snapshot.keys())
+                    logger.info(f"StateSnapshotEvent: keys={snapshot_keys}")
+            yield event
+
+    sse_event_stream = adapter.encode_stream(logged_event_stream())
 
     return StreamingResponse(
         sse_event_stream,

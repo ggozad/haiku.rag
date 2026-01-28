@@ -641,3 +641,118 @@ def test_chat_session_state_model_dump_json_serializes_datetime():
     # datetime should be serialized as ISO string, not datetime object
     assert isinstance(snapshot["session_context"]["last_updated"], str)
     assert snapshot["session_context"]["last_updated"] == "2025-01-27T12:00:00"
+
+
+def test_emit_state_event_returns_snapshot_when_no_current_state():
+    """emit_state_event returns StateSnapshotEvent when current_state is None."""
+    from ag_ui.core import EventType, StateSnapshotEvent
+
+    from haiku.rag.agents.chat.state import emit_state_event
+
+    new_state = ChatSessionState(session_id="test-123")
+
+    event = emit_state_event(None, new_state)
+
+    assert isinstance(event, StateSnapshotEvent)
+    assert event.type == EventType.STATE_SNAPSHOT
+    assert event.snapshot["session_id"] == "test-123"
+
+
+def test_emit_state_event_returns_snapshot_with_state_key():
+    """emit_state_event wraps snapshot in state_key namespace."""
+    from ag_ui.core import EventType, StateSnapshotEvent
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, emit_state_event
+
+    new_state = ChatSessionState(session_id="test-123")
+
+    event = emit_state_event(None, new_state, state_key=AGUI_STATE_KEY)
+
+    assert isinstance(event, StateSnapshotEvent)
+    assert event.type == EventType.STATE_SNAPSHOT
+    assert AGUI_STATE_KEY in event.snapshot
+    assert event.snapshot[AGUI_STATE_KEY]["session_id"] == "test-123"
+
+
+def test_emit_state_event_returns_none_when_no_changes():
+    """emit_state_event returns None when states are identical."""
+    from haiku.rag.agents.chat.state import emit_state_event
+
+    state = ChatSessionState(session_id="test-123", qa_history=[], citations=[])
+
+    event = emit_state_event(state, state)
+
+    assert event is None
+
+
+def test_emit_state_event_returns_delta_with_changes():
+    """emit_state_event returns StateDeltaEvent with JSON Patch ops for changes."""
+    from ag_ui.core import EventType, StateDeltaEvent
+
+    from haiku.rag.agents.chat.state import emit_state_event
+
+    current_state = ChatSessionState(session_id="test-123", qa_history=[], citations=[])
+    new_state = ChatSessionState(
+        session_id="test-123",
+        qa_history=[QAResponse(question="Q1", answer="A1", confidence=0.9)],
+        citations=[],
+    )
+
+    event = emit_state_event(current_state, new_state)
+
+    assert isinstance(event, StateDeltaEvent)
+    assert event.type == EventType.STATE_DELTA
+    assert len(event.delta) > 0
+    # Delta should contain an "add" operation for the new qa_history entry
+    ops = event.delta
+    qa_history_op = next((op for op in ops if "/qa_history" in op["path"]), None)
+    assert qa_history_op is not None
+
+
+def test_emit_state_event_delta_with_state_key():
+    """emit_state_event wraps delta paths with state_key namespace."""
+    from ag_ui.core import StateDeltaEvent
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, emit_state_event
+
+    current_state = ChatSessionState(session_id="test-123", qa_history=[])
+    new_state = ChatSessionState(
+        session_id="test-123",
+        qa_history=[QAResponse(question="Q1", answer="A1", confidence=0.9)],
+    )
+
+    event = emit_state_event(current_state, new_state, state_key=AGUI_STATE_KEY)
+
+    assert isinstance(event, StateDeltaEvent)
+    # Paths should be namespaced under state_key
+    for op in event.delta:
+        assert op["path"].startswith(f"/{AGUI_STATE_KEY}")
+
+
+def test_emit_state_event_delta_produces_valid_patch():
+    """emit_state_event delta can be applied to reproduce new state."""
+    import jsonpatch
+
+    from haiku.rag.agents.chat.state import emit_state_event
+
+    current_state = ChatSessionState(
+        session_id="test-123",
+        qa_history=[QAResponse(question="Q1", answer="A1", confidence=0.9)],
+        citations=[],
+    )
+    new_state = ChatSessionState(
+        session_id="test-123",
+        qa_history=[
+            QAResponse(question="Q1", answer="A1", confidence=0.9),
+            QAResponse(question="Q2", answer="A2", confidence=0.8),
+        ],
+        citations=[],
+    )
+
+    event = emit_state_event(current_state, new_state)
+
+    # Apply patch to current state and verify it produces new state
+    current_snapshot = current_state.model_dump(mode="json")
+    patched = jsonpatch.apply_patch(current_snapshot, event.delta)
+    new_snapshot = new_state.model_dump(mode="json")
+    assert patched == new_snapshot
