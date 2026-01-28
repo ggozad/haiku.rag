@@ -25,6 +25,8 @@ The chat interface provides:
 - Session memory for context-aware follow-up questions
 - Visual grounding to inspect chunk source locations
 
+![Chat TUI interface](img/tui-qa.svg)
+
 ### Command Palette
 
 Press `Ctrl+P` to open the command palette:
@@ -146,6 +148,8 @@ Three panels display your data:
 - **Chunks** (top right) - Chunks for the selected document
 - **Detail View** (bottom right) - Full content and metadata
 
+![Inspector search](img/inspector-search.svg)
+
 ### Navigation
 
 | Key | Action |
@@ -182,10 +186,21 @@ Press `c` while viewing a chunk to see the expanded context that would be provid
 
 ### Visual Grounding
 
+Visual grounding shows exactly where a chunk appears in the original document by highlighting its bounding box on the page image. This helps verify chunk boundaries and understand how content was extracted.
+
 Press `v` while viewing a chunk to see page images with the chunk's location highlighted:
 
-- Use `←` / `→` arrow keys to navigate between pages
-- Requires documents processed with Docling that include page images
+- Bounding boxes show the exact region of the page that maps to the chunk
+- Use `←` / `→` arrow keys to navigate between pages when a chunk spans multiple pages
+- Press `Esc` to close the modal
 
-!!! note
-    Visual grounding requires documents with a stored DoclingDocument that includes page images. Text-only documents won't have visual grounding available.
+![Visual grounding modal](img/tui-visual-grounding.png)
+
+#### Requirements
+
+- **Page images**: Documents must be processed with Docling's page image extraction enabled (default for PDFs)
+- **Terminal image support**: Your terminal must support inline images (e.g., iTerm2, WezTerm, Kitty). Terminals without image support will show a placeholder message.
+- **DoclingDocument storage**: Text-only documents (plain text, markdown added via `add`) don't have visual grounding available
+
+!!! tip
+    You can also view visual grounding from the command line with `haiku-rag visualize <chunk_id>`. See [CLI documentation](cli.md#visualize-chunk) for details.

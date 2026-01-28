@@ -8,19 +8,19 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 ## Features
 
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
-- **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Question answering** — QA agents with citations (page numbers, section headings)
+- **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
-- **Visual grounding** — View chunks highlighted on original page images
-- **Time travel** — Query the database at any historical point with `--before`
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
-- **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
-- **File monitoring** — Watch directories and auto-index on changes
-- **Inspector** — TUI for browsing documents, chunks, and search results
 - **CLI & Python API** — Full functionality from command line or code
+- **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
+- **Visual grounding** — View chunks highlighted on original page images
+- **File monitoring** — Watch directories and auto-index on changes
+- **Time travel** — Query the database at any historical point with `--before`
+- **Inspector** — TUI for browsing documents, chunks, and search results
 
 ## Installation
 
@@ -29,20 +29,24 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 ### Full Package (Recommended)
 
 ```bash
-uv pip install haiku.rag
+pip install haiku.rag
 ```
 
 Includes all features: document processing, all embedding providers, and rerankers.
 
+Using [uv](https://docs.astral.sh/uv/)? `uv pip install haiku.rag`
+
 ### Slim Package (Minimal Dependencies)
 
 ```bash
-uv pip install haiku.rag-slim
+pip install haiku.rag-slim
 ```
 
-Install only the extras you need. See the [Installation](https://ggozad.github.io/haiku.rag/installation/) documentation for available options
+Install only the extras you need. See the [Installation](https://ggozad.github.io/haiku.rag/installation/) documentation for available options.
 
 ## Quick Start
+
+> **Note**: Requires an embedding provider (Ollama, OpenAI, etc.). See the [Tutorial](https://ggozad.github.io/haiku.rag/tutorial/) for setup instructions.
 
 ```bash
 # Index a PDF
@@ -139,4 +143,9 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance benchmarks
 - [Changelog](https://ggozad.github.io/haiku.rag/changelog/) - Version history
 
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+<!-- mcp-name is used by the MCP registry to identify this server -->
 mcp-name: io.github.ggozad/haiku-rag

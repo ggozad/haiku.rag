@@ -86,21 +86,21 @@ Now you can view your [LanceDB](https://lancedb.com/) database, and the embeddin
 haiku-rag info
 ```
 
-You should see output like:
+You should see output similar to:
 
 ```
 haiku.rag database info
   path: /Users/moo/Library/Application Support/haiku.rag/haiku.rag.lancedb
-  haiku.rag version (db): 0.20.0
+  haiku.rag version (db): x.y.z
   embeddings: openai/text-embedding-3-small (dim: 1536)
   documents: 3 (storage: 48.0 KB)
   chunks: 3 (storage: 52.0 KB)
   vector index: not created
 ──────────────────────────────────────────────────────────────────────────────────
 Versions
-  haiku.rag: 0.20.0
-  lancedb: 0.25.2
-  docling: 2.58.0
+  haiku.rag: x.y.z
+  lancedb: ...
+  docling: ...
 ```
 
 ## Asking questions and retrieving information
