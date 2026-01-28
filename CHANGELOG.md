@@ -17,6 +17,10 @@
 
 ### Changed
 
+- **AG-UI State Delta Updates**: Web application now sends `StateDeltaEvent` (JSON Patch RFC 6902) instead of full `StateSnapshotEvent` for state updates
+  - Reduces bandwidth when state grows large (e.g., 50 Q&As with citations)
+  - First request still sends full snapshot; subsequent requests send only changes
+  - Backend logging shows incoming/outgoing state events for debugging
 - **Selective Citation Filtering**: Synthesis steps now select only relevant citations instead of including all
   - LLM receives `<available_citations>` with chunk IDs and content previews
   - LLM populates `cited_chunks` with only chunks that directly support the answer

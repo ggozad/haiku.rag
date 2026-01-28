@@ -99,6 +99,13 @@ async def stream_chat(request: Request) -> Response:
                 initial_context=chat_state.get("initial_context"),
                 citation_registry=chat_state.get("citation_registry", {}),
             )
+            logger.info(
+                f"Incoming state: session={session_state.session_id[:8]}, "
+                f"qa_history={len(session_state.qa_history)}, "
+                f"citations={len(session_state.citation_registry)}"
+            )
+    else:
+        logger.info("Incoming state: new session (no session_id)")
 
     deps = ChatDeps(
         client=get_client(db_path),
@@ -111,7 +118,35 @@ async def stream_chat(request: Request) -> Response:
     adapter = AGUIAdapter(agent=chat_agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(deps=deps)
 
-    sse_event_stream = adapter.encode_stream(event_stream)
+    async def logged_event_stream():
+        async for event in event_stream:
+            event_type = getattr(event, "type", None)
+            if event_type and "state" in str(event_type).lower():
+                delta = getattr(event, "delta", None)
+                snapshot = getattr(event, "snapshot", None)
+                if delta is not None:
+                    logger.info(f"Outgoing StateDeltaEvent: {len(delta)} ops")
+                    for op in delta:
+                        # Extract key from path like /haiku.rag.chat/qa_history/0
+                        parts = op["path"].split("/")
+                        key = "/".join(parts[2:]) if len(parts) > 2 else op["path"]
+                        logger.info(f"  {op['op']} {key}")
+                elif snapshot is not None:
+                    chat_state = snapshot.get(AGUI_STATE_KEY, {})
+                    sid = chat_state.get("session_id", "")[:8] if chat_state else ""
+                    qa_len = len(chat_state.get("qa_history", [])) if chat_state else 0
+                    reg_len = (
+                        len(chat_state.get("citation_registry", {}))
+                        if chat_state
+                        else 0
+                    )
+                    logger.info(
+                        f"Outgoing StateSnapshotEvent: session={sid}, "
+                        f"qa={qa_len}, keys={reg_len}"
+                    )
+            yield event
+
+    sse_event_stream = adapter.encode_stream(logged_event_stream())
 
     return StreamingResponse(
         sse_event_stream,
