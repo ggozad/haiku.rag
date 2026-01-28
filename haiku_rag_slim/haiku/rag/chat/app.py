@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import jsonpatch
 from ag_ui.core import EventType
 from pydantic_ai import (
     Agent,
@@ -106,6 +107,7 @@ class ChatApp(App):
         self._current_worker: Worker[None] | None = None
         self._message_history: list[ModelMessage] = []
         self._document_filter: list[str] = []
+        self._agui_state_snapshot: dict[str, Any] = {}
 
     def compose(self) -> "ComposeResult":
         """Compose the UI layout."""
@@ -185,20 +187,33 @@ class ChatApp(App):
                 widget = self._tool_call_widgets[tool_call_id]
                 chat_history.mark_tool_complete(widget)
 
-            # Extract citations from StateSnapshotEvent in tool metadata
+            # Extract citations from state events in tool metadata
             result = getattr(event, "result", None)
             metadata = getattr(result, "metadata", None) if result else None
             if metadata:
                 for meta_event in metadata:
-                    if (
-                        hasattr(meta_event, "type")
-                        and meta_event.type == EventType.STATE_SNAPSHOT
-                    ):
+                    if not hasattr(meta_event, "type"):
+                        continue
+
+                    if meta_event.type == EventType.STATE_SNAPSHOT:
                         snapshot = getattr(meta_event, "snapshot", {})
+                        self._agui_state_snapshot = snapshot
                         chat_state = snapshot.get(AGUI_STATE_KEY, snapshot)
-                        self._last_citations = [
-                            Citation(**c) for c in chat_state["citations"]
-                        ]
+                        citations = chat_state.get("citations", [])
+                        self._last_citations = [Citation(**c) for c in citations]
+
+                    elif meta_event.type == EventType.STATE_DELTA:
+                        delta = getattr(meta_event, "delta", [])
+                        if delta:
+                            patch = jsonpatch.JsonPatch(delta)
+                            self._agui_state_snapshot = patch.apply(
+                                self._agui_state_snapshot
+                            )
+                        chat_state = self._agui_state_snapshot.get(
+                            AGUI_STATE_KEY, self._agui_state_snapshot
+                        )
+                        citations = chat_state.get("citations", [])
+                        self._last_citations = [Citation(**c) for c in citations]
 
     async def _event_stream_handler(
         self,
@@ -252,6 +267,12 @@ class ChatApp(App):
         await chat_history.show_thinking()
 
         try:
+            # Initialize AGUI state snapshot from session state for delta application
+            if self.session_state:
+                self._agui_state_snapshot = {
+                    AGUI_STATE_KEY: self.session_state.model_dump(mode="json")
+                }
+
             deps = ChatDeps(
                 client=self.client,
                 config=self.config,
@@ -304,6 +325,7 @@ class ChatApp(App):
         await chat_history.clear_messages()
         self._last_citations.clear()
         self._message_history.clear()
+        self._agui_state_snapshot = {}
         # Reset context lock and session state (reset to CLI value)
         self._context_locked = False
         self.session_state = ChatSessionState(
