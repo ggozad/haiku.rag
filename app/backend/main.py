@@ -83,6 +83,7 @@ async def stream_chat(request: Request) -> Response:
     initial_qa_history: list[QAResponse] = []
     session_id: str | None = None
     document_filter: list[str] = []
+    initial_context: str | None = None
     state = getattr(run_input, "state", None)
     if state:
         chat_state = state.get(AGUI_STATE_KEY, state)
@@ -92,6 +93,7 @@ async def stream_chat(request: Request) -> Response:
             ]
         session_id = chat_state.get("session_id")
         document_filter = chat_state.get("document_filter", [])
+        initial_context = chat_state.get("initial_context")
 
     deps = ChatDeps(
         client=get_client(db_path),
@@ -99,6 +101,7 @@ async def stream_chat(request: Request) -> Response:
         session_state=ChatSessionState(
             qa_history=initial_qa_history,
             document_filter=document_filter,
+            initial_context=initial_context,
             **({"session_id": session_id} if session_id else {}),
         ),
         state_key=AGUI_STATE_KEY,

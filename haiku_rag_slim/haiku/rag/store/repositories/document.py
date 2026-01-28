@@ -167,6 +167,17 @@ class DocumentRepository:
         results = list(query.to_pydantic(DocumentRecord))
         return [self._record_to_document(doc) for doc in results]
 
+    async def count(self, filter: str | None = None) -> int:
+        """Count documents with optional filtering.
+
+        Args:
+            filter: Optional SQL WHERE clause to filter documents.
+
+        Returns:
+            Number of documents matching the criteria.
+        """
+        return self.store.documents_table.count_rows(filter=filter)
+
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
         escaped_uri = _escape_sql_string(uri)

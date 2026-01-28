@@ -163,6 +163,11 @@ class ResearchReport(BaseModel):
     recommendations: list[str] = Field(
         description="Actionable recommendations based on findings", default=[]
     )
-    sources_summary: str = Field(
-        description="Summary of sources used and their reliability"
+    cited_chunks: list[str] = Field(
+        default_factory=list,
+        description="Chunk IDs selected by synthesis as directly supporting the report",
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="Resolved citations with full metadata",
     )

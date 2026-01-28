@@ -1,6 +1,27 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Chat Agent Document Awareness Tools**: Two new tools for browsing and understanding the knowledge base
+  - `list_documents` — Returns `DocumentListResponse` with paginated documents (50 per page), page number, total pages, and total count; respects session document filter
+  - `summarize_document` — Generate LLM-powered summaries of specific documents
+- **Document Count API**: New `count_documents(filter)` method on `HaikuRAG` client for efficient document counting
+- **Read-Only Initial Context**: Initial context is now locked after the first message, providing consistent session context
+  - Chat TUI: `--initial-context` CLI option sets background context for the session
+  - Context can be edited via command palette before the first message is sent
+  - After first message, context becomes read-only (view only)
+  - Clearing chat resets context to CLI value and unlocks editing
+  - Web app: Memory panel now serves dual purpose - edit initial context before first message, view session context after
+  - Agent uses `initial_context` as fallback when `session_context` is empty
+
+### Changed
+
+- **Selective Citation Filtering**: Synthesis steps now select only relevant citations instead of including all
+  - LLM receives `<available_citations>` with chunk IDs and content previews
+  - LLM populates `cited_chunks` with only chunks that directly support the answer
+  - `ResearchReport` now has `cited_chunks` and `citations` fields; removed `sources_summary`
+
 ## [0.27.1] - 2026-01-27
 
 ### Added

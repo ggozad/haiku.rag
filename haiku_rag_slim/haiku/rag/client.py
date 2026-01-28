@@ -854,6 +854,17 @@ class HaikuRAG:
             limit=limit, offset=offset, filter=filter
         )
 
+    async def count_documents(self, filter: str | None = None) -> int:
+        """Count documents with optional filtering.
+
+        Args:
+            filter: Optional SQL WHERE clause to filter documents.
+
+        Returns:
+            Number of documents matching the criteria.
+        """
+        return await self.document_repository.count(filter=filter)
+
     async def search(
         self,
         query: str,

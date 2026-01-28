@@ -966,6 +966,203 @@ async def test_summarization_task_cancellation():
     _summarization_tasks.clear()
 
 
+# =============================================================================
+# list_documents Tool Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_list_documents_basic(allow_model_requests, temp_db_path):
+    """Test that list_documents tool returns available documents."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask to list documents
+        result = await agent.run(
+            "What documents are available in the knowledge base?",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # Should mention both documents
+        assert "DocLayNet" in result.output
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_list_documents_with_session_filter(allow_model_requests, temp_db_path):
+    """Test that list_documents respects session document_filter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        agent = create_chat_agent(Config)
+        # Set session filter to only include the labels document
+        session_state = ChatSessionState(
+            session_id="test-list-filter",
+            document_filter=["DocLayNet Class Labels"],
+        )
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+            session_state=session_state,
+        )
+
+        # Ask to list documents - should only show filtered documents
+        result = await agent.run(
+            "Show me what documents are available",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # Should only mention the Labels document, not Sources
+        assert "Labels" in result.output or "labels" in result.output
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_list_documents_pagination(allow_model_requests, temp_db_path):
+    """Test that list_documents supports pagination via limit/offset."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add multiple test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask to list first 2 documents
+        result = await agent.run(
+            "List the first 2 documents available",
+            deps=deps,
+        )
+
+        assert result.output is not None
+
+
+# =============================================================================
+# summarize_document Tool Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_summarize_document_found(allow_model_requests, temp_db_path):
+    """Test that summarize_document generates a summary for a found document."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add a test document
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask to summarize a specific document
+        result = await agent.run(
+            "Summarize the DocLayNet Class Labels document",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # Should contain summary content about class labels
+        assert len(result.output) > 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_summarize_document_not_found(allow_model_requests, temp_db_path):
+    """Test that summarize_document handles not found documents gracefully."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask to summarize a document that doesn't exist
+        result = await agent.run(
+            "Summarize the nonexistent document",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # Should indicate the document wasn't found
+
+
+# =============================================================================
+# count_documents Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_count_documents(temp_db_path):
+    """Test count_documents method."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Empty database
+        assert await client.count_documents() == 0
+
+        # Add documents
+        await client.create_document(content="Doc 1", uri="test/doc1.pdf")
+        await client.create_document(content="Doc 2", uri="test/doc2.pdf")
+        await client.create_document(content="Doc 3", uri="other/doc3.txt")
+
+        # Count all
+        assert await client.count_documents() == 3
+
+        # Count with filter
+        assert await client.count_documents(filter="uri LIKE '%.pdf'") == 2
+        assert await client.count_documents(filter="uri LIKE '%.txt'") == 1
+
+
 def test_citation_index_fallback_without_session_state():
     """Test that citation indices fall back to sequential numbering without session_state.
 

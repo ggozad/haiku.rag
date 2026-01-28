@@ -593,6 +593,11 @@ def chat(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    initial_context: str | None = typer.Option(
+        None,
+        "--initial-context",
+        help="Initial background context to provide to the conversation",
+    ),
 ):
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
@@ -603,6 +608,7 @@ def chat(
         db_path,
         read_only=_read_only,
         before=_before,
+        initial_context=initial_context,
     )
 
 

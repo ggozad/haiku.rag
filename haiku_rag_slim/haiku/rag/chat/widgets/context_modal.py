@@ -2,20 +2,25 @@ from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Markdown, Static
+from textual.widgets import Button, Markdown, Static, TextArea
 
 if TYPE_CHECKING:
     from haiku.rag.agents.chat.state import ChatSessionState
 
 
 class ContextModal(ModalScreen):  # pragma: no cover
-    """Modal screen for displaying session context."""
+    """Modal screen for viewing/editing context.
+
+    Before first message (not locked, no session context): Edit initial context
+    After first message (locked or has session context): View session context
+    """
 
     BINDINGS = [
-        Binding("escape", "dismiss", "Close", show=True),
-        Binding("ctrl+o", "dismiss", "Close", show=True),
+        Binding("escape", "cancel", "Close", show=False),
+        Binding("ctrl+o", "cancel", "Close", show=False),
     ]
 
     CSS = """
@@ -25,11 +30,9 @@ class ContextModal(ModalScreen):  # pragma: no cover
     }
 
     #context-container {
-        width: auto;
-        min-width: 40;
-        max-width: 80;
+        width: 70;
         height: auto;
-        max-height: 20;
+        max-height: 32;
         background: $surface;
         border: tall $primary;
         padding: 1 2;
@@ -40,23 +43,87 @@ class ContextModal(ModalScreen):  # pragma: no cover
         margin-bottom: 1;
     }
 
+    #context-description {
+        height: auto;
+        margin-bottom: 1;
+        color: $text-muted;
+    }
+
+    #context-editor {
+        height: 12;
+        min-height: 8;
+        max-height: 16;
+    }
+
     #context-content {
         height: 1fr;
+        max-height: 16;
         scrollbar-gutter: stable;
+    }
+
+    #button-row {
+        height: auto;
+        margin-top: 1;
+        align: right middle;
+    }
+
+    #button-row Button {
+        margin-left: 1;
     }
     """
 
-    def __init__(self, session_state: "ChatSessionState | None"):
+    class ContextUpdated(Message):
+        """Emitted when the context is saved."""
+
+        def __init__(self, context: str) -> None:
+            super().__init__()
+            self.context = context
+
+    def __init__(
+        self, session_state: "ChatSessionState | None", is_locked: bool = False
+    ) -> None:
         super().__init__()
         self.session_state = session_state
+        self._is_locked = is_locked
+
+    @property
+    def _is_edit_mode(self) -> bool:
+        """Edit mode when not locked and no session context yet."""
+        has_session_context = (
+            self.session_state
+            and self.session_state.session_context
+            and self.session_state.session_context.summary
+        )
+        return not self._is_locked and not has_session_context
 
     def compose(self) -> ComposeResult:
         with Vertical(id="context-container"):
-            yield Static("[bold]Session Context[/bold]", id="context-header")
-            with VerticalScroll(id="context-content"):
-                yield Markdown(self._get_content())
+            if self._is_edit_mode:
+                yield Static("[bold]Initial Context[/bold]", id="context-header")
+                yield Static(
+                    "Set background context to guide the conversation. "
+                    "This will be locked after you send your first message.",
+                    id="context-description",
+                )
+                initial_value = ""
+                if self.session_state and self.session_state.initial_context:
+                    initial_value = self.session_state.initial_context
+                yield TextArea(initial_value, id="context-editor")
+                with Horizontal(id="button-row"):
+                    yield Button("Cancel", id="cancel-btn", variant="default")
+                    yield Button("Save", id="save-btn", variant="primary")
+            else:
+                yield Static("[bold]Session Context[/bold]", id="context-header")
+                yield Static(
+                    "What the assistant has learned from your conversation.",
+                    id="context-description",
+                )
+                with VerticalScroll(id="context-content"):
+                    yield Markdown(self._get_session_content())
+                with Horizontal(id="button-row"):
+                    yield Button("Close", id="cancel-btn", variant="primary")
 
-    def _get_content(self) -> str:
+    def _get_session_content(self) -> str:
         if not self.session_state:
             return "*No session state.*"
 
@@ -72,5 +139,19 @@ class ContextModal(ModalScreen):  # pragma: no cover
 
         return f"**Last updated:** {updated}\n\n---\n\n{ctx.summary}"
 
-    async def action_dismiss(self, result=None) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "cancel-btn":
+            self.action_cancel()
+        elif event.button.id == "save-btn":
+            self.action_save()
+
+    def action_cancel(self) -> None:
+        """Cancel and close without saving."""
+        self.app.pop_screen()
+
+    def action_save(self) -> None:
+        """Save context and close."""
+        editor = self.query_one("#context-editor", TextArea)
+        self.post_message(self.ContextUpdated(editor.text))
         self.app.pop_screen()
