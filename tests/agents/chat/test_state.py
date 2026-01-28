@@ -146,8 +146,8 @@ def test_chat_deps_state_getter_without_namespace():
     assert state["session_id"] == "test-123"
 
 
-def test_chat_deps_state_getter_returns_none_without_session():
-    """Test ChatDeps.state getter returns None when no session_state."""
+def test_chat_deps_state_getter_returns_default_state():
+    """Test ChatDeps.state getter returns default state when not explicitly set."""
     from unittest.mock import MagicMock
 
     from haiku.rag.agents.chat.state import ChatDeps
@@ -158,10 +158,13 @@ def test_chat_deps_state_getter_returns_none_without_session():
     deps = ChatDeps(
         client=mock_client,
         config=mock_config,
-        session_state=None,
     )
 
-    assert deps.state is None
+    state = deps.state
+    assert state is not None
+    assert "session_id" in state
+    assert state["qa_history"] == []
+    assert state["citations"] == []
 
 
 def test_chat_deps_state_setter_updates_from_namespaced_state():
@@ -223,8 +226,8 @@ def test_chat_deps_state_setter_handles_none():
     assert deps.session_state.session_id == "original"
 
 
-def test_chat_deps_state_setter_without_session_state():
-    """Test ChatDeps.state setter does nothing when session_state is None."""
+def test_chat_deps_state_setter_updates_default_state():
+    """Test ChatDeps.state setter updates the default session_state."""
     from unittest.mock import MagicMock
 
     from haiku.rag.agents.chat.state import ChatDeps
@@ -235,13 +238,15 @@ def test_chat_deps_state_setter_without_session_state():
     deps = ChatDeps(
         client=mock_client,
         config=mock_config,
-        session_state=None,
     )
 
-    # Should not raise even with valid incoming state
-    deps.state = {"session_id": "test", "qa_history": [], "citations": []}
+    original_session_id = deps.session_state.session_id
 
-    assert deps.session_state is None
+    # Update with incoming state
+    deps.state = {"session_id": "updated-123", "qa_history": [], "citations": []}
+
+    assert deps.session_state.session_id == "updated-123"
+    assert deps.session_state.session_id != original_session_id
 
 
 def test_chat_deps_state_setter_with_citation_dicts():
@@ -643,37 +648,6 @@ def test_chat_session_state_model_dump_json_serializes_datetime():
     # datetime should be serialized as ISO string, not datetime object
     assert isinstance(snapshot["session_context"]["last_updated"], str)
     assert snapshot["session_context"]["last_updated"] == "2025-01-27T12:00:00"
-
-
-def test_emit_state_event_returns_snapshot_when_no_current_state():
-    """emit_state_event returns StateSnapshotEvent when current_state is None."""
-    from ag_ui.core import EventType, StateSnapshotEvent
-
-    from haiku.rag.agents.chat.state import emit_state_event
-
-    new_state = ChatSessionState(session_id="test-123")
-
-    event = emit_state_event(None, new_state)
-
-    assert isinstance(event, StateSnapshotEvent)
-    assert event.type == EventType.STATE_SNAPSHOT
-    assert event.snapshot["session_id"] == "test-123"
-
-
-def test_emit_state_event_returns_snapshot_with_state_key():
-    """emit_state_event wraps snapshot in state_key namespace."""
-    from ag_ui.core import EventType, StateSnapshotEvent
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, emit_state_event
-
-    new_state = ChatSessionState(session_id="test-123")
-
-    event = emit_state_event(None, new_state, state_key=AGUI_STATE_KEY)
-
-    assert isinstance(event, StateSnapshotEvent)
-    assert event.type == EventType.STATE_SNAPSHOT
-    assert AGUI_STATE_KEY in event.snapshot
-    assert event.snapshot[AGUI_STATE_KEY]["session_id"] == "test-123"
 
 
 def test_emit_state_event_returns_none_when_no_changes():

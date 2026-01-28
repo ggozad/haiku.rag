@@ -100,7 +100,7 @@ class ChatApp(App):
         self.client: HaikuRAG | None = None
         self.config = get_config()
         self.agent: Agent[ChatDeps, str] | None = None
-        self.session_state: ChatSessionState | None = None
+        self.session_state = ChatSessionState()
         self._is_processing = False
         self._tool_call_widgets: dict[str, Any] = {}
         self._last_citations: list[Citation] = []

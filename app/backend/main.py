@@ -79,17 +79,12 @@ async def stream_chat(request: Request) -> Response:
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    # Restore session state from incoming AG-UI state (look under namespaced key)
-    session_state: ChatSessionState | None = None
+    # Restore session state from incoming AG-UI state
+    session_state = ChatSessionState(session_id="")  # New session: empty session_id
     state = getattr(run_input, "state", None)
     if state and AGUI_STATE_KEY in state:
         chat_state = state[AGUI_STATE_KEY]
         if chat_state and chat_state.get("session_id"):
-            # Only restore state if client has a session_id (not first request)
-            # This ensures first request gets a full snapshot with generated UUID
-            # NOTE: We intentionally do NOT restore session_context from the client.
-            # The server maintains session_context via background summarization tasks,
-            # and the agent fetches it from the server-side cache (get_cached_session_context).
             session_state = ChatSessionState(
                 session_id=chat_state["session_id"],
                 qa_history=[
@@ -104,8 +99,10 @@ async def stream_chat(request: Request) -> Response:
                 f"qa_history={len(session_state.qa_history)}, "
                 f"citations={len(session_state.citation_registry)}"
             )
+        else:
+            logger.info("Incoming state: new session")
     else:
-        logger.info("Incoming state: new session (no session_id)")
+        logger.info("Incoming state: new session")
 
     deps = ChatDeps(
         client=get_client(db_path),

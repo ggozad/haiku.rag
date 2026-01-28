@@ -19,7 +19,12 @@ from haiku.rag.config import Config
 
 
 def extract_state_from_result(result, state_key: str = AGUI_STATE_KEY) -> dict | None:
-    """Extract emitted state from agent result's tool return metadata."""
+    """Extract emitted state from agent result's tool return metadata.
+
+    For deltas, applies the patch to an empty state to get the final state.
+    """
+    import jsonpatch
+
     for message in result.all_messages():
         if hasattr(message, "parts"):
             for part in message.parts:
@@ -28,9 +33,14 @@ def extract_state_from_result(result, state_key: str = AGUI_STATE_KEY) -> dict |
                         if isinstance(meta, StateSnapshotEvent):
                             return meta.snapshot.get(state_key)
                         elif isinstance(meta, StateDeltaEvent):
-                            # For delta, we'd need to apply the patch
-                            # For now, return None and let caller handle
-                            pass
+                            # Apply delta to empty state to get final state
+                            empty_state = {
+                                state_key: ChatSessionState(session_id="").model_dump(
+                                    mode="json"
+                                )
+                            }
+                            patched = jsonpatch.apply_patch(empty_state, meta.delta)
+                            return patched.get(state_key)
     return None
 
 
@@ -54,7 +64,9 @@ def test_chat_deps_initialization(temp_db_path):
     assert deps.client is client
     assert deps.config is Config
     assert deps.search_results is None
-    assert deps.session_state is None
+    assert deps.session_state is not None
+    assert deps.session_state.qa_history == []
+    assert deps.session_state.citations == []
 
     client.close()
 
@@ -467,11 +479,9 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
         )
 
         agent = create_chat_agent(Config)
-        # Pass session_state=None so agent creates fresh state with UUID
         deps = ChatDeps(
             client=client,
             config=Config,
-            session_state=None,
             state_key=AGUI_STATE_KEY,
         )
 
@@ -506,11 +516,9 @@ async def test_chat_agent_ask_triggers_background_summarization(
         )
 
         agent = create_chat_agent(Config)
-        # Pass session_state=None so agent creates fresh state with UUID
         deps = ChatDeps(
             client=client,
             config=Config,
-            session_state=None,
             state_key=AGUI_STATE_KEY,
         )
 
@@ -565,11 +573,9 @@ async def test_chat_agent_ask_with_prior_answer_retrieval(
         )
 
         agent = create_chat_agent(Config)
-        # First call with no session state
         deps1 = ChatDeps(
             client=client,
             config=Config,
-            session_state=None,
             state_key=AGUI_STATE_KEY,
         )
 

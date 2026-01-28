@@ -1,5 +1,6 @@
 import asyncio
 import math
+import uuid
 
 from pydantic_ai import Agent, RunContext, ToolReturn
 
@@ -94,11 +95,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             limit: Number of results to return (default: 5)
         """
         # Build session filter from document_filter
-        session_filter = None
-        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
-            session_filter = build_multi_document_filter(
-                ctx.deps.session_state.document_filter
-            )
+        session_filter = build_multi_document_filter(
+            ctx.deps.session_state.document_filter
+        )
 
         # Build tool filter from document_name parameter
         tool_filter = build_document_filter(document_name) if document_name else None
@@ -116,12 +115,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         if not results:
             return ToolReturn(return_value="No results found.")
 
-        # Copy session state to work with (avoids mutating original for delta computation)
-        new_state = (
-            ctx.deps.session_state.model_copy(deep=True)
-            if ctx.deps.session_state
-            else ChatSessionState()
-        )
+        new_state = ctx.deps.session_state.model_copy(deep=True)
+        if not new_state.session_id:
+            new_state.session_id = str(uuid.uuid4())
 
         # Build citation infos using the copy's registry
         citation_infos = []
@@ -190,11 +186,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             document_name: Optional document name/title to search within (e.g., "tbmed593", "army manual")
         """
         # Build session filter from document_filter
-        session_filter = None
-        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
-            session_filter = build_multi_document_filter(
-                ctx.deps.session_state.document_filter
-            )
+        session_filter = build_multi_document_filter(
+            ctx.deps.session_state.document_filter
+        )
 
         # Build tool filter from document_name parameter
         tool_filter = build_document_filter(document_name) if document_name else None
@@ -204,23 +198,19 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         # Build and run the conversational research graph
         graph = build_conversational_graph(config=ctx.deps.config)
-        session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
+        session_id = ctx.deps.session_state.session_id
 
         # Get session context from server cache for planning, fallback to initial_context
-        cached_context = get_cached_session_context(session_id) if session_id else None
+        cached_context = get_cached_session_context(session_id)
         session_context = (
             cached_context.render_markdown()
             if cached_context and cached_context.summary
-            else (
-                ctx.deps.session_state.initial_context
-                if ctx.deps.session_state
-                else None
-            )
+            else ctx.deps.session_state.initial_context
         )
 
         # Find relevant prior answers from qa_history
         prior_answers = []
-        if ctx.deps.session_state and ctx.deps.session_state.qa_history:
+        if ctx.deps.session_state.qa_history:
             embedder = get_embedder(ctx.deps.config)
             question_embedding = await embedder.embed_query(question)
 
@@ -267,12 +257,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         result = await graph.run(state=state, deps=deps)
 
-        # Copy session state to work with (avoids mutating original for delta computation)
-        new_state = (
-            ctx.deps.session_state.model_copy(deep=True)
-            if ctx.deps.session_state
-            else ChatSessionState()
-        )
+        new_state = ctx.deps.session_state.model_copy(deep=True)
+        if not new_state.session_id:
+            new_state.session_id = str(uuid.uuid4())
 
         # Build citation infos using the copy's registry
         citation_infos = []
@@ -354,12 +341,7 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         page_size = 50
         offset = (page - 1) * page_size
 
-        # Build session filter from document_filter
-        doc_filter = None
-        if ctx.deps.session_state and ctx.deps.session_state.document_filter:
-            doc_filter = build_multi_document_filter(
-                ctx.deps.session_state.document_filter
-            )
+        doc_filter = build_multi_document_filter(ctx.deps.session_state.document_filter)
 
         docs = await ctx.deps.client.list_documents(
             limit=page_size, offset=offset, filter=doc_filter
