@@ -32,7 +32,6 @@ from haiku.rag.utils import build_prompt, get_model
 def format_context_for_prompt(
     context: ResearchContext,
     include_pending_questions: bool = True,
-    include_citations: bool = False,
 ) -> str:
     """Format the research context as XML for prompts.
 
@@ -40,8 +39,6 @@ def format_context_for_prompt(
         context: The research context to format.
         include_pending_questions: Whether to include pending sub-questions.
             Set to False for synthesis prompts where pending questions aren't relevant.
-        include_citations: Whether to include available citations for selection.
-            Set to True for synthesis prompts where the LLM should select relevant citations.
     """
     context_data: dict[str, object] = {}
 
@@ -63,26 +60,6 @@ def format_context_for_prompt(
             }
             for qa in context.qa_responses
         ]
-
-    if include_citations and context.qa_responses:
-        seen_chunks: set[str] = set()
-        available_citations: list[dict[str, str]] = []
-        for qa in context.qa_responses:
-            for c in qa.citations:
-                if c.chunk_id not in seen_chunks:
-                    seen_chunks.add(c.chunk_id)
-                    content_preview = (
-                        c.content[:500] + "..." if len(c.content) > 500 else c.content
-                    )
-                    available_citations.append(
-                        {
-                            "chunk_id": c.chunk_id,
-                            "document": c.document_title or c.document_uri,
-                            "content": content_preview,
-                        }
-                    )
-        if available_citations:
-            context_data["available_citations"] = available_citations
 
     return format_as_xml(context_data, root_tag="context")
 
@@ -373,10 +350,7 @@ def build_research_graph(
             deps_type=ResearchDependencies,
         )
 
-        # Include available citations for the LLM to select from
-        context_xml = format_context_for_prompt(
-            state.context, include_pending_questions=False, include_citations=True
-        )
+        context_xml = format_context_for_prompt(state.context)
         prompt = (
             "Generate a comprehensive research report based on all gathered information.\n\n"
             f"{context_xml}\n\n"
@@ -387,21 +361,7 @@ def build_research_graph(
             context=state.context,
         )
         result = await agent.run(prompt, deps=agent_deps)
-        report = result.output
-
-        citation_lookup: dict[str, Citation] = {}
-        for qa in state.context.qa_responses:
-            for c in qa.citations:
-                if c.chunk_id not in citation_lookup:
-                    citation_lookup[c.chunk_id] = c
-
-        resolved_citations: list[Citation] = []
-        for chunk_id in report.cited_chunks:
-            if chunk_id in citation_lookup:
-                resolved_citations.append(citation_lookup[chunk_id])
-        report.citations = resolved_citations
-
-        return report
+        return result.output
 
     # Build the graph structure
     collect_answers = g.join(
@@ -519,19 +479,17 @@ def build_conversational_graph(
         state = ctx.state
         deps = ctx.deps
 
-        # Use RawSearchAnswer so LLM can select which chunks to cite
-        agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(  # type: ignore[invalid-assignment]
+        agent: Agent[ResearchDependencies, ConversationalAnswer] = Agent(  # type: ignore[invalid-assignment]
             model=get_model(config.research.model, config),
-            output_type=RawSearchAnswer,
+            output_type=ConversationalAnswer,
             instructions=conversational_prompt,
             retries=3,
             output_retries=3,
             deps_type=ResearchDependencies,
         )
 
-        # Include available citations for the LLM to select from
         context_xml = format_context_for_prompt(
-            state.context, include_pending_questions=False, include_citations=True
+            state.context, include_pending_questions=False
         )
         prompt = f"Answer the question based on the gathered evidence.\n\n{context_xml}"
         agent_deps = ResearchDependencies(
@@ -539,23 +497,20 @@ def build_conversational_graph(
             context=state.context,
         )
         result = await agent.run(prompt, deps=agent_deps)
-        raw_answer = result.output
 
-        citation_lookup: dict[str, Citation] = {}
+        # Collect unique citations from qa_responses (dedupe by chunk_id)
+        seen_chunks: set[str] = set()
+        unique_citations: list[Citation] = []
         for qa in state.context.qa_responses:
             for c in qa.citations:
-                if c.chunk_id not in citation_lookup:
-                    citation_lookup[c.chunk_id] = c
-
-        filtered_citations: list[Citation] = []
-        for chunk_id in raw_answer.cited_chunks:
-            if chunk_id in citation_lookup:
-                filtered_citations.append(citation_lookup[chunk_id])
+                if c.chunk_id not in seen_chunks:
+                    seen_chunks.add(c.chunk_id)
+                    unique_citations.append(c)
 
         return ConversationalAnswer(
-            answer=raw_answer.answer,
-            citations=filtered_citations,
-            confidence=raw_answer.confidence,
+            answer=result.output.answer,
+            citations=unique_citations,
+            confidence=result.output.confidence,
         )
 
     # Build the graph structure (simplified: plan → search → synthesize)

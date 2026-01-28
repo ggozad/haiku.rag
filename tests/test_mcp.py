@@ -277,6 +277,7 @@ async def test_mcp_research_question():
             main_findings=["Finding 1"],
             conclusions=["Conclusion 1"],
             recommendations=["Recommendation 1"],
+            sources_summary="Sources used",
         )
 
         with (

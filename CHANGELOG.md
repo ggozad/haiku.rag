@@ -21,10 +21,7 @@
   - Reduces bandwidth when state grows large (e.g., 50 Q&As with citations)
   - First request still sends full snapshot; subsequent requests send only changes
   - Backend logging shows incoming/outgoing state events for debugging
-- **Selective Citation Filtering**: Synthesis steps now select only relevant citations instead of including all
-  - LLM receives `<available_citations>` with chunk IDs and content previews
-  - LLM populates `cited_chunks` with only chunks that directly support the answer
-  - `ResearchReport` now has `cited_chunks` and `citations` fields; removed `sources_summary`
+
 
 ## [0.27.1] - 2026-01-27
 

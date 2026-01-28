@@ -349,6 +349,7 @@ async def test_ask_with_deep(app: HaikuRAGApp, monkeypatch):
         executive_summary="Deep research answer",
         main_findings=["Finding 1"],
         conclusions=["Conclusion 1"],
+        sources_summary="Sources",
     )
 
     mock_graph = AsyncMock()
@@ -386,6 +387,7 @@ async def test_ask_with_deep_and_cite(app: HaikuRAGApp, monkeypatch):
         executive_summary="Deep research answer",
         main_findings=["Finding 1"],
         conclusions=["Conclusion 1"],
+        sources_summary="Sources",
     )
 
     mock_graph = AsyncMock()

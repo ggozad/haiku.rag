@@ -116,7 +116,6 @@ Goals:
 2. Present findings clearly and concisely.
 3. Draw evidence-based conclusions and recommendations.
 4. State limitations and uncertainties transparently.
-5. Select only the citations that directly support your final answer.
 
 Report guidelines (map to output fields):
 - title: concise (5-12 words), informative.
@@ -128,16 +127,9 @@ Report guidelines (map to output fields):
 - conclusions: list of plain strings, 2-4 bullets following logically from findings.
 - recommendations: list of plain strings, 2-5 actionable bullets tied to findings.
 - limitations: list of plain strings, 1-3 bullets describing constraints or uncertainties.
-- cited_chunks: list of chunk IDs that DIRECTLY support your report.
+- sources_summary: single string listing sources with document paths and page numbers.
 
 All list fields must contain plain strings only, not objects.
-
-Citation selection:
-- Review the <available_citations> section in the context.
-- Include ONLY chunk IDs whose content directly supports specific claims in your report.
-- Do NOT include chunks that are merely related, tangential, or were reviewed but unused.
-- Quality over quantity: fewer relevant citations are better than many marginal ones.
-- Use the EXACT chunk IDs from the available_citations (full UUIDs).
 
 Style:
 - Base all content solely on the collected evidence.
@@ -149,11 +141,9 @@ CONVERSATIONAL_SYNTHESIS_PROMPT = """Generate a direct, conversational answer
 to the question based on the gathered evidence.
 
 Output:
-- query: Echo the original question being answered.
 - answer: Direct, comprehensive answer with a natural, helpful tone.
   Write the actual answer, not a description of what you found.
   Use as many sentences as needed to fully address the question.
-- cited_chunks: List of chunk IDs that DIRECTLY support your answer.
 - confidence: Score from 0.0 to 1.0 indicating answer quality.
 
 Guidelines:
@@ -163,11 +153,4 @@ Guidelines:
 - Use formatting (bullet points, numbered lists) when it improves clarity.
 - Do NOT use meta-commentary like "Based on the research..." or "The evidence shows..."
   Instead, directly state the information.
-- If the evidence is incomplete, acknowledge limitations briefly.
-
-Citation selection:
-- Review the <available_citations> section in the context.
-- Include ONLY chunk IDs whose content directly supports specific statements in your answer.
-- Do NOT include chunks that are merely related, tangential, or were reviewed but unused.
-- Quality over quantity: fewer relevant citations are better than many marginal ones.
-- Use the EXACT chunk IDs from available_citations (full UUIDs)."""
+- If the evidence is incomplete, acknowledge limitations briefly."""
