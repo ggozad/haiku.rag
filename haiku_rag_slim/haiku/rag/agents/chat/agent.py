@@ -116,12 +116,19 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         if not results:
             return ToolReturn(return_value="No results found.")
 
-        # Build citation infos using stable registry indices
+        # Copy session state to work with (avoids mutating original for delta computation)
+        new_state = (
+            ctx.deps.session_state.model_copy(deep=True)
+            if ctx.deps.session_state
+            else ChatSessionState()
+        )
+
+        # Build citation infos using the copy's registry
         citation_infos = []
         for r in results:
             chunk_id = r.chunk_id or ""
-            if ctx.deps.session_state is not None and chunk_id:
-                index = ctx.deps.session_state.get_or_assign_index(chunk_id)
+            if chunk_id:
+                index = new_state.get_or_assign_index(chunk_id)
             else:
                 index = len(citation_infos) + 1
             citation_infos.append(
@@ -137,26 +144,10 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 )
             )
 
-        # Build new state with citations and registry
-        session_id = ctx.deps.session_state.session_id if ctx.deps.session_state else ""
-        new_state = ChatSessionState(
-            session_id=session_id,
-            citations=citation_infos,
-            qa_history=(
-                ctx.deps.session_state.qa_history if ctx.deps.session_state else []
-            ),
-            session_context=get_cached_session_context(session_id)
-            if session_id
-            else None,
-            document_filter=(
-                ctx.deps.session_state.document_filter if ctx.deps.session_state else []
-            ),
-            citation_registry=(
-                ctx.deps.session_state.citation_registry
-                if ctx.deps.session_state
-                else {}
-            ),
-        )
+        # Update new_state with citations and fresh session_context
+        new_state.citations = citation_infos
+        if new_state.session_id:
+            new_state.session_context = get_cached_session_context(new_state.session_id)
 
         # Return detailed results for the agent to present
         result_lines = []
@@ -276,14 +267,17 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         result = await graph.run(state=state, deps=deps)
 
-        # Build citation infos using stable registry indices
+        # Copy session state to work with (avoids mutating original for delta computation)
+        new_state = (
+            ctx.deps.session_state.model_copy(deep=True)
+            if ctx.deps.session_state
+            else ChatSessionState()
+        )
+
+        # Build citation infos using the copy's registry
         citation_infos = []
         for c in result.citations:
-            # Use registry for stable indices across calls
-            if ctx.deps.session_state is not None:
-                index = ctx.deps.session_state.get_or_assign_index(c.chunk_id)
-            else:
-                index = len(citation_infos) + 1
+            index = new_state.get_or_assign_index(c.chunk_id)
             citation_infos.append(
                 Citation(
                     index=index,
@@ -297,54 +291,37 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
                 )
             )
 
-        # Accumulate Q&A in session state with full citation metadata
-        if ctx.deps.session_state is not None:
-            qa_response = QAResponse(
-                question=question,
-                answer=result.answer,
-                confidence=result.confidence,
-                citations=citation_infos,
-            )
-            ctx.deps.session_state.qa_history.append(qa_response)
-            # Enforce FIFO limit
-            if len(ctx.deps.session_state.qa_history) > MAX_QA_HISTORY:
-                ctx.deps.session_state.qa_history = ctx.deps.session_state.qa_history[
-                    -MAX_QA_HISTORY:
-                ]
-
-            # Spawn background task to update session context
-            # Cancel any previous summarization for this session
-            if session_id in _summarization_tasks:
-                _summarization_tasks[session_id].cancel()
-
-            task = asyncio.create_task(
-                _update_context_background(
-                    qa_history=list(ctx.deps.session_state.qa_history),
-                    config=ctx.deps.config,
-                    session_state=ctx.deps.session_state,
-                )
-            )
-            _summarization_tasks[session_id] = task
-            task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
-
-        # Build new state with citations, qa_history, and registry
-        new_state = ChatSessionState(
-            session_id=session_id,
+        # Add Q&A to the copy's history
+        qa_response = QAResponse(
+            question=question,
+            answer=result.answer,
+            confidence=result.confidence,
             citations=citation_infos,
-            qa_history=(
-                ctx.deps.session_state.qa_history if ctx.deps.session_state else []
-            ),
-            session_context=get_cached_session_context(session_id)
-            if session_id
-            else None,
-            document_filter=(
-                ctx.deps.session_state.document_filter if ctx.deps.session_state else []
-            ),
-            citation_registry=(
-                ctx.deps.session_state.citation_registry
-                if ctx.deps.session_state
-                else {}
-            ),
+        )
+        new_state.qa_history.append(qa_response)
+        # Enforce FIFO limit
+        if len(new_state.qa_history) > MAX_QA_HISTORY:
+            new_state.qa_history = new_state.qa_history[-MAX_QA_HISTORY:]
+
+        # Update citations and session_context
+        new_state.citations = citation_infos
+        if new_state.session_id:
+            new_state.session_context = get_cached_session_context(new_state.session_id)
+
+        # Spawn background task to update session context
+        if new_state.session_id in _summarization_tasks:
+            _summarization_tasks[new_state.session_id].cancel()
+
+        task = asyncio.create_task(
+            _update_context_background(
+                qa_history=list(new_state.qa_history),
+                config=ctx.deps.config,
+                session_state=new_state,
+            )
+        )
+        _summarization_tasks[new_state.session_id] = task
+        task.add_done_callback(
+            lambda t, sid=new_state.session_id: _summarization_tasks.pop(sid, None)
         )
 
         # Format answer with citation references using stable indices

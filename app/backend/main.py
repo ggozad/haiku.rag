@@ -80,30 +80,30 @@ async def stream_chat(request: Request) -> Response:
     run_input = AGUIAdapter.build_run_input(body)
 
     # Restore session state from incoming AG-UI state (look under namespaced key)
-    initial_qa_history: list[QAResponse] = []
-    session_id: str | None = None
-    document_filter: list[str] = []
-    initial_context: str | None = None
+    session_state: ChatSessionState | None = None
     state = getattr(run_input, "state", None)
-    if state:
-        chat_state = state.get(AGUI_STATE_KEY, state)
-        if "qa_history" in chat_state:
-            initial_qa_history = [
-                QAResponse(**qa) for qa in chat_state.get("qa_history", [])
-            ]
-        session_id = chat_state.get("session_id")
-        document_filter = chat_state.get("document_filter", [])
-        initial_context = chat_state.get("initial_context")
+    if state and AGUI_STATE_KEY in state:
+        chat_state = state[AGUI_STATE_KEY]
+        if chat_state and chat_state.get("session_id"):
+            # Only restore state if client has a session_id (not first request)
+            # This ensures first request gets a full snapshot with generated UUID
+            # NOTE: We intentionally do NOT restore session_context from the client.
+            # The server maintains session_context via background summarization tasks,
+            # and the agent fetches it from the server-side cache (get_cached_session_context).
+            session_state = ChatSessionState(
+                session_id=chat_state["session_id"],
+                qa_history=[
+                    QAResponse(**qa) for qa in chat_state.get("qa_history", [])
+                ],
+                document_filter=chat_state.get("document_filter", []),
+                initial_context=chat_state.get("initial_context"),
+                citation_registry=chat_state.get("citation_registry", {}),
+            )
 
     deps = ChatDeps(
         client=get_client(db_path),
         config=Config,
-        session_state=ChatSessionState(
-            qa_history=initial_qa_history,
-            document_filter=document_filter,
-            initial_context=initial_context,
-            **({"session_id": session_id} if session_id else {}),
-        ),
+        session_state=session_state,
         state_key=AGUI_STATE_KEY,
     )
 
@@ -111,25 +111,7 @@ async def stream_chat(request: Request) -> Response:
     adapter = AGUIAdapter(agent=chat_agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(deps=deps)
 
-    # Wrap to log state events
-    async def logged_event_stream():
-        async for event in event_stream:
-            event_type = getattr(event, "type", None)
-            if event_type and "state" in str(event_type).lower():
-                delta: list[dict[str, str]] | None = getattr(event, "delta", None)
-                snapshot: dict[str, object] | None = getattr(event, "snapshot", None)
-                if delta is not None:
-                    logger.info(f"StateDeltaEvent: {len(delta)} ops")
-                    for op in delta[:3]:  # Log first 3 ops
-                        logger.info(f"  {op['op']} {op['path']}")
-                    if len(delta) > 3:
-                        logger.info(f"  ... and {len(delta) - 3} more ops")
-                elif snapshot is not None:
-                    snapshot_keys = list(snapshot.keys())
-                    logger.info(f"StateSnapshotEvent: keys={snapshot_keys}")
-            yield event
-
-    sse_event_stream = adapter.encode_stream(logged_event_stream())
+    sse_event_stream = adapter.encode_stream(event_stream)
 
     return StreamingResponse(
         sse_event_stream,

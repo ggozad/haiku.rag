@@ -47,6 +47,7 @@ interface ChatSessionState {
 	qa_history: QAResponse[];
 	session_context: SessionContext | null;
 	document_filter: string[];
+	citation_registry: Record<string, number>;
 }
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
@@ -404,6 +405,7 @@ function ChatContentInner() {
 					qa_history: [],
 					session_context: null,
 					document_filter: [],
+					citation_registry: {},
 				},
 			},
 		},
@@ -429,6 +431,8 @@ function ChatContentInner() {
 				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
 				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
 				document_filter: selected,
+				citation_registry:
+					agentState?.[AGUI_STATE_KEY]?.citation_registry ?? {},
 			},
 		});
 	};
@@ -445,6 +449,8 @@ function ChatContentInner() {
 				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
 				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
 				document_filter: agentState?.[AGUI_STATE_KEY]?.document_filter ?? [],
+				citation_registry:
+					agentState?.[AGUI_STATE_KEY]?.citation_registry ?? {},
 			},
 		});
 	};
