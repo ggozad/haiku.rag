@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.27.2] - 2026-01-29
+
 ### Added
 
 - **Deep Ask Evaluations**: QA benchmarks can now use the research graph for multi-step reasoning
