@@ -27,9 +27,10 @@ Get the structured DoclingDocument object for advanced analysis.
 Returns a DoclingDocument object, or None if not found.
 See "DoclingDocument API" section below for how to use it.
 
-### ask(question) -> str
-Ask a question using the QA agent with RAG. Returns the answer as a string.
-Use this for semantic analysis that benefits from LLM reasoning.
+### llm(prompt) -> str
+Call an LLM directly with the given prompt. Returns the response as a string.
+Use this for classification, summarization, extraction, or any task where you
+already have the content and just need LLM reasoning.
 
 ## Standard Library Modules
 You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
@@ -41,7 +42,7 @@ You can import: json, re, collections, math, statistics, itertools, functools, d
 3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
 4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
 5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
+6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
 7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
 
 ## DoclingDocument API
@@ -112,13 +113,13 @@ for r in results:
 print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
 ```
 
-### Using ask() for semantic analysis
+### Using llm() for classification
 ```python
-# First search to find relevant content
-results = search("machine learning approaches")
-# Then use ask() to synthesize an answer
-summary = ask("What are the main machine learning approaches discussed?")
-print(summary)
+# Get document content
+content = get_document("Q1 Report")
+# Use llm() to classify sentiment
+sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+print(sentiment)
 ```
 
 ## Workflow

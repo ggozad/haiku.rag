@@ -139,7 +139,7 @@ class REPLEnvironment:
             "list_documents": self._make_list_documents(),
             "get_document": self._make_get_document(),
             "get_docling_document": self._make_get_docling_document(),
-            "ask": self._make_ask(),
+            "llm": self._make_llm(),
         }
         self.locals: dict[str, Any] = {}
 
@@ -246,38 +246,23 @@ class REPLEnvironment:
 
         return get_docling_document
 
-    def _make_ask(self):
-        """Create sync ask function that uses QA agent."""
+    def _make_llm(self):
+        """Create sync llm function for plain LLM calls without RAG."""
 
-        def ask(question: str) -> str:
-            async def _ask():
-                answer, citations = await self.client.ask(
-                    question, filter=self.context.filter
-                )
-                for c in citations:
-                    for sr in self.context.search_results:
-                        if sr.chunk_id == c.chunk_id:
-                            break
-                    else:
-                        from haiku.rag.store.models import SearchResult
+        def llm(prompt: str) -> str:
+            async def _llm():
+                from pydantic_ai import Agent
 
-                        self.context.search_results.append(
-                            SearchResult(
-                                chunk_id=c.chunk_id,
-                                document_id=c.document_id,
-                                document_title=c.document_title or "",
-                                document_uri=c.document_uri,
-                                content=c.content,
-                                score=1.0,
-                                page_numbers=c.page_numbers,
-                                headings=c.headings or [],
-                            )
-                        )
-                return answer
+                from haiku.rag.utils import get_model
 
-            return self._run_async_from_thread(_ask())
+                model = get_model(self.config.model)
+                agent: Agent[None, str] = Agent(model, output_type=str)
+                result = await agent.run(prompt)
+                return result.output
 
-        return ask
+            return self._run_async_from_thread(_llm())
+
+        return llm
 
     def _safe_import(
         self,

@@ -345,20 +345,11 @@ class TestHaikuRAGBridgeFunctions:
         assert "True" in result.stdout
 
     @pytest.mark.asyncio
-    async def test_ask(self, repl_env_empty):
-        """Test ask function calls client with correct args."""
-        from unittest.mock import AsyncMock
-
-        repl_env_empty.client.ask = AsyncMock(return_value=("The fox is brown.", []))
-
-        result = await repl_env_empty.execute_async(
-            "answer = ask('What color is the fox?')\nprint('fox' in answer.lower())"
-        )
+    async def test_llm(self, repl_env_empty):
+        """Test llm function is available in sandbox."""
+        result = await repl_env_empty.execute_async("print(callable(llm))")
         assert result.success
         assert "True" in result.stdout
-        repl_env_empty.client.ask.assert_called_once_with(
-            "What color is the fox?", filter=None
-        )
 
 
 class TestSandboxExecution:
@@ -488,27 +479,6 @@ class TestContextFilter:
 
             client.list_documents.assert_called_once_with(
                 limit=10, offset=0, filter="title = 'Report'"
-            )
-
-    @pytest.mark.asyncio
-    async def test_context_filter_applied_to_ask(self, temp_db_path):
-        """ask applies context filter automatically."""
-        from unittest.mock import AsyncMock
-
-        from haiku.rag.agents.rlm.dependencies import RLMContext
-        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
-        from haiku.rag.client import HaikuRAG
-        from haiku.rag.config.models import RLMConfig
-
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            context = RLMContext(filter="metadata->>'category' = 'finance'")
-            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
-            client.ask = AsyncMock(return_value=("Answer", []))
-
-            await repl.execute_async("ask('What is the revenue?')")
-
-            client.ask.assert_called_once_with(
-                "What is the revenue?", filter="metadata->>'category' = 'finance'"
             )
 
 
