@@ -3,6 +3,11 @@
 
 ### Added
 
+- **Deep Ask Evaluations**: QA benchmarks can now use the research graph for multi-step reasoning
+  - New `--deep` flag on `evaluations run` enables deep ask mode
+  - Uses research graph with `max_iterations=2` and `confidence_threshold=0.0`
+  - Evaluation name automatically suffixed with `_deep` when enabled
+  - Experiment metadata includes `deep_ask` field for tracking
 - **Chat Agent Document Awareness Tools**: Two new tools for browsing and understanding the knowledge base
   - `list_documents` — Returns `DocumentListResponse` with paginated documents (50 per page), page number, total pages, and total count; respects session document filter
   - `summarize_document` — Generate LLM-powered summaries of specific documents

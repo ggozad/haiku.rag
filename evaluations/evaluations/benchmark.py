@@ -17,6 +17,9 @@ from rich.progress import Progress
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -39,11 +42,13 @@ def build_experiment_metadata(
     test_cases: int,
     config: AppConfig,
     judge_config: ModelConfig,
+    deep: bool = False,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
     return {
         "dataset": dataset_key,
         "test_cases": test_cases,
+        "deep_ask": deep,
         "embedder_provider": config.embeddings.model.provider,
         "embedder_model": config.embeddings.model.name,
         "embedder_dim": config.embeddings.model.vector_dim,
@@ -265,6 +270,7 @@ async def run_qa_benchmark(
     limit: int | None = None,
     name: str | None = None,
     db_path: Path | None = None,
+    deep: bool = False,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if limit is not None:
@@ -297,19 +303,37 @@ async def run_qa_benchmark(
 
     db = spec.db_path(db_path)
     async with HaikuRAG(db, config=config) as rag:
-        qa = get_qa_agent(rag, system_prompt=spec.system_prompt)
+        if deep:
+            graph = build_research_graph(config=config)
 
-        async def answer_question(question: str) -> str:
-            answer, _ = await qa.answer(question)
-            return answer
+            async def answer_question(question: str) -> str:
+                context = ResearchContext(original_question=question)
+                state = ResearchState.from_config(
+                    context=context,
+                    config=config,
+                    max_iterations=2,
+                    confidence_threshold=0.0,
+                )
+                deps = ResearchDeps(client=rag)
+                report = await graph.run(state=state, deps=deps)
+                return report.executive_summary if report else ""
+        else:
+            qa = get_qa_agent(rag, system_prompt=spec.system_prompt)
+
+            async def answer_question(question: str) -> str:
+                answer, _ = await qa.answer(question)
+                return answer
 
         eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
+        if deep:
+            eval_name = f"{eval_name}_deep"
 
         experiment_metadata = build_experiment_metadata(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
             judge_config=judge_config,
+            deep=deep,
         )
 
         report = await evaluation_dataset.evaluate(
@@ -359,6 +383,7 @@ async def evaluate_dataset(
     db_path: Path | None,
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
+    deep: bool = False,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -378,8 +403,11 @@ async def evaluate_dataset(
         )
 
     if not skip_qa:
-        console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, config, limit=limit, name=name, db_path=db_path)
+        mode_label = "deep QA" if deep else "QA"
+        console.print(f"\nRunning {mode_label} benchmarks...", style="bold yellow")
+        await run_qa_benchmark(
+            spec, config, limit=limit, name=name, db_path=db_path, deep=deep
+        )
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -410,6 +438,11 @@ def run(
         False,
         "--multimodal-only",
         help="Only evaluate queries requiring image understanding.",
+    ),
+    deep: bool = typer.Option(
+        False,
+        "--deep",
+        help="Use deep QA mode (multi-step reasoning with research graph).",
     ),
 ) -> None:
     spec = DATASETS.get(dataset.lower())
@@ -449,6 +482,7 @@ def run(
             db_path=db,
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
+            deep=deep,
         )
     )
 
