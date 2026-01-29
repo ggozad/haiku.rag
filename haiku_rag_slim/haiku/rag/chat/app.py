@@ -170,6 +170,10 @@ class ChatApp(App):
         if self.client:
             await self.client.__aexit__(None, None, None)
 
+    def _sync_session_state(self, chat_state: dict[str, Any]) -> None:
+        """Sync session_state from AG-UI state."""
+        self.session_state = ChatSessionState.model_validate(chat_state)
+
     async def _handle_stream_event(self, event: AgentStreamEvent) -> None:
         """Handle streaming events from the agent."""
         chat_history = self.query_one(ChatHistory)
@@ -201,6 +205,7 @@ class ChatApp(App):
                         chat_state = snapshot.get(AGUI_STATE_KEY, snapshot)
                         citations = chat_state.get("citations", [])
                         self._last_citations = [Citation(**c) for c in citations]
+                        self._sync_session_state(chat_state)
 
                     elif meta_event.type == EventType.STATE_DELTA:
                         delta = getattr(meta_event, "delta", [])
@@ -214,6 +219,7 @@ class ChatApp(App):
                         )
                         citations = chat_state.get("citations", [])
                         self._last_citations = [Citation(**c) for c in citations]
+                        self._sync_session_state(chat_state)
 
     async def _event_stream_handler(
         self,

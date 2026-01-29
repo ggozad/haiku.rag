@@ -22,6 +22,9 @@
   - First request still sends full snapshot; subsequent requests send only changes
   - Backend logging shows incoming/outgoing state events for debugging
 
+### Fixed
+
+- **Chat TUI Session State Sync**: TUI now syncs full session state from AG-UI events
 
 ## [0.27.1] - 2026-01-27
 
