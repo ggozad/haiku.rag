@@ -337,10 +337,6 @@ async def test_handle_stream_event_extracts_citations_from_state_snapshot(
             # Handle the event
             await app._handle_stream_event(event)
 
-            # Citations should be extracted
-            assert len(app._last_citations) == 1
-            assert app._last_citations[0].chunk_id == "chunk1"
-
             # Session state should be synced
             assert len(app.session_state.citations) == 1
             assert app.session_state.citations[0].chunk_id == "chunk1"
@@ -392,7 +388,7 @@ async def test_handle_stream_event_extracts_citations_from_state_delta(
             )
             event1 = FunctionToolResultEvent(result=tool_return1)
             await app._handle_stream_event(event1)
-            assert len(app._last_citations) == 0
+            assert len(app.session_state.citations) == 0
 
             # Now handle a STATE_DELTA event that adds citations
             delta_event = StateDeltaEvent(
@@ -430,14 +426,10 @@ async def test_handle_stream_event_extracts_citations_from_state_delta(
             # Handle the delta event
             await app._handle_stream_event(event2)
 
-            # Citations should be extracted from the delta
-            assert len(app._last_citations) == 1
-            assert app._last_citations[0].chunk_id == "chunk1"
-            assert app._last_citations[0].content == "Test content from delta"
-
             # Session state should be synced
             assert len(app.session_state.citations) == 1
             assert app.session_state.citations[0].chunk_id == "chunk1"
+            assert app.session_state.citations[0].content == "Test content from delta"
 
 
 @pytest.mark.asyncio
@@ -514,14 +506,10 @@ async def test_handle_stream_event_delta_with_preinitialized_state(
             # Handle the delta event
             await app._handle_stream_event(event)
 
-            # Citations should be extracted from the delta
-            assert len(app._last_citations) == 1
-            assert app._last_citations[0].chunk_id == "chunk1"
-            assert app._last_citations[0].content == "Content from first delta"
-
             # Session state should be synced
             assert len(app.session_state.citations) == 1
             assert app.session_state.citations[0].chunk_id == "chunk1"
+            assert app.session_state.citations[0].content == "Content from first delta"
 
 
 @pytest.mark.asyncio

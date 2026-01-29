@@ -23,7 +23,6 @@ from haiku.rag.agents.chat.state import (
     ChatDeps,
     ChatSessionState,
 )
-from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 
@@ -103,7 +102,6 @@ class ChatApp(App):
         self.session_state = ChatSessionState()
         self._is_processing = False
         self._tool_call_widgets: dict[str, Any] = {}
-        self._last_citations: list[Citation] = []
         self._current_worker: Worker[None] | None = None
         self._message_history: list[ModelMessage] = []
         self._document_filter: list[str] = []
@@ -203,8 +201,6 @@ class ChatApp(App):
                         snapshot = getattr(meta_event, "snapshot", {})
                         self._agui_state_snapshot = snapshot
                         chat_state = snapshot.get(AGUI_STATE_KEY, snapshot)
-                        citations = chat_state.get("citations", [])
-                        self._last_citations = [Citation(**c) for c in citations]
                         self._sync_session_state(chat_state)
 
                     elif meta_event.type == EventType.STATE_DELTA:
@@ -217,8 +213,6 @@ class ChatApp(App):
                         chat_state = self._agui_state_snapshot.get(
                             AGUI_STATE_KEY, self._agui_state_snapshot
                         )
-                        citations = chat_state.get("citations", [])
-                        self._last_citations = [Citation(**c) for c in citations]
                         self._sync_session_state(chat_state)
 
     async def _event_stream_handler(
@@ -253,7 +247,7 @@ class ChatApp(App):
 
         # Clear for new query
         self._tool_call_widgets.clear()
-        self._last_citations.clear()
+        self.session_state.citations.clear()
 
         # Run agent in a worker to keep UI responsive
         self._is_processing = True
@@ -309,8 +303,8 @@ class ChatApp(App):
                 self._message_history = stream.all_messages()
 
                 # Add citations captured from tool metadata
-                if self._last_citations:
-                    await chat_history.add_citations(self._last_citations)
+                if self.session_state.citations:
+                    await chat_history.add_citations(self.session_state.citations)
 
         except asyncio.CancelledError:
             chat_history.hide_thinking()
@@ -329,7 +323,6 @@ class ChatApp(App):
         """Clear the chat history and reset session."""
         chat_history = self.query_one(ChatHistory)
         await chat_history.clear_messages()
-        self._last_citations.clear()
         self._message_history.clear()
         self._agui_state_snapshot = {}
         # Reset context lock and session state (reset to CLI value)
