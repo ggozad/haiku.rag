@@ -482,6 +482,96 @@ class TestContextFilter:
             )
 
 
+class TestPreloadedDocuments:
+    """Test pre-loaded documents context variable."""
+
+    @pytest.mark.asyncio
+    async def test_documents_variable_available_when_preloaded(self, temp_db_path):
+        """documents variable is available when context.documents is set."""
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+        from haiku.rag.store.models import Document
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            preloaded = [
+                Document(
+                    id="doc-1",
+                    title="First Doc",
+                    uri="test://first",
+                    content="Content of first document about cats.",
+                ),
+                Document(
+                    id="doc-2",
+                    title="Second Doc",
+                    uri="test://second",
+                    content="Content of second document about dogs.",
+                ),
+            ]
+            context = RLMContext(documents=preloaded)
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+
+            result = await repl.execute_async(
+                "print(len(documents))\n"
+                "print([d['title'] for d in documents])\n"
+                "print('cats' in documents[0]['content'])"
+            )
+            assert result.success
+            assert "2" in result.stdout
+            assert "First Doc" in result.stdout
+            assert "Second Doc" in result.stdout
+            assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_documents_variable_not_available_without_preload(self, temp_db_path):
+        """documents variable is not available when context.documents is None."""
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            context = RLMContext()
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+
+            result = await repl.execute_async("print(documents)")
+            assert not result.success
+            assert "NameError" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_documents_has_expected_fields(self, temp_db_path):
+        """documents variable contains expected dict fields."""
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+        from haiku.rag.store.models import Document
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            preloaded = [
+                Document(
+                    id="doc-1",
+                    title="Test Doc",
+                    uri="test://doc",
+                    content="Test content",
+                ),
+            ]
+            context = RLMContext(documents=preloaded)
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+
+            result = await repl.execute_async(
+                "d = documents[0]\n"
+                "print(sorted(d.keys()))\n"
+                "print(d['id'], d['title'], d['uri'])"
+            )
+            assert result.success
+            assert "['content', 'id', 'title', 'uri']" in result.stdout
+            assert "doc-1" in result.stdout
+            assert "Test Doc" in result.stdout
+            assert "test://doc" in result.stdout
+
+
 class TestSecurityEscapes:
     """Test that common security escape attempts are blocked."""
 

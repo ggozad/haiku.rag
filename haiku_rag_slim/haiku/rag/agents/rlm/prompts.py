@@ -32,6 +32,16 @@ Call an LLM directly with the given prompt. Returns the response as a string.
 Use this for classification, summarization, extraction, or any task where you
 already have the content and just need LLM reasoning.
 
+## Pre-loaded Documents Variable
+
+If documents were pre-loaded for this session, a `documents` variable is available:
+```python
+# documents is a list of dicts with keys: id, title, uri, content
+for doc in documents:
+    print(doc['title'], len(doc['content']))
+```
+Check if it exists with: `if 'documents' in dir(): ...`
+
 ## Standard Library Modules
 You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
 

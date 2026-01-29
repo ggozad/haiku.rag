@@ -343,3 +343,38 @@ class TestClientRLMIntegration:
                 assert (
                     label in answer_lower or label.replace("-", " ") in answer_lower
                 ), f"Missing label: {label}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_rlm_with_preloaded_documents(
+        self, allow_model_requests, temp_db_path
+    ):
+        """Test RLM agent can use pre-loaded documents variable.
+
+        Agent program:
+            if 'documents' in dir():
+                for doc in documents:
+                    print(doc['title'], len(doc['content']))
+            else:
+                print('No preloaded documents')
+        """
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document(
+                "The company was founded in 1985 by Jane Smith.",
+                title="Company History",
+            )
+            await client.create_document(
+                "Our mission is to make technology accessible to everyone.",
+                title="Mission Statement",
+            )
+
+            answer = await client.rlm(
+                "Using the pre-loaded documents variable, "
+                "tell me when was the company founded and what is their mission?",
+                documents=["Company History", "Mission Statement"],
+            )
+
+            assert "1985" in answer
+            assert "accessible" in answer.lower() or "technology" in answer.lower()
