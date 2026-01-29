@@ -337,9 +337,10 @@ async def test_handle_stream_event_extracts_citations_from_state_snapshot(
             # Handle the event
             await app._handle_stream_event(event)
 
-            # Citations should be extracted
-            assert len(app._last_citations) == 1
-            assert app._last_citations[0].chunk_id == "chunk1"
+            # Session state should be synced
+            assert len(app.session_state.citations) == 1
+            assert app.session_state.citations[0].chunk_id == "chunk1"
+            assert app.session_state.citation_registry == {"chunk1": 1}
 
 
 @pytest.mark.asyncio
@@ -387,7 +388,7 @@ async def test_handle_stream_event_extracts_citations_from_state_delta(
             )
             event1 = FunctionToolResultEvent(result=tool_return1)
             await app._handle_stream_event(event1)
-            assert len(app._last_citations) == 0
+            assert len(app.session_state.citations) == 0
 
             # Now handle a STATE_DELTA event that adds citations
             delta_event = StateDeltaEvent(
@@ -425,10 +426,10 @@ async def test_handle_stream_event_extracts_citations_from_state_delta(
             # Handle the delta event
             await app._handle_stream_event(event2)
 
-            # Citations should be extracted from the delta
-            assert len(app._last_citations) == 1
-            assert app._last_citations[0].chunk_id == "chunk1"
-            assert app._last_citations[0].content == "Test content from delta"
+            # Session state should be synced
+            assert len(app.session_state.citations) == 1
+            assert app.session_state.citations[0].chunk_id == "chunk1"
+            assert app.session_state.citations[0].content == "Test content from delta"
 
 
 @pytest.mark.asyncio
@@ -505,10 +506,76 @@ async def test_handle_stream_event_delta_with_preinitialized_state(
             # Handle the delta event
             await app._handle_stream_event(event)
 
-            # Citations should be extracted from the delta
-            assert len(app._last_citations) == 1
-            assert app._last_citations[0].chunk_id == "chunk1"
-            assert app._last_citations[0].content == "Content from first delta"
+            # Session state should be synced
+            assert len(app.session_state.citations) == 1
+            assert app.session_state.citations[0].chunk_id == "chunk1"
+            assert app.session_state.citations[0].content == "Content from first delta"
+
+
+@pytest.mark.asyncio
+async def test_handle_stream_event_syncs_session_context(temp_db_path: Path):
+    """Test that _handle_stream_event syncs session_context to session_state."""
+    from ag_ui.core import EventType, StateDeltaEvent
+    from pydantic_ai import FunctionToolResultEvent
+    from pydantic_ai.messages import ToolReturnPart
+
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY
+    from haiku.rag.chat.app import ChatApp
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+        app = ChatApp(temp_db_path, read_only=True)
+
+        async with app.run_test():
+            # Pre-initialize state
+            app._agui_state_snapshot = {
+                AGUI_STATE_KEY: {
+                    "session_id": "test",
+                    "citations": [],
+                    "qa_history": [],
+                    "citation_registry": {},
+                    "document_filter": [],
+                    "initial_context": None,
+                    "session_context": None,
+                }
+            }
+
+            # Verify session_context starts as None
+            assert app.session_state.session_context is None
+
+            # Handle a delta that adds session_context
+            delta_event = StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[
+                    {
+                        "op": "replace",
+                        "path": f"/{AGUI_STATE_KEY}/session_context",
+                        "value": {
+                            "summary": "User asked about Python async patterns.",
+                            "last_updated": "2025-01-15T10:30:00",
+                        },
+                    },
+                ],
+            )
+            tool_return = ToolReturnPart(
+                tool_name="ask",
+                content="Answer about async",
+                tool_call_id="test-call-1",
+                metadata=[delta_event],
+            )
+            event = FunctionToolResultEvent(result=tool_return)
+
+            await app._handle_stream_event(event)
+
+            # Session context should be synced to session_state
+            assert app.session_state.session_context is not None
+            assert (
+                app.session_state.session_context.summary
+                == "User asked about Python async patterns."
+            )
 
 
 @pytest.mark.asyncio
