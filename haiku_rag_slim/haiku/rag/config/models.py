@@ -94,6 +94,19 @@ class ResearchConfig(BaseModel):
     max_concurrency: int = 1
 
 
+class RLMConfig(BaseModel):
+    model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            name="gpt-oss",
+            enable_thinking=False,
+        )
+    )
+    code_timeout: float = 60.0
+    max_output_chars: int = 50_000
+    max_tool_calls: int = 20
+
+
 class PictureDescriptionConfig(BaseModel):
     """Configuration for VLM-based picture description."""
 
@@ -194,6 +207,7 @@ class AppConfig(BaseModel):
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
+    rlm: RLMConfig = Field(default_factory=RLMConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)

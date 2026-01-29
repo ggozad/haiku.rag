@@ -16,7 +16,7 @@ def _get_or_create_repl(ctx) -> REPLEnvironment:
     if key not in _repl_cache:
         _repl_cache[key] = REPLEnvironment(
             client=ctx.deps.client,
-            config=ctx.deps.rlm_config,
+            config=ctx.deps.config.rlm,
             context=ctx.deps.context,
         )
     return _repl_cache[key]
@@ -35,7 +35,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
     Returns:
         A pydantic-ai Agent configured for RLM execution.
     """
-    model = get_model(config.qa.model, config)
+    model = get_model(config.rlm.model, config)
 
     agent: Agent[RLMDeps, RLMResult] = Agent(  # type: ignore[invalid-assignment]
         model,

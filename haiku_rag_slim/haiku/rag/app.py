@@ -432,6 +432,37 @@ class HaikuRAGApp:
                     for renderable in format_citations_rich(citations):
                         self.console.print(renderable)
 
+    async def rlm(
+        self,
+        question: str,
+        document: str | None = None,
+        filter: str | None = None,
+    ):
+        """Answer a question using the RLM agent with code execution.
+
+        Args:
+            question: The question to answer
+            document: Optional document ID or title to pre-load
+            filter: SQL WHERE clause to filter documents
+        """
+        async with HaikuRAG(
+            db_path=self.db_path,
+            config=self.config,
+            read_only=self.read_only,
+            before=self.before,
+        ) as self.client:
+            documents = [document] if document else None
+
+            self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+            self.console.print()
+            self.console.print("[dim]Running RLM agent with code execution...[/dim]")
+            self.console.print()
+
+            answer = await self.client.rlm(question, documents=documents, filter=filter)
+
+            self.console.print("[bold green]Answer:[/bold green]")
+            self.console.print(Markdown(answer))
+
     async def research(
         self,
         question: str,

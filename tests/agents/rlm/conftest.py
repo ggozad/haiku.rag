@@ -1,8 +1,9 @@
 import pytest
 
-from haiku.rag.agents.rlm.dependencies import RLMConfig, RLMContext
+from haiku.rag.agents.rlm.dependencies import RLMContext
 from haiku.rag.agents.rlm.sandbox import REPLEnvironment
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import RLMConfig
 
 
 @pytest.fixture

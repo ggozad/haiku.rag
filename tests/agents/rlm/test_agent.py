@@ -2,7 +2,7 @@ import pytest
 from pydantic_ai import Agent
 
 from haiku.rag.agents.rlm.agent import create_rlm_agent
-from haiku.rag.agents.rlm.dependencies import RLMConfig, RLMContext, RLMDeps
+from haiku.rag.agents.rlm.dependencies import RLMContext, RLMDeps
 from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
 from haiku.rag.config import Config
 
@@ -26,12 +26,10 @@ class TestExecuteCodeTool:
         """Test that execute_code tool produces structured CodeExecution output."""
         from haiku.rag.agents.rlm.agent import _get_or_create_repl
 
-        config = RLMConfig()
         context = RLMContext()
         deps = RLMDeps(
             client=empty_client,
             config=Config,
-            rlm_config=config,
             context=context,
         )
 
@@ -51,12 +49,10 @@ class TestExecuteCodeTool:
         """Test that code executions are tracked as CodeExecution objects in RLMContext."""
         from haiku.rag.agents.rlm.agent import _get_or_create_repl
 
-        config = RLMConfig()
         context = RLMContext()
         deps = RLMDeps(
             client=empty_client,
             config=Config,
-            rlm_config=config,
             context=context,
         )
 
@@ -91,12 +87,10 @@ class TestExecuteCodeTool:
         """Test that failed executions are properly captured."""
         from haiku.rag.agents.rlm.agent import _get_or_create_repl
 
-        config = RLMConfig()
         context = RLMContext()
         deps = RLMDeps(
             client=empty_client,
             config=Config,
-            rlm_config=config,
             context=context,
         )
 

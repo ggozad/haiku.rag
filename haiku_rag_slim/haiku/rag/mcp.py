@@ -245,4 +245,31 @@ def create_mcp_server(
         except Exception:
             return None
 
+    @mcp.tool()
+    async def rlm_question(
+        question: str,
+        document: str | None = None,
+        filter: str | None = None,
+    ) -> str:
+        """Answer complex questions using code execution (RLM agent).
+
+        Use this for questions requiring computation, aggregation, or
+        complex traversal across documents. The agent can write Python
+        code to search, analyze, and compute answers.
+
+        Args:
+            question: The question to answer.
+            document: Optional document ID or title to pre-load for analysis.
+            filter: Optional SQL WHERE clause to filter documents.
+
+        Returns:
+            The answer as a string.
+        """
+        try:
+            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
+                documents = [document] if document else None
+                return await rag.rlm(question, documents=documents, filter=filter)
+        except Exception as e:
+            return f"Error running RLM agent: {e!s}"
+
     return mcp

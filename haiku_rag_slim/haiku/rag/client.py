@@ -1293,6 +1293,53 @@ class HaikuRAG:
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question, filter=filter)
 
+    async def rlm(
+        self,
+        question: str,
+        documents: list[str] | None = None,
+        filter: str | None = None,
+    ) -> str:
+        """Answer a question using the RLM agent with code execution.
+
+        The RLM (Recursive Language Model) agent can write and execute Python
+        code in a sandboxed environment to solve problems that require
+        computation, aggregation, or complex traversal across documents.
+
+        Args:
+            question: The question to answer.
+            documents: Optional list of document IDs or titles to pre-load.
+            filter: SQL WHERE clause to filter documents during searches.
+
+        Returns:
+            The answer as a string.
+        """
+        from haiku.rag.agents.rlm import RLMContext, RLMDeps, create_rlm_agent
+
+        context = RLMContext(filter=filter)
+
+        if documents:
+            loaded_docs = []
+            for doc_ref in documents:
+                doc = await self.get_document_by_id(doc_ref)
+                if not doc:
+                    docs = await self.list_documents(filter=f"title = '{doc_ref}'")
+                    if docs and docs[0].id:
+                        doc = await self.get_document_by_id(docs[0].id)
+                if doc:
+                    loaded_docs.append(doc)
+            context.documents = loaded_docs if loaded_docs else None
+
+        deps = RLMDeps(
+            client=self,
+            config=self._config,
+            context=context,
+        )
+
+        agent = create_rlm_agent(self._config)
+        result = await agent.run(question, deps=deps)
+
+        return result.output.answer
+
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.
 

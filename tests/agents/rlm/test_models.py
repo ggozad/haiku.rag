@@ -29,7 +29,6 @@ class TestRLMResult:
     def test_create_result_with_answer_only(self):
         result = RLMResult(answer="The answer is 42")
         assert result.answer == "The answer is 42"
-        assert result.citations == []
         assert result.code_executions == []
 
     def test_create_result_with_code_executions(self):
@@ -53,22 +52,3 @@ class TestRLMResult:
         )
         assert len(result.code_executions) == 2
         assert result.code_executions[1].stdout == "2\n"
-
-    def test_create_result_with_citations(self):
-        from haiku.rag.agents.research.models import Citation
-
-        citations = [
-            Citation(
-                document_id="doc1",
-                chunk_id="chunk1",
-                document_uri="file://test.pdf",
-                document_title="Test Doc",
-                content="Some content",
-            )
-        ]
-        result = RLMResult(
-            answer="Found in Test Doc",
-            citations=citations,
-        )
-        assert len(result.citations) == 1
-        assert result.citations[0].document_title == "Test Doc"

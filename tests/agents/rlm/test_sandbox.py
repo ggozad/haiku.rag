@@ -445,6 +445,73 @@ class TestSandboxExecution:
         )  # Allow some margin for truncation message
 
 
+class TestContextFilter:
+    """Test that context filter is applied to all searches."""
+
+    @pytest.mark.asyncio
+    async def test_context_filter_applied_to_search(self, temp_db_path):
+        """Search applies context filter automatically."""
+        from unittest.mock import AsyncMock
+
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            context = RLMContext(filter="uri LIKE '%medical%'")
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+            client.search = AsyncMock(return_value=[])
+
+            await repl.execute_async("search('test query')")
+
+            client.search.assert_called_once_with(
+                "test query", limit=10, filter="uri LIKE '%medical%'"
+            )
+
+    @pytest.mark.asyncio
+    async def test_context_filter_applied_to_list_documents(self, temp_db_path):
+        """list_documents applies context filter automatically."""
+        from unittest.mock import AsyncMock
+
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            context = RLMContext(filter="title = 'Report'")
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+            client.list_documents = AsyncMock(return_value=[])
+
+            await repl.execute_async("list_documents()")
+
+            client.list_documents.assert_called_once_with(
+                limit=10, offset=0, filter="title = 'Report'"
+            )
+
+    @pytest.mark.asyncio
+    async def test_context_filter_applied_to_ask(self, temp_db_path):
+        """ask applies context filter automatically."""
+        from unittest.mock import AsyncMock
+
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            context = RLMContext(filter="metadata->>'category' = 'finance'")
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+            client.ask = AsyncMock(return_value=("Answer", []))
+
+            await repl.execute_async("ask('What is the revenue?')")
+
+            client.ask.assert_called_once_with(
+                "What is the revenue?", filter="metadata->>'category' = 'finance'"
+            )
+
+
 class TestSecurityEscapes:
     """Test that common security escape attempts are blocked."""
 

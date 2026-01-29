@@ -1,7 +1,5 @@
 from pydantic import BaseModel, Field
 
-from haiku.rag.agents.research.models import Citation
-
 
 class CodeExecution(BaseModel):
     """Result of executing a code block in the RLM sandbox."""
@@ -16,10 +14,6 @@ class RLMResult(BaseModel):
     """Result from RLM agent execution."""
 
     answer: str = Field(description="The answer to the user's question")
-    citations: list[Citation] = Field(
-        default_factory=list,
-        description="Citations for sources used in the answer",
-    )
     code_executions: list[CodeExecution] = Field(
         default_factory=list,
         description="History of code executions during the RLM session",

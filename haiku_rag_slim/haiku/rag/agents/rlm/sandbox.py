@@ -6,7 +6,8 @@ import traceback
 from io import StringIO
 from typing import TYPE_CHECKING, Any
 
-from haiku.rag.agents.rlm.dependencies import RLMConfig, RLMContext
+from haiku.rag.agents.rlm.dependencies import RLMContext
+from haiku.rag.config.models import RLMConfig
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -151,11 +152,11 @@ class REPLEnvironment:
     def _make_search(self):
         """Create sync search function that bridges to async client."""
 
-        def search(
-            query: str, limit: int = 10, filter: str | None = None
-        ) -> list[dict]:
+        def search(query: str, limit: int = 10) -> list[dict]:
             async def _search():
-                return await self.client.search(query, limit=limit, filter=filter)
+                return await self.client.search(
+                    query, limit=limit, filter=self.context.filter
+                )
 
             results = self._run_async_from_thread(_search())
             self.context.search_results.extend(results)
@@ -178,12 +179,10 @@ class REPLEnvironment:
     def _make_list_documents(self):
         """Create sync list_documents function."""
 
-        def list_documents(
-            limit: int = 10, offset: int = 0, filter: str | None = None
-        ) -> list[dict]:
+        def list_documents(limit: int = 10, offset: int = 0) -> list[dict]:
             async def _list():
                 return await self.client.list_documents(
-                    limit=limit, offset=offset, filter=filter
+                    limit=limit, offset=offset, filter=self.context.filter
                 )
 
             docs = self._run_async_from_thread(_list())
@@ -250,9 +249,11 @@ class REPLEnvironment:
     def _make_ask(self):
         """Create sync ask function that uses QA agent."""
 
-        def ask(question: str, filter: str | None = None) -> str:
+        def ask(question: str) -> str:
             async def _ask():
-                answer, citations = await self.client.ask(question, filter=filter)
+                answer, citations = await self.client.ask(
+                    question, filter=self.context.filter
+                )
                 for c in citations:
                     for sr in self.context.search_results:
                         if sr.chunk_id == c.chunk_id:
