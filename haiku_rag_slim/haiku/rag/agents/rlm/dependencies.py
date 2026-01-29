@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from haiku.rag.store.models import Document, SearchResult
 
 if TYPE_CHECKING:
+    from haiku.rag.agents.rlm.models import CodeExecution
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config.models import AppConfig
 
@@ -24,7 +25,7 @@ class RLMContext:
 
     documents: list[Document] | None = None
     search_results: list[SearchResult] = field(default_factory=list)
-    code_executions: list[dict] = field(default_factory=list)
+    code_executions: "list[CodeExecution]" = field(default_factory=list)
 
 
 @dataclass
