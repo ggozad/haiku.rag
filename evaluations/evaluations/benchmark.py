@@ -491,13 +491,25 @@ def download(
             console.print(f"[red]Failed to download {spec.key}: {e}[/red]")
             continue
 
+        # Check if the expected database exists in the downloaded snapshot
+        source_path = Path(downloaded_path) / spec.db_filename
+        if not source_path.exists():
+            console.print(
+                f"[red]Database {spec.key} not found in HuggingFace repo.[/red]"
+            )
+            console.print(
+                f"[yellow]The database may not have been uploaded yet. "
+                f"Try running 'evaluations build {spec.key}' to create it locally.[/yellow]"
+            )
+            continue
+
         # Remove existing database if force is set
         if db.exists():
             shutil.rmtree(db)
 
         # Copy from cache to target location
         db.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(Path(downloaded_path) / spec.db_filename, db)
+        shutil.copytree(source_path, db)
 
         console.print(f"[green]Downloaded {spec.key} to {db}[/green]")
 
