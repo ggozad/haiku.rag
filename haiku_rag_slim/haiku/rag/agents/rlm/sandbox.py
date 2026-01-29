@@ -229,17 +229,17 @@ class REPLEnvironment:
             async def _get():
                 doc = await self.client.get_document_by_id(id_or_title)
                 if doc:
-                    return doc.docling_document
+                    return doc.get_docling_document()
                 docs = await self.client.list_documents(
                     filter=f"title = '{id_or_title}'"
                 )
                 if docs and docs[0].id:
                     full_doc = await self.client.get_document_by_id(docs[0].id)
-                    return full_doc.docling_document if full_doc else None
+                    return full_doc.get_docling_document() if full_doc else None
                 docs = await self.client.list_documents(filter=f"uri = '{id_or_title}'")
                 if docs and docs[0].id:
                     full_doc = await self.client.get_document_by_id(docs[0].id)
-                    return full_doc.docling_document if full_doc else None
+                    return full_doc.get_docling_document() if full_doc else None
                 return None
 
             return self._run_async_from_thread(_get())

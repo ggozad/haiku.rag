@@ -171,3 +171,29 @@ class TestClientRLMIntegration:
             )
 
             assert "1" in answer
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_rlm_docling_document_structure(
+        self, allow_model_requests, temp_db_path
+    ):
+        """Test RLM agent can analyze document structure using DoclingDocument."""
+        from pathlib import Path
+
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config import AppConfig
+
+        pdf_path = Path("tests/data/doclaynet.pdf")
+        config = AppConfig()
+        config.processing.conversion_options.do_ocr = False
+
+        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+            await client.create_document_from_source(pdf_path)
+
+            answer = await client.rlm(
+                "How many tables are in the document? "
+                "Also tell me how many pictures/figures it contains."
+            )
+
+            # The doclaynet.pdf has 1 table and 1 picture
+            assert "1" in answer
