@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic_ai import Agent
 
@@ -5,6 +7,11 @@ from haiku.rag.agents.rlm.agent import create_rlm_agent
 from haiku.rag.agents.rlm.dependencies import RLMContext, RLMDeps
 from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
 from haiku.rag.config import Config
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_rlm")
 
 
 class TestCreateRLMAgent:
@@ -104,3 +111,63 @@ class TestExecuteCodeTool:
         result = await repl.execute_async("1/0")
         assert result.success is False
         assert "ZeroDivisionError" in result.stderr
+
+
+class TestClientRLMIntegration:
+    """Integration tests for client.rlm() method."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_rlm_count_documents(self, allow_model_requests, temp_db_path):
+        """Test RLM agent can count documents."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document("First document about cats.", title="Doc 1")
+            await client.create_document("Second document about dogs.", title="Doc 2")
+            await client.create_document("Third document about birds.", title="Doc 3")
+
+            answer = await client.rlm("How many documents are in the database?")
+
+            assert "3" in answer
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_rlm_aggregation(self, allow_model_requests, temp_db_path):
+        """Test RLM agent can perform aggregation across documents."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document(
+                "Sales report Q1: Revenue was $100,000.", title="Q1 Report"
+            )
+            await client.create_document(
+                "Sales report Q2: Revenue was $150,000.", title="Q2 Report"
+            )
+            await client.create_document(
+                "Sales report Q3: Revenue was $200,000.", title="Q3 Report"
+            )
+
+            answer = await client.rlm(
+                "What is the total revenue across all quarterly reports?"
+            )
+
+            assert "450" in answer or "450,000" in answer
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_rlm_with_filter(self, allow_model_requests, temp_db_path):
+        """Test RLM agent respects filter parameter."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document("Cat document.", title="Cats")
+            await client.create_document("Dog document.", title="Dogs")
+            await client.create_document("Bird document.", title="Birds")
+
+            answer = await client.rlm(
+                "How many documents are available?",
+                filter="title = 'Cats'",
+            )
+
+            assert "1" in answer
