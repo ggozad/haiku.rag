@@ -257,6 +257,33 @@ Flags:
 
 Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 
+## RLM (Recursive Language Model)
+
+Answer complex analytical questions via code execution:
+
+```bash
+haiku-rag rlm "How many documents mention security?"
+```
+
+Filter to specific documents:
+
+```bash
+haiku-rag rlm "What is the total revenue?" --filter "title LIKE '%Financial%'"
+```
+
+Pre-load specific documents for comparison:
+
+```bash
+haiku-rag rlm "Compare the conclusions" --document "Report A" --document "Report B"
+```
+
+Flags:
+
+- `--filter` / `-f`: SQL WHERE clause to restrict document access
+- `--document` / `-d`: Pre-load a document by title or ID (can repeat)
+
+See [RLM Agent](rlm.md) for details on capabilities and configuration.
+
 ## Server
 
 Start services (requires at least one flag):

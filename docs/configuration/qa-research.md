@@ -61,3 +61,24 @@ research:
 - **max_concurrency**: Concurrent search operations (default: 1)
 
 The research workflow uses an iterative feedback loop: the planner proposes one question at a time, sees the answer, then decides whether to continue or synthesize. This continues until the planner marks research as complete or `max_iterations` is reached.
+
+## RLM Configuration
+
+Configure the RLM (Recursive Language Model) agent:
+
+```yaml
+rlm:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  code_timeout: 60.0      # Max seconds for code execution
+  max_tool_calls: 20      # Max execute_code calls per question
+  max_output_chars: 50000 # Truncate output after this many chars
+```
+
+- **model**: LLM configuration (see [Providers](providers.md#model-settings))
+- **code_timeout**: Maximum seconds for each code execution (default: 60)
+- **max_tool_calls**: Maximum number of code execution calls per question (default: 20)
+- **max_output_chars**: Truncate code output after this many characters (default: 50000)
+
+See [RLM Agent](../rlm.md) for usage details.

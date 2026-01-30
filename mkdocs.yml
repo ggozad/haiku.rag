@@ -72,6 +72,7 @@ nav:
       - Custom Pipelines: custom-pipelines.md
       - Tuning: tuning.md
       - Agents: agents.md
+      - RLM Agent: rlm.md
       - Applications: apps.md
       - Server: server.md
       - Remote processing: remote-processing.md

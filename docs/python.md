@@ -396,3 +396,28 @@ The QA agent searches your documents for relevant information and uses the confi
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
 See also: [Agents](agents.md) for details on the QA agent and the multi‑agent research workflow.
+
+## RLM (Recursive Language Model)
+
+Answer complex analytical questions via code execution:
+
+```python
+# Aggregation across documents
+answer = await client.rlm("Which quarter had the highest revenue?")
+
+# Computation within a document set
+answer = await client.rlm(
+    "What is the average deal size mentioned in these contracts?",
+    filter="uri LIKE '%contracts%'"
+)
+
+# Multi-document comparison
+answer = await client.rlm(
+    "What changed between these two versions of the policy?",
+    documents=["Policy v1.0", "Policy v2.0"]
+)
+```
+
+The RLM agent writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
+
+See [RLM Agent](rlm.md) for details on capabilities and configuration.
