@@ -134,7 +134,7 @@ Note the significant degradation when very small models are used such as `qwen3:
 
 We benchmark both the plain text version (HTML stripped, no structure) and HTML version. Since HTML chunks are small (typically a phrase), we use `chunk_radius=2` to expand context.
 
-*Results from v0.20.0*
+*Results from v0.27.2*
 
 ### Retrieval (MAP)
 
@@ -149,9 +149,8 @@ We benchmark both the plain text version (HTML stripped, no structure) and HTML 
 
 | Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                        |
 |----------------------|------------|-----------------------------|----------|------------------------------|
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.74     | plain text, `chunk-radius=0` |
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.79     | html, `chunk-radius=2`       |
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.80     | html, `chunk-radius=2`, reranker=`mxbai-rerank-base-v2` |
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.82     | html, `chunk-radius=2`       |
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.80     | html, `chunk-radius=2`       |
 
 ## HotpotQA
 
