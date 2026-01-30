@@ -9,16 +9,13 @@ from haiku.rag.agents.chat import (
 from haiku.rag.agents.qa import QuestionAnswerAgent, get_qa_agent
 from haiku.rag.agents.research import (
     Citation,
-    EvaluationResult,
+    IterativePlanResult,
     ResearchContext,
     ResearchDependencies,
     ResearchReport,
     SearchAnswer,
 )
-from haiku.rag.agents.research.graph import (
-    build_conversational_graph,
-    build_research_graph,
-)
+from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 __all__ = [
@@ -27,7 +24,6 @@ __all__ = [
     "QuestionAnswerAgent",
     # Research
     "build_research_graph",
-    "build_conversational_graph",
     "ResearchContext",
     "ResearchDependencies",
     "ResearchDeps",
@@ -35,7 +31,7 @@ __all__ = [
     "ResearchReport",
     "Citation",
     "SearchAnswer",
-    "EvaluationResult",
+    "IterativePlanResult",
     # Chat
     "create_chat_agent",
     "SearchAgent",

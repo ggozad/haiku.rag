@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from haiku.rag.agents.research.dependencies import ResearchContext
-from haiku.rag.agents.research.models import EvaluationResult
 from haiku.rag.client import HaikuRAG
 
 if TYPE_CHECKING:
@@ -35,9 +34,6 @@ class ResearchState(BaseModel):
     )
     max_concurrency: int = Field(
         default=1, description="Maximum concurrent search operations", ge=1
-    )
-    last_eval: EvaluationResult | None = Field(
-        default=None, description="Last evaluation result"
     )
     search_filter: str | None = Field(
         default=None, description="SQL WHERE clause to filter search results"

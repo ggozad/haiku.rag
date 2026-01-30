@@ -46,22 +46,27 @@ async def test_graph_end_to_end(allow_model_requests, temp_db_path, qa_corpus):
     client.close()
 
 
-def test_research_plan_allows_empty_sub_questions():
-    """Test ResearchPlan accepts empty sub_questions when context is sufficient."""
-    from haiku.rag.agents.research.models import ResearchPlan
+def test_iterative_plan_result_model():
+    """Test IterativePlanResult model validation."""
+    from haiku.rag.agents.research.models import IterativePlanResult
 
-    plan = ResearchPlan(sub_questions=[])
-    assert plan.sub_questions == []
+    # Test complete state
+    complete = IterativePlanResult(
+        is_complete=True,
+        next_question=None,
+        reasoning="All aspects covered.",
+    )
+    assert complete.is_complete is True
+    assert complete.next_question is None
 
-
-def test_research_plan_rejects_too_many_sub_questions():
-    """Test ResearchPlan rejects more than 12 sub_questions."""
-    from pydantic import ValidationError
-
-    from haiku.rag.agents.research.models import ResearchPlan
-
-    with pytest.raises(ValidationError, match="Cannot have more than 12"):
-        ResearchPlan(sub_questions=[f"q{i}" for i in range(13)])
+    # Test continue state
+    continue_result = IterativePlanResult(
+        is_complete=False,
+        next_question="What are the specific requirements?",
+        reasoning="Need more details.",
+    )
+    assert continue_result.is_complete is False
+    assert continue_result.next_question == "What are the specific requirements?"
 
 
 # =============================================================================
@@ -69,13 +74,20 @@ def test_research_plan_rejects_too_many_sub_questions():
 # =============================================================================
 
 
-def test_build_conversational_graph_returns_graph():
-    """Test build_conversational_graph returns a valid Graph instance."""
+def test_build_research_graph_conversational_mode_returns_graph():
+    """Test build_research_graph with output_mode='conversational' returns a valid Graph instance."""
     from pydantic_graph.beta import Graph
 
-    from haiku.rag.agents.research.graph import build_conversational_graph
+    graph = build_research_graph(output_mode="conversational")
+    assert graph is not None
+    assert isinstance(graph, Graph)
 
-    graph = build_conversational_graph()
+
+def test_build_research_graph_report_mode_returns_graph():
+    """Test build_research_graph with output_mode='report' returns a valid Graph instance."""
+    from pydantic_graph.beta import Graph
+
+    graph = build_research_graph(output_mode="report")
     assert graph is not None
     assert isinstance(graph, Graph)
 

@@ -477,12 +477,6 @@ class HaikuRAGApp:
             self.console.print(report.executive_summary)
             self.console.print()
 
-            # Confidence (from last evaluation)
-            if state.last_eval:
-                conf = state.last_eval.confidence_score
-                self.console.print(f"[bold cyan]Confidence:[/bold cyan] {conf:.1%}")
-                self.console.print()
-
             # Main Findings
             if report.main_findings:
                 self.console.print("[bold cyan]Main Findings:[/bold cyan]")

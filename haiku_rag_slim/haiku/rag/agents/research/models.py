@@ -1,25 +1,21 @@
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
 
 
-class ResearchPlan(BaseModel):
-    """A structured research plan with sub-questions to explore."""
+class IterativePlanResult(BaseModel):
+    """Output from iterative planning step."""
 
-    sub_questions: list[str] = Field(
-        ...,
-        description="Specific questions to research, phrased as complete questions",
+    is_complete: bool = Field(
+        description="Whether research is complete and can be synthesized"
     )
-
-    @field_validator("sub_questions")
-    @classmethod
-    def validate_sub_questions(cls, v: list[str]) -> list[str]:
-        if len(v) > 12:
-            raise ValueError("Cannot have more than 12 sub-questions")
-        return v
+    next_question: str | None = Field(
+        default=None, description="Next question to investigate, if not complete"
+    )
+    reasoning: str = Field(description="Brief explanation of the decision")
 
 
 class Citation(BaseModel):
@@ -113,27 +109,6 @@ def resolve_citations(
             )
         )
     return citations
-
-
-class EvaluationResult(BaseModel):
-    """Result of research sufficiency evaluation."""
-
-    is_sufficient: bool = Field(
-        description="Whether the research is sufficient to answer the original question"
-    )
-    confidence_score: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="Confidence level in the completeness of research (0-1)",
-    )
-    reasoning: str = Field(
-        description="Explanation of why the research is or isn't complete"
-    )
-    new_questions: list[str] = Field(
-        default_factory=list,
-        max_length=3,
-        description="New sub-questions to add to the research (max 3)",
-    )
 
 
 class ConversationalAnswer(BaseModel):
