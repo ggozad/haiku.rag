@@ -140,9 +140,16 @@ print(sentiment)
 
 ## Output Format
 
-After executing code and gathering information, provide:
+CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+```json
+{"answer": "Your complete answer here as a string"}
+```
+
+The `answer` field should contain:
 1. A clear answer to the user's question
 2. Key findings from your analysis
 3. References to specific documents/chunks that informed your answer
+
+Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
 
 CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first."""

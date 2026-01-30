@@ -1265,3 +1265,47 @@ async def test_summarization_task_cleanup_on_completion():
 
     # Task should be cleaned up
     assert session_id not in _summarization_tasks
+
+
+# =============================================================================
+# analyze Tool Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_analyze_tool(allow_model_requests, temp_db_path):
+    """Test the analyze tool for complex analytical questions."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add test documents
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+        await client.create_document(
+            content=DOCLAYNET_DATA_SOURCES,
+            uri="doclaynet-sources",
+            title="DocLayNet Sources",
+        )
+
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            client=client,
+            config=Config,
+        )
+
+        # Ask an analytical question that requires computation
+        result = await agent.run(
+            "How many documents are in the database?",
+            deps=deps,
+        )
+
+        assert result.output is not None
+        # The answer should mention 3 documents
+        assert "3" in result.output or "three" in result.output.lower()

@@ -447,4 +447,41 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
 
         return f"**Summary of {doc.title or doc.uri}:**\n\n{result.output}"
 
+    @agent.tool
+    async def analyze(
+        ctx: RunContext[ChatDeps],
+        task: str,
+        document_name: str | None = None,
+    ) -> str:
+        """Execute a computational task via code execution.
+
+        IMPORTANT: Provide a clear, specific task instruction that describes
+        exactly what to compute. Do NOT pass the user's question directly.
+
+        Examples of good task instructions:
+        - "Count the total number of documents using list_documents()"
+        - "Search for 'Python' and return the titles of all matching documents"
+        - "Calculate the average word count across all documents"
+
+        Args:
+            task: A specific, actionable instruction describing what to compute
+            document_name: Optional document to focus on
+        """
+        client = ctx.deps.client
+        session_state = ctx.deps.session_state
+
+        # Build session filter from document_filter
+        session_filter = build_multi_document_filter(session_state.document_filter)
+
+        # Build tool filter from document_name parameter
+        tool_filter = build_document_filter(document_name) if document_name else None
+
+        # Combine filters: session AND tool
+        filter_clause = combine_filters(session_filter, tool_filter)
+
+        # Call RLM agent with the task instruction
+        answer = await client.rlm(task, filter=filter_clause)
+
+        return answer
+
     return agent
