@@ -13,7 +13,6 @@ from haiku.rag.agents.research.models import (
     RawSearchAnswer,
     ResearchReport,
     SearchAnswer,
-    resolve_citations,
 )
 from haiku.rag.agents.research.prompts import (
     CONVERSATIONAL_SYNTHESIS_PROMPT,
@@ -69,10 +68,17 @@ async def _iterative_plan_logic(
     config: AppConfig,
 ) -> IterativePlanResult:
     """Evaluate context and decide next question or mark complete."""
-    model_config = config.research.model
-
     has_prior_answers = bool(state.context.qa_responses)
-    has_session_context = bool(state.context.session_context)
+
+    # If max iterations reached, skip LLM and mark complete
+    if state.iterations >= state.max_iterations:
+        return IterativePlanResult(
+            is_complete=True,
+            next_question=None,
+            reasoning=f"Max iterations ({state.max_iterations}) reached.",
+        )
+
+    model_config = config.research.model
 
     if has_prior_answers:
         effective_prompt = build_prompt(ITERATIVE_PLAN_PROMPT_WITH_CONTEXT, config)
@@ -88,39 +94,6 @@ async def _iterative_plan_logic(
         deps_type=ResearchDependencies,
     )
 
-    search_filter = state.search_filter
-
-    # Register gather_context tool only on first iteration (no prior answers)
-    if not has_prior_answers:
-
-        @plan_agent.tool
-        async def gather_context(
-            ctx2: RunContext[ResearchDependencies],
-            query: str,
-            limit: int | None = None,
-        ) -> str:
-            results = await ctx2.deps.client.search(
-                query, limit=limit, filter=search_filter
-            )
-            results = await ctx2.deps.client.expand_context(results)
-            content = "\n\n".join(r.content for r in results)
-
-            # Save as a preliminary answer so synthesis has context if planner
-            # decides to complete immediately
-            if results:
-                preliminary = SearchAnswer(
-                    query=query,
-                    answer=content,
-                    cited_chunks=[r.chunk_id for r in results if r.chunk_id],
-                    confidence=0.5,
-                    citations=resolve_citations(
-                        [r.chunk_id for r in results if r.chunk_id], results
-                    ),
-                )
-                state.context.add_qa_response(preliminary)
-
-            return content
-
     # Build prompt based on current state
     if has_prior_answers:
         context_xml = format_context_for_prompt(state.context)
@@ -128,17 +101,22 @@ async def _iterative_plan_logic(
             f"Review the gathered evidence and decide whether to continue or synthesize.\n\n"
             f"{context_xml}"
         )
-    elif has_session_context:
-        context_xml = format_context_for_prompt(state.context)
-        prompt = f"Explore the knowledge base and plan research.\n\n{context_xml}"
     else:
-        prompt = (
-            f"Explore the knowledge base and plan research.\n\n"
-            f"Main question: {state.context.original_question}"
-        )
+        context_xml = format_context_for_prompt(state.context)
+        prompt = f"Plan the research investigation.\n\n{context_xml}"
 
     agent_deps = ResearchDependencies(client=deps.client, context=state.context)
     result = await plan_agent.run(prompt, deps=agent_deps)
+
+    # Enforce: if no prior answers, must have a next_question to investigate
+    if not has_prior_answers:
+        if result.output.is_complete or not result.output.next_question:
+            return IterativePlanResult(
+                is_complete=False,
+                next_question=result.output.next_question
+                or state.context.original_question,
+                reasoning=result.output.reasoning,
+            )
 
     return result.output
 
@@ -371,12 +349,7 @@ def build_research_graph(
             .branch(
                 g.match(
                     IterativePlanResult,
-                    matches=lambda r, ctx=None: (
-                        not r.is_complete
-                        and r.next_question is not None
-                        and ctx is not None
-                        and ctx.state.iterations < ctx.state.max_iterations
-                    ),
+                    matches=lambda r: not r.is_complete and r.next_question is not None,
                 )
                 .label("Continue research")
                 .transform(extract_question)

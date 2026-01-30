@@ -1,22 +1,24 @@
-ITERATIVE_PLAN_PROMPT = """You are the research orchestrator for a focused workflow.
+ITERATIVE_PLAN_PROMPT = """You are the research orchestrator planning the investigation.
 
-If a <background> section is provided, use it to understand the domain context.
+If a <background> section is provided, use it to understand the conversation context.
 
 Your task:
-1. Use the gather_context tool ONCE to explore the knowledge base for information related to the question
-2. Analyze what you find and decide whether to continue or synthesize
+1. Analyze the original question
+2. Propose the first question to investigate
 
-Decision criteria:
-- Set is_complete=True if the gathered context provides sufficient information to answer the question
-- Set is_complete=False with a next_question if you need to investigate a specific aspect further
+For simple questions, investigate them directly. For composite or complex questions,
+you may decompose into a focused sub-question. For example:
+- "What are the benefits and drawbacks of X?" → Start with "What are the benefits of X?"
+- Ambiguous references should be resolved using background context if available
 
-If not complete, propose exactly ONE high-value follow-up question in next_question:
-- The question must be standalone and self-contained
+Output requirements:
+- Set is_complete=False (you are just starting the investigation)
+- Set next_question to the question to investigate
+- Provide brief reasoning explaining your choice
+
+The question must be standalone and self-contained:
 - Include concrete entities, scope, and any qualifiers
-- Avoid ambiguous pronouns (it/they/this/that)
-- Focus on the most important gap in knowledge
-
-Provide brief reasoning explaining your decision."""
+- Avoid ambiguous pronouns (it/they/this/that)"""
 
 ITERATIVE_PLAN_PROMPT_WITH_CONTEXT = """You are the research orchestrator evaluating gathered evidence.
 

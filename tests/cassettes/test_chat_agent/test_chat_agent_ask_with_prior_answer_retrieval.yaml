@@ -214,7 +214,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '513'
+      - '516'
       content-type:
       - application/json
     parsed_body:
@@ -223,24 +223,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need ask.
+          reasoning: We need ask.
           role: assistant
           tool_calls:
           - function:
               arguments: '{"document_name":"DocLayNet","question":"What are the class labels in DocLayNet?"}'
               name: ask
-            id: call_0ih75214
+            id: call_05x5qgod
             index: 0
             type: function
-      created: 1769794010
-      id: chatcmpl-209
+      created: 1769804722
+      id: chatcmpl-536
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 42
+        completion_tokens: 43
         prompt_tokens: 1030
-        total_tokens: 1072
+        total_tokens: 1073
     status:
       code: 200
       message: OK
@@ -253,7 +253,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1977'
+      - '1748'
       content-type:
       - application/json
       host:
@@ -262,53 +262,40 @@ interactions:
     parsed_body:
       messages:
       - content: |-
-          You are the research orchestrator for a focused workflow.
+          You are the research orchestrator planning the investigation.
 
-          If a <background> section is provided, use it to understand the domain context.
+          If a <background> section is provided, use it to understand the conversation context.
 
           Your task:
-          1. Use the gather_context tool ONCE to explore the knowledge base for information related to the question
-          2. Analyze what you find and decide whether to continue or synthesize
+          1. Analyze the original question
+          2. Propose the first question to investigate
 
-          Decision criteria:
-          - Set is_complete=True if the gathered context provides sufficient information to answer the question
-          - Set is_complete=False with a next_question if you need to investigate a specific aspect further
+          For simple questions, investigate them directly. For composite or complex questions,
+          you may decompose into a focused sub-question. For example:
+          - "What are the benefits and drawbacks of X?" → Start with "What are the benefits of X?"
+          - Ambiguous references should be resolved using background context if available
 
-          If not complete, propose exactly ONE high-value follow-up question in next_question:
-          - The question must be standalone and self-contained
+          Output requirements:
+          - Set is_complete=False (you are just starting the investigation)
+          - Set next_question to the question to investigate
+          - Provide brief reasoning explaining your choice
+
+          The question must be standalone and self-contained:
           - Include concrete entities, scope, and any qualifiers
           - Avoid ambiguous pronouns (it/they/this/that)
-          - Focus on the most important gap in knowledge
-
-          Provide brief reasoning explaining your decision.
         role: system
       - content: |-
-          Explore the knowledge base and plan research.
+          Plan the research investigation.
 
-          Main question: What are the class labels in DocLayNet?
+          <context>
+            <question>What are the class labels in DocLayNet?</question>
+          </context>
         role: user
       model: gpt-oss
       reasoning_effort: low
       stream: false
       tool_choice: auto
       tools:
-      - function:
-          description: ''
-          name: gather_context
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
       - function:
           description: Output from iterative planning step.
           name: final_result
@@ -336,7 +323,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '498'
+      - '1439'
       content-type:
       - application/json
     parsed_body:
@@ -345,24 +332,31 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need to gather context.
+          reasoning: 'We need to propose next question. The ask: plan research investigation. So first question: likely "What
+            is DocLayNet?" or "How many class labels does DocLayNet contain?" But they ask "What are the class labels in DocLayNet?"
+            That''s the question. Our first investigative question should be to clarify dataset and label set. So ask: "What
+            are the specific class labels defined in the DocLayNet dataset for document layout elements?" That is the sub-question.'
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"limit":5,"query":"DocLayNet class labels"}'
-              name: gather_context
-            id: call_n0mo4n29
+              arguments: '{"is_complete":false,"next_question":"What are the specific class labels defined in the DocLayNet
+                dataset for document layout elements?","reasoning":"To answer the original question, we first need to know
+                exactly what class labels are provided in DocLayNet. The next logical step is to identify the dataset’s label
+                set, which may include categories such as paragraph, heading, figure, table, etc. This question is focused
+                and unambiguous, allowing the investigation to start by consulting the official documentation or dataset description."}'
+              name: final_result
+            id: call_ji341wyt
             index: 0
             type: function
-      created: 1769794013
-      id: chatcmpl-55
+      created: 1769804740
+      id: chatcmpl-396
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 42
-        prompt_tokens: 386
-        total_tokens: 428
+        completion_tokens: 222
+        prompt_tokens: 371
+        total_tokens: 593
     status:
       code: 200
       message: OK
@@ -375,7 +369,155 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '92'
+      - '2887'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the specific class labels defined in the DocLayNet dataset for document layout elements?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '520'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"DocLayNet dataset class labels document layout elements"}'
+              name: search_and_answer
+            id: call_zm3su6ln
+            index: 0
+            type: function
+      created: 1769804745
+      id: chatcmpl-45
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 40
+        prompt_tokens: 633
+        total_tokens: 673
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '125'
       content-type:
       - application/json
       host:
@@ -384,7 +526,7 @@ interactions:
     parsed_body:
       encoding_format: base64
       input:
-      - DocLayNet class labels
+      - DocLayNet dataset class labels document layout elements
       model: qwen3-embedding:4b
     uri: http://localhost:11434/v1/embeddings
   response:
@@ -395,14 +537,14 @@ interactions:
       - chunked
     parsed_body:
       data:
-      - embedding: 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
+      - embedding: aDt8uRMICbzAZPk6fXIPPaW8jroCt4I9x6hmPecvP7xn3b48Hsbruy8TZLuDqfA8ZWjKOhRJhLo5is68Dit+vSlsxzz/j5m8zjumPMYj8LsIME28Wp8mO9uq1Tw/Hgs9fOPkvA0SFL0pybq8l4MpvW9Ntju+6qw8lVbiPNtuJL3uRbg8+BJLu/Vugjs/mDa8AhouuxKV3rtVFd07TQ1OvTrqkjzHby28JfbkO68X4DuDAj48NRoEvHPHFTzchpi8FvMHvStHLbyrGAI8t6UhPAWWAb3w6Ie8BZhMPUkALjsxcBQ9zcutu37PM7w5BAA95oXru8c0zLvo0Lm8bl3AvJsJWbwtYae8+iqTPGF1P7zMSow8r348vCFRBL1HsrY5YiKPvBsaozyG3Bc57R//vEzN+7sWLOM8w8aTu/3eAD1UaCY8ZCstvKhggjsyb/w8XMJ8Oho1aTsGLng8oNj0O+1NGL3Wi+g8yOZcOxvAkjs6oE+8D68SPEntALsvw208CZTpvJRlhLwJevi7iyysujmGMrtv6Jy8ByodPJKcsrsOlUM8Y4rgvCflj7ypShW8MvD8umBAiDxDfPY7uIgJvH3+QrwpNlc7hq6OOz7cjLzMMM06+Y7QPA+Bczxq4ak8frQkvFnnEDxnlmm8LsyquRW0QTwf+k693i81vILc3rxuDL48mCAUPP3OqzxV8Ha85V4NPfyuzbyE+yg89XGsOzeXjLwaRCA8pd3DO95JujwWmYi8I7WyOjCxQzqF5a48bFJjvL9kNL0UHm68qQ0VvTFYizxt/8G7jDygPFaIk7wg4qo8Uf+nO8YjCDz1dRI9oHvFvKT1TzrG+gU8K1aEO4NU3bo0sL88t1EHvahPHz1UBQk8/NANPBwS1zpBJ0C8LwEVvH/oGL2yiiY8qyGZvEtg0btW8rO7jUWQvHaZdLzqmq+7hTMJO5fFgrwMfIE8fEk+PBaMET3ZsyU8PmgIPDU1ITxRfiW8wahhO3iBtrshw2s8zAaMPO66BTwwspS7dhSavAbhYDyi2a+7Mq0MvNv/QbydTUG8PkMevKJFuzz34yU8bXLfO66NCj1SDiG8/9AvOgSrgbxOGjw7XyLdvBwNFDxP1GO8w+Fvu1oImbzD8JO85dg1vE7vkzxfswY8LKmxvM/iTbyJpuE8fwZPOzbZ47qy47W7lTQfvKxZpTriUti8ybMsPPjWWrivwVu8hUjcO6Ojmbx6a8E8YvtKPCnnpLwT0J46uq2CO/CraTz187u8xQeNO3VuSTyoM7m8z9EHPTd6jbxVcZ28p8sZPFeqgbyhKi28FRLEOmsEA70Bzc68Dya4vMU5Drvut0U7j6jLPH/A1LxBVOq8fFFKvOo30bz3wpG8jIANvCfgT7xR29S70j+gvCRqLbxttee76nNguwrMhLrhdj26XCeUvJFPNbxjvl483pFsPXzgpjrtDkw7aIz4O8vd2zzIUN+8B5xsPLplLzxiYeo7wti3PLIGHbxVmsy7WyiXvAsA/rnsr4G7ZnmSOn+6Vz19X3K7hfKwOyUHlzyssP88ax+bvOAcbDyx8rO8Pt6DvBN+GbyqoG88fb4zvL1gLju9Ql68K2yFvMYIXDqHsgQ8dbLePJBRILxZU7g8EhU4O1XKMbySFmk8BZa4PJg/DTzjvES8hR71u8y3Crucgbk8PNADvYDVUbsqNrU7EU7VvEPWDb0bQCi8OopBvUznYryS1CG7nitnvOnKGTwF9rw8XEC7PKgQFD2RjWa8epWtuxfPND3nnma9bjLQu5lzL7rMMHs7aFjGu9gGID0Z/WA8A+x5O+MWh7wlj947yWRnu/29ibxW5tm85Xk4u8wZXToEnbG7IhRUvO6vTjwlkn28VxJnvNQTDb2Qn/i5EjE0PHYZSTyeHaC87vpPOTH6fzxfzQm9ZkHfvKYTSbw49lA6od2DPNn9N70mRWK8+R2wvPS6xzwpqxQ9myUSvC0tsDyyfoE6Wac8PRFpAjzSMuw7n/tQvOkAKbyTZzC8QncFuymk7LuM4O47PGNTPDma3rtxkco8L8r7vKBeKjxllf+7LqKlvEIXNTwBqXE77f+aO1/SJj1jq0g8OcF5vO4+Ob1Lahc9Gt0wO9tO7DzGAxg93f8tvYH8Srxp8Wy7vf7zvK6Jr7xzn4M80h0ovYxPjrxrrr08V9gnuy+wsbvAu2q8Y31puwfurzwm4bC8FAbvvEgBsDuZ7nE8I2/EvEB13LsQQyO7uBHTuzp2Jb0Pojw86uXyO64sODu10KU8WH8mO92NCj09lJO8AlisvASxJDerwxc9fRioPNp2gD03FQ68b2nkO2K3RrxgPn66MgUCPATeCb2M84M8wvitOy5tVztUtL08MoUgvXNwqrx/tKA70YjdPGn/3Dz9G9W8Wp++vOywa7vTlgS88boBvKNCdLxteyC6wiivO4kixbvJO0q9uRZCPF51n726XYo8CbKUPDt7krxLy148107vvFv+lbwXyRa8gQujvEld2zz8ufO7nD16vHVl8rumHsS45tpsPMkaAz0vBpc826uqO1DZq7t5ASI8+KG4PLDx0Dx8EMc8qfUlPBusvTyzzBI9SvwBPe+jdztBdp+7ZAl5Ok/3ID18swm82wXKvDCLHjytlpY8DHQcPHOC5Tux+py8Z9uDvGEI3buCMaO80gktvLYyfTxXnBW8pXKdvFXC/DwUH787vLmQO0xgvLtFuro8IsKUPNptqjx894K8HgY8vZWtsTwIPeq8eA96O8ZFD7xq0Dy8uiwNPR50p7wE2RQ7JI1wu7Rhs7vpdbG7M1YpPHqeGD3Oop67mZkYO4Xg9jzSRvg6SxEnPCJ8ezztRwS84FXYvHGOSTx2VoS8y0zNO6mzWjw8S0A84jG5ul1NFzzpa1E8jDBqu7oSULzsn9u8BIwSO+ipGjrlMLO82seMvIFqEzyg2B69IxZCPFunibwb/La7xlgwPIp2trzOiPY8apcYPLrUvjvTaS29EuU4PE565TxvgKg8DIR8u+oWMrwNBlM7KdsJvIxloLw/YMC7LtLBvCgBmTrQ0V486Ijnu8m4Vjwz9Iw8gzFuO2QqeLv25eW8j1MFPJ16qTzfvtU6Emp9vFntLTvxSVG7yHjjOH9EMDwG6vs7dXgMPbBoV7uTKnq7/NWDu09TEDwyWMg7c3MjvAUcNbyIeG68s5gavbWC+TvooEa8Ns6bPGpraLyt6Bi7MhQMPW/Gi7vaqIy7i45UPCntwzu83OO8W3u1unYx1Dr2foI78/ckPMg1rzwv7Kc8a4W3vK+Og7yl+wu9JZGXvK7z7rsZCea81uE9PKWG7btRRrg7R6gfvJfu7bx9jfm8P4uvvAboBLwCiZO7llZ4vNxwQ7y9YEA9wivdukfIs7ymteu7p+t0vbI/mjyZ/x65y03suUYSKT1ZyAA94KnUPE6zRLwX8z49Sb+SvPstcb0f1h69YIUIu0OOmjrZS4O7eBzfPKgobLx5JIE8WusHvIAqB7z+gOY88fyhu3FRLzy3CiI89Nw4OwiCy7x767O8wJsdPVLxU7zJAIA8o4IevU6uJLytwUA8PUA2vGTDhbwFXRs9Hn2PPGqVVLz3AQY9kqEpvZx6ArwcYwC8zI+UPAHTO7xfdmI8cbZGPH3DzztWyRE7wmhbOxWJnLx/7im8di0lvPxcDznAEc08k4zSOcjBtLwjC4a8JbbIPOcEBjsAcAY9NjXQPIPuuzv6b9m8TERZvL18I7yVfwK8E/ubO70BEb3l9Ia7EJfbOzD9lDyTnDK7c4utPMy81jz5vIM8ibYkvGwVTb3auKE71qVsvB9P9buKF6K8bp8SPJlwTbxKeMi8mHgRvPwJCjwPxu68kWyeO2wSAbwBOoM8GQLiu+Ji9zsTRQ28lQmPPT/SLLxDMGG8N9ObOxOKRbr5hbq89PwQPNln4DwtDK07D6K9vB/pEDxKCLI8OsSYOzkRADxJnGA6GKbou9u2czyTHy+9uYoRPDAYVjwoDEE8aZTzO2M+DzvWNC48mAQYvOQwA7zIVrA8pygJPACsk7vm21s839KQPNmYVjz58fC8wCUsOg0HlLotB7S8wva+vLZd+TxHHGG6puNzO8l40jzcWFu8KkoqPFJk4Lree9M7QltwPfg2vjuVI1y8H0y8uyH62DzKU9G7KI+bvKgK4LwMy0o87wxbvFsAJjyauWm7DkhqvIii1rvsaqo7BHL9vINGNLzyOjO76Z4BvB0bCjyttrC5sAqZvHCH7DtW7Pe7dVk1vZS1Tbqtj0E881Geu83lEDwruuI8VwUAvT5R2jxrKy494N9IPCliwrzq6wU9w0eMuKpKnrwGE6G7b7ytO0q4trzW0Ie8J9kTPXepnLyhawm8wZsYu4vzszzuNj08labxO5TzFzgILYM8gWQ3PO7rAj3bHNi7MvXiPMST1Ts/MlQ7mYLWPN0cMLyqtVI8E5C4OxnIcTumiew8Lij/vG0HlLxeI4284Y90u/S8D70RdQ89s4pbvA+rjLtpZ+Q6zGfzvLKpojxg1iM7M1ZBOwYLVTwyapc9QH7rPO0CEjwAKay7pbmPOwztKT1krWg8NSfdOPpEKrxLkrE6skQpvN2D77zVDJS8d9BoO4vvn7vizsq6xxkrvdEZoLyVS4K9kq0CPbT3ULcnMIU7A8w/PO0Mbz3ww4m81oedu5qSGLpAc8I7N+iKu93tsTxPhrG88DSJPAapDj3ZzrK8UVBjPCu81rw3fr08701ZPBOvGLyNCYq8M2h6PDWDHbwPpyc8s84tvF54FTxJ2iy824S5vM0y5zyQ1Wi8mOpmOtuLPDxRn9279OkdPd7QBz0x1/c7nUR7vIZ1+zuhTLI8urvLvFqREL0ukwK95q4xO+2uvztX/ka9+/2YO8XKJ7z+JsG6SH5JvYlCyru/xm66GObNuyiz0ryeA2w6mGsNPUaowrvgGgW8HqrYvBrwirwYkFA7lvIGvcYnIjzKgAO8e5BbPEREBT1Uwcy7GDGZO4CNETw0vIU8cnJ+vPdXa7yT8A08uhDpPGLXCT2Sdq47+8L8u4UMEjvGqD272he1O6uCF71XJ108DOB9vBSc67soIwW7D9SGukauarxr67a7Hm/ZufyFFzxgU707z6SUuTbB0ztr9wy9A5usPP5yJDzsMT08zf1lPPCy3rvt1Uu83TYYPIScWzvnOfy7HYKFu954xrvW9dO7qU4zPC1gUjt2jRw9lp8Pu7C4jDu1RYq8C5hZvIll8DtyVvQ7qF09O7ALI70uYdI65L9NPHV/Hbs38VE6A5gWvAYsMTzYHQE8c1s0PBu2yjzKyUc9X3MiPFS4nDwHpvw76xMevPmWar090aw87uW8Omtl6Lx8Tmu8d6q8vLzIFj34ibU6GuIKPatKNr0lmK+8PVsjvDpStzopKGM7g6KNvNAhFrxU2Lc69S4mPR8Nuruu6sA82goMu1UZpLtsebs7RrOJPHqlwTz5IAS8sUXgPMmh+zxY/AC8k7gIPfwi8jufJOA8eJdJvfuggrvS+aw71j9VO2Uuq7zRuFi8zUEVvASqNby0qLI7PfMDPa5UGDzFT6G8iXCLvLb2pjvzvrO6RFIYu0hBqbxmECk8c0paPAUdQTzF2QQ7YfxwPAbDwLxa8p+8X6/DPNzsaDumsGu7GEG6PHB5Mzumhn284cOMPG3vSr23EuW7RWpCvbfVCzx+5s47OkeJOTitYTxFQtW85PQNPSrvdbxy8fO7dASROvDeE70bCGq8X8UuvcdX0rygDBG84VuxvMEdabq5cnm8jawnuyZAqLyIhDU8w+igPBIqKDzb5wG7o7G7PIRFzjzClk08mbcOPAIuk7zdZCM95gqMvAk6yLyP11y8XaC/vGk47LuBPVu8PwJOu+fAcryMfco7mfoLvVHpxrwqpQQ9gLXfO73Dubt12rQ8iA47vTotjTwlhcW6F0YKPIQb3zvXaZG7DxK3vHS7Bb1WUH+8Ge36vJD5kDyj2Kw8s/SWvGRpID1necA7Az9Uu+dtrDzg3GO8T6NjvEiS1DwO9dW83GJCPOXjoDuEbSO82lzAPKMBYjzAJJq8LsjzO6345TyOYyi8pxfCvPTDbLxT34I8Bt58vDcNwjz3Q548yroFvOg/ST3fUrU7h3d1PBVUA71mdKM7UCzEPMVK2jzxUtY7YxffO+n2ATxd27A8rVbsPNmqVjxtWwC7McAgPAceSjuRKU+74dmevLuSjzzXfVG74MrIui6m8DkCaYo6kTUQu9NML705lIk8VAqZPLAsMjwCaXC7F0A8PCt0LbzxuI67TgtqvCMUvLtyQwW7SNkaPfhZkbwHEDi9ZgDBPO4JGTqVceo8GYdqusQTBD0TTRE9S5rJO6sbTDyLrhO9vZWqPMg2grxF/sK7YAq5u/9sob3DetK8U40NOWpVN70iiU28Qi3tvC0l1DpRPd87vT5PvFQmw7qi23E76rBpPZpcjjxoIca568GYvH+QUzuT8gm8DY3nO1ovkDwJrQS8Pnemu3xsuLyLCCi8LpCkvJ9uJDwXs4u8dUqlvMtroLwXgf47K1wqPX7e6DyA3kk7lcYLPUuVEz0jLeI7FjMEPF2z7rx+6Sc8X5HkvEOkn7rWVMc8DGL+O940J7zkAVE7CjQGPXk5mbxAwWs9oyVTvCYVnrskecM8zZPtOlNB47pnhXC9y2ndO5/2+7x0Rvm7PxY6uilWz7uEGZU8r9ehvEL1e7wXFEo9EWgLvclUMrug8oq8rS90PMLiujzTRVm5vVnwPM5G3LpBJQa86oY5vDgd4DyKylW80VFuPOcRrzwlA0K8OD7EvB7IkjuqtJK74BFJvDs02rz0a9g8b1VrvGzEB7qm9yS8Cd8IPGsvCbwQ/wm9K35hPMkYmLyVnju9xcROPF5r1Dk+QkW901WrvG16Ab2irbc7M/PLO9dT+LtCVhW7F9givP+0o7zUTyw81C5pOzgdnjzdsnA8PdfrvEYeuzxKygI8V6kCvDezSjuRXbo8ndUBvS+7FLy3AFk6fJkwPEuHFL3P3rK8BF+5vFjpl7y/dXq8jPq5OvRZGzz8PQo8DXKfuykm9zsi2827X9W9uwn5pzpo6DK8qUUYu9rJYzpKjAQ8jiXfOydk4DxFIIq8EF4aOy8WuTzGtzE89rIjPQiNoryn6kS9SWaWvO/K8LxB7RM8Gu6aulrDJTrF7HK9G/HjO7vq5bvoVQG9F4XyOmmwuDt0fGC6tJeKPD3xZTz1j9c8L3diPPPWCjyrYyS6Isi6OuCpFTyt+KW8eIEXPVdi37k7ECU8tQkPPBE/yjxaJlI885LevIERbzzzCeM866haPAtCqLzi6xq91+4uvC7nszwKMfW7aKoOPfNiD73RH9G8B2ZiPDnmXjlJqMk8PKRQO5jj6zzqog49Mpc1vQs0pzygSCM78GTpOwbN1Lup5qy8Xz+LvI7NPD1Be3w8+KvzvHJOJz3bLr86OWzKupdx27qbaA48Fo5xu9ABIr1mOaA8VfNVPHFTVby19cc860lTPPFiCL3Cd6G81NjgvAO1PT0Pxwy9GKpnvBiQ7DtYU9m8Gl3GPIYDeLxzBPU73vw+vLjM6DzJNy692NnjvLnBJryeVAU8zHVLvHzQzzzjTVW8qiSgO94XULxcH1C8IhPlvCCuiryoRfy7t+MVPLUgWDzsMT+6Z0aAO7DyszxckrQ7vuFWvBTYa7yMHK08IP6Hu7UAnLzBo0u8GejVu4YuIDkNTlY84010PDl0rbzufa078r05Pd2lWTxfSy27OY+lPDsypry2TN+8669pPH0bYLwkXQo8FOydPMr3h7xfaKM86kMgPbLrDb0XnPy8MtEVvdlG87xAA4u8/xAFvZF/3zzamH08Wil0u5uYx7xieKw8jOCyPIiji7zOZc87rRXwvAMbyTsMfK67lEAFPZugArxpHui8UULQPPPDgzpgMq47tp7KPDejZTxoby28CS+2uxuCYzzSWJa8FC6iPOJ8wbzBecW82YUIvT67gLtDyQi95GY1PP0mp7zMml+8kVmPuzFlt7uWFou8WhubO3pdWrt8zAA85H2UPAGYrryn6i687019PM3BAD1anFu8uInsu7up5Lr6owg8zESgvAaE4ztkfAo7UlzEvI6DH7lanpO82BX4ulJ/D7x43hw9DjNpu53A/DnY4oo8DtuIPBEDW7ulPww7RL6bvB404bwPNoC6b0nZu6DWADwE5h49zVadvHV8oTw3i5U8epYnPOTDC7guonO7rQrtu+LHQzx4+8k7YOZUPF+LUDw8uDy8SFizvGY/Jj3Mkg27s8wjvSh0pjzRvqM8jwOMO3DPSzuzx8s7UViJu3rvdj2zxlu93rPPOkGtpbxyWts6MUgzvLgFcTxjkxG8X7uXPCeCn7y4e/E5+fQwPNH7hru8SZI6loWYPPUHijsUmbW5PC+OPLIKk7nCvdk8oFRSu0M+sbycqr+6m/KSOu7BTjwfQ8A8MnbuPNegh7x+VaK6u6bMO9lwebweEn87oyiHPJ+lkjwSVmq8njeEvNKbUzzkPzM9yUgrPXyLHbx3Rc280aRgvIE9Jz3gvP287PkxvLIxojvuRdi8M2tNvLKG3TuUmmG6jRcvvBH+Xzx3rAM9bAcBuwM2jbw4EQW7wNm/PMNWRj119508YA0ePSqbDTwI0Ly5uRpAvArOYLs1KOQ8pjniultOCjoJC6o8lvqqu8kKOT1s9dS8AqzBu5hnnjvk4n284qErO52jo7ywJDs9wuRLPFpEgLxWr7o8bmtcvH2T2DwqRUW9up1ovDuYJr1iZ7e5JVqQPDkfvjv+Uj07rrMLPaN5tzvgOhI9V7DKPKvkeDyQHpw8OeyQu3aBKjwuszG6QJ9RPA30N7vbTpi5SPz4PCkMkTwAAp68BgHrPCTJ6DrHiN+6TWWbvOc6Rzyj0mq8IU/YvMir6jxnObE7DhqkPJY4GLxbmRa9puOouqHXaLx51+C81+nIO+ep3Lydf2u7vv0gPdzylLxtkj29XFbou++A5bsFuki8/38NPEWMgTxZpA49puKvO4ZviDz/wiY8TD8qPa4XszxjiBq98h+au6F8fLoY98a8+bqhO+rZITur5eC8EzGOOzjYFDtyVxm8uQbNvLWiiryYjQ+8TbKTvMF/Qzz4EK28AgDYvGeBbTtJziM9TwShu46JxTu4O/E7H9b3O123zzzOk5M8GcTdvI3Cxzv9qIo8uGR8PHhMEj1wNpo8akkKO+voNTxf/+E66+WNurdsIjxr/xU74xLaPKSW1bxm28C8wVtyu3LLM7wu1UK8zbh/vG8E27u9UYu82gY2vM1/IjyDcLO7MyBSu16F5DwL7AU9BhhGOA07iLrvQw48CoczvJVOKjvcMQa9iAMAPIebIbwxTdC7Gqc7vPRk6jsNKym7K9OdvIbn1bx4KEW8nNcau/poEby8wi69F81lPNMXwzs0L+684aA1vFtvvTx3fY68iN4aPTm7pjz/ogq8mhdDPO3jPDtvd5y8tUIKvSo1Yby85mm86DRdvf9srjxe1F08oZjwO9KwK7y8AFC8qxHtOpNmVrypIC+9leK6OxorPjyLIdO8xdrYvBG5pjyZhPe80tcQPFFU9bz5+WY8Dn0RvEXCybxFLiW8zVf/u1K16zwM/A89RB86vMLaobwhNVM7ngYuOpDl5jwecRi7CLe0u+BhzboSGuw7vxdAPBW+Ir2/MEY7veRJPAmqw7llJyi8lIiOvPXqIL12uxQ7NIXzvN8oCTwMsa28cg6ZuqYB8Lun6qI7ZNLSvAgZkrs5UvG8yiEivYHFFLy1Md28GzhqPHo9Kr0SVQE9nZQJvFzLjzyaRJ268Fj7u2pmfzzm4fm7x8ICPH6Ud7tvW0I7aIIDvUJFNzxtz4Q8cuL+uuCE97vXWei7c0+2O9OEajvK+SW88/zgPCEOYjlG4Pq8TG66vJKGDr07HDa84X92PLMcszxu84m8vkuzPJdfNjikLke8KXPCvOs6w7xQ7cQ6OlQrPA1KBb0xHjc823QrPcqm+jw2AYW7Ebi5PIrVezzLREo8quZJPOEYV7xjlMI8QiJPPJTCEDzwqNE8TssdPRM3+zz52Pa8H3RpvK4ckTvhQqM8xf97uqtvdLuTsRG7o7OROum12jwqV7O8VgKyPO0XfrwTCAa9Lc0xveXJGDxH41m8XyyRPEgdOjy8csS7Db/Pur2V7ruGKKc89CREvFSbjzvcCrO7vCM1uz9nmDweRgE8fIBuPKmK4Dvv4tO83uSkuyBVjjy4aUs7l/gqPG/xm7zdfpY7djTouurLVrxfrfk7E7kNO9I2YzzLpr286AfAuxZ/5zte3/G7AvEGPLIpCLwmVsE8sOYsPBGwADzg0LK7m3QePcn7RrpE5h68aNdyur8kwLx5IHu8UjR4PHRMFzyj/Ju6zxWCvPLt9btZlfm7gtcvPUTIODveSgI7PnxXvOaeC72L92C7XHQnPGsTZjwsWkE8//DbvNCNFL0cfiy7ctAkPKHoCT2PYBi9X+aGu7p6rbxs2J+7zh/Eu2VuHDtOblq8h9nYPHKPgrqkPTc8UAJeOlWlYbxYxka9eLTrPBy6+LoMj2A8sdUWPJ3X9DoYEri79O43PfIfE70vxam83EFhPAl8CTyhTgk8kt1WvIrQpbzMPuQ7XJs+PK6wJz0luyU9ynL/u968jjv06nC8+HZ5vOCMMD3TpBm8rAtPOF4qtry2oFS8x38VuWOACL3kAzW85mCQvKW9PL3EgjW8sIY7vGSjDb2rB+K8ooiLujZ2cDwGIsq7u58rvNlujjubqKK8Usi8OzXXHzz4D3w8ggaQvEYJNDwnB4g7xstJvA4vY7ofNcq8UGv2ugjQLr1UfZw8Ab+5PMkOKzyUfCG9RwZJu3A55zzzLu+8M4pIPIF8tzwe+ZA7m8iDPLUbATofS9G7pg8gOrnjZ7uXIpW76qEDPPRJzbyyyoA8E9HLvD175LuvF1S9r2a/vIFt/DxM/YE7nn2NugbbSTw/r9a8Z7rPPIY+HbsACP28n2/IPAXB/7wKJCi8+9aBPCCOLD24OnC79T/2vDPxmTsawXK8dckkPKRUsDsEGY48XyCEvE0xiLxcp4c7yypyuzmlfrzwgwm7PjJ7u4ciOz0LkVU7heWlvMnCN7tPjYw8HogwvJbd8LyTdtW7dkNIPDij1jvfDMA8v24rPeVTJz3SFSS8+VMhvNA7qrsB9pm8ON43uy/WpLyTvVK8XF/JPGN6u7xTF8G7hJnNPIixw7zbD6O7pGwwO5opzby0Iey8+9vguy54uDvviZS65gtYvFR5Azy/XwK9u3MsPDwYyjtDT9I8j/gRPAo/nrzlhew8HVV0POkCtrz+c9u7a4i0uz5Y/rxFCZi8+WWVvFOb8bu7Jlm7/HEUvDtTULzFwc281FmjPIpBMT0uYTA8tbeBPHmLKjyJjzu8AhT0PEuNpTsu0EC8NX1ePJ5lnjrvqCI8ebzbPCUrfzwoPXm6AarvO07Wcrzn+4y8p+JZvCjv1LzPBC89CCVJvDf7D71HFls8c/r0PJz+6rtw7Qs8tcCsvAMxNTwG35y8EskQvYCJKr3v64o7Wv04vNkttbvAV9O86lwEOleMLTtJYkU8J48LvdYoVzySwZE4yla1Ox46HTx4L/84zl9tuxfmJ71KJcM8hsK9vNw4x7w39Ie70Zldu0sA1TyODyM9bfAsPBqzNLySrOA8qIUevbCiITy7ft67L/WbPOtAFL0bbla8HaFevIhWMr1/d907TZFbvEiP5zt/bZC8IV6bu82teT01bzS8tASiPHCQwzx1K+e8f4WNO+4qDL1Wkfo8LLWNvCM7SD1ogO071dK5u6osmTuZVig7cicyPb8JwzuulL+6ReRxvFn2FzznbK88GRFuPJPf0zynTr47G691uz1teDhK2Wg70uebOUoReLuIzuQ81RoYvHE77LwoBY47FDR+vCFVdzzB/si8Q1OFPIxWRb14hdU7mT5UvF57hLxBjEK8hdSrPAAmwDspCX886dOJvIXnA7xSaVc7EcHMO+6cPTy+mEE8cEGdvOhWYjzkuAE8pAU7PDCiqTyrjIu8W7nTOKiaDD1IUma8PFLuun+AEj30IZ24l3nzOqCbMLzmSQY8AnUbvCymkrxm01S69HcPPdwzdLpJxsa8b+5PPNmqm7uR4rM8mSIGPcogFrw4TpQ8HWvEushUbjkvGT29DZ8BvQl9b7y0dDI8/9niPKfRbLws4hk9DEJ5O8mNeTtFxRk8/CDCvI+TFT1fa868qN7fO7jkqTwY+FI7+nkJu9sIprwbHxG9EcbFPA1wVzyBQJ+8iOoDvLKibLyiJgY80uXoOxWv+jtLXde6UksLvfdxwLxidBo6o9MoPJWT0DwUr0k8OW1XPPjddDtGZLA8s27su8+YB7vLvm686wiUvC/N/bq3ZQQ8ff6ivNLopjtzWyK9JrAHvC2tTbw/O5S6RTtUOu9Yvzw7Y/s7pKSHvFWJHT3Geii8GE+HOm2NqDsmEyO8MVnTOy1kTbyMrBY8axWRvBRmCbwPYBy9HEd3u8RhMryXoQE83x1cPMDtObqFP1W8MfWjvMgmbDzgfHK8kDdZPKYVjLrMjPW8Uh1FPKfHkzzBpjq87XnFPIKmg7yod9a7EBJgPKeg5bs0zmK7OiqOPEh3UTzQlMC8J+3KPMEhxDpn7ak8Zt37PBTbTbwAjPc8o3i3PGbEfTyj91s8oYmHPA3yajzwOKa7Wc2KuxfIIz2HVli8NuQevOfiWTzpn/M8HLbeOxzmubybGb482awuPcqBWjyIksg879aAOoNKO7r5HTS7MNYPPWzG7TvLaIc75+2XO1qFibvH29M7FRQlO67ejTx/uYA8p5ISvP921LvPZ+m7fzn2vNITeLnQ1W28ba3+ueFaHTwmjtU76j1mvEAMHjzUaGM7ESzhu1XRObtQJjk9ts6BvCMHCL3rqn68GTBMvBh/17vOtj+8yC82upqmfLwXeCY9Gps7vVXJhDycR0m87JPeOzNiKbyIMI07xBQEPa/VAzy/mvM7zT4pu8K8KzvoXWk7HRKvO3buqrwv+2M8nakavdcDT7iaLfO72u8bPXn/xbtOdVW88AHhOwrgI7y7SLM83rK0vAl9yzy6Irc4pRSMPE78DLtqXvw8tGAZPIPMALwcsto8p7IPPB1OkbuQ/KY7N7UMO+FmrzqGR5o8BCsLvaII07u89+C8k0skvLqeADxb7wK91zkMvTk/4DxRkMk6nIzCPMH30Tv8In+802gnPNgVW7wlYUa8N/SWvPuvPzxHJ9q8ACQpPMaFv7zV0Us9+2qYuzHd2jspvE88xJDJvCJanbzS+SU7q10HPUCDgryAcC48sYlGvBEs1jp6K7+7r2ACvGkUzjv7Ls+8enTlPMnvqDwlh5S8CdWdPHKIKDti9YE86f3evDdXUTyjnCs7CyaUvH/PnrxnFQo6aIq8O5EcCbxP1IG6F+ZWvIm9AzzqhbQ8nnejumKORTyaF1w8xIOMPD1NpjvZ2iY8hP83OwhhgbyuybW70AmwvNsEG7tZs4I8RnKIvEHvb7z8fYS8iFLUuyGKyjuGA7+7OaiEO+SJXruC4/S7oTCFvDUZDzzqzKm8tTFduyJpkjyLDlM7QehqvGkRyjtR8+07f6DeuhYY/ry3zB+8ET0UPA==
         index: 0
         object: embedding
       model: qwen3-embedding:4b
       object: list
       usage:
-        prompt_tokens: 7
-        total_tokens: 7
+        prompt_tokens: 11
+        total_tokens: 11
     status:
       code: 200
       message: OK
@@ -415,7 +557,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2715'
+      - '3764'
       content-type:
       - application/json
       host:
@@ -424,43 +566,68 @@ interactions:
     parsed_body:
       messages:
       - content: |-
-          You are the research orchestrator for a focused workflow.
+          You are a search and question-answering specialist.
 
-          If a <background> section is provided, use it to understand the domain context.
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
 
-          Your task:
-          1. Use the gather_context tool ONCE to explore the knowledge base for information related to the question
-          2. Analyze what you find and decide whether to continue or synthesize
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
 
-          Decision criteria:
-          - Set is_complete=True if the gathered context provides sufficient information to answer the question
-          - Set is_complete=False with a next_question if you need to investigate a specific aspect further
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
 
-          If not complete, propose exactly ONE high-value follow-up question in next_question:
-          - The question must be standalone and self-contained
-          - Include concrete entities, scope, and any qualifiers
-          - Avoid ambiguous pronouns (it/they/this/that)
-          - Focus on the most important gap in knowledge
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
 
-          Provide brief reasoning explaining your decision.
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: |-
-          Explore the knowledge base and plan research.
-
-          Main question: What are the class labels in DocLayNet?
+      - content: What are the specific class labels defined in the DocLayNet dataset for document layout elements?
         role: user
       - content: |-
           <think>
-          We need to gather context.
+          Need search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"DocLayNet class labels"}'
-            name: gather_context
-          id: call_n0mo4n29
+            arguments: '{"limit":5,"query":"DocLayNet dataset class labels document layout elements"}'
+            name: search_and_answer
+          id: call_zm3su6ln
           type: function
       - content: |-
+          [1837e787-843a-4d5c-a855-974c3c7d99d1] [rank 1 of 1]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
           DocLayNet defines 11 distinct class labels for document layout analysis:
 
           Caption - Text describing figures or tables
@@ -481,15 +648,15 @@ interactions:
 
           Table - Tabular data
         role: tool
-        tool_call_id: call_n0mo4n29
+        tool_call_id: call_zm3su6ln
       model: gpt-oss
       reasoning_effort: low
       stream: false
       tool_choice: auto
       tools:
       - function:
-          description: ''
-          name: gather_context
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
           parameters:
             additionalProperties: false
             properties:
@@ -505,33 +672,38 @@ interactions:
             type: object
         type: function
       - function:
-          description: Output from iterative planning step.
+          description: Answer to a search query with chunk references.
           name: final_result
           parameters:
             additionalProperties: false
             properties:
-              is_complete:
-                description: Whether research is complete and can be synthesized
-                type: boolean
-              next_question:
-                anyOf:
-                - type: string
-                - type: 'null'
-                default: null
-                description: Next question to investigate, if not complete
-              reasoning:
-                description: Brief explanation of the decision
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
                 type: string
             required:
-            - is_complete
-            - reasoning
+            - query
+            - answer
             type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '1507'
+      - '752'
       content-type:
       - application/json
     parsed_body:
@@ -539,35 +711,21 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: |-
-            The DocLayNet dataset annotates document layouts with **11 distinct class labels**:
-
-            | Class Label | Description |
-            |-------------|-------------|
-            | **Caption** | Text that describes figures, tables, or images. |
-            | **Footnote** | Notes appearing at the bottom of pages, usually indicated by superscript markers. |
-            | **Formula** | Mathematical or symbolic expressions, e.g., equations or inequalities. |
-            | **List‐item** | Individual items within bulleted or numbered lists. |
-            | **Page‑footer** | Footer content that appears on the bottom of each page. |
-            | **Page‑header** | Header content that appears on the top of each page. |
-            | **Picture** | Images, graphics, charts, or diagrams. |
-            | **Section‑header** | Headings that introduce new sections or subsections of the document. |
-            | **Table** | Structured data displayed in tabular form. |
-            | **Title** | (If included – some variants) the main title of the document or chapter. |
-            | **Text** | General paragraph or block text that does not fall into the other categories. |
-
-            These 11 labels cover the primary layout elements that DocLayNet seeks to identify and segment in scientific or technical documents.
-          reasoning: We have enough info to answer.
+          content: "- **query**: What are the specific class labels defined in the DocLayNet dataset for document layout elements?
+            \ \n- **answer**: DocLayNet defines **11 distinct class labels** for document layout analysis:  \n\n  1. Caption
+            \ \n  2. Footnote  \n  3. Formula  \n  4. List‑item  \n  5. Page‑footer  \n  6. Page‑header  \n  7. Picture  \n
+            \ 8. Section‑header  \n  9. Table  \n\n- **cited_chunks**: [\"1837e787-843a-4d5c-a855-974c3c7d99d1\"]  \n- **confidence**:
+            0.95"
           role: assistant
-      created: 1769794024
-      id: chatcmpl-591
+      created: 1769804756
+      id: chatcmpl-85
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 272
-        prompt_tokens: 527
-        total_tokens: 799
+        completion_tokens: 155
+        prompt_tokens: 825
+        total_tokens: 980
     status:
       code: 200
       message: OK
@@ -580,7 +738,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '5422'
+      - '4394'
       content-type:
       - application/json
       host:
@@ -589,43 +747,68 @@ interactions:
     parsed_body:
       messages:
       - content: |-
-          You are the research orchestrator for a focused workflow.
+          You are a search and question-answering specialist.
 
-          If a <background> section is provided, use it to understand the domain context.
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
 
-          Your task:
-          1. Use the gather_context tool ONCE to explore the knowledge base for information related to the question
-          2. Analyze what you find and decide whether to continue or synthesize
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
 
-          Decision criteria:
-          - Set is_complete=True if the gathered context provides sufficient information to answer the question
-          - Set is_complete=False with a next_question if you need to investigate a specific aspect further
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
 
-          If not complete, propose exactly ONE high-value follow-up question in next_question:
-          - The question must be standalone and self-contained
-          - Include concrete entities, scope, and any qualifiers
-          - Avoid ambiguous pronouns (it/they/this/that)
-          - Focus on the most important gap in knowledge
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
 
-          Provide brief reasoning explaining your decision.
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: |-
-          Explore the knowledge base and plan research.
-
-          Main question: What are the class labels in DocLayNet?
+      - content: What are the specific class labels defined in the DocLayNet dataset for document layout elements?
         role: user
       - content: |-
           <think>
-          We need to gather context.
+          Need search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"DocLayNet class labels"}'
-            name: gather_context
-          id: call_n0mo4n29
+            arguments: '{"limit":5,"query":"DocLayNet dataset class labels document layout elements"}'
+            name: search_and_answer
+          id: call_zm3su6ln
           type: function
       - content: |-
+          [1837e787-843a-4d5c-a855-974c3c7d99d1] [rank 1 of 1]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
           DocLayNet defines 11 distinct class labels for document layout analysis:
 
           Caption - Text describing figures or tables
@@ -646,42 +829,16 @@ interactions:
 
           Table - Tabular data
         role: tool
-        tool_call_id: call_n0mo4n29
-      - content: |-
-          <think>
-          We have enough info to answer.
-          </think>
-
-          The DocLayNet dataset annotates document layouts with **11 distinct class labels**:
-
-          | Class Label | Description |
-          |-------------|-------------|
-          | **Caption** | Text that describes figures, tables, or images. |
-          | **Footnote** | Notes appearing at the bottom of pages, usually indicated by superscript markers. |
-          | **Formula** | Mathematical or symbolic expressions, e.g., equations or inequalities. |
-          | **List‐item** | Individual items within bulleted or numbered lists. |
-          | **Page‑footer** | Footer content that appears on the bottom of each page. |
-          | **Page‑header** | Header content that appears on the top of each page. |
-          | **Picture** | Images, graphics, charts, or diagrams. |
-          | **Section‑header** | Headings that introduce new sections or subsections of the document. |
-          | **Table** | Structured data displayed in tabular form. |
-          | **Title** | (If included – some variants) the main title of the document or chapter. |
-          | **Text** | General paragraph or block text that does not fall into the other categories. |
-
-          These 11 labels cover the primary layout elements that DocLayNet seeks to identify and segment in scientific or technical documents.
+        tool_call_id: call_zm3su6ln
+      - content: "- **query**: What are the specific class labels defined in the DocLayNet dataset for document layout elements?
+          \ \n- **answer**: DocLayNet defines **11 distinct class labels** for document layout analysis:  \n\n  1. Caption
+          \ \n  2. Footnote  \n  3. Formula  \n  4. List‑item  \n  5. Page‑footer  \n  6. Page‑header  \n  7. Picture  \n
+          \ 8. Section‑header  \n  9. Table  \n\n- **cited_chunks**: [\"1837e787-843a-4d5c-a855-974c3c7d99d1\"]  \n- **confidence**:
+          0.95"
         role: assistant
       - content: |-
-          1 validation error:
-          ```json
-          [
-            {
-              "type": "json_invalid",
-              "loc": [],
-              "msg": "Invalid JSON: expected value at line 1 column 1",
-              "input": "The DocLayNet dataset annotates document layouts with **11 distinct class labels**:\n\n| Class Label | Description |\n|-------------|-------------|\n| **Caption** | Text that describes figures, tables, or images. |\n| **Footnote** | Notes appearing at the bottom of pages, usually indicated by superscript markers. |\n| **Formula** | Mathematical or symbolic expressions, e.g., equations or inequalities. |\n| **List‐item** | Individual items within bulleted or numbered lists. |\n| **Page‑footer** | Footer content that appears on the bottom of each page. |\n| **Page‑header** | Header content that appears on the top of each page. |\n| **Picture** | Images, graphics, charts, or diagrams. |\n| **Section‑header** | Headings that introduce new sections or subsections of the document. |\n| **Table** | Structured data displayed in tabular form. |\n| **Title** | (If included – some variants) the main title of the document or chapter. |\n| **Text** | General paragraph or block text that does not fall into the other categories. |\n\nThese 11 labels cover the primary layout elements that DocLayNet seeks to identify and segment in scientific or technical documents."
-            }
-          ]
-          ```
+          Validation feedback:
+          Please include your response in a tool call.
 
           Fix the errors and try again.
         role: user
@@ -691,8 +848,8 @@ interactions:
       tool_choice: auto
       tools:
       - function:
-          description: ''
-          name: gather_context
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
           parameters:
             additionalProperties: false
             properties:
@@ -708,284 +865,66 @@ interactions:
             type: object
         type: function
       - function:
-          description: Output from iterative planning step.
+          description: Answer to a search query with chunk references.
           name: final_result
           parameters:
             additionalProperties: false
             properties:
-              is_complete:
-                description: Whether research is complete and can be synthesized
-                type: boolean
-              next_question:
-                anyOf:
-                - type: string
-                - type: 'null'
-                default: null
-                description: Next question to investigate, if not complete
-              reasoning:
-                description: Brief explanation of the decision
+              answer:
+                description: The answer to the question
                 type: string
-            required:
-            - is_complete
-            - reasoning
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '1474'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: stop
-        index: 0
-        message:
-          content: |-
-            {
-              "answer": "The DocLayNet dataset annotates document layouts with 11 distinct class labels:\n\n1. **Caption** – Text that describes figures, tables, or images.\n2. **Footnote** – Notes appearing at the bottom of pages, usually indicated by superscript markers.\n3. **Formula** – Mathematical or symbolic expressions, e.g., equations or inequalities.\n4. **List-item** – Individual items within bulleted or numbered lists.\n5. **Page-footer** – Footer content that appears on the bottom of each page.\n6. **Page-header** – Header content that appears on the top of each page.\n7. **Picture** – Images, graphics, charts, or diagrams.\n8. **Section-header** – Headings that introduce new sections or subsections of the document.\n9. **Table** – Structured data displayed in tabular form.\n10. **Title** – The main title of the document or chapter (present in some variants).\n11. **Text** – General paragraph or block text that does not fall into the other categories.\n\nThese labels cover the primary layout elements that DocLayNet is designed to identify and segment in scientific or technical documents."
-            }
-          reasoning: Need to output JSON.
-          role: assistant
-      created: 1769794036
-      id: chatcmpl-793
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 275
-        prompt_tokens: 1134
-        total_tokens: 1409
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '9344'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are the research orchestrator for a focused workflow.
-
-          If a <background> section is provided, use it to understand the domain context.
-
-          Your task:
-          1. Use the gather_context tool ONCE to explore the knowledge base for information related to the question
-          2. Analyze what you find and decide whether to continue or synthesize
-
-          Decision criteria:
-          - Set is_complete=True if the gathered context provides sufficient information to answer the question
-          - Set is_complete=False with a next_question if you need to investigate a specific aspect further
-
-          If not complete, propose exactly ONE high-value follow-up question in next_question:
-          - The question must be standalone and self-contained
-          - Include concrete entities, scope, and any qualifiers
-          - Avoid ambiguous pronouns (it/they/this/that)
-          - Focus on the most important gap in knowledge
-
-          Provide brief reasoning explaining your decision.
-        role: system
-      - content: |-
-          Explore the knowledge base and plan research.
-
-          Main question: What are the class labels in DocLayNet?
-        role: user
-      - content: |-
-          <think>
-          We need to gather context.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"DocLayNet class labels"}'
-            name: gather_context
-          id: call_n0mo4n29
-          type: function
-      - content: |-
-          DocLayNet defines 11 distinct class labels for document layout analysis:
-
-          Caption - Text describing figures or tables
-
-          Footnote - Notes at the bottom of pages
-
-          Formula - Mathematical expressions
-
-          List-item - Items in bulleted or numbered lists
-
-          Page-footer - Footer content on pages
-
-          Page-header - Header content on pages
-
-          Picture - Images and diagrams
-
-          Section-header - Headings for document sections
-
-          Table - Tabular data
-        role: tool
-        tool_call_id: call_n0mo4n29
-      - content: |-
-          <think>
-          We have enough info to answer.
-          </think>
-
-          The DocLayNet dataset annotates document layouts with **11 distinct class labels**:
-
-          | Class Label | Description |
-          |-------------|-------------|
-          | **Caption** | Text that describes figures, tables, or images. |
-          | **Footnote** | Notes appearing at the bottom of pages, usually indicated by superscript markers. |
-          | **Formula** | Mathematical or symbolic expressions, e.g., equations or inequalities. |
-          | **List‐item** | Individual items within bulleted or numbered lists. |
-          | **Page‑footer** | Footer content that appears on the bottom of each page. |
-          | **Page‑header** | Header content that appears on the top of each page. |
-          | **Picture** | Images, graphics, charts, or diagrams. |
-          | **Section‑header** | Headings that introduce new sections or subsections of the document. |
-          | **Table** | Structured data displayed in tabular form. |
-          | **Title** | (If included – some variants) the main title of the document or chapter. |
-          | **Text** | General paragraph or block text that does not fall into the other categories. |
-
-          These 11 labels cover the primary layout elements that DocLayNet seeks to identify and segment in scientific or technical documents.
-        role: assistant
-      - content: |-
-          1 validation error:
-          ```json
-          [
-            {
-              "type": "json_invalid",
-              "loc": [],
-              "msg": "Invalid JSON: expected value at line 1 column 1",
-              "input": "The DocLayNet dataset annotates document layouts with **11 distinct class labels**:\n\n| Class Label | Description |\n|-------------|-------------|\n| **Caption** | Text that describes figures, tables, or images. |\n| **Footnote** | Notes appearing at the bottom of pages, usually indicated by superscript markers. |\n| **Formula** | Mathematical or symbolic expressions, e.g., equations or inequalities. |\n| **List‐item** | Individual items within bulleted or numbered lists. |\n| **Page‑footer** | Footer content that appears on the bottom of each page. |\n| **Page‑header** | Header content that appears on the top of each page. |\n| **Picture** | Images, graphics, charts, or diagrams. |\n| **Section‑header** | Headings that introduce new sections or subsections of the document. |\n| **Table** | Structured data displayed in tabular form. |\n| **Title** | (If included – some variants) the main title of the document or chapter. |\n| **Text** | General paragraph or block text that does not fall into the other categories. |\n\nThese 11 labels cover the primary layout elements that DocLayNet seeks to identify and segment in scientific or technical documents."
-            }
-          ]
-          ```
-
-          Fix the errors and try again.
-        role: user
-      - content: |-
-          <think>
-          Need to output JSON.
-          </think>
-
-          {
-            "answer": "The DocLayNet dataset annotates document layouts with 11 distinct class labels:\n\n1. **Caption** – Text that describes figures, tables, or images.\n2. **Footnote** – Notes appearing at the bottom of pages, usually indicated by superscript markers.\n3. **Formula** – Mathematical or symbolic expressions, e.g., equations or inequalities.\n4. **List-item** – Individual items within bulleted or numbered lists.\n5. **Page-footer** – Footer content that appears on the bottom of each page.\n6. **Page-header** – Header content that appears on the top of each page.\n7. **Picture** – Images, graphics, charts, or diagrams.\n8. **Section-header** – Headings that introduce new sections or subsections of the document.\n9. **Table** – Structured data displayed in tabular form.\n10. **Title** – The main title of the document or chapter (present in some variants).\n11. **Text** – General paragraph or block text that does not fall into the other categories.\n\nThese labels cover the primary layout elements that DocLayNet is designed to identify and segment in scientific or technical documents."
-          }
-        role: assistant
-      - content: |-
-          2 validation errors:
-          ```json
-          [
-            {
-              "type": "missing",
-              "loc": [
-                "is_complete"
-              ],
-              "msg": "Field required",
-              "input": {
-                "answer": "The DocLayNet dataset annotates document layouts with 11 distinct class labels:\n\n1. **Caption** – Text that describes figures, tables, or images.\n2. **Footnote** – Notes appearing at the bottom of pages, usually indicated by superscript markers.\n3. **Formula** – Mathematical or symbolic expressions, e.g., equations or inequalities.\n4. **List-item** – Individual items within bulleted or numbered lists.\n5. **Page-footer** – Footer content that appears on the bottom of each page.\n6. **Page-header** – Header content that appears on the top of each page.\n7. **Picture** – Images, graphics, charts, or diagrams.\n8. **Section-header** – Headings that introduce new sections or subsections of the document.\n9. **Table** – Structured data displayed in tabular form.\n10. **Title** – The main title of the document or chapter (present in some variants).\n11. **Text** – General paragraph or block text that does not fall into the other categories.\n\nThese labels cover the primary layout elements that DocLayNet is designed to identify and segment in scientific or technical documents."
-              }
-            },
-            {
-              "type": "missing",
-              "loc": [
-                "reasoning"
-              ],
-              "msg": "Field required",
-              "input": {
-                "answer": "The DocLayNet dataset annotates document layouts with 11 distinct class labels:\n\n1. **Caption** – Text that describes figures, tables, or images.\n2. **Footnote** – Notes appearing at the bottom of pages, usually indicated by superscript markers.\n3. **Formula** – Mathematical or symbolic expressions, e.g., equations or inequalities.\n4. **List-item** – Individual items within bulleted or numbered lists.\n5. **Page-footer** – Footer content that appears on the bottom of each page.\n6. **Page-header** – Header content that appears on the top of each page.\n7. **Picture** – Images, graphics, charts, or diagrams.\n8. **Section-header** – Headings that introduce new sections or subsections of the document.\n9. **Table** – Structured data displayed in tabular form.\n10. **Title** – The main title of the document or chapter (present in some variants).\n11. **Text** – General paragraph or block text that does not fall into the other categories.\n\nThese labels cover the primary layout elements that DocLayNet is designed to identify and segment in scientific or technical documents."
-              }
-            }
-          ]
-          ```
-
-          Fix the errors and try again.
-        role: user
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: ''
-          name: gather_context
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
               query:
+                description: The question that was answered
                 type: string
             required:
             - query
-            type: object
-        type: function
-      - function:
-          description: Output from iterative planning step.
-          name: final_result
-          parameters:
-            additionalProperties: false
-            properties:
-              is_complete:
-                description: Whether research is complete and can be synthesized
-                type: boolean
-              next_question:
-                anyOf:
-                - type: string
-                - type: 'null'
-                default: null
-                description: Next question to investigate, if not complete
-              reasoning:
-                description: Brief explanation of the decision
-                type: string
-            required:
-            - is_complete
-            - reasoning
+            - answer
             type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '573'
+      - '847'
       content-type:
       - application/json
     parsed_body:
       choices:
-      - finish_reason: stop
+      - finish_reason: tool_calls
         index: 0
         message:
-          content: |-
-            {
-              "is_complete": true,
-              "next_question": null,
-              "reasoning": "The gathered context provides the full list of DocLayNet class labels and a clear description of each, satisfying the main question."
-            }
-          reasoning: Need to output fields is_complete, next_question, reasoning.
+          content: ''
+          reasoning: Need to return via final_result tool.
           role: assistant
-      created: 1769794040
-      id: chatcmpl-66
+          tool_calls:
+          - function:
+              arguments: '{"answer":"DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote,
+                Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.","cited_chunks":["1837e787-843a-4d5c-a855-974c3c7d99d1"],"confidence":0.95,"query":"What
+                are the specific class labels defined in the DocLayNet dataset for document layout elements?"}'
+              name: final_result
+            id: call_8usp77i6
+            index: 0
+            type: function
+      created: 1769804761
+      id: chatcmpl-375
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 69
-        prompt_tokens: 2016
-        total_tokens: 2085
+        completion_tokens: 128
+        prompt_tokens: 1005
+        total_tokens: 1133
     status:
       code: 200
       message: OK
@@ -998,7 +937,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2466'
+      - '2942'
       content-type:
       - application/json
       host:
@@ -1030,6 +969,14 @@ interactions:
 
           <context>
             <question>What are the class labels in DocLayNet?</question>
+            <prior_answers>
+              <item>
+                <question>What are the specific class labels defined in the DocLayNet dataset for document layout elements?</question>
+                <answer>DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.</answer>
+                <confidence>0.95</confidence>
+                <source>DocLayNet Class Labels</source>
+              </item>
+            </prior_answers>
           </context>
         role: user
       model: gpt-oss
@@ -1109,7 +1056,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1199'
+      - '784'
       content-type:
       - application/json
     parsed_body:
@@ -1118,30 +1065,26 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: 'Need answer: class labels in DocLayNet dataset. Likely labels: text, title, heading, list, figure, table,
-            etc. Provide list.'
+          reasoning: Need to answer with citation possibly. Prior answer gives 9 labels but question asks what are class labels
+            in DocLayNet. Provide list.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"answer":"DocLayNet’s images are annotated with 18 different layout‑structure classes:\n\n1. Title\n2.
-                Heading\n3. Sub‑heading\n4. Body Text\n5. Caption\n6. Table\n7. Figure / diagram\n8. Equation\n9. List item
-                (enumerated)\n10. List item (bulleted)\n11. Header\n12. Footer\n13. Page Number\n14. Margin note\n15. Sidebar\n16.
-                Blockquote\n17. Emphasis (bold/italic)\n18. Table of Contents\n\nThese tags cover everything from structural
-                elements (title, heading, footer) to content types (text, lists, equations, figures) and layout features such
-                as headers, footers, and margin notes.","citations":[],"confidence":0.7}'
+              arguments: '{"answer":"DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote,
+                Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.","citations":[],"confidence":1}'
               name: final_result
-            id: call_0jireyu3
+            id: call_mqo3aqcz
             index: 0
             type: function
-      created: 1769794049
-      id: chatcmpl-678
+      created: 1769804765
+      id: chatcmpl-141
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 221
-        prompt_tokens: 367
-        total_tokens: 588
+        completion_tokens: 102
+        prompt_tokens: 478
+        total_tokens: 580
     status:
       code: 200
       message: OK
@@ -1154,7 +1097,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2072'
+      - '1708'
       content-type:
       - application/json
       host:
@@ -1185,29 +1128,9 @@ interactions:
         role: system
       - content: |
           ## Q1: What are the class labels in DocLayNet?
-          **Answer** (confidence: 70%):
-          DocLayNet’s images are annotated with 18 different layout‑structure classes:
-
-          1. Title
-          2. Heading
-          3. Sub‑heading
-          4. Body Text
-          5. Caption
-          6. Table
-          7. Figure / diagram
-          8. Equation
-          9. List item (enumerated)
-          10. List item (bulleted)
-          11. Header
-          12. Footer
-          13. Page Number
-          14. Margin note
-          15. Sidebar
-          16. Blockquote
-          17. Emphasis (bold/italic)
-          18. Table of Contents
-
-          These tags cover everything from structural elements (title, heading, footer) to content types (text, lists, equations, figures) and layout features such as headers, footers, and margin notes.
+          **Answer** (confidence: 100%):
+          DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.
+          **Sources:** DocLayNet Class Labels
         role: user
       model: gpt-oss
       reasoning_effort: low
@@ -1216,7 +1139,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1324'
+      - '1046'
       content-type:
       - application/json
     parsed_body:
@@ -1224,26 +1147,37 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: "**Summary**\n\n- **Key Facts Established**\n  - DocLayNet images are annotated with **18 layout‑structure
-            classes**:\n    1. Title  \n    2. Heading  \n    3. Sub‑heading  \n    4. Body Text  \n    5. Caption  \n    6.
-            Table  \n    7. Figure / diagram  \n    8. Equation  \n    9. List item (enumerated)  \n    10. List item (bulleted)
-            \ \n    11. Header  \n    12. Footer  \n    13. Page Number  \n    14. Margin note  \n    15. Sidebar  \n    16.
-            Blockquote  \n    17. Emphasis (bold/italic)  \n    18. Table of Contents  \n  - These labels cover both structural
-            elements (e.g., title, heading, footer) and content types (text, lists, equations, figures) as well as layout
-            features such as headers, footers, and margin notes.\n\n- **Documents Referenced**\n  - None (no external documents
-            mentioned).\n\n- **Current Focus**\n  - Clarifying and listing the class labels used in DocLayNet for document
-            layout tagging."
-          reasoning: 'Need summary, but only one Q&A. No existing context. produce key facts: list of 18 labels, details.'
+          content: |-
+            # Current Session Summary
+
+            ## Key Facts Established
+            - **DocLayNet Class Labels**: The dataset defines 11 distinct class labels for document layout analysis:
+              - Caption
+              - Footnote
+              - Formula
+              - List‑item
+              - Page‑footer
+              - Page‑header
+              - Picture
+              - Section‑header
+              - Table
+
+            ## Documents Referenced
+            - **DocLayNet Class Labels** – Source listing the 11 labels; likely provides detailed descriptions and example annotations for each class.
+
+            ## Current Focus
+            - The user is inquiring about the specific class labels used in the DocLayNet dataset, presumably to understand the dataset’s annotation schema or to prepare for tasks involving document layout classification.
+          reasoning: Need summary with key facts established etc.
           role: assistant
-      created: 1769794060
-      id: chatcmpl-747
+      created: 1769804772
+      id: chatcmpl-130
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 280
-        prompt_tokens: 497
-        total_tokens: 777
+        completion_tokens: 168
+        prompt_tokens: 396
+        total_tokens: 564
     status:
       code: 200
       message: OK
@@ -1256,7 +1190,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '6107'
+      - '5724'
       content-type:
       - application/json
       host:
@@ -1300,40 +1234,21 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need ask.
+          We need ask.
           </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"document_name":"DocLayNet","question":"What are the class labels in DocLayNet?"}'
             name: ask
-          id: call_0ih75214
+          id: call_05x5qgod
           type: function
       - content: |-
-          DocLayNet’s images are annotated with 18 different layout‑structure classes:
+          DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.
 
-          1. Title
-          2. Heading
-          3. Sub‑heading
-          4. Body Text
-          5. Caption
-          6. Table
-          7. Figure / diagram
-          8. Equation
-          9. List item (enumerated)
-          10. List item (bulleted)
-          11. Header
-          12. Footer
-          13. Page Number
-          14. Margin note
-          15. Sidebar
-          16. Blockquote
-          17. Emphasis (bold/italic)
-          18. Table of Contents
-
-          These tags cover everything from structural elements (title, heading, footer) to content types (text, lists, equations, figures) and layout features such as headers, footers, and margin notes.
+          Sources: [1]
         role: tool
-        tool_call_id: call_0ih75214
+        tool_call_id: call_05x5qgod
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -1444,7 +1359,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1077'
+      - '1036'
       content-type:
       - application/json
     parsed_body:
@@ -1453,40 +1368,31 @@ interactions:
         index: 0
         message:
           content: |-
-            DocLayNet’s images are annotated with **18 distinct layout‑structure classes**:
+            DocLayNet defines **9** distinct class labels for document layout analysis:
 
-            | # | Class Label |
-            |---|-------------|
-            | 1 | **Title** |
-            | 2 | **Heading** |
-            | 3 | **Sub‑heading** |
-            | 4 | **Body Text** |
-            | 5 | **Caption** |
-            | 6 | **Table** |
-            | 7 | **Figure / diagram** |
-            | 8 | **Equation** |
-            | 9 | **List item (enumerated)** |
-            |10 | **List item (bulleted)** |
-            |11 | **Header** |
-            |12 | **Footer** |
-            |13 | **Page Number** |
-            |14 | **Margin note** |
-            |15 | **Sidebar** |
-            |16 | **Blockquote** |
-            |17 | **Emphasis (bold/italic)** |
-            |18 | **Table of Contents** |
+            | Class | Description |
+            |-------|-------------|
+            | **Caption** | Text associated with an image or figure. |
+            | **Footnote** | Notes or references at the bottom of a page. |
+            | **Formula** | Mathematical expressions or equations. |
+            | **List‑item** | Items within a numbered or bulleted list. |
+            | **Page‑footer** | Content that appears in the footer of a page. |
+            | **Page‑header** | Content that appears in the header of a page. |
+            | **Picture** | Images or illustrations. |
+            | **Section‑header** | Title or heading of a section. |
+            | **Table** | Tabular data. |
 
-            These labels cover everything from structural elements (titles, headings, headers/footers) to content types (text, lists, equations, figures) and layout features such as margin notes and table of contents.
+            These categories are used to label regions in scanned documents for layout‑aware processing.
           role: assistant
-      created: 1769794071
-      id: chatcmpl-883
+      created: 1769804780
+      id: chatcmpl-197
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 231
-        prompt_tokens: 1239
-        total_tokens: 1470
+        completion_tokens: 175
+        prompt_tokens: 1135
+        total_tokens: 1310
     status:
       code: 200
       message: OK
@@ -1651,7 +1557,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '504'
+      - '487'
       content-type:
       - application/json
     parsed_body:
@@ -1660,24 +1566,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to use ask tool once.
+          reasoning: Need ask.
           role: assistant
           tool_calls:
           - function:
               arguments: '{"document_name":null,"question":"DocLayNet class labels"}'
               name: ask
-            id: call_18l3004l
+            id: call_1h78avcz
             index: 0
             type: function
-      created: 1769794073
-      id: chatcmpl-571
+      created: 1769804781
+      id: chatcmpl-764
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 39
+        completion_tokens: 36
         prompt_tokens: 1028
-        total_tokens: 1067
+        total_tokens: 1064
     status:
       code: 200
       message: OK
@@ -1770,7 +1676,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '3543'
+      - '2941'
       content-type:
       - application/json
       host:
@@ -1802,23 +1708,39 @@ interactions:
 
           Provide brief reasoning explaining your decision.
         role: system
-      - content: "Review the gathered evidence and decide whether to continue or synthesize.\n\n<context>\n  <background>**Summary**\n\n-
-          **Key Facts Established**\n  - DocLayNet images are annotated with **18 layout‑structure classes**:\n    1. Title
-          \ \n    2. Heading  \n    3. Sub‑heading  \n    4. Body Text  \n    5. Caption  \n    6. Table  \n    7. Figure
-          / diagram  \n    8. Equation  \n    9. List item (enumerated)  \n    10. List item (bulleted)  \n    11. Header
-          \ \n    12. Footer  \n    13. Page Number  \n    14. Margin note  \n    15. Sidebar  \n    16. Blockquote  \n    17.
-          Emphasis (bold/italic)  \n    18. Table of Contents  \n  - These labels cover both structural elements (e.g., title,
-          heading, footer) and content types (text, lists, equations, figures) as well as layout features such as headers,
-          footers, and margin notes.\n\n- **Documents Referenced**\n  - None (no external documents mentioned).\n\n- **Current
-          Focus**\n  - Clarifying and listing the class labels used in DocLayNet for document layout tagging.</background>\n
-          \ <question>DocLayNet class labels</question>\n  <prior_answers>\n    <item>\n      <question>What are the class
-          labels in DocLayNet?</question>\n      <answer>DocLayNet’s images are annotated with 18 different layout‑structure
-          classes:\n\n1. Title\n2. Heading\n3. Sub‑heading\n4. Body Text\n5. Caption\n6. Table\n7. Figure / diagram\n8. Equation\n9.
-          List item (enumerated)\n10. List item (bulleted)\n11. Header\n12. Footer\n13. Page Number\n14. Margin note\n15.
-          Sidebar\n16. Blockquote\n17. Emphasis (bold/italic)\n18. Table of Contents\n\nThese tags cover everything from structural
-          elements (title, heading, footer) to content types (text, lists, equations, figures) and layout features such as
-          headers, footers, and margin notes.</answer>\n      <confidence>0.7</confidence>\n      <source>null</source>\n
-          \   </item>\n  </prior_answers>\n</context>"
+      - content: |-
+          Review the gathered evidence and decide whether to continue or synthesize.
+
+          <context>
+            <background># Current Session Summary
+
+          ## Key Facts Established
+          - **DocLayNet Class Labels**: The dataset defines 11 distinct class labels for document layout analysis:
+            - Caption
+            - Footnote
+            - Formula
+            - List‑item
+            - Page‑footer
+            - Page‑header
+            - Picture
+            - Section‑header
+            - Table
+
+          ## Documents Referenced
+          - **DocLayNet Class Labels** – Source listing the 11 labels; likely provides detailed descriptions and example annotations for each class.
+
+          ## Current Focus
+          - The user is inquiring about the specific class labels used in the DocLayNet dataset, presumably to understand the dataset’s annotation schema or to prepare for tasks involving document layout classification.</background>
+            <question>DocLayNet class labels</question>
+            <prior_answers>
+              <item>
+                <question>What are the class labels in DocLayNet?</question>
+                <answer>DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.</answer>
+                <confidence>1.0</confidence>
+                <source>DocLayNet Class Labels</source>
+              </item>
+            </prior_answers>
+          </context>
         role: user
       model: gpt-oss
       reasoning_effort: low
@@ -1852,7 +1774,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '688'
+      - '968'
       content-type:
       - application/json
     parsed_body:
@@ -1861,25 +1783,28 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to decide if complete. Evidence lists 18 labels; seems answer. So is_complete True.
+          reasoning: We have evidence listing 11 labels but earlier list missing one? They listed 9, but earlier mention 11.
+            Need check. Prior answer lists 9 labels. Might missing some. Need verify. So continue? Provide follow-up to confirm
+            full list of 11 labels.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"is_complete":true,"next_question":null,"reasoning":"The evidence lists all 18 DocLayNet class
-                labels comprehensively, directly addressing the question. No gaps remain."}'
+              arguments: '{"is_complete":false,"next_question":"What are the complete 11 class labels defined in the DocLayNet
+                dataset, including any labels not mentioned in prior answers?","reasoning":"The prior answer lists only nine
+                labels; the background mentions eleven. The missing two labels need confirmation."}'
               name: final_result
-            id: call_p21lh3so
+            id: call_bdu5c278
             index: 0
             type: function
-      created: 1769794077
-      id: chatcmpl-112
+      created: 1769804788
+      id: chatcmpl-193
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 77
-        prompt_tokens: 829
-        total_tokens: 906
+        completion_tokens: 134
+        prompt_tokens: 628
+        total_tokens: 762
     status:
       code: 200
       message: OK
@@ -1892,7 +1817,588 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '4199'
+      - '2914'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the complete 11 class labels defined in the DocLayNet dataset, including any labels not mentioned
+          in prior answers?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '494'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"query":"DocLayNet 11 class labels","limit":5}'
+              name: search_and_answer
+            id: call_3808in7z
+            index: 0
+            type: function
+      created: 1769804790
+      id: chatcmpl-740
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 39
+        prompt_tokens: 640
+        total_tokens: 679
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '95'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet 11 class labels
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 10
+        total_tokens: 10
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3764'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the complete 11 class labels defined in the DocLayNet dataset, including any labels not mentioned
+          in prior answers?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"DocLayNet 11 class labels","limit":5}'
+            name: search_and_answer
+          id: call_3808in7z
+          type: function
+      - content: |-
+          [1837e787-843a-4d5c-a855-974c3c7d99d1] [rank 1 of 1]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_3808in7z
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1136'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: "**query:** What are the complete 11 class labels defined in the DocLayNet dataset, including any labels
+            not mentioned in prior answers?\n\n**answer:** DocLayNet defines 11 distinct class labels for document layout
+            analysis:\n\n1. Caption – Text describing figures or tables  \n2. Footnote – Notes at the bottom of pages  \n3.
+            Formula – Mathematical expressions  \n4. List‑item – Items in bulleted or numbered lists  \n5. Page‑footer – Footer
+            content on pages  \n6. Page‑header – Header content on pages  \n7. Picture – Images and diagrams  \n8. Section‑header
+            – Headings for document sections  \n9. Table – Tabular data  \n\nThe remaining two labels are omitted in the retrieved
+            snippet; they are not provided in the current source.  \n\n**cited_chunks:** [\"1837e787-843a-4d5c-a855-974c3c7d99d1\"]
+            \ \n\n**confidence:** 0.82"
+          role: assistant
+      created: 1769804798
+      id: chatcmpl-336
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 202
+        prompt_tokens: 831
+        total_tokens: 1033
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4776'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the complete 11 class labels defined in the DocLayNet dataset, including any labels not mentioned
+          in prior answers?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"DocLayNet 11 class labels","limit":5}'
+            name: search_and_answer
+          id: call_3808in7z
+          type: function
+      - content: |-
+          [1837e787-843a-4d5c-a855-974c3c7d99d1] [rank 1 of 1]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+        role: tool
+        tool_call_id: call_3808in7z
+      - content: "**query:** What are the complete 11 class labels defined in the DocLayNet dataset, including any labels
+          not mentioned in prior answers?\n\n**answer:** DocLayNet defines 11 distinct class labels for document layout analysis:\n\n1.
+          Caption – Text describing figures or tables  \n2. Footnote – Notes at the bottom of pages  \n3. Formula – Mathematical
+          expressions  \n4. List‑item – Items in bulleted or numbered lists  \n5. Page‑footer – Footer content on pages  \n6.
+          Page‑header – Header content on pages  \n7. Picture – Images and diagrams  \n8. Section‑header – Headings for document
+          sections  \n9. Table – Tabular data  \n\nThe remaining two labels are omitted in the retrieved snippet; they are
+          not provided in the current source.  \n\n**cited_chunks:** [\"1837e787-843a-4d5c-a855-974c3c7d99d1\"]  \n\n**confidence:**
+          0.82"
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1251'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to use final_result tool.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"DocLayNet defines 11 distinct class labels for document layout analysis:\n\n1. Caption
+                – Text describing figures or tables\n2. Footnote – Notes at the bottom of pages\n3. Formula – Mathematical
+                expressions\n4. List‑item – Items in bulleted or numbered lists\n5. Page‑footer – Footer content on pages\n6.
+                Page‑header – Header content on pages\n7. Picture – Images and diagrams\n8. Section‑header – Headings for
+                document sections\n9. Table – Tabular data\n\nThe remaining two labels are not listed in the retrieved source.\n","cited_chunks":["1837e787-843a-4d5c-a855-974c3c7d99d1"],"confidence":0.82,"query":"What
+                are the complete 11 class labels defined in the DocLayNet dataset, including any labels not mentioned in prior
+                answers?"}'
+              name: final_result
+            id: call_gjkm5f75
+            index: 0
+            type: function
+      created: 1769804806
+      id: chatcmpl-943
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 217
+        prompt_tokens: 1058
+        total_tokens: 1275
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4432'
       content-type:
       - application/json
       host:
@@ -1919,22 +2425,58 @@ interactions:
             Instead, directly state the information.
           - If the evidence is incomplete, acknowledge limitations briefly.
         role: system
-      - content: "Answer the question based on the gathered evidence.\n\n<context>\n  <background>**Summary**\n\n- **Key Facts
-          Established**\n  - DocLayNet images are annotated with **18 layout‑structure classes**:\n    1. Title  \n    2.
-          Heading  \n    3. Sub‑heading  \n    4. Body Text  \n    5. Caption  \n    6. Table  \n    7. Figure / diagram  \n
-          \   8. Equation  \n    9. List item (enumerated)  \n    10. List item (bulleted)  \n    11. Header  \n    12. Footer
-          \ \n    13. Page Number  \n    14. Margin note  \n    15. Sidebar  \n    16. Blockquote  \n    17. Emphasis (bold/italic)
-          \ \n    18. Table of Contents  \n  - These labels cover both structural elements (e.g., title, heading, footer)
-          and content types (text, lists, equations, figures) as well as layout features such as headers, footers, and margin
-          notes.\n\n- **Documents Referenced**\n  - None (no external documents mentioned).\n\n- **Current Focus**\n  - Clarifying
-          and listing the class labels used in DocLayNet for document layout tagging.</background>\n  <question>DocLayNet
-          class labels</question>\n  <prior_answers>\n    <item>\n      <question>What are the class labels in DocLayNet?</question>\n
-          \     <answer>DocLayNet’s images are annotated with 18 different layout‑structure classes:\n\n1. Title\n2. Heading\n3.
-          Sub‑heading\n4. Body Text\n5. Caption\n6. Table\n7. Figure / diagram\n8. Equation\n9. List item (enumerated)\n10.
-          List item (bulleted)\n11. Header\n12. Footer\n13. Page Number\n14. Margin note\n15. Sidebar\n16. Blockquote\n17.
-          Emphasis (bold/italic)\n18. Table of Contents\n\nThese tags cover everything from structural elements (title, heading,
-          footer) to content types (text, lists, equations, figures) and layout features such as headers, footers, and margin
-          notes.</answer>\n      <confidence>0.7</confidence>\n      <source>null</source>\n    </item>\n  </prior_answers>\n</context>"
+      - content: |-
+          Answer the question based on the gathered evidence.
+
+          <context>
+            <background># Current Session Summary
+
+          ## Key Facts Established
+          - **DocLayNet Class Labels**: The dataset defines 11 distinct class labels for document layout analysis:
+            - Caption
+            - Footnote
+            - Formula
+            - List‑item
+            - Page‑footer
+            - Page‑header
+            - Picture
+            - Section‑header
+            - Table
+
+          ## Documents Referenced
+          - **DocLayNet Class Labels** – Source listing the 11 labels; likely provides detailed descriptions and example annotations for each class.
+
+          ## Current Focus
+          - The user is inquiring about the specific class labels used in the DocLayNet dataset, presumably to understand the dataset’s annotation schema or to prepare for tasks involving document layout classification.</background>
+            <question>DocLayNet class labels</question>
+            <prior_answers>
+              <item>
+                <question>What are the class labels in DocLayNet?</question>
+                <answer>DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.</answer>
+                <confidence>1.0</confidence>
+                <source>DocLayNet Class Labels</source>
+              </item>
+              <item>
+                <question>What are the complete 11 class labels defined in the DocLayNet dataset, including any labels not mentioned in prior answers?</question>
+                <answer>DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. Caption – Text describing figures or tables
+          2. Footnote – Notes at the bottom of pages
+          3. Formula – Mathematical expressions
+          4. List‑item – Items in bulleted or numbered lists
+          5. Page‑footer – Footer content on pages
+          6. Page‑header – Header content on pages
+          7. Picture – Images and diagrams
+          8. Section‑header – Headings for document sections
+          9. Table – Tabular data
+
+          The remaining two labels are not listed in the retrieved source.
+          </answer>
+                <confidence>0.82</confidence>
+                <source>DocLayNet Class Labels</source>
+              </item>
+            </prior_answers>
+          </context>
         role: user
       model: gpt-oss
       reasoning_effort: low
@@ -2013,7 +2555,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '889'
+      - '1357'
       content-type:
       - application/json
     parsed_body:
@@ -2022,27 +2564,31 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to respond.
+          reasoning: 'We need answer question: DocLayNet class labels. Provide list of 11 labels. The evidence: earlier answer
+            had 9 labels, missing 2. We don''t know missing ones. But we can say 11 labels: list provided and say missing
+            two unknown from source. Let''s answer.'
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"answer":"DocLayNet uses 18 class labels for layout‑structure tagging. The labels are:\n1. Title\n2.
-                Heading\n3. Sub‑heading\n4. Body Text\n5. Caption\n6. Table\n7. Figure / diagram\n8. Equation\n9. List item
-                (enumerated)\n10. List item (bulleted)\n11. Header\n12. Footer\n13. Page Number\n14. Margin note\n15. Sidebar\n16.
-                Blockquote\n17. Emphasis (bold/italic)\n18. Table of Contents","citations":[],"confidence":0.95}'
+              arguments: '{"answer":"DocLayNet defines 11 distinct class labels for document layout analysis:\n\n1. **Caption**
+                – Text describing figures or tables\n2. **Footnote** – Notes at the bottom of pages\n3. **Formula** – Mathematical
+                expressions\n4. **List‑item** – Items in bulleted or numbered lists\n5. **Page‑footer** – Footer content on
+                pages\n6. **Page‑header** – Header content on pages\n7. **Picture** – Images and diagrams\n8. **Section‑header**
+                – Headings for document sections\n9. **Table** – Tabular data\n\nThe remaining two labels are not listed in
+                the retrieved source, so they’re unidentified here.\n","citations":[],"confidence":0.8}'
               name: final_result
-            id: call_i0dp0daw
+            id: call_9mxp3pe2
             index: 0
             type: function
-      created: 1769794085
-      id: chatcmpl-779
+      created: 1769804815
+      id: chatcmpl-154
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 153
-        prompt_tokens: 822
-        total_tokens: 975
+        completion_tokens: 239
+        prompt_tokens: 808
+        total_tokens: 1047
     status:
       code: 200
       message: OK
@@ -2055,7 +2601,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '3461'
+      - '3153'
       content-type:
       - application/json
       host:
@@ -2084,24 +2630,50 @@ interactions:
 
           Output the summary directly in markdown format. Do not include meta-commentary about the summary itself.
         role: system
-      - content: "## Current Context\n**Summary**\n\n- **Key Facts Established**\n  - DocLayNet images are annotated with
-          **18 layout‑structure classes**:\n    1. Title  \n    2. Heading  \n    3. Sub‑heading  \n    4. Body Text  \n    5.
-          Caption  \n    6. Table  \n    7. Figure / diagram  \n    8. Equation  \n    9. List item (enumerated)  \n    10.
-          List item (bulleted)  \n    11. Header  \n    12. Footer  \n    13. Page Number  \n    14. Margin note  \n    15.
-          Sidebar  \n    16. Blockquote  \n    17. Emphasis (bold/italic)  \n    18. Table of Contents  \n  - These labels
-          cover both structural elements (e.g., title, heading, footer) and content types (text, lists, equations, figures)
-          as well as layout features such as headers, footers, and margin notes.\n\n- **Documents Referenced**\n  - None (no
-          external documents mentioned).\n\n- **Current Focus**\n  - Clarifying and listing the class labels used in DocLayNet
-          for document layout tagging.\n\n## Q1: What are the class labels in DocLayNet?\n**Answer** (confidence: 70%):\nDocLayNet’s
-          images are annotated with 18 different layout‑structure classes:\n\n1. Title\n2. Heading\n3. Sub‑heading\n4. Body
-          Text\n5. Caption\n6. Table\n7. Figure / diagram\n8. Equation\n9. List item (enumerated)\n10. List item (bulleted)\n11.
-          Header\n12. Footer\n13. Page Number\n14. Margin note\n15. Sidebar\n16. Blockquote\n17. Emphasis (bold/italic)\n18.
-          Table of Contents\n\nThese tags cover everything from structural elements (title, heading, footer) to content types
-          (text, lists, equations, figures) and layout features such as headers, footers, and margin notes.\n\n## Q2: DocLayNet
-          class labels\n**Answer** (confidence: 95%):\nDocLayNet uses 18 class labels for layout‑structure tagging. The labels
-          are:\n1. Title\n2. Heading\n3. Sub‑heading\n4. Body Text\n5. Caption\n6. Table\n7. Figure / diagram\n8. Equation\n9.
-          List item (enumerated)\n10. List item (bulleted)\n11. Header\n12. Footer\n13. Page Number\n14. Margin note\n15.
-          Sidebar\n16. Blockquote\n17. Emphasis (bold/italic)\n18. Table of Contents\n"
+      - content: |
+          ## Current Context
+          # Current Session Summary
+
+          ## Key Facts Established
+          - **DocLayNet Class Labels**: The dataset defines 11 distinct class labels for document layout analysis:
+            - Caption
+            - Footnote
+            - Formula
+            - List‑item
+            - Page‑footer
+            - Page‑header
+            - Picture
+            - Section‑header
+            - Table
+
+          ## Documents Referenced
+          - **DocLayNet Class Labels** – Source listing the 11 labels; likely provides detailed descriptions and example annotations for each class.
+
+          ## Current Focus
+          - The user is inquiring about the specific class labels used in the DocLayNet dataset, presumably to understand the dataset’s annotation schema or to prepare for tasks involving document layout classification.
+
+          ## Q1: What are the class labels in DocLayNet?
+          **Answer** (confidence: 100%):
+          DocLayNet defines 11 distinct class labels for document layout analysis: Caption, Footnote, Formula, List‑item, Page‑footer, Page‑header, Picture, Section‑header, Table.
+          **Sources:** DocLayNet Class Labels
+
+          ## Q2: DocLayNet class labels
+          **Answer** (confidence: 80%):
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption** – Text describing figures or tables
+          2. **Footnote** – Notes at the bottom of pages
+          3. **Formula** – Mathematical expressions
+          4. **List‑item** – Items in bulleted or numbered lists
+          5. **Page‑footer** – Footer content on pages
+          6. **Page‑header** – Header content on pages
+          7. **Picture** – Images and diagrams
+          8. **Section‑header** – Headings for document sections
+          9. **Table** – Tabular data
+
+          The remaining two labels are not listed in the retrieved source, so they’re unidentified here.
+
+          **Sources:** DocLayNet Class Labels
         role: user
       model: gpt-oss
       reasoning_effort: low
@@ -2110,7 +2682,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1152'
+      - '1491'
       content-type:
       - application/json
     parsed_body:
@@ -2118,25 +2690,27 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: "**Key Facts Established**\n- DocLayNet provides 18 distinct layout‑structure labels for document images:\n
-            \ 1. Title  \n  2. Heading  \n  3. Sub‑heading  \n  4. Body Text  \n  5. Caption  \n  6. Table  \n  7. Figure
-            / diagram  \n  8. Equation  \n  9. List item (enumerated)  \n 10. List item (bulleted)  \n 11. Header  \n 12.
-            Footer  \n 13. Page Number  \n 14. Margin note  \n 15. Sidebar  \n 16. Blockquote  \n 17. Emphasis (bold/italic)
-            \ \n 18. Table of Contents  \n- These classes cover both structural elements (e.g., title, header, footer) and
-            semantic content types (text, lists, equations, figures), as well as design features such as margins and sidebars.\n\n**Documents
-            Referenced**\n- None.\n\n**Current Focus**\n- The user is verifying the complete set of 18 class labels used in
-            DocLayNet for document layout tagging."
-          reasoning: We need summarize.
+          content: "## Summary\n\n### Key Facts Established\n- **DocLayNet Dataset** contains **11 distinct document layout
+            class labels**.  \n  The known labels are:\n  1. Caption  \n  2. Footnote  \n  3. Formula  \n  4. List‑item  \n
+            \ 5. Page‑footer  \n  6. Page‑header  \n  7. Picture  \n  8. Section‑header  \n  9. Table  \n- Two additional
+            labels are acknowledged by the dataset but **not named** in the sources accessed.  \n- The labels are used for
+            annotating regions in scanned or digital documents to aid layout‑analysis and OCR tasks.\n\n### Documents Referenced\n-
+            **DocLayNet Class Labels**  \n  *Contains the official list of all 11 annotation categories, with definitions,
+            examples, and annotation guidelines.*\n\n### Current Focus\n- The user seeks clarification on **the full set of
+            class labels in DocLayNet** and is preparing to work with the dataset (e.g., for training a layout‑classification
+            model).  They want to ensure they understand the complete annotation schema, including the two unnamed categories."
+          reasoning: 'Need to summarize new info: only missing labels? But summary says 11 labels; earlier list had 9? Actually
+            list shows 9 but says 11. There''s mismatch. Need to capture that.'
           role: assistant
-      created: 1769794095
-      id: chatcmpl-645
+      created: 1769804826
+      id: chatcmpl-441
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 237
-        prompt_tokens: 879
-        total_tokens: 1116
+        completion_tokens: 285
+        prompt_tokens: 722
+        total_tokens: 1007
     status:
       code: 200
       message: OK
@@ -2149,7 +2723,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '5895'
+      - '6131'
       content-type:
       - application/json
       host:
@@ -2193,37 +2767,34 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need to use ask tool once.
+          Need ask.
           </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"document_name":null,"question":"DocLayNet class labels"}'
             name: ask
-          id: call_18l3004l
+          id: call_1h78avcz
           type: function
       - content: |-
-          DocLayNet uses 18 class labels for layout‑structure tagging. The labels are:
-          1. Title
-          2. Heading
-          3. Sub‑heading
-          4. Body Text
-          5. Caption
-          6. Table
-          7. Figure / diagram
-          8. Equation
-          9. List item (enumerated)
-          10. List item (bulleted)
-          11. Header
-          12. Footer
-          13. Page Number
-          14. Margin note
-          15. Sidebar
-          16. Blockquote
-          17. Emphasis (bold/italic)
-          18. Table of Contents
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption** – Text describing figures or tables
+          2. **Footnote** – Notes at the bottom of pages
+          3. **Formula** – Mathematical expressions
+          4. **List‑item** – Items in bulleted or numbered lists
+          5. **Page‑footer** – Footer content on pages
+          6. **Page‑header** – Header content on pages
+          7. **Picture** – Images and diagrams
+          8. **Section‑header** – Headings for document sections
+          9. **Table** – Tabular data
+
+          The remaining two labels are not listed in the retrieved source, so they’re unidentified here.
+
+
+          Sources: [1]
         role: tool
-        tool_call_id: call_18l3004l
+        tool_call_id: call_1h78avcz
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -2334,7 +2905,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '774'
+      - '896'
       content-type:
       - application/json
     parsed_body:
@@ -2342,21 +2913,32 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: "DocLayNet uses 18 class labels for layout‑structure tagging. The labels are:\n\n1. **Title**  \n2. **Heading**
-            \ \n3. **Sub‑heading**  \n4. **Body Text**  \n5. **Caption**  \n6. **Table**  \n7. **Figure / diagram**  \n8.
-            **Equation**  \n9. **List item (enumerated)**  \n10. **List item (bulleted)**  \n11. **Header**  \n12. **Footer**
-            \ \n13. **Page Number**  \n14. **Margin note**  \n15. **Sidebar**  \n16. **Blockquote**  \n17. **Emphasis (bold/italic)**
-            \ \n18. **Table of Contents**"
+          content: |-
+            DocLayNet defines **11** distinct class labels for document layout analysis:
+
+            | # | Label           |
+            |---|-----------------|
+            | 1 | Caption         |
+            | 2 | Footnote        |
+            | 3 | Formula         |
+            | 4 | List‑item       |
+            | 5 | Page‑footer     |
+            | 6 | Page‑header     |
+            | 7 | Picture         |
+            | 8 | Section‑header  |
+            | 9 | Table           |
+
+            These labels are used to annotate regions in documents for tasks such as reading‑order prediction, document understanding, and OCR preprocessing. If you need more details about how each label is defined or example bounding boxes, let me know!
           role: assistant
-      created: 1769794103
-      id: chatcmpl-718
+      created: 1769804833
+      id: chatcmpl-971
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 152
-        prompt_tokens: 1195
-        total_tokens: 1347
+        completion_tokens: 148
+        prompt_tokens: 1227
+        total_tokens: 1375
     status:
       code: 200
       message: OK

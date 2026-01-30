@@ -4,17 +4,18 @@ from haiku.rag.agents.research.prompts import (
 )
 
 
-def test_iterative_plan_prompt_with_context_does_not_instruct_gather_context():
-    """ITERATIVE_PLAN_PROMPT_WITH_CONTEXT should not instruct to use gather_context.
-
-    When prior answers already exist, we don't need to gather context again.
-    """
-    assert "gather_context" not in ITERATIVE_PLAN_PROMPT_WITH_CONTEXT
+def test_iterative_plan_prompt_proposes_first_question():
+    """ITERATIVE_PLAN_PROMPT should instruct to propose the first question."""
+    assert "first question" in ITERATIVE_PLAN_PROMPT.lower()
+    assert "is_complete=False" in ITERATIVE_PLAN_PROMPT
 
 
-def test_iterative_plan_prompt_instructs_gather_context():
-    """ITERATIVE_PLAN_PROMPT should instruct to use gather_context for initial planning."""
-    assert "gather_context" in ITERATIVE_PLAN_PROMPT
+def test_iterative_plan_prompt_with_context_evaluates_evidence():
+    """ITERATIVE_PLAN_PROMPT_WITH_CONTEXT should evaluate prior answers."""
+    assert "prior_answers" in ITERATIVE_PLAN_PROMPT_WITH_CONTEXT
+    assert (
+        "evaluat" in ITERATIVE_PLAN_PROMPT_WITH_CONTEXT.lower()
+    )  # matches evaluate/evaluating
 
 
 def test_prompt_selection_uses_context_prompt_with_prior_answers():
