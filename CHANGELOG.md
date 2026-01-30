@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Iterative Research Planning**: Research graph now uses an iterative feedback loop instead of batch question processing
+  - Planner proposes ONE question at a time, sees the answer, then decides whether to continue
+  - Removes `gather_context` tool — planner proposes questions directly
+  - Simpler flow: `plan_next` → `search_one` → loop back until complete → `synthesize`
+  - Consolidated `build_conversational_graph()` into `build_research_graph(output_mode="conversational")`
+
 ## [0.27.2] - 2026-01-29
 
 ### Added

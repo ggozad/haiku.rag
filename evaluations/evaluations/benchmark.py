@@ -308,12 +308,7 @@ async def run_qa_benchmark(
 
             async def answer_question(question: str) -> str:
                 context = ResearchContext(original_question=question)
-                state = ResearchState.from_config(
-                    context=context,
-                    config=config,
-                    max_iterations=2,
-                    confidence_threshold=0.0,
-                )
+                state = ResearchState.from_config(context=context, config=config)
                 deps = ResearchDeps(client=rag)
                 report = await graph.run(state=state, deps=deps)
                 return report.executive_summary if report else ""
