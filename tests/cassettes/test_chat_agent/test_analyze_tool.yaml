@@ -157,7 +157,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7744'
+      - '7066'
       content-type:
       - application/json
       host:
@@ -246,12 +246,10 @@ interactions:
         type: function
       - function:
           description: |-
-            Answer CONTENT questions by retrieving and synthesizing from documents.
+            Answer a specific question using the knowledge base.
 
-            Use this for questions about WHAT documents say - retrieval and synthesis.
-            Examples: "What does X say about Y?", "What are the main findings?", "Explain concept Z"
-
-            Do NOT use for counting/aggregation questions like "How many documents mention X?" - use analyze instead.
+            Use this for direct questions that need a focused answer with citations.
+            Uses a research graph for planning, searching, and synthesis.
           name: ask
           parameters:
             additionalProperties: false
@@ -263,7 +261,7 @@ interactions:
                 default: null
                 description: Optional document name/title to search within (e.g., "tbmed593", "army manual")
               question:
-                description: The content question to answer
+                description: The question to answer
                 type: string
             required:
             - question
@@ -322,23 +320,13 @@ interactions:
           description: |-
             Execute a computational task via code execution.
 
-            IMPORTANT: Do NOT pass the user's question directly. Instead, provide a
-            clear, specific task instruction that describes exactly what to compute.
+            IMPORTANT: Provide a clear, specific task instruction that describes
+            exactly what to compute. Do NOT pass the user's question directly.
 
             Examples of good task instructions:
-            - User asks "How many documents are there?" →
-              task="Count the total number of documents in the database using list_documents()"
-            - User asks "What's the average word count?" →
-              task="Calculate the average word count across all documents by getting each document's content and counting words"
-            - User asks "Which documents mention Python?" →
-              task="Search for 'Python' and return the titles of all matching documents"
-
-            Use this for:
-            - Counting: task="Count documents matching criteria X"
-            - Aggregation: task="Sum/average values Y across documents"
-            - Extraction: task="Extract and list all Z from documents"
-
-            Do NOT use for content questions - use ask instead.
+            - "Count the total number of documents using list_documents()"
+            - "Search for 'Python' and return the titles of all matching documents"
+            - "Calculate the average word count across all documents"
           name: analyze
           parameters:
             additionalProperties: false
@@ -360,7 +348,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '515'
+      - '539'
       content-type:
       - application/json
     parsed_body:
@@ -369,24 +357,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need count. Use analyze.
+          reasoning: Need to count total documents. Use analyze tool.
           role: assistant
           tool_calls:
           - function:
               arguments: '{"task":"Count the total number of documents using list_documents()"}'
               name: analyze
-            id: call_6hr3gxx2
+            id: call_w7qynecj
             index: 0
             type: function
-      created: 1769782360
-      id: chatcmpl-797
+      created: 1769785117
+      id: chatcmpl-187
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 39
-        prompt_tokens: 1508
-        total_tokens: 1547
+        completion_tokens: 43
+        prompt_tokens: 1373
+        total_tokens: 1416
     status:
       code: 200
       message: OK
@@ -641,7 +629,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '523'
+      - '527'
       content-type:
       - application/json
     parsed_body:
@@ -650,24 +638,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need to run list_documents, count.
+          reasoning: Need to run list_documents and count.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"docs=list_documents(limit=1000);print(len(docs))"}'
+              arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
               name: execute_code
-            id: call_j3yll9cs
+            id: call_quotbvly
             index: 0
             type: function
-      created: 1769782362
-      id: chatcmpl-963
+      created: 1769785119
+      id: chatcmpl-208
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 45
+        completion_tokens: 46
         prompt_tokens: 1759
-        total_tokens: 1804
+        total_tokens: 1805
     status:
       code: 200
       message: OK
@@ -680,7 +668,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8772'
+      - '8780'
       content-type:
       - application/json
       host:
@@ -849,18 +837,18 @@ interactions:
         role: user
       - content: |-
           <think>
-          We need to run list_documents, count.
+          Need to run list_documents and count.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"docs=list_documents(limit=1000);print(len(docs))"}'
+            arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
             name: execute_code
-          id: call_j3yll9cs
+          id: call_quotbvly
           type: function
-      - content: '{"code":"docs=list_documents(limit=1000);print(len(docs))","stdout":"3\n","stderr":"","success":true}'
+      - content: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))","stdout":"3\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_j3yll9cs
+        tool_call_id: call_quotbvly
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -946,15 +934,15 @@ interactions:
         message:
           content: '{"answer":"There are 3 documents in the knowledge base."}'
           role: assistant
-      created: 1769782363
-      id: chatcmpl-319
+      created: 1769785120
+      id: chatcmpl-514
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
         completion_tokens: 21
-        prompt_tokens: 1849
-        total_tokens: 1870
+        prompt_tokens: 1852
+        total_tokens: 1873
     status:
       code: 200
       message: OK
@@ -967,7 +955,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8099'
+      - '7582'
       content-type:
       - application/json
       host:
@@ -1022,18 +1010,32 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need count. Use analyze.
+          Need to count total documents. Use analyze tool.
           </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"task":"Count the total number of documents using list_documents()"}'
             name: analyze
-          id: call_6hr3gxx2
+          id: call_w7qynecj
           type: function
-      - content: There are 3 documents in the knowledge base.
+      - content: |
+          There are 3 documents in the knowledge base.
+
+          ---
+          **Code executed:**
+
+          ```python
+          # Execution 1
+          docs = list_documents(limit=1000)
+          print(len(docs))
+          ```
+          Output:
+          ```
+          3
+          ```
         role: tool
-        tool_call_id: call_6hr3gxx2
+        tool_call_id: call_w7qynecj
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -1070,12 +1072,10 @@ interactions:
         type: function
       - function:
           description: |-
-            Answer CONTENT questions by retrieving and synthesizing from documents.
+            Answer a specific question using the knowledge base.
 
-            Use this for questions about WHAT documents say - retrieval and synthesis.
-            Examples: "What does X say about Y?", "What are the main findings?", "Explain concept Z"
-
-            Do NOT use for counting/aggregation questions like "How many documents mention X?" - use analyze instead.
+            Use this for direct questions that need a focused answer with citations.
+            Uses a research graph for planning, searching, and synthesis.
           name: ask
           parameters:
             additionalProperties: false
@@ -1087,7 +1087,7 @@ interactions:
                 default: null
                 description: Optional document name/title to search within (e.g., "tbmed593", "army manual")
               question:
-                description: The content question to answer
+                description: The question to answer
                 type: string
             required:
             - question
@@ -1146,23 +1146,13 @@ interactions:
           description: |-
             Execute a computational task via code execution.
 
-            IMPORTANT: Do NOT pass the user's question directly. Instead, provide a
-            clear, specific task instruction that describes exactly what to compute.
+            IMPORTANT: Provide a clear, specific task instruction that describes
+            exactly what to compute. Do NOT pass the user's question directly.
 
             Examples of good task instructions:
-            - User asks "How many documents are there?" →
-              task="Count the total number of documents in the database using list_documents()"
-            - User asks "What's the average word count?" →
-              task="Calculate the average word count across all documents by getting each document's content and counting words"
-            - User asks "Which documents mention Python?" →
-              task="Search for 'Python' and return the titles of all matching documents"
-
-            Use this for:
-            - Counting: task="Count documents matching criteria X"
-            - Aggregation: task="Sum/average values Y across documents"
-            - Extraction: task="Extract and list all Z from documents"
-
-            Do NOT use for content questions - use ask instead.
+            - "Count the total number of documents using list_documents()"
+            - "Search for 'Python' and return the titles of all matching documents"
+            - "Calculate the average word count across all documents"
           name: analyze
           parameters:
             additionalProperties: false
@@ -1184,7 +1174,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '341'
+      - '332'
       content-type:
       - application/json
     parsed_body:
@@ -1192,17 +1182,17 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: You’ve got three documents in the database right now.
+          content: There are **three** documents in the database.
           role: assistant
-      created: 1769782365
-      id: chatcmpl-556
+      created: 1769785121
+      id: chatcmpl-668
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 15
-        prompt_tokens: 1574
-        total_tokens: 1589
+        completion_tokens: 14
+        prompt_tokens: 1481
+        total_tokens: 1495
     status:
       code: 200
       message: OK

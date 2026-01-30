@@ -467,6 +467,8 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
             task: A specific, actionable instruction describing what to compute
             document_name: Optional document to focus on
         """
+        from haiku.rag.agents.rlm import RLMContext, RLMDeps, create_rlm_agent
+
         client = ctx.deps.client
         session_state = ctx.deps.session_state
 
@@ -479,8 +481,30 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         # Combine filters: session AND tool
         filter_clause = combine_filters(session_filter, tool_filter)
 
-        # Call RLM agent with the task instruction
-        answer = await client.rlm(task, filter=filter_clause)
+        # Call RLM agent directly to access code executions
+        rlm_context = RLMContext(filter=filter_clause)
+        deps = RLMDeps(
+            client=client,
+            config=ctx.deps.config,
+            context=rlm_context,
+        )
+
+        rlm_agent = create_rlm_agent(ctx.deps.config)
+        result = await rlm_agent.run(task, deps=deps)
+
+        # Format response with code executions
+        answer = result.output.answer
+        code_executions = rlm_context.code_executions
+
+        if code_executions:
+            code_section = "\n\n---\n**Code executed:**\n"
+            for i, execution in enumerate(code_executions, 1):
+                code_section += f"\n```python\n# Execution {i}\n{execution.code}\n```\n"
+                if execution.stdout.strip():
+                    code_section += f"Output:\n```\n{execution.stdout.strip()}\n```\n"
+                if execution.stderr.strip():
+                    code_section += f"Errors:\n```\n{execution.stderr.strip()}\n```\n"
+            return answer + code_section
 
         return answer
 

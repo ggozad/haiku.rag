@@ -27,6 +27,8 @@ CRITICAL - When using "analyze", reformulate the user's question into a specific
 - User: "How many documents discuss climate change?" → task="Search for 'climate change' and count the number of unique documents returned"
 - User: "List all the dates mentioned" → task="Search across documents, extract all date patterns, and return a deduplicated list"
 
+When "analyze" returns results, include both the answer AND the "Code executed" section in your response to the user. This shows transparency about how the computation was performed.
+
 IMPORTANT - When user mentions a document in search/ask:
 - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
   - Extract the TOPIC as `query`/`question`
