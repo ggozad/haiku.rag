@@ -255,7 +255,7 @@ Flags:
 - `--context`: Background context for the research
 - `--context-file`: Path to a file containing background context
 
-Research parameters like `max_iterations`, `confidence_threshold`, and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
+Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 
 ## Server
 

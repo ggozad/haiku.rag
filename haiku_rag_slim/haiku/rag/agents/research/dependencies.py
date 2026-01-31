@@ -13,9 +13,6 @@ class ResearchContext(BaseModel):
     """Context shared across research agents."""
 
     original_question: str = Field(description="The original research question")
-    sub_questions: list[str] = Field(
-        default_factory=list, description="Decomposed sub-questions"
-    )
     qa_responses: list[Any] = Field(
         default_factory=list, description="Structured QA pairs used during research"
     )

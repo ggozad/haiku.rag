@@ -23,7 +23,7 @@ from haiku.rag.agents.chat.state import (
     emit_state_event,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
-from haiku.rag.agents.research.graph import build_conversational_graph
+from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG
@@ -197,7 +197,9 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         doc_filter = combine_filters(session_filter, tool_filter)
 
         # Build and run the conversational research graph
-        graph = build_conversational_graph(config=ctx.deps.config)
+        graph = build_research_graph(
+            config=ctx.deps.config, output_mode="conversational"
+        )
         session_id = ctx.deps.session_state.session_id
 
         # Get session context from server cache for planning, fallback to initial_context
@@ -247,7 +249,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         state = ResearchState(
             context=context,
             max_iterations=1,
-            confidence_threshold=0.0,
             search_filter=doc_filter,
             max_concurrency=ctx.deps.config.research.max_concurrency,
         )

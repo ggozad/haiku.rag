@@ -85,7 +85,6 @@ qa:
     provider: ollama
     name: gpt-oss
     enable_thinking: false
-  max_sub_questions: 3
   max_iterations: 2
   max_concurrency: 1
 
@@ -95,7 +94,6 @@ research:
     name: ""
     enable_thinking: false
   max_iterations: 3
-  confidence_threshold: 0.8
   max_concurrency: 1
 
 search:

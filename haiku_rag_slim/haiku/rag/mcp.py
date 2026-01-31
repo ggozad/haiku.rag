@@ -199,7 +199,6 @@ def create_mcp_server(
                         context=context,
                         config=config,
                         max_iterations=2,
-                        confidence_threshold=0.0,
                     )
                     deps = ResearchDeps(client=rag)
 

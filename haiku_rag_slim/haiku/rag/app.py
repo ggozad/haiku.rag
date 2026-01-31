@@ -398,8 +398,7 @@ class HaikuRAGApp:
                 state = ResearchState.from_config(
                     context=context,
                     config=self.config,
-                    max_iterations=2,
-                    confidence_threshold=0.0,
+                    max_iterations=1,
                 )
                 state.search_filter = filter
                 deps = ResearchDeps(client=self.client)
@@ -476,12 +475,6 @@ class HaikuRAGApp:
             self.console.print("[bold cyan]Executive Summary:[/bold cyan]")
             self.console.print(report.executive_summary)
             self.console.print()
-
-            # Confidence (from last evaluation)
-            if state.last_eval:
-                conf = state.last_eval.confidence_score
-                self.console.print(f"[bold cyan]Confidence:[/bold cyan] {conf:.1%}")
-                self.console.print()
 
             # Main Findings
             if report.main_findings:

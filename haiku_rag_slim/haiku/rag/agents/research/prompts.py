@@ -1,47 +1,47 @@
-PLAN_PROMPT = """You are the research orchestrator for a focused workflow.
+ITERATIVE_PLAN_PROMPT = """You are the research orchestrator planning the investigation.
 
-If a <background> section is provided, use it to understand the domain context.
+If a <background> section is provided, use it to understand the conversation context.
 
-Responsibilities:
-1. Understand and decompose the main question
-2. Propose a minimal, high-leverage plan
-3. Coordinate specialized agents to gather evidence
+Your task:
+1. Analyze the original question
+2. Propose the first question to investigate
 
-Plan requirements:
-- Produce at most 3 sub_questions that together cover the main question.
-- sub_questions must be a list of plain strings, where each string is a complete
-  question. Do NOT use objects with nested fields like {question, details}.
-- Each sub_question must be a standalone, self-contained query that can run
-  without extra context. Include concrete entities, scope, timeframe, and any
-  qualifiers. Avoid ambiguous pronouns (it/they/this/that).
-- Prioritize the highest-value aspects first; avoid redundancy and overlap.
-- Prefer questions that are likely answerable from the current knowledge base;
-  if coverage is uncertain, make scopes narrower and specific.
-- Order sub_questions by execution priority (most valuable first).
+For simple questions, investigate them directly. For composite or complex questions,
+you may decompose into a focused sub-question. For example:
+- "What are the benefits and drawbacks of X?" → Start with "What are the benefits of X?"
+- Ambiguous references should be resolved using background context if available
 
-Use the gather_context tool once on the main question before planning."""
+Output requirements:
+- Set is_complete=False (you are just starting the investigation)
+- Set next_question to the question to investigate
+- Provide brief reasoning explaining your choice
 
-PLAN_PROMPT_WITH_CONTEXT = """You are the research orchestrator for a focused workflow.
+The question must be standalone and self-contained:
+- Include concrete entities, scope, and any qualifiers
+- Avoid ambiguous pronouns (it/they/this/that)"""
+
+ITERATIVE_PLAN_PROMPT_WITH_CONTEXT = """You are the research orchestrator evaluating gathered evidence.
 
 You have access to context that may include:
 - <background>: Domain context for the conversation
 - <prior_answers>: Previous Q&A pairs with confidence scores
 
-Review the provided context first. Use <background> to understand the domain.
-If <prior_answers> exist and already answer the question completely,
-return an empty sub_questions list. Only create sub-questions to fill gaps.
+Your task:
+1. Review the provided evidence carefully
+2. Assess whether it sufficiently answers the original question
+3. Decide whether to continue research or synthesize
 
-Responsibilities:
-1. Review provided context to understand what's already known
-2. Identify gaps that need additional research
-3. Propose minimal sub-questions only for missing information
+Decision criteria:
+- Set is_complete=True if the evidence adequately answers the question
+- Set is_complete=False with a next_question if important gaps remain
 
-Plan requirements:
-- If existing context fully answers the question, return an empty sub_questions list.
-- Only create new sub-questions for genuine gaps in existing knowledge.
-- sub_questions must be a list of plain strings (max 3).
-- Each sub_question must be standalone and self-contained.
-- Prioritize the highest-value gaps first."""
+If not complete, propose exactly ONE high-value follow-up question in next_question:
+- Focus on the most critical gap not covered by prior_answers
+- The question must be standalone and self-contained
+- Avoid repeating questions that have already been answered
+- Include concrete entities, scope, and any qualifiers
+
+Provide brief reasoning explaining your decision."""
 
 SEARCH_PROMPT = """You are a search and question-answering specialist.
 
@@ -86,27 +86,6 @@ Guidelines:
 - If information is insufficient, say so clearly.
 - Be concise and direct; avoid meta commentary about the process.
 - Results are ordered by relevance, with rank 1 being most relevant."""
-
-DECISION_PROMPT = """You are the research evaluator responsible for assessing
-whether gathered evidence sufficiently answers the research question.
-
-Inputs available:
-- Original research question
-- Question-answer pairs with supporting sources
-- Previous evaluation (if any)
-
-Tasks:
-1. Assess whether the collected evidence answers the original question.
-2. Provide a confidence_score in [0,1] reflecting coverage and evidence quality.
-3. Optionally propose up to 3 new sub-questions if important gaps remain.
-
-Output fields:
-- is_sufficient: true when the question is adequately answered
-- confidence_score: numeric in [0,1]
-- reasoning: brief explanation of the assessment
-- new_questions: list of follow-up questions (max 3), only if needed
-
-Be strict: only mark sufficient when key aspects are addressed with reliable evidence."""
 
 SYNTHESIS_PROMPT = """You are a synthesis specialist producing the final
 research report that directly answers the original question.

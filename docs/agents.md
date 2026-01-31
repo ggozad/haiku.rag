@@ -163,44 +163,39 @@ Frontend clients should extract state from under this key. See the [Web Applicat
 
 ## Research Graph
 
-The research workflow is implemented as a typed pydantic-graph. It plans, searches (in parallel batches), evaluates, and synthesizes into a final report.
+The research workflow is implemented as a typed pydantic-graph. It uses an iterative feedback loop where the planner proposes one question at a time, sees the answer, then decides whether to continue or synthesize.
 
 ```mermaid
 ---
 title: Research graph
 ---
 stateDiagram-v2
-  [*] --> plan
-  plan --> get_batch
-  get_batch --> search_one: Has questions (map)
-  get_batch --> synthesize: No questions
-  search_one --> collect_answers
-  collect_answers --> decide
-  decide --> get_batch: Continue research
-  decide --> synthesize: Done researching
+  [*] --> plan_next
+  plan_next --> search_one: Has next question
+  plan_next --> synthesize: Complete or max iterations
+  search_one --> plan_next
   synthesize --> [*]
 ```
 
 **Key nodes:**
 
-- **plan**: Builds up to 3 standalone sub-questions (uses an internal presearch tool)
-- **get_batch**: Retrieves remaining sub-questions for the current iteration
-- **search_one**: Answers a single sub-question using the KB (mapped in parallel)
-- **collect_answers**: Aggregates search results from parallel executions
-- **decide**: Evaluates confidence and determines whether to continue or synthesize
+- **plan_next**: Evaluates gathered evidence and either proposes the next question to investigate or marks research as complete
+- **search_one**: Answers a single question using the knowledge base
 - **synthesize**: Generates a final structured research report
 
 **Primary models:**
 
-- `SearchAnswer` — one per sub-question (query, answer, confidence, citations)
-- `EvaluationResult` — confidence score, new questions, sufficiency assessment
+- `IterativePlanResult` — planning decision (is_complete, next_question, reasoning)
+- `SearchAnswer` — answer to a single question (query, answer, confidence, citations)
 - `ResearchReport` — final report (title, executive summary, findings, conclusions, …)
+- `ConversationalAnswer` — alternative output for chat integration (answer, citations, confidence)
 
-**Parallel execution:**
+**Iterative flow:**
 
-- The `search_one` node is mapped over all questions in a batch
-- Parallelism is controlled via `max_concurrency`
-- Decision nodes process results after each batch completes
+- Each iteration: planner evaluates context → proposes one question → search answers it → loop back
+- Planner can decompose complex questions (e.g., "benefits and drawbacks" → start with "benefits")
+- Session context is used to resolve ambiguous references and inform planning
+- Loop terminates when planner marks `is_complete=True` or `max_iterations` is reached
 
 ### CLI Usage
 
@@ -249,7 +244,6 @@ custom_config = AppConfig(
         provider="openai",
         model="gpt-4o-mini",
         max_iterations=5,
-        confidence_threshold=0.85,
         max_concurrency=3,
     )
 )

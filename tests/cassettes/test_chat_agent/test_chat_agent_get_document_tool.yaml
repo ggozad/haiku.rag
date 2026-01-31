@@ -62,7 +62,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '4084'
+      - '5222'
       content-type:
       - application/json
       host:
@@ -77,14 +77,16 @@ interactions:
 
           CRITICAL RULES:
           1. For greetings or casual chat: respond directly WITHOUT using any tools
-          2. For questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+          2. For questions: Use the "ask" tool EXACTLY ONCE - it automatically uses prior conversation context
           3. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
           4. NEVER call the same tool multiple times for a single user message
           5. NEVER make up information - always use tools to get facts from the knowledge base
 
           How to decide which tool to use:
-          - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
-          - "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
+          - "list_documents" - Use when the user wants to browse or see what documents are available (e.g., "what documents are available?", "show me the documents", "list available docs").
+          - "summarize_document" - Use when the user wants an overview or summary of a specific document (e.g., "summarize document X", "what does Y cover?", "give me an overview of Z").
+          - "get_document" - Use when the user wants the FULL content of a specific document (e.g., "get the paper about Y", "fetch 2412.00566", "show me the full document").
+          - "ask" - Use for questions about topics in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across documents to return answers with citations.
           - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
 
           IMPORTANT - When user mentions a document in search/ask:
@@ -161,6 +163,21 @@ interactions:
         type: function
       - function:
           description: |-
+            List available documents in the knowledge base.
+
+            Use this when the user wants to browse or see what documents are available.
+          name: list_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              page:
+                default: 1
+                description: 'Page number (default: 1, 50 documents per page)'
+                type: integer
+            type: object
+        type: function
+      - function:
+          description: |-
             Retrieve a specific document by title or URI.
 
             Use this when the user wants to fetch/get/retrieve a specific document.
@@ -176,11 +193,28 @@ interactions:
             type: object
           strict: true
         type: function
+      - function:
+          description: |-
+            Generate a summary of a specific document.
+
+            Use this when the user wants an overview or summary of a document's content.
+          name: summarize_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to summarize
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '477'
+      - '510'
       content-type:
       - application/json
     parsed_body:
@@ -189,24 +223,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need get_document.
+          reasoning: User wants a specific document. Use get_document.
           role: assistant
           tool_calls:
           - function:
               arguments: '{"query":"DocLayNet Class Labels"}'
               name: get_document
-            id: call_m5izt73j
+            id: call_jxvkrbku
             index: 0
             type: function
-      created: 1768998258
-      id: chatcmpl-390
+      created: 1769793902
+      id: chatcmpl-566
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 32
-        prompt_tokens: 846
-        total_tokens: 878
+        completion_tokens: 38
+        prompt_tokens: 1029
+        total_tokens: 1067
     status:
       code: 200
       message: OK
@@ -219,7 +253,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '5169'
+      - '6338'
       content-type:
       - application/json
       host:
@@ -234,14 +268,16 @@ interactions:
 
           CRITICAL RULES:
           1. For greetings or casual chat: respond directly WITHOUT using any tools
-          2. For questions: Use the "ask" tool EXACTLY ONCE - it handles query expansion internally
+          2. For questions: Use the "ask" tool EXACTLY ONCE - it automatically uses prior conversation context
           3. For searches: Use the "search" tool EXACTLY ONCE - it handles multi-query expansion internally
           4. NEVER call the same tool multiple times for a single user message
           5. NEVER make up information - always use tools to get facts from the knowledge base
 
           How to decide which tool to use:
-          - "get_document" - Use when the user references a SPECIFIC document by name, title, or URI (e.g., "summarize document X", "get the paper about Y", "fetch 2412.00566"). Retrieves the full document content.
-          - "ask" - Use for general questions about topics in the knowledge base when no specific document is named. It searches across all documents and returns answers with citations.
+          - "list_documents" - Use when the user wants to browse or see what documents are available (e.g., "what documents are available?", "show me the documents", "list available docs").
+          - "summarize_document" - Use when the user wants an overview or summary of a specific document (e.g., "summarize document X", "what does Y cover?", "give me an overview of Z").
+          - "get_document" - Use when the user wants the FULL content of a specific document (e.g., "get the paper about Y", "fetch 2412.00566", "show me the full document").
+          - "ask" - Use for questions about topics in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across documents to return answers with citations.
           - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
 
           IMPORTANT - When user mentions a document in search/ask:
@@ -261,21 +297,21 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need get_document.
+          User wants a specific document. Use get_document.
           </think>
         role: assistant
         tool_calls:
         - function:
             arguments: '{"query":"DocLayNet Class Labels"}'
             name: get_document
-          id: call_m5izt73j
+          id: call_jxvkrbku
           type: function
       - content: |-
           **DocLayNet Class Labels**
 
-          - ID: cd0fc5b8-ec16-4f1c-99fe-20979ecaab1c
+          - ID: 99c3503e-a8ad-4116-a8be-63fb8048dceb
           - URI: doclaynet-labels
-          - Created: 2026-01-21 14:24
+          - Created: 2026-01-30 19:25
 
           **Content:**
           DocLayNet Dataset - Class Labels
@@ -296,7 +332,7 @@ interactions:
 
           The Text class has the highest count with 510,377 instances in the dataset.
         role: tool
-        tool_call_id: call_m5izt73j
+        tool_call_id: call_jxvkrbku
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -356,6 +392,21 @@ interactions:
         type: function
       - function:
           description: |-
+            List available documents in the knowledge base.
+
+            Use this when the user wants to browse or see what documents are available.
+          name: list_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              page:
+                default: 1
+                description: 'Page number (default: 1, 50 documents per page)'
+                type: integer
+            type: object
+        type: function
+      - function:
+          description: |-
             Retrieve a specific document by title or URI.
 
             Use this when the user wants to fetch/get/retrieve a specific document.
@@ -371,11 +422,28 @@ interactions:
             type: object
           strict: true
         type: function
+      - function:
+          description: |-
+            Generate a summary of a specific document.
+
+            Use this when the user wants an overview or summary of a document's content.
+          name: summarize_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to summarize
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '1131'
+      - '1137'
       content-type:
       - application/json
     parsed_body:
@@ -383,24 +451,24 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: "Here’s the full **DocLayNet Class Labels** document:\n\n---\n\n## DocLayNet Dataset – Class Labels\n\nDocLayNet
-            defines **11 distinct class labels** for document layout analysis:\n\n1. **Caption** – Text describing figures
-            or tables  \n2. **Footnote** – Notes at the bottom of pages  \n3. **Formula** – Mathematical expressions  \n4.
-            **List‑item** – Items in bulleted or numbered lists  \n5. **Page‑footer** – Footer content on pages  \n6. **Page‑header**
-            – Header content on pages  \n7. **Picture** – Images and diagrams  \n8. **Section‑header** – Headings for document
+          content: "Here’s the **DocLayNet Class Labels** document:\n\n**DocLayNet Dataset – Class Labels**\n\nDocLayNet defines
+            **11** distinct class labels for document layout analysis:\n\n1. **Caption** – Text describing figures or tables
+            \ \n2. **Footnote** – Notes at the bottom of pages  \n3. **Formula** – Mathematical expressions  \n4. **List‑item**
+            – Items in bulleted or numbered lists  \n5. **Page‑footer** – Footer content on pages  \n6. **Page‑header** –
+            Header content on pages  \n7. **Picture** – Images and diagrams  \n8. **Section‑header** – Headings for document
             sections  \n9. **Table** – Tabular data  \n10. **Text** – Regular paragraph text (highest count: **510,377** instances)
-            \ \n11. **Title** – Document titles  \n\nThe **Text** class has the highest count with 510,377 instances in the
-            dataset."
+            \ \n11. **Title** – Document titles  \n\nThe **Text** class has the largest number of instances, with **510,377**
+            entries in the dataset."
           role: assistant
-      created: 1768998262
-      id: chatcmpl-746
+      created: 1769793910
+      id: chatcmpl-948
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 202
-        prompt_tokens: 1110
-        total_tokens: 1312
+        completion_tokens: 204
+        prompt_tokens: 1297
+        total_tokens: 1501
     status:
       code: 200
       message: OK
