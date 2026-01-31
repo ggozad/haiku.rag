@@ -32,17 +32,15 @@ qa:
     provider: ollama
     name: gpt-oss
     enable_thinking: false
-  max_sub_questions: 3  # Maximum sub-questions for deep QA
-  max_iterations: 2     # Maximum search iterations per sub-question
-  max_concurrency: 1    # Sub-questions processed in parallel
+  max_iterations: 2     # Maximum search iterations
+  max_concurrency: 1    # Concurrent search operations
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **max_sub_questions**: For deep QA mode, maximum number of sub-questions to generate (default: 3)
-- **max_iterations**: Maximum search/evaluate cycles per sub-question (default: 2)
-- **max_concurrency**: Number of sub-questions to process in parallel (default: 1)
+- **max_iterations**: Maximum search iterations (default: 2)
+- **max_concurrency**: Number of concurrent search operations (default: 1)
 
-Deep QA mode (`haiku-rag ask --deep`) decomposes complex questions into sub-questions, processes them in parallel batches, and synthesizes the results.
+Deep QA mode (`haiku-rag ask --deep`) uses the research graph with a single iteration for quick, focused answers.
 
 ## Research Configuration
 
@@ -55,13 +53,11 @@ research:
     name: ""               # Empty to use qa model
     enable_thinking: false
   max_iterations: 3
-  confidence_threshold: 0.8
   max_concurrency: 1
 ```
 
 - **model**: LLM configuration. Leave provider/model empty to inherit from `qa` (see [Providers](providers.md#model-settings))
-- **max_iterations**: Maximum search/evaluate cycles (default: 3)
-- **confidence_threshold**: Stop when confidence score meets/exceeds this (default: 0.8)
-- **max_concurrency**: Sub-questions searched in parallel per iteration (default: 1)
+- **max_iterations**: Maximum planning/search iterations (default: 3)
+- **max_concurrency**: Concurrent search operations (default: 1)
 
-The research workflow plans sub-questions, searches in parallel batches, evaluates findings, and iterates until reaching the confidence threshold or max iterations.
+The research workflow uses an iterative feedback loop: the planner proposes one question at a time, sees the answer, then decides whether to continue or synthesize. This continues until the planner marks research as complete or `max_iterations` is reached.

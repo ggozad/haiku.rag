@@ -30,7 +30,6 @@ async def test_graph_end_to_end(allow_model_requests, temp_db_path, qa_corpus):
     state = ResearchState(
         context=ResearchContext(original_question=doc["question"]),
         max_iterations=1,
-        confidence_threshold=0.5,
         max_concurrency=1,
     )
 
@@ -153,27 +152,6 @@ def test_format_context_for_prompt_with_session_context():
     assert "<background>" in result
     assert "Previous discussion" in result
     assert "What is Y?" in result
-
-
-def test_format_context_for_prompt_excludes_pending_questions():
-    """Test format_context_for_prompt can exclude pending questions."""
-    from haiku.rag.agents.research.dependencies import ResearchContext
-    from haiku.rag.agents.research.graph import format_context_for_prompt
-
-    context = ResearchContext(
-        original_question="Main question?",
-        sub_questions=["Sub Q1?", "Sub Q2?"],
-    )
-
-    # With pending questions (default)
-    with_pending = format_context_for_prompt(context, include_pending_questions=True)
-    assert "Sub Q1?" in with_pending
-
-    # Without pending questions (for synthesis)
-    without_pending = format_context_for_prompt(
-        context, include_pending_questions=False
-    )
-    assert "Sub Q1?" not in without_pending
 
 
 def test_format_context_for_prompt_with_prior_answers():

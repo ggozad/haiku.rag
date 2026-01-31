@@ -399,7 +399,6 @@ class HaikuRAGApp:
                     context=context,
                     config=self.config,
                     max_iterations=1,
-                    confidence_threshold=0.0,
                 )
                 state.search_filter = filter
                 deps = ResearchDeps(client=self.client)

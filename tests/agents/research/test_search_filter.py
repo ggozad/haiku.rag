@@ -78,7 +78,6 @@ async def test_research_graph_uses_search_filter(
     state = ResearchState(
         context=ResearchContext(original_question="Tell me about animals"),
         max_iterations=1,
-        confidence_threshold=0.5,
         search_filter=filter_clause,
     )
 
@@ -116,7 +115,6 @@ async def test_search_filter_none_searches_all(allow_model_requests, client_with
     state = ResearchState(
         context=ResearchContext(original_question="Tell me about animals"),
         max_iterations=1,
-        confidence_threshold=0.5,
         search_filter=None,
     )
 

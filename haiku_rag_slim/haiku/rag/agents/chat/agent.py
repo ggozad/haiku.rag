@@ -249,7 +249,6 @@ def create_chat_agent(config: AppConfig) -> Agent[ChatDeps, str]:
         state = ResearchState(
             context=context,
             max_iterations=1,
-            confidence_threshold=0.0,
             search_filter=doc_filter,
             max_concurrency=ctx.deps.config.research.max_concurrency,
         )

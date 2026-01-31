@@ -27,26 +27,14 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import build_prompt, get_model
 
 
-def format_context_for_prompt(
-    context: ResearchContext,
-    include_pending_questions: bool = True,
-) -> str:
-    """Format the research context as XML for prompts.
-
-    Args:
-        context: The research context to format.
-        include_pending_questions: Whether to include pending sub-questions.
-            Set to False for synthesis prompts where pending questions aren't relevant.
-    """
+def format_context_for_prompt(context: ResearchContext) -> str:
+    """Format the research context as XML for prompts."""
     context_data: dict[str, object] = {}
 
     if context.session_context:
         context_data["background"] = context.session_context
 
     context_data["question"] = context.original_question
-
-    if include_pending_questions and context.sub_questions:
-        context_data["pending_questions"] = context.sub_questions
 
     if context.qa_responses:
         context_data["prior_answers"] = [
@@ -267,9 +255,7 @@ def build_research_graph(
                 deps_type=ResearchDependencies,
             )
 
-            context_xml = format_context_for_prompt(
-                state.context, include_pending_questions=False
-            )
+            context_xml = format_context_for_prompt(state.context)
             prompt = (
                 "Generate a comprehensive research report based on all gathered information.\n\n"
                 f"{context_xml}\n\n"
@@ -301,9 +287,7 @@ def build_research_graph(
                 deps_type=ResearchDependencies,
             )
 
-            context_xml = format_context_for_prompt(
-                state.context, include_pending_questions=False
-            )
+            context_xml = format_context_for_prompt(state.context)
             prompt = (
                 f"Answer the question based on the gathered evidence.\n\n{context_xml}"
             )

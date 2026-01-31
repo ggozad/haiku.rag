@@ -9,6 +9,13 @@
   - Simpler flow: `plan_next` → `search_one` → loop back until complete → `synthesize`
   - Consolidated `build_conversational_graph()` into `build_research_graph(output_mode="conversational")`
 
+### Removed
+
+- **Dead config options**: Removed vestigial fields from iterative planning refactor
+  - `confidence_threshold` from `ResearchConfig` and `ResearchState` (LLM decides completion via `is_complete`)
+  - `max_sub_questions` from `QAConfig` (iterative flow uses one question at a time)
+  - `sub_questions` field from `ResearchContext` (no longer populated)
+
 ## [0.27.2] - 2026-01-29
 
 ### Added

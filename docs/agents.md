@@ -244,7 +244,6 @@ custom_config = AppConfig(
         provider="openai",
         model="gpt-4o-mini",
         max_iterations=5,
-        confidence_threshold=0.85,
         max_concurrency=3,
     )
 )
