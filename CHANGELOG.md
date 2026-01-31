@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **CI**: Cache HuggingFace tokenizer to prevent flaky test failures when HuggingFace has transient outages
+
 ## [0.28.0] - 2026-01-31
 
 ### Changed
