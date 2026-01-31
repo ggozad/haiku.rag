@@ -59,6 +59,13 @@ jobs:
           python-version-file: "pyproject.toml"
       - name: Install dependencies
         run: uv sync --all-extras
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-${{ runner.os }}-qwen-tokenizer-v1
+      - name: Pre-download tokenizer
+        run: uv run python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-0.6B')"
       - name: Run tests with coverage
         run: uv run pytest -m "not integration" --cov=haiku --cov-report=xml
       - name: Upload coverage to Codecov
