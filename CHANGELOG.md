@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.28.0] - 2026-01-31
+
 ### Changed
 
 - **Iterative Research Planning**: Research graph now uses an iterative feedback loop instead of batch question processing
