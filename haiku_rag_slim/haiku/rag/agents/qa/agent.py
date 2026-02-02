@@ -10,7 +10,7 @@ from haiku.rag.agents.research.models import (
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
-from haiku.rag.tools import ToolContext
+from haiku.rag.tools.context import ToolContext
 from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
 from haiku.rag.utils import get_model
 
