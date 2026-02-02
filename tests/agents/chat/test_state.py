@@ -5,6 +5,8 @@ from haiku.rag.agents.chat.state import (
     ChatSessionState,
     QAResponse,
     SessionContext,
+)
+from haiku.rag.tools.filters import (
     build_document_filter,
     build_multi_document_filter,
     combine_filters,

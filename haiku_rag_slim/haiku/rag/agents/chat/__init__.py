@@ -13,7 +13,6 @@ from haiku.rag.agents.chat.state import (
     QAResponse,
     SearchDeps,
     SessionContext,
-    build_document_filter,
 )
 
 __all__ = [
@@ -27,7 +26,6 @@ __all__ = [
     "QAResponse",
     "SearchDeps",
     "SessionContext",
-    "build_document_filter",
     "summarize_session",
     "update_session_context",
 ]
