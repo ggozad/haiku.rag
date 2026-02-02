@@ -13,7 +13,7 @@ How to decide which tool to use:
 - "list_documents" - Use when the user wants to browse or see what documents are available (e.g., "what documents are available?", "show me the documents", "list available docs").
 - "summarize_document" - Use when the user wants an overview or summary of a specific document (e.g., "summarize document X", "what does Y cover?", "give me an overview of Z").
 - "get_document" - Use when the user wants the FULL content of a specific document (e.g., "get the paper about Y", "fetch 2412.00566", "show me the full document").
-- "ask" - Use for CONTENT questions: "What does X say about Y?", "What are the main findings?", "Explain concept Z from the documents". This tool retrieves and synthesizes text from documents.
+- "ask" - Use for questions about topics in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across documents to return answers with citations.
 - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
 
 IMPORTANT - When user mentions a document in search/ask:
