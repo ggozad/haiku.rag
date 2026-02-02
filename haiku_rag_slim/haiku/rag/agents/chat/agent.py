@@ -17,9 +17,6 @@ from haiku.rag.agents.chat.state import (
     DocumentInfo,
     DocumentListResponse,
     QAResponse,
-    build_document_filter,
-    build_multi_document_filter,
-    combine_filters,
     emit_state_event,
 )
 from haiku.rag.agents.research.dependencies import ResearchContext
@@ -29,6 +26,11 @@ from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import get_embedder
+from haiku.rag.tools.filters import (
+    build_document_filter,
+    build_multi_document_filter,
+    combine_filters,
+)
 from haiku.rag.utils import get_model
 
 # Similarity threshold for finding relevant prior answers

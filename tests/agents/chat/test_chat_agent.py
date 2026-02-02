@@ -737,7 +737,7 @@ async def test_search_agent_with_session_filter(allow_model_requests, temp_db_pa
             title="DocLayNet Sources",
         )
 
-        from haiku.rag.agents.chat.state import build_multi_document_filter
+        from haiku.rag.tools.filters import build_multi_document_filter
 
         search_agent = SearchAgent(client, Config)
 
