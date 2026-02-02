@@ -64,6 +64,9 @@ class DoclingServeChunker(DocumentChunker):
     def _build_chunking_data(self) -> dict[str, str]:
         """Build form data for chunking request."""
         return {
+            "convert_do_ocr": "false",
+            "convert_force_ocr": "false",
+            "convert_ocr_engine": "tesseract",
             "chunking_max_tokens": str(self.config.processing.chunk_size),
             "chunking_tokenizer": self.config.processing.chunking_tokenizer,
             "chunking_merge_peers": str(
