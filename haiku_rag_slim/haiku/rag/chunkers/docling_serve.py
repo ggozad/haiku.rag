@@ -61,9 +61,13 @@ class DoclingServeChunker(DocumentChunker):
         )
         self.chunker_type = config.processing.chunker_type
 
-    def _build_chunking_data(self) -> dict[str, str]:
+    def _build_chunking_data(self) -> dict[str, str | list[str]]:
         """Build form data for chunking request."""
-        return {
+        opts = self.config.processing.conversion_options
+        data: dict[str, str | list[str]] = {
+            "convert_do_ocr": str(opts.do_ocr).lower(),
+            "convert_force_ocr": str(opts.force_ocr).lower(),
+            "convert_ocr_engine": opts.ocr_engine,
             "chunking_max_tokens": str(self.config.processing.chunk_size),
             "chunking_tokenizer": self.config.processing.chunking_tokenizer,
             "chunking_merge_peers": str(
@@ -73,6 +77,9 @@ class DoclingServeChunker(DocumentChunker):
                 self.config.processing.chunking_use_markdown_tables
             ).lower(),
         }
+        if opts.ocr_lang:
+            data["convert_ocr_lang"] = opts.ocr_lang
+        return data
 
     async def _call_chunk_api(self, document: "DoclingDocument") -> list[dict]:
         """Call docling-serve chunking API and return raw chunk data.

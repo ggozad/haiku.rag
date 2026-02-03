@@ -351,6 +351,10 @@ class TestDoclingServeChunker:
         config.processing.chunk_size = 512
         config.processing.chunking_merge_peers = False
         config.processing.chunking_use_markdown_tables = True
+        config.processing.conversion_options.do_ocr = False
+        config.processing.conversion_options.force_ocr = True
+        config.processing.conversion_options.ocr_engine = "tesseract"
+        config.processing.conversion_options.ocr_lang = ["en", "de"]
         chunker = DoclingServeChunker(config)
 
         result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
@@ -370,6 +374,40 @@ class TestDoclingServeChunker:
         assert data["chunking_max_tokens"] == "512"
         assert data["chunking_merge_peers"] == "false"
         assert data["chunking_use_markdown_tables"] == "true"
+        # OCR options from conversion_options
+        assert data["convert_do_ocr"] == "false"
+        assert data["convert_force_ocr"] == "true"
+        assert data["convert_ocr_engine"] == "tesseract"
+        assert data["convert_ocr_lang"] == ["en", "de"]
+
+    @pytest.mark.asyncio
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_omits_empty_ocr_lang(self, mock_client_class, config):
+        """Test that ocr_lang is omitted when empty (default)."""
+        # Ensure ocr_lang is empty (default)
+        config.processing.conversion_options.ocr_lang = []
+        chunker = DoclingServeChunker(config)
+
+        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        converter = get_converter(Config)
+        doc = await converter.convert_text("# Test", name="test.md")
+        await chunker.chunk(doc)
+
+        call_kwargs = mock_client.post.call_args.kwargs
+        data = call_kwargs["data"]
+        # OCR options should use defaults
+        assert data["convert_do_ocr"] == "true"
+        assert data["convert_force_ocr"] == "false"
+        assert data["convert_ocr_engine"] == "auto"
+        # ocr_lang should NOT be present when empty
+        assert "convert_ocr_lang" not in data
 
     @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
