@@ -1,4 +1,11 @@
+from pathlib import Path
+
 import pytest
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_sandbox")
 
 
 class TestSafeBuiltins:
@@ -570,6 +577,130 @@ class TestPreloadedDocuments:
             assert "doc-1" in result.stdout
             assert "Test Doc" in result.stdout
             assert "test://doc" in result.stdout
+
+
+class TestSandboxEscapeVectors:
+    """Test that known sandbox escape techniques are blocked.
+
+    Each test contains actual exploit code that would work without the fix.
+    """
+
+    @pytest.mark.asyncio
+    async def test_type_dict_subclasses_escape_blocked(self, repl_env_empty):
+        """Cannot escape via type.__dict__['__subclasses__'].
+
+        Without fix: This would enumerate all loaded classes and find
+        subprocess.Popen to execute arbitrary shell commands.
+        """
+        result = await repl_env_empty.execute_async("""
+# EXPLOIT: Access __subclasses__ via dict to bypass AST check
+subclasses_method = type.__dict__['__subclasses__']
+all_classes = subclasses_method(object)
+print(f"Found {len(all_classes)} classes")
+""")
+        assert not result.success
+        assert "not allowed" in result.stderr.lower()
+
+    @pytest.mark.asyncio
+    async def test_popen_shell_execution_blocked(self, repl_env_empty):
+        """Cannot execute shell commands via Popen.
+
+        Without fix: This would execute 'whoami' and return the username.
+        """
+        result = await repl_env_empty.execute_async("""
+# EXPLOIT: Find subprocess.Popen and execute shell commands
+subclasses_method = type.__dict__['__subclasses__']
+all_classes = subclasses_method(object)
+popen = [c for c in all_classes if c.__name__ == 'Popen'][0]
+proc = popen('whoami', shell=True, stdout=-1)
+print(proc.stdout.read())
+""")
+        assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_socket_creation_blocked(self, repl_env_empty):
+        """Cannot create network sockets for data exfiltration.
+
+        Without fix: This would create a socket that could connect to external servers.
+        """
+        result = await repl_env_empty.execute_async("""
+# EXPLOIT: Find socket class and create network connection
+subclasses_method = type.__dict__['__subclasses__']
+all_classes = subclasses_method(object)
+socket_cls = [c for c in all_classes if c.__name__ == 'socket'][0]
+s = socket_cls(2, 1)  # AF_INET, SOCK_STREAM
+print(f"Created socket: {s}")
+""")
+        assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_type_three_arg_class_creation_blocked(self, repl_env_empty):
+        """Cannot use type() with 3 arguments to create classes dynamically."""
+        result = await repl_env_empty.execute_async(
+            "EvilClass = type('EvilClass', (object,), {'x': 1})"
+        )
+        assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_dict_key_dunder_access_blocked(self, repl_env_empty):
+        """Cannot access dunder methods via dictionary key access."""
+        result = await repl_env_empty.execute_async(
+            "method = str.__dict__['__add__']\nprint(method)"
+        )
+        assert not result.success
+        assert "not allowed" in result.stderr.lower()
+
+    @pytest.mark.asyncio
+    async def test_dict_key_private_access_blocked(self, repl_env_empty):
+        """Cannot access private attributes via dictionary key access."""
+        result = await repl_env_empty.execute_async(
+            "method = object.__dict__['_private']\nprint(method)"
+        )
+        assert not result.success
+        assert "not allowed" in result.stderr.lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_sql_injection_in_get_document_blocked(self, temp_db_path):
+        """SQL injection in get_document cannot bypass context filter.
+
+        Without fix: Injecting quotes would leak documents that should be
+        protected by the context filter.
+        """
+        from haiku.rag.agents.rlm.dependencies import RLMContext
+        from haiku.rag.agents.rlm.sandbox import REPLEnvironment
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.config.models import RLMConfig
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            # Create documents: one secret, one public
+            await client.create_document(
+                content="TOP SECRET: Launch codes 1234",
+                uri="secret://classified",
+                title="Classified Intel",
+            )
+            await client.create_document(
+                content="Public weather report",
+                uri="public://weather",
+                title="Weather",
+            )
+
+            # Sandbox restricted to public:// only
+            context = RLMContext(filter="uri LIKE 'public://%'")
+            repl = REPLEnvironment(client=client, config=RLMConfig(), context=context)
+
+            # EXPLOIT: SQL injection to access secret document
+            result = await repl.execute_async("""
+# Injection payload breaks out of quotes and adds OR clause
+content = get_document("x' OR uri LIKE 'secret://%")
+if content:
+    print(f"LEAKED: {content}")
+else:
+    print("NO LEAK")
+""")
+            assert result.success
+            assert "TOP SECRET" not in result.stdout
+            assert "Launch codes" not in result.stdout
 
 
 class TestSecurityEscapes:

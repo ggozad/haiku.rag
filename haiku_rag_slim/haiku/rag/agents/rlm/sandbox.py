@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from haiku.rag.agents.rlm.dependencies import RLMContext
 from haiku.rag.config.models import RLMConfig
+from haiku.rag.store.repositories.document import _escape_sql_string
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -84,7 +85,9 @@ class REPLEnvironment:
         "str": str,
         "sum": sum,
         "tuple": tuple,
-        "type": type,
+        "type": (
+            lambda obj: type(obj)
+        ),  # Single-arg only, blocks type(name, bases, dict)
         "zip": zip,
         "Exception": Exception,
         "ValueError": ValueError,
@@ -206,13 +209,14 @@ class REPLEnvironment:
                 doc = await self.client.get_document_by_id(id_or_title)
                 if doc:
                     return doc.content
+                safe_input = _escape_sql_string(id_or_title)
                 docs = await self.client.list_documents(
-                    filter=f"title = '{id_or_title}'"
+                    filter=f"title = '{safe_input}'"
                 )
                 if docs and docs[0].id:
                     full_doc = await self.client.get_document_by_id(docs[0].id)
                     return full_doc.content if full_doc else None
-                docs = await self.client.list_documents(filter=f"uri = '{id_or_title}'")
+                docs = await self.client.list_documents(filter=f"uri = '{safe_input}'")
                 if docs and docs[0].id:
                     full_doc = await self.client.get_document_by_id(docs[0].id)
                     return full_doc.content if full_doc else None
@@ -230,13 +234,14 @@ class REPLEnvironment:
                 doc = await self.client.get_document_by_id(id_or_title)
                 if doc:
                     return doc.get_docling_document()
+                safe_input = _escape_sql_string(id_or_title)
                 docs = await self.client.list_documents(
-                    filter=f"title = '{id_or_title}'"
+                    filter=f"title = '{safe_input}'"
                 )
                 if docs and docs[0].id:
                     full_doc = await self.client.get_document_by_id(docs[0].id)
                     return full_doc.get_docling_document() if full_doc else None
-                docs = await self.client.list_documents(filter=f"uri = '{id_or_title}'")
+                docs = await self.client.list_documents(filter=f"uri = '{safe_input}'")
                 if docs and docs[0].id:
                     full_doc = await self.client.get_document_by_id(docs[0].id)
                     return full_doc.get_docling_document() if full_doc else None
@@ -305,6 +310,16 @@ class REPLEnvironment:
                     raise SecurityError(
                         f"Access to private/dunder attribute '{node.attr}' is not allowed"
                     )
+            # Block dictionary key access to dunder/private strings
+            # This prevents type.__dict__['__subclasses__'] attacks
+            if isinstance(node, ast.Subscript):
+                if isinstance(node.slice, ast.Constant):
+                    if isinstance(
+                        node.slice.value, str
+                    ) and node.slice.value.startswith("_"):
+                        raise SecurityError(
+                            f"Dictionary access to '{node.slice.value}' is not allowed"
+                        )
 
     def _execute_sync(self, code: str) -> REPLResult:
         """Internal synchronous execution - must be called from executor thread."""

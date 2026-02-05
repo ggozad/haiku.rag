@@ -22,7 +22,10 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
-from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.document import (
+    DocumentRepository,
+    _escape_sql_string,
+)
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
@@ -1322,7 +1325,8 @@ class HaikuRAG:
             for doc_ref in documents:
                 doc = await self.get_document_by_id(doc_ref)
                 if not doc:
-                    docs = await self.list_documents(filter=f"title = '{doc_ref}'")
+                    safe_ref = _escape_sql_string(doc_ref)
+                    docs = await self.list_documents(filter=f"title = '{safe_ref}'")
                     if docs and docs[0].id:
                         doc = await self.get_document_by_id(docs[0].id)
                 if doc:
