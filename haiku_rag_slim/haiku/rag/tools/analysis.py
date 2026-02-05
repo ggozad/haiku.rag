@@ -7,8 +7,13 @@ from haiku.rag.agents.rlm.models import CodeExecution
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext
-from haiku.rag.tools.filters import build_document_filter, combine_filters
+from haiku.rag.tools.filters import (
+    build_document_filter,
+    build_multi_document_filter,
+    combine_filters,
+)
 from haiku.rag.tools.models import AnalysisResult
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 ANALYSIS_NAMESPACE = "haiku.rag.analysis"
 
@@ -36,6 +41,8 @@ def create_analysis_toolset(
         config: Application configuration.
         context: Optional ToolContext for state accumulation.
             If provided, code executions are tracked in AnalysisState.
+            If SessionState is registered, it will be used for dynamic
+            document filtering.
         base_filter: Optional base SQL WHERE clause applied to searches.
         tool_name: Name for the analyze tool. Defaults to "analyze".
 
@@ -63,9 +70,20 @@ def create_analysis_toolset(
         Returns:
             AnalysisResult with answer and execution metadata.
         """
-        # Build filter from base_filter and document_name
+        # Get session filter from session state
+        session_filter = None
+        if context is not None:
+            session_state = context.get_typed(SESSION_NAMESPACE, SessionState)
+            if session_state is not None and session_state.document_filter:
+                session_filter = build_multi_document_filter(
+                    session_state.document_filter
+                )
+
+        # Build filter from base_filter, session_filter, and document_name
         doc_filter = build_document_filter(document_name) if document_name else None
-        effective_filter = combine_filters(base_filter, doc_filter)
+        effective_filter = combine_filters(
+            combine_filters(base_filter, session_filter), doc_filter
+        )
 
         # Create RLM context and deps
         rlm_context = RLMContext(filter=effective_filter)

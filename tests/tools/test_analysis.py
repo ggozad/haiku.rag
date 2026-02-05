@@ -72,18 +72,12 @@ class TestAnalysisToolset:
 
 
 @pytest.fixture
-def analysis_client(temp_db_path):
+async def analysis_client(temp_db_path):
     """Create a HaikuRAG client for analysis tests."""
-    import asyncio
-
     from haiku.rag.client import HaikuRAG
 
-    async def setup():
-        rag = HaikuRAG(temp_db_path, create=True)
-        await rag.__aenter__()
-        return rag
-
-    return asyncio.get_event_loop().run_until_complete(setup())
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        yield rag
 
 
 @pytest.fixture

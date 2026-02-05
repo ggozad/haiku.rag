@@ -62,6 +62,16 @@ class ToolContext(BaseModel):
         """Get state for a namespace, or None if not registered."""
         return self._namespaces.get(namespace)
 
+    def get_typed(self, namespace: str, expected_type: type[T]) -> T | None:
+        """Get state for a namespace with type checking.
+
+        Returns the state cast to expected_type if it matches, None otherwise.
+        """
+        state = self._namespaces.get(namespace)
+        if isinstance(state, expected_type):
+            return state
+        return None
+
     def get_or_create(self, namespace: str, factory: Callable[[], T]) -> T:
         """Get state for a namespace, creating it if not registered.
 

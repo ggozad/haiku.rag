@@ -1,4 +1,7 @@
+import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 
@@ -7,11 +10,26 @@ from haiku.rag.agents.chat.state import ChatSessionState, QAResponse, SessionCon
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
 
-# Cache for session contexts (session_id -> SessionContext)
-# Used to persist async summarization results between requests
-_session_context_cache: dict[str, SessionContext] = {}
+if TYPE_CHECKING:
+    from haiku.rag.tools.qa import QASessionState
+
+
+@dataclass
+class SessionCache:
+    """Per-session cache for context and embeddings."""
+
+    context: SessionContext | None = None
+    embeddings: dict[str, list[float]] = field(default_factory=dict)
+
+
+# Cache for session data (session_id -> SessionCache)
+# Used to persist async summarization results and embeddings between requests
+_session_cache: dict[str, SessionCache] = {}
 _cache_timestamps: dict[str, datetime] = {}
 _CACHE_TTL = timedelta(hours=1)
+
+# Track summarization tasks per session to allow cancellation
+_summarization_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 def _cleanup_stale_cache() -> None:
@@ -19,21 +37,45 @@ def _cleanup_stale_cache() -> None:
     now = datetime.now()
     stale = [sid for sid, ts in _cache_timestamps.items() if now - ts > _CACHE_TTL]
     for sid in stale:
-        _session_context_cache.pop(sid, None)
+        _session_cache.pop(sid, None)
         _cache_timestamps.pop(sid, None)
+
+
+def _get_or_create_session_cache(session_id: str) -> SessionCache:
+    """Get or create session cache for a given session_id."""
+    _cleanup_stale_cache()
+    if session_id not in _session_cache:
+        _session_cache[session_id] = SessionCache()
+    _cache_timestamps[session_id] = datetime.now()
+    return _session_cache[session_id]
 
 
 def cache_session_context(session_id: str, context: SessionContext) -> None:
     """Store session context in cache."""
-    _cleanup_stale_cache()
-    _session_context_cache[session_id] = context
-    _cache_timestamps[session_id] = datetime.now()
+    cache = _get_or_create_session_cache(session_id)
+    cache.context = context
 
 
 def get_cached_session_context(session_id: str) -> SessionContext | None:
     """Get session context from server cache."""
     _cleanup_stale_cache()
-    return _session_context_cache.get(session_id)
+    cache = _session_cache.get(session_id)
+    return cache.context if cache else None
+
+
+def cache_question_embedding(
+    session_id: str, question: str, embedding: list[float]
+) -> None:
+    """Store question embedding in session cache."""
+    cache = _get_or_create_session_cache(session_id)
+    cache.embeddings[question] = embedding
+
+
+def get_cached_embedding(session_id: str, question: str) -> list[float] | None:
+    """Get cached embedding for a question in this session."""
+    _cleanup_stale_cache()
+    cache = _session_cache.get(session_id)
+    return cache.embeddings.get(question) if cache else None
 
 
 async def summarize_session(
@@ -114,3 +156,78 @@ def _format_qa_history(qa_history: list[QAResponse]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+async def _update_context_background(
+    qa_session_state: "QASessionState",
+    config: AppConfig,
+    session_id: str,
+) -> None:
+    """Background task to update session context after an ask."""
+    try:
+        # Convert QAHistoryEntry to QAResponse format for update_session_context
+        qa_history = [
+            QAResponse(
+                question=entry.question,
+                answer=entry.answer,
+                confidence=entry.confidence,
+                citations=list(entry.citations),
+            )
+            for entry in qa_session_state.qa_history
+        ]
+
+        session_state = ChatSessionState(
+            session_id=session_id,
+            qa_history=qa_history,
+        )
+
+        await update_session_context(
+            qa_history=qa_history,
+            config=config,
+            session_state=session_state,
+        )
+
+        # Update the QASessionState with the new context
+        cached = get_cached_session_context(session_id)
+        if cached and cached.summary:
+            qa_session_state.session_context = cached.render_markdown()
+
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).exception(f"Background summarization failed: {e}")
+
+
+def trigger_background_summarization(
+    qa_session_state: "QASessionState",
+    config: AppConfig,
+    session_id: str,
+) -> None:
+    """Trigger background session summarization if qa_history has entries.
+
+    Args:
+        qa_session_state: QASessionState with qa_history to summarize.
+        config: AppConfig for model selection.
+        session_id: Session ID for caching results.
+    """
+    if not qa_session_state.qa_history or not session_id:
+        return
+
+    # Cancel any existing summarization task for this session
+    if session_id in _summarization_tasks:
+        _summarization_tasks[session_id].cancel()
+
+    # Spawn background task
+    task = asyncio.create_task(
+        _update_context_background(
+            qa_session_state=qa_session_state,
+            config=config,
+            session_id=session_id,
+        )
+    )
+    _summarization_tasks[session_id] = task
+    task.add_done_callback(
+        lambda _t, sid=session_id: _summarization_tasks.pop(sid, None)
+    )
