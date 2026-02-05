@@ -62,14 +62,13 @@ Key features:
 
 ### Tools
 
-The chat agent uses six tools:
+The chat agent uses five tools:
 
 - `list_documents` — Browse available documents in the knowledge base
 - `summarize_document` — Generate a summary of a specific document
 - `get_document` — Retrieve a specific document by title or URI
 - `search` — Hybrid search with optional document filter
 - `ask` — Answer questions using the conversational research graph (automatically recalls prior answers)
-- `analyze` — Complex analytical questions via code execution (counting, aggregation, comparison)
 
 The `ask` tool automatically checks conversation history before running research. It uses embedding similarity (0.7 cosine threshold) to find semantically matching prior answers, which are passed to the research planner as context. When prior answers are sufficient, the planner can skip searching entirely.
 

@@ -15,19 +15,6 @@ How to decide which tool to use:
 - "get_document" - Use when the user wants the FULL content of a specific document (e.g., "get the paper about Y", "fetch 2412.00566", "show me the full document").
 - "ask" - Use for CONTENT questions: "What does X say about Y?", "What are the main findings?", "Explain concept Z from the documents". This tool retrieves and synthesizes text from documents.
 - "search" - Use when the user explicitly asks to search/find/explore documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content snippets. Do NOT shorten, summarize, or omit any part of the results.
-- "analyze" - Use for COMPUTATIONAL tasks. IMPORTANT: Do NOT pass the user's question directly. Instead, write a specific task instruction describing what to compute.
-
-IMPORTANT - Choosing between "ask" and "analyze":
-- "ask" answers WHAT questions about content (retrieval + synthesis)
-- "analyze" answers HOW MANY/HOW MUCH questions requiring computation
-
-CRITICAL - When using "analyze", reformulate the user's question into a specific task:
-- User: "How many documents are there?" → task="Count the total number of documents using list_documents()"
-- User: "What is the total revenue across all reports?" → task="Search for revenue figures in all documents, extract the numeric values, and calculate the sum"
-- User: "How many documents discuss climate change?" → task="Search for 'climate change' and count the number of unique documents returned"
-- User: "List all the dates mentioned" → task="Search across documents, extract all date patterns, and return a deduplicated list"
-
-When "analyze" returns results, include both the answer AND the "Code executed" section in your response to the user. This shows transparency about how the computation was performed.
 
 IMPORTANT - When user mentions a document in search/ask:
 - If user says "search in <doc>", "find in <doc>", "answer from <doc>", or "<topic> in <doc>":
