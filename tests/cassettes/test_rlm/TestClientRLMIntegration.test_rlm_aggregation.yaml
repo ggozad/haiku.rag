@@ -128,7 +128,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7702'
+      - '8296'
       content-type:
       - application/json
       host:
@@ -166,9 +166,20 @@ interactions:
           Returns a DoclingDocument object, or None if not found.
           See "DoclingDocument API" section below for how to use it.
 
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
           You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
@@ -180,7 +191,7 @@ interactions:
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
 
           ## DoclingDocument API
@@ -251,13 +262,13 @@ interactions:
           print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
           ```
 
-          ### Using ask() for semantic analysis
+          ### Using llm() for classification
           ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
           ```
 
           ## Workflow
@@ -268,10 +279,17 @@ interactions:
 
           ## Output Format
 
-          After executing code and gathering information, provide:
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string"}
+          ```
+
+          The `answer` field should contain:
           1. A clear answer to the user's question
           2. Key findings from your analysis
           3. References to specific documents/chunks that informed your answer
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -291,7 +309,7 @@ interactions:
             modules (json, re, collections, math, statistics, itertools,
             functools, datetime, typing).
 
-            Use print() to output results. Variables persist between executions.</summary>
+            Use print() to output results.</summary>
             <returns>
             <description>Structured result with success status, stdout, and stderr.</description>
             </returns>
@@ -352,7 +370,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '695'
+      - '1173'
       content-type:
       - application/json
     parsed_body:
@@ -361,25 +379,29 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need revenue from quarterly reports. Search for "quarterly report" and revenue.
+          reasoning: Need search on quarterly reports.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in
-                results[:5]:\n    print(r[''document_title''], r[''score''], r[''page_numbers''])\n"}'
+              arguments: '{"code":"# Search for quarterly revenue\nimport re\nresults = search(\"quarterly report revenue\",
+                limit=20)\nprint(''Found'', len(results), ''chunks'')\n# collect revenue amounts\ntotals = []\nfor r in results:\n    txt
+                = r[''content'']\n    # look for patterns like $xx,xxx or $xx.xx million\n    matches = re.findall(r''\\$(?:\\d{1,3}(?:,\\d{3})*\\.?\\d*|\\d{1,3}(?:\\.\\d{1,2})?)'',
+                txt)\n    for m in matches:\n        # clean and convert\n        num = m.replace(''$'','''').replace('','','''')\n        try:\n            val
+                = float(num)\n            totals.append(val)\n        except:\n            pass\nprint(''Revenue matches'',
+                len(totals), ''values'')\nprint(''Sum'', sum(totals))"}'
               name: execute_code
-            id: call_8cd1wnf6
+            id: call_r8bbnfjv
             index: 0
             type: function
-      created: 1769703355
-      id: chatcmpl-273
+      created: 1770322497
+      id: chatcmpl-844
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 87
-        prompt_tokens: 1601
-        total_tokens: 1688
+        completion_tokens: 234
+        prompt_tokens: 1754
+        total_tokens: 1988
     status:
       code: 200
       message: OK
@@ -392,47 +414,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '94'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      encoding_format: base64
-      input:
-      - quarterly report revenue
-      model: qwen3-embedding:4b
-    uri: http://localhost:11434/v1/embeddings
-  response:
-    headers:
-      content-type:
-      - application/json
-      transfer-encoding:
-      - chunked
-    parsed_body:
-      data:
-      - embedding: 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
-        index: 0
-        object: embedding
-      model: qwen3-embedding:4b
-      object: list
-      usage:
-        prompt_tokens: 5
-        total_tokens: 5
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '8540'
+      - '10088'
       content-type:
       - application/json
       host:
@@ -470,9 +452,20 @@ interactions:
           Returns a DoclingDocument object, or None if not found.
           See "DoclingDocument API" section below for how to use it.
 
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
           You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
@@ -484,7 +477,7 @@ interactions:
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
 
           ## DoclingDocument API
@@ -555,13 +548,13 @@ interactions:
           print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
           ```
 
-          ### Using ask() for semantic analysis
+          ### Using llm() for classification
           ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
           ```
 
           ## Workflow
@@ -572,10 +565,17 @@ interactions:
 
           ## Output Format
 
-          After executing code and gathering information, provide:
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string"}
+          ```
+
+          The `answer` field should contain:
           1. A clear answer to the user's question
           2. Key findings from your analysis
           3. References to specific documents/chunks that informed your answer
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -583,21 +583,28 @@ interactions:
         role: user
       - content: |-
           <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
+          Need search on quarterly reports.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
+            arguments: '{"code":"# Search for quarterly revenue\nimport re\nresults = search(\"quarterly report revenue\",
+              limit=20)\nprint(''Found'', len(results), ''chunks'')\n# collect revenue amounts\ntotals = []\nfor r in results:\n    txt
+              = r[''content'']\n    # look for patterns like $xx,xxx or $xx.xx million\n    matches = re.findall(r''\\$(?:\\d{1,3}(?:,\\d{3})*\\.?\\d*|\\d{1,3}(?:\\.\\d{1,2})?)'',
+              txt)\n    for m in matches:\n        # clean and convert\n        num = m.replace(''$'','''').replace('','','''')\n        try:\n            val
+              = float(num)\n            totals.append(val)\n        except:\n            pass\nprint(''Revenue matches'',
+              len(totals), ''values'')\nprint(''Sum'', sum(totals))"}'
             name: execute_code
-          id: call_8cd1wnf6
+          id: call_r8bbnfjv
           type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
+      - content: '{"code":"# Search for quarterly revenue\nimport re\nresults = search(\"quarterly report revenue\", limit=20)\nprint(''Found'',
+          len(results), ''chunks'')\n# collect revenue amounts\ntotals = []\nfor r in results:\n    txt = r[''content'']\n    #
+          look for patterns like $xx,xxx or $xx.xx million\n    matches = re.findall(r''\\$(?:\\d{1,3}(?:,\\d{3})*\\.?\\d*|\\d{1,3}(?:\\.\\d{1,2})?)'',
+          txt)\n    for m in matches:\n        # clean and convert\n        num = m.replace(''$'','''').replace('','','''')\n        try:\n            val
+          = float(num)\n            totals.append(val)\n        except:\n            pass\nprint(''Revenue matches'', len(totals),
+          ''values'')\nprint(''Sum'', sum(totals))","stdout":"Found 3 chunks\nRevenue matches 3 values\nSum 450000.0\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_8cd1wnf6
+        tool_call_id: call_r8bbnfjv
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -612,7 +619,7 @@ interactions:
             modules (json, re, collections, math, statistics, itertools,
             functools, datetime, typing).
 
-            Use print() to output results. Variables persist between executions.</summary>
+            Use print() to output results.</summary>
             <returns>
             <description>Structured result with success status, stdout, and stderr.</description>
             </returns>
@@ -673,7 +680,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '635'
+      - '1406'
       content-type:
       - application/json
     parsed_body:
@@ -682,24 +689,31 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: 'We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.'
+          reasoning: Sum 450k but may incomplete. Probably need to sum across all quarterly reports; maybe each doc has revenue.
+            Need list documents.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
+              arguments: '{"code":"# list documents\nfrom collections import defaultdict\nimport re\n# Search all documents
+                for \"quarterly report\"\nresults = search(\"quarterly report\", limit=100)\nprint(''Chunks found'', len(results))\n#
+                group by document\nby_doc = defaultdict(list)\nfor r in results:\n    by_doc[r[''document_id'']].append(r)\nprint(''Documents
+                with quarterly report'', len(by_doc))\n# sum per document\nimport statistics\nrevenues = []\nbest_docs = []\nfor
+                doc_id, chunks in by_doc.items():\n    total = 0\n    for ch in chunks:\n        txt = ch[''content'']\n        matches
+                = re.findall(r''\\$([\\d,]+)'', txt)\n        for m in matches:\n            total += int(m.replace('','',''''))\n    revenues.append(total)\n    best_docs.append((doc_id,total))\nprint(''Sum
+                per doc'', best_docs)\nprint(''Total revenue'', sum(revenues))"}'
               name: execute_code
-            id: call_mgo4t2ty
+            id: call_lnvgketk
             index: 0
             type: function
-      created: 1769703357
-      id: chatcmpl-775
+      created: 1770322504
+      id: chatcmpl-744
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 85
-        prompt_tokens: 1812
-        total_tokens: 1897
+        completion_tokens: 266
+        prompt_tokens: 2241
+        total_tokens: 2507
     status:
       code: 200
       message: OK
@@ -712,47 +726,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '79'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      encoding_format: base64
-      input:
-      - Q4 Report
-      model: qwen3-embedding:4b
-    uri: http://localhost:11434/v1/embeddings
-  response:
-    headers:
-      content-type:
-      - application/json
-      transfer-encoding:
-      - chunked
-    parsed_body:
-      data:
-      - embedding: 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
-        index: 0
-        object: embedding
-      model: qwen3-embedding:4b
-      object: list
-      usage:
-        prompt_tokens: 4
-        total_tokens: 4
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '9198'
+      - '12433'
       content-type:
       - application/json
       host:
@@ -790,9 +764,20 @@ interactions:
           Returns a DoclingDocument object, or None if not found.
           See "DoclingDocument API" section below for how to use it.
 
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
           You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
@@ -804,7 +789,7 @@ interactions:
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
 
           ## DoclingDocument API
@@ -875,13 +860,13 @@ interactions:
           print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
           ```
 
-          ### Using ask() for semantic analysis
+          ### Using llm() for classification
           ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
           ```
 
           ## Workflow
@@ -892,10 +877,17 @@ interactions:
 
           ## Output Format
 
-          After executing code and gathering information, provide:
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string"}
+          ```
+
+          The `answer` field should contain:
           1. A clear answer to the user's question
           2. Key findings from your analysis
           3. References to specific documents/chunks that informed your answer
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -903,36 +895,56 @@ interactions:
         role: user
       - content: |-
           <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
+          Need search on quarterly reports.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
+            arguments: '{"code":"# Search for quarterly revenue\nimport re\nresults = search(\"quarterly report revenue\",
+              limit=20)\nprint(''Found'', len(results), ''chunks'')\n# collect revenue amounts\ntotals = []\nfor r in results:\n    txt
+              = r[''content'']\n    # look for patterns like $xx,xxx or $xx.xx million\n    matches = re.findall(r''\\$(?:\\d{1,3}(?:,\\d{3})*\\.?\\d*|\\d{1,3}(?:\\.\\d{1,2})?)'',
+              txt)\n    for m in matches:\n        # clean and convert\n        num = m.replace(''$'','''').replace('','','''')\n        try:\n            val
+              = float(num)\n            totals.append(val)\n        except:\n            pass\nprint(''Revenue matches'',
+              len(totals), ''values'')\nprint(''Sum'', sum(totals))"}'
             name: execute_code
-          id: call_8cd1wnf6
+          id: call_r8bbnfjv
           type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
+      - content: '{"code":"# Search for quarterly revenue\nimport re\nresults = search(\"quarterly report revenue\", limit=20)\nprint(''Found'',
+          len(results), ''chunks'')\n# collect revenue amounts\ntotals = []\nfor r in results:\n    txt = r[''content'']\n    #
+          look for patterns like $xx,xxx or $xx.xx million\n    matches = re.findall(r''\\$(?:\\d{1,3}(?:,\\d{3})*\\.?\\d*|\\d{1,3}(?:\\.\\d{1,2})?)'',
+          txt)\n    for m in matches:\n        # clean and convert\n        num = m.replace(''$'','''').replace('','','''')\n        try:\n            val
+          = float(num)\n            totals.append(val)\n        except:\n            pass\nprint(''Revenue matches'', len(totals),
+          ''values'')\nprint(''Sum'', sum(totals))","stdout":"Found 3 chunks\nRevenue matches 3 values\nSum 450000.0\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_8cd1wnf6
+        tool_call_id: call_r8bbnfjv
       - content: |-
           <think>
-          We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.
+          Sum 450k but may incomplete. Probably need to sum across all quarterly reports; maybe each doc has revenue. Need list documents.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
+            arguments: '{"code":"# list documents\nfrom collections import defaultdict\nimport re\n# Search all documents
+              for \"quarterly report\"\nresults = search(\"quarterly report\", limit=100)\nprint(''Chunks found'', len(results))\n#
+              group by document\nby_doc = defaultdict(list)\nfor r in results:\n    by_doc[r[''document_id'']].append(r)\nprint(''Documents
+              with quarterly report'', len(by_doc))\n# sum per document\nimport statistics\nrevenues = []\nbest_docs = []\nfor
+              doc_id, chunks in by_doc.items():\n    total = 0\n    for ch in chunks:\n        txt = ch[''content'']\n        matches
+              = re.findall(r''\\$([\\d,]+)'', txt)\n        for m in matches:\n            total += int(m.replace('','',''''))\n    revenues.append(total)\n    best_docs.append((doc_id,total))\nprint(''Sum
+              per doc'', best_docs)\nprint(''Total revenue'', sum(revenues))"}'
             name: execute_code
-          id: call_mgo4t2ty
+          id: call_lnvgketk
           type: function
-      - content: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
+      - content: '{"code":"# list documents\nfrom collections import defaultdict\nimport re\n# Search all documents for \"quarterly
+          report\"\nresults = search(\"quarterly report\", limit=100)\nprint(''Chunks found'', len(results))\n# group by document\nby_doc
+          = defaultdict(list)\nfor r in results:\n    by_doc[r[''document_id'']].append(r)\nprint(''Documents with quarterly
+          report'', len(by_doc))\n# sum per document\nimport statistics\nrevenues = []\nbest_docs = []\nfor doc_id, chunks
+          in by_doc.items():\n    total = 0\n    for ch in chunks:\n        txt = ch[''content'']\n        matches = re.findall(r''\\$([\\d,]+)'',
+          txt)\n        for m in matches:\n            total += int(m.replace('','',''''))\n    revenues.append(total)\n    best_docs.append((doc_id,total))\nprint(''Sum
+          per doc'', best_docs)\nprint(''Total revenue'', sum(revenues))","stdout":"Chunks found 3\nDocuments with quarterly
+          report 3\nSum per doc [(''35915855-e66c-4758-a35f-1f3b00b0cab9'', 100000), (''d4964813-114a-4b0e-a750-78f2caa2b5b2'',
+          150000), (''8184d6d8-2c6a-46d4-9d7e-6748c9a132cd'', 200000)]\nTotal revenue 450000\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_mgo4t2ty
+        tool_call_id: call_lnvgketk
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -947,7 +959,7 @@ interactions:
             modules (json, re, collections, math, statistics, itertools,
             functools, datetime, typing).
 
-            Use print() to output results. Variables persist between executions.</summary>
+            Use print() to output results.</summary>
             <returns>
             <description>Structured result with success status, stdout, and stderr.</description>
             </returns>
@@ -1008,1402 +1020,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '663'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: All quarterly reports 1-3 only? Maybe Q4 is in separate doc. Search “Quarterly Report 4”.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-              name: execute_code
-            id: call_3d3jutqn
-            index: 0
-            type: function
-      created: 1769703359
-      id: chatcmpl-718
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 84
-        prompt_tokens: 1975
-        total_tokens: 2059
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '88'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      encoding_format: base64
-      input:
-      - Quarterly Report 4
-      model: qwen3-embedding:4b
-    uri: http://localhost:11434/v1/embeddings
-  response:
-    headers:
-      content-type:
-      - application/json
-      transfer-encoding:
-      - chunked
-    parsed_body:
-      data:
-      - embedding: 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
-        index: 0
-        object: embedding
-      model: qwen3-embedding:4b
-      object: list
-      usage:
-        prompt_tokens: 6
-        total_tokens: 6
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '9893'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using ask() for semantic analysis
-          ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          After executing code and gathering information, provide:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: What is the total revenue across all quarterly reports?
-        role: user
-      - content: |-
-          <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
-            name: execute_code
-          id: call_8cd1wnf6
-          type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8cd1wnf6
-      - content: |-
-          <think>
-          We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_mgo4t2ty
-          type: function
-      - content: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_mgo4t2ty
-      - content: |-
-          <think>
-          All quarterly reports 1-3 only? Maybe Q4 is in separate doc. Search “Quarterly Report 4”.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_3d3jutqn
-          type: function
-      - content: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_3d3jutqn
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results. Variables persist between executions.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '1144'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: |-
-            <think>
-            It appears only Q1‑Q3 reports are present in the index. We need revenue figures from each. We'll retrieve the full text of each report and extract numbers labeled “Revenue”.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in
-                docs:\n    content = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-                content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-                = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n"}'
-              name: execute_code
-            id: call_2rg8jz4m
-            index: 0
-            type: function
-      created: 1769703364
-      id: chatcmpl-874
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 204
-        prompt_tokens: 2139
-        total_tokens: 2343
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '11457'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using ask() for semantic analysis
-          ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          After executing code and gathering information, provide:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: What is the total revenue across all quarterly reports?
-        role: user
-      - content: |-
-          <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
-            name: execute_code
-          id: call_8cd1wnf6
-          type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8cd1wnf6
-      - content: |-
-          <think>
-          We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_mgo4t2ty
-          type: function
-      - content: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_mgo4t2ty
-      - content: |-
-          <think>
-          All quarterly reports 1-3 only? Maybe Q4 is in separate doc. Search “Quarterly Report 4”.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_3d3jutqn
-          type: function
-      - content: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_3d3jutqn
-      - content: |2-
-
-          It appears only Q1‑Q3 reports are present in the index. We need revenue figures from each. We'll retrieve the full text of each report and extract numbers labeled “Revenue”.
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in
-              docs:\n    content = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-              content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-              = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n"}'
-            name: execute_code
-          id: call_2rg8jz4m
-          type: function
-      - content: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in docs:\n    content
-          = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-          content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-          = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n","stdout":"{''Q1
-          Report'': None, ''Q2 Report'': None, ''Q3 Report'': None}\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_2rg8jz4m
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results. Variables persist between executions.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '558'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: No revenue found by pattern. Let's inspect content snippet.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n"}'
-              name: execute_code
-            id: call_oqz8cbe0
-            index: 0
-            type: function
-      created: 1769703365
-      id: chatcmpl-151
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 52
-        prompt_tokens: 2528
-        total_tokens: 2580
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '11977'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using ask() for semantic analysis
-          ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          After executing code and gathering information, provide:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: What is the total revenue across all quarterly reports?
-        role: user
-      - content: |-
-          <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
-            name: execute_code
-          id: call_8cd1wnf6
-          type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8cd1wnf6
-      - content: |-
-          <think>
-          We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_mgo4t2ty
-          type: function
-      - content: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_mgo4t2ty
-      - content: |-
-          <think>
-          All quarterly reports 1-3 only? Maybe Q4 is in separate doc. Search “Quarterly Report 4”.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_3d3jutqn
-          type: function
-      - content: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_3d3jutqn
-      - content: |2-
-
-          It appears only Q1‑Q3 reports are present in the index. We need revenue figures from each. We'll retrieve the full text of each report and extract numbers labeled “Revenue”.
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in
-              docs:\n    content = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-              content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-              = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n"}'
-            name: execute_code
-          id: call_2rg8jz4m
-          type: function
-      - content: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in docs:\n    content
-          = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-          content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-          = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n","stdout":"{''Q1
-          Report'': None, ''Q2 Report'': None, ''Q3 Report'': None}\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_2rg8jz4m
-      - content: |-
-          <think>
-          No revenue found by pattern. Let's inspect content snippet.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n"}'
-            name: execute_code
-          id: call_oqz8cbe0
-          type: function
-      - content: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n","stdout":"Sales report Q1: Revenue
-          was $100,000.\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_oqz8cbe0
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results. Variables persist between executions.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '855'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: Need to handle different phrasing. Search for "$" pattern.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"code":"import re\nrevs={}\nfor d in [''Q1 Report'',''Q2 Report'',''Q3 Report'']:\n    content=get_document(d)\n    if
-                content:\n        vals=re.findall(r''\\$([\\d,]+)'',content)\n        if vals:\n            rev=sum(int(v.replace('','',''''))
-                for v in vals)\n        else:\n            rev=None\n    else:\n        rev=None\n    revs[d]=rev\nprint(revs)\n"}'
-              name: execute_code
-            id: call_2j8yqv8s
-            index: 0
-            type: function
-      created: 1769703369
-      id: chatcmpl-192
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 139
-        prompt_tokens: 2641
-        total_tokens: 2780
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '13113'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using ask() for semantic analysis
-          ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          After executing code and gathering information, provide:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: What is the total revenue across all quarterly reports?
-        role: user
-      - content: |-
-          <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
-            name: execute_code
-          id: call_8cd1wnf6
-          type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8cd1wnf6
-      - content: |-
-          <think>
-          We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_mgo4t2ty
-          type: function
-      - content: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_mgo4t2ty
-      - content: |-
-          <think>
-          All quarterly reports 1-3 only? Maybe Q4 is in separate doc. Search “Quarterly Report 4”.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_3d3jutqn
-          type: function
-      - content: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_3d3jutqn
-      - content: |2-
-
-          It appears only Q1‑Q3 reports are present in the index. We need revenue figures from each. We'll retrieve the full text of each report and extract numbers labeled “Revenue”.
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in
-              docs:\n    content = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-              content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-              = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n"}'
-            name: execute_code
-          id: call_2rg8jz4m
-          type: function
-      - content: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in docs:\n    content
-          = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-          content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-          = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n","stdout":"{''Q1
-          Report'': None, ''Q2 Report'': None, ''Q3 Report'': None}\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_2rg8jz4m
-      - content: |-
-          <think>
-          No revenue found by pattern. Let's inspect content snippet.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n"}'
-            name: execute_code
-          id: call_oqz8cbe0
-          type: function
-      - content: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n","stdout":"Sales report Q1: Revenue
-          was $100,000.\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_oqz8cbe0
-      - content: |-
-          <think>
-          Need to handle different phrasing. Search for "$" pattern.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"import re\nrevs={}\nfor d in [''Q1 Report'',''Q2 Report'',''Q3 Report'']:\n    content=get_document(d)\n    if
-              content:\n        vals=re.findall(r''\\$([\\d,]+)'',content)\n        if vals:\n            rev=sum(int(v.replace('','',''''))
-              for v in vals)\n        else:\n            rev=None\n    else:\n        rev=None\n    revs[d]=rev\nprint(revs)\n"}'
-            name: execute_code
-          id: call_2j8yqv8s
-          type: function
-      - content: '{"code":"import re\nrevs={}\nfor d in [''Q1 Report'',''Q2 Report'',''Q3 Report'']:\n    content=get_document(d)\n    if
-          content:\n        vals=re.findall(r''\\$([\\d,]+)'',content)\n        if vals:\n            rev=sum(int(v.replace('','',''''))
-          for v in vals)\n        else:\n            rev=None\n    else:\n        rev=None\n    revs[d]=rev\nprint(revs)\n","stdout":"{''Q1
-          Report'': 100000, ''Q2 Report'': 150000, ''Q3 Report'': 200000}\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_2j8yqv8s
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results. Variables persist between executions.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '995'
+      - '679'
       content-type:
       - application/json
     parsed_body:
@@ -2411,413 +1028,20 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: "**Answer**\n\nThe total revenue reported across the three quarterly reports is:\n\n\\- Q1 Report: **$100,000**
-            \ \n\\- Q2 Report: **$150,000**  \n\\- Q3 Report: **$200,000**\n\n**Total Revenue (all quarters combined): $450,000**\n\n**Key
-            Findings & Sources**\n\n1. **Q1 Report** – revenue extraction from the text \"Revenue was $100,000.\"\n   - Source
-            snippet: *“Sales report Q1: Revenue was $100,000.”*\n2. **Q2 Report** – revenue extracted from \"$150,000\" in
-            the document.\n3. **Q3 Report** – revenue extracted from \"$200,000\" in the document.\n\nAll figures were obtained
-            by searching each document for dollar amounts and summing them. No Q4 report was found in the available documents."
+          content: '{"answer":"The total revenue reported across all quarterly report documents in the knowledge base is **$450,000**.  This
+            sum was derived by aggregating the revenue figures in each document that contains a quarterly report: $100,000,
+            $150,000, and $200,000, respectively.  These figures were extracted from the content of the three quarterly report
+            chunks identified in the search results."}'
           role: assistant
-      created: 1769703373
-      id: chatcmpl-568
+      created: 1770322506
+      id: chatcmpl-33
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 180
-        prompt_tokens: 2941
-        total_tokens: 3121
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '14838'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using ask() for semantic analysis
-          ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          After executing code and gathering information, provide:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: What is the total revenue across all quarterly reports?
-        role: user
-      - content: |-
-          <think>
-          We need revenue from quarterly reports. Search for "quarterly report" and revenue.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-              r[''score''], r[''page_numbers''])\n"}'
-            name: execute_code
-          id: call_8cd1wnf6
-          type: function
-      - content: '{"code":"results = search(\"quarterly report revenue\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
-          r[''score''], r[''page_numbers''])\n","stdout":"3\nQ1 Report 0.03226645663380623 []\nQ2 Report 0.03226645663380623
-          []\nQ3 Report 0.032258063554763794 []\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8cd1wnf6
-      - content: |-
-          <think>
-          We have 3 reports: Q1, Q2, Q3. Likely Q4 also exists. Search again for Q4.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_mgo4t2ty
-          type: function
-      - content: '{"code":"results = search(\"Q4 Report\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_mgo4t2ty
-      - content: |-
-          <think>
-          All quarterly reports 1-3 only? Maybe Q4 is in separate doc. Search “Quarterly Report 4”.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n"}'
-            name: execute_code
-          id: call_3d3jutqn
-          type: function
-      - content: '{"code":"results = search(\"Quarterly Report 4\", limit=10)\nprint(len(results))\nfor r in results:\n    print(r[''document_title''])\n","stdout":"3\nQ1
-          Report\nQ2 Report\nQ3 Report\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_3d3jutqn
-      - content: |2-
-
-          It appears only Q1‑Q3 reports are present in the index. We need revenue figures from each. We'll retrieve the full text of each report and extract numbers labeled “Revenue”.
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in
-              docs:\n    content = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-              content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-              = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n"}'
-            name: execute_code
-          id: call_2rg8jz4m
-          type: function
-      - content: '{"code":"docs = [''Q1 Report'', ''Q2 Report'', ''Q3 Report'']\nrevenues = {}\nimport re\nfor d in docs:\n    content
-          = get_document(d)\n    if content:\n        # Find revenue lines\n        matches = re.findall(r''Revenue.*?:\\s*\\$([\\d,\\.]+)'',
-          content, re.IGNORECASE)\n        if matches:\n            # take first match\n            rev = float(matches[0].replace('','',''''))\n            revenues[d]
-          = rev\n        else:\n            revenues[d] = None\n    else:\n        revenues[d] = None\nprint(revenues)\n","stdout":"{''Q1
-          Report'': None, ''Q2 Report'': None, ''Q3 Report'': None}\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_2rg8jz4m
-      - content: |-
-          <think>
-          No revenue found by pattern. Let's inspect content snippet.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n"}'
-            name: execute_code
-          id: call_oqz8cbe0
-          type: function
-      - content: '{"code":"content = get_document(''Q1 Report'')\nprint(content[:500])\n","stdout":"Sales report Q1: Revenue
-          was $100,000.\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_oqz8cbe0
-      - content: |-
-          <think>
-          Need to handle different phrasing. Search for "$" pattern.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"import re\nrevs={}\nfor d in [''Q1 Report'',''Q2 Report'',''Q3 Report'']:\n    content=get_document(d)\n    if
-              content:\n        vals=re.findall(r''\\$([\\d,]+)'',content)\n        if vals:\n            rev=sum(int(v.replace('','',''''))
-              for v in vals)\n        else:\n            rev=None\n    else:\n        rev=None\n    revs[d]=rev\nprint(revs)\n"}'
-            name: execute_code
-          id: call_2j8yqv8s
-          type: function
-      - content: '{"code":"import re\nrevs={}\nfor d in [''Q1 Report'',''Q2 Report'',''Q3 Report'']:\n    content=get_document(d)\n    if
-          content:\n        vals=re.findall(r''\\$([\\d,]+)'',content)\n        if vals:\n            rev=sum(int(v.replace('','',''''))
-          for v in vals)\n        else:\n            rev=None\n    else:\n        rev=None\n    revs[d]=rev\nprint(revs)\n","stdout":"{''Q1
-          Report'': 100000, ''Q2 Report'': 150000, ''Q3 Report'': 200000}\n","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_2j8yqv8s
-      - content: "**Answer**\n\nThe total revenue reported across the three quarterly reports is:\n\n\\- Q1 Report: **$100,000**
-          \ \n\\- Q2 Report: **$150,000**  \n\\- Q3 Report: **$200,000**\n\n**Total Revenue (all quarters combined): $450,000**\n\n**Key
-          Findings & Sources**\n\n1. **Q1 Report** – revenue extraction from the text \"Revenue was $100,000.\"\n   - Source
-          snippet: *“Sales report Q1: Revenue was $100,000.”*\n2. **Q2 Report** – revenue extracted from \"$150,000\" in the
-          document.\n3. **Q3 Report** – revenue extracted from \"$200,000\" in the document.\n\nAll figures were obtained
-          by searching each document for dollar amounts and summing them. No Q4 report was found in the available documents."
-        role: assistant
-      - content: |-
-          1 validation error:
-          ```json
-          [
-            {
-              "type": "json_invalid",
-              "loc": [],
-              "msg": "Invalid JSON: expected value at line 1 column 1",
-              "input": "**Answer**\n\nThe total revenue reported across the three quarterly reports is:\n\n\\- Q1 Report: **$100,000**  \n\\- Q2 Report: **$150,000**  \n\\- Q3 Report: **$200,000**\n\n**Total Revenue (all quarters combined): $450,000**\n\n**Key Findings & Sources**\n\n1. **Q1 Report** – revenue extraction from the text \"Revenue was $100,000.\"\n   - Source snippet: *“Sales report Q1: Revenue was $100,000.”*\n2. **Q2 Report** – revenue extracted from \"$150,000\" in the document.\n3. **Q3 Report** – revenue extracted from \"$200,000\" in the document.\n\nAll figures were obtained by searching each document for dollar amounts and summing them. No Q4 report was found in the available documents."
-            }
-          ]
-          ```
-
-          Fix the errors and try again.
-        role: user
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results. Variables persist between executions.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '1126'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: Need to output JSON.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"answer":"The total revenue reported across the three quarterly reports is:\n- Q1 Report: $100,000\n-
-                Q2 Report: $150,000\n- Q3 Report: $200,000\n\n**Total Revenue (all quarters combined): $450,000**\n\n**Key
-                Findings \u0026 Sources**\n1. Q1 Report – revenue extracted from the text \"Revenue was $100,000.\" (Source:
-                Sales report Q1 text)\n2. Q2 Report – revenue extracted from \"$150,000\" in the document.\n3. Q3 Report –
-                revenue extracted from \"$200,000\" in the document.\n\nAll figures were obtained by searching each document
-                for dollar amounts and summing them. No Q4 report was found in the available documents.","code_executions":[]}'
-              name: final_result
-            id: call_1ouq42ea
-            index: 0
-            type: function
-      created: 1769703378
-      id: chatcmpl-830
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 195
-        prompt_tokens: 3387
-        total_tokens: 3582
+        completion_tokens: 87
+        prompt_tokens: 2869
+        total_tokens: 2956
     status:
       code: 200
       message: OK

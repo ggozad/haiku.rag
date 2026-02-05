@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,10 @@ class TestDockerSandboxHaikuRAG:
     @docker_required
     @pytest.mark.asyncio
     @pytest.mark.vcr()
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="Requires Ollama - VCR can't capture calls from inside Docker",
+    )
     async def test_search_with_data(self, temp_db_path, test_docker_image):
         """Test search function works."""
         async with HaikuRAG(temp_db_path, create=True) as client:

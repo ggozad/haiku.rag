@@ -128,7 +128,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7686'
+      - '8280'
       content-type:
       - application/json
       host:
@@ -166,9 +166,20 @@ interactions:
           Returns a DoclingDocument object, or None if not found.
           See "DoclingDocument API" section below for how to use it.
 
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
           You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
@@ -180,7 +191,7 @@ interactions:
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
 
           ## DoclingDocument API
@@ -251,13 +262,13 @@ interactions:
           print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
           ```
 
-          ### Using ask() for semantic analysis
+          ### Using llm() for classification
           ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
           ```
 
           ## Workflow
@@ -268,10 +279,17 @@ interactions:
 
           ## Output Format
 
-          After executing code and gathering information, provide:
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string"}
+          ```
+
+          The `answer` field should contain:
           1. A clear answer to the user's question
           2. Key findings from your analysis
           3. References to specific documents/chunks that informed your answer
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -291,7 +309,7 @@ interactions:
             modules (json, re, collections, math, statistics, itertools,
             functools, datetime, typing).
 
-            Use print() to output results. Variables persist between executions.</summary>
+            Use print() to output results.</summary>
             <returns>
             <description>Structured result with success status, stdout, and stderr.</description>
             </returns>
@@ -352,7 +370,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '519'
+      - '513'
       content-type:
       - application/json
     parsed_body:
@@ -361,24 +379,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need to list documents.
+          reasoning: Need to list_documents.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))\n"}'
+              arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
               name: execute_code
-            id: call_hk3j646j
+            id: call_3ltyid1i
             index: 0
             type: function
-      created: 1769703338
-      id: chatcmpl-806
+      created: 1770322488
+      id: chatcmpl-467
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 46
-        prompt_tokens: 1599
-        total_tokens: 1645
+        completion_tokens: 43
+        prompt_tokens: 1752
+        total_tokens: 1795
     status:
       code: 200
       message: OK
@@ -391,7 +409,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8124'
+      - '8709'
       content-type:
       - application/json
       host:
@@ -429,9 +447,20 @@ interactions:
           Returns a DoclingDocument object, or None if not found.
           See "DoclingDocument API" section below for how to use it.
 
-          ### ask(question) -> str
-          Ask a question using the QA agent with RAG. Returns the answer as a string.
-          Use this for semantic analysis that benefits from LLM reasoning.
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
           You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
@@ -443,7 +472,7 @@ interactions:
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use ask() for Semantic Analysis**: When you need to understand meaning or interpret content, use the ask() function.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
 
           ## DoclingDocument API
@@ -514,13 +543,13 @@ interactions:
           print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
           ```
 
-          ### Using ask() for semantic analysis
+          ### Using llm() for classification
           ```python
-          # First search to find relevant content
-          results = search("machine learning approaches")
-          # Then use ask() to synthesize an answer
-          summary = ask("What are the main machine learning approaches discussed?")
-          print(summary)
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
           ```
 
           ## Workflow
@@ -531,10 +560,17 @@ interactions:
 
           ## Output Format
 
-          After executing code and gathering information, provide:
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string"}
+          ```
+
+          The `answer` field should contain:
           1. A clear answer to the user's question
           2. Key findings from your analysis
           3. References to specific documents/chunks that informed your answer
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -542,18 +578,18 @@ interactions:
         role: user
       - content: |-
           <think>
-          We need to list documents.
+          Need to list_documents.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))\n"}'
+            arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
             name: execute_code
-          id: call_hk3j646j
+          id: call_3ltyid1i
           type: function
-      - content: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))\n","stdout":"3\n","stderr":"","success":true}'
+      - content: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))","stdout":"3\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_hk3j646j
+        tool_call_id: call_3ltyid1i
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -568,7 +604,7 @@ interactions:
             modules (json, re, collections, math, statistics, itertools,
             functools, datetime, typing).
 
-            Use print() to output results. Variables persist between executions.</summary>
+            Use print() to output results.</summary>
             <returns>
             <description>Structured result with success status, stdout, and stderr.</description>
             </returns>
@@ -629,7 +665,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '706'
+      - '341'
       content-type:
       - application/json
     parsed_body:
@@ -637,19 +673,17 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: '{"answer":"There are **3 documents** in the database.\n\nKey findings:\n- The `list_documents` function
-            returned a list of 3 entries.\n- No further pagination or filtering was required.\n\nReference: The result from
-            `list_documents(limit=1000)` showing 3 items.","code_executions":[{"code":"docs = list_documents(limit=1000)\nprint(len(docs))\n","stdout":"3\n","stderr":"","success":true}]}'
+          content: '{"answer":"There are 3 documents in the database."}'
           role: assistant
-      created: 1769703340
-      id: chatcmpl-326
+      created: 1770322490
+      id: chatcmpl-796
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 117
-        prompt_tokens: 1694
-        total_tokens: 1811
+        completion_tokens: 20
+        prompt_tokens: 1842
+        total_tokens: 1862
     status:
       code: 200
       message: OK

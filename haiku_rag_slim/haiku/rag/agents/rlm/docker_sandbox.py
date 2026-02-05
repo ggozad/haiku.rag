@@ -129,7 +129,10 @@ class DockerSandbox:
 
         try:
             if self._process.stdin:
-                self._process.stdin.close()
+                try:
+                    self._process.stdin.close()
+                except BrokenPipeError:
+                    pass
             self._process.terminate()
             self._process.wait(timeout=5)
         except subprocess.TimeoutExpired:
