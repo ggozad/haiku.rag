@@ -18,8 +18,20 @@ from haiku.rag.tools.filters import (
     combine_filters,
 )
 from haiku.rag.tools.models import AnalysisResult, QAResult
-from haiku.rag.tools.qa import QA_NAMESPACE, QAState, create_qa_toolset
+from haiku.rag.tools.qa import (
+    QA_NAMESPACE,
+    QA_SESSION_NAMESPACE,
+    QAHistoryEntry,
+    QASessionState,
+    QAState,
+    create_qa_toolset,
+)
 from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
+from haiku.rag.tools.session import (
+    SESSION_NAMESPACE,
+    SessionState,
+    compute_state_delta,
+)
 
 __all__ = [
     "ToolContext",
@@ -38,9 +50,15 @@ __all__ = [
     "create_document_toolset",
     "find_document",
     "QA_NAMESPACE",
+    "QA_SESSION_NAMESPACE",
     "QAState",
+    "QASessionState",
+    "QAHistoryEntry",
     "create_qa_toolset",
     "ANALYSIS_NAMESPACE",
     "AnalysisState",
     "create_analysis_toolset",
+    "SESSION_NAMESPACE",
+    "SessionState",
+    "compute_state_delta",
 ]

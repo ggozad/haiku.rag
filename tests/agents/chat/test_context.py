@@ -261,13 +261,13 @@ class TestSessionContextCache:
     def test_cache_and_retrieve_session_context(self):
         """Test caching and retrieving a session context."""
         from haiku.rag.agents.chat.context import (
-            _session_context_cache,
+            _session_cache,
             cache_session_context,
             get_cached_session_context,
         )
 
         # Clear cache
-        _session_context_cache.clear()
+        _session_cache.clear()
 
         now = datetime.now()
         ctx = SessionContext(summary="Test summary", last_updated=now)
@@ -282,11 +282,11 @@ class TestSessionContextCache:
     def test_get_cached_session_context_returns_none_when_not_cached(self):
         """Test get_cached_session_context returns None when nothing cached."""
         from haiku.rag.agents.chat.context import (
-            _session_context_cache,
+            _session_cache,
             get_cached_session_context,
         )
 
-        _session_context_cache.clear()
+        _session_cache.clear()
 
         result = get_cached_session_context("nonexistent-session")
         assert result is None
@@ -298,12 +298,12 @@ class TestSessionContextCache:
         from haiku.rag.agents.chat.context import (
             _CACHE_TTL,
             _cache_timestamps,
-            _session_context_cache,
+            _session_cache,
             cache_session_context,
             get_cached_session_context,
         )
 
-        _session_context_cache.clear()
+        _session_cache.clear()
         _cache_timestamps.clear()
 
         # Add an entry
@@ -320,21 +320,21 @@ class TestSessionContextCache:
 
         # Should be None because the entry was cleaned up
         assert result is None
-        assert "stale-session" not in _session_context_cache
+        assert "stale-session" not in _session_cache
 
     @pytest.mark.asyncio
-    async def test_update_session_context_caches_result(self):
+    async def test_update_session_caches_result(self):
         """Test update_session_context stores result in cache."""
         from unittest.mock import AsyncMock, patch
 
         from haiku.rag.agents.chat.context import (
-            _session_context_cache,
+            _session_cache,
             get_cached_session_context,
             update_session_context,
         )
         from haiku.rag.agents.chat.state import ChatSessionState
 
-        _session_context_cache.clear()
+        _session_cache.clear()
 
         session_state = ChatSessionState(session_id="cache-test-session")
 
@@ -368,13 +368,13 @@ class TestSessionContextCache:
     async def test_update_session_context_no_cache_without_session_id(self):
         """Test update_session_context doesn't cache without session_id."""
         from haiku.rag.agents.chat.context import (
-            _session_context_cache,
+            _session_cache,
             get_cached_session_context,
             update_session_context,
         )
         from haiku.rag.agents.chat.state import ChatSessionState
 
-        _session_context_cache.clear()
+        _session_cache.clear()
 
         # No session_id
         session_state = ChatSessionState()
@@ -395,12 +395,12 @@ class TestSessionContextCache:
         from unittest.mock import patch
 
         from haiku.rag.agents.chat.context import (
-            _session_context_cache,
+            _session_cache,
             update_session_context,
         )
         from haiku.rag.agents.chat.state import ChatSessionState
 
-        _session_context_cache.clear()
+        _session_cache.clear()
 
         # Create session_state with initial_context but no session_context
         session_state = ChatSessionState(
@@ -446,12 +446,12 @@ class TestSessionContextCache:
         from unittest.mock import patch
 
         from haiku.rag.agents.chat.context import (
-            _session_context_cache,
+            _session_cache,
             update_session_context,
         )
         from haiku.rag.agents.chat.state import ChatSessionState, SessionContext
 
-        _session_context_cache.clear()
+        _session_cache.clear()
 
         # Create session_state with BOTH initial_context and session_context
         session_state = ChatSessionState(

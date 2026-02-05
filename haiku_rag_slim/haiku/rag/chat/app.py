@@ -17,14 +17,19 @@ from pydantic_ai import (
 )
 from pydantic_ai.messages import ModelMessage
 
-from haiku.rag.agents.chat.agent import create_chat_agent
+from haiku.rag.agents.chat.agent import (
+    ChatDeps,
+    create_chat_agent,
+    trigger_background_summarization,
+)
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
-    ChatDeps,
     ChatSessionState,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -153,8 +158,16 @@ class ChatApp(App):
         )
         await self.client.__aenter__()
 
-        # Create agent and session state
-        self.agent = create_chat_agent(self.config)
+        # Create tool context and agent
+        self.tool_context = ToolContext()
+        self.agent = create_chat_agent(self.config, self.client, self.tool_context)
+
+        # Initialize session state in tool context
+        session_state = self.tool_context.get_typed(SESSION_NAMESPACE, SessionState)
+        if session_state is not None:
+            session_state.document_filter = self._document_filter
+
+        # Keep ChatSessionState for UI state sync (used by _sync_session_state)
         self.session_state = ChatSessionState(
             session_id=str(uuid.uuid4()),
             initial_context=self._initial_context,
@@ -170,8 +183,40 @@ class ChatApp(App):
             await self.client.__aexit__(None, None, None)
 
     def _sync_session_state(self, chat_state: dict[str, Any]) -> None:
-        """Sync session_state from AG-UI state."""
-        self.session_state = ChatSessionState.model_validate(chat_state)
+        """Sync session_state from AG-UI state.
+
+        Updates existing session_state with fields from incoming state,
+        preserving fields not present in the update (e.g., initial_context).
+        """
+        from haiku.rag.agents.research.models import Citation
+
+        # Update specific fields rather than replacing the entire state
+        if "session_id" in chat_state:
+            self.session_state.session_id = chat_state["session_id"]
+        if "document_filter" in chat_state:
+            self.session_state.document_filter = chat_state["document_filter"]
+        if "citation_registry" in chat_state:
+            self.session_state.citation_registry = chat_state["citation_registry"]
+        if "citations" in chat_state:
+            self.session_state.citations = [
+                Citation(**c) if isinstance(c, dict) else c
+                for c in chat_state["citations"]
+            ]
+        if "qa_history" in chat_state:
+            from haiku.rag.agents.chat.state import QAResponse
+
+            self.session_state.qa_history = [
+                QAResponse(**qa) if isinstance(qa, dict) else qa
+                for qa in chat_state["qa_history"]
+            ]
+        if "session_context" in chat_state:
+            from haiku.rag.agents.chat.state import SessionContext
+
+            ctx = chat_state["session_context"]
+            if ctx is not None:
+                self.session_state.session_context = (
+                    SessionContext(**ctx) if isinstance(ctx, dict) else ctx
+                )
 
     async def _handle_stream_event(self, event: AgentStreamEvent) -> None:
         """Handle streaming events from the agent."""
@@ -274,10 +319,33 @@ class ChatApp(App):
                     AGUI_STATE_KEY: self.session_state.model_dump(mode="json")
                 }
 
+            # Sync session state to tool context before running
+            session_state = self.tool_context.get_typed(SESSION_NAMESPACE, SessionState)
+            if session_state is not None:
+                session_state.session_id = self.session_state.session_id
+                session_state.document_filter = self.session_state.document_filter
+                session_state.citation_registry = self.session_state.citation_registry
+                session_state.citations = list(self.session_state.citations)
+
+            # Sync initial_context to QA session state
+            from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+
+            qa_session_state = self.tool_context.get_typed(
+                QA_SESSION_NAMESPACE, QASessionState
+            )
+            if qa_session_state is not None:
+                if (
+                    not qa_session_state.session_context
+                    and self.session_state.initial_context
+                ):
+                    qa_session_state.session_context = (
+                        self.session_state.initial_context
+                    )
+
             deps = ChatDeps(
-                client=self.client,
                 config=self.config,
-                session_state=self.session_state,
+                tool_context=self.tool_context,
+                session_id=self.session_state.session_id,
                 state_key=AGUI_STATE_KEY,
             )
 
@@ -306,6 +374,23 @@ class ChatApp(App):
                 # Add citations captured from tool metadata
                 if self.session_state.citations:
                     await chat_history.add_citations(self.session_state.citations)
+
+                # Trigger background summarization
+                trigger_background_summarization(deps)
+
+                # Sync session context from QASessionState to ChatSessionState for modal
+                qa_session_state = self.tool_context.get_typed(
+                    QA_SESSION_NAMESPACE, QASessionState
+                )
+                if qa_session_state is not None and qa_session_state.session_context:
+                    from datetime import datetime
+
+                    from haiku.rag.agents.chat.state import SessionContext
+
+                    self.session_state.session_context = SessionContext(
+                        summary=qa_session_state.session_context,
+                        last_updated=datetime.now(),
+                    )
 
         except asyncio.CancelledError:
             chat_history.hide_thinking()
@@ -383,6 +468,21 @@ class ChatApp(App):
     async def action_show_context(self) -> None:
         """Show context modal (edit initial context or view session context)."""
         from haiku.rag.chat.widgets.context_modal import ContextModal
+        from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+
+        # Sync session context from QASessionState before showing modal
+        qa_session_state = self.tool_context.get_typed(
+            QA_SESSION_NAMESPACE, QASessionState
+        )
+        if qa_session_state is not None and qa_session_state.session_context:
+            from datetime import datetime
+
+            from haiku.rag.agents.chat.state import SessionContext
+
+            self.session_state.session_context = SessionContext(
+                summary=qa_session_state.session_context,
+                last_updated=datetime.now(),
+            )
 
         await self.push_screen(
             ContextModal(self.session_state, is_locked=self._context_locked)

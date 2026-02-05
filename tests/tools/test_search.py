@@ -213,15 +213,11 @@ class TestSearchToolExecution:
 
 
 @pytest.fixture
-def search_client(temp_db_path):
+async def search_client(temp_db_path):
     """Create a HaikuRAG client with test data for search tests."""
-    import asyncio
-
     from haiku.rag.client import HaikuRAG
 
-    async def setup():
-        rag = HaikuRAG(temp_db_path, create=True)
-        await rag.__aenter__()
+    async with HaikuRAG(temp_db_path, create=True) as rag:
         await rag.create_document(
             "Python is a programming language. It is widely used for web development.",
             uri="test://python",
@@ -232,9 +228,7 @@ def search_client(temp_db_path):
             uri="test://javascript",
             title="JavaScript Guide",
         )
-        return rag
-
-    return asyncio.get_event_loop().run_until_complete(setup())
+        yield rag
 
 
 @pytest.fixture

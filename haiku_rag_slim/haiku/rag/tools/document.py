@@ -4,6 +4,8 @@ from pydantic_ai import Agent, FunctionToolset
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.filters import build_multi_document_filter, combine_filters
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 from haiku.rag.utils import get_model
 
 DOCUMENT_NAMESPACE = "haiku.rag.document"
@@ -91,6 +93,8 @@ def create_document_toolset(
         config: Application configuration (used for summarization LLM).
         context: Optional ToolContext for state tracking.
             If provided, accessed documents are tracked in DocumentState.
+            If SessionState is registered, it will be used for dynamic
+            document filtering.
         base_filter: Optional base SQL WHERE clause applied to list operations.
 
     Returns:
@@ -113,10 +117,21 @@ def create_document_toolset(
         page_size = 50
         offset = (page - 1) * page_size
 
+        # Get session filter from session state
+        session_filter = None
+        if context is not None:
+            session_state = context.get_typed(SESSION_NAMESPACE, SessionState)
+            if session_state is not None and session_state.document_filter:
+                session_filter = build_multi_document_filter(
+                    session_state.document_filter
+                )
+
+        effective_filter = combine_filters(base_filter, session_filter)
+
         docs = await client.list_documents(
-            limit=page_size, offset=offset, filter=base_filter
+            limit=page_size, offset=offset, filter=effective_filter
         )
-        total = await client.count_documents(filter=base_filter)
+        total = await client.count_documents(filter=effective_filter)
         total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
         return DocumentListResponse(
