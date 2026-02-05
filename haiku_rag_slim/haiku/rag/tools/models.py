@@ -35,7 +35,3 @@ class AnalysisResult(BaseModel):
         default=True,
         description="Whether code was executed to produce this answer",
     )
-    execution_count: int = Field(
-        default=0,
-        description="Number of code executions performed",
-    )

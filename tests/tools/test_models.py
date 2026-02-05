@@ -84,7 +84,6 @@ def test_analysis_result_defaults():
     """Test AnalysisResult has sensible defaults."""
     result = AnalysisResult(answer="The result is 42")
     assert result.code_executed is True
-    assert result.execution_count == 0
 
 
 def test_analysis_result_with_values():
@@ -92,8 +91,6 @@ def test_analysis_result_with_values():
     result = AnalysisResult(
         answer="The result is 42",
         code_executed=True,
-        execution_count=3,
     )
     assert result.answer == "The result is 42"
     assert result.code_executed is True
-    assert result.execution_count == 3

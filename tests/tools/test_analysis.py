@@ -12,28 +12,19 @@ class TestAnalysisState:
     """Tests for AnalysisState model."""
 
     def test_analysis_state_defaults(self):
-        """AnalysisState initializes with empty code_executions."""
+        """AnalysisState initializes with empty programs."""
         state = AnalysisState()
-        assert state.code_executions == []
+        assert state.programs == []
 
     def test_analysis_state_serialization(self):
         """AnalysisState serializes and deserializes correctly."""
-        from haiku.rag.agents.rlm.models import CodeExecution
-
         state = AnalysisState()
-        state.code_executions.append(
-            CodeExecution(
-                code="print('hello')",
-                stdout="hello\n",
-                stderr="",
-                success=True,
-            )
-        )
+        state.programs.append("print('hello')")
 
         data = state.model_dump()
         restored = AnalysisState.model_validate(data)
-        assert len(restored.code_executions) == 1
-        assert restored.code_executions[0].code == "print('hello')"
+        assert len(restored.programs) == 1
+        assert restored.programs[0] == "print('hello')"
 
 
 class TestAnalysisToolset:
