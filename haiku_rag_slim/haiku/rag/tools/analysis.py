@@ -3,7 +3,7 @@ from pydantic_ai import FunctionToolset
 
 from haiku.rag.agents.rlm.agent import create_rlm_agent
 from haiku.rag.agents.rlm.dependencies import RLMContext, RLMDeps
-from haiku.rag.agents.rlm.models import CodeExecution
+from haiku.rag.agents.rlm.docker_sandbox import DockerSandbox
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext
@@ -21,10 +21,10 @@ ANALYSIS_NAMESPACE = "haiku.rag.analysis"
 class AnalysisState(BaseModel):
     """State for analysis toolset.
 
-    Tracks code executions across tool invocations.
+    Tracks programs produced across tool invocations.
     """
 
-    code_executions: list[CodeExecution] = []
+    programs: list[str] = []
 
 
 def create_analysis_toolset(
@@ -85,28 +85,32 @@ def create_analysis_toolset(
             combine_filters(base_filter, session_filter), doc_filter
         )
 
-        # Create RLM context and deps
+        # Create RLM context
         rlm_context = RLMContext(filter=effective_filter)
-        deps = RLMDeps(
+
+        # Run RLM agent with Docker sandbox
+        async with DockerSandbox(
             client=client,
-            config=config,
+            config=config.rlm,
             context=rlm_context,
-        )
+            image=config.rlm.docker_image,
+        ) as sandbox:
+            deps = RLMDeps(
+                sandbox=sandbox,
+                context=rlm_context,
+            )
 
-        # Run RLM agent
-        rlm_agent = create_rlm_agent(config)
-        result = await rlm_agent.run(task, deps=deps)
+            rlm_agent = create_rlm_agent(config)
+            result = await rlm_agent.run(task, deps=deps)
 
-        # Track code executions in state
-        code_executions = rlm_context.code_executions
-        if state is not None:
-            state.code_executions.extend(code_executions)
+            program = result.output.program
+            if state is not None and program:
+                state.programs.append(program)
 
-        return AnalysisResult(
-            answer=result.output.answer,
-            code_executed=len(code_executions) > 0,
-            execution_count=len(code_executions),
-        )
+            return AnalysisResult(
+                answer=result.output.answer,
+                code_executed=bool(program),
+            )
 
     toolset = FunctionToolset()
     toolset.add_function(analyze, name=tool_name)
