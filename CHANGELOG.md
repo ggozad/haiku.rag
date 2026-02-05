@@ -8,13 +8,16 @@
   - Allows disabling OCR via config when running docling-serve in read-only containers
 - **RLM Agent (Recursive Language Model)**: New agent for complex analytical tasks via sandboxed Python code execution
   - Solves problems traditional RAG can't handle: aggregation, computation, multi-document analysis
-  - Sandboxed execution with safe builtins and allowed imports (json, re, math, statistics, etc.)
+  - Docker-based sandbox with full Python environment (no import restrictions)
+  - Container reuse within a single `rlm()` call for reduced latency
   - Available functions: `search()`, `list_documents()`, `get_document()`, `get_docling_document()`, `llm()`
   - Pre-loaded documents support via `documents` variable
   - Context filter for scoping searches without LLM control
   - New `client.rlm(question)` method on HaikuRAG client
   - New `haiku-rag rlm` CLI command
   - New `rlm_question` MCP tool
+  - New config options: `docker_image`, `docker_memory_limit`
+- **CI**: Docker sandbox integration tests run in GitHub Actions
 
 ### Fixed
 

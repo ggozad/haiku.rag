@@ -1316,7 +1316,12 @@ class HaikuRAG:
         Returns:
             The answer as a string.
         """
-        from haiku.rag.agents.rlm import RLMContext, RLMDeps, create_rlm_agent
+        from haiku.rag.agents.rlm import (
+            DockerSandbox,
+            RLMContext,
+            RLMDeps,
+            create_rlm_agent,
+        )
 
         context = RLMContext(filter=filter)
 
@@ -1333,16 +1338,23 @@ class HaikuRAG:
                     loaded_docs.append(doc)
             context.documents = loaded_docs if loaded_docs else None
 
-        deps = RLMDeps(
+        async with DockerSandbox(
             client=self,
-            config=self._config,
+            config=self._config.rlm,
             context=context,
-        )
+            image=self._config.rlm.docker_image,
+        ) as sandbox:
+            deps = RLMDeps(
+                client=self,
+                config=self._config,
+                sandbox=sandbox,
+                context=context,
+            )
 
-        agent = create_rlm_agent(self._config)
-        result = await agent.run(question, deps=deps)
+            agent = create_rlm_agent(self._config)
+            result = await agent.run(question, deps=deps)
 
-        return result.output.answer
+            return result.output.answer
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.

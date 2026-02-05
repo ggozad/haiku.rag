@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from haiku.rag.store.models import Document, SearchResult
 
 if TYPE_CHECKING:
+    from haiku.rag.agents.rlm.docker_sandbox import DockerSandbox
     from haiku.rag.agents.rlm.models import CodeExecution
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config.models import AppConfig
@@ -25,4 +26,5 @@ class RLMDeps:
 
     client: "HaikuRAG"
     config: "AppConfig"
+    sandbox: "DockerSandbox"
     context: RLMContext = field(default_factory=RLMContext)

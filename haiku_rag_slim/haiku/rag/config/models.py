@@ -105,6 +105,8 @@ class RLMConfig(BaseModel):
     code_timeout: float = 60.0
     max_output_chars: int = 50_000
     max_tool_calls: int = 20
+    docker_image: str = "ghcr.io/ggozad/haiku.rag-slim:latest"
+    docker_memory_limit: str = "512m"
 
 
 class PictureDescriptionConfig(BaseModel):

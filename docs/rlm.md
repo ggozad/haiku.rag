@@ -132,19 +132,9 @@ for doc in documents:
 
 Each document dict has keys: `id`, `title`, `uri`, `content`
 
-## Allowed Imports
+## Imports
 
-The following standard library modules can be imported:
-
-- `json` - JSON encoding/decoding
-- `re` - Regular expressions
-- `math` - Mathematical functions
-- `statistics` - Statistical functions
-- `collections` - Specialized containers
-- `itertools` - Iterator utilities
-- `functools` - Higher-order functions
-- `datetime` - Date and time handling
-- `typing` - Type hints
+The sandbox runs in a Docker container with full Python available. Any module installed in the container image can be imported:
 
 ```python
 import re
@@ -161,15 +151,17 @@ for r in results:
 print(Counter(error_types).most_common(10))
 ```
 
-## Security
+The default image (`ghcr.io/ggozad/haiku.rag-slim`) includes the Python standard library. Custom images can add additional packages like `pandas` or `numpy`.
 
-The sandbox enforces several security measures:
+## Docker Sandbox
 
-- **Blocked builtins**: `eval`, `exec`, `compile`, `open`, `input`, `__import__`, `globals`, `locals`, `getattr`, `setattr`, `delattr`
-- **Blocked imports**: `os`, `sys`, `subprocess`, `shutil`, `socket`, `requests`, `builtins`
-- **Private attribute access blocked**: Cannot access `__dunder__` attributes (except common ones like `__init__`, `__str__`)
-- **Execution timeout**: Code execution times out after configurable limit (default 60s)
+Code executes in an isolated Docker container with:
+
+- **Read-only database**: The LanceDB database is mounted read-only
+- **Memory limits**: Configurable memory limit (default 512MB)
+- **Execution timeout**: Code times out after configurable limit (default 60s)
 - **Output truncation**: Large outputs are truncated to prevent memory issues
+- **Container reuse**: Within a single `rlm()` call, the container stays warm for multiple code executions
 
 ## Context Filter
 
@@ -201,4 +193,26 @@ rlm:
   code_timeout: 60.0      # Max seconds for code execution
   max_tool_calls: 20      # Max execute_code calls per question
   max_output_chars: 50000 # Truncate output after this many chars
+  docker_image: "ghcr.io/ggozad/haiku.rag-slim:latest"  # Container image
+  docker_memory_limit: "512m"  # Container memory limit
+```
+
+### Custom Docker Image
+
+To add additional Python packages, create a custom Dockerfile:
+
+```dockerfile
+FROM ghcr.io/ggozad/haiku.rag-slim:latest
+RUN pip install pandas numpy
+```
+
+Build and configure:
+
+```bash
+docker build -t my-rlm-image .
+```
+
+```yaml
+rlm:
+  docker_image: "my-rlm-image"
 ```

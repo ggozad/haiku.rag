@@ -3,23 +3,8 @@ from pydantic_ai import Agent, RunContext
 from haiku.rag.agents.rlm.dependencies import RLMDeps
 from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
 from haiku.rag.agents.rlm.prompts import RLM_SYSTEM_PROMPT
-from haiku.rag.agents.rlm.sandbox import REPLEnvironment
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
-
-_repl_cache: dict[int, REPLEnvironment] = {}
-
-
-def _get_or_create_repl(ctx) -> REPLEnvironment:
-    """Get or create a REPL environment for this context."""
-    key = id(ctx.deps)
-    if key not in _repl_cache:
-        _repl_cache[key] = REPLEnvironment(
-            client=ctx.deps.client,
-            config=ctx.deps.config.rlm,
-            context=ctx.deps.context,
-        )
-    return _repl_cache[key]
 
 
 def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
@@ -54,7 +39,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
         modules (json, re, collections, math, statistics, itertools,
         functools, datetime, typing).
 
-        Use print() to output results. Variables persist between executions.
+        Use print() to output results.
 
         Args:
             code: Python code to execute.
@@ -62,9 +47,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
         Returns:
             Structured result with success status, stdout, and stderr.
         """
-        repl = _get_or_create_repl(ctx)
-
-        result = await repl.execute_async(code)
+        result = await ctx.deps.sandbox.execute(code)
 
         execution = CodeExecution(
             code=code,
