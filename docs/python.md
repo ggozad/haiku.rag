@@ -403,16 +403,18 @@ Answer complex analytical questions via code execution:
 
 ```python
 # Aggregation across documents
-answer = await client.rlm("Which quarter had the highest revenue?")
+result = await client.rlm("Which quarter had the highest revenue?")
+print(result.answer)    # The answer
+print(result.program)   # The final consolidated program
 
 # Computation within a document set
-answer = await client.rlm(
+result = await client.rlm(
     "What is the average deal size mentioned in these contracts?",
     filter="uri LIKE '%contracts%'"
 )
 
 # Multi-document comparison
-answer = await client.rlm(
+result = await client.rlm(
     "What changed between these two versions of the policy?",
     documents=["Policy v1.0", "Policy v2.0"]
 )

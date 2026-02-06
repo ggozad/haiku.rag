@@ -26,29 +26,7 @@ class TestCodeExecution:
 
 
 class TestRLMResult:
-    def test_create_result_with_answer_only(self):
-        result = RLMResult(answer="The answer is 42")
+    def test_create_result(self):
+        result = RLMResult(answer="The answer is 42", program="print(42)")
         assert result.answer == "The answer is 42"
-        assert result.code_executions == []
-
-    def test_create_result_with_code_executions(self):
-        executions = [
-            CodeExecution(
-                code="x = 1 + 1",
-                stdout="",
-                stderr="",
-                success=True,
-            ),
-            CodeExecution(
-                code="print(x)",
-                stdout="2\n",
-                stderr="",
-                success=True,
-            ),
-        ]
-        result = RLMResult(
-            answer="x equals 2",
-            code_executions=executions,
-        )
-        assert len(result.code_executions) == 2
-        assert result.code_executions[1].stdout == "2\n"
+        assert result.program == "print(42)"

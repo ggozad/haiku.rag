@@ -65,9 +65,9 @@ class TestClientRLMIntegration:
             await client.create_document("Second document about dogs.", title="Doc 2")
             await client.create_document("Third document about birds.", title="Doc 3")
 
-            answer = await client.rlm("How many documents are in the database?")
+            result = await client.rlm("How many documents are in the database?")
 
-            assert "3" in answer
+            assert "3" in result.answer
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -107,11 +107,11 @@ class TestClientRLMIntegration:
                 "Sales report Q3: Revenue was $200,000.", title="Q3 Report"
             )
 
-            answer = await client.rlm(
+            result = await client.rlm(
                 "What is the total revenue across all quarterly reports?"
             )
 
-            assert "450" in answer or "450,000" in answer
+            assert "450" in result.answer or "450,000" in result.answer
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -136,12 +136,12 @@ class TestClientRLMIntegration:
             await client.create_document("Dog document.", title="Dogs")
             await client.create_document("Bird document.", title="Birds")
 
-            answer = await client.rlm(
+            result = await client.rlm(
                 "How many documents are available?",
                 filter="title = 'Cats'",
             )
 
-            assert "1" in answer
+            assert "1" in result.answer
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -169,13 +169,13 @@ class TestClientRLMIntegration:
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document_from_source(pdf_path)
 
-            answer = await client.rlm(
+            result = await client.rlm(
                 "How many tables are in the document? "
                 "Also tell me how many pictures/figures it contains."
             )
 
             # The doclaynet.pdf has 1 table and 1 picture
-            assert "1" in answer
+            assert "1" in result.answer
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -221,14 +221,14 @@ class TestClientRLMIntegration:
                 title="Q3 Update",
             )
 
-            answer = await client.rlm(
+            result = await client.rlm(
                 "Analyze the sentiment of each quarterly update. "
                 "How many quarters were positive, negative, and mixed?"
             )
 
             # Should identify: Q1=positive, Q2=negative, Q3=mixed
-            assert "positive" in answer.lower()
-            assert "negative" in answer.lower()
+            assert "positive" in result.answer.lower()
+            assert "negative" in result.answer.lower()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -257,7 +257,7 @@ class TestClientRLMIntegration:
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document_from_source(pdf_path)
 
-            answer = await client.rlm(
+            result = await client.rlm(
                 "Search for content about document element types or labels. "
                 "What are all the different document element types mentioned? "
                 "List them all."
@@ -265,7 +265,7 @@ class TestClientRLMIntegration:
 
             # The doclaynet.pdf defines exactly 11 class labels for document elements
             # Normalize Unicode hyphens (U+2011 non-breaking hyphen) to regular hyphens
-            answer_lower = answer.lower().replace("\u2011", "-")
+            answer_lower = result.answer.lower().replace("\u2011", "-")
             expected_labels = [
                 "caption",
                 "footnote",
@@ -318,11 +318,14 @@ class TestClientRLMIntegration:
                 title="Mission Statement",
             )
 
-            answer = await client.rlm(
+            result = await client.rlm(
                 "Using the pre-loaded documents variable, "
                 "tell me when was the company founded and what is their mission?",
                 documents=["Company History", "Mission Statement"],
             )
 
-            assert "1985" in answer
-            assert "accessible" in answer.lower() or "technology" in answer.lower()
+            assert "1985" in result.answer
+            assert (
+                "accessible" in result.answer.lower()
+                or "technology" in result.answer.lower()
+            )

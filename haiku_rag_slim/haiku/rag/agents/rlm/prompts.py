@@ -43,7 +43,7 @@ for doc in documents:
 Check if it exists with: `if 'documents' in dir(): ...`
 
 ## Standard Library Modules
-You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
+You can import any Python standard library module.
 
 ## Strategy Guide
 
@@ -72,7 +72,7 @@ When you call `get_docling_document(id_or_title)`, you get a DoclingDocument obj
 
 ### Text Item Properties
 - `item.text` - The text content
-- `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
+- `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
 - `item.prov` - Provenance (page numbers, bounding boxes)
 
 ### Table Access
@@ -85,7 +85,7 @@ When you call `get_docling_document(id_or_title)`, you get a DoclingDocument obj
 doc = get_docling_document("My Document")
 
 # Get all headings
-headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
+headings = [t.text for t in doc.texts if "header" in str(t.label)]
 
 # Iterate with structure
 for item, level in doc.iterate_items():
@@ -142,14 +142,12 @@ print(sentiment)
 
 CRITICAL: Your final response MUST be valid JSON matching this exact schema:
 ```json
-{"answer": "Your complete answer here as a string"}
+{"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
 ```
 
-The `answer` field should contain:
-1. A clear answer to the user's question
-2. Key findings from your analysis
-3. References to specific documents/chunks that informed your answer
+- `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+- `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
 
-Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
+Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
 
 CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first."""

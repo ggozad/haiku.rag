@@ -14,7 +14,4 @@ class RLMResult(BaseModel):
     """Result from RLM agent execution."""
 
     answer: str = Field(description="The answer to the user's question")
-    code_executions: list[CodeExecution] = Field(
-        default_factory=list,
-        description="History of code executions during the RLM session",
-    )
+    program: str = Field(description="The final consolidated program")

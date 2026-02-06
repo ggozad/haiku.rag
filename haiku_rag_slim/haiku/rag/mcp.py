@@ -268,7 +268,8 @@ def create_mcp_server(
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 documents = [document] if document else None
-                return await rag.rlm(question, documents=documents, filter=filter)
+                result = await rag.rlm(question, documents=documents, filter=filter)
+                return result.answer
         except Exception as e:
             return f"Error running RLM agent: {e!s}"
 

@@ -131,7 +131,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8342'
+      - '7836'
       content-type:
       - application/json
       host:
@@ -185,7 +185,7 @@ interactions:
           Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
+          You can import any Python standard library module.
 
           ## Strategy Guide
 
@@ -214,7 +214,7 @@ interactions:
 
           ### Text Item Properties
           - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
           - `item.prov` - Provenance (page numbers, bounding boxes)
 
           ### Table Access
@@ -227,7 +227,7 @@ interactions:
           doc = get_docling_document("My Document")
 
           # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
 
           # Iterate with structure
           for item, level in doc.iterate_items():
@@ -284,15 +284,13 @@ interactions:
 
           CRITICAL: Your final response MUST be valid JSON matching this exact schema:
           ```json
-          {"answer": "Your complete answer here as a string"}
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
           ```
 
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
 
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -305,12 +303,11 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in the sandboxed environment.
+            <summary>Execute Python code in a Docker-sandboxed environment.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
 
             Use print() to output results.</summary>
             <returns>
@@ -332,48 +329,25 @@ interactions:
           description: Result from RLM agent execution.
           name: final_result
           parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
             additionalProperties: false
             properties:
               answer:
                 description: The answer to the user's question
                 type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
+              program:
+                description: The final consolidated program
+                type: string
             required:
             - answer
+            - program
             type: object
+          strict: true
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '521'
+      - '592'
       content-type:
       - application/json
     parsed_body:
@@ -382,24 +356,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need quarterly updates documents. Search.
+          reasoning: Need to search for quarterly updates documents. Use search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"search(\"quarterly update\", limit=20)"}'
+              arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nprint(results[:3])"}'
               name: execute_code
-            id: call_f7rhj4ml
+            id: call_vnbck7g3
             index: 0
             type: function
-      created: 1770322595
-      id: chatcmpl-358
+      created: 1770373405
+      id: chatcmpl-477
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 40
-        prompt_tokens: 1763
-        total_tokens: 1803
+        completion_tokens: 58
+        prompt_tokens: 1758
+        total_tokens: 1816
     status:
       code: 200
       message: OK
@@ -412,7 +386,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8765'
+      - '9608'
       content-type:
       - application/json
       host:
@@ -466,7 +440,7 @@ interactions:
           Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
+          You can import any Python standard library module.
 
           ## Strategy Guide
 
@@ -495,7 +469,7 @@ interactions:
 
           ### Text Item Properties
           - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
           - `item.prov` - Provenance (page numbers, bounding boxes)
 
           ### Table Access
@@ -508,7 +482,7 @@ interactions:
           doc = get_docling_document("My Document")
 
           # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
 
           # Iterate with structure
           for item, level in doc.iterate_items():
@@ -565,15 +539,13 @@ interactions:
 
           CRITICAL: Your final response MUST be valid JSON matching this exact schema:
           ```json
-          {"answer": "Your complete answer here as a string"}
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
           ```
 
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
 
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -581,18 +553,29 @@ interactions:
         role: user
       - content: |-
           <think>
-          Need quarterly updates documents. Search.
+          Need to search for quarterly updates documents. Use search.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"search(\"quarterly update\", limit=20)"}'
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nprint(results[:3])"}'
             name: execute_code
-          id: call_f7rhj4ml
+          id: call_vnbck7g3
           type: function
-      - content: '{"code":"search(\"quarterly update\", limit=20)","stdout":"","stderr":"","success":true}'
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nprint(results[:3])","stdout":"3\n[{''chunk_id'':
+          ''f43599fd-f1ef-456d-8aee-28467c9e467b'', ''content'': ''Mixed results this quarter. While product quality improved,
+          marketing campaigns underperformed. Revenue was flat compared to last year but customer retention increased.'',
+          ''document_id'': ''1c58eccc-aad4-4b4e-8632-854dfbafc78e'', ''document_title'': ''Q3 Update'', ''document_uri'':
+          None, ''score'': 0.032786883413791656, ''page_numbers'': [], ''headings'': None}, {''chunk_id'': ''ce740ef8-ae7f-4efb-81c1-1ffa34323f56'',
+          ''content'': ''We faced significant challenges this quarter. Supply chain issues caused delays, and we missed our
+          revenue target by 15%. Several key employees left the company.'', ''document_id'': ''afb82f72-2eb0-4d3e-ad45-95c641e8cb71'',
+          ''document_title'': ''Q2 Update'', ''document_uri'': None, ''score'': 0.032258063554763794, ''page_numbers'': [],
+          ''headings'': None}, {''chunk_id'': ''77a36420-7c61-4881-bd05-ba7aec532934'', ''content'': ''The new product launch
+          exceeded expectations. Sales grew 40% and customer feedback has been overwhelmingly positive. Team morale is at
+          an all-time high.'', ''document_id'': ''bea81446-5d06-489f-9309-e97aa9762a96'', ''document_title'': ''Q1 Update'',
+          ''document_uri'': None, ''score'': 0.01587301678955555, ''page_numbers'': [], ''headings'': None}]\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_f7rhj4ml
+        tool_call_id: call_vnbck7g3
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -600,12 +583,11 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in the sandboxed environment.
+            <summary>Execute Python code in a Docker-sandboxed environment.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
 
             Use print() to output results.</summary>
             <returns>
@@ -627,684 +609,25 @@ interactions:
           description: Result from RLM agent execution.
           name: final_result
           parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
             additionalProperties: false
             properties:
               answer:
                 description: The answer to the user's question
                 type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '496'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: No output. Need to list documents.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"code":"list_documents(limit=10)"}'
-              name: execute_code
-            id: call_8kasef7x
-            index: 0
-            type: function
-      created: 1770322596
-      id: chatcmpl-817
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 37
-        prompt_tokens: 1842
-        total_tokens: 1879
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '9145'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### llm(prompt) -> str
-          Call an LLM directly with the given prompt. Returns the response as a string.
-          Use this for classification, summarization, extraction, or any task where you
-          already have the content and just need LLM reasoning.
-
-          ## Pre-loaded Documents Variable
-
-          If documents were pre-loaded for this session, a `documents` variable is available:
-          ```python
-          # documents is a list of dicts with keys: id, title, uri, content
-          for doc in documents:
-              print(doc['title'], len(doc['content']))
-          ```
-          Check if it exists with: `if 'documents' in dir(): ...`
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using llm() for classification
-          ```python
-          # Get document content
-          content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
-          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
-          print(sentiment)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
-          ```json
-          {"answer": "Your complete answer here as a string"}
-          ```
-
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
-        role: user
-      - content: |-
-          <think>
-          Need quarterly updates documents. Search.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"search(\"quarterly update\", limit=20)"}'
-            name: execute_code
-          id: call_f7rhj4ml
-          type: function
-      - content: '{"code":"search(\"quarterly update\", limit=20)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_f7rhj4ml
-      - content: |-
-          <think>
-          No output. Need to list documents.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"list_documents(limit=10)"}'
-            name: execute_code
-          id: call_8kasef7x
-          type: function
-      - content: '{"code":"list_documents(limit=10)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8kasef7x
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
+              program:
+                description: The final consolidated program
                 type: string
             required:
-            - code
+            - answer
+            - program
             type: object
           strict: true
         type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '547'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: |-
-            <think>
-            Possibly documents not loaded. Try search for "Q1" etc.
-            </think>
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"code":"search(\"Q1\", limit=10)"}'
-              name: execute_code
-            id: call_5p6t6pm8
-            index: 0
-            type: function
-      created: 1770322597
-      id: chatcmpl-664
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 53
-        prompt_tokens: 1914
-        total_tokens: 1967
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '9560'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### llm(prompt) -> str
-          Call an LLM directly with the given prompt. Returns the response as a string.
-          Use this for classification, summarization, extraction, or any task where you
-          already have the content and just need LLM reasoning.
-
-          ## Pre-loaded Documents Variable
-
-          If documents were pre-loaded for this session, a `documents` variable is available:
-          ```python
-          # documents is a list of dicts with keys: id, title, uri, content
-          for doc in documents:
-              print(doc['title'], len(doc['content']))
-          ```
-          Check if it exists with: `if 'documents' in dir(): ...`
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using llm() for classification
-          ```python
-          # Get document content
-          content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
-          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
-          print(sentiment)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
-          ```json
-          {"answer": "Your complete answer here as a string"}
-          ```
-
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
-        role: user
-      - content: |-
-          <think>
-          Need quarterly updates documents. Search.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"search(\"quarterly update\", limit=20)"}'
-            name: execute_code
-          id: call_f7rhj4ml
-          type: function
-      - content: '{"code":"search(\"quarterly update\", limit=20)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_f7rhj4ml
-      - content: |-
-          <think>
-          No output. Need to list documents.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"list_documents(limit=10)"}'
-            name: execute_code
-          id: call_8kasef7x
-          type: function
-      - content: '{"code":"list_documents(limit=10)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8kasef7x
-      - content: |-
-          <think>
-
-          Possibly documents not loaded. Try search for "Q1" etc.
-
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"search(\"Q1\", limit=10)"}'
-            name: execute_code
-          id: call_5p6t6pm8
-          type: function
-      - content: '{"code":"search(\"Q1\", limit=10)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_5p6t6pm8
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '736'
+      - '1333'
       content-type:
       - application/json
     parsed_body:
@@ -1312,359 +635,25 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: |-
-            <think>
-            No results. Might be no data. Could return zero counts.{"answer":"I explored the knowledge base for documents containing quarterly updates, but I couldn't find any relevant content. Consequently, I cannot determine how many quarters were positive, negative, or mixed. If you can provide the text of the quarterly updates or specify where to locate them, I can perform the sentiment analysis and give you the requested counts."}
+          content: '{"answer":"Among the quarterly updates examined, there is one positive quarter (Q1), one negative quarter
+            (Q2), and one mixed quarter (Q3).","program":"# Find quarterly update chunks\nresults = search(\"quarterly update\",
+            limit=50)\n# Classify sentiment via llm\nsentiment_counts = {\"positive\":0, \"negative\":0, \"mixed\":0}\nfor
+            res in results:\n    content = res[''content'']\n    sentiment = llm(f\"Classify the sentiment of the following
+            corporate update as ''positive'', ''negative'', or ''mixed'':\\n\\n{content}\")\n    # Normalize output\n    sentiment
+            = sentiment.lower().split()[0]\n    if sentiment in sentiment_counts:\n        sentiment_counts[sentiment] +=
+            1\n    else:\n        sentiment_counts[''mixed''] += 1\nprint(sentiment_counts)\n# Output the counts\nprint(f\"Positive:
+            {sentiment_counts[''positive'']}\\nNegative: {sentiment_counts[''negative'']}\\nMixed: {sentiment_counts[''mixed'']}\")"}'
+          reasoning: We have 3 quarterly updates Q1 positive, Q2 negative, Q3 mixed. Need count.
           role: assistant
-      created: 1770322600
-      id: chatcmpl-793
+      created: 1770373411
+      id: chatcmpl-392
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 98
-        prompt_tokens: 1999
-        total_tokens: 2097
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '10719'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
-
-          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
-
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
-          - from haiku.rag import search  ✗ WRONG - will fail
-
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
-
-          ## Available Functions
-
-          ### search(query, limit=10) -> list[dict]
-          Search the knowledge base using hybrid search (vector + full-text).
-          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-          ### list_documents(limit=10, offset=0) -> list[dict]
-          List available documents in the knowledge base.
-          Returns list of dicts with keys: id, title, uri, created_at
-
-          ### get_document(id_or_title) -> str | None
-          Get the full text content of a document by ID, title, or URI.
-          Returns the document content as a string, or None if not found.
-
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
-
-          ### llm(prompt) -> str
-          Call an LLM directly with the given prompt. Returns the response as a string.
-          Use this for classification, summarization, extraction, or any task where you
-          already have the content and just need LLM reasoning.
-
-          ## Pre-loaded Documents Variable
-
-          If documents were pre-loaded for this session, a `documents` variable is available:
-          ```python
-          # documents is a list of dicts with keys: id, title, uri, content
-          for doc in documents:
-              print(doc['title'], len(doc['content']))
-          ```
-          Check if it exists with: `if 'documents' in dir(): ...`
-
-          ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
-
-          ## Strategy Guide
-
-          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
-          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
-
-          ## Example Patterns
-
-          ### Counting documents matching a condition
-          ```python
-          docs = list_documents(limit=100)
-          count = 0
-          for doc in docs:
-              content = get_document(doc['id'])
-              if content and 'keyword' in content.lower():
-                  count += 1
-                  print(f"Found in: {doc['title']}")
-          print(f"Total: {count}")
-          ```
-
-          ### Aggregating data across documents
-          ```python
-          import re
-          numbers = []
-          results = search("financial data", limit=20)
-          for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
-          ```
-
-          ### Using llm() for classification
-          ```python
-          # Get document content
-          content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
-          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
-          print(sentiment)
-          ```
-
-          ## Workflow
-
-          1. **ALWAYS start by using execute_code** to explore the knowledge base
-          2. Run multiple code blocks as needed to gather information
-          3. After collecting data, provide your final answer
-
-          ## Output Format
-
-          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
-          ```json
-          {"answer": "Your complete answer here as a string"}
-          ```
-
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
-
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
-
-          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
-        role: system
-      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
-        role: user
-      - content: |-
-          <think>
-          Need quarterly updates documents. Search.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"search(\"quarterly update\", limit=20)"}'
-            name: execute_code
-          id: call_f7rhj4ml
-          type: function
-      - content: '{"code":"search(\"quarterly update\", limit=20)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_f7rhj4ml
-      - content: |-
-          <think>
-          No output. Need to list documents.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"list_documents(limit=10)"}'
-            name: execute_code
-          id: call_8kasef7x
-          type: function
-      - content: '{"code":"list_documents(limit=10)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_8kasef7x
-      - content: |-
-          <think>
-
-          Possibly documents not loaded. Try search for "Q1" etc.
-
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"code":"search(\"Q1\", limit=10)"}'
-            name: execute_code
-          id: call_5p6t6pm8
-          type: function
-      - content: '{"code":"search(\"Q1\", limit=10)","stdout":"","stderr":"","success":true}'
-        role: tool
-        tool_call_id: call_5p6t6pm8
-      - content: |2-
-
-          No results. Might be no data. Could return zero counts.{"answer":"I explored the knowledge base for documents containing quarterly updates, but I couldn't find any relevant content. Consequently, I cannot determine how many quarters were positive, negative, or mixed. If you can provide the text of the quarterly updates or specify where to locate them, I can perform the sentiment analysis and give you the requested counts."}
-        role: assistant
-      - content: |-
-          1 validation error:
-          ```json
-          [
-            {
-              "type": "json_invalid",
-              "loc": [],
-              "msg": "Invalid JSON: expected ident at line 2 column 2",
-              "input": "\nNo results. Might be no data. Could return zero counts.{\"answer\":\"I explored the knowledge base for documents containing quarterly updates, but I couldn't find any relevant content. Consequently, I cannot determine how many quarters were positive, negative, or mixed. If you can provide the text of the quarterly updates or specify where to locate them, I can perform the sentiment analysis and give you the requested counts.\"}"
-            }
-          ]
-          ```
-
-          Fix the errors and try again.
-        role: user
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: |-
-            <summary>Execute Python code in the sandboxed environment.
-
-            The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
-
-            Use print() to output results.</summary>
-            <returns>
-            <description>Structured result with success status, stdout, and stderr.</description>
-            </returns>
-          name: execute_code
-          parameters:
-            additionalProperties: false
-            properties:
-              code:
-                description: Python code to execute.
-                type: string
-            required:
-            - code
-            type: object
-          strict: true
-        type: function
-      - function:
-          description: Result from RLM agent execution.
-          name: final_result
-          parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the user's question
-                type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
-            required:
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '719'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: stop
-        index: 0
-        message:
-          content: '{"answer":"I explored the knowledge base for documents containing quarterly updates, but I couldn''t find
-            any relevant content. Consequently, I cannot determine how many quarters were positive, negative, or mixed. If
-            you can provide the text of the quarterly updates or specify where to locate them, I can perform the sentiment
-            analysis and give you the requested counts."}'
-          reasoning: Need valid JSON. Provide just JSON object.
-          role: assistant
-      created: 1770322602
-      id: chatcmpl-609
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 88
-        prompt_tokens: 2233
-        total_tokens: 2321
+        completion_tokens: 264
+        prompt_tokens: 2257
+        total_tokens: 2521
     status:
       code: 200
       message: OK

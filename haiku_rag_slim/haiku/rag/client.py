@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.agents.research.models import Citation
+    from haiku.rag.agents.rlm.models import RLMResult
 
 logger = logging.getLogger(__name__)
 
@@ -1325,7 +1326,7 @@ class HaikuRAG:
         question: str,
         documents: list[str] | None = None,
         filter: str | None = None,
-    ) -> str:
+    ) -> "RLMResult":
         """Answer a question using the RLM agent with code execution.
 
         The RLM (Recursive Language Model) agent can write and execute Python
@@ -1338,7 +1339,7 @@ class HaikuRAG:
             filter: SQL WHERE clause to filter documents during searches.
 
         Returns:
-            The answer as a string.
+            RLMResult with the answer and the final consolidated program.
         """
         from haiku.rag.agents.rlm import (
             DockerSandbox,
@@ -1371,7 +1372,7 @@ class HaikuRAG:
             agent = create_rlm_agent(self._config)
             result = await agent.run(question, deps=deps)
 
-            return result.output.answer
+            return result.output
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.

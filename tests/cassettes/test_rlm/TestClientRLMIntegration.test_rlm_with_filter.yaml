@@ -128,7 +128,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8274'
+      - '7768'
       content-type:
       - application/json
       host:
@@ -182,7 +182,7 @@ interactions:
           Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
+          You can import any Python standard library module.
 
           ## Strategy Guide
 
@@ -211,7 +211,7 @@ interactions:
 
           ### Text Item Properties
           - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
           - `item.prov` - Provenance (page numbers, bounding boxes)
 
           ### Table Access
@@ -224,7 +224,7 @@ interactions:
           doc = get_docling_document("My Document")
 
           # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
 
           # Iterate with structure
           for item, level in doc.iterate_items():
@@ -281,15 +281,13 @@ interactions:
 
           CRITICAL: Your final response MUST be valid JSON matching this exact schema:
           ```json
-          {"answer": "Your complete answer here as a string"}
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
           ```
 
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
 
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -302,12 +300,11 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in the sandboxed environment.
+            <summary>Execute Python code in a Docker-sandboxed environment.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
 
             Use print() to output results.</summary>
             <returns>
@@ -329,48 +326,25 @@ interactions:
           description: Result from RLM agent execution.
           name: final_result
           parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
             additionalProperties: false
             properties:
               answer:
                 description: The answer to the user's question
                 type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
+              program:
+                description: The final consolidated program
+                type: string
             required:
             - answer
+            - program
             type: object
+          strict: true
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '490'
+      - '517'
       content-type:
       - application/json
     parsed_body:
@@ -379,24 +353,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need to list documents.
+          reasoning: Need to get list_documents.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"print(len(list_documents()))"}'
+              arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
               name: execute_code
-            id: call_wvyfhnmo
+            id: call_ly3bn3y0
             index: 0
             type: function
-      created: 1770322511
-      id: chatcmpl-2
+      created: 1770373376
+      id: chatcmpl-196
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 34
-        prompt_tokens: 1750
-        total_tokens: 1784
+        completion_tokens: 44
+        prompt_tokens: 1745
+        total_tokens: 1789
     status:
       code: 200
       message: OK
@@ -409,7 +383,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8658'
+      - '8201'
       content-type:
       - application/json
       host:
@@ -463,7 +437,7 @@ interactions:
           Check if it exists with: `if 'documents' in dir(): ...`
 
           ## Standard Library Modules
-          You can import: json, re, collections, math, statistics, itertools, functools, datetime, typing
+          You can import any Python standard library module.
 
           ## Strategy Guide
 
@@ -492,7 +466,7 @@ interactions:
 
           ### Text Item Properties
           - `item.text` - The text content
-          - `item.label` - Type: TITLE, PARAGRAPH, SECTION_HEADER, LIST_ITEM, etc.
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
           - `item.prov` - Provenance (page numbers, bounding boxes)
 
           ### Table Access
@@ -505,7 +479,7 @@ interactions:
           doc = get_docling_document("My Document")
 
           # Get all headings
-          headings = [t.text for t in doc.texts if "HEADER" in str(t.label)]
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
 
           # Iterate with structure
           for item, level in doc.iterate_items():
@@ -562,15 +536,13 @@ interactions:
 
           CRITICAL: Your final response MUST be valid JSON matching this exact schema:
           ```json
-          {"answer": "Your complete answer here as a string"}
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
           ```
 
-          The `answer` field should contain:
-          1. A clear answer to the user's question
-          2. Key findings from your analysis
-          3. References to specific documents/chunks that informed your answer
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
 
-          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "..."}
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
 
           CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
         role: system
@@ -578,18 +550,18 @@ interactions:
         role: user
       - content: |-
           <think>
-          We need to list documents.
+          Need to get list_documents.
           </think>
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"print(len(list_documents()))"}'
+            arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
             name: execute_code
-          id: call_wvyfhnmo
+          id: call_ly3bn3y0
           type: function
-      - content: '{"code":"print(len(list_documents()))","stdout":"1\n","stderr":"","success":true}'
+      - content: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))","stdout":"1\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_wvyfhnmo
+        tool_call_id: call_ly3bn3y0
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -597,12 +569,11 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in the sandboxed environment.
+            <summary>Execute Python code in a Docker-sandboxed environment.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, ask) and safe standard library
-            modules (json, re, collections, math, statistics, itertools,
-            functools, datetime, typing).
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
 
             Use print() to output results.</summary>
             <returns>
@@ -624,48 +595,25 @@ interactions:
           description: Result from RLM agent execution.
           name: final_result
           parameters:
-            $defs:
-              CodeExecution:
-                additionalProperties: false
-                description: Result of executing a code block in the RLM sandbox.
-                properties:
-                  code:
-                    description: The Python code that was executed
-                    type: string
-                  stderr:
-                    description: Standard error captured during execution
-                    type: string
-                  stdout:
-                    description: Standard output captured during execution
-                    type: string
-                  success:
-                    description: Whether execution completed without error
-                    type: boolean
-                required:
-                - code
-                - stdout
-                - stderr
-                - success
-                type: object
             additionalProperties: false
             properties:
               answer:
                 description: The answer to the user's question
                 type: string
-              code_executions:
-                description: History of code executions during the RLM session
-                items:
-                  $ref: '#/$defs/CodeExecution'
-                type: array
+              program:
+                description: The final consolidated program
+                type: string
             required:
             - answer
+            - program
             type: object
+          strict: true
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '333'
+      - '424'
       content-type:
       - application/json
     parsed_body:
@@ -673,17 +621,17 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: '{"answer":"There is 1 document available."}'
+          content: '{"answer":"There is 1 document available in the knowledge base.","program":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
           role: assistant
-      created: 1770322513
-      id: chatcmpl-541
+      created: 1770373377
+      id: chatcmpl-195
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 18
-        prompt_tokens: 1821
-        total_tokens: 1839
+        completion_tokens: 39
+        prompt_tokens: 1836
+        total_tokens: 1875
     status:
       code: 200
       message: OK

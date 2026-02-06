@@ -35,17 +35,18 @@ from haiku.rag.client import HaikuRAG
 
 async with HaikuRAG(path_to_db) as client:
     # Basic question
-    answer = await client.rlm("How many documents mention 'security'?")
-    print(answer)
+    result = await client.rlm("How many documents mention 'security'?")
+    print(result.answer)    # The answer
+    print(result.program)   # The final consolidated program
 
     # With filter (agent can only see filtered documents)
-    answer = await client.rlm(
+    result = await client.rlm(
         "What is the total revenue?",
         filter="title LIKE '%Financial%'"
     )
 
     # Pre-load specific documents
-    answer = await client.rlm(
+    result = await client.rlm(
         "Compare the conclusions",
         documents=["Report A", "Report B"]
     )
@@ -169,7 +170,7 @@ The `filter` parameter restricts what documents the agent can access. Unlike too
 
 ```python
 # Agent can only see documents with "confidential" in the URI
-answer = await client.rlm(
+result = await client.rlm(
     "Summarize all findings",
     filter="uri LIKE '%confidential%'"
 )

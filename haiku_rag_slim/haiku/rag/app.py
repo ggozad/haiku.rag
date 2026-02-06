@@ -16,6 +16,7 @@ from rich.progress import (
     TextColumn,
     TransferSpeedColumn,
 )
+from rich.syntax import Syntax
 
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_research_graph
@@ -458,10 +459,13 @@ class HaikuRAGApp:
             self.console.print("[dim]Running RLM agent with code execution...[/dim]")
             self.console.print()
 
-            answer = await self.client.rlm(question, documents=documents, filter=filter)
+            result = await self.client.rlm(question, documents=documents, filter=filter)
 
+            self.console.print("[bold yellow]Program:[/bold yellow]")
+            self.console.print(Syntax(result.program, "python"))
+            self.console.print()
             self.console.print("[bold green]Answer:[/bold green]")
-            self.console.print(Markdown(answer))
+            self.console.print(Markdown(result.answer))
 
     async def research(
         self,
