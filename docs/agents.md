@@ -55,22 +55,21 @@ The chat agent enables multi-turn conversational RAG. It maintains session state
 
 Key features:
 
-- **Session memory**: Previous Q/A pairs are used as context for follow-up questions
-- **Query expansion**: Search toolset generates multiple query variations for better recall
+- **Composable toolsets**: Built from reusable `FunctionToolset` factories in `haiku.rag.tools`
+- **Semantic prior answer recall**: The `ask` tool embeds each question and matches it against conversation history — relevant prior answers are passed to the research planner, which can skip searching when they suffice
+- **Background summarization**: After each `ask` call, an async background task summarizes the QA history into a compact session context, cached server-side for the next request
+- **Session context injection**: The session context summary flows into the research planner as `<background>` XML, letting it resolve ambiguous references ("How does *it* handle X?")
 - **Document filtering**: Natural language document filtering ("search in document X about...")
-- **Confidence filtering**: Low-confidence answers are flagged
 
 ### Tools
 
-The chat agent uses five tools:
+The chat agent composes five tools from `haiku.rag.tools`:
 
 - `list_documents` — Browse available documents in the knowledge base
 - `summarize_document` — Generate a summary of a specific document
 - `get_document` — Retrieve a specific document by title or URI
-- `search` — Hybrid search with optional document filter
-- `ask` — Answer questions using the conversational research graph (automatically recalls prior answers)
-
-The `ask` tool automatically checks conversation history before running research. It uses embedding similarity (0.7 cosine threshold) to find semantically matching prior answers, which are passed to the research planner as context. When prior answers are sufficient, the planner can skip searching entirely.
+- `search` — Hybrid search with query expansion and optional document filter
+- `ask` — Answer questions using the conversational research graph
 
 ### CLI Usage
 
@@ -124,11 +123,35 @@ state = ChatSessionState()
 # User can reference [1] in follow-up and it still refers to original source
 ```
 
-Q/A history is used to:
+### Conversational Memory
 
-1. Provide context for follow-up questions
-2. Avoid repeating previous answers (the `ask` tool automatically recalls relevant prior answers)
-3. Enable semantic ranking of relevant past answers
+The chat agent maintains two layers of conversational memory that work together:
+
+**1. Semantic prior answer recall**
+
+When the `ask` tool receives a question, it:
+
+1. Embeds the new question
+2. Computes cosine similarity against all cached `qa_history` embeddings
+3. Selects prior answers above a 0.7 similarity threshold
+4. Passes them as `prior_answers` to the research graph's `ResearchContext`
+
+The research planner sees these as `<prior_answers>` in its prompt. If the prior answers already cover the question, the planner marks research as complete and skips directly to synthesis — no new searches needed.
+
+Question embeddings are cached per-session to avoid re-embedding on every turn. Uncached embeddings are batch-computed.
+
+**2. Background session summarization**
+
+After each `ask` call completes, `trigger_background_summarization()` spawns an async task that:
+
+1. Formats the full `qa_history` (questions, answers, confidence, sources) as markdown
+2. Sends it to an LLM with the current session context (if any) as input
+3. Produces a compact summary capturing key facts, entities, and document references
+4. Caches the result server-side under the `session_id`
+
+If a new `ask` fires before the previous summarization finishes, the old task is cancelled. On the next request, the cached summary is picked up and injected as `session_context` into the research planner's `<background>` XML.
+
+This means follow-up questions like "Tell me more about the authentication part" resolve correctly even though the planner never saw the original conversation — it has the summary.
 
 ### AG-UI Integration
 
@@ -174,31 +197,50 @@ The research workflow is implemented as a typed pydantic-graph. It uses an itera
 title: Research graph
 ---
 stateDiagram-v2
+  state plan_next_decision <<choice>>
   [*] --> plan_next
-  plan_next --> search_one: Has next question
-  plan_next --> synthesize: Complete or max iterations
-  search_one --> plan_next
+  plan_next --> plan_next_decision
+  plan_next_decision --> search_one: Has next question
+  plan_next_decision --> synthesize: Complete or max iterations
+  search_one --> plan_next: Answer added to context
   synthesize --> [*]
+
+  note right of plan_next
+    Receives session_context as background
+    and prior_answers from conversation history.
+    Uses a different prompt when prior answers exist.
+  end note
 ```
+
+The graph receives a `ResearchContext` containing:
+
+- `original_question` — the user's question
+- `session_context` — summary of conversation history (injected as `<background>` XML)
+- `qa_responses` — prior answers from semantic matching or previous iterations (injected as `<prior_answers>` XML)
+
+When prior answers are provided, the planner uses a context-aware prompt that evaluates whether existing evidence is sufficient. If it is, the planner marks `is_complete=True` and the graph skips directly to synthesis without any searches.
 
 **Key nodes:**
 
-- **plan_next**: Evaluates gathered evidence and either proposes the next question to investigate or marks research as complete
-- **search_one**: Answers a single question using the knowledge base
-- **synthesize**: Generates a final structured research report
+- **plan_next**: Evaluates gathered evidence and either proposes the next question to investigate or marks research as complete. Uses a context-aware prompt when prior answers exist, allowing it to skip research entirely.
+- **search_one**: Answers a single question using the knowledge base (up to 3 search calls per question). Each answer is added to `ResearchContext.qa_responses` for the next planning iteration.
+- **synthesize**: Generates the final output from all gathered evidence.
 
-**Primary models:**
+**Output modes:**
 
-- `IterativePlanResult` — planning decision (is_complete, next_question, reasoning)
-- `SearchAnswer` — answer to a single question (query, answer, confidence, citations)
-- `ResearchReport` — final report (title, executive summary, findings, conclusions, …)
-- `ConversationalAnswer` — alternative output for chat integration (answer, citations, confidence)
+The graph supports two output modes via `build_research_graph(output_mode=...)`:
+
+| Mode | Output type | Used by |
+|------|-------------|---------|
+| `"report"` | `ResearchReport` (title, executive summary, findings, conclusions, recommendations) | CLI `haiku-rag research`, Python API |
+| `"conversational"` | `ConversationalAnswer` (answer, citations, confidence) | Chat agent's `ask` tool |
 
 **Iterative flow:**
 
 - Each iteration: planner evaluates context → proposes one question → search answers it → loop back
 - Planner can decompose complex questions (e.g., "benefits and drawbacks" → start with "benefits")
-- Session context is used to resolve ambiguous references and inform planning
+- Session context resolves ambiguous references and informs planning
+- Prior answers let the planner skip redundant searches
 - Loop terminates when planner marks `is_complete=True` or `max_iterations` is reached
 
 ### CLI Usage
@@ -259,6 +301,39 @@ async with HaikuRAG(path_to_db) as client:
     deps = ResearchDeps(client=client)
 
     report = await graph.run(state=state, deps=deps)
+```
+
+**Conversational mode with prior answers:**
+
+```python
+from haiku.rag.agents.research.dependencies import ResearchContext
+from haiku.rag.agents.research.graph import build_research_graph
+from haiku.rag.agents.research.models import SearchAnswer
+from haiku.rag.agents.research.state import ResearchDeps, ResearchState
+
+# Conversational mode returns ConversationalAnswer instead of ResearchReport
+graph = build_research_graph(config=Config, output_mode="conversational")
+
+# Pass session context and prior answers from conversation history
+context = ResearchContext(
+    original_question="How does it handle authentication?",
+    session_context="User is building a Python web app with FastAPI.",
+    qa_responses=[
+        SearchAnswer(
+            query="What authentication methods are supported?",
+            answer="JWT and OAuth2 are supported.",
+            confidence=0.95,
+            cited_chunks=["chunk-1"],
+        )
+    ],
+)
+state = ResearchState.from_config(context=context, config=Config)
+deps = ResearchDeps(client=client)
+
+result = await graph.run(state=state, deps=deps)
+print(result.answer)       # Direct conversational answer
+print(result.confidence)   # 0.0-1.0
+print(result.citations)    # Deduplicated citations from all searches
 ```
 
 ### Filtering Documents
