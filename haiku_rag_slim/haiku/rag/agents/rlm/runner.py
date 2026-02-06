@@ -12,7 +12,6 @@ def build_namespace(
     client: Any, config: Any, context: Any, loop: asyncio.AbstractEventLoop
 ) -> dict[str, Any]:
     """Build execution namespace with haiku.rag functions injected."""
-    from haiku.rag.store.repositories.document import _escape_sql_string
 
     def run_async(coro: Any) -> Any:
         """Run async coroutine from sync context using thread-safe scheduling."""
@@ -58,37 +57,15 @@ def build_namespace(
 
     def get_document(id_or_title: str) -> str | None:
         async def _get() -> str | None:
-            doc = await client.get_document_by_id(id_or_title)
-            if doc:
-                return doc.content
-            safe_input = _escape_sql_string(id_or_title)
-            docs = await client.list_documents(filter=f"title = '{safe_input}'")
-            if docs and docs[0].id:
-                full_doc = await client.get_document_by_id(docs[0].id)
-                return full_doc.content if full_doc else None
-            docs = await client.list_documents(filter=f"uri = '{safe_input}'")
-            if docs and docs[0].id:
-                full_doc = await client.get_document_by_id(docs[0].id)
-                return full_doc.content if full_doc else None
-            return None
+            doc = await client.resolve_document(id_or_title)
+            return doc.content if doc else None
 
         return run_async(_get())
 
     def get_docling_document(id_or_title: str) -> Any:
         async def _get() -> Any:
-            doc = await client.get_document_by_id(id_or_title)
-            if doc:
-                return doc.get_docling_document()
-            safe_input = _escape_sql_string(id_or_title)
-            docs = await client.list_documents(filter=f"title = '{safe_input}'")
-            if docs and docs[0].id:
-                full_doc = await client.get_document_by_id(docs[0].id)
-                return full_doc.get_docling_document() if full_doc else None
-            docs = await client.list_documents(filter=f"uri = '{safe_input}'")
-            if docs and docs[0].id:
-                full_doc = await client.get_document_by_id(docs[0].id)
-                return full_doc.get_docling_document() if full_doc else None
-            return None
+            doc = await client.resolve_document(id_or_title)
+            return doc.get_docling_document() if doc else None
 
         return run_async(_get())
 

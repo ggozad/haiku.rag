@@ -739,6 +739,30 @@ class HaikuRAG:
         """
         return await self.document_repository.get_by_uri(uri)
 
+    async def resolve_document(self, id_or_title: str) -> Document | None:
+        """Resolve a document by ID, title, or URI (in that order).
+
+        Args:
+            id_or_title: Document ID, title, or URI to look up.
+
+        Returns:
+            The Document instance if found, None otherwise.
+        """
+        doc = await self.get_document_by_id(id_or_title)
+        if doc:
+            return doc
+
+        safe_input = _escape_sql_string(id_or_title)
+        docs = await self.list_documents(filter=f"title = '{safe_input}'")
+        if docs and docs[0].id:
+            return await self.get_document_by_id(docs[0].id)
+
+        docs = await self.list_documents(filter=f"uri = '{safe_input}'")
+        if docs and docs[0].id:
+            return await self.get_document_by_id(docs[0].id)
+
+        return None
+
     async def update_document(
         self,
         document_id: str,
@@ -1328,12 +1352,7 @@ class HaikuRAG:
         if documents:
             loaded_docs = []
             for doc_ref in documents:
-                doc = await self.get_document_by_id(doc_ref)
-                if not doc:
-                    safe_ref = _escape_sql_string(doc_ref)
-                    docs = await self.list_documents(filter=f"title = '{safe_ref}'")
-                    if docs and docs[0].id:
-                        doc = await self.get_document_by_id(docs[0].id)
+                doc = await self.resolve_document(doc_ref)
                 if doc:
                     loaded_docs.append(doc)
             context.documents = loaded_docs if loaded_docs else None
