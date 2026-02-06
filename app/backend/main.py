@@ -15,8 +15,7 @@ from starlette.routing import Route
 from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
-    ChatSessionState,
-    QAResponse,
+    ToolContext,
     create_chat_agent,
 )
 from haiku.rag.client import HaikuRAG
@@ -54,96 +53,48 @@ db_path = Path(db_path_str)
 logger.info(f"Database path: {db_path}")
 logger.info(f"QA Provider: {Config.qa.model.provider}, Model: {Config.qa.model.name}")
 
-# Create the chat agent
-chat_agent = create_chat_agent(Config)
-
-# Client cache for proper lifecycle
-_client_cache: dict[str, HaikuRAG] = {}
+# Only HaikuRAG client is a singleton (expensive to create)
+_client: HaikuRAG | None = None
 
 
-def get_client(effective_db_path: Path) -> HaikuRAG:
+def get_client() -> HaikuRAG:
     """Get or create cached client."""
-    path_key = str(effective_db_path)
-    if path_key not in _client_cache:
-        _client_cache[path_key] = HaikuRAG(
-            db_path=effective_db_path, config=Config, create=True
-        )
-    return _client_cache[path_key]
+    global _client
+    if _client is None:
+        _client = HaikuRAG(db_path=db_path, config=Config, create=True)
+    return _client
 
 
 async def stream_chat(request: Request) -> Response:
-    """Chat streaming endpoint with AG-UI protocol."""
-    body = await request.body()
+    """Chat streaming endpoint with AG-UI protocol.
 
-    # Parse request to build run_input
+    This endpoint is stateless - all state flows via AG-UI protocol:
+    - Fresh ToolContext created per request
+    - AGUIAdapter restores state via ChatDeps.state setter
+    - ChatDeps generates session_id if not provided
+    - Ask tool triggers background summarization internally
+    - ChatDeps.state getter emits final state in response
+    """
+    body = await request.body()
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    # Restore session state from incoming AG-UI state
-    session_state = ChatSessionState(session_id="")  # New session: empty session_id
-    state = getattr(run_input, "state", None)
-    if state and AGUI_STATE_KEY in state:
-        chat_state = state[AGUI_STATE_KEY]
-        if chat_state and chat_state.get("session_id"):
-            session_state = ChatSessionState(
-                session_id=chat_state["session_id"],
-                qa_history=[
-                    QAResponse(**qa) for qa in chat_state.get("qa_history", [])
-                ],
-                document_filter=chat_state.get("document_filter", []),
-                initial_context=chat_state.get("initial_context"),
-                citation_registry=chat_state.get("citation_registry", {}),
-            )
-            logger.info(
-                f"Incoming state: session={session_state.session_id[:8]}, "
-                f"qa_history={len(session_state.qa_history)}, "
-                f"citations={len(session_state.citation_registry)}"
-            )
-        else:
-            logger.info("Incoming state: new session")
-    else:
-        logger.info("Incoming state: new session")
+    # Fresh context per request - state restored by AGUIAdapter via ChatDeps.state setter
+    context = ToolContext()
+    agent = create_chat_agent(Config, get_client(), context)
 
     deps = ChatDeps(
-        client=get_client(db_path),
         config=Config,
-        session_state=session_state,
+        tool_context=context,
         state_key=AGUI_STATE_KEY,
     )
 
     # Use AGUIAdapter for streaming
-    adapter = AGUIAdapter(agent=chat_agent, run_input=run_input, accept=accept)
+    # State restoration happens automatically via ChatDeps.state setter
+    # Background summarization triggered by ask() tool internally
+    adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(deps=deps)
-
-    async def logged_event_stream():
-        async for event in event_stream:
-            event_type = getattr(event, "type", None)
-            if event_type and "state" in str(event_type).lower():
-                delta = getattr(event, "delta", None)
-                snapshot = getattr(event, "snapshot", None)
-                if delta is not None:
-                    logger.info(f"Outgoing StateDeltaEvent: {len(delta)} ops")
-                    for op in delta:
-                        # Extract key from path like /haiku.rag.chat/qa_history/0
-                        parts = op["path"].split("/")
-                        key = "/".join(parts[2:]) if len(parts) > 2 else op["path"]
-                        logger.info(f"  {op['op']} {key}")
-                elif snapshot is not None:
-                    chat_state = snapshot.get(AGUI_STATE_KEY, {})
-                    sid = chat_state.get("session_id", "")[:8] if chat_state else ""
-                    qa_len = len(chat_state.get("qa_history", [])) if chat_state else 0
-                    reg_len = (
-                        len(chat_state.get("citation_registry", {}))
-                        if chat_state
-                        else 0
-                    )
-                    logger.info(
-                        f"Outgoing StateSnapshotEvent: session={sid}, "
-                        f"qa={qa_len}, keys={reg_len}"
-                    )
-            yield event
-
-    sse_event_stream = adapter.encode_stream(logged_event_stream())
+    sse_event_stream = adapter.encode_stream(event_stream)
 
     return StreamingResponse(
         sse_event_stream,
@@ -158,10 +109,13 @@ async def stream_chat(request: Request) -> Response:
 
 async def health_check(_: Request) -> JSONResponse:
     """Health check endpoint."""
+    # Create a temporary agent just for health check
+    context = ToolContext()
+    agent = create_chat_agent(Config, get_client(), context)
     return JSONResponse(
         {
             "status": "healthy",
-            "agent_model": str(chat_agent.model),
+            "agent_model": str(agent.model),
             "qa_provider": Config.qa.model.provider,
             "qa_model": Config.qa.model.name,
             "db_path": str(db_path),
@@ -175,7 +129,7 @@ async def list_documents(_: Request) -> JSONResponse:
     if not db_path.exists():
         return JSONResponse({"documents": [], "error": "Database not found"})
 
-    client = get_client(db_path)
+    client = get_client()
     docs = await client.document_repository.list_all()
     return JSONResponse(
         {
@@ -198,7 +152,7 @@ async def db_info(_: Request) -> JSONResponse:
             }
         )
 
-    client = get_client(db_path)
+    client = get_client()
     stats = client.store.get_stats()
 
     return JSONResponse(
@@ -224,7 +178,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     if not db_path.exists():
         return JSONResponse({"error": "Database not found"}, status_code=404)
 
-    client = get_client(db_path)
+    client = get_client()
 
     chunk = await client.chunk_repository.get_by_id(chunk_id)
     if not chunk:

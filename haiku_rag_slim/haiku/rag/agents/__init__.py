@@ -1,9 +1,7 @@
 from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
-    QAResponse,
-    SearchAgent,
-    SearchDeps,
+    QAHistoryEntry,
     create_chat_agent,
 )
 from haiku.rag.agents.qa import QuestionAnswerAgent, get_qa_agent
@@ -34,9 +32,7 @@ __all__ = [
     "IterativePlanResult",
     # Chat
     "create_chat_agent",
-    "SearchAgent",
     "ChatDeps",
     "ChatSessionState",
-    "QAResponse",
-    "SearchDeps",
+    "QAHistoryEntry",
 ]
