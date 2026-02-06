@@ -142,11 +142,14 @@ class DocumentRepository:
         self.store.documents_table.delete(f"id = '{safe_id}'")
         return True
 
+    _LISTING_COLUMNS = ["id", "title", "uri", "metadata", "created_at", "updated_at"]
+
     async def list_all(
         self,
         limit: int | None = None,
         offset: int | None = None,
         filter: str | None = None,
+        include_content: bool = False,
     ) -> list[Document]:
         """List all documents with optional pagination and filtering.
 
@@ -154,12 +157,16 @@ class DocumentRepository:
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
             filter: Optional SQL WHERE clause to filter documents.
+            include_content: Whether to load content and docling_document.
+                Defaults to False to avoid loading large blobs for listing.
 
         Returns:
             List of Document instances matching the criteria.
         """
         query = self.store.documents_table.search()
 
+        if not include_content:
+            query = query.select(self._LISTING_COLUMNS)
         if filter is not None:
             query = query.where(filter)
         if offset is not None:
@@ -167,8 +174,26 @@ class DocumentRepository:
         if limit is not None:
             query = query.limit(limit)
 
-        results = list(query.to_pydantic(DocumentRecord))
-        return [self._record_to_document(doc) for doc in results]
+        if include_content:
+            results = list(query.to_pydantic(DocumentRecord))
+            return [self._record_to_document(doc) for doc in results]
+
+        return [
+            Document(
+                id=row["id"],
+                content="",
+                title=row.get("title"),
+                uri=row.get("uri"),
+                metadata=json.loads(row.get("metadata", "{}")),
+                created_at=datetime.fromisoformat(row["created_at"])
+                if row.get("created_at")
+                else datetime.now(),
+                updated_at=datetime.fromisoformat(row["updated_at"])
+                if row.get("updated_at")
+                else datetime.now(),
+            )
+            for row in query.to_list()
+        ]
 
     async def count(self, filter: str | None = None) -> int:
         """Count documents with optional filtering.

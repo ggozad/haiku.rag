@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Document listing memory usage**: `list_documents` no longer loads full document content and docling blobs by default, preventing out-of-memory errors on large databases. Use `include_content=True` when content is needed.
+
 ## [0.29.0] - 2026-02-06
 
 ### Added

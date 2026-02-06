@@ -867,6 +867,7 @@ class HaikuRAG:
         limit: int | None = None,
         offset: int | None = None,
         filter: str | None = None,
+        include_content: bool = False,
     ) -> list[Document]:
         """List all documents with optional pagination and filtering.
 
@@ -874,12 +875,14 @@ class HaikuRAG:
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
             filter: Optional SQL WHERE clause to filter documents.
+            include_content: Whether to load content and docling_document.
+                Defaults to False to avoid loading large blobs.
 
         Returns:
             List of Document instances matching the criteria.
         """
         return await self.document_repository.list_all(
-            limit=limit, offset=offset, filter=filter
+            limit=limit, offset=offset, filter=filter, include_content=include_content
         )
 
     async def count_documents(self, filter: str | None = None) -> int:
@@ -1480,7 +1483,7 @@ class HaikuRAG:
         settings_repo = SettingsRepository(self.store)
         settings_repo.save_current_settings()
 
-        documents = await self.list_documents()
+        documents = await self.list_documents(include_content=True)
 
         if mode == RebuildMode.EMBED_ONLY:
             async for doc_id in self._rebuild_embed_only(documents):

@@ -134,6 +134,9 @@ doc = await client.get_document_by_uri("file:///path/to/document.pdf")
 List all documents:
 ```python
 docs = await client.list_documents(limit=10, offset=0)
+
+# Include full content and docling document (not loaded by default)
+docs = await client.list_documents(include_content=True)
 ```
 
 Filter documents by properties:

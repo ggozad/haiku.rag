@@ -64,7 +64,7 @@ class TestStoreTimeTravel:
         repo = DocumentRepository(store)
 
         # Should only see first document
-        docs = await repo.list_all()
+        docs = await repo.list_all(include_content=True)
         assert len(docs) == 1
         assert docs[0].content == "First document"
         store.close()
