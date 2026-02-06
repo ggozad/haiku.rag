@@ -717,7 +717,7 @@ def test_ask_tool_citation_registry_logic():
     3. Same chunk_id always gets same index
     4. Indices don't reset between calls
     """
-    session_state = ChatSessionState(session_id="test-registry")
+    session_state = SessionState()
 
     # Simulate first ask tool building citations
     first_ask_chunks = ["chunk-a", "chunk-b"]
@@ -768,7 +768,7 @@ def test_search_tool_citation_registry_logic():
     Verifies that search and ask tools share the same registry,
     maintaining stable indices across different tool calls.
     """
-    session_state = ChatSessionState(session_id="test-registry")
+    session_state = SessionState()
 
     # Simulate ask tool first (assigns indices 1, 2)
     for chunk_id in ["chunk-a", "chunk-b"]:

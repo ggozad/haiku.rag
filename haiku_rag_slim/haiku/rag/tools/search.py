@@ -6,7 +6,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import ToolContext
-from haiku.rag.tools.filters import build_multi_document_filter, combine_filters
+from haiku.rag.tools.filters import combine_filters, get_session_filter
 from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState, compute_state_delta
 
 SEARCH_NAMESPACE = "haiku.rag.search"
@@ -75,14 +75,9 @@ def create_search_toolset(
             if session_state is not None:
                 old_session_state = session_state.model_copy(deep=True)
 
-        # Build session filter from session state's document_filter
-        session_filter = None
-        if session_state is not None and session_state.document_filter:
-            session_filter = build_multi_document_filter(session_state.document_filter)
-
         # Combine all filters: base_filter AND session_filter AND tool filter
         effective_filter = combine_filters(
-            combine_filters(base_filter, session_filter), filter
+            get_session_filter(context, base_filter), filter
         )
 
         effective_limit = limit or config.search.limit

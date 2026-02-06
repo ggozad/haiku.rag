@@ -16,6 +16,7 @@ from haiku.rag.tools.filters import (
     build_document_filter,
     build_multi_document_filter,
     combine_filters,
+    get_session_filter,
 )
 from haiku.rag.tools.models import AnalysisResult, QAResult
 from haiku.rag.tools.qa import (
@@ -40,6 +41,7 @@ __all__ = [
     "build_document_filter",
     "build_multi_document_filter",
     "combine_filters",
+    "get_session_filter",
     "SEARCH_NAMESPACE",
     "SearchState",
     "create_search_toolset",

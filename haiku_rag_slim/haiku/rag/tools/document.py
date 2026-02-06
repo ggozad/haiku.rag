@@ -4,8 +4,7 @@ from pydantic_ai import Agent, FunctionToolset
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext
-from haiku.rag.tools.filters import build_multi_document_filter, combine_filters
-from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
+from haiku.rag.tools.filters import get_session_filter
 from haiku.rag.utils import get_model
 
 DOCUMENT_NAMESPACE = "haiku.rag.document"
@@ -117,16 +116,7 @@ def create_document_toolset(
         page_size = 50
         offset = (page - 1) * page_size
 
-        # Get session filter from session state
-        session_filter = None
-        if context is not None:
-            session_state = context.get_typed(SESSION_NAMESPACE, SessionState)
-            if session_state is not None and session_state.document_filter:
-                session_filter = build_multi_document_filter(
-                    session_state.document_filter
-                )
-
-        effective_filter = combine_filters(base_filter, session_filter)
+        effective_filter = get_session_filter(context, base_filter)
 
         docs = await client.list_documents(
             limit=page_size, offset=offset, filter=effective_filter
