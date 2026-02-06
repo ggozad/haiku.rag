@@ -3,12 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.agents.chat.state import (
-    QAResponse,
-    SessionContext,
-)
+from haiku.rag.agents.chat.state import SessionContext
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.config import Config
+from haiku.rag.tools.qa import QAHistoryEntry
 
 
 @pytest.fixture(scope="module")
@@ -82,7 +80,7 @@ class TestSummarizeSession:
         from haiku.rag.agents.chat.context import summarize_session
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What is the authentication method?",
                 answer="The API uses JWT tokens for authentication.",
                 confidence=0.95,
@@ -115,7 +113,7 @@ class TestSummarizeSession:
         from haiku.rag.agents.chat.context import summarize_session
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What is the authentication method?",
                 answer="The API uses JWT tokens for authentication.",
                 confidence=0.95,
@@ -130,7 +128,7 @@ class TestSummarizeSession:
                     )
                 ],
             ),
-            QAResponse(
+            QAHistoryEntry(
                 question="What is the rate limit?",
                 answer="Rate limiting is set to 100 requests per minute.",
                 confidence=0.9,
@@ -145,7 +143,7 @@ class TestSummarizeSession:
                     )
                 ],
             ),
-            QAResponse(
+            QAHistoryEntry(
                 question="How do I refresh tokens?",
                 answer="Use the /refresh endpoint with your refresh token.",
                 confidence=0.85,
@@ -178,7 +176,7 @@ class TestSummarizeSession:
         from haiku.rag.agents.chat.context import summarize_session
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What's the rate limit?",
                 answer="100 requests per minute.",
                 confidence=0.9,
@@ -218,7 +216,7 @@ class TestUpdateSessionContext:
         session_state = ChatSessionState(session_id="test-session")
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What is the authentication method?",
                 answer="The API uses JWT tokens.",
                 confidence=0.95,
@@ -339,7 +337,7 @@ class TestSessionContextCache:
         session_state = ChatSessionState(session_id="cache-test-session")
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What is Python?",
                 answer="A programming language.",
                 confidence=0.95,
@@ -409,7 +407,7 @@ class TestSessionContextCache:
         )
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What is JWT?",
                 answer="JSON Web Token for authentication.",
                 confidence=0.95,
@@ -461,7 +459,7 @@ class TestSessionContextCache:
         )
 
         qa_history = [
-            QAResponse(
+            QAHistoryEntry(
                 question="What is JWT?",
                 answer="JSON Web Token.",
                 confidence=0.95,

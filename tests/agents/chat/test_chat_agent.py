@@ -7,16 +7,15 @@ from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
-    QAResponse,
-    SearchAgent,
+    QAHistoryEntry,
     ToolContext,
     create_chat_agent,
 )
 from haiku.rag.agents.chat.context import get_cached_session_context
-from haiku.rag.agents.chat.state import MAX_QA_HISTORY
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
+from haiku.rag.tools.qa import MAX_QA_HISTORY
 from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 
@@ -226,7 +225,7 @@ def test_citation():
 
 
 def test_qa_response():
-    """Test QAResponse model."""
+    """Test QAHistoryEntry model."""
     citation = Citation(
         index=1,
         document_id="doc-123",
@@ -235,7 +234,7 @@ def test_qa_response():
         document_title="Test Document",
         content="Test content",
     )
-    qa = QAResponse(
+    qa = QAHistoryEntry(
         question="What is this?",
         answer="This is a test",
         confidence=0.95,
@@ -249,7 +248,7 @@ def test_qa_response():
 
 
 def test_qa_response_sources_with_uri_fallback():
-    """Test QAResponse.sources falls back to URI when title is None."""
+    """Test QAHistoryEntry.sources falls back to URI when title is None."""
     citation = Citation(
         index=1,
         document_id="doc-123",
@@ -258,7 +257,7 @@ def test_qa_response_sources_with_uri_fallback():
         document_title=None,
         content="Test content",
     )
-    qa = QAResponse(
+    qa = QAHistoryEntry(
         question="What is this?",
         answer="This is a test",
         citations=[citation],
@@ -267,7 +266,7 @@ def test_qa_response_sources_with_uri_fallback():
 
 
 def test_qa_response_to_search_answer():
-    """Test QAResponse.to_search_answer() converts to SearchAnswer for research graph."""
+    """Test QAHistoryEntry.to_search_answer() converts to SearchAnswer for research graph."""
     citation = Citation(
         index=1,
         document_id="doc-123",
@@ -276,7 +275,7 @@ def test_qa_response_to_search_answer():
         document_title="Test Document",
         content="Test content",
     )
-    qa = QAResponse(
+    qa = QAHistoryEntry(
         question="What is the answer?",
         answer="The answer is 42",
         confidence=0.95,
@@ -291,14 +290,6 @@ def test_qa_response_to_search_answer():
     assert search_answer.cited_chunks == ["chunk-456"]
     assert len(search_answer.citations) == 1
     assert search_answer.citations[0].chunk_id == "chunk-456"
-
-
-def test_search_agent_initialization(temp_db_path):
-    """Test SearchAgent can be initialized."""
-    client = HaikuRAG(temp_db_path, create=True)
-    search_agent = SearchAgent(client, Config)
-    assert search_agent is not None
-    client.close()
 
 
 # DocLayNet content for testing
@@ -469,108 +460,6 @@ async def test_chat_agent_get_document_not_found(allow_model_requests, temp_db_p
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
-async def test_search_agent_with_context(allow_model_requests, temp_db_path):
-    """Test SearchAgent's search method with context."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Add test documents
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-        await client.create_document(
-            content=DOCLAYNET_ANNOTATION,
-            uri="doclaynet-annotation",
-            title="DocLayNet Annotation",
-        )
-
-        search_agent = SearchAgent(client, Config)
-
-        # Search with context
-        results = await search_agent.search(
-            query="What are the class labels?",
-            context="We're discussing document layout analysis",
-        )
-
-        assert isinstance(results, list)
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_search_agent_with_filter(allow_model_requests, temp_db_path):
-    """Test SearchAgent's search method with document filter."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Add test documents
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-        await client.create_document(
-            content=DOCLAYNET_DATA_SOURCES,
-            uri="doclaynet-sources",
-            title="DocLayNet Sources",
-        )
-
-        search_agent = SearchAgent(client, Config)
-
-        # Search with filter - only the labels document
-        results = await search_agent.search(
-            query="What information is available?",
-            filter="uri LIKE '%labels%'",
-        )
-
-        assert isinstance(results, list)
-        # Results should only come from the labels document
-        for r in results:
-            assert "labels" in (r.document_uri or "")
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_search_agent_deduplication(allow_model_requests, temp_db_path):
-    """Test SearchAgent deduplicates results by chunk_id."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Add test documents
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-
-        search_agent = SearchAgent(client, Config)
-
-        # Search - the search agent will likely run multiple queries
-        # that could return the same chunk, which should be deduplicated
-        results = await search_agent.search(
-            query="Tell me about class labels and their counts",
-        )
-
-        assert isinstance(results, list)
-
-        # Verify no duplicate chunk_ids
-        chunk_ids = [r.chunk_id for r in results if r.chunk_id]
-        assert len(chunk_ids) == len(set(chunk_ids)), "Found duplicate chunk_ids"
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_search_agent_no_results(allow_model_requests, temp_db_path):
-    """Test SearchAgent handles no results gracefully."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        search_agent = SearchAgent(client, Config)
-
-        # Search in empty database
-        results = await search_agent.search(
-            query="Find information about nonexistent topic xyz123",
-        )
-
-        assert isinstance(results, list)
-        assert len(results) == 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
 async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path):
     """Test that the ask tool is called and can add citations to session state."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -728,7 +617,7 @@ def test_fifo_limit_enforcement():
     """
     # Create a session state with MAX_QA_HISTORY + 1 entries
     qa_history = [
-        QAResponse(
+        QAHistoryEntry(
             question=f"Question {i}",
             answer=f"Answer {i}",
             confidence=0.9,
@@ -816,43 +705,6 @@ async def test_chat_agent_search_with_session_filter(
         for citation in session_state.citations:
             assert "labels" in citation.document_uri.lower() or "Labels" in (
                 citation.document_title or ""
-            )
-
-
-@pytest.mark.asyncio
-@pytest.mark.vcr()
-async def test_search_agent_with_session_filter(allow_model_requests, temp_db_path):
-    """Test SearchAgent respects session document filter."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Add two distinct documents
-        await client.create_document(
-            content=DOCLAYNET_CLASS_LABELS,
-            uri="doclaynet-labels",
-            title="DocLayNet Class Labels",
-        )
-        await client.create_document(
-            content=DOCLAYNET_DATA_SOURCES,
-            uri="doclaynet-sources",
-            title="DocLayNet Sources",
-        )
-
-        from haiku.rag.tools.filters import build_multi_document_filter
-
-        search_agent = SearchAgent(client, Config)
-
-        # Build filter for only the labels document
-        doc_filter = build_multi_document_filter(["DocLayNet Class Labels"])
-
-        results = await search_agent.search(
-            query="What information is available?",
-            filter=doc_filter,
-        )
-
-        assert isinstance(results, list)
-        # All results should be from the labels document
-        for r in results:
-            assert "labels" in (r.document_uri or "").lower() or "Labels" in (
-                r.document_title or ""
             )
 
 
@@ -1033,9 +885,9 @@ def test_prior_answer_matching_below_threshold():
 
 
 def test_qa_response_embedding_cache():
-    """Test that QAResponse stores and retrieves question_embedding correctly."""
+    """Test that QAHistoryEntry stores and retrieves question_embedding correctly."""
     embedding = [0.1, 0.2, 0.3, 0.4]
-    qa = QAResponse(
+    qa = QAHistoryEntry(
         question="What is X?",
         answer="X is Y.",
         confidence=0.9,
@@ -1049,8 +901,8 @@ def test_qa_response_embedding_cache():
 
 
 def test_qa_response_embedding_default_none():
-    """Test that QAResponse.question_embedding defaults to None."""
-    qa = QAResponse(
+    """Test that QAHistoryEntry.question_embedding defaults to None."""
+    qa = QAHistoryEntry(
         question="What is X?",
         answer="X is Y.",
         confidence=0.9,
