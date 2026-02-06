@@ -1364,8 +1364,6 @@ class HaikuRAG:
             image=self._config.rlm.docker_image,
         ) as sandbox:
             deps = RLMDeps(
-                client=self,
-                config=self._config,
                 sandbox=sandbox,
                 context=context,
             )

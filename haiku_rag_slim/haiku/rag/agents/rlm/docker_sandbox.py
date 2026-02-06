@@ -36,6 +36,12 @@ class DockerSandbox:
 
     DEFAULT_IMAGE = "ghcr.io/ggozad/haiku.rag-slim:latest"
 
+    haiku_client: "HaikuRAG"
+    config: RLMConfig
+    context: RLMContext
+    image: str
+    _process: subprocess.Popen[bytes] | None
+
     def __init__(
         self,
         client: "HaikuRAG",
@@ -47,7 +53,7 @@ class DockerSandbox:
         self.config = config
         self.context = context
         self.image = image or self.DEFAULT_IMAGE
-        self._process: subprocess.Popen[bytes] | None = None
+        self._process = None
 
     def _build_docker_cmd(self) -> list[str]:
         """Build the docker run command."""
