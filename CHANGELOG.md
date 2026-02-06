@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.29.0] - 2026-02-06
+
 ### Added
 
 - **docling-serve Chunker OCR Options**: The docling-serve chunker now respects OCR settings from `conversion_options`
