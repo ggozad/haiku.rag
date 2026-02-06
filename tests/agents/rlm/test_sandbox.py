@@ -17,11 +17,10 @@ def vcr_cassette_dir():
 def is_docker_available() -> bool:
     """Check if Docker daemon is available."""
     try:
-        import docker
+        import subprocess
 
-        client = docker.from_env()
-        client.ping()
-        return True
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
+        return result.returncode == 0
     except Exception:
         return False
 

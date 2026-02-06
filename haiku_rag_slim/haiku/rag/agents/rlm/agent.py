@@ -55,8 +55,6 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
             success=result.success,
         )
 
-        ctx.deps.context.code_executions.append(execution)
-
         return execution
 
     return agent

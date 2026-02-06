@@ -192,7 +192,6 @@ rlm:
     provider: anthropic
     name: claude-sonnet-4-20250514
   code_timeout: 60.0      # Max seconds for code execution
-  max_tool_calls: 20      # Max execute_code calls per question
   max_output_chars: 50000 # Truncate output after this many chars
   docker_image: "ghcr.io/ggozad/haiku.rag-slim:latest"  # Container image
   docker_memory_limit: "512m"  # Container memory limit

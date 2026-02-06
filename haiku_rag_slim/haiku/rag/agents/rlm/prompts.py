@@ -50,7 +50,7 @@ You can import any Python standard library module.
 1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
 2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
 3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
 5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
 6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
 7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.

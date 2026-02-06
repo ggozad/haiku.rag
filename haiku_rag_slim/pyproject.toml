@@ -22,7 +22,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "docker>=7.1.0",
     "docling-core==2.60.1",
     "httpx>=0.28.1",
     "jsonpatch>=1.33",

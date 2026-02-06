@@ -23,7 +23,6 @@ def build_namespace(
             return await client.search(query, limit=limit, filter=context.filter)
 
         results = run_async(_search())
-        context.search_results.extend(results)
         return [
             {
                 "chunk_id": r.chunk_id,
