@@ -85,6 +85,42 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
         assert deleted_again is False
 
 
+async def test_client_resolve_document(temp_db_path):
+    """Test resolve_document finds documents by ID, title, or URI."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Insert document directly via repository (no embeddings needed)
+        doc = Document(
+            content="Test content",
+            uri="test://resolve-test",
+            title="Resolve Test Doc",
+        )
+        doc = await client.document_repository.create(doc)
+
+        # Resolve by ID
+        by_id = await client.resolve_document(doc.id)
+        assert by_id is not None
+        assert by_id.id == doc.id
+
+        # Resolve by title
+        by_title = await client.resolve_document("Resolve Test Doc")
+        assert by_title is not None
+        assert by_title.id == doc.id
+
+        # Resolve by URI
+        by_uri = await client.resolve_document("test://resolve-test")
+        assert by_uri is not None
+        assert by_uri.id == doc.id
+
+        # Not found returns None
+        not_found = await client.resolve_document("nonexistent")
+        assert not_found is None
+
+        # SQL injection is escaped
+        injection = "x' OR title LIKE '%"
+        injected = await client.resolve_document(injection)
+        assert injected is None
+
+
 @pytest.mark.vcr()
 async def test_client_update_document(qa_corpus: Dataset, temp_db_path):
     """Test updating document with individual parameters."""
@@ -1384,3 +1420,50 @@ async def test_client_convert_with_html_format(temp_db_path):
         labels = [str(getattr(item, "label", "")) for item, _ in items]
 
         assert "title" in labels
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
+    """SQL injection is blocked when using _escape_sql_string.
+
+    This test verifies that _escape_sql_string properly prevents SQL injection
+    by escaping single quotes in user input.
+    """
+    from haiku.rag.store.repositories.document import _escape_sql_string
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create documents
+        await client.create_document(
+            content="Secret classified data XYZ",
+            uri="secret://doc",
+            title="Secret",
+        )
+        await client.create_document(
+            content="Public report about weather",
+            uri="public://report",
+            title="Weather Report",
+        )
+
+        # Without escaping, this injection would match all documents
+        # by breaking out of the string literal: title = 'x' OR title LIKE '%'
+        injection_payload = "x' OR title LIKE '%"
+
+        # With proper escaping, single quotes become double quotes
+        # so the filter becomes: title = 'x'' OR title LIKE ''%'
+        # which searches for a literal title containing the injection string
+        safe_payload = _escape_sql_string(injection_payload)
+        docs = await client.list_documents(filter=f"title = '{safe_payload}'")
+
+        # Should find 0 documents (injection is escaped, searching for literal string)
+        assert len(docs) == 0
+
+        # Verify the escaping works correctly
+        assert safe_payload == "x'' OR title LIKE ''%"
+
+        # Verify unescaped injection would have matched documents (for test validity)
+        # This demonstrates that the injection works without escaping
+        docs_unescaped = await client.list_documents(
+            filter=f"title = '{injection_payload}'"
+        )
+        assert len(docs_unescaped) == 2  # SQL injection succeeds without escaping

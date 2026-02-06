@@ -26,6 +26,7 @@ flowchart TB
         QA[QA Agent]
         Chat[Chat Agent]
         Research[Research Graph]
+        RLM[RLM Agent]
     end
 
     subgraph Apps["Applications"]
@@ -97,7 +98,7 @@ flowchart LR
 
 ### Agent Layer
 
-Three agent types for different use cases:
+Four agent types for different use cases:
 
 ```mermaid
 flowchart TB
@@ -122,6 +123,14 @@ flowchart TB
         Evaluate -->|Continue| Batch
         Evaluate -->|Done| Synthesize[Synthesize]
     end
+
+    subgraph RLM["RLM Agent"]
+        Q4[Question] --> Code[Write Code]
+        Code --> Execute[Execute]
+        Execute --> Examine[Examine Results]
+        Examine -->|Iterate| Code
+        Examine -->|Done| A4[Answer]
+    end
 ```
 
 **QA Agent** - Single-turn question answering:
@@ -143,6 +152,13 @@ flowchart TB
 - Parallel search execution
 - Iterative refinement based on confidence
 - Synthesizes structured research report
+
+**RLM Agent** - Complex analytical tasks via code execution:
+
+- Writes Python code to explore the knowledge base
+- Executes in sandboxed environment
+- Handles aggregation, computation, multi-document analysis
+- Iterates until answer is found
 
 ### Applications
 

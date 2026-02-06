@@ -50,6 +50,12 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
   - `question` (required): The research question
   - Returns a structured research report with findings, conclusions, and sources
 
+- **`rlm_question`** - Answer complex analytical questions via code execution
+  - `question` (required): The question to answer
+  - `filter` (optional): SQL WHERE clause to restrict document access
+  - `document` (optional): Document title/ID to pre-load (can repeat)
+  - Best for aggregation, computation, and multi-document analysis
+
 ## Starting MCP Server
 
 The MCP server supports Streamable HTTP and stdio transports:

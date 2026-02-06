@@ -1,0 +1,898 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '116'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - The company was founded in 1985 by Jane Smith.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: +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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 15
+        total_tokens: 15
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '127'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - Our mission is to make technology accessible to everyone.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 11
+        total_tokens: 11
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '7839'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a Docker-sandboxed environment.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '622'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to inspect documents variable.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
+                preloaded documents'')"}'
+              name: execute_code
+            id: call_dk6bzypo
+            index: 0
+            type: function
+      created: 1770373463
+      id: chatcmpl-869
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 69
+        prompt_tokens: 1759
+        total_tokens: 1828
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '8495'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: |-
+          <think>
+          Need to inspect documents variable.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
+              preloaded documents'')"}'
+            name: execute_code
+          id: call_dk6bzypo
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
+          preloaded documents'')","stdout":"No preloaded documents\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_dk6bzypo
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a Docker-sandboxed environment.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '661'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: No preloaded docs. Need to search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"results = search(''company founded mission'', limit=10)\nfor r in results:\n    print(''Title:'',
+                r[''document_title''], ''Score:'', r[''score''])\n    print(r[''content''][:200])\n    print(''---'')"}'
+              name: execute_code
+            id: call_zf1l4x9e
+            index: 0
+            type: function
+      created: 1770373465
+      id: chatcmpl-682
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 86
+        prompt_tokens: 1903
+        total_tokens: 1989
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '9434'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: |-
+          <think>
+          Need to inspect documents variable.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
+              preloaded documents'')"}'
+            name: execute_code
+          id: call_dk6bzypo
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
+          preloaded documents'')","stdout":"No preloaded documents\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_dk6bzypo
+      - content: |-
+          <think>
+          No preloaded docs. Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(''company founded mission'', limit=10)\nfor r in results:\n    print(''Title:'',
+              r[''document_title''], ''Score:'', r[''score''])\n    print(r[''content''][:200])\n    print(''---'')"}'
+            name: execute_code
+          id: call_zf1l4x9e
+          type: function
+      - content: '{"code":"results = search(''company founded mission'', limit=10)\nfor r in results:\n    print(''Title:'',
+          r[''document_title''], ''Score:'', r[''score''])\n    print(r[''content''][:200])\n    print(''---'')","stdout":"Title:
+          Mission Statement Score: 0.032522473484277725\nOur mission is to make technology accessible to everyone.\n---\nTitle:
+          Company History Score: 0.032522473484277725\nThe company was founded in 1985 by Jane Smith.\n---\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_zf1l4x9e
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a Docker-sandboxed environment.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_docling_document, llm) and any Python standard
+            library module.
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1256'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: '{"answer":"The company was founded in 1985. Its mission is to make technology accessible to everyone.","program":"#
+            Get relevant documents via search\nresults = search(''company founded mission'', limit=10)\n# Find founded year
+            and mission statement\nfounded_year = None\nmission = None\nfor r in results:\n    text = r[''content'']\n    if
+            ''founded'' in text.lower() and founded_year is None:\n        import re\n        m = re.search(r''\\b(19\\d{2}|20\\d{2})\\b'',
+            text)\n        if m:\n            founded_year = m.group(1)\n    if ''mission'' in text.lower() and mission is
+            None:\n        # simple extraction of the sentence containing \"mission\"\n        sentences = re.split(r''(?<=[.!?])\\s+'',
+            text)\n        for s in sentences:\n            if ''mission'' in s.lower():\n                mission = s.strip()\n                break\n#
+            Output\nprint(f\"Founded year: {founded_year}\")\nprint(f\"Mission: {mission}\")"}'
+          role: assistant
+      created: 1770373471
+      id: chatcmpl-972
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 246
+        prompt_tokens: 2135
+        total_tokens: 2381
+    status:
+      code: 200
+      message: OK
+version: 1

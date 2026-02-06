@@ -77,9 +77,10 @@ class DocumentRepository:
 
     async def get_by_id(self, entity_id: str) -> Document | None:
         """Get a document by its ID."""
+        safe_id = _escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
-            .where(f"id = '{entity_id}'")
+            .where(f"id = '{safe_id}'")
             .limit(1)
             .to_pydantic(DocumentRecord)
         )
@@ -104,8 +105,9 @@ class DocumentRepository:
         entity.updated_at = datetime.fromisoformat(now)
 
         # Update the record
+        safe_id = _escape_sql_string(entity.id)
         self.store.documents_table.update(
-            where=f"id = '{entity.id}'",
+            where=f"id = '{safe_id}'",
             values={
                 "content": entity.content,
                 "uri": entity.uri,
@@ -136,7 +138,8 @@ class DocumentRepository:
         await self.chunk_repository.delete_by_document_id(entity_id)
 
         # Delete the document
-        self.store.documents_table.delete(f"id = '{entity_id}'")
+        safe_id = _escape_sql_string(entity_id)
+        self.store.documents_table.delete(f"id = '{safe_id}'")
         return True
 
     async def list_all(

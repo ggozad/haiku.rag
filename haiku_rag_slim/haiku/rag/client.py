@@ -22,13 +22,17 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
-from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.document import (
+    DocumentRepository,
+    _escape_sql_string,
+)
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.agents.research.models import Citation
+    from haiku.rag.agents.rlm.models import RLMResult
 
 logger = logging.getLogger(__name__)
 
@@ -736,6 +740,30 @@ class HaikuRAG:
         """
         return await self.document_repository.get_by_uri(uri)
 
+    async def resolve_document(self, id_or_title: str) -> Document | None:
+        """Resolve a document by ID, title, or URI (in that order).
+
+        Args:
+            id_or_title: Document ID, title, or URI to look up.
+
+        Returns:
+            The Document instance if found, None otherwise.
+        """
+        doc = await self.get_document_by_id(id_or_title)
+        if doc:
+            return doc
+
+        safe_input = _escape_sql_string(id_or_title)
+        docs = await self.list_documents(filter=f"title = '{safe_input}'")
+        if docs and docs[0].id:
+            return await self.get_document_by_id(docs[0].id)
+
+        docs = await self.list_documents(filter=f"uri = '{safe_input}'")
+        if docs and docs[0].id:
+            return await self.get_document_by_id(docs[0].id)
+
+        return None
+
     async def update_document(
         self,
         document_id: str,
@@ -1292,6 +1320,59 @@ class HaikuRAG:
 
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question, filter=filter)
+
+    async def rlm(
+        self,
+        question: str,
+        documents: list[str] | None = None,
+        filter: str | None = None,
+    ) -> "RLMResult":
+        """Answer a question using the RLM agent with code execution.
+
+        The RLM (Recursive Language Model) agent can write and execute Python
+        code in a sandboxed environment to solve problems that require
+        computation, aggregation, or complex traversal across documents.
+
+        Args:
+            question: The question to answer.
+            documents: Optional list of document IDs or titles to pre-load.
+            filter: SQL WHERE clause to filter documents during searches.
+
+        Returns:
+            RLMResult with the answer and the final consolidated program.
+        """
+        from haiku.rag.agents.rlm import (
+            DockerSandbox,
+            RLMContext,
+            RLMDeps,
+            create_rlm_agent,
+        )
+
+        context = RLMContext(filter=filter)
+
+        if documents:
+            loaded_docs = []
+            for doc_ref in documents:
+                doc = await self.resolve_document(doc_ref)
+                if doc:
+                    loaded_docs.append(doc)
+            context.documents = loaded_docs if loaded_docs else None
+
+        async with DockerSandbox(
+            client=self,
+            config=self._config.rlm,
+            context=context,
+            image=self._config.rlm.docker_image,
+        ) as sandbox:
+            deps = RLMDeps(
+                sandbox=sandbox,
+                context=context,
+            )
+
+            agent = create_rlm_agent(self._config)
+            result = await agent.run(question, deps=deps)
+
+            return result.output
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.

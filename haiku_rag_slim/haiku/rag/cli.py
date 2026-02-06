@@ -364,6 +364,39 @@ def ask(
     )
 
 
+@_cli.command("rlm", help="Answer questions using code execution (RLM agent)")
+def rlm(
+    question: str = typer.Argument(
+        help="The question to answer",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    document: str | None = typer.Option(
+        None,
+        "--document",
+        "-d",
+        help="Document ID or title to pre-load for analysis",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(
+        app.rlm(
+            question=question,
+            document=document,
+            filter=filter,
+        )
+    )
+
+
 @_cli.command("research", help="Run multi-agent research and output a concise report")
 def research(
     question: str = typer.Argument(..., help="The research question to investigate"),

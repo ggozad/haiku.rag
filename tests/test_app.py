@@ -669,3 +669,57 @@ def test_migrate_closes_store_on_exception(tmp_path):
             app.migrate()
 
         mock_store.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_rlm(app: HaikuRAGApp, monkeypatch):
+    """Test rlm method calls client.rlm and prints results."""
+    from haiku.rag.agents.rlm.models import RLMResult
+
+    mock_result = RLMResult(
+        answer="The total is 42.",
+        program="result = sum(values)\nprint(result)",
+    )
+
+    mock_client = AsyncMock()
+    mock_client.rlm = AsyncMock(return_value=mock_result)
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        await app.rlm("What is the total?")
+
+    mock_client.rlm.assert_called_once_with(
+        "What is the total?", documents=None, filter=None
+    )
+    calls = [str(c) for c in mock_print.call_args_list]
+    assert any("Question" in c for c in calls)
+    assert any("Program" in c for c in calls)
+    assert any("Answer" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_rlm_with_document_and_filter(app: HaikuRAGApp, monkeypatch):
+    """Test rlm method passes document and filter to client."""
+    from haiku.rag.agents.rlm.models import RLMResult
+
+    mock_result = RLMResult(
+        answer="Answer with filter",
+        program="print('filtered')",
+    )
+
+    mock_client = AsyncMock()
+    mock_client.rlm = AsyncMock(return_value=mock_result)
+    mock_client.__aenter__.return_value = mock_client
+
+    mock_print = MagicMock()
+    monkeypatch.setattr(app.console, "print", mock_print)
+
+    with patch("haiku.rag.app.HaikuRAG", return_value=mock_client):
+        await app.rlm("What is it?", document="doc-123", filter="uri LIKE '%test%'")
+
+    mock_client.rlm.assert_called_once_with(
+        "What is it?", documents=["doc-123"], filter="uri LIKE '%test%'"
+    )

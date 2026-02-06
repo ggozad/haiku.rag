@@ -1,10 +1,11 @@
 # Agents
 
-Three agentic flows are provided by haiku.rag:
+Four agentic flows are provided by haiku.rag:
 
 - **Simple QA Agent** — a focused question answering agent
 - **Chat Agent** — multi-turn conversational RAG with session memory
 - **Research Graph** — a multi-step research workflow with question decomposition
+- **RLM Agent** — complex analytical tasks via sandboxed Python code execution (see [RLM Agent](rlm.md))
 
 See [QA and Research Configuration](configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
 

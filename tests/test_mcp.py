@@ -307,3 +307,71 @@ async def test_mcp_research_question():
             assert result.title == "Research Title"
             assert result.executive_summary == "Summary"
             mock_graph.run.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mcp_rlm_question():
+    """Test rlm_question tool is properly wired."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = Path(temp_dir) / "test.lancedb"
+        mcp = create_mcp_server(db_path)
+
+        from haiku.rag.agents.rlm.models import RLMResult
+
+        mock_result = RLMResult(
+            answer="The total is 42.",
+            program="result = sum(values)\nprint(result)",
+        )
+
+        with patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class:
+            mock_rag = AsyncMock()
+            mock_rag.rlm = AsyncMock(return_value=mock_result)
+            mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_rag)
+            mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            tools = await mcp.get_tools()
+            rlm_tool = next(t for t in tools.values() if t.name == "rlm_question")
+
+            result = await rlm_tool.fn(question="What is the total?")
+
+            assert result == "The total is 42."
+            mock_rag.rlm.assert_called_once_with(
+                "What is the total?", documents=None, filter=None
+            )
+
+
+@pytest.mark.asyncio
+async def test_mcp_rlm_question_with_document_and_filter():
+    """Test rlm_question tool with document and filter parameters."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = Path(temp_dir) / "test.lancedb"
+        mcp = create_mcp_server(db_path)
+
+        from haiku.rag.agents.rlm.models import RLMResult
+
+        mock_result = RLMResult(
+            answer="Filtered answer",
+            program="print('filtered')",
+        )
+
+        with patch("haiku.rag.mcp.HaikuRAG") as mock_rag_class:
+            mock_rag = AsyncMock()
+            mock_rag.rlm = AsyncMock(return_value=mock_result)
+            mock_rag_class.return_value.__aenter__ = AsyncMock(return_value=mock_rag)
+            mock_rag_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            tools = await mcp.get_tools()
+            rlm_tool = next(t for t in tools.values() if t.name == "rlm_question")
+
+            result = await rlm_tool.fn(
+                question="Analyze this",
+                document="doc-123",
+                filter="uri LIKE '%test%'",
+            )
+
+            assert result == "Filtered answer"
+            mock_rag.rlm.assert_called_once_with(
+                "Analyze this",
+                documents=["doc-123"],
+                filter="uri LIKE '%test%'",
+            )
