@@ -42,6 +42,7 @@ class TestDocumentModels:
         assert state.accessed_documents == []
 
 
+@pytest.mark.vcr()
 class TestDocumentToolset:
     """Tests for create_document_toolset."""
 
@@ -72,6 +73,7 @@ class TestDocumentToolset:
         assert isinstance(state, DocumentState)
 
 
+@pytest.mark.vcr()
 class TestDocumentToolExecution:
     """Tests for document tool execution."""
 
