@@ -88,11 +88,13 @@ async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
 async def test_client_resolve_document(temp_db_path):
     """Test resolve_document finds documents by ID, title, or URI."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(
+        # Insert document directly via repository (no embeddings needed)
+        doc = Document(
             content="Test content",
             uri="test://resolve-test",
             title="Resolve Test Doc",
         )
+        doc = await client.document_repository.create(doc)
 
         # Resolve by ID
         by_id = await client.resolve_document(doc.id)
