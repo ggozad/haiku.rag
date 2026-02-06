@@ -49,6 +49,13 @@ class QAHistoryEntry(BaseModel):
     citations: list[Citation] = []
     question_embedding: list[float] | None = Field(default=None, exclude=True)
 
+    @property
+    def sources(self) -> list[str]:
+        """Source names for display."""
+        return list(
+            dict.fromkeys(c.document_title or c.document_uri for c in self.citations)
+        )
+
     def to_search_answer(self) -> SearchAnswer:
         """Convert to SearchAnswer for research graph context."""
         return SearchAnswer(
@@ -58,6 +65,12 @@ class QAHistoryEntry(BaseModel):
             cited_chunks=[c.chunk_id for c in self.citations],
             citations=self.citations,
         )
+
+
+# Resolve ChatSessionState forward reference to QAHistoryEntry
+from haiku.rag.agents.chat.state import _rebuild_models  # noqa: E402
+
+_rebuild_models(QAHistoryEntry)
 
 
 class QAState(BaseModel):

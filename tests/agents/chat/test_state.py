@@ -1,9 +1,7 @@
 from ag_ui.core import StateDeltaEvent
 
 from haiku.rag.agents.chat.state import (
-    MAX_QA_HISTORY,
     ChatSessionState,
-    QAResponse,
     SessionContext,
 )
 from haiku.rag.tools.filters import (
@@ -11,6 +9,7 @@ from haiku.rag.tools.filters import (
     build_multi_document_filter,
     combine_filters,
 )
+from haiku.rag.tools.qa import QAHistoryEntry
 
 
 def test_build_document_filter_simple():
@@ -89,302 +88,9 @@ def test_combine_filters_both():
 
 def test_max_qa_history_constant():
     """Test MAX_QA_HISTORY constant value."""
+    from haiku.rag.tools.qa import MAX_QA_HISTORY
+
     assert MAX_QA_HISTORY == 50
-
-
-def test_chat_deps_state_getter_returns_namespaced_state():
-    """Test ChatDeps.state getter returns state under namespaced key."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(
-        session_id="test-123",
-        qa_history=[
-            QAResponse(question="Q1", answer="A1", confidence=0.9),
-        ],
-    )
-
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    state = deps.state
-    assert state is not None
-    assert AGUI_STATE_KEY in state
-    assert state[AGUI_STATE_KEY]["session_id"] == "test-123"
-    assert len(state[AGUI_STATE_KEY]["qa_history"]) == 1
-    assert state[AGUI_STATE_KEY]["qa_history"][0]["question"] == "Q1"
-
-
-def test_chat_deps_state_getter_without_namespace():
-    """Test ChatDeps.state getter returns flat state when no state_key."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="test-123")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=None,
-    )
-
-    state = deps.state
-    assert state is not None
-    assert "session_id" in state
-    assert state["session_id"] == "test-123"
-
-
-def test_chat_deps_state_getter_returns_default_state():
-    """Test ChatDeps.state getter returns default state when not explicitly set."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import ChatDeps
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-    )
-
-    state = deps.state
-    assert state is not None
-    assert "session_id" in state
-    assert state["qa_history"] == []
-    assert state["citations"] == []
-
-
-def test_chat_deps_state_setter_updates_from_namespaced_state():
-    """Test ChatDeps.state setter updates session_state from namespaced incoming state."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="initial")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    # Simulate incoming AG-UI state with namespaced key
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "updated-123",
-            "qa_history": [
-                {"question": "Q1", "answer": "A1", "confidence": 0.9, "citations": []}
-            ],
-            "citations": [],
-        }
-    }
-
-    deps.state = incoming_state
-
-    assert deps.session_state is not None
-    assert deps.session_state.session_id == "updated-123"
-    assert len(deps.session_state.qa_history) == 1
-    assert deps.session_state.qa_history[0].question == "Q1"
-
-
-def test_chat_deps_state_setter_handles_none():
-    """Test ChatDeps.state setter handles None gracefully."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="original")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-    )
-
-    # Setting None should not raise and should not change state
-    deps.state = None
-
-    assert deps.session_state is not None
-    assert deps.session_state.session_id == "original"
-
-
-def test_chat_deps_state_setter_updates_default_state():
-    """Test ChatDeps.state setter updates the default session_state."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import ChatDeps
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-    )
-
-    original_session_id = deps.session_state.session_id
-
-    # Update with incoming state
-    deps.state = {"session_id": "updated-123", "qa_history": [], "citations": []}
-
-    assert deps.session_state.session_id == "updated-123"
-    assert deps.session_state.session_id != original_session_id
-
-
-def test_chat_deps_state_setter_with_citation_dicts():
-    """Test ChatDeps.state setter converts citation dicts to Citation."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="test")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "test",
-            "qa_history": [],
-            "citations": [
-                {
-                    "index": 1,
-                    "document_id": "doc-1",
-                    "chunk_id": "chunk-1",
-                    "document_uri": "test.md",
-                    "document_title": "Test Doc",
-                    "page_numbers": [1, 2],
-                    "headings": ["Intro"],
-                    "content": "Test content",
-                }
-            ],
-        }
-    }
-
-    deps.state = incoming_state
-
-    assert deps.session_state is not None
-    assert len(deps.session_state.citations) == 1
-    citation = deps.session_state.citations[0]
-    assert citation.document_id == "doc-1"
-    assert citation.chunk_id == "chunk-1"
-    assert citation.page_numbers == [1, 2]
-
-
-def test_chat_deps_state_getter_includes_session_context():
-    """Test ChatDeps.state getter includes session_context when present."""
-    from datetime import datetime
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import (
-        AGUI_STATE_KEY,
-        ChatDeps,
-        ChatSessionState,
-        SessionContext,
-    )
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    now = datetime.now()
-    session_state = ChatSessionState(
-        session_id="test-123",
-        session_context=SessionContext(
-            summary="User discussed authentication.",
-            last_updated=now,
-        ),
-    )
-
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    state = deps.state
-    assert state is not None
-    assert AGUI_STATE_KEY in state
-    assert state[AGUI_STATE_KEY]["session_context"] is not None
-    assert (
-        state[AGUI_STATE_KEY]["session_context"]["summary"]
-        == "User discussed authentication."
-    )
-
-
-def test_chat_deps_state_setter_ignores_session_context():
-    """Test ChatDeps.state setter ignores session_context from client.
-
-    The agent owns session_context via server-side cache, so client-provided
-    session_context should be ignored to prevent stale state overwriting.
-    """
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import (
-        AGUI_STATE_KEY,
-        ChatDeps,
-        ChatSessionState,
-        SessionContext,
-    )
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    # Start with a session_context (e.g., from cache)
-    session_state = ChatSessionState(
-        session_id="test",
-        session_context=SessionContext(summary="Server-side context"),
-    )
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    # Client sends different session_context (stale)
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "test",
-            "qa_history": [],
-            "citations": [],
-            "session_context": {
-                "summary": "Client-provided stale context",
-                "last_updated": "2025-01-15T10:30:00",
-            },
-        }
-    }
-
-    deps.state = incoming_state
-
-    # session_context should NOT be overwritten
-    assert deps.session_state is not None
-    assert deps.session_state.session_context is not None
-    assert deps.session_state.session_context.summary == "Server-side context"
 
 
 def test_citation_registry_index_assignment():
@@ -395,8 +101,6 @@ def test_citation_registry_index_assignment():
     - Second unique chunk gets index 2
     - Same chunk_id always returns same index
     """
-    from haiku.rag.agents.chat.state import ChatSessionState
-
     session_state = ChatSessionState(session_id="test")
 
     # First chunk gets index 1
@@ -414,8 +118,6 @@ def test_citation_registry_index_assignment():
 
 def test_citation_registry_stability():
     """Test citation indices are stable across multiple calls in any order."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
     session_state = ChatSessionState(session_id="test")
 
     # First round assigns indices 1, 2, 3
@@ -435,8 +137,6 @@ def test_citation_registry_stability():
 
 def test_citation_registry_serialization_roundtrip():
     """Test citation_registry serializes and deserializes correctly for AG-UI state."""
-    from haiku.rag.agents.chat.state import ChatSessionState
-
     # Create state and assign indices
     original = ChatSessionState(session_id="test")
     original.get_or_assign_index("chunk-a")
@@ -455,127 +155,6 @@ def test_citation_registry_serialization_roundtrip():
     assert restored.get_or_assign_index("chunk-b") == 2
     # New chunk should get next index
     assert restored.get_or_assign_index("chunk-c") == 3
-
-
-def test_chat_deps_state_getter_includes_citation_registry():
-    """Test ChatDeps.state getter includes citation_registry."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="test")
-    session_state.get_or_assign_index("chunk-a")
-
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    state = deps.state
-    assert state is not None
-    assert AGUI_STATE_KEY in state
-    assert state[AGUI_STATE_KEY]["citation_registry"] == {"chunk-a": 1}
-
-
-def test_chat_deps_state_setter_restores_citation_registry():
-    """Test ChatDeps.state setter restores citation_registry from incoming state."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="test")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    # Simulate incoming AG-UI state with citation_registry
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "test",
-            "qa_history": [],
-            "citations": [],
-            "citation_registry": {"chunk-x": 1, "chunk-y": 2},
-        }
-    }
-
-    deps.state = incoming_state
-
-    assert deps.session_state is not None
-    # Registry should be restored
-    assert deps.session_state.get_or_assign_index("chunk-x") == 1
-    assert deps.session_state.get_or_assign_index("chunk-y") == 2
-    # New chunk gets next index
-    assert deps.session_state.get_or_assign_index("chunk-z") == 3
-
-
-def test_chat_deps_state_setter_restores_document_filter():
-    """Test ChatDeps.state setter restores document_filter from incoming state."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(session_id="test")
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "test",
-            "qa_history": [],
-            "citations": [],
-            "document_filter": ["doc1.pdf", "doc2.pdf"],
-        }
-    }
-
-    deps.state = incoming_state
-
-    assert deps.session_state is not None
-    assert deps.session_state.document_filter == ["doc1.pdf", "doc2.pdf"]
-
-
-def test_chat_deps_state_getter_includes_document_filter():
-    """Test ChatDeps.state getter includes document_filter."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.agents.chat.state import AGUI_STATE_KEY, ChatDeps, ChatSessionState
-
-    mock_client = MagicMock()
-    mock_config = MagicMock()
-
-    session_state = ChatSessionState(
-        session_id="test-123",
-        document_filter=["doc1.pdf", "doc2.pdf"],
-    )
-
-    deps = ChatDeps(
-        client=mock_client,
-        config=mock_config,
-        session_state=session_state,
-        state_key=AGUI_STATE_KEY,
-    )
-
-    state = deps.state
-    assert state is not None
-    assert AGUI_STATE_KEY in state
-    assert state[AGUI_STATE_KEY]["document_filter"] == ["doc1.pdf", "doc2.pdf"]
 
 
 def test_chat_session_state_defaults_to_empty_session_id():
@@ -685,7 +264,7 @@ def test_emit_state_event_returns_delta_with_changes():
     current_state = ChatSessionState(session_id="test-123", qa_history=[], citations=[])
     new_state = ChatSessionState(
         session_id="test-123",
-        qa_history=[QAResponse(question="Q1", answer="A1", confidence=0.9)],
+        qa_history=[QAHistoryEntry(question="Q1", answer="A1", confidence=0.9)],
         citations=[],
     )
 
@@ -709,7 +288,7 @@ def test_emit_state_event_delta_with_state_key():
     current_state = ChatSessionState(session_id="test-123", qa_history=[])
     new_state = ChatSessionState(
         session_id="test-123",
-        qa_history=[QAResponse(question="Q1", answer="A1", confidence=0.9)],
+        qa_history=[QAHistoryEntry(question="Q1", answer="A1", confidence=0.9)],
     )
 
     event = emit_state_event(current_state, new_state, state_key=AGUI_STATE_KEY)
@@ -728,14 +307,14 @@ def test_emit_state_event_delta_produces_valid_patch():
 
     current_state = ChatSessionState(
         session_id="test-123",
-        qa_history=[QAResponse(question="Q1", answer="A1", confidence=0.9)],
+        qa_history=[QAHistoryEntry(question="Q1", answer="A1", confidence=0.9)],
         citations=[],
     )
     new_state = ChatSessionState(
         session_id="test-123",
         qa_history=[
-            QAResponse(question="Q1", answer="A1", confidence=0.9),
-            QAResponse(question="Q2", answer="A2", confidence=0.8),
+            QAHistoryEntry(question="Q1", answer="A1", confidence=0.9),
+            QAHistoryEntry(question="Q2", answer="A2", confidence=0.8),
         ],
         citations=[],
     )

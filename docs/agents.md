@@ -56,7 +56,7 @@ The chat agent enables multi-turn conversational RAG. It maintains session state
 Key features:
 
 - **Session memory**: Previous Q/A pairs are used as context for follow-up questions
-- **Query expansion**: SearchAgent generates multiple query variations for better recall
+- **Query expansion**: Search toolset generates multiple query variations for better recall
 - **Document filtering**: Natural language document filtering ("search in document X about...")
 - **Confidence filtering**: Low-confidence answers are flagged
 
@@ -85,13 +85,14 @@ See [Applications](apps.md#chat-tui) for the full TUI interface guide.
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.agents.chat import create_chat_agent, ChatDeps, ChatSessionState
+from haiku.rag.agents.chat import create_chat_agent, ChatDeps
+from haiku.rag.tools import ToolContext
 
 async with HaikuRAG(path_to_db) as client:
-    # Create agent and session
-    agent = create_chat_agent(config)
-    session = ChatSessionState()
-    deps = ChatDeps(client=client, config=config, session_state=session)
+    # Create agent with composed toolsets
+    context = ToolContext()
+    agent = create_chat_agent(config, client, context)
+    deps = ChatDeps(config=config, tool_context=context)
 
     # First question
     result = await agent.run("What is haiku.rag?", deps=deps)
@@ -134,14 +135,16 @@ Q/A history is used to:
 When using the chat agent with AG-UI streaming, state is emitted under a namespaced key to avoid conflicts with other agents:
 
 ```python
-from haiku.rag.agents.chat import AGUI_STATE_KEY, ChatDeps, ChatSessionState
+from haiku.rag.agents.chat import AGUI_STATE_KEY, ChatDeps
+from haiku.rag.tools import ToolContext
 
 # AGUI_STATE_KEY = "haiku.rag.chat"
 
+context = ToolContext()
+agent = create_chat_agent(config, client, context)
 deps = ChatDeps(
-    client=client,
     config=config,
-    session_state=ChatSessionState(),
+    tool_context=context,
     state_key=AGUI_STATE_KEY,  # Enables namespaced state emission
 )
 ```

@@ -203,10 +203,10 @@ class ChatApp(App):
                 for c in chat_state["citations"]
             ]
         if "qa_history" in chat_state:
-            from haiku.rag.agents.chat.state import QAResponse
+            from haiku.rag.tools.qa import QAHistoryEntry
 
             self.session_state.qa_history = [
-                QAResponse(**qa) if isinstance(qa, dict) else qa
+                QAHistoryEntry(**qa) if isinstance(qa, dict) else qa
                 for qa in chat_state["qa_history"]
             ]
         if "session_context" in chat_state:

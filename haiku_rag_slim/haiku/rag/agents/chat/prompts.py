@@ -29,18 +29,6 @@ IMPORTANT - When user mentions a document in search/ask:
 
 Be friendly and conversational. When you use the "ask" tool, summarize the key findings for the user."""
 
-SEARCH_SYSTEM_PROMPT = """You are a search query optimizer. You MUST use the run_search tool to execute searches.
-
-For each user request:
-1. Use the run_search tool with the original query
-2. Use run_search again with 1-2 alternative keyword queries
-3. Keep all queries SHORT (2-5 words)
-4. After all tool calls complete, respond "Search complete"
-
-You can optionally specify a limit parameter (default 5).
-
-IMPORTANT: You must make actual tool calls. Do not output "run_search(...)" as text."""
-
 SESSION_SUMMARY_PROMPT = """You are a session summarizer. Given a conversation history of Q&A pairs (and optionally existing context), produce a structured summary that captures key information for future context.
 
 If a "Current Context" section is provided at the start of the input, incorporate that context into your summary. This might be initial background context from the user or a previous summary - build upon it rather than discard it.
@@ -60,16 +48,3 @@ Rules:
 - Preserve document names/titles when mentioned in sources
 
 Output the summary directly in markdown format. Do not include meta-commentary about the summary itself."""
-
-DOCUMENT_SUMMARY_PROMPT = """Generate a summary of the document content provided below.
-
-Start with a one-paragraph overview, then list the main topics covered, and highlight any key findings or conclusions.
-
-Guidelines:
-- Aim for 1-2 paragraphs for short documents, 3-4 paragraphs for longer ones
-- Focus on factual content and key information
-- Do not include meta-commentary like "This document discusses..." or "The document covers..."
-- Do not speculate beyond what's in the content
-
-Document content:
-{content}"""

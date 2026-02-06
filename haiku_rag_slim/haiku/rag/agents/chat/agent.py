@@ -14,16 +14,13 @@ from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
-    DocumentInfo,
-    QAResponse,
-    SearchDeps,
     SessionContext,
     emit_state_event,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext
-from haiku.rag.tools.document import DocumentListResponse, create_document_toolset
+from haiku.rag.tools.document import create_document_toolset
 from haiku.rag.tools.qa import (
     QA_SESSION_NAMESPACE,
     QASessionState,
@@ -275,10 +272,6 @@ __all__ = [
     "trigger_background_summarization",
     "ChatDeps",
     "ChatSessionState",
-    "DocumentInfo",
-    "DocumentListResponse",
-    "QAResponse",
-    "SearchDeps",
     "SessionContext",
     "emit_state_event",
     "AGUI_STATE_KEY",

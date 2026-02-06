@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 from pydantic_ai import Agent
 
 from haiku.rag.agents.chat.prompts import SESSION_SUMMARY_PROMPT
-from haiku.rag.agents.chat.state import ChatSessionState, QAResponse, SessionContext
+from haiku.rag.agents.chat.state import ChatSessionState, SessionContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
 
 if TYPE_CHECKING:
-    from haiku.rag.tools.qa import QASessionState
+    from haiku.rag.tools.qa import QAHistoryEntry, QASessionState
 
 
 @dataclass
@@ -79,7 +79,7 @@ def get_cached_embedding(session_id: str, question: str) -> list[float] | None:
 
 
 async def summarize_session(
-    qa_history: list[QAResponse],
+    qa_history: list["QAHistoryEntry"],
     config: AppConfig,
     current_context: str | None = None,
 ) -> str:
@@ -113,7 +113,7 @@ async def summarize_session(
 
 
 async def update_session_context(
-    qa_history: list[QAResponse],
+    qa_history: list["QAHistoryEntry"],
     config: AppConfig,
     session_state: ChatSessionState,
 ) -> None:
@@ -143,7 +143,7 @@ async def update_session_context(
         cache_session_context(session_state.session_id, session_state.session_context)
 
 
-def _format_qa_history(qa_history: list[QAResponse]) -> str:
+def _format_qa_history(qa_history: list["QAHistoryEntry"]) -> str:
     """Format qa_history for input to summarization."""
     lines: list[str] = []
     for i, qa in enumerate(qa_history, 1):
@@ -165,16 +165,7 @@ async def _update_context_background(
 ) -> None:
     """Background task to update session context after an ask."""
     try:
-        # Convert QAHistoryEntry to QAResponse format for update_session_context
-        qa_history = [
-            QAResponse(
-                question=entry.question,
-                answer=entry.answer,
-                confidence=entry.confidence,
-                citations=list(entry.citations),
-            )
-            for entry in qa_session_state.qa_history
-        ]
+        qa_history = list(qa_session_state.qa_history)
 
         session_state = ChatSessionState(
             session_id=session_id,
