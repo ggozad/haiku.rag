@@ -46,4 +46,6 @@ async def test_operations_work_after_database_created():
         async with HaikuRAG(db_path=db_path, config=config) as client:
             docs = await client.list_documents()
             assert len(docs) == 1
-            assert docs[0].content == "Test content"
+            doc = await client.get_document_by_id(docs[0].id)
+            assert doc is not None
+            assert doc.content == "Test content"

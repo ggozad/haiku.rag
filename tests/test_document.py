@@ -7,6 +7,54 @@ from haiku.rag.store.repositories.document import DocumentRepository
 
 
 @pytest.mark.asyncio
+async def test_document_list_excludes_content_by_default(
+    qa_corpus: Dataset, temp_db_path
+):
+    """list_all excludes content and docling_document by default."""
+    store = Store(temp_db_path, create=True)
+    doc_repo = DocumentRepository(store)
+
+    doc = Document(
+        content=qa_corpus[0]["document_extracted"],
+        uri="https://example.com/doc.txt",
+        title="Test Document",
+        metadata={"key": "value"},
+    )
+    created = await doc_repo.create(doc)
+
+    docs = await doc_repo.list_all()
+    assert len(docs) == 1
+    assert docs[0].id == created.id
+    assert docs[0].title == "Test Document"
+    assert docs[0].uri == "https://example.com/doc.txt"
+    assert docs[0].metadata == {"key": "value"}
+    assert docs[0].content == ""
+    assert docs[0].docling_document is None
+
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_document_list_includes_content_when_requested(
+    qa_corpus: Dataset, temp_db_path
+):
+    """list_all returns content when include_content=True."""
+    store = Store(temp_db_path, create=True)
+    doc_repo = DocumentRepository(store)
+
+    content = qa_corpus[0]["document_extracted"]
+    doc = Document(content=content, uri="https://example.com/doc.txt")
+    created = await doc_repo.create(doc)
+
+    docs = await doc_repo.list_all(include_content=True)
+    assert len(docs) == 1
+    assert docs[0].id == created.id
+    assert docs[0].content == content
+
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_document_list_with_filter(qa_corpus: Dataset, temp_db_path):
     """Test listing documents with filter clause."""
     store = Store(temp_db_path, create=True)
