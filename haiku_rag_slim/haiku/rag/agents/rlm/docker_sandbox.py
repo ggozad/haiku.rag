@@ -24,7 +24,7 @@ class SandboxResult:
     success: bool
 
 
-class DockerSandbox:
+class DockerSandbox:  # pragma: no cover
     """Execute code in a persistent Docker container.
 
     Use as an async context manager to manage container lifecycle:
