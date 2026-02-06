@@ -47,6 +47,7 @@ class TestSearchState:
         assert restored.results[0].chunk_id == "c1"
 
 
+@pytest.mark.vcr()
 class TestSearchToolset:
     """Tests for create_search_toolset."""
 
@@ -96,6 +97,7 @@ class TestSearchToolset:
         assert state.results[0].chunk_id == "pre1"
 
 
+@pytest.mark.vcr()
 class TestSearchToolExecution:
     """Tests for search tool execution."""
 
