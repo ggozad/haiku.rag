@@ -230,6 +230,8 @@ providers:
 
 Conversion options work identically for both local and remote processing.
 
+**Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail—set `do_ocr: false` to disable OCR entirely.
+
 ### Chunking Strategies
 
 **Hybrid chunking** (default):

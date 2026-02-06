@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **docling-serve Chunker OCR Options**: The docling-serve chunker now respects OCR settings from `conversion_options`
+  - Passes `do_ocr`, `force_ocr`, `ocr_engine`, and `ocr_lang` to the chunking API
+  - Allows disabling OCR via config when running docling-serve in read-only containers
+
 ### Fixed
 
 - **CI**: Cache HuggingFace tokenizer to prevent flaky test failures when HuggingFace has transient outages
