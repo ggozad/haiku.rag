@@ -31,6 +31,7 @@ from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_
 from haiku.rag.tools.session import (
     SESSION_NAMESPACE,
     SessionState,
+    compute_combined_state_delta,
     compute_state_delta,
 )
 
@@ -63,4 +64,5 @@ __all__ = [
     "SESSION_NAMESPACE",
     "SessionState",
     "compute_state_delta",
+    "compute_combined_state_delta",
 ]

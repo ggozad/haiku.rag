@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, PrivateAttr
@@ -72,18 +71,18 @@ class ToolContext(BaseModel):
             return state
         return None
 
-    def get_or_create(self, namespace: str, factory: Callable[[], T]) -> T:
+    def get_or_create(self, namespace: str, state_type: type[T]) -> T:
         """Get state for a namespace, creating it if not registered.
 
         Args:
             namespace: The namespace to get or create state for.
-            factory: A callable that returns a new Pydantic model instance.
+            state_type: A Pydantic BaseModel subclass to instantiate if needed.
 
         Returns:
             The state for the namespace.
         """
         if namespace not in self._namespaces:
-            self._namespaces[namespace] = factory()
+            self._namespaces[namespace] = state_type()
         return self._namespaces[namespace]  # type: ignore[return-value]
 
     def clear_namespace(self, namespace: str) -> None:
