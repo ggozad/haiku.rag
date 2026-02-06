@@ -17,7 +17,11 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.tools.context import ToolContext
-from haiku.rag.tools.filters import build_document_filter, combine_filters
+from haiku.rag.tools.filters import (
+    build_document_filter,
+    combine_filters,
+    get_session_filter,
+)
 from haiku.rag.tools.models import QAResult
 from haiku.rag.tools.session import (
     SESSION_NAMESPACE,
@@ -177,15 +181,9 @@ def create_qa_toolset(
                         old_state_snapshot["session_context"] = None
 
         # Build filter from session state, base_filter, and document_name
-        session_filter = None
-        if session_state is not None and session_state.document_filter:
-            from haiku.rag.tools.filters import build_multi_document_filter
-
-            session_filter = build_multi_document_filter(session_state.document_filter)
-
         doc_filter = build_document_filter(document_name) if document_name else None
         effective_filter = combine_filters(
-            combine_filters(base_filter, session_filter), doc_filter
+            get_session_filter(context, base_filter), doc_filter
         )
 
         # Determine session context

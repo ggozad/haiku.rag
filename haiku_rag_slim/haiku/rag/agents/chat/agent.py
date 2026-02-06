@@ -15,7 +15,6 @@ from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
     SessionContext,
-    emit_state_event,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -273,6 +272,5 @@ __all__ = [
     "ChatDeps",
     "ChatSessionState",
     "SessionContext",
-    "emit_state_event",
     "AGUI_STATE_KEY",
 ]

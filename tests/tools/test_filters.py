@@ -1,8 +1,11 @@
+from haiku.rag.tools.context import ToolContext
 from haiku.rag.tools.filters import (
     build_document_filter,
     build_multi_document_filter,
     combine_filters,
+    get_session_filter,
 )
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 
 def test_build_document_filter_simple():
@@ -77,3 +80,37 @@ def test_combine_filters_both():
     """Test combine_filters combines with AND."""
     result = combine_filters("uri = 'test'", "title = 'doc'")
     assert result == "(uri = 'test') AND (title = 'doc')"
+
+
+def test_get_session_filter_no_context():
+    """Returns base_filter as-is when context is None."""
+    assert get_session_filter(None) is None
+    assert get_session_filter(None, "uri = 'test'") == "uri = 'test'"
+
+
+def test_get_session_filter_no_document_filter():
+    """Returns base_filter when SessionState has no document_filter."""
+    context = ToolContext()
+    context.register(SESSION_NAMESPACE, SessionState())
+    assert get_session_filter(context) is None
+    assert get_session_filter(context, "uri = 'test'") == "uri = 'test'"
+
+
+def test_get_session_filter_with_document_filter():
+    """Builds filter from SessionState.document_filter."""
+    context = ToolContext()
+    context.register(SESSION_NAMESPACE, SessionState(document_filter=["mytest"]))
+    result = get_session_filter(context)
+    assert result is not None
+    assert "mytest" in result
+
+
+def test_get_session_filter_combines_with_base_filter():
+    """Combines session filter with base_filter using AND."""
+    context = ToolContext()
+    context.register(SESSION_NAMESPACE, SessionState(document_filter=["mytest"]))
+    result = get_session_filter(context, "uri = 'base'")
+    assert result is not None
+    assert "uri = 'base'" in result
+    assert "mytest" in result
+    assert "AND" in result
