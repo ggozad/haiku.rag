@@ -151,6 +151,7 @@ We benchmark both the plain text version (HTML stripped, no structure) and HTML 
 |----------------------|------------|-----------------------------|----------|------------------------------|
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.82     | html, `chunk-radius=2`       |
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.80     | html, `chunk-radius=2`       |
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.83     | html, `chunk-radius=2`, `jinaai/jina-reranker-v3` |
 
 ## HotpotQA
 
