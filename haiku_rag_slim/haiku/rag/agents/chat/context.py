@@ -181,7 +181,7 @@ async def _update_context_background(
         # Update the QASessionState with the new context
         cached = get_cached_session_context(session_id)
         if cached and cached.summary:
-            qa_session_state.session_context = cached.render_markdown()
+            qa_session_state.session_context = cached.summary
 
     except asyncio.CancelledError:
         pass

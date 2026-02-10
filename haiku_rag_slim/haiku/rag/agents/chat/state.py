@@ -17,10 +17,6 @@ class SessionContext(BaseModel):
     summary: str = ""
     last_updated: datetime | None = None
 
-    def render_markdown(self) -> str:
-        """Render context for injection into research graph."""
-        return self.summary
-
 
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""

@@ -7,8 +7,6 @@ from haiku.rag.tools.context import ToolContext
 from haiku.rag.tools.filters import get_session_filter
 from haiku.rag.utils import get_model
 
-DOCUMENT_NAMESPACE = "haiku.rag.document"
-
 DOCUMENT_SUMMARY_PROMPT = """Generate a summary of the document content provided below.
 
 Start with a one-paragraph overview, then list the main topics covered, and highlight any key findings or conclusions.
@@ -38,15 +36,6 @@ class DocumentListResponse(BaseModel):
     page: int
     total_pages: int
     total_documents: int
-
-
-class DocumentState(BaseModel):
-    """State for document toolset.
-
-    Tracks documents accessed during tool invocations.
-    """
-
-    accessed_documents: list[DocumentInfo] = []
 
 
 async def find_document(client: HaikuRAG, query: str):
@@ -91,7 +80,6 @@ def create_document_toolset(
         client: HaikuRAG client for document operations.
         config: Application configuration (used for summarization LLM).
         context: Optional ToolContext for state tracking.
-            If provided, accessed documents are tracked in DocumentState.
             If SessionState is registered, it will be used for dynamic
             document filtering.
         base_filter: Optional base SQL WHERE clause applied to list operations.
@@ -99,10 +87,6 @@ def create_document_toolset(
     Returns:
         FunctionToolset with list_documents, get_document, summarize_document tools.
     """
-    # Get or create document state if context provided
-    state: DocumentState | None = None
-    if context is not None:
-        state = context.get_or_create(DOCUMENT_NAMESPACE, DocumentState)
 
     async def list_documents(page: int = 1) -> DocumentListResponse:
         """List available documents in the knowledge base.
@@ -152,16 +136,6 @@ def create_document_toolset(
         if doc is None:
             return f"Document not found: {query}"
 
-        # Track accessed document in state
-        if state is not None:
-            state.accessed_documents.append(
-                DocumentInfo(
-                    title=doc.title or "Untitled",
-                    uri=doc.uri or "",
-                    created=doc.created_at.strftime("%Y-%m-%d"),
-                )
-            )
-
         return (
             f"**{doc.title or 'Untitled'}**\n\n"
             f"- ID: {doc.id}\n"
@@ -183,16 +157,6 @@ def create_document_toolset(
 
         if doc is None:
             return f"Document not found: {query}"
-
-        # Track accessed document in state
-        if state is not None:
-            state.accessed_documents.append(
-                DocumentInfo(
-                    title=doc.title or "Untitled",
-                    uri=doc.uri or "",
-                    created=doc.created_at.strftime("%Y-%m-%d"),
-                )
-            )
 
         # Use LLM to generate summary
         summary_model = get_model(config.qa.model, config)

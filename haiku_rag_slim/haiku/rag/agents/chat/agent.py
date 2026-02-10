@@ -155,7 +155,7 @@ class ChatDeps:
             if self.session_id:
                 cached = get_cached_session_context(self.session_id)
                 if cached and cached.summary:
-                    qa_session_state.session_context = cached.render_markdown()
+                    qa_session_state.session_context = cached.summary
 
             # Handle initial_context -> session_context for first message
             # Only applies if session_context is still empty after restoring and cache check

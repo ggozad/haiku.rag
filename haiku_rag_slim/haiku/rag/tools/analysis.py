@@ -1,4 +1,3 @@
-from pydantic import BaseModel
 from pydantic_ai import FunctionToolset
 
 from haiku.rag.agents.rlm.agent import create_rlm_agent
@@ -14,17 +13,6 @@ from haiku.rag.tools.filters import (
 )
 from haiku.rag.tools.models import AnalysisResult
 
-ANALYSIS_NAMESPACE = "haiku.rag.analysis"
-
-
-class AnalysisState(BaseModel):
-    """State for analysis toolset.
-
-    Tracks programs produced across tool invocations.
-    """
-
-    programs: list[str] = []
-
 
 def create_analysis_toolset(
     client: HaikuRAG,
@@ -39,7 +27,6 @@ def create_analysis_toolset(
         client: HaikuRAG client for document operations.
         config: Application configuration.
         context: Optional ToolContext for state accumulation.
-            If provided, code executions are tracked in AnalysisState.
             If SessionState is registered, it will be used for dynamic
             document filtering.
         base_filter: Optional base SQL WHERE clause applied to searches.
@@ -48,10 +35,6 @@ def create_analysis_toolset(
     Returns:
         FunctionToolset with an analyze tool.
     """
-    # Get or create analysis state if context provided
-    state: AnalysisState | None = None
-    if context is not None:
-        state = context.get_or_create(ANALYSIS_NAMESPACE, AnalysisState)
 
     async def analyze(
         task: str,
@@ -94,8 +77,6 @@ def create_analysis_toolset(
             result = await rlm_agent.run(task, deps=deps)
 
             program = result.output.program
-            if state is not None and program:
-                state.programs.append(program)
 
             return AnalysisResult(
                 answer=result.output.answer,

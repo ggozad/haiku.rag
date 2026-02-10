@@ -1,40 +1,6 @@
 import pytest
 
-from haiku.rag.tools import QAResult, ToolContext
-from haiku.rag.tools.qa import QA_NAMESPACE, QAState, create_qa_toolset
-
-
-class TestQAState:
-    """Tests for QAState model."""
-
-    def test_qa_state_defaults(self):
-        """QAState initializes with empty history."""
-        state = QAState()
-        assert state.history == []
-
-    def test_qa_state_add_result(self):
-        """Can add QAResult to history."""
-        state = QAState()
-        result = QAResult(question="What is Python?", answer="A programming language.")
-        state.history.append(result)
-        assert len(state.history) == 1
-        assert state.history[0].question == "What is Python?"
-
-    def test_qa_state_serialization(self):
-        """QAState serializes and deserializes correctly."""
-        state = QAState()
-        state.history.append(
-            QAResult(
-                question="Test?",
-                answer="Answer.",
-                confidence=0.95,
-            )
-        )
-
-        data = state.model_dump()
-        restored = QAState.model_validate(data)
-        assert len(restored.history) == 1
-        assert restored.history[0].confidence == 0.95
+from haiku.rag.tools.qa import create_qa_toolset
 
 
 class TestQAToolset:
@@ -53,15 +19,6 @@ class TestQAToolset:
         """The toolset includes an 'ask' tool."""
         toolset = create_qa_toolset(qa_client_simple, qa_config)
         assert "ask" in toolset.tools
-
-    def test_qa_toolset_registers_state(self, qa_client_simple, qa_config):
-        """Toolset registers QAState under QA_NAMESPACE."""
-        context = ToolContext()
-        create_qa_toolset(qa_client_simple, qa_config, context=context)
-
-        state = context.get(QA_NAMESPACE)
-        assert state is not None
-        assert isinstance(state, QAState)
 
     def test_qa_toolset_custom_tool_name(self, qa_client_simple, qa_config):
         """Toolset supports custom tool name."""

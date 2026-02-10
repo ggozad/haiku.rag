@@ -1,30 +1,6 @@
 import pytest
 
-from haiku.rag.tools import ToolContext
-from haiku.rag.tools.analysis import (
-    ANALYSIS_NAMESPACE,
-    AnalysisState,
-    create_analysis_toolset,
-)
-
-
-class TestAnalysisState:
-    """Tests for AnalysisState model."""
-
-    def test_analysis_state_defaults(self):
-        """AnalysisState initializes with empty programs."""
-        state = AnalysisState()
-        assert state.programs == []
-
-    def test_analysis_state_serialization(self):
-        """AnalysisState serializes and deserializes correctly."""
-        state = AnalysisState()
-        state.programs.append("print('hello')")
-
-        data = state.model_dump()
-        restored = AnalysisState.model_validate(data)
-        assert len(restored.programs) == 1
-        assert restored.programs[0] == "print('hello')"
+from haiku.rag.tools.analysis import create_analysis_toolset
 
 
 class TestAnalysisToolset:
@@ -43,15 +19,6 @@ class TestAnalysisToolset:
         """The toolset includes an 'analyze' tool."""
         toolset = create_analysis_toolset(analysis_client, analysis_config)
         assert "analyze" in toolset.tools
-
-    def test_analysis_toolset_registers_state(self, analysis_client, analysis_config):
-        """Toolset registers AnalysisState under ANALYSIS_NAMESPACE."""
-        context = ToolContext()
-        create_analysis_toolset(analysis_client, analysis_config, context=context)
-
-        state = context.get(ANALYSIS_NAMESPACE)
-        assert state is not None
-        assert isinstance(state, AnalysisState)
 
     def test_analysis_toolset_custom_tool_name(self, analysis_client, analysis_config):
         """Toolset supports custom tool name."""

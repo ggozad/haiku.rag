@@ -1,11 +1,8 @@
 import pytest
 
-from haiku.rag.tools import ToolContext
 from haiku.rag.tools.document import (
-    DOCUMENT_NAMESPACE,
     DocumentInfo,
     DocumentListResponse,
-    DocumentState,
     create_document_toolset,
 )
 
@@ -36,11 +33,6 @@ class TestDocumentModels:
         assert response.total_pages == 3
         assert response.total_documents == 125
 
-    def test_document_state_defaults(self):
-        """DocumentState initializes with empty accessed list."""
-        state = DocumentState()
-        assert state.accessed_documents == []
-
 
 @pytest.mark.vcr()
 class TestDocumentToolset:
@@ -62,15 +54,6 @@ class TestDocumentToolset:
         assert "list_documents" in toolset.tools
         assert "get_document" in toolset.tools
         assert "summarize_document" in toolset.tools
-
-    def test_document_toolset_registers_state(self, doc_client, doc_config):
-        """Toolset registers DocumentState under DOCUMENT_NAMESPACE."""
-        context = ToolContext()
-        create_document_toolset(doc_client, doc_config, context=context)
-
-        state = context.get(DOCUMENT_NAMESPACE)
-        assert state is not None
-        assert isinstance(state, DocumentState)
 
 
 @pytest.mark.vcr()
@@ -134,20 +117,6 @@ class TestDocumentToolExecution:
         result = await get_tool.function("nonexistent")
 
         assert "Document not found" in result
-
-    @pytest.mark.asyncio
-    async def test_get_document_tracks_in_state(self, doc_client, doc_config):
-        """get_document tracks accessed documents in state."""
-        context = ToolContext()
-        toolset = create_document_toolset(doc_client, doc_config, context=context)
-
-        get_tool = toolset.tools["get_document"]
-        await get_tool.function("Python Guide")
-
-        state = context.get(DOCUMENT_NAMESPACE)
-        assert isinstance(state, DocumentState)
-        assert len(state.accessed_documents) == 1
-        assert state.accessed_documents[0].title == "Python Guide"
 
     @pytest.mark.asyncio
     async def test_list_documents_with_base_filter(self, doc_client, doc_config):

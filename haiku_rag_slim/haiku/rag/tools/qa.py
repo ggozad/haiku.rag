@@ -29,8 +29,6 @@ from haiku.rag.tools.session import (
     compute_combined_state_delta,
 )
 
-QA_NAMESPACE = "haiku.rag.qa"
-
 PRIOR_ANSWER_RELEVANCE_THRESHOLD = 0.7
 
 
@@ -77,15 +75,6 @@ from haiku.rag.agents.chat.state import _rebuild_models  # noqa: E402
 _rebuild_models(QAHistoryEntry)
 
 
-class QAState(BaseModel):
-    """State for QA toolset.
-
-    Tracks Q&A history across tool invocations.
-    """
-
-    history: list[QAResult] = []
-
-
 class QASessionState(BaseModel):
     """Extended session state for QA with embedding cache."""
 
@@ -115,7 +104,6 @@ def create_qa_toolset(
         client: HaikuRAG client for search operations.
         config: Application configuration.
         context: Optional ToolContext for state accumulation.
-            If provided, Q&A results are accumulated in QAState.
             If SessionState is registered, it will be used for dynamic
             document filtering and citation indexing.
         base_filter: Optional base SQL WHERE clause applied to searches.
@@ -128,10 +116,6 @@ def create_qa_toolset(
     Returns:
         FunctionToolset with an ask tool.
     """
-    # Get or create QA state if context provided
-    state: QAState | None = None
-    if context is not None:
-        state = context.get_or_create(QA_NAMESPACE, QAState)
 
     async def ask(
         question: str,
@@ -284,10 +268,6 @@ def create_qa_toolset(
             confidence=result.confidence,
             citations=citations,
         )
-
-        # Accumulate in QA state if context provided
-        if state is not None:
-            state.history.append(qa_result)
 
         # Update session state with citations
         if session_state is not None:

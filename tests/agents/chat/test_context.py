@@ -33,17 +33,6 @@ class TestSessionContext:
         assert ctx.summary == "User discussed authentication patterns."
         assert ctx.last_updated == now
 
-    def test_render_markdown_empty(self):
-        """Test render_markdown returns empty string when no summary."""
-        ctx = SessionContext()
-        assert ctx.render_markdown() == ""
-
-    def test_render_markdown_with_summary(self):
-        """Test render_markdown returns the summary directly."""
-        summary = "## Key Facts\n- Authentication uses JWT\n- Rate limit is 100/min"
-        ctx = SessionContext(summary=summary)
-        assert ctx.render_markdown() == summary
-
     def test_session_context_serialization_roundtrip(self):
         """Test SessionContext serializes and deserializes correctly."""
         now = datetime.now()
