@@ -1,4 +1,3 @@
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -75,7 +74,7 @@ class SessionContext(BaseModel):
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
-    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str = ""
     initial_context: str | None = None
     citations: list[Citation] = []
     qa_history: list[QAResponse] = []

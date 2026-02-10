@@ -1,5 +1,3 @@
-import uuid
-
 from ag_ui.core import StateDeltaEvent
 
 from haiku.rag.agents.chat.state import (
@@ -578,26 +576,20 @@ def test_chat_deps_state_getter_includes_document_filter():
     assert state[AGUI_STATE_KEY]["document_filter"] == ["doc1.pdf", "doc2.pdf"]
 
 
-def test_chat_session_state_auto_generates_session_id():
-    """New ChatSessionState should have a valid UUID session_id."""
+def test_chat_session_state_defaults_to_empty_session_id():
+    """New ChatSessionState should default to empty session_id.
+
+    Tools in agent.py detect the empty string and assign a UUID,
+    which then appears in the state delta so clients receive it.
+    """
     state = ChatSessionState()
-    assert state.session_id
-    assert len(state.session_id) == 36  # UUID format
-    # Verify it's a valid UUID
-    uuid.UUID(state.session_id)
+    assert state.session_id == ""
 
 
 def test_chat_session_state_preserves_explicit_session_id():
     """Explicit session_id should be preserved."""
     state = ChatSessionState(session_id="my-custom-id")
     assert state.session_id == "my-custom-id"
-
-
-def test_chat_session_state_each_instance_gets_unique_id():
-    """Each new instance should get a unique session_id."""
-    state1 = ChatSessionState()
-    state2 = ChatSessionState()
-    assert state1.session_id != state2.session_id
 
 
 def test_chat_session_state_initial_context_default_none():
@@ -648,6 +640,27 @@ def test_chat_session_state_model_dump_json_serializes_datetime():
     # datetime should be serialized as ISO string, not datetime object
     assert isinstance(snapshot["session_context"]["last_updated"], str)
     assert snapshot["session_context"]["last_updated"] == "2025-01-27T12:00:00"
+
+
+def test_emit_state_event_includes_session_id_when_assigned():
+    """emit_state_event detects session_id change from empty to UUID.
+
+    When session_id defaults to "" and the tool assigns a UUID,
+    the delta must include session_id so clients can persist it.
+    """
+    from haiku.rag.agents.chat.state import emit_state_event
+
+    current_state = ChatSessionState()  # session_id=""
+    new_state = ChatSessionState(session_id="assigned-uuid-123")
+
+    event = emit_state_event(current_state, new_state)
+
+    assert event is not None
+    session_id_op = next(
+        (op for op in event.delta if op["path"] == "/session_id"), None
+    )
+    assert session_id_op is not None
+    assert session_id_op["value"] == "assigned-uuid-123"
 
 
 def test_emit_state_event_returns_none_when_no_changes():

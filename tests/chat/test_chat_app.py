@@ -266,9 +266,9 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             await chat_history.add_message("assistant", "Hi there")
             assert len(chat_history.messages) == 2
 
-            # Store original session ID
+            # Mutate session state to simulate an active session
             assert app.session_state is not None
-            original_session_id = app.session_state.session_id
+            app.session_state.session_id = "active-session-123"
 
             # Clear chat via action (available through command palette)
             await app.action_clear_chat()
@@ -277,9 +277,11 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             # Verify messages cleared
             assert len(chat_history.messages) == 0
 
-            # Verify session state reset (new session ID)
+            # Verify session state reset
             assert app.session_state is not None
-            assert app.session_state.session_id != original_session_id
+            assert app.session_state.session_id == ""
+            assert app.session_state.qa_history == []
+            assert app.session_state.citations == []
 
 
 @pytest.mark.asyncio
