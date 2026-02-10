@@ -246,8 +246,24 @@ async def test_chat_history_thinking_indicator(temp_db_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_chat_app_generates_session_id(temp_db_path: Path):
+    """Test that ChatApp generates a UUID session_id on mount."""
+    from haiku.rag.chat.app import ChatApp
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+        app = ChatApp(temp_db_path, read_only=True)
+
+        async with app.run_test():
+            assert app.session_state.session_id != ""
+
+
+@pytest.mark.asyncio
 async def test_clear_chat_resets_session(temp_db_path: Path):
-    """Test that clearing chat resets the session state."""
+    """Test that clearing chat resets the session state with a new session_id."""
     from haiku.rag.chat.app import ChatApp
     from haiku.rag.chat.widgets.chat_history import ChatHistory
 
@@ -266,9 +282,9 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             await chat_history.add_message("assistant", "Hi there")
             assert len(chat_history.messages) == 2
 
-            # Mutate session state to simulate an active session
-            assert app.session_state is not None
-            app.session_state.session_id = "active-session-123"
+            # Record the original session_id
+            original_session_id = app.session_state.session_id
+            assert original_session_id != ""
 
             # Clear chat via action (available through command palette)
             await app.action_clear_chat()
@@ -277,9 +293,10 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             # Verify messages cleared
             assert len(chat_history.messages) == 0
 
-            # Verify session state reset
+            # Verify session state reset with a new session_id
             assert app.session_state is not None
-            assert app.session_state.session_id == ""
+            assert app.session_state.session_id != ""
+            assert app.session_state.session_id != original_session_id
             assert app.session_state.qa_history == []
             assert app.session_state.citations == []
 
