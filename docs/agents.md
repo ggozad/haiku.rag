@@ -102,6 +102,40 @@ async with HaikuRAG(path_to_db) as client:
     print(result.output)
 ```
 
+### Feature Selection
+
+By default, `create_chat_agent` enables search, documents, and QA toolsets. You can customize which capabilities the agent has via the `features` parameter:
+
+```python
+from haiku.rag.agents.chat import (
+    create_chat_agent,
+    FEATURE_SEARCH,
+    FEATURE_DOCUMENTS,
+    FEATURE_QA,
+    FEATURE_ANALYSIS,
+)
+
+# Search-only agent
+agent = create_chat_agent(config, client, context, features=[FEATURE_SEARCH])
+
+# All features including code analysis
+agent = create_chat_agent(
+    config, client, context,
+    features=[FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA, FEATURE_ANALYSIS],
+)
+```
+
+Available features:
+
+| Feature | Constant | Tools added |
+|---------|----------|-------------|
+| Search | `FEATURE_SEARCH` | `search` |
+| Documents | `FEATURE_DOCUMENTS` | `list_documents`, `get_document`, `summarize_document` |
+| QA | `FEATURE_QA` | `ask` |
+| Analysis | `FEATURE_ANALYSIS` | `analyze` |
+
+The system prompt is automatically composed to match the selected features — only guidance for active tools is included. `SessionState` is always registered (shared by all features). `QASessionState` is only registered when the QA feature is active.
+
 ### Session State
 
 The `ChatSessionState` maintains:

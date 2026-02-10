@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from pydantic_ai import Agent
 
@@ -10,7 +10,7 @@ from haiku.rag.agents.chat.context import (
 from haiku.rag.agents.chat.context import (
     trigger_background_summarization as _trigger_summarization,
 )
-from haiku.rag.agents.chat.prompts import CHAT_SYSTEM_PROMPT
+from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
@@ -28,6 +28,13 @@ from haiku.rag.tools.qa import (
 from haiku.rag.tools.search import create_search_toolset
 from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 from haiku.rag.utils import get_model
+
+FEATURE_SEARCH = "search"
+FEATURE_DOCUMENTS = "documents"
+FEATURE_QA = "qa"
+FEATURE_ANALYSIS = "analysis"
+
+DEFAULT_FEATURES = [FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA]
 
 
 @dataclass
@@ -162,6 +169,7 @@ def create_chat_agent(
     config: AppConfig,
     client: HaikuRAG,
     context: ToolContext,
+    features: list[str] | None = None,
 ) -> Agent[ChatDeps, str]:
     """Create the chat agent with composed toolsets.
 
@@ -169,8 +177,11 @@ def create_chat_agent(
         config: Application configuration.
         client: HaikuRAG client for database operations.
         context: ToolContext for shared state across toolsets.
-            Should have SessionState and QASessionState registered
-            (will be auto-registered if not present).
+            SessionState is always registered. QASessionState is
+            registered only when the QA feature is active.
+        features: List of features to enable. Defaults to DEFAULT_FEATURES
+            (search, documents, qa). Available features: "search",
+            "documents", "qa", "analysis".
 
     Returns:
         The configured chat agent.
@@ -182,36 +193,45 @@ def create_chat_agent(
             deps = ChatDeps(config=config, tool_context=context)
             result = await agent.run("Search for X", deps=deps)
     """
-    # Ensure session states are registered with proper AG-UI state key
+    if features is None:
+        features = DEFAULT_FEATURES
+
+    # SessionState is always registered (shared by all features)
     existing = context.get(SESSION_NAMESPACE, SessionState)
     if existing is None:
         context.register(SESSION_NAMESPACE, SessionState(state_key=AGUI_STATE_KEY))
     elif existing.state_key is None:
         existing.state_key = AGUI_STATE_KEY
-    if context.get(QA_SESSION_NAMESPACE, QASessionState) is None:
-        context.register(QA_SESSION_NAMESPACE, QASessionState())
 
-    # Create toolsets - these capture client, config, and context in closures
-    search_toolset = create_search_toolset(client, config, context=context)
-    document_toolset = create_document_toolset(client, config, context=context)
-    qa_toolset = create_qa_toolset(client, config, context=context)
+    # QASessionState only when QA feature is active
+    if FEATURE_QA in features:
+        if context.get(QA_SESSION_NAMESPACE, QASessionState) is None:
+            context.register(QA_SESSION_NAMESPACE, QASessionState())
+
+    # Create toolsets conditionally based on features
+    toolsets = []
+    if FEATURE_SEARCH in features:
+        toolsets.append(create_search_toolset(client, config, context=context))
+    if FEATURE_DOCUMENTS in features:
+        toolsets.append(create_document_toolset(client, config, context=context))
+    if FEATURE_QA in features:
+        toolsets.append(create_qa_toolset(client, config, context=context))
+    if FEATURE_ANALYSIS in features:
+        from haiku.rag.tools.analysis import create_analysis_toolset
+
+        toolsets.append(create_analysis_toolset(client, config, context=context))
 
     # Create the agent with composed toolsets
     model = get_model(config.qa.model, config)
 
-    agent = cast(
-        Agent[ChatDeps, str],
-        Agent(
-            model,
-            deps_type=ChatDeps,
-            output_type=str,
-            instructions=CHAT_SYSTEM_PROMPT,
-            toolsets=[search_toolset, document_toolset, qa_toolset],  # type: ignore[arg-type]
-            retries=3,
-        ),
+    return Agent(
+        model,
+        deps_type=ChatDeps,
+        output_type=str,
+        instructions=build_chat_prompt(features),
+        toolsets=toolsets,
+        retries=3,
     )
-
-    return agent
 
 
 def trigger_background_summarization(deps: ChatDeps) -> None:
@@ -269,4 +289,9 @@ __all__ = [
     "ChatSessionState",
     "SessionContext",
     "AGUI_STATE_KEY",
+    "FEATURE_SEARCH",
+    "FEATURE_DOCUMENTS",
+    "FEATURE_QA",
+    "FEATURE_ANALYSIS",
+    "DEFAULT_FEATURES",
 ]
