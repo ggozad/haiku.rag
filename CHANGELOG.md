@@ -1,9 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+## [0.29.1] - 2026-02-10
+
 ### Fixed
 
 - **Document listing memory usage**: `list_documents` no longer loads full document content and docling blobs by default, preventing out-of-memory errors on large databases. Use `include_content=True` when content is needed.
+- **Chat session_id not persisting across AG-UI requests**: `ChatSessionState.session_id` now defaults to `""` instead of auto-generating a UUID. This ensures the session_id assignment is detected as a state change and included in the `StateDeltaEvent` delta, allowing clients to persist it across requests.
 
 ## [0.29.0] - 2026-02-06
 
