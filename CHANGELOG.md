@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **TUI session context not updating**: The Chat TUI now generates a UUID `session_id` on mount and on chat clear, fixing background summarization which requires a non-empty `session_id`.
+
 ## [0.29.1] - 2026-02-10
 
 ### Fixed

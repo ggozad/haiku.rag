@@ -156,6 +156,7 @@ class ChatApp(App):
         # Create agent and session state
         self.agent = create_chat_agent(self.config)
         self.session_state = ChatSessionState(
+            session_id=str(uuid.uuid4()),
             initial_context=self._initial_context,
             document_filter=self._document_filter,
         )
@@ -328,6 +329,7 @@ class ChatApp(App):
         # Reset context lock and session state (reset to CLI value)
         self._context_locked = False
         self.session_state = ChatSessionState(
+            session_id=str(uuid.uuid4()),
             initial_context=self._initial_context,
             document_filter=self._document_filter,
         )
