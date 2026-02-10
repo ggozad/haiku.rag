@@ -555,6 +555,121 @@ async def test_chat_agent_ask_triggers_background_summarization(
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
+async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_path):
+    """Test multi-turn conversation with initial context, summarization, and prior recall.
+
+    Exercises the full conversation flow:
+    1. Initial context is transferred to session context
+    2. First question triggers background summarization
+    3. Second related question uses prior answer recall and updated session context
+    4. Both qa_history entries are present after two turns
+    """
+    import asyncio
+
+    from haiku.rag.agents.chat.agent import trigger_background_summarization
+    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+        await client.create_document(
+            content=DOCLAYNET_ANNOTATION,
+            uri="doclaynet-annotation",
+            title="DocLayNet Annotation",
+        )
+
+        context = ToolContext()
+        agent = create_chat_agent(Config, client, context)
+        deps = ChatDeps(
+            config=Config,
+            tool_context=context,
+            state_key=AGUI_STATE_KEY,
+        )
+
+        # Set initial state with initial_context (mimicking AG-UI client)
+        deps.state = {
+            AGUI_STATE_KEY: {
+                "session_id": "",
+                "initial_context": "The user is researching the DocLayNet dataset for a paper on document layout analysis.",
+                "session_context": None,
+                "qa_history": [],
+                "citations": [],
+                "document_filter": [],
+                "citation_registry": {},
+            }
+        }
+
+        # session_id should be auto-generated
+        assert deps.session_id != ""
+        session_id = deps.session_id
+
+        # initial_context should be transferred to QASessionState
+        qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
+        assert qa_session is not None
+        assert (
+            qa_session.session_context
+            == "The user is researching the DocLayNet dataset for a paper on document layout analysis."
+        )
+
+        # First question about class labels
+        result1 = await agent.run(
+            "What are the class labels defined in DocLayNet?",
+            deps=deps,
+        )
+        trigger_background_summarization(deps)
+        assert result1.output is not None
+
+        # Wait for background summarization
+        cached_context = None
+        for _ in range(50):
+            cached_context = get_cached_session_context(session_id)
+            if cached_context is not None:
+                break
+            await asyncio.sleep(0.1)
+
+        assert cached_context is not None
+        assert cached_context.summary != ""
+
+        # qa_history should have one entry
+        qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
+        assert qa_session is not None
+        assert len(qa_session.qa_history) >= 1
+
+        # Second related question - uses prior answers and updated session context
+        result2 = await agent.run(
+            "How were the annotations created and how many annotators were involved?",
+            deps=deps,
+            message_history=result1.all_messages(),
+        )
+        trigger_background_summarization(deps)
+        assert result2.output is not None
+
+        # Wait for updated summarization
+        for _ in range(50):
+            updated = get_cached_session_context(session_id)
+            if (
+                updated is not None
+                and updated.last_updated != cached_context.last_updated
+            ):
+                break
+            await asyncio.sleep(0.1)
+
+        # qa_history should have two entries
+        qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
+        assert qa_session is not None
+        assert len(qa_session.qa_history) >= 2
+
+        # Session context should be updated with newer summary
+        updated = get_cached_session_context(session_id)
+        assert updated is not None
+        assert updated.summary != ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_chat_agent_ask_with_prior_answer_retrieval(
     allow_model_requests, temp_db_path
 ):
