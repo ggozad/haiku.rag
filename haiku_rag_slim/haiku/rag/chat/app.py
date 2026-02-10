@@ -163,7 +163,7 @@ class ChatApp(App):
         self.agent = create_chat_agent(self.config, self.client, self.tool_context)
 
         # Initialize session state in tool context
-        session_state = self.tool_context.get_typed(SESSION_NAMESPACE, SessionState)
+        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
         if session_state is not None:
             session_state.document_filter = self._document_filter
 
@@ -320,7 +320,7 @@ class ChatApp(App):
                 }
 
             # Sync session state to tool context before running
-            session_state = self.tool_context.get_typed(SESSION_NAMESPACE, SessionState)
+            session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
             if session_state is not None:
                 session_state.session_id = self.session_state.session_id
                 session_state.document_filter = self.session_state.document_filter
@@ -330,7 +330,7 @@ class ChatApp(App):
             # Sync initial_context to QA session state
             from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
-            qa_session_state = self.tool_context.get_typed(
+            qa_session_state = self.tool_context.get(
                 QA_SESSION_NAMESPACE, QASessionState
             )
             if qa_session_state is not None:
@@ -379,7 +379,7 @@ class ChatApp(App):
                 trigger_background_summarization(deps)
 
                 # Sync session context from QASessionState to ChatSessionState for modal
-                qa_session_state = self.tool_context.get_typed(
+                qa_session_state = self.tool_context.get(
                     QA_SESSION_NAMESPACE, QASessionState
                 )
                 if qa_session_state is not None and qa_session_state.session_context:
@@ -471,9 +471,7 @@ class ChatApp(App):
         from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
         # Sync session context from QASessionState before showing modal
-        qa_session_state = self.tool_context.get_typed(
-            QA_SESSION_NAMESPACE, QASessionState
-        )
+        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
         if qa_session_state is not None and qa_session_state.session_context:
             from datetime import datetime
 

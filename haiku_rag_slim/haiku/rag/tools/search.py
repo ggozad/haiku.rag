@@ -71,7 +71,7 @@ def create_search_toolset(
         session_state: SessionState | None = None
         old_session_state: SessionState | None = None
         if context is not None:
-            session_state = context.get_typed(SESSION_NAMESPACE, SessionState)
+            session_state = context.get(SESSION_NAMESPACE, SessionState)
             if session_state is not None:
                 old_session_state = session_state.model_copy(deep=True)
 

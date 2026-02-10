@@ -171,3 +171,33 @@ def test_serialization_roundtrip():
     qa_state = restored.get("qa")
     assert isinstance(qa_state, TestState)
     assert qa_state.value == 99
+
+
+def test_get_with_type_match():
+    """Test get with state_type returns typed state when type matches."""
+    ctx = ToolContext()
+    state = TestState(value=42)
+    ctx.register("ns", state)
+
+    result = ctx.get("ns", TestState)
+    assert result is state
+    assert result.value == 42
+
+
+def test_get_with_type_mismatch():
+    """Test get with state_type returns None when type doesn't match."""
+    ctx = ToolContext()
+    ctx.register("ns", TestState(value=42))
+
+    result = ctx.get("ns", TestStateWithList)
+    assert result is None
+
+
+def test_get_without_type():
+    """Test get without state_type returns BaseModel (unchanged behavior)."""
+    ctx = ToolContext()
+    state = TestState(value=42)
+    ctx.register("ns", state)
+
+    result = ctx.get("ns")
+    assert result is state

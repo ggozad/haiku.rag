@@ -52,16 +52,14 @@ class ChatDeps:
         snapshot: dict[str, Any] = {"session_id": self.session_id}
 
         # Add SessionState fields
-        session_state = self.tool_context.get_typed(SESSION_NAMESPACE, SessionState)
+        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
         if session_state is not None:
             snapshot["document_filter"] = session_state.document_filter
             snapshot["citation_registry"] = session_state.citation_registry
             snapshot["citations"] = [c.model_dump() for c in session_state.citations]
 
         # Add QASessionState fields
-        qa_session_state = self.tool_context.get_typed(
-            QA_SESSION_NAMESPACE, QASessionState
-        )
+        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
         if qa_session_state is not None:
             snapshot["qa_history"] = [
                 qa.model_dump() for qa in qa_session_state.qa_history
@@ -92,7 +90,7 @@ class ChatDeps:
                 state_data = nested
 
         # Update SessionState from incoming state
-        session_state = self.tool_context.get_typed(SESSION_NAMESPACE, SessionState)
+        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
         if session_state is not None:
             if "document_filter" in state_data:
                 session_state.document_filter = state_data.get("document_filter", [])
@@ -122,9 +120,7 @@ class ChatDeps:
             session_state.incoming_session_id = incoming_session_id
 
         # Update QASessionState from incoming state
-        qa_session_state = self.tool_context.get_typed(
-            QA_SESSION_NAMESPACE, QASessionState
-        )
+        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
         if qa_session_state is not None:
             if "qa_history" in state_data:
                 from haiku.rag.tools.qa import QAHistoryEntry
@@ -187,12 +183,12 @@ def create_chat_agent(
             result = await agent.run("Search for X", deps=deps)
     """
     # Ensure session states are registered with proper AG-UI state key
-    existing = context.get_typed(SESSION_NAMESPACE, SessionState)
+    existing = context.get(SESSION_NAMESPACE, SessionState)
     if existing is None:
         context.register(SESSION_NAMESPACE, SessionState(state_key=AGUI_STATE_KEY))
     elif existing.state_key is None:
         existing.state_key = AGUI_STATE_KEY
-    if context.get_typed(QA_SESSION_NAMESPACE, QASessionState) is None:
+    if context.get(QA_SESSION_NAMESPACE, QASessionState) is None:
         context.register(QA_SESSION_NAMESPACE, QASessionState())
 
     # Create toolsets - these capture client, config, and context in closures
@@ -230,7 +226,7 @@ def trigger_background_summarization(deps: ChatDeps) -> None:
     Args:
         deps: Chat dependencies with tool_context containing QASessionState.
     """
-    qa_session_state = deps.tool_context.get_typed(QA_SESSION_NAMESPACE, QASessionState)
+    qa_session_state = deps.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
     if qa_session_state is None or not qa_session_state.qa_history:
         return
     if not deps.session_id:

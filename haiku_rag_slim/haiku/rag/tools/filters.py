@@ -52,7 +52,7 @@ def get_session_filter(
 
     from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
-    session_state = context.get_typed(SESSION_NAMESPACE, SessionState)
+    session_state = context.get(SESSION_NAMESPACE, SessionState)
     if session_state is None or not session_state.document_filter:
         return base_filter
 

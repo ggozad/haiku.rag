@@ -154,8 +154,8 @@ def create_qa_toolset(
         old_state_snapshot: dict | None = None
 
         if context is not None:
-            session_state = context.get_typed(SESSION_NAMESPACE, SessionState)
-            qa_session_state = context.get_typed(QA_SESSION_NAMESPACE, QASessionState)
+            session_state = context.get(SESSION_NAMESPACE, SessionState)
+            qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
 
             # Capture combined state snapshot before changes
             # Use incoming values (what client sent) so delta shows server-side updates

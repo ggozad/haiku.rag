@@ -1,4 +1,4 @@
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -57,19 +57,24 @@ class ToolContext(BaseModel):
         """
         self._namespaces[namespace] = state
 
-    def get(self, namespace: str) -> BaseModel | None:
-        """Get state for a namespace, or None if not registered."""
-        return self._namespaces.get(namespace)
+    @overload
+    def get(self, namespace: str) -> BaseModel | None: ...
 
-    def get_typed(self, namespace: str, expected_type: type[T]) -> T | None:
-        """Get state for a namespace with type checking.
+    @overload
+    def get(self, namespace: str, state_type: type[T]) -> T | None: ...
 
-        Returns the state cast to expected_type if it matches, None otherwise.
+    def get(
+        self, namespace: str, state_type: type[T] | None = None
+    ) -> BaseModel | T | None:
+        """Get state for a namespace, or None if not registered.
+
+        When state_type is provided, returns the state only if it matches
+        the expected type, otherwise returns None.
         """
         state = self._namespaces.get(namespace)
-        if isinstance(state, expected_type):
-            return state
-        return None
+        if state_type is not None:
+            return state if isinstance(state, state_type) else None
+        return state
 
     def get_or_create(self, namespace: str, state_type: type[T]) -> T:
         """Get state for a namespace, creating it if not registered.
