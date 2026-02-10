@@ -8,7 +8,11 @@ from haiku.rag.agents.chat.context import (
     get_cached_embedding,
     trigger_background_summarization,
 )
-from haiku.rag.agents.chat.state import SessionContext
+from haiku.rag.agents.chat.state import (
+    SessionContext,
+    build_chat_state_delta,
+    build_chat_state_snapshot,
+)
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.models import Citation, SearchAnswer
@@ -26,7 +30,6 @@ from haiku.rag.tools.models import QAResult
 from haiku.rag.tools.session import (
     SESSION_NAMESPACE,
     SessionState,
-    compute_combined_state_delta,
 )
 
 PRIOR_ANSWER_RELEVANCE_THRESHOLD = 0.7
@@ -144,25 +147,11 @@ def create_qa_toolset(
             # Capture combined state snapshot before changes
             # Use incoming values (what client sent) so delta shows server-side updates
             if session_state is not None:
-                old_state_snapshot = {
-                    "session_id": session_state.incoming_session_id,
-                    "document_filter": session_state.document_filter.copy(),
-                    "citation_registry": session_state.citation_registry.copy(),
-                    "citations": [c.model_dump() for c in session_state.citations],
-                }
-                if qa_session_state is not None:
-                    old_state_snapshot["qa_history"] = [
-                        qa.model_dump() for qa in qa_session_state.qa_history
-                    ]
-                    # Use incoming_session_context so delta shows what client sent
-                    if qa_session_state.incoming_session_context is not None:
-                        old_state_snapshot["session_context"] = (
-                            qa_session_state.incoming_session_context.model_dump(
-                                mode="json"
-                            )
-                        )
-                    else:
-                        old_state_snapshot["session_context"] = None
+                old_state_snapshot = build_chat_state_snapshot(
+                    session_state,
+                    qa_session_state,
+                    incoming=True,
+                )
 
         # Build filter from session state, base_filter, and document_name
         doc_filter = build_document_filter(document_name) if document_name else None
@@ -298,24 +287,13 @@ def create_qa_toolset(
         # Compute and return state delta if session state changed
         if session_state is not None and old_state_snapshot is not None:
             # Build new combined state snapshot
-            new_state_snapshot = {
-                "session_id": session_state.session_id,
-                "document_filter": session_state.document_filter,
-                "citation_registry": session_state.citation_registry,
-                "citations": [c.model_dump() for c in session_state.citations],
-            }
-            if qa_session_state is not None:
-                new_state_snapshot["qa_history"] = [
-                    qa.model_dump() for qa in qa_session_state.qa_history
-                ]
-                if qa_session_state.session_context:
-                    new_state_snapshot["session_context"] = SessionContext(
-                        summary=qa_session_state.session_context
-                    ).model_dump(mode="json")
-                else:
-                    new_state_snapshot["session_context"] = None
+            new_state_snapshot = build_chat_state_snapshot(
+                session_state,
+                qa_session_state,
+                incoming=False,
+            )
 
-            state_event = compute_combined_state_delta(
+            state_event = build_chat_state_delta(
                 old_state_snapshot,
                 new_state_snapshot,
                 state_key=session_state.state_key,

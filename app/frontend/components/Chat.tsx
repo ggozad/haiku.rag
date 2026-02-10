@@ -411,6 +411,29 @@ function ChatContentInner() {
 		},
 	);
 
+	const normalizeChatState = (
+		state: ChatSessionState | undefined,
+	): ChatSessionState => ({
+		session_id: state?.session_id ?? "",
+		initial_context: state?.initial_context ?? null,
+		citations: state?.citations ?? [],
+		qa_history: state?.qa_history ?? [],
+		session_context: state?.session_context ?? null,
+		document_filter: state?.document_filter ?? [],
+		citation_registry: state?.citation_registry ?? {},
+	});
+
+	const mergeChatState = (partial: Partial<ChatSessionState>) => {
+		const current = normalizeChatState(agentState?.[AGUI_STATE_KEY]);
+		setAgentState({
+			...agentState,
+			[AGUI_STATE_KEY]: {
+				...current,
+				...partial,
+			},
+		});
+	};
+
 	// Extract session context, document filter, and initial context from agent state
 	const sessionContext = agentState?.[AGUI_STATE_KEY]?.session_context ?? null;
 	const documentFilter = agentState?.[AGUI_STATE_KEY]?.document_filter ?? [];
@@ -421,38 +444,12 @@ function ChatContentInner() {
 		(agentState?.[AGUI_STATE_KEY]?.qa_history?.length ?? 0) > 0;
 
 	const handleFilterApply = (selected: string[]) => {
-		setAgentState({
-			...agentState,
-			[AGUI_STATE_KEY]: {
-				...agentState?.[AGUI_STATE_KEY],
-				session_id: agentState?.[AGUI_STATE_KEY]?.session_id ?? "",
-				initial_context: agentState?.[AGUI_STATE_KEY]?.initial_context ?? null,
-				citations: agentState?.[AGUI_STATE_KEY]?.citations ?? [],
-				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
-				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
-				document_filter: selected,
-				citation_registry:
-					agentState?.[AGUI_STATE_KEY]?.citation_registry ?? {},
-			},
-		});
+		mergeChatState({ document_filter: selected });
 	};
 
 	const handleInitialContextChange = (value: string) => {
 		if (isContextLocked) return;
-		setAgentState({
-			...agentState,
-			[AGUI_STATE_KEY]: {
-				...agentState?.[AGUI_STATE_KEY],
-				session_id: agentState?.[AGUI_STATE_KEY]?.session_id ?? "",
-				initial_context: value || null,
-				citations: agentState?.[AGUI_STATE_KEY]?.citations ?? [],
-				qa_history: agentState?.[AGUI_STATE_KEY]?.qa_history ?? [],
-				session_context: agentState?.[AGUI_STATE_KEY]?.session_context ?? null,
-				document_filter: agentState?.[AGUI_STATE_KEY]?.document_filter ?? [],
-				citation_registry:
-					agentState?.[AGUI_STATE_KEY]?.citation_registry ?? {},
-			},
-		});
+		mergeChatState({ initial_context: value || null });
 	};
 
 	useCoAgentStateRender<AgentState>({

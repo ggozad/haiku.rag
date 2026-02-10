@@ -15,6 +15,7 @@ from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
     SessionContext,
+    build_chat_state_snapshot,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -56,29 +57,13 @@ class ChatDeps:
         Combines SessionState and QASessionState into a single state dict
         matching the ChatSessionState schema expected by AG-UI clients.
         """
-        snapshot: dict[str, Any] = {"session_id": self.session_id}
-
-        # Add SessionState fields
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        if session_state is not None:
-            snapshot["document_filter"] = session_state.document_filter
-            snapshot["citation_registry"] = session_state.citation_registry
-            snapshot["citations"] = [c.model_dump() for c in session_state.citations]
-
-        # Add QASessionState fields
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
-        if qa_session_state is not None:
-            snapshot["qa_history"] = [
-                qa.model_dump() for qa in qa_session_state.qa_history
-            ]
-            # Convert string to SessionContext model for frontend
-            if qa_session_state.session_context:
-                snapshot["session_context"] = SessionContext(
-                    summary=qa_session_state.session_context
-                ).model_dump(mode="json")
-            else:
-                snapshot["session_context"] = None
-
+        snapshot = build_chat_state_snapshot(
+            session_state,
+            qa_session_state,
+            incoming=False,
+        )
         if self.state_key:
             return {self.state_key: snapshot}
         return snapshot
@@ -151,7 +136,7 @@ class ChatDeps:
                 qa_session_state.session_context = None
 
             # Check cache for fresher session_context from background summarization
-            # Cache is authoritative - always use it if available
+            # Cache is authoritative so background summaries show up on next request
             if self.session_id:
                 cached = get_cached_session_context(self.session_id)
                 if cached and cached.summary:
