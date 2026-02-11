@@ -18,6 +18,7 @@ from haiku.rag.tools.qa import (
     QAHistoryEntry,
     QASessionState,
     create_qa_toolset,
+    run_qa_core,
 )
 from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
 from haiku.rag.tools.session import (
@@ -46,6 +47,7 @@ __all__ = [
     "QASessionState",
     "QAHistoryEntry",
     "create_qa_toolset",
+    "run_qa_core",
     "create_analysis_toolset",
     "SESSION_NAMESPACE",
     "SessionState",

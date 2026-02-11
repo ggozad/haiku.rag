@@ -92,6 +92,149 @@ QA_SESSION_NAMESPACE = "haiku.rag.qa_session"
 MAX_QA_HISTORY = 50
 
 
+async def run_qa_core(
+    client: HaikuRAG,
+    config: AppConfig,
+    question: str,
+    document_name: str | None = None,
+    *,
+    context: ToolContext | None = None,
+    base_filter: str | None = None,
+    session_context: str | None = None,
+    prior_answers: list[SearchAnswer] | None = None,
+) -> QAResult:
+    """Run the QA flow and return a QAResult.
+
+    This is the core QA implementation shared by toolsets and client APIs.
+    It updates session state and QA history when context is provided.
+    """
+    session_state: SessionState | None = None
+    qa_session_state: QASessionState | None = None
+
+    if context is not None:
+        session_state = context.get(SESSION_NAMESPACE, SessionState)
+        qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
+
+    doc_filter = build_document_filter(document_name) if document_name else None
+    effective_filter = combine_filters(
+        get_session_filter(context, base_filter), doc_filter
+    )
+
+    effective_session_context = session_context
+    if qa_session_state is not None and qa_session_state.session_context:
+        effective_session_context = qa_session_state.session_context
+
+    effective_prior_answers = prior_answers or []
+    session_id = session_state.session_id if session_state is not None else ""
+    if qa_session_state is not None and qa_session_state.qa_history:
+        embedder = get_embedder(config)
+        question_embedding = await embedder.embed_query(question)
+
+        to_embed = []
+        to_embed_indices = []
+        for i, qa in enumerate(qa_session_state.qa_history):
+            if qa.question_embedding is None:
+                if session_id:
+                    cached = get_cached_embedding(session_id, qa.question)
+                    if cached:
+                        qa.question_embedding = cached
+                        continue
+                to_embed.append(qa.question)
+                to_embed_indices.append(i)
+
+        if to_embed:
+            new_embeddings = await embedder.embed_documents(to_embed)
+            for i, idx in enumerate(to_embed_indices):
+                embedding = new_embeddings[i]
+                qa_session_state.qa_history[idx].question_embedding = embedding
+                if session_id:
+                    cache_question_embedding(
+                        session_id,
+                        qa_session_state.qa_history[idx].question,
+                        embedding,
+                    )
+
+        matched_answers = []
+        for qa in qa_session_state.qa_history:
+            if qa.question_embedding is not None:
+                similarity = _cosine_similarity(
+                    question_embedding, qa.question_embedding
+                )
+                if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
+                    matched_answers.append(qa.to_search_answer())
+
+        if matched_answers:
+            effective_prior_answers = matched_answers
+
+    graph = build_research_graph(config=config, output_mode="conversational")
+
+    research_context = ResearchContext(
+        original_question=question,
+        session_context=effective_session_context,
+        qa_responses=effective_prior_answers,
+    )
+    research_state = ResearchState(
+        context=research_context,
+        max_iterations=1,
+        search_filter=effective_filter,
+        max_concurrency=config.research.max_concurrency,
+    )
+    deps = ResearchDeps(client=client)
+
+    result = await graph.run(state=research_state, deps=deps)
+
+    # Build citations with stable indices from session state
+    citations = []
+    for i, c in enumerate(result.citations):
+        if session_state is not None:
+            index = session_state.get_or_assign_index(c.chunk_id)
+        else:
+            index = i + 1
+
+        citations.append(
+            Citation(
+                index=index,
+                document_id=c.document_id,
+                chunk_id=c.chunk_id,
+                document_uri=c.document_uri,
+                document_title=c.document_title,
+                page_numbers=c.page_numbers,
+                headings=c.headings,
+                content=c.content,
+            )
+        )
+
+    qa_result = QAResult(
+        question=question,
+        answer=result.answer,
+        confidence=result.confidence,
+        citations=citations,
+    )
+
+    if session_state is not None:
+        session_state.citations = citations
+
+    if qa_session_state is not None:
+        qa_session_state.qa_history.append(
+            QAHistoryEntry(
+                question=question,
+                answer=result.answer,
+                confidence=result.confidence,
+                citations=citations,
+            )
+        )
+        # Enforce FIFO limit
+        if len(qa_session_state.qa_history) > MAX_QA_HISTORY:
+            qa_session_state.qa_history = qa_session_state.qa_history[-MAX_QA_HISTORY:]
+        trigger_background_summarization(
+            qa_session_state=qa_session_state,
+            config=config,
+            session_id=session_id,
+        )
+
+    return qa_result
+
+
 def create_qa_toolset(
     client: HaikuRAG,
     config: AppConfig,
@@ -135,7 +278,6 @@ def create_qa_toolset(
         Returns:
             QAResult with answer, confidence, and citations.
         """
-        # Get session states
         session_state: SessionState | None = None
         qa_session_state: QASessionState | None = None
         old_state_snapshot: dict | None = None
@@ -144,7 +286,6 @@ def create_qa_toolset(
             session_state = context.get(SESSION_NAMESPACE, SessionState)
             qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
 
-            # Capture combined state snapshot before changes
             # Use incoming values (what client sent) so delta shows server-side updates
             if session_state is not None:
                 old_state_snapshot = build_chat_state_snapshot(
@@ -153,140 +294,18 @@ def create_qa_toolset(
                     incoming=True,
                 )
 
-        # Build filter from session state, base_filter, and document_name
-        doc_filter = build_document_filter(document_name) if document_name else None
-        effective_filter = combine_filters(
-            get_session_filter(context, base_filter), doc_filter
-        )
-
-        # Determine session context
-        effective_session_context = session_context
-        if qa_session_state is not None and qa_session_state.session_context:
-            effective_session_context = qa_session_state.session_context
-
-        # Find relevant prior answers via similarity matching
-        effective_prior_answers = prior_answers or []
-        session_id = session_state.session_id if session_state is not None else ""
-        if qa_session_state is not None and qa_session_state.qa_history:
-            embedder = get_embedder(config)
-            question_embedding = await embedder.embed_query(question)
-
-            # Collect questions that need embedding
-            to_embed = []
-            to_embed_indices = []
-            for i, qa in enumerate(qa_session_state.qa_history):
-                if qa.question_embedding is None:
-                    # Check per-session cache first
-                    if session_id:
-                        cached = get_cached_embedding(session_id, qa.question)
-                        if cached:
-                            qa.question_embedding = cached
-                            continue
-                    to_embed.append(qa.question)
-                    to_embed_indices.append(i)
-
-            # Batch embed uncached questions
-            if to_embed:
-                new_embeddings = await embedder.embed_documents(to_embed)
-                for i, idx in enumerate(to_embed_indices):
-                    embedding = new_embeddings[i]
-                    qa_session_state.qa_history[idx].question_embedding = embedding
-                    # Cache per-session for next request
-                    if session_id:
-                        cache_question_embedding(
-                            session_id,
-                            qa_session_state.qa_history[idx].question,
-                            embedding,
-                        )
-
-            # Find similar prior answers
-            matched_answers = []
-            for qa in qa_session_state.qa_history:
-                if qa.question_embedding is not None:
-                    similarity = _cosine_similarity(
-                        question_embedding, qa.question_embedding
-                    )
-                    if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
-                        matched_answers.append(qa.to_search_answer())
-
-            if matched_answers:
-                effective_prior_answers = matched_answers
-
-        # Build and run the research graph
-        graph = build_research_graph(config=config, output_mode="conversational")
-
-        research_context = ResearchContext(
-            original_question=question,
-            session_context=effective_session_context,
-            qa_responses=effective_prior_answers,
-        )
-        research_state = ResearchState(
-            context=research_context,
-            max_iterations=1,
-            search_filter=effective_filter,
-            max_concurrency=config.research.max_concurrency,
-        )
-        deps = ResearchDeps(client=client)
-
-        result = await graph.run(state=research_state, deps=deps)
-
-        # Build citations with stable indices from session state
-        citations = []
-        for i, c in enumerate(result.citations):
-            if session_state is not None:
-                index = session_state.get_or_assign_index(c.chunk_id)
-            else:
-                index = i + 1
-
-            citations.append(
-                Citation(
-                    index=index,
-                    document_id=c.document_id,
-                    chunk_id=c.chunk_id,
-                    document_uri=c.document_uri,
-                    document_title=c.document_title,
-                    page_numbers=c.page_numbers,
-                    headings=c.headings,
-                    content=c.content,
-                )
-            )
-
-        qa_result = QAResult(
+        qa_result = await run_qa_core(
+            client=client,
+            config=config,
             question=question,
-            answer=result.answer,
-            confidence=result.confidence,
-            citations=citations,
+            document_name=document_name,
+            context=context,
+            base_filter=base_filter,
+            session_context=session_context,
+            prior_answers=prior_answers,
         )
 
-        # Update session state with citations
-        if session_state is not None:
-            session_state.citations = citations
-
-        # Update QA session state with history entry
-        if qa_session_state is not None:
-            qa_session_state.qa_history.append(
-                QAHistoryEntry(
-                    question=question,
-                    answer=result.answer,
-                    confidence=result.confidence,
-                    citations=citations,
-                )
-            )
-            # Enforce FIFO limit
-            if len(qa_session_state.qa_history) > MAX_QA_HISTORY:
-                qa_session_state.qa_history = qa_session_state.qa_history[
-                    -MAX_QA_HISTORY:
-                ]
-            # Trigger background summarization
-            trigger_background_summarization(
-                qa_session_state=qa_session_state,
-                config=config,
-                session_id=session_id,
-            )
-
-        # Compute and return state delta if session state changed
         if session_state is not None and old_state_snapshot is not None:
-            # Build new combined state snapshot
             new_state_snapshot = build_chat_state_snapshot(
                 session_state,
                 qa_session_state,
@@ -299,10 +318,9 @@ def create_qa_toolset(
                 state_key=session_state.state_key,
             )
 
-            # Format answer with citation references
-            answer_text = result.answer
-            if citations:
-                citation_refs = " ".join(f"[{c.index}]" for c in citations)
+            answer_text = qa_result.answer
+            if qa_result.citations:
+                citation_refs = " ".join(f"[{c.index}]" for c in qa_result.citations)
                 answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
             metadata = [state_event] if state_event is not None else None

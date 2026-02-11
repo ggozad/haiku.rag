@@ -52,16 +52,13 @@ def create_analysis_toolset(
         Returns:
             AnalysisResult with answer and execution metadata.
         """
-        # Build filter from base_filter, session_filter, and document_name
         doc_filter = build_document_filter(document_name) if document_name else None
         effective_filter = combine_filters(
             get_session_filter(context, base_filter), doc_filter
         )
 
-        # Create RLM context
         rlm_context = RLMContext(filter=effective_filter)
 
-        # Run RLM agent with Docker sandbox
         async with DockerSandbox(
             client=client,
             config=config.rlm,

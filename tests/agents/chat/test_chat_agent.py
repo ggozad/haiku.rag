@@ -11,7 +11,10 @@ from haiku.rag.agents.chat import (
     ToolContext,
     create_chat_agent,
 )
-from haiku.rag.agents.chat.context import get_cached_session_context
+from haiku.rag.agents.chat.context import (
+    _summarization_tasks,
+    get_cached_session_context,
+)
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -563,8 +566,12 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
     2. First question triggers background summarization
     3. Second related question uses prior answer recall and updated session context
     4. Both qa_history entries are present after two turns
+
+    The ask tool internally fires background summarization (concurrent HTTP calls)
+    which causes VCR cassette mismatches. We patch it to a no-op and trigger
+    summarization explicitly after each turn to keep HTTP ordering deterministic.
     """
-    import asyncio
+    from unittest.mock import patch
 
     from haiku.rag.agents.chat.agent import trigger_background_summarization
     from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
@@ -614,22 +621,24 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
             == "The user is researching the DocLayNet dataset for a paper on document layout analysis."
         )
 
-        # First question about class labels
-        result1 = await agent.run(
-            "What are the class labels defined in DocLayNet?",
-            deps=deps,
-        )
-        trigger_background_summarization(deps)
+        # Patch the internal summarization trigger in the ask tool to avoid
+        # concurrent HTTP calls that break VCR cassette replay ordering.
+        with patch(
+            "haiku.rag.tools.qa.trigger_background_summarization",
+        ):
+            # First question about class labels
+            result1 = await agent.run(
+                "What are the class labels defined in DocLayNet?",
+                deps=deps,
+            )
         assert result1.output is not None
 
-        # Wait for background summarization
-        cached_context = None
-        for _ in range(50):
-            cached_context = get_cached_session_context(session_id)
-            if cached_context is not None:
-                break
-            await asyncio.sleep(0.1)
+        # Trigger summarization explicitly (sequential, no concurrency)
+        trigger_background_summarization(deps)
+        if session_id in _summarization_tasks:
+            await _summarization_tasks[session_id]
 
+        cached_context = get_cached_session_context(session_id)
         assert cached_context is not None
         assert cached_context.summary != ""
 
@@ -639,23 +648,20 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
         assert len(qa_session.qa_history) >= 1
 
         # Second related question - uses prior answers and updated session context
-        result2 = await agent.run(
-            "How were the annotations created and how many annotators were involved?",
-            deps=deps,
-            message_history=result1.all_messages(),
-        )
-        trigger_background_summarization(deps)
+        with patch(
+            "haiku.rag.tools.qa.trigger_background_summarization",
+        ):
+            result2 = await agent.run(
+                "How were the annotations created and how many annotators were involved?",
+                deps=deps,
+                message_history=result1.all_messages(),
+            )
         assert result2.output is not None
 
-        # Wait for updated summarization
-        for _ in range(50):
-            updated = get_cached_session_context(session_id)
-            if (
-                updated is not None
-                and updated.last_updated != cached_context.last_updated
-            ):
-                break
-            await asyncio.sleep(0.1)
+        # Trigger summarization explicitly
+        trigger_background_summarization(deps)
+        if session_id in _summarization_tasks:
+            await _summarization_tasks[session_id]
 
         # qa_history should have two entries
         qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)

@@ -47,7 +47,6 @@ def create_search_toolset(
     Returns:
         FunctionToolset with a search tool.
     """
-    # Get or create search state if context provided
     search_state: SearchState | None = None
     if context is not None:
         search_state = context.get_or_create(SEARCH_NAMESPACE, SearchState)
@@ -67,7 +66,6 @@ def create_search_toolset(
         Returns:
             Formatted search results with content and metadata.
         """
-        # Get session state for dynamic filters and citation indexing
         session_state: SessionState | None = None
         old_session_state: SessionState | None = None
         if context is not None:
@@ -88,14 +86,12 @@ def create_search_toolset(
         if expand_context:
             results = await client.expand_context(results)
 
-        # Accumulate results in search state if context provided
         if search_state is not None:
             search_state.results.extend(results)
 
         if not results:
             return "No results found."
 
-        # Build citations if session state is available
         if session_state is not None:
             citations = []
             for r in results:
@@ -118,7 +114,6 @@ def create_search_toolset(
                 )
             session_state.citations = citations
 
-            # Format results with citation indices
             result_lines = []
             for c in citations:
                 title = c.document_title or c.document_uri or "Unknown"
@@ -134,7 +129,6 @@ def create_search_toolset(
 
             formatted = f"Found {len(results)} results:\n\n" + "\n\n".join(result_lines)
 
-            # Compute state delta if session state changed
             if old_session_state is not None:
                 state_event = compute_state_delta(old_session_state, session_state)
                 if state_event is not None:

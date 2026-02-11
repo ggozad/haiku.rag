@@ -81,7 +81,6 @@ class ChatDeps:
             if isinstance(nested, dict):
                 state_data = nested
 
-        # Update SessionState from incoming state
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
         if session_state is not None:
             if "document_filter" in state_data:
@@ -96,7 +95,6 @@ class ChatDeps:
                     for c in state_data.get("citations", [])
                 ]
 
-        # Extract session_id if present, or generate one
         # Track what the client sent (for delta computation)
         incoming_session_id = state_data.get("session_id", "")
 
@@ -111,7 +109,6 @@ class ChatDeps:
             session_state.session_id = self.session_id
             session_state.incoming_session_id = incoming_session_id
 
-        # Update QASessionState from incoming state
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
         if qa_session_state is not None:
             if "qa_history" in state_data:
@@ -181,19 +178,16 @@ def create_chat_agent(
     if features is None:
         features = DEFAULT_FEATURES
 
-    # SessionState is always registered (shared by all features)
     existing = context.get(SESSION_NAMESPACE, SessionState)
     if existing is None:
         context.register(SESSION_NAMESPACE, SessionState(state_key=AGUI_STATE_KEY))
     elif existing.state_key is None:
         existing.state_key = AGUI_STATE_KEY
 
-    # QASessionState only when QA feature is active
     if FEATURE_QA in features:
         if context.get(QA_SESSION_NAMESPACE, QASessionState) is None:
             context.register(QA_SESSION_NAMESPACE, QASessionState())
 
-    # Create toolsets conditionally based on features
     toolsets = []
     if FEATURE_SEARCH in features:
         toolsets.append(create_search_toolset(client, config, context=context))
@@ -206,7 +200,6 @@ def create_chat_agent(
 
         toolsets.append(create_analysis_toolset(client, config, context=context))
 
-    # Create the agent with composed toolsets
     model = get_model(config.qa.model, config)
 
     return Agent(

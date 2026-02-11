@@ -40,7 +40,6 @@ class DocumentListResponse(BaseModel):
 
 async def find_document(client: HaikuRAG, query: str):
     """Find a document by exact URI, partial URI, or partial title match."""
-    # Try exact URI match first
     doc = await client.get_document_by_uri(query)
     if doc is not None:
         return doc
@@ -49,7 +48,6 @@ async def find_document(client: HaikuRAG, query: str):
     # Also try without spaces for matching "TB MED 593" to "tbmed593"
     no_spaces = escaped_query.replace(" ", "")
 
-    # Try partial URI match (with and without spaces)
     docs = await client.list_documents(
         limit=1,
         filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%') OR LOWER(uri) LIKE LOWER('%{no_spaces}%')",
@@ -57,7 +55,6 @@ async def find_document(client: HaikuRAG, query: str):
     if docs and docs[0].id:
         return await client.get_document_by_id(docs[0].id)
 
-    # Try partial title match (with and without spaces)
     docs = await client.list_documents(
         limit=1,
         filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')",
@@ -158,7 +155,6 @@ def create_document_toolset(
         if doc is None:
             return f"Document not found: {query}"
 
-        # Use LLM to generate summary
         summary_model = get_model(config.qa.model, config)
         summary_agent: Agent[None, str] = Agent(
             summary_model,
