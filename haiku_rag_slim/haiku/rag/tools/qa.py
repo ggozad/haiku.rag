@@ -1,13 +1,11 @@
 import math
 
+from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic import BaseModel, Field
 from pydantic_ai import FunctionToolset, ToolReturn
 
 from haiku.rag.agents.chat.context import trigger_background_summarization
-from haiku.rag.agents.chat.state import (
-    build_chat_state_delta,
-    build_chat_state_snapshot,
-)
+from haiku.rag.agents.chat.state import build_chat_state_snapshot
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.models import Citation, SearchAnswer
@@ -258,19 +256,12 @@ def create_qa_toolset(
         """
         session_state: SessionState | None = None
         qa_session_state: QASessionState | None = None
-        old_state_snapshot: dict | None = None
         state_key: str | None = None
 
         if context is not None:
             session_state = context.get(SESSION_NAMESPACE, SessionState)
             qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
             state_key = context.state_key
-
-            if session_state is not None:
-                old_state_snapshot = build_chat_state_snapshot(
-                    session_state,
-                    qa_session_state,
-                )
 
         qa_result = await run_qa_core(
             client=client,
@@ -283,25 +274,24 @@ def create_qa_toolset(
             prior_answers=prior_answers,
         )
 
-        if session_state is not None and old_state_snapshot is not None:
-            new_state_snapshot = build_chat_state_snapshot(
+        if session_state is not None:
+            snapshot = build_chat_state_snapshot(
                 session_state,
                 qa_session_state,
             )
-
-            state_event = build_chat_state_delta(
-                old_state_snapshot,
-                new_state_snapshot,
-                state_key=state_key,
-            )
+            if state_key:
+                snapshot = {state_key: snapshot}
 
             answer_text = qa_result.answer
             if qa_result.citations:
                 citation_refs = " ".join(f"[{c.index}]" for c in qa_result.citations)
                 answer_text = f"{answer_text}\n\nSources: {citation_refs}"
 
-            metadata = [state_event] if state_event is not None else None
-            return ToolReturn(return_value=answer_text, metadata=metadata)
+            state_event = StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=snapshot,
+            )
+            return ToolReturn(return_value=answer_text, metadata=[state_event])
 
         return qa_result
 

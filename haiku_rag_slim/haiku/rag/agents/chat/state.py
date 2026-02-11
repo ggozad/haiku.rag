@@ -6,8 +6,6 @@ from pydantic import BaseModel
 from haiku.rag.agents.research.models import Citation
 
 if TYPE_CHECKING:
-    from ag_ui.core import StateDeltaEvent
-
     from haiku.rag.tools.qa import QAHistoryEntry, QASessionState
     from haiku.rag.tools.session import SessionState
 
@@ -76,14 +74,3 @@ def build_chat_state_snapshot(
             snapshot["session_context"] = None
 
     return snapshot
-
-
-def build_chat_state_delta(
-    old_snapshot: dict[str, Any],
-    new_snapshot: dict[str, Any],
-    state_key: str | None,
-) -> "StateDeltaEvent | None":
-    """Compute a delta patch between two combined snapshots."""
-    from haiku.rag.tools.session import compute_combined_state_delta
-
-    return compute_combined_state_delta(old_snapshot, new_snapshot, state_key)
