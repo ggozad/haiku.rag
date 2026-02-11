@@ -2,7 +2,7 @@ from typing import Any
 
 import jsonpatch
 from ag_ui.core import EventType, StateDeltaEvent
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from haiku.rag.agents.research.models import Citation
 
@@ -20,7 +20,6 @@ class SessionState(BaseModel):
     """
 
     session_id: str = ""
-    incoming_session_id: str = Field(default="", exclude=True)  # Track what client sent
     document_filter: list[str] = []
     citation_registry: dict[str, int] = {}
     citations: list[Citation] = []

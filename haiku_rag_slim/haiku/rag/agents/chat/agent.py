@@ -59,11 +59,7 @@ class ChatDeps:
         """
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
-        snapshot = build_chat_state_snapshot(
-            session_state,
-            qa_session_state,
-            incoming=False,
-        )
+        snapshot = build_chat_state_snapshot(session_state, qa_session_state)
         if self.state_key:
             return {self.state_key: snapshot}
         return snapshot
@@ -95,19 +91,15 @@ class ChatDeps:
                     for c in state_data.get("citations", [])
                 ]
 
-        # Track what the client sent (for delta computation)
-        incoming_session_id = state_data.get("session_id", "")
-
-        if incoming_session_id:
-            self.session_id = incoming_session_id
+        # Restore session_id from client or generate one
+        client_session_id = state_data.get("session_id", "")
+        if client_session_id:
+            self.session_id = client_session_id
         elif not self.session_id:
-            # Generate session_id now so ask() tool can use it
             self.session_id = str(uuid.uuid4())
 
-        # Sync session_id to SessionState (track incoming for delta computation)
         if session_state is not None:
             session_state.session_id = self.session_id
-            session_state.incoming_session_id = incoming_session_id
 
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
         if qa_session_state is not None:
@@ -119,28 +111,22 @@ class ChatDeps:
                     for qa in state_data.get("qa_history", [])
                 ]
 
-            # Track what client sent for delta computation
-            incoming_session_context = state_data.get("session_context")
-            if isinstance(incoming_session_context, dict):
-                qa_session_state.incoming_session_context = SessionContext(
-                    **incoming_session_context
-                )
-                qa_session_state.session_context = (
-                    qa_session_state.incoming_session_context.summary
-                )
-            elif incoming_session_context is None:
-                qa_session_state.incoming_session_context = None
+            # Restore session_context from client
+            session_context = state_data.get("session_context")
+            if isinstance(session_context, dict):
+                qa_session_state.session_context = SessionContext(
+                    **session_context
+                ).summary
+            elif session_context is None:
                 qa_session_state.session_context = None
 
             # Check cache for fresher session_context from background summarization
-            # Cache is authoritative so background summaries show up on next request
             if self.session_id:
                 cached = get_cached_session_context(self.session_id)
                 if cached and cached.summary:
                     qa_session_state.session_context = cached.summary
 
             # Handle initial_context -> session_context for first message
-            # Only applies if session_context is still empty after restoring and cache check
             if "initial_context" in state_data:
                 initial = state_data.get("initial_context")
                 if initial and not qa_session_state.session_context:

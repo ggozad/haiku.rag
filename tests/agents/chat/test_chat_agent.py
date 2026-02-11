@@ -128,8 +128,7 @@ def test_chat_deps_state_setter_handles_initial_context():
 
 
 def test_chat_deps_state_setter_parses_session_context_dict():
-    """Test ChatDeps.state setter parses session_context dict into SessionContext model."""
-    from haiku.rag.agents.chat.state import SessionContext
+    """Test ChatDeps.state setter parses session_context dict and extracts summary."""
     from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
     context = ToolContext()
@@ -155,15 +154,10 @@ def test_chat_deps_state_setter_parses_session_context_dict():
 
     deps.state = incoming_state
 
-    # session_context dict should be parsed into SessionContext model
+    # session_context dict should be parsed and summary extracted
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
     assert qa_session_state.session_context == "Previous conversation summary"
-    assert isinstance(qa_session_state.incoming_session_context, SessionContext)
-    assert (
-        qa_session_state.incoming_session_context.summary
-        == "Previous conversation summary"
-    )
 
 
 def test_chat_deps_state_setter_generates_session_id():

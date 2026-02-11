@@ -46,29 +46,22 @@ def _rebuild_models(qa_history_entry_cls: type) -> None:
 def build_chat_state_snapshot(
     session_state: "SessionState | None",
     qa_state: "QASessionState | None",
-    *,
-    incoming: bool = False,
 ) -> dict[str, Any]:
-    """Build a combined AG-UI chat state snapshot.
+    """Build a combined AG-UI chat state snapshot from current values.
 
     Args:
         session_state: SessionState from ToolContext.
         qa_state: QASessionState from ToolContext.
-        incoming: If True, use client-sent values where applicable.
 
     Returns:
-        Snapshot dict, optionally wrapped by state_key.
+        Snapshot dict.
     """
     snapshot: dict[str, Any] = {"session_id": ""}
 
     if session_state is not None:
         snapshot.update(
             {
-                "session_id": (
-                    session_state.incoming_session_id
-                    if incoming
-                    else session_state.session_id
-                ),
+                "session_id": session_state.session_id,
                 "document_filter": session_state.document_filter.copy(),
                 "citation_registry": session_state.citation_registry.copy(),
                 "citations": [c.model_dump() for c in session_state.citations],
@@ -77,20 +70,12 @@ def build_chat_state_snapshot(
 
     if qa_state is not None:
         snapshot["qa_history"] = [qa.model_dump() for qa in qa_state.qa_history]
-        if incoming:
-            if qa_state.incoming_session_context is not None:
-                snapshot["session_context"] = (
-                    qa_state.incoming_session_context.model_dump(mode="json")
-                )
-            else:
-                snapshot["session_context"] = None
+        if qa_state.session_context:
+            snapshot["session_context"] = SessionContext(
+                summary=qa_state.session_context
+            ).model_dump(mode="json")
         else:
-            if qa_state.session_context:
-                snapshot["session_context"] = SessionContext(
-                    summary=qa_state.session_context
-                ).model_dump(mode="json")
-            else:
-                snapshot["session_context"] = None
+            snapshot["session_context"] = None
 
     return snapshot
 

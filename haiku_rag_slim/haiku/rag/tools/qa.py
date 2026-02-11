@@ -9,7 +9,6 @@ from haiku.rag.agents.chat.context import (
     trigger_background_summarization,
 )
 from haiku.rag.agents.chat.state import (
-    SessionContext,
     build_chat_state_delta,
     build_chat_state_snapshot,
 )
@@ -83,9 +82,6 @@ class QASessionState(BaseModel):
 
     qa_history: list[QAHistoryEntry] = []
     session_context: str | None = None
-    incoming_session_context: SessionContext | None = Field(
-        default=None, exclude=True
-    )  # Track what client sent
 
 
 QA_SESSION_NAMESPACE = "haiku.rag.qa_session"
@@ -288,12 +284,10 @@ def create_qa_toolset(
             qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
             state_key = context.state_key
 
-            # Use incoming values (what client sent) so delta shows server-side updates
             if session_state is not None:
                 old_state_snapshot = build_chat_state_snapshot(
                     session_state,
                     qa_session_state,
-                    incoming=True,
                 )
 
         qa_result = await run_qa_core(
@@ -311,7 +305,6 @@ def create_qa_toolset(
             new_state_snapshot = build_chat_state_snapshot(
                 session_state,
                 qa_session_state,
-                incoming=False,
             )
 
             state_event = build_chat_state_delta(
