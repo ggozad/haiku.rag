@@ -64,7 +64,6 @@ def test_chat_deps_initialization(temp_db_path):
 
     assert deps.config is Config
     assert deps.tool_context is context
-    assert deps.is_new is True
     assert deps.state_key is None
 
 
@@ -151,6 +150,42 @@ def test_chat_deps_state_setter_parses_session_context_dict():
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
     assert qa_session_state.session_context == "Previous conversation summary"
+
+
+def test_chat_deps_state_setter_preserves_server_session_context():
+    """Test that server's session_context is preferred over client's stale value."""
+    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+
+    context = ToolContext()
+    qa_state = QASessionState()
+    qa_state.session_context = "Fresh summary from background summarizer"
+    context.register(QA_SESSION_NAMESPACE, qa_state)
+    context.register(SESSION_NAMESPACE, SessionState())
+
+    deps = ChatDeps(config=Config, tool_context=context, state_key=AGUI_STATE_KEY)
+
+    # Client sends stale session_context
+    incoming_state = {
+        AGUI_STATE_KEY: {
+            "session_context": {
+                "summary": "Stale summary from client",
+                "last_updated": "2025-01-27T12:00:00",
+            },
+            "qa_history": [],
+            "citations": [],
+            "document_filter": [],
+            "citation_registry": {},
+        }
+    }
+
+    deps.state = incoming_state
+
+    # Server's fresher session_context should be preserved
+    qa_session_state = context.get(QA_SESSION_NAMESPACE)
+    assert isinstance(qa_session_state, QASessionState)
+    assert (
+        qa_session_state.session_context == "Fresh summary from background summarizer"
+    )
 
 
 def test_chat_session_state():

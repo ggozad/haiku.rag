@@ -79,13 +79,12 @@ async def stream_chat(request: Request) -> Response:
     run_input = AGUIAdapter.build_run_input(body)
 
     thread_id = getattr(run_input, "thread_id", None) or "default"
-    context, is_new = context_cache.get_or_create(thread_id)
+    context, _is_new = context_cache.get_or_create(thread_id)
     agent = create_chat_agent(Config, get_client(), context)
 
     deps = ChatDeps(
         config=Config,
         tool_context=context,
-        is_new=is_new,
         state_key=AGUI_STATE_KEY,
     )
 

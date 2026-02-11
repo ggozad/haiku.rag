@@ -43,7 +43,6 @@ class ChatDeps:
 
     config: AppConfig
     tool_context: ToolContext
-    is_new: bool = True
     state_key: str | None = None
 
     @property
@@ -74,57 +73,43 @@ class ChatDeps:
                 state_data = nested
 
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
+        if session_state is not None:
+            if "document_filter" in state_data:
+                session_state.document_filter = state_data.get("document_filter", [])
+            if "citation_registry" in state_data:
+                session_state.citation_registry = state_data["citation_registry"]
+            if "citations" in state_data:
+                from haiku.rag.agents.research.models import Citation
 
-        if self.is_new:
-            # First request for this context: fully populate from client state
-            if session_state is not None:
-                if "document_filter" in state_data:
-                    session_state.document_filter = state_data.get(
-                        "document_filter", []
-                    )
-                if "citation_registry" in state_data:
-                    session_state.citation_registry = state_data["citation_registry"]
-                if "citations" in state_data:
-                    from haiku.rag.agents.research.models import Citation
+                session_state.citations = [
+                    Citation(**c) if isinstance(c, dict) else c
+                    for c in state_data.get("citations", [])
+                ]
 
-                    session_state.citations = [
-                        Citation(**c) if isinstance(c, dict) else c
-                        for c in state_data.get("citations", [])
-                    ]
+        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
+        if qa_session_state is not None:
+            if "qa_history" in state_data:
+                from haiku.rag.tools.qa import QAHistoryEntry
 
-            qa_session_state = self.tool_context.get(
-                QA_SESSION_NAMESPACE, QASessionState
-            )
-            if qa_session_state is not None:
-                if "qa_history" in state_data:
-                    from haiku.rag.tools.qa import QAHistoryEntry
+                qa_session_state.qa_history = [
+                    QAHistoryEntry(**qa) if isinstance(qa, dict) else qa
+                    for qa in state_data.get("qa_history", [])
+                ]
 
-                    qa_session_state.qa_history = [
-                        QAHistoryEntry(**qa) if isinstance(qa, dict) else qa
-                        for qa in state_data.get("qa_history", [])
-                    ]
-
-                # Restore session_context from client
+            # Prefer server's session_context (background summarizer may
+            # have updated it since the client's last snapshot).
+            if not qa_session_state.session_context:
                 session_context = state_data.get("session_context")
                 if isinstance(session_context, dict):
                     qa_session_state.session_context = SessionContext(
                         **session_context
                     ).summary
-                elif session_context is None:
-                    qa_session_state.session_context = None
 
                 # Handle initial_context -> session_context for first message
                 if "initial_context" in state_data:
                     initial = state_data.get("initial_context")
                     if initial and not qa_session_state.session_context:
                         qa_session_state.session_context = initial
-        else:
-            # Returning request: only merge client-controlled fields
-            if session_state is not None:
-                if "document_filter" in state_data:
-                    session_state.document_filter = state_data.get(
-                        "document_filter", []
-                    )
 
 
 def create_chat_agent(

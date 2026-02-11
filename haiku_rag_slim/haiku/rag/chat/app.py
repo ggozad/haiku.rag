@@ -251,7 +251,6 @@ class ChatApp(App):
             deps = ChatDeps(
                 config=self.config,
                 tool_context=self.tool_context,
-                is_new=False,
             )
 
             async with self.agent.run_stream(

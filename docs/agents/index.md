@@ -127,13 +127,27 @@ The system prompt is automatically composed to match the selected features. See 
 
 ### Session State
 
-The `ChatSessionState` maintains:
+Session state is managed through `ToolContext` — a namespace-based state container shared across all toolsets. The chat agent uses two namespaces:
 
-- `session_id` — Unique identifier for the session
-- `qa_history` — List of previous Q/A pairs
-- `session_context` — Automatically maintained session context summary
+**`SessionState`** (session management):
+
 - `document_filter` — List of document titles/URIs to restrict searches
 - `citation_registry` — Stable mapping of chunk IDs to citation indices
+- `citations` — Citations from the current query
+
+**`QASessionState`** (QA history and context):
+
+- `qa_history` — List of previous Q/A pairs with embeddings
+- `session_context` — Automatically maintained session context summary
+
+For multi-session applications (e.g., web backends), use `ToolContextCache` to cache `ToolContext` instances by external session/thread ID:
+
+```python
+from haiku.rag.tools import ToolContext, ToolContextCache
+
+cache = ToolContextCache()  # TTL-based, defaults to 1 hour
+context, _is_new = cache.get_or_create(thread_id)
+```
 
 **Citation Registry**: Citation indices persist across tool calls within a session. The same `chunk_id` always returns the same citation index (first-occurrence-wins). This ensures consistent citation numbering in multi-turn conversations — `[1]` always refers to the same source.
 

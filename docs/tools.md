@@ -227,9 +227,12 @@ When using the chat agent with [AG-UI](https://docs.ag-ui.com) streaming, `ChatD
 
 ```python
 from haiku.rag.agents.chat import AGUI_STATE_KEY, ChatDeps, create_chat_agent
-from haiku.rag.tools import ToolContext
+from haiku.rag.tools import ToolContext, ToolContextCache
 
-context = ToolContext()
+# For multi-session apps, cache ToolContext per thread
+cache = ToolContextCache()
+context, _is_new = cache.get_or_create(thread_id)
+
 agent = create_chat_agent(config, client, context)
 deps = ChatDeps(
     config=config,
@@ -243,7 +246,6 @@ The emitted state structure:
 ```json
 {
   "haiku.rag.chat": {
-    "session_id": "uuid",
     "citations": [],
     "qa_history": [],
     "session_context": null,
@@ -253,7 +255,7 @@ The emitted state structure:
 }
 ```
 
-State flows bidirectionally — the frontend sends its current state on each request, and the agent emits deltas (JSON Patch) reflecting server-side updates (new citations, QA history entries, session context). See the [Web Application](apps.md#web-application) for a complete implementation.
+State flows bidirectionally — the frontend sends its current state on each request, and the agent emits deltas (JSON Patch) reflecting server-side updates (new citations, QA history entries, session context). The server always prefers its own `session_context` over the client's value, since background summarization may have updated it between requests. See the [Web Application](apps.md#web-application) for a complete implementation.
 
 ## Filter Helpers
 
