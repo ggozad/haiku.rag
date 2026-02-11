@@ -177,7 +177,7 @@ analysis = create_analysis_toolset(client, config, context=context)
 
 **Tool: `analyze(task, document_name?)`**
 
-Executes a computational task via code execution and returns an `AnalysisResult`. Requires Docker — see [RLM Agent](rlm.md) for setup.
+Executes a computational task via code execution and returns an `AnalysisResult`. Requires Docker — see [RLM Agent](agents/rlm.md) for setup.
 
 ## Composing Custom Agents
 

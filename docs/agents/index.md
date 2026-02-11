@@ -7,7 +7,7 @@ Four agentic flows are provided by haiku.rag:
 - **Research Graph** — a multi-step research workflow with question decomposition
 - **RLM Agent** — complex analytical tasks via sandboxed Python code execution (see [RLM Agent](rlm.md))
 
-See [QA and Research Configuration](configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
+See [QA and Research Configuration](../configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
 
 ## Simple QA Agent
 
@@ -51,11 +51,11 @@ async with HaikuRAG(path_to_db) as client:
 
 ## Chat Agent
 
-The chat agent enables multi-turn conversational RAG. It is built from composable [toolsets](tools.md) and maintains session state to improve follow-up answers.
+The chat agent enables multi-turn conversational RAG. It is built from composable [toolsets](../tools.md) and maintains session state to improve follow-up answers.
 
 Key features:
 
-- **Composable toolsets**: Built from reusable `FunctionToolset` factories — see [Toolsets](tools.md)
+- **Composable toolsets**: Built from reusable `FunctionToolset` factories — see [Toolsets](../tools.md)
 - **Semantic prior answer recall**: Similar prior Q/A pairs are retrieved and passed to the research planner, which can skip searching when they suffice
 - **Background summarization**: After each `ask` call, the QA history is summarized into a compact session context for the next request
 - **Document filtering**: Session-level or per-query document filtering
@@ -67,7 +67,7 @@ haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
 ```
 
-See [Applications](apps.md#chat-tui) for the full TUI interface guide.
+See [Applications](../apps.md#chat-tui) for the full TUI interface guide.
 
 ### Python Usage
 
@@ -123,7 +123,7 @@ Available features:
 | QA | `FEATURE_QA` | `ask` |
 | Analysis | `FEATURE_ANALYSIS` | `analyze` |
 
-The system prompt is automatically composed to match the selected features. See [Toolsets](tools.md) for details on each toolset's parameters and behavior.
+The system prompt is automatically composed to match the selected features. See [Toolsets](../tools.md) for details on each toolset's parameters and behavior.
 
 ### Session State
 
@@ -309,4 +309,4 @@ state.search_filter = "id IN ('doc-123', 'doc-456')"
 report = await graph.run(state=state, deps=deps)
 ```
 
-The filter applies to all search operations in the graph. See [Filtering Search Results](python.md#filtering-search-results) for available filter columns and syntax.
+The filter applies to all search operations in the graph. See [Filtering Search Results](../python.md#filtering-search-results) for available filter columns and syntax.
