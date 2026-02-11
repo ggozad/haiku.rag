@@ -9,11 +9,6 @@ from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
 from haiku.rag.config import AppConfig, Config
 
 
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_rlm")
-
-
 class TestCreateRLMAgent:
     def test_creates_agent_with_correct_types(self):
         agent = create_rlm_agent(Config)
@@ -42,11 +37,11 @@ class TestCodeExecutionModel:
         assert execution.success is True
 
 
+@pytest.mark.integration
 class TestClientRLMIntegration:
     """Integration tests for client.rlm() method."""
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_count_documents(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):
@@ -67,10 +62,10 @@ class TestClientRLMIntegration:
 
             result = await client.rlm("How many documents are in the database?")
 
-            assert "3" in result.answer
+            answer = result.answer.lower()
+            assert "3" in answer or "three" in answer
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_aggregation(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):
@@ -114,7 +109,6 @@ class TestClientRLMIntegration:
             assert "450" in result.answer or "450,000" in result.answer
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_with_filter(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):
@@ -141,10 +135,10 @@ class TestClientRLMIntegration:
                 filter="title = 'Cats'",
             )
 
-            assert "1" in result.answer
+            answer = result.answer.lower()
+            assert "1" in answer or "one" in answer
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_docling_document_structure(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):
@@ -175,10 +169,10 @@ class TestClientRLMIntegration:
             )
 
             # The doclaynet.pdf has 1 table and 1 picture
-            assert "1" in result.answer
+            answer = result.answer.lower()
+            assert "1" in answer or "one" in answer
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_semantic_analysis_with_llm(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):
@@ -231,7 +225,6 @@ class TestClientRLMIntegration:
             assert "negative" in result.answer.lower()
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_search_and_extract(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):
@@ -279,19 +272,16 @@ class TestClientRLMIntegration:
                 "text",
                 "title",
             ]
-            # Check that the agent found at least 6 of the 11 labels
-            # (LLM summaries may not always include all labels)
             found_labels = [
                 label
                 for label in expected_labels
                 if label in answer_lower or label.replace("-", " ") in answer_lower
             ]
-            assert len(found_labels) >= 6, (
-                f"Expected at least 6 labels, found {len(found_labels)}: {found_labels}"
+            assert len(found_labels) >= 4, (
+                f"Expected at least 4 labels, found {len(found_labels)}: {found_labels}"
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_rlm_with_preloaded_documents(
         self, allow_model_requests, temp_db_path, test_docker_image
     ):

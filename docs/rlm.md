@@ -195,6 +195,8 @@ rlm:
   max_output_chars: 50000 # Truncate output after this many chars
   docker_image: "ghcr.io/ggozad/haiku.rag-slim:latest"  # Container image
   docker_memory_limit: "512m"  # Container memory limit
+  docker_host: null        # Docker daemon URL (for remote Docker)
+  docker_db_path: null     # Database path on Docker host (for remote Docker)
 ```
 
 ### Custom Docker Image
@@ -216,3 +218,16 @@ docker build -t my-rlm-image .
 rlm:
   docker_image: "my-rlm-image"
 ```
+
+### Remote Docker
+
+The RLM sandbox can run on a remote Docker host (e.g., a GPU server):
+
+```yaml
+rlm:
+  docker_host: "tcp://gpu-server:2375"   # or ssh://user@gpu-server
+  docker_db_path: "/data/haiku.rag.lancedb"  # Path to the DB on the remote host
+```
+
+- **`docker_host`**: URL of the remote Docker daemon. Supports `tcp://`, `ssh://`, and `unix://` schemes. When not set, connects to the local Docker daemon.
+- **`docker_db_path`**: Path to the LanceDB database on the Docker host. Volume mounts are resolved on the host, so for remote Docker you must specify where the database lives on that machine. When not set, uses the local database path.

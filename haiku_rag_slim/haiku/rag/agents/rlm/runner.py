@@ -126,21 +126,44 @@ def execute_code(
         sys.stdout = original_stdout
 
 
-def send_response(result: dict[str, Any]) -> None:
-    """Send length-prefixed JSON response."""
+def send_response(conn: Any, result: dict[str, Any]) -> None:
+    """Send length-prefixed JSON response over TCP socket."""
     response = json.dumps(result)
-    sys.stdout.write(f"{len(response)}\n")
-    sys.stdout.write(response)
-    sys.stdout.flush()
+    data = f"{len(response)}\n{response}".encode()
+    conn.sendall(data)
+
+
+def read_message(conn: Any) -> str | None:
+    """Read a length-prefixed JSON message from TCP socket."""
+    buf = b""
+    while b"\n" not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return None
+        buf += chunk
+
+    newline_idx = buf.index(b"\n")
+    length = int(buf[:newline_idx].strip())
+    buf = buf[newline_idx + 1 :]
+
+    while len(buf) < length:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return None
+        buf += chunk
+
+    return buf[:length].decode()
 
 
 async def main() -> None:
     """Main entry point for container execution.
 
-    Runs a loop reading length-prefixed JSON messages and executing code.
+    Starts a TCP server, prints the port for the host to discover,
+    then runs a loop reading length-prefixed JSON messages and executing code.
     """
     import concurrent.futures
     import os
+    import socket
     from pathlib import Path
 
     from haiku.rag.agents.rlm.dependencies import RLMContext
@@ -153,6 +176,20 @@ async def main() -> None:
     context = RLMContext(filter=filter_expr)
     max_output_chars = config.rlm.max_output_chars
 
+    bind_port = int(os.environ.get("HAIKU_SANDBOX_PORT", "0"))
+
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock.bind(("0.0.0.0", bind_port))
+    server_sock.listen(1)
+    port = server_sock.getsockname()[1]
+
+    sys.stdout.write(f"PORT:{port}\n")
+    sys.stdout.flush()
+
+    conn, _ = server_sock.accept()
+    server_sock.close()
+
     loop = asyncio.get_running_loop()
 
     async with HaikuRAG(db_path, config=config, read_only=True) as client:
@@ -160,30 +197,30 @@ async def main() -> None:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             while True:
-                # Read length-prefixed message
-                length_line = sys.stdin.readline()
-                if not length_line:
+                message = read_message(conn)
+                if message is None:
                     break
 
                 try:
-                    length = int(length_line.strip())
-                    message = sys.stdin.read(length)
                     request = json.loads(message)
                     code = request.get("code", "")
 
                     result = await loop.run_in_executor(
                         executor, execute_code, code, namespace, max_output_chars
                     )
-                    send_response(result)
+                    send_response(conn, result)
 
                 except (ValueError, json.JSONDecodeError) as e:
                     send_response(
+                        conn,
                         {
                             "success": False,
                             "stdout": "",
                             "stderr": f"Invalid request: {e}",
-                        }
+                        },
                     )
+
+    conn.close()
 
 
 if __name__ == "__main__":

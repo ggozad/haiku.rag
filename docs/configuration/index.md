@@ -104,6 +104,17 @@ search:
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
 
+rlm:
+  model:
+    provider: ""         # Empty to use qa settings
+    name: ""
+  code_timeout: 60.0
+  max_output_chars: 50000
+  docker_image: "ghcr.io/ggozad/haiku.rag-slim:latest"
+  docker_memory_limit: "512m"
+  docker_host: null      # Docker daemon URL (tcp://, ssh://, unix://)
+  docker_db_path: null   # Database path on Docker host
+
 prompts:
   domain_preamble: ""  # Prepended to all agent prompts
   qa: null             # Custom QA agent prompt (null = use default)

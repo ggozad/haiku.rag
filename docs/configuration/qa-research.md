@@ -73,10 +73,18 @@ rlm:
     name: claude-sonnet-4-20250514
   code_timeout: 60.0      # Max seconds for code execution
   max_output_chars: 50000 # Truncate output after this many chars
+  docker_image: "ghcr.io/ggozad/haiku.rag-slim:latest"
+  docker_memory_limit: "512m"
+  docker_host: null        # Docker daemon URL (tcp://, ssh://, unix://)
+  docker_db_path: null     # Database path on Docker host
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
+- **docker_image**: Container image for the sandbox (default: `ghcr.io/ggozad/haiku.rag-slim:latest`)
+- **docker_memory_limit**: Container memory limit (default: `512m`)
+- **docker_host**: URL of a remote Docker daemon. When set, the sandbox runs on the remote host instead of locally. Supports `tcp://`, `ssh://`, and `unix://` schemes.
+- **docker_db_path**: Path to the database on the Docker host. Required for remote Docker since volume mounts resolve on the host machine.
 
-See [RLM Agent](../rlm.md) for usage details.
+See [RLM Agent](../rlm.md) for usage details and remote Docker setup.
