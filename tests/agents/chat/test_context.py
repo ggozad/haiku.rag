@@ -212,7 +212,6 @@ class TestUpdateSessionContext:
         result = await update_session_context(
             qa_history=qa_history,
             config=Config,
-            session_id="test-session",
         )
 
         assert result.summary != ""
@@ -231,129 +230,8 @@ class TestUpdateSessionContext:
         assert result.summary == ""
 
 
-class TestSessionContextCache:
-    """Tests for server-side session context caching."""
-
-    def test_cache_and_retrieve_session_context(self):
-        """Test caching and retrieving a session context."""
-        from haiku.rag.agents.chat.context import (
-            _session_cache,
-            cache_session_context,
-            get_cached_session_context,
-        )
-
-        # Clear cache
-        _session_cache.clear()
-
-        now = datetime.now()
-        ctx = SessionContext(summary="Test summary", last_updated=now)
-
-        cache_session_context("session-1", ctx)
-        result = get_cached_session_context("session-1")
-
-        assert result is not None
-        assert result.summary == "Test summary"
-        assert result.last_updated == now
-
-    def test_get_cached_session_context_returns_none_when_not_cached(self):
-        """Test get_cached_session_context returns None when nothing cached."""
-        from haiku.rag.agents.chat.context import (
-            _session_cache,
-            get_cached_session_context,
-        )
-
-        _session_cache.clear()
-
-        result = get_cached_session_context("nonexistent-session")
-        assert result is None
-
-    def test_cache_ttl_cleanup_removes_stale_entries(self):
-        """Test that stale cache entries are cleaned up."""
-        from datetime import timedelta
-
-        from haiku.rag.agents.chat.context import (
-            _CACHE_TTL,
-            _cache_timestamps,
-            _session_cache,
-            cache_session_context,
-            get_cached_session_context,
-        )
-
-        _session_cache.clear()
-        _cache_timestamps.clear()
-
-        # Add an entry
-        ctx = SessionContext(summary="Old summary", last_updated=datetime.now())
-        cache_session_context("stale-session", ctx)
-
-        # Make the entry stale by backdating its timestamp
-        _cache_timestamps["stale-session"] = (
-            datetime.now() - _CACHE_TTL - timedelta(seconds=1)
-        )
-
-        # Getting session context should trigger cleanup
-        result = get_cached_session_context("stale-session")
-
-        # Should be None because the entry was cleaned up
-        assert result is None
-        assert "stale-session" not in _session_cache
-
-    @pytest.mark.asyncio
-    async def test_update_session_caches_result(self):
-        """Test update_session_context stores result in cache."""
-        from unittest.mock import AsyncMock, patch
-
-        from haiku.rag.agents.chat.context import (
-            _session_cache,
-            get_cached_session_context,
-            update_session_context,
-        )
-
-        _session_cache.clear()
-
-        qa_history = [
-            QAHistoryEntry(
-                question="What is Python?",
-                answer="A programming language.",
-                confidence=0.95,
-            )
-        ]
-
-        with patch(
-            "haiku.rag.agents.chat.context.summarize_session",
-            new=AsyncMock(return_value="Mocked summary"),
-        ):
-            result = await update_session_context(
-                qa_history=qa_history,
-                config=Config,
-                session_id="cache-test-session",
-            )
-
-        assert result.summary == "Mocked summary"
-
-        cached = get_cached_session_context("cache-test-session")
-        assert cached is not None
-        assert cached.summary == "Mocked summary"
-
-    @pytest.mark.asyncio
-    async def test_update_session_context_no_cache_without_session_id(self):
-        """Test update_session_context doesn't cache without session_id."""
-        from haiku.rag.agents.chat.context import (
-            _session_cache,
-            get_cached_session_context,
-            update_session_context,
-        )
-
-        _session_cache.clear()
-
-        await update_session_context(
-            qa_history=[],
-            config=Config,
-        )
-
-        # Nothing should be cached (no session_id)
-        cached = get_cached_session_context("")
-        assert cached is None
+class TestUpdateSessionContextPassesCurrentContext:
+    """Tests for update_session_context current_context forwarding."""
 
     @pytest.mark.asyncio
     async def test_update_session_context_passes_current_context(self):

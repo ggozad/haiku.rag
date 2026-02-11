@@ -3,11 +3,7 @@ import math
 from pydantic import BaseModel, Field
 from pydantic_ai import FunctionToolset, ToolReturn
 
-from haiku.rag.agents.chat.context import (
-    cache_question_embedding,
-    get_cached_embedding,
-    trigger_background_summarization,
-)
+from haiku.rag.agents.chat.context import trigger_background_summarization
 from haiku.rag.agents.chat.state import (
     build_chat_state_delta,
     build_chat_state_snapshot,
@@ -121,7 +117,6 @@ async def run_qa_core(
         effective_session_context = qa_session_state.session_context
 
     effective_prior_answers = prior_answers or []
-    session_id = session_state.session_id if session_state is not None else ""
     if qa_session_state is not None and qa_session_state.qa_history:
         embedder = get_embedder(config)
         question_embedding = await embedder.embed_query(question)
@@ -130,25 +125,13 @@ async def run_qa_core(
         to_embed_indices = []
         for i, qa in enumerate(qa_session_state.qa_history):
             if qa.question_embedding is None:
-                if session_id:
-                    cached = get_cached_embedding(session_id, qa.question)
-                    if cached:
-                        qa.question_embedding = cached
-                        continue
                 to_embed.append(qa.question)
                 to_embed_indices.append(i)
 
         if to_embed:
             new_embeddings = await embedder.embed_documents(to_embed)
             for i, idx in enumerate(to_embed_indices):
-                embedding = new_embeddings[i]
-                qa_session_state.qa_history[idx].question_embedding = embedding
-                if session_id:
-                    cache_question_embedding(
-                        session_id,
-                        qa_session_state.qa_history[idx].question,
-                        embedding,
-                    )
+                qa_session_state.qa_history[idx].question_embedding = new_embeddings[i]
 
         matched_answers = []
         for qa in qa_session_state.qa_history:
@@ -225,7 +208,6 @@ async def run_qa_core(
         trigger_background_summarization(
             qa_session_state=qa_session_state,
             config=config,
-            session_id=session_id,
         )
 
     return qa_result

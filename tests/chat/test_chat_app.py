@@ -246,24 +246,8 @@ async def test_chat_history_thinking_indicator(temp_db_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_chat_app_generates_session_id(temp_db_path: Path):
-    """Test that ChatApp generates a UUID session_id on mount."""
-    from haiku.rag.chat.app import ChatApp
-
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
-        app = ChatApp(temp_db_path, read_only=True)
-
-        async with app.run_test():
-            assert app.session_state.session_id != ""
-
-
-@pytest.mark.asyncio
 async def test_clear_chat_resets_session(temp_db_path: Path):
-    """Test that clearing chat resets the session state with a new session_id."""
+    """Test that clearing chat resets the session state."""
     from haiku.rag.chat.app import ChatApp
     from haiku.rag.chat.widgets.chat_history import ChatHistory
 
@@ -282,10 +266,6 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             await chat_history.add_message("assistant", "Hi there")
             assert len(chat_history.messages) == 2
 
-            # Record the original session_id
-            original_session_id = app.session_state.session_id
-            assert original_session_id != ""
-
             # Clear chat via action (available through command palette)
             await app.action_clear_chat()
             await pilot.pause()
@@ -293,10 +273,8 @@ async def test_clear_chat_resets_session(temp_db_path: Path):
             # Verify messages cleared
             assert len(chat_history.messages) == 0
 
-            # Verify session state reset with a new session_id
+            # Verify session state reset
             assert app.session_state is not None
-            assert app.session_state.session_id != ""
-            assert app.session_state.session_id != original_session_id
             assert app.session_state.qa_history == []
             assert app.session_state.citations == []
 
@@ -326,7 +304,6 @@ async def test_handle_stream_event_extracts_citations_from_state_snapshot(
                 type=EventType.STATE_SNAPSHOT,
                 snapshot={
                     AGUI_STATE_KEY: {
-                        "session_id": "test",
                         "citations": [
                             {
                                 "index": 1,
@@ -392,7 +369,6 @@ async def test_handle_stream_event_extracts_citations_from_state_delta(
                 type=EventType.STATE_SNAPSHOT,
                 snapshot={
                     AGUI_STATE_KEY: {
-                        "session_id": "test",
                         "citations": [],
                         "qa_history": [],
                         "citation_registry": {},
@@ -479,7 +455,6 @@ async def test_handle_stream_event_delta_with_preinitialized_state(
             # Pre-initialize _agui_state_snapshot (simulating what _run_agent does)
             app._agui_state_snapshot = {
                 AGUI_STATE_KEY: {
-                    "session_id": "test",
                     "citations": [],
                     "qa_history": [],
                     "citation_registry": {},
@@ -552,7 +527,6 @@ async def test_handle_stream_event_syncs_session_context(temp_db_path: Path):
             # Pre-initialize state
             app._agui_state_snapshot = {
                 AGUI_STATE_KEY: {
-                    "session_id": "test",
                     "citations": [],
                     "qa_history": [],
                     "citation_registry": {},

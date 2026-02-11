@@ -1,12 +1,8 @@
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import Agent
 
-from haiku.rag.agents.chat.context import (
-    get_cached_session_context,
-)
 from haiku.rag.agents.chat.context import (
     trigger_background_summarization as _trigger_summarization,
 )
@@ -47,7 +43,7 @@ class ChatDeps:
 
     config: AppConfig
     tool_context: ToolContext
-    session_id: str = ""
+    is_new: bool = True
     state_key: str | None = None
 
     @property
@@ -78,59 +74,57 @@ class ChatDeps:
                 state_data = nested
 
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        if session_state is not None:
-            if "document_filter" in state_data:
-                session_state.document_filter = state_data.get("document_filter", [])
-            if "citation_registry" in state_data:
-                session_state.citation_registry = state_data["citation_registry"]
-            if "citations" in state_data:
-                from haiku.rag.agents.research.models import Citation
 
-                session_state.citations = [
-                    Citation(**c) if isinstance(c, dict) else c
-                    for c in state_data.get("citations", [])
-                ]
+        if self.is_new:
+            # First request for this context: fully populate from client state
+            if session_state is not None:
+                if "document_filter" in state_data:
+                    session_state.document_filter = state_data.get(
+                        "document_filter", []
+                    )
+                if "citation_registry" in state_data:
+                    session_state.citation_registry = state_data["citation_registry"]
+                if "citations" in state_data:
+                    from haiku.rag.agents.research.models import Citation
 
-        # Restore session_id from client or generate one
-        client_session_id = state_data.get("session_id", "")
-        if client_session_id:
-            self.session_id = client_session_id
-        elif not self.session_id:
-            self.session_id = str(uuid.uuid4())
+                    session_state.citations = [
+                        Citation(**c) if isinstance(c, dict) else c
+                        for c in state_data.get("citations", [])
+                    ]
 
-        if session_state is not None:
-            session_state.session_id = self.session_id
+            qa_session_state = self.tool_context.get(
+                QA_SESSION_NAMESPACE, QASessionState
+            )
+            if qa_session_state is not None:
+                if "qa_history" in state_data:
+                    from haiku.rag.tools.qa import QAHistoryEntry
 
-        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
-        if qa_session_state is not None:
-            if "qa_history" in state_data:
-                from haiku.rag.tools.qa import QAHistoryEntry
+                    qa_session_state.qa_history = [
+                        QAHistoryEntry(**qa) if isinstance(qa, dict) else qa
+                        for qa in state_data.get("qa_history", [])
+                    ]
 
-                qa_session_state.qa_history = [
-                    QAHistoryEntry(**qa) if isinstance(qa, dict) else qa
-                    for qa in state_data.get("qa_history", [])
-                ]
+                # Restore session_context from client
+                session_context = state_data.get("session_context")
+                if isinstance(session_context, dict):
+                    qa_session_state.session_context = SessionContext(
+                        **session_context
+                    ).summary
+                elif session_context is None:
+                    qa_session_state.session_context = None
 
-            # Restore session_context from client
-            session_context = state_data.get("session_context")
-            if isinstance(session_context, dict):
-                qa_session_state.session_context = SessionContext(
-                    **session_context
-                ).summary
-            elif session_context is None:
-                qa_session_state.session_context = None
-
-            # Check cache for fresher session_context from background summarization
-            if self.session_id:
-                cached = get_cached_session_context(self.session_id)
-                if cached and cached.summary:
-                    qa_session_state.session_context = cached.summary
-
-            # Handle initial_context -> session_context for first message
-            if "initial_context" in state_data:
-                initial = state_data.get("initial_context")
-                if initial and not qa_session_state.session_context:
-                    qa_session_state.session_context = initial
+                # Handle initial_context -> session_context for first message
+                if "initial_context" in state_data:
+                    initial = state_data.get("initial_context")
+                    if initial and not qa_session_state.session_context:
+                        qa_session_state.session_context = initial
+        else:
+            # Returning request: only merge client-controlled fields
+            if session_state is not None:
+                if "document_filter" in state_data:
+                    session_state.document_filter = state_data.get(
+                        "document_filter", []
+                    )
 
 
 def create_chat_agent(
@@ -204,22 +198,16 @@ def trigger_background_summarization(deps: ChatDeps) -> None:
     Call this after agent.run() or agent.run_stream() completes to update
     the session context summary in the background.
 
-    Note: The ask() tool now triggers summarization internally, so this
-    function is primarily for explicit triggering when needed.
-
     Args:
         deps: Chat dependencies with tool_context containing QASessionState.
     """
     qa_session_state = deps.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
     if qa_session_state is None or not qa_session_state.qa_history:
         return
-    if not deps.session_id:
-        return
 
     _trigger_summarization(
         qa_session_state=qa_session_state,
         config=deps.config,
-        session_id=deps.session_id,
     )
 
 

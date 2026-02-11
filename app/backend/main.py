@@ -20,9 +20,12 @@ from haiku.rag.agents.chat import (
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.tools import ToolContext
+from haiku.rag.tools.context import ToolContextCache
 
 load_dotenv(find_dotenv(usecwd=True))
+
+# Cache ToolContext instances by thread_id across requests
+context_cache = ToolContextCache()
 
 # Configure logfire (only sends data if LOGFIRE_TOKEN is present)
 try:
@@ -68,30 +71,24 @@ def get_client() -> HaikuRAG:
 async def stream_chat(request: Request) -> Response:
     """Chat streaming endpoint with AG-UI protocol.
 
-    This endpoint is stateless - all state flows via AG-UI protocol:
-    - Fresh ToolContext created per request
-    - AGUIAdapter restores state via ChatDeps.state setter
-    - ChatDeps generates session_id if not provided
-    - Ask tool triggers background summarization internally
-    - ChatDeps.state getter emits final state in response
+    Uses ToolContextCache to maintain state across requests for the same thread.
+    AGUIAdapter restores client-sent state via ChatDeps.state setter.
     """
     body = await request.body()
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    # Fresh context per request - state restored by AGUIAdapter via ChatDeps.state setter
-    context = ToolContext()
+    thread_id = getattr(run_input, "thread_id", None) or "default"
+    context, is_new = context_cache.get_or_create(thread_id)
     agent = create_chat_agent(Config, get_client(), context)
 
     deps = ChatDeps(
         config=Config,
         tool_context=context,
+        is_new=is_new,
         state_key=AGUI_STATE_KEY,
     )
 
-    # Use AGUIAdapter for streaming
-    # State restoration happens automatically via ChatDeps.state setter
-    # Background summarization triggered by ask() tool internally
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(deps=deps)
     sse_event_stream = adapter.encode_stream(event_stream)

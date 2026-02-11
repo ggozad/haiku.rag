@@ -24,7 +24,6 @@ class SessionContext(BaseModel):
 class ChatSessionState(BaseModel):
     """State shared between frontend and agent via AG-UI."""
 
-    session_id: str = ""
     initial_context: str | None = None
     citations: list[Citation] = []
     qa_history: list["QAHistoryEntry"] = []
@@ -56,12 +55,11 @@ def build_chat_state_snapshot(
     Returns:
         Snapshot dict.
     """
-    snapshot: dict[str, Any] = {"session_id": ""}
+    snapshot: dict[str, Any] = {}
 
     if session_state is not None:
         snapshot.update(
             {
-                "session_id": session_state.session_id,
                 "document_filter": session_state.document_filter.copy(),
                 "citation_registry": session_state.citation_registry.copy(),
                 "citations": [c.model_dump() for c in session_state.citations],

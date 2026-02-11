@@ -57,7 +57,7 @@ def test_citation_registry_stability():
 def test_citation_registry_serialization_roundtrip():
     """Test citation_registry serializes and deserializes correctly for AG-UI state."""
     # Create state and assign indices
-    original = ChatSessionState(session_id="test")
+    original = ChatSessionState()
     original.citation_registry = {"chunk-a": 1, "chunk-b": 2}
 
     # Serialize
@@ -68,22 +68,6 @@ def test_citation_registry_serialization_roundtrip():
     # Deserialize (simulating AG-UI state restoration)
     restored = ChatSessionState.model_validate(state_dict)
     assert restored.citation_registry == {"chunk-a": 1, "chunk-b": 2}
-
-
-def test_chat_session_state_defaults_to_empty_session_id():
-    """New ChatSessionState should default to empty session_id.
-
-    Tools in agent.py detect the empty string and assign a UUID,
-    which then appears in the state delta so clients receive it.
-    """
-    state = ChatSessionState()
-    assert state.session_id == ""
-
-
-def test_chat_session_state_preserves_explicit_session_id():
-    """Explicit session_id should be preserved."""
-    state = ChatSessionState(session_id="my-custom-id")
-    assert state.session_id == "my-custom-id"
 
 
 def test_chat_session_state_initial_context_default_none():
@@ -101,7 +85,6 @@ def test_chat_session_state_initial_context_preserved():
 def test_chat_session_state_initial_context_serialization():
     """initial_context should serialize and deserialize correctly."""
     state = ChatSessionState(
-        session_id="test-123",
         initial_context="User is working on authentication",
     )
     state_dict = state.model_dump()
@@ -121,7 +104,6 @@ def test_chat_session_state_model_dump_json_serializes_datetime():
     from datetime import datetime
 
     session_state = ChatSessionState(
-        session_id="test",
         session_context=SessionContext(
             summary="Test summary",
             last_updated=datetime(2025, 1, 27, 12, 0, 0),

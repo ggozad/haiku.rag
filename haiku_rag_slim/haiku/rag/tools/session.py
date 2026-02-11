@@ -13,13 +13,11 @@ class SessionState(BaseModel):
     """Session-level state for AG-UI integration.
 
     This state is shared across toolsets and enables:
-    - Session identification
     - Dynamic document filtering
     - Stable citation indices across tool calls
     - AG-UI state synchronization
     """
 
-    session_id: str = ""
     document_filter: list[str] = []
     citation_registry: dict[str, int] = {}
     citations: list[Citation] = []

@@ -107,10 +107,9 @@ def test_chat_deps_state_without_qa(temp_db_path):
     context = ToolContext()
     create_chat_agent(Config, client, context, features=[FEATURE_SEARCH])
 
-    deps = ChatDeps(config=Config, tool_context=context, session_id="test")
+    deps = ChatDeps(config=Config, tool_context=context)
     state = deps.state
 
-    assert "session_id" in state
     # SessionState fields should be present
     assert "document_filter" in state
     assert "citation_registry" in state

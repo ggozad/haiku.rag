@@ -169,7 +169,6 @@ class ChatApp(App):
 
         # Keep ChatSessionState for UI state sync (used by _sync_session_state)
         self.session_state = ChatSessionState(
-            session_id=str(uuid.uuid4()),
             initial_context=self._initial_context,
             document_filter=self._document_filter,
         )
@@ -191,8 +190,6 @@ class ChatApp(App):
         from haiku.rag.agents.research.models import Citation
 
         # Update specific fields rather than replacing the entire state
-        if "session_id" in chat_state:
-            self.session_state.session_id = chat_state["session_id"]
         if "document_filter" in chat_state:
             self.session_state.document_filter = chat_state["document_filter"]
         if "citation_registry" in chat_state:
@@ -322,7 +319,6 @@ class ChatApp(App):
             # Sync session state to tool context before running
             session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
             if session_state is not None:
-                session_state.session_id = self.session_state.session_id
                 session_state.document_filter = self.session_state.document_filter
                 session_state.citation_registry = self.session_state.citation_registry
                 session_state.citations = list(self.session_state.citations)
@@ -345,7 +341,7 @@ class ChatApp(App):
             deps = ChatDeps(
                 config=self.config,
                 tool_context=self.tool_context,
-                session_id=self.session_state.session_id,
+                is_new=False,
                 state_key=AGUI_STATE_KEY,
             )
 
@@ -414,7 +410,6 @@ class ChatApp(App):
         # Reset context lock and session state (reset to CLI value)
         self._context_locked = False
         self.session_state = ChatSessionState(
-            session_id=str(uuid.uuid4()),
             initial_context=self._initial_context,
             document_filter=self._document_filter,
         )

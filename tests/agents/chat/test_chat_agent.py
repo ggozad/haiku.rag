@@ -9,10 +9,7 @@ from haiku.rag.agents.chat import (
     ChatSessionState,
     create_chat_agent,
 )
-from haiku.rag.agents.chat.context import (
-    _summarization_tasks,
-    get_cached_session_context,
-)
+from haiku.rag.agents.chat.context import _summarization_tasks
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -38,9 +35,7 @@ def extract_state_from_result(result, state_key: str = AGUI_STATE_KEY) -> dict |
                         elif isinstance(meta, StateDeltaEvent):
                             # Apply delta to empty state to get final state
                             empty_state = {
-                                state_key: ChatSessionState(session_id="").model_dump(
-                                    mode="json"
-                                )
+                                state_key: ChatSessionState().model_dump(mode="json")
                             }
                             patched = jsonpatch.apply_patch(empty_state, meta.delta)
                             return patched.get(state_key)
@@ -69,7 +64,7 @@ def test_chat_deps_initialization(temp_db_path):
 
     assert deps.config is Config
     assert deps.tool_context is context
-    assert deps.session_id == ""
+    assert deps.is_new is True
     assert deps.state_key is None
 
 
@@ -109,7 +104,6 @@ def test_chat_deps_state_setter_handles_initial_context():
     # Client sends initial_context with no session_context
     incoming_state = {
         AGUI_STATE_KEY: {
-            "session_id": "",
             "initial_context": "Background info about the project",
             "session_context": None,
             "qa_history": [],
@@ -140,7 +134,6 @@ def test_chat_deps_state_setter_parses_session_context_dict():
     # Client sends session_context as a dict (as it comes from JSON)
     incoming_state = {
         AGUI_STATE_KEY: {
-            "session_id": "test-session",
             "session_context": {
                 "summary": "Previous conversation summary",
                 "last_updated": "2025-01-27T12:00:00",
@@ -160,44 +153,9 @@ def test_chat_deps_state_setter_parses_session_context_dict():
     assert qa_session_state.session_context == "Previous conversation summary"
 
 
-def test_chat_deps_state_setter_generates_session_id():
-    """Test ChatDeps.state setter generates session_id if client sends empty."""
-    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
-
-    context = ToolContext()
-    context.register(QA_SESSION_NAMESPACE, QASessionState())
-    context.register(SESSION_NAMESPACE, SessionState())
-
-    deps = ChatDeps(config=Config, tool_context=context, state_key=AGUI_STATE_KEY)
-
-    # Client sends empty session_id
-    incoming_state = {
-        AGUI_STATE_KEY: {
-            "session_id": "",
-            "session_context": None,
-            "qa_history": [],
-            "citations": [],
-            "document_filter": [],
-            "citation_registry": {},
-        }
-    }
-
-    deps.state = incoming_state
-
-    # session_id should be generated (UUID format)
-    assert deps.session_id != ""
-    assert len(deps.session_id) == 36  # UUID length with dashes
-
-    # Should also be synced to SessionState
-    session_state = context.get(SESSION_NAMESPACE)
-    assert isinstance(session_state, SessionState)
-    assert session_state.session_id == deps.session_id
-
-
 def test_chat_session_state():
     """Test ChatSessionState model."""
-    state = ChatSessionState(session_id="test-session")
-    assert state.session_id == "test-session"
+    state = ChatSessionState()
     assert state.citations == []
     assert state.qa_history == []
 
@@ -356,7 +314,6 @@ async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
         deps = ChatDeps(
             config=Config,
             tool_context=context,
-            session_id="test-search",
         )
 
         # Ask something that should trigger the search tool
@@ -391,7 +348,6 @@ async def test_chat_agent_search_tool_with_filter(allow_model_requests, temp_db_
         deps = ChatDeps(
             config=Config,
             tool_context=context,
-            session_id="test-search-filter",
         )
 
         # Ask to search within a specific document
@@ -503,10 +459,16 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
 async def test_chat_agent_ask_triggers_background_summarization(
     allow_model_requests, temp_db_path
 ):
-    """Test that the ask tool triggers background session context summarization."""
-    import asyncio
+    """Test that the ask tool triggers background session context summarization.
 
-    from haiku.rag.agents.chat.agent import run_chat_agent
+    Patches the internal trigger in run_qa_core to avoid concurrent HTTP calls
+    that break VCR cassette replay ordering. Triggers summarization explicitly
+    after the agent run completes.
+    """
+    from unittest.mock import patch
+
+    from haiku.rag.agents.chat.agent import trigger_background_summarization
+    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         await client.create_document(
@@ -520,33 +482,31 @@ async def test_chat_agent_ask_triggers_background_summarization(
         deps = ChatDeps(
             config=Config,
             tool_context=context,
-            session_id="test-summarization",
             state_key=AGUI_STATE_KEY,
         )
 
-        # Ask a question using run_chat_agent to trigger background summarization
-        result = await run_chat_agent(
-            agent,
-            deps,
-            "What is the highest count class in the DocLayNet dataset?",
-        )
+        # Patch internal trigger to avoid concurrent HTTP calls during VCR
+        with patch("haiku.rag.tools.qa.trigger_background_summarization"):
+            result = await agent.run(
+                "What is the highest count class in the DocLayNet dataset?",
+                deps=deps,
+            )
 
-        assert result is not None
+        assert result.output is not None
+
+        # Trigger summarization explicitly (sequential, deterministic)
+        trigger_background_summarization(deps)
 
         # Wait for background task to complete
-        # The task caches session_context server-side
-        session_id = deps.session_id
-        cached_context = None
-        for _ in range(50):  # Wait up to 5 seconds
-            cached_context = get_cached_session_context(session_id)
-            if cached_context is not None:
-                break
-            await asyncio.sleep(0.1)
+        qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
+        assert qa_session_state is not None
+        key = id(qa_session_state)
+        if key in _summarization_tasks:
+            await _summarization_tasks[key]
 
         # Verify session_context was populated by background task
-        assert cached_context is not None
-        assert cached_context.summary != ""
-        assert cached_context.last_updated is not None
+        assert qa_session_state.session_context is not None
+        assert qa_session_state.session_context != ""
 
 
 @pytest.mark.asyncio
@@ -592,7 +552,6 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
         # Set initial state with initial_context (mimicking AG-UI client)
         deps.state = {
             AGUI_STATE_KEY: {
-                "session_id": "",
                 "initial_context": "The user is researching the DocLayNet dataset for a paper on document layout analysis.",
                 "session_context": None,
                 "qa_history": [],
@@ -601,10 +560,6 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
                 "citation_registry": {},
             }
         }
-
-        # session_id should be auto-generated
-        assert deps.session_id != ""
-        session_id = deps.session_id
 
         # initial_context should be transferred to QASessionState
         qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
@@ -628,12 +583,12 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
 
         # Trigger summarization explicitly (sequential, no concurrency)
         trigger_background_summarization(deps)
-        if session_id in _summarization_tasks:
-            await _summarization_tasks[session_id]
+        key = id(qa_session)
+        if key in _summarization_tasks:
+            await _summarization_tasks[key]
 
-        cached_context = get_cached_session_context(session_id)
-        assert cached_context is not None
-        assert cached_context.summary != ""
+        assert qa_session.session_context is not None
+        assert qa_session.session_context != ""
 
         # qa_history should have one entry
         qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
@@ -653,18 +608,18 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
 
         # Trigger summarization explicitly
         trigger_background_summarization(deps)
-        if session_id in _summarization_tasks:
-            await _summarization_tasks[session_id]
-
-        # qa_history should have two entries
         qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
         assert qa_session is not None
+        key = id(qa_session)
+        if key in _summarization_tasks:
+            await _summarization_tasks[key]
+
+        # qa_history should have two entries
         assert len(qa_session.qa_history) >= 2
 
         # Session context should be updated with newer summary
-        updated = get_cached_session_context(session_id)
-        assert updated is not None
-        assert updated.summary != ""
+        assert qa_session.session_context is not None
+        assert qa_session.session_context != ""
 
 
 @pytest.mark.asyncio
@@ -740,7 +695,6 @@ def test_fifo_limit_enforcement():
     ]
 
     session_state = ChatSessionState(
-        session_id="test-fifo",
         qa_history=qa_history,
     )
 
@@ -759,7 +713,6 @@ def test_fifo_limit_enforcement():
 def test_chat_session_state_document_filter():
     """Test ChatSessionState with document_filter."""
     state = ChatSessionState(
-        session_id="test-filter",
         document_filter=["doc1.pdf", "doc2.pdf"],
     )
     assert state.document_filter == ["doc1.pdf", "doc2.pdf"]
@@ -767,7 +720,7 @@ def test_chat_session_state_document_filter():
 
 def test_chat_session_state_document_filter_default_empty():
     """Test ChatSessionState document_filter defaults to empty list."""
-    state = ChatSessionState(session_id="test")
+    state = ChatSessionState()
     assert state.document_filter == []
 
 
@@ -801,7 +754,6 @@ async def test_chat_agent_search_with_session_filter(
         deps = ChatDeps(
             config=Config,
             tool_context=context,
-            session_id="test-session-filter",
         )
 
         # Search should only return results from the filtered document
@@ -1032,7 +984,7 @@ def test_qa_response_embedding_default_none():
 
 @pytest.mark.asyncio
 async def test_summarization_task_cancellation():
-    """Test that new summarization tasks cancel previous ones for same session."""
+    """Test that new summarization tasks cancel previous ones for same state object."""
     import asyncio
 
     from haiku.rag.agents.chat.context import _summarization_tasks
@@ -1040,7 +992,7 @@ async def test_summarization_task_cancellation():
     # Clear any existing tasks
     _summarization_tasks.clear()
 
-    session_id = "test-cancel-session"
+    key = 12345  # Simulates id(qa_session_state)
 
     # Create a slow task that simulates summarization
     async def slow_task():
@@ -1048,18 +1000,18 @@ async def test_summarization_task_cancellation():
 
     # Start first task
     task1 = asyncio.create_task(slow_task())
-    _summarization_tasks[session_id] = task1
+    _summarization_tasks[key] = task1
 
     # Simulate what happens when second ask comes in - cancel first task
-    if session_id in _summarization_tasks:
-        _summarization_tasks[session_id].cancel()
+    if key in _summarization_tasks:
+        _summarization_tasks[key].cancel()
 
     # Yield to let cancellation propagate
     await asyncio.sleep(0)
 
     # Start second task
     task2 = asyncio.create_task(slow_task())
-    _summarization_tasks[session_id] = task2
+    _summarization_tasks[key] = task2
 
     # First task should be cancelled
     assert task1.cancelled() or task1.done()
@@ -1143,7 +1095,6 @@ async def test_list_documents_with_session_filter(allow_model_requests, temp_db_
         deps = ChatDeps(
             config=Config,
             tool_context=context,
-            session_id="test-list-filter",
         )
 
         # Ask to list documents - should only show filtered documents
@@ -1320,18 +1271,18 @@ async def test_summarization_task_cleanup_on_completion():
 
     _summarization_tasks.clear()
 
-    session_id = "test-cleanup-session"
+    key = 67890  # Simulates id(qa_session_state)
 
     # Create a fast task
     async def fast_task():
         await asyncio.sleep(0.01)
 
     task = asyncio.create_task(fast_task())
-    _summarization_tasks[session_id] = task
-    task.add_done_callback(lambda t: _summarization_tasks.pop(session_id, None))
+    _summarization_tasks[key] = task
+    task.add_done_callback(lambda t: _summarization_tasks.pop(key, None))
 
     # Wait for completion
     await task
 
     # Task should be cleaned up
-    assert session_id not in _summarization_tasks
+    assert key not in _summarization_tasks
