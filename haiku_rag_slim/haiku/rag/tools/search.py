@@ -68,8 +68,10 @@ def create_search_toolset(
         """
         session_state: SessionState | None = None
         old_session_state: SessionState | None = None
+        state_key: str | None = None
         if context is not None:
             session_state = context.get(SESSION_NAMESPACE, SessionState)
+            state_key = context.state_key
             if session_state is not None:
                 old_session_state = session_state.model_copy(deep=True)
 
@@ -130,7 +132,11 @@ def create_search_toolset(
             formatted = f"Found {len(results)} results:\n\n" + "\n\n".join(result_lines)
 
             if old_session_state is not None:
-                state_event = compute_state_delta(old_session_state, session_state)
+                state_event = compute_state_delta(
+                    old_session_state,
+                    session_state,
+                    state_key=state_key,
+                )
                 if state_event is not None:
                     return ToolReturn(
                         return_value=formatted,

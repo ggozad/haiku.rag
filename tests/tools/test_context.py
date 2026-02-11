@@ -201,3 +201,114 @@ def test_get_without_type():
 
     result = ctx.get("ns")
     assert result is state
+
+
+def test_tool_context_state_key_default_none():
+    """Test ToolContext state_key defaults to None."""
+    ctx = ToolContext()
+    assert ctx.state_key is None
+
+
+def test_tool_context_state_key_set():
+    """Test ToolContext state_key can be set."""
+    ctx = ToolContext()
+    ctx.state_key = "haiku.rag.chat"
+    assert ctx.state_key == "haiku.rag.chat"
+
+
+# =============================================================================
+# ToolContextCache Tests
+# =============================================================================
+
+
+def test_tool_context_cache_get_or_create_new():
+    """Test get_or_create returns a new context with is_new=True."""
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache()
+    context, is_new = cache.get_or_create("thread-1")
+
+    assert isinstance(context, ToolContext)
+    assert is_new is True
+
+
+def test_tool_context_cache_get_or_create_existing():
+    """Test get_or_create returns existing context with is_new=False."""
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache()
+    ctx1, is_new1 = cache.get_or_create("thread-1")
+    ctx2, is_new2 = cache.get_or_create("thread-1")
+
+    assert ctx2 is ctx1
+    assert is_new1 is True
+    assert is_new2 is False
+
+
+def test_tool_context_cache_different_keys():
+    """Test get_or_create returns different contexts for different keys."""
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache()
+    ctx1, _ = cache.get_or_create("thread-1")
+    ctx2, _ = cache.get_or_create("thread-2")
+
+    assert ctx1 is not ctx2
+
+
+def test_tool_context_cache_ttl_expiry():
+    """Test that contexts are evicted after TTL expires."""
+    from datetime import timedelta
+
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache(ttl=timedelta(seconds=0))
+    ctx1, _ = cache.get_or_create("thread-1")
+
+    # With zero TTL, next access should create a new context
+    ctx2, is_new = cache.get_or_create("thread-1")
+
+    assert ctx2 is not ctx1
+    assert is_new is True
+
+
+def test_tool_context_cache_remove():
+    """Test remove deletes a specific key."""
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache()
+    cache.get_or_create("thread-1")
+    cache.get_or_create("thread-2")
+
+    cache.remove("thread-1")
+
+    ctx, is_new = cache.get_or_create("thread-1")
+    assert is_new is True
+
+    # thread-2 should still exist
+    ctx2, is_new2 = cache.get_or_create("thread-2")
+    assert is_new2 is False
+
+
+def test_tool_context_cache_remove_nonexistent():
+    """Test remove handles nonexistent key gracefully."""
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache()
+    cache.remove("nonexistent")  # Should not raise
+
+
+def test_tool_context_cache_clear():
+    """Test clear removes all entries."""
+    from haiku.rag.tools.context import ToolContextCache
+
+    cache = ToolContextCache()
+    cache.get_or_create("thread-1")
+    cache.get_or_create("thread-2")
+
+    cache.clear()
+
+    ctx1, is_new1 = cache.get_or_create("thread-1")
+    ctx2, is_new2 = cache.get_or_create("thread-2")
+    assert is_new1 is True
+    assert is_new2 is True

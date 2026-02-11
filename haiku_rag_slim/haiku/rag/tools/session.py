@@ -24,7 +24,6 @@ class SessionState(BaseModel):
     document_filter: list[str] = []
     citation_registry: dict[str, int] = {}
     citations: list[Citation] = []
-    state_key: str | None = Field(default=None, exclude=True)
 
     def get_or_assign_index(self, chunk_id: str) -> int:
         """Get or assign a stable citation index for a chunk_id.
@@ -44,16 +43,16 @@ class SessionState(BaseModel):
 def compute_state_delta(
     old_state: SessionState,
     new_state: SessionState,
+    state_key: str | None = None,
 ) -> StateDeltaEvent | None:
     """Compute state delta between old and new session state.
 
     Returns a StateDeltaEvent if there are changes, None otherwise.
-    The state_key from new_state is used for namespacing.
     """
     return compute_combined_state_delta(
         old_state.model_dump(mode="json"),
         new_state.model_dump(mode="json"),
-        state_key=new_state.state_key,
+        state_key=state_key,
     )
 
 

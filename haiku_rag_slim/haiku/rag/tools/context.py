@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Any, TypeVar, overload
 
 from pydantic import BaseModel, PrivateAttr
@@ -44,6 +45,7 @@ class ToolContext(BaseModel):
         ns_data = context.dump_namespaces()
     """
 
+    state_key: str | None = None
     _namespaces: dict[str, BaseModel] = PrivateAttr(default_factory=dict)
 
     def register(self, namespace: str, state: BaseModel) -> None:
@@ -126,3 +128,48 @@ class ToolContext(BaseModel):
         state = state_type.model_validate(data)
         self._namespaces[namespace] = state
         return state
+
+
+class ToolContextCache:
+    """In-memory cache for ToolContext instances, keyed by external session/thread ID."""
+
+    def __init__(self, ttl: timedelta = timedelta(hours=1)) -> None:
+        self._cache: dict[str, ToolContext] = {}
+        self._timestamps: dict[str, datetime] = {}
+        self._ttl = ttl
+
+    def get_or_create(self, key: str) -> tuple[ToolContext, bool]:
+        """Get an existing context or create a new one.
+
+        Returns:
+            Tuple of (context, is_new) where is_new is True if a new context was created.
+        """
+        self._cleanup()
+        if key in self._cache:
+            self._timestamps[key] = datetime.now()
+            return self._cache[key], False
+
+        context = ToolContext()
+        self._cache[key] = context
+        self._timestamps[key] = datetime.now()
+        return context, True
+
+    def remove(self, key: str) -> None:
+        """Remove a specific key from the cache."""
+        self._cache.pop(key, None)
+        self._timestamps.pop(key, None)
+
+    def clear(self) -> None:
+        """Clear all entries."""
+        self._cache.clear()
+        self._timestamps.clear()
+
+    def _cleanup(self) -> None:
+        """Remove entries older than TTL."""
+        now = datetime.now()
+        expired = [
+            key for key, ts in self._timestamps.items() if (now - ts) >= self._ttl
+        ]
+        for key in expired:
+            self._cache.pop(key, None)
+            self._timestamps.pop(key, None)

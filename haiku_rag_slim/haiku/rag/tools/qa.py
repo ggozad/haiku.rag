@@ -281,10 +281,12 @@ def create_qa_toolset(
         session_state: SessionState | None = None
         qa_session_state: QASessionState | None = None
         old_state_snapshot: dict | None = None
+        state_key: str | None = None
 
         if context is not None:
             session_state = context.get(SESSION_NAMESPACE, SessionState)
             qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
+            state_key = context.state_key
 
             # Use incoming values (what client sent) so delta shows server-side updates
             if session_state is not None:
@@ -315,7 +317,7 @@ def create_qa_toolset(
             state_event = build_chat_state_delta(
                 old_state_snapshot,
                 new_state_snapshot,
-                state_key=session_state.state_key,
+                state_key=state_key,
             )
 
             answer_text = qa_result.answer

@@ -180,9 +180,9 @@ def create_chat_agent(
 
     existing = context.get(SESSION_NAMESPACE, SessionState)
     if existing is None:
-        context.register(SESSION_NAMESPACE, SessionState(state_key=AGUI_STATE_KEY))
-    elif existing.state_key is None:
-        existing.state_key = AGUI_STATE_KEY
+        context.register(SESSION_NAMESPACE, SessionState())
+    if context.state_key is None:
+        context.state_key = AGUI_STATE_KEY
 
     if FEATURE_QA in features:
         if context.get(QA_SESSION_NAMESPACE, QASessionState) is None:
