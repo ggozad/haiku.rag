@@ -1,6 +1,7 @@
 import os
-from pathlib import Path
 
+import docker
+import docker.errors
 import pytest
 
 from haiku.rag.agents.rlm.dependencies import RLMContext
@@ -9,18 +10,13 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import RLMConfig
 
 
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_sandbox")
-
-
 def is_docker_available() -> bool:
     """Check if Docker daemon is available."""
     try:
-        import subprocess
-
-        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
-        return result.returncode == 0
+        client = docker.from_env()
+        client.ping()
+        client.close()
+        return True
     except Exception:
         return False
 
@@ -81,15 +77,14 @@ class TestDockerSandboxErrors:
         async with HaikuRAG(temp_db_path, create=True) as client:
             config = RLMConfig(docker_image="nonexistent-image:v999.999.999")
             context = RLMContext()
-            async with DockerSandbox(
-                client=client, config=config, context=context, image=config.docker_image
-            ) as sandbox:
-                result = await sandbox.execute("print('hello')")
-                assert not result.success
-                assert (
-                    "not found" in result.stderr.lower()
-                    or "error" in result.stderr.lower()
-                )
+            with pytest.raises(docker.errors.ImageNotFound):
+                async with DockerSandbox(
+                    client=client,
+                    config=config,
+                    context=context,
+                    image=config.docker_image,
+                ) as sandbox:
+                    await sandbox.execute("print('hello')")
 
 
 @pytest.mark.integration
@@ -108,7 +103,6 @@ class TestDockerSandboxHaikuRAG:
 
     @docker_required
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_list_documents_with_data(self, temp_db_path, test_docker_image):
         """Test list_documents returns documents when populated."""
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -132,10 +126,9 @@ class TestDockerSandboxHaikuRAG:
 
     @docker_required
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     @pytest.mark.skipif(
         os.environ.get("CI") == "true",
-        reason="Requires Ollama - VCR can't capture calls from inside Docker",
+        reason="Requires Ollama running inside Docker container",
     )
     async def test_search_with_data(self, temp_db_path, test_docker_image):
         """Test search function works."""
@@ -163,7 +156,6 @@ class TestDockerSandboxHaikuRAG:
 
     @docker_required
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_get_document(self, temp_db_path, test_docker_image):
         """Test get_document function."""
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -202,7 +194,6 @@ class TestDockerSandboxContextFilter:
 
     @docker_required
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_filter_applied_to_list_documents(
         self, temp_db_path, test_docker_image
     ):

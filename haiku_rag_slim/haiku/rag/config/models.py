@@ -106,6 +106,8 @@ class RLMConfig(BaseModel):
     max_output_chars: int = 50_000
     docker_image: str = "ghcr.io/ggozad/haiku.rag-slim:latest"
     docker_memory_limit: str = "512m"
+    docker_host: str | None = None
+    docker_db_path: str | None = None
 
 
 class PictureDescriptionConfig(BaseModel):

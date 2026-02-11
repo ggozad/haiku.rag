@@ -1,9 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **RLM Docker sandbox uses docker-py SDK**: Migrated from subprocess to the `docker` Python SDK for container lifecycle management. This enables support for remote Docker hosts (e.g., GPU servers) via the new `docker_host` and `docker_db_path` config options. The sandbox now communicates with the container over TCP sockets instead of stdin/stdout pipes.
+
 ### Fixed
 
 - **TUI session context not updating**: The Chat TUI now generates a UUID `session_id` on mount and on chat clear, fixing background summarization which requires a non-empty `session_id`.
+- **Flaky RLM integration tests**: Fixed brittle assertions that failed when the LLM expressed numbers as words (e.g., "three" instead of "3").
 
 ## [0.29.1] - 2026-02-10
 
