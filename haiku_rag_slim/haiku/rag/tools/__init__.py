@@ -47,7 +47,6 @@ __all__ = [
     "QASessionState",
     "QAHistoryEntry",
     "create_qa_toolset",
-    "run_qa_core",
     "create_analysis_toolset",
     "SESSION_NAMESPACE",
     "SessionState",

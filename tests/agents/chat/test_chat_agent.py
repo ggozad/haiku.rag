@@ -7,8 +7,6 @@ from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
     ChatSessionState,
-    QAHistoryEntry,
-    ToolContext,
     create_chat_agent,
 )
 from haiku.rag.agents.chat.context import (
@@ -18,7 +16,8 @@ from haiku.rag.agents.chat.context import (
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
-from haiku.rag.tools.qa import MAX_QA_HISTORY
+from haiku.rag.tools import ToolContext
+from haiku.rag.tools.qa import MAX_QA_HISTORY, QAHistoryEntry
 from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 

@@ -195,14 +195,11 @@ class TestUpdateSessionContext:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_update_session_context_updates_state(
+    async def test_update_session_context_returns_context(
         self, allow_model_requests, temp_db_path
     ):
-        """Test update_session_context updates the session_state."""
+        """Test update_session_context returns a populated SessionContext."""
         from haiku.rag.agents.chat.context import update_session_context
-        from haiku.rag.agents.chat.state import ChatSessionState
-
-        session_state = ChatSessionState(session_id="test-session")
 
         qa_history = [
             QAHistoryEntry(
@@ -212,34 +209,26 @@ class TestUpdateSessionContext:
             )
         ]
 
-        await update_session_context(
+        result = await update_session_context(
             qa_history=qa_history,
             config=Config,
-            session_state=session_state,
+            session_id="test-session",
         )
 
-        # session_context should now be populated
-        assert session_state.session_context is not None
-        assert session_state.session_context.summary != ""
-        assert session_state.session_context.last_updated is not None
+        assert result.summary != ""
+        assert result.last_updated is not None
 
     @pytest.mark.asyncio
     async def test_update_session_context_with_empty_history(self):
-        """Test update_session_context with empty history sets empty context."""
+        """Test update_session_context with empty history returns empty summary."""
         from haiku.rag.agents.chat.context import update_session_context
-        from haiku.rag.agents.chat.state import ChatSessionState
 
-        session_state = ChatSessionState(session_id="test-session")
-
-        await update_session_context(
+        result = await update_session_context(
             qa_history=[],
             config=Config,
-            session_state=session_state,
         )
 
-        # session_context should exist but have empty summary
-        assert session_state.session_context is not None
-        assert session_state.session_context.summary == ""
+        assert result.summary == ""
 
 
 class TestSessionContextCache:
@@ -319,11 +308,8 @@ class TestSessionContextCache:
             get_cached_session_context,
             update_session_context,
         )
-        from haiku.rag.agents.chat.state import ChatSessionState
 
         _session_cache.clear()
-
-        session_state = ChatSessionState(session_id="cache-test-session")
 
         qa_history = [
             QAHistoryEntry(
@@ -333,23 +319,21 @@ class TestSessionContextCache:
             )
         ]
 
-        # Mock summarize_session to avoid LLM call (we're testing caching, not summarization)
         with patch(
             "haiku.rag.agents.chat.context.summarize_session",
             new=AsyncMock(return_value="Mocked summary"),
         ):
-            await update_session_context(
+            result = await update_session_context(
                 qa_history=qa_history,
                 config=Config,
-                session_state=session_state,
+                session_id="cache-test-session",
             )
 
-        # Should be cached
+        assert result.summary == "Mocked summary"
+
         cached = get_cached_session_context("cache-test-session")
         assert cached is not None
         assert cached.summary == "Mocked summary"
-        assert session_state.session_context is not None
-        assert cached.summary == session_state.session_context.summary
 
     @pytest.mark.asyncio
     async def test_update_session_context_no_cache_without_session_id(self):
@@ -359,41 +343,24 @@ class TestSessionContextCache:
             get_cached_session_context,
             update_session_context,
         )
-        from haiku.rag.agents.chat.state import ChatSessionState
 
         _session_cache.clear()
-
-        # No session_id
-        session_state = ChatSessionState()
 
         await update_session_context(
             qa_history=[],
             config=Config,
-            session_state=session_state,
         )
 
-        # Nothing should be cached (empty session_id)
+        # Nothing should be cached (no session_id)
         cached = get_cached_session_context("")
         assert cached is None
 
     @pytest.mark.asyncio
-    async def test_update_session_context_uses_initial_context_as_fallback(self):
-        """Test update_session_context uses initial_context when no session_context exists."""
+    async def test_update_session_context_passes_current_context(self):
+        """Test update_session_context passes current_context to summarizer."""
         from unittest.mock import patch
 
-        from haiku.rag.agents.chat.context import (
-            _session_cache,
-            update_session_context,
-        )
-        from haiku.rag.agents.chat.state import ChatSessionState
-
-        _session_cache.clear()
-
-        # Create session_state with initial_context but no session_context
-        session_state = ChatSessionState(
-            session_id="initial-context-test",
-            initial_context="User is working on a Python web application with FastAPI.",
-        )
+        from haiku.rag.agents.chat.context import update_session_context
 
         qa_history = [
             QAHistoryEntry(
@@ -403,7 +370,6 @@ class TestSessionContextCache:
             )
         ]
 
-        # Mock summarize_session to capture what gets passed as current_context
         captured_current_context = []
 
         async def mock_summarize(qa_history, config, current_context=None):
@@ -417,61 +383,8 @@ class TestSessionContextCache:
             await update_session_context(
                 qa_history=qa_history,
                 config=Config,
-                session_state=session_state,
+                current_context="Previous session summary",
             )
 
-        # initial_context should have been passed as current_context
         assert len(captured_current_context) == 1
-        assert (
-            captured_current_context[0]
-            == "User is working on a Python web application with FastAPI."
-        )
-
-    @pytest.mark.asyncio
-    async def test_update_session_context_session_context_takes_precedence(self):
-        """Test session_context.summary takes precedence over initial_context."""
-        from unittest.mock import patch
-
-        from haiku.rag.agents.chat.context import (
-            _session_cache,
-            update_session_context,
-        )
-        from haiku.rag.agents.chat.state import ChatSessionState, SessionContext
-
-        _session_cache.clear()
-
-        # Create session_state with BOTH initial_context and session_context
-        session_state = ChatSessionState(
-            session_id="precedence-test",
-            initial_context="Initial background info",
-            session_context=SessionContext(summary="Evolved session summary"),
-        )
-
-        qa_history = [
-            QAHistoryEntry(
-                question="What is JWT?",
-                answer="JSON Web Token.",
-                confidence=0.95,
-            )
-        ]
-
-        # Mock summarize_session to capture what gets passed as current_context
-        captured_current_context = []
-
-        async def mock_summarize(qa_history, config, current_context=None):
-            captured_current_context.append(current_context)
-            return "Mocked summary"
-
-        with patch(
-            "haiku.rag.agents.chat.context.summarize_session",
-            new=mock_summarize,
-        ):
-            await update_session_context(
-                qa_history=qa_history,
-                config=Config,
-                session_state=session_state,
-            )
-
-        # session_context.summary should take precedence over initial_context
-        assert len(captured_current_context) == 1
-        assert captured_current_context[0] == "Evolved session summary"
+        assert captured_current_context[0] == "Previous session summary"

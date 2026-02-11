@@ -426,3 +426,26 @@ result = await client.rlm(
 The RLM agent writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
 
 See [RLM Agent](rlm.md) for details on capabilities and configuration.
+
+## Building Custom Agents
+
+haiku.rag provides composable toolset factories that can be mixed into any pydantic-ai agent. This lets you build custom agents with exactly the capabilities you need — search, document management, Q&A, or code analysis — sharing state across tools via `ToolContext`.
+
+```python
+from pydantic_ai import Agent
+from haiku.rag.tools import ToolContext, create_search_toolset, create_qa_toolset
+
+async with HaikuRAG("path/to/db.lancedb") as client:
+    context = ToolContext()
+    agent = Agent(
+        "openai:gpt-4o",
+        instructions="You are a helpful assistant.",
+        toolsets=[
+            create_search_toolset(client, config, context=context),
+            create_qa_toolset(client, config, context=context),
+        ],
+    )
+    result = await agent.run("What are the main findings?")
+```
+
+See [Toolsets](tools.md) for the full API reference and composition guide.

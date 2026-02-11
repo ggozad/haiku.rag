@@ -15,12 +15,12 @@ from starlette.routing import Route
 from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
-    ToolContext,
     create_chat_agent,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
+from haiku.rag.tools import ToolContext
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -109,13 +109,9 @@ async def stream_chat(request: Request) -> Response:
 
 async def health_check(_: Request) -> JSONResponse:
     """Health check endpoint."""
-    # Create a temporary agent just for health check
-    context = ToolContext()
-    agent = create_chat_agent(Config, get_client(), context)
     return JSONResponse(
         {
             "status": "healthy",
-            "agent_model": str(agent.model),
             "qa_provider": Config.qa.model.provider,
             "qa_model": Config.qa.model.name,
             "db_path": str(db_path),

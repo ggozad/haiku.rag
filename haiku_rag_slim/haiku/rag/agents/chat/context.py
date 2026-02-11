@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from pydantic_ai import Agent
 
 from haiku.rag.agents.chat.prompts import SESSION_SUMMARY_PROMPT
-from haiku.rag.agents.chat.state import ChatSessionState, SessionContext
+from haiku.rag.agents.chat.state import SessionContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
 
@@ -115,32 +115,30 @@ async def summarize_session(
 async def update_session_context(
     qa_history: list["QAHistoryEntry"],
     config: AppConfig,
-    session_state: ChatSessionState,
-) -> None:
-    """Update session context in the session state.
+    session_id: str = "",
+    current_context: str | None = None,
+) -> SessionContext:
+    """Summarize qa_history and cache the resulting session context.
 
     Args:
         qa_history: List of Q&A pairs from the conversation.
         config: AppConfig for model selection.
-        session_state: The session state to update.
-    """
-    # Use existing session_context summary if available, else initial_context
-    current_context: str | None = None
-    if session_state.session_context and session_state.session_context.summary:
-        current_context = session_state.session_context.summary
-    elif session_state.initial_context:
-        current_context = session_state.initial_context
+        session_id: Session ID for caching. If empty, result is not cached.
+        current_context: Previous summary to incorporate.
 
+    Returns:
+        The new SessionContext with summary and timestamp.
+    """
     summary = await summarize_session(
         qa_history, config, current_context=current_context
     )
-    session_state.session_context = SessionContext(
+    context = SessionContext(
         summary=summary,
         last_updated=datetime.now(),
     )
-    # Also cache for next-run delivery in stateless contexts
-    if session_state.session_id:
-        cache_session_context(session_state.session_id, session_state.session_context)
+    if session_id:
+        cache_session_context(session_id, context)
+    return context
 
 
 def _format_qa_history(qa_history: list["QAHistoryEntry"]) -> str:
@@ -165,23 +163,15 @@ async def _update_context_background(
 ) -> None:
     """Background task to update session context after an ask."""
     try:
-        qa_history = list(qa_session_state.qa_history)
-
-        session_state = ChatSessionState(
-            session_id=session_id,
-            qa_history=qa_history,
-        )
-
-        await update_session_context(
-            qa_history=qa_history,
+        result = await update_session_context(
+            qa_history=list(qa_session_state.qa_history),
             config=config,
-            session_state=session_state,
+            session_id=session_id,
+            current_context=qa_session_state.session_context,
         )
 
-        # Update the QASessionState with the new context
-        cached = get_cached_session_context(session_id)
-        if cached and cached.summary:
-            qa_session_state.session_context = cached.summary
+        if result.summary:
+            qa_session_state.session_context = result.summary
 
     except asyncio.CancelledError:
         pass

@@ -51,25 +51,14 @@ async with HaikuRAG(path_to_db) as client:
 
 ## Chat Agent
 
-The chat agent enables multi-turn conversational RAG. It maintains session state including Q/A history and uses that context to improve follow-up answers.
+The chat agent enables multi-turn conversational RAG. It is built from composable [toolsets](tools.md) and maintains session state to improve follow-up answers.
 
 Key features:
 
-- **Composable toolsets**: Built from reusable `FunctionToolset` factories in `haiku.rag.tools`
-- **Semantic prior answer recall**: The `ask` tool embeds each question and matches it against conversation history — relevant prior answers are passed to the research planner, which can skip searching when they suffice
-- **Background summarization**: After each `ask` call, an async background task summarizes the QA history into a compact session context, cached server-side for the next request
-- **Session context injection**: The session context summary flows into the research planner as `<background>` XML, letting it resolve ambiguous references ("How does *it* handle X?")
-- **Document filtering**: Natural language document filtering ("search in document X about...")
-
-### Tools
-
-The chat agent composes five tools from `haiku.rag.tools`:
-
-- `list_documents` — Browse available documents in the knowledge base
-- `summarize_document` — Generate a summary of a specific document
-- `get_document` — Retrieve a specific document by title or URI
-- `search` — Hybrid search with query expansion and optional document filter
-- `ask` — Answer questions using the conversational research graph
+- **Composable toolsets**: Built from reusable `FunctionToolset` factories — see [Toolsets](tools.md)
+- **Semantic prior answer recall**: Similar prior Q/A pairs are retrieved and passed to the research planner, which can skip searching when they suffice
+- **Background summarization**: After each `ask` call, the QA history is summarized into a compact session context for the next request
+- **Document filtering**: Session-level or per-query document filtering
 
 ### CLI Usage
 
@@ -134,93 +123,31 @@ Available features:
 | QA | `FEATURE_QA` | `ask` |
 | Analysis | `FEATURE_ANALYSIS` | `analyze` |
 
-The system prompt is automatically composed to match the selected features — only guidance for active tools is included. `SessionState` is always registered (shared by all features). `QASessionState` is only registered when the QA feature is active.
+The system prompt is automatically composed to match the selected features. See [Toolsets](tools.md) for details on each toolset's parameters and behavior.
 
 ### Session State
 
 The `ChatSessionState` maintains:
 
 - `session_id` — Unique identifier for the session
-- `qa_history` — List of previous Q/A pairs (FIFO, max 50)
+- `qa_history` — List of previous Q/A pairs
 - `session_context` — Automatically maintained session context summary
 - `document_filter` — List of document titles/URIs to restrict searches
 - `citation_registry` — Stable mapping of chunk IDs to citation indices
 
 **Citation Registry**: Citation indices persist across tool calls within a session. The same `chunk_id` always returns the same citation index (first-occurrence-wins). This ensures consistent citation numbering in multi-turn conversations — `[1]` always refers to the same source.
 
-```python
-# Example: citation indices are stable across calls
-state = ChatSessionState()
-
-# First call returns citations [1], [2], [3]
-# Second call reuses [1] if same chunk, assigns [4], [5] for new chunks
-# User can reference [1] in follow-up and it still refers to original source
-```
-
 ### Conversational Memory
 
-The chat agent maintains two layers of conversational memory that work together:
+The chat agent maintains two layers of conversational memory:
 
 **1. Semantic prior answer recall**
 
-When the `ask` tool receives a question, it:
-
-1. Embeds the new question
-2. Computes cosine similarity against all cached `qa_history` embeddings
-3. Selects prior answers above a 0.7 similarity threshold
-4. Passes them as `prior_answers` to the research graph's `ResearchContext`
-
-The research planner sees these as `<prior_answers>` in its prompt. If the prior answers already cover the question, the planner marks research as complete and skips directly to synthesis — no new searches needed.
-
-Question embeddings are cached per-session to avoid re-embedding on every turn. Uncached embeddings are batch-computed.
+When the `ask` tool receives a question, it embeds the question and compares it against prior Q/A embeddings. Sufficiently similar prior answers are passed to the research planner, which can skip searching entirely if they already cover the question.
 
 **2. Background session summarization**
 
-After each `ask` call completes, `trigger_background_summarization()` spawns an async task that:
-
-1. Formats the full `qa_history` (questions, answers, confidence, sources) as markdown
-2. Sends it to an LLM with the current session context (if any) as input
-3. Produces a compact summary capturing key facts, entities, and document references
-4. Caches the result server-side under the `session_id`
-
-If a new `ask` fires before the previous summarization finishes, the old task is cancelled. On the next request, the cached summary is picked up and injected as `session_context` into the research planner's `<background>` XML.
-
-This means follow-up questions like "Tell me more about the authentication part" resolve correctly even though the planner never saw the original conversation — it has the summary.
-
-### AG-UI Integration
-
-When using the chat agent with AG-UI streaming, state is emitted under a namespaced key to avoid conflicts with other agents:
-
-```python
-from haiku.rag.agents.chat import AGUI_STATE_KEY, ChatDeps
-from haiku.rag.tools import ToolContext
-
-# AGUI_STATE_KEY = "haiku.rag.chat"
-
-context = ToolContext()
-agent = create_chat_agent(config, client, context)
-deps = ChatDeps(
-    config=config,
-    tool_context=context,
-    state_key=AGUI_STATE_KEY,  # Enables namespaced state emission
-)
-```
-
-The emitted state structure:
-
-```json
-{
-  "haiku.rag.chat": {
-    "session_id": "",
-    "citations": [...],
-    "qa_history": [...],
-    "document_filter": [...],
-    "citation_registry": {"chunk-id-1": 1, "chunk-id-2": 2}
-  }
-}
-```
-
-Frontend clients should extract state from under this key. See the [Web Application](apps.md#web-application) for a complete implementation example.
+After each `ask` call, a background task summarizes the full QA history into a compact session context. This summary is injected into the research planner on the next request, allowing it to resolve ambiguous references ("Tell me more about the authentication part") without having seen the full conversation.
 
 ## Research Graph
 

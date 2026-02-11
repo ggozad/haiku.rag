@@ -1,7 +1,6 @@
 from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
-    QAHistoryEntry,
     create_chat_agent,
 )
 from haiku.rag.agents.qa import QuestionAnswerAgent, get_qa_agent
@@ -15,6 +14,7 @@ from haiku.rag.agents.research import (
 )
 from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
+from haiku.rag.tools.qa import QAHistoryEntry
 
 __all__ = [
     # QA
