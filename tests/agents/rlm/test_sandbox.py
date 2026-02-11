@@ -1,13 +1,20 @@
 import os
+from contextlib import AbstractContextManager
+from pathlib import Path
 
 import docker
 import docker.errors
 import pytest
+import vcr
+import vcr.cassette
+from tests import json_body_serializer
 
 from haiku.rag.agents.rlm.dependencies import RLMContext
 from haiku.rag.agents.rlm.docker_sandbox import DockerSandbox, SandboxResult
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import RLMConfig
+
+CASSETTE_DIR = str(Path(__file__).parent.parent.parent / "cassettes" / "test_sandbox")
 
 
 def is_docker_available() -> bool:
@@ -25,6 +32,19 @@ docker_required = pytest.mark.skipif(
     not is_docker_available(),
     reason="Docker daemon not available",
 )
+
+
+def cassette(name: str) -> AbstractContextManager[vcr.cassette.Cassette]:
+    """VCR cassette scoped to embedding calls only (not docker-py)."""
+    v = vcr.VCR()
+    v.register_serializer("yaml", json_body_serializer)
+    return v.use_cassette(
+        f"{CASSETTE_DIR}/{name}.yaml",
+        record_mode="none" if os.environ.get("CI") else "new_episodes",
+        filter_headers=["authorization", "x-api-key"],
+        ignore_hosts=["huggingface.co"],
+        decode_compressed_response=True,
+    )
 
 
 @pytest.mark.integration
@@ -106,11 +126,12 @@ class TestDockerSandboxHaikuRAG:
     async def test_list_documents_with_data(self, temp_db_path, test_docker_image):
         """Test list_documents returns documents when populated."""
         async with HaikuRAG(temp_db_path, create=True) as client:
-            await client.create_document(
-                content="Test content",
-                uri="test://doc1",
-                title="Test Document",
-            )
+            with cassette("test_list_documents_with_data"):
+                await client.create_document(
+                    content="Test content",
+                    uri="test://doc1",
+                    title="Test Document",
+                )
 
             config = RLMConfig(docker_image=test_docker_image)
             context = RLMContext()
@@ -128,7 +149,7 @@ class TestDockerSandboxHaikuRAG:
     @pytest.mark.asyncio
     @pytest.mark.skipif(
         os.environ.get("CI") == "true",
-        reason="Requires Ollama running inside Docker container",
+        reason="Requires Ollama inside Docker container",
     )
     async def test_search_with_data(self, temp_db_path, test_docker_image):
         """Test search function works."""
@@ -159,11 +180,12 @@ class TestDockerSandboxHaikuRAG:
     async def test_get_document(self, temp_db_path, test_docker_image):
         """Test get_document function."""
         async with HaikuRAG(temp_db_path, create=True) as client:
-            doc = await client.create_document(
-                content="Content about foxes and dogs.",
-                uri="test://doc",
-                title="Fox Document",
-            )
+            with cassette("test_get_document"):
+                doc = await client.create_document(
+                    content="Content about foxes and dogs.",
+                    uri="test://doc",
+                    title="Fox Document",
+                )
 
             config = RLMConfig(docker_image=test_docker_image)
             context = RLMContext()
@@ -199,16 +221,17 @@ class TestDockerSandboxContextFilter:
     ):
         """Test that context filter is passed to list_documents."""
         async with HaikuRAG(temp_db_path, create=True) as client:
-            await client.create_document(
-                content="Public content",
-                uri="public://doc1",
-                title="Public Doc",
-            )
-            await client.create_document(
-                content="Private content",
-                uri="private://doc2",
-                title="Private Doc",
-            )
+            with cassette("test_filter_applied_to_list_documents"):
+                await client.create_document(
+                    content="Public content",
+                    uri="public://doc1",
+                    title="Public Doc",
+                )
+                await client.create_document(
+                    content="Private content",
+                    uri="private://doc2",
+                    title="Private Doc",
+                )
 
             config = RLMConfig(docker_image=test_docker_image)
             context = RLMContext(filter="uri LIKE 'public://%'")
