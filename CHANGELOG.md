@@ -21,6 +21,11 @@
 - **AG-UI state sync**: `ask` tool now emits `StateSnapshotEvent` instead of `StateDeltaEvent`, ensuring background summarization results are reliably delivered to clients
 - **TUI simplified**: Chat TUI reads directly from `ToolContext` namespace states instead of maintaining a separate `ChatSessionState` and manually syncing via AG-UI state events
 - **AG-UI web app**: Uses `ToolContextCache` to maintain per-thread state across requests
+- **Frontend session management**: Persistent chat sessions with localStorage, wired to backend `ToolContextCache` via CopilotKit `threadId`
+  - Session manager dropdown: create, switch, delete, and export sessions to markdown
+  - Messages, chat state, and citations restored on session switch
+  - Session title derived from first user message
+  - Inline citation blocks injected after assistant responses via `qa_history` correlation
 
 ### Removed
 

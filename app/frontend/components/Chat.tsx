@@ -1,58 +1,49 @@
 "use client";
 
 import {
-	CopilotKit,
-	useCoAgent,
-	useCoAgentStateRender,
-	useCopilotAction,
-} from "@copilotkit/react-core";
-import { CopilotChat } from "@copilotkit/react-ui";
-import { useState } from "react";
-import "@copilotkit/react-ui/styles.css";
+	CopilotChatMessageView,
+	CopilotChatView,
+	CopilotKitProvider,
+	defineToolCallRenderer,
+	UseAgentUpdate,
+	useAgent,
+	useCopilotKit,
+} from "@copilotkit/react-core/v2";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { BrainIcon, FilterIcon } from "../lib/icons";
+import type { ChatSessionState } from "../lib/sessionStorage";
+import {
+	createSession,
+	getActiveSessionId,
+	getSession,
+	normalizeChatState,
+	updateSessionMessages,
+} from "../lib/sessionStorage";
 import CitationBlock from "./CitationBlock";
 import ContextPanel from "./ContextPanel";
 import DbInfo from "./DbInfo";
 import DocumentFilter from "./DocumentFilter";
+import SessionManager from "./SessionManager";
 
 // Must match AGUI_STATE_KEY from haiku.rag.agents.chat
 const AGUI_STATE_KEY = "haiku.rag.chat";
 
-interface Citation {
-	index: number;
-	document_id: string;
-	chunk_id: string;
-	document_uri: string;
-	document_title: string | null;
-	page_numbers: number[];
-	headings: string[] | null;
-	content: string;
-}
-
-interface QAResponse {
-	question: string;
-	answer: string;
-	confidence: number;
-	citations: Citation[];
-}
-
-interface SessionContext {
-	summary: string;
-	last_updated: string | null;
-}
-
-interface ChatSessionState {
-	session_id: string;
-	initial_context: string | null;
-	citations: Citation[];
-	qa_history: QAResponse[];
-	session_context: SessionContext | null;
-	document_filter: string[];
-	citation_registry: Record<string, number>;
-}
-
 // AG-UI state is namespaced under AGUI_STATE_KEY
 interface AgentState {
 	[AGUI_STATE_KEY]?: ChatSessionState;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: CopilotKit message objects vary at runtime
+function serializeMessages(messages: any[]): any[] {
+	return JSON.parse(JSON.stringify(messages));
 }
 
 function SpinnerIcon() {
@@ -143,31 +134,6 @@ function FileIcon() {
 	);
 }
 
-function BrainIcon() {
-	return (
-		<svg
-			width="18"
-			height="18"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-			<path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-			<path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-			<path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
-			<path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
-			<path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
-			<path d="M19.938 10.5a4 4 0 0 1 .585.396" />
-			<path d="M6 18a4 4 0 0 1-1.967-.516" />
-			<path d="M19.967 17.484A4 4 0 0 1 18 18" />
-		</svg>
-	);
-}
-
 function ToolCallIndicator({
 	toolName,
 	status,
@@ -246,114 +212,6 @@ function ToolCallIndicator({
 
 	return (
 		<div className={`tool-call-card ${isComplete ? "complete" : "loading"}`}>
-			<style>{`
-				@keyframes spin {
-					from { transform: rotate(0deg); }
-					to { transform: rotate(360deg); }
-				}
-				@keyframes fadeIn {
-					from { opacity: 0; transform: translateY(-4px); }
-					to { opacity: 1; transform: translateY(0); }
-				}
-				@keyframes pulse {
-					0%, 100% { opacity: 1; }
-					50% { opacity: 0.6; }
-				}
-				.tool-call-card {
-					display: flex;
-					align-items: flex-start;
-					gap: 12px;
-					padding: 12px 14px;
-					margin: 8px 0;
-					background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-					border-radius: 10px;
-					font-size: 13px;
-					color: #475569;
-					border: 1px solid #e2e8f0;
-					box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-					animation: fadeIn 0.2s ease-out;
-					transition: all 0.2s ease;
-				}
-				.tool-call-card.loading {
-					border-color: #bfdbfe;
-					background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-				}
-				.tool-call-card.complete {
-					border-color: #bbf7d0;
-					background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-				}
-				.tool-status-icon {
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					width: 28px;
-					height: 28px;
-					border-radius: 8px;
-					flex-shrink: 0;
-				}
-				.tool-call-card.loading .tool-status-icon {
-					background: #dbeafe;
-					color: #2563eb;
-				}
-				.tool-call-card.complete .tool-status-icon {
-					background: #bbf7d0;
-					color: #16a34a;
-				}
-				.tool-spinner {
-					animation: spin 1s linear infinite;
-				}
-				.tool-content {
-					flex: 1;
-					min-width: 0;
-				}
-				.tool-header {
-					display: flex;
-					align-items: center;
-					gap: 6px;
-					margin-bottom: 4px;
-				}
-				.tool-badge {
-					display: inline-flex;
-					align-items: center;
-					gap: 4px;
-					padding: 2px 8px;
-					background: rgba(59, 130, 246, 0.1);
-					color: #2563eb;
-					border-radius: 4px;
-					font-size: 11px;
-					font-weight: 600;
-					text-transform: uppercase;
-					letter-spacing: 0.025em;
-				}
-				.tool-call-card.complete .tool-badge {
-					background: rgba(22, 163, 74, 0.1);
-					color: #16a34a;
-				}
-				.tool-status-text {
-					font-size: 11px;
-					color: #94a3b8;
-				}
-				.tool-call-card.loading .tool-status-text {
-					animation: pulse 1.5s ease-in-out infinite;
-				}
-				.tool-description {
-					color: #334155;
-					line-height: 1.5;
-					word-break: break-word;
-				}
-				.tool-query {
-					color: #0f172a;
-					font-weight: 500;
-				}
-				.tool-context {
-					color: #64748b;
-				}
-				.tool-context em {
-					color: #475569;
-					font-style: normal;
-					font-weight: 500;
-				}
-			`}</style>
 			<div className="tool-status-icon">
 				{isComplete ? <CheckIcon /> : <SpinnerIcon />}
 			</div>
@@ -373,60 +231,164 @@ function ToolCallIndicator({
 	);
 }
 
-function FilterIcon() {
+// Context for sharing chat state with the message view
+const ChatStateContext = createContext<ChatSessionState | null>(null);
+
+// Wildcard tool call renderer for all server-side tools
+const toolCallRenderers = [
+	defineToolCallRenderer({
+		name: "*",
+		render: ({ name, args, result }) => (
+			<ToolCallIndicator
+				toolName={name}
+				status={result !== undefined ? "complete" : "loading"}
+				args={(args ?? {}) as Record<string, unknown>}
+			/>
+		),
+	}),
+];
+
+// Custom message view that injects CitationBlocks after assistant responses.
+// Uses CopilotChatMessageView's children render prop to post-process the
+// rendered message elements and inject citations at the right positions.
+function MessageViewWithCitations({
+	messages,
+	isRunning,
+}: {
+	// biome-ignore lint/suspicious/noExplicitAny: AG-UI Message type is a broad union
+	messages: any[];
+	isRunning: boolean;
+}) {
+	const chatState = useContext(ChatStateContext);
+
+	const cursor = isRunning ? (
+		<div key="cursor" className="streaming-cursor">
+			<span className="dot" />
+			<span className="dot" />
+			<span className="dot" />
+		</div>
+	) : null;
+
 	return (
-		<svg
-			width="18"
-			height="18"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-		</svg>
+		<CopilotChatMessageView messages={messages} isRunning={isRunning}>
+			{({ messageElements }) => {
+				if (!chatState?.qa_history?.length) {
+					return (
+						<>
+							{messageElements}
+							{cursor}
+						</>
+					);
+				}
+
+				// CopilotChatMessageView renders one element per user/assistant/activity
+				// message (tool messages produce nothing). We correlate elements with
+				// messages to inject CitationBlocks after the right assistant responses.
+				//
+				// Tool call objects on messages only carry `id` (no `name`), so we
+				// can't identify which tool was called from the message alone. Instead
+				// we rely on the fact that qa_history only grows when the `ask` tool
+				// runs: after each assistant text response that followed tool calls,
+				// we inject any new qa_history citations.
+				const result: React.ReactNode[] = [];
+				let qaIdx = 0;
+				let seenToolCalls = false;
+				let elemIdx = 0;
+
+				for (const msg of messages) {
+					if (msg.role === "user") {
+						seenToolCalls = false;
+					}
+
+					if (
+						msg.role === "assistant" &&
+						Array.isArray(msg.toolCalls) &&
+						msg.toolCalls.length > 0
+					) {
+						seenToolCalls = true;
+					}
+
+					const isRendered =
+						msg.role === "user" ||
+						msg.role === "assistant" ||
+						msg.role === "activity";
+					if (!isRendered) continue;
+
+					if (elemIdx < messageElements.length) {
+						result.push(messageElements[elemIdx]);
+						elemIdx++;
+					}
+
+					// After an assistant text response that followed tool calls,
+					// inject the next qa_history entry's citations (one per turn)
+					if (msg.role === "assistant" && msg.content && seenToolCalls) {
+						if (qaIdx < chatState.qa_history.length) {
+							const qa = chatState.qa_history[qaIdx];
+							if (qa.citations?.length) {
+								result.push(
+									<CitationBlock
+										key={`citations-${qaIdx}`}
+										citations={qa.citations}
+									/>,
+								);
+							}
+							qaIdx++;
+						}
+						seenToolCalls = false;
+					}
+				}
+
+				while (elemIdx < messageElements.length) {
+					result.push(messageElements[elemIdx]);
+					elemIdx++;
+				}
+
+				return (
+					<>
+						{result}
+						{cursor}
+					</>
+				);
+			}}
+		</CopilotChatMessageView>
 	);
 }
 
-function ChatContentInner() {
+function ChatContentInner({
+	sessionId,
+	onSessionChange,
+}: {
+	sessionId: string;
+	onSessionChange: (id: string) => void;
+}) {
 	const [contextOpen, setContextOpen] = useState(false);
 	const [filterOpen, setFilterOpen] = useState(false);
 
-	const { state: agentState, setState: setAgentState } = useCoAgent<AgentState>(
-		{
-			name: "chat_agent",
-			initialState: {
-				[AGUI_STATE_KEY]: {
-					session_id: "",
-					initial_context: null,
-					citations: [],
-					qa_history: [],
-					session_context: null,
-					document_filter: [],
-					citation_registry: {},
-				},
-			},
-		},
+	const { agent } = useAgent({
+		agentId: "chat_agent",
+		updates: [
+			UseAgentUpdate.OnMessagesChanged,
+			UseAgentUpdate.OnStateChanged,
+			UseAgentUpdate.OnRunStatusChanged,
+		],
+	});
+	const { copilotkit: ck } = useCopilotKit();
+
+	// Set threadId (CopilotChat normally does this in its connect effect)
+	useEffect(() => {
+		agent.threadId = sessionId;
+	}, [agent, sessionId]);
+
+	const chatState = normalizeChatState(
+		(agent.state as AgentState)?.[AGUI_STATE_KEY],
 	);
 
-	const normalizeChatState = (
-		state: ChatSessionState | undefined,
-	): ChatSessionState => ({
-		session_id: state?.session_id ?? "",
-		initial_context: state?.initial_context ?? null,
-		citations: state?.citations ?? [],
-		qa_history: state?.qa_history ?? [],
-		session_context: state?.session_context ?? null,
-		document_filter: state?.document_filter ?? [],
-		citation_registry: state?.citation_registry ?? {},
-	});
-
 	const mergeChatState = (partial: Partial<ChatSessionState>) => {
-		const current = normalizeChatState(agentState?.[AGUI_STATE_KEY]);
-		setAgentState({
-			...agentState,
+		const current = normalizeChatState(
+			(agent.state as AgentState)?.[AGUI_STATE_KEY],
+		);
+		agent.setState({
+			...agent.state,
 			[AGUI_STATE_KEY]: {
 				...current,
 				...partial,
@@ -434,14 +396,105 @@ function ChatContentInner() {
 		});
 	};
 
-	// Extract session context, document filter, and initial context from agent state
-	const sessionContext = agentState?.[AGUI_STATE_KEY]?.session_context ?? null;
-	const documentFilter = agentState?.[AGUI_STATE_KEY]?.document_filter ?? [];
-	const initialContext = agentState?.[AGUI_STATE_KEY]?.initial_context ?? "";
+	// Restore session from localStorage when agent reference changes.
+	// useAgent returns a provisional agent initially, then the real agent
+	// after runtime connects — re-run restore each time so messages stick.
+	useEffect(() => {
+		if (agent.messages.length > 0) return;
+		const session = getSession(sessionId);
+		if (!session) return;
+		if (session.chatState) {
+			agent.setState({
+				[AGUI_STATE_KEY]: normalizeChatState(session.chatState),
+			});
+		}
+		if (session.messages.length > 0) {
+			// biome-ignore lint/suspicious/noExplicitAny: AG-UI Message type is a broad union
+			agent.setMessages(session.messages as any[]);
+		}
+	}, [agent, sessionId]);
+
+	// Persist messages and state to localStorage.
+	// Read chatState from agent.state at effect time (not render time) so that
+	// restore and persist effects in the same commit see consistent state.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: JSON.stringify tracks content changes
+	useEffect(() => {
+		if (sessionId && agent.messages.length > 0) {
+			const currentChatState = normalizeChatState(
+				(agent.state as AgentState)?.[AGUI_STATE_KEY],
+			);
+			updateSessionMessages(
+				sessionId,
+				serializeMessages(agent.messages),
+				currentChatState,
+			);
+		}
+	}, [JSON.stringify(agent.messages), chatState, sessionId]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: stable identity via agent ref
+	const messages = useMemo(
+		() => [...agent.messages],
+		[JSON.stringify(agent.messages)],
+	);
+
+	const onSubmitMessage = useCallback(
+		async (text: string) => {
+			agent.addMessage({
+				id: crypto.randomUUID(),
+				role: "user",
+				content: text,
+			});
+			try {
+				await ck.runAgent({ agent });
+			} catch (error) {
+				console.error("runAgent failed", error);
+			}
+		},
+		[agent, ck],
+	);
+
+	const onStop = useCallback(() => {
+		try {
+			ck.stopAgent({ agent });
+		} catch {
+			agent.abortRun();
+		}
+	}, [agent, ck]);
+
+	// Strip the scroll view's internal paddingBottom (inline style set by
+	// CopilotChatView to reserve space for its absolutely-positioned input
+	// container, which we've overridden to flow in a flex layout).
+	// Uses a ref callback so it runs when the element actually mounts.
+	const paddingObserver = useRef<MutationObserver | null>(null);
+	const scrollAreaCallbackRef = useCallback((node: HTMLDivElement | null) => {
+		if (paddingObserver.current) {
+			paddingObserver.current.disconnect();
+			paddingObserver.current = null;
+		}
+		if (!node) return;
+		const strip = () => {
+			for (const div of node.querySelectorAll<HTMLElement>("div")) {
+				if (div.style.paddingBottom && div.style.paddingBottom !== "1rem") {
+					div.style.paddingBottom = "1rem";
+				}
+			}
+		};
+		strip();
+		const observer = new MutationObserver(strip);
+		observer.observe(node, {
+			subtree: true,
+			attributes: true,
+			attributeFilter: ["style"],
+		});
+		paddingObserver.current = observer;
+	}, []);
+
+	const sessionContext = chatState.session_context;
+	const documentFilter = chatState.document_filter;
+	const initialContext = chatState.initial_context ?? "";
 
 	// Context is locked after first message (qa_history has entries)
-	const isContextLocked =
-		(agentState?.[AGUI_STATE_KEY]?.qa_history?.length ?? 0) > 0;
+	const isContextLocked = (chatState.qa_history?.length ?? 0) > 0;
 
 	const handleFilterApply = (selected: string[]) => {
 		mergeChatState({ document_filter: selected });
@@ -452,132 +505,15 @@ function ChatContentInner() {
 		mergeChatState({ initial_context: value || null });
 	};
 
-	useCoAgentStateRender<AgentState>({
-		name: "chat_agent",
-		render: ({ state }) => {
-			const chatState = state[AGUI_STATE_KEY];
-			if (chatState?.citations.length) {
-				return <CitationBlock citations={chatState.citations} />;
-			}
-			return null;
-		},
-	});
-
-	useCopilotAction({
-		name: "search",
-		available: "disabled",
-		parameters: [
-			{ name: "query", type: "string" },
-			{ name: "document_name", type: "string" },
-		],
-		render: ({ status, args }) => (
-			<ToolCallIndicator
-				toolName="search"
-				status={status}
-				args={args as Record<string, unknown>}
-			/>
-		),
-	});
-
-	useCopilotAction({
-		name: "ask",
-		available: "disabled",
-		parameters: [
-			{ name: "question", type: "string" },
-			{ name: "document_name", type: "string" },
-		],
-		render: ({ status, args }) => (
-			<ToolCallIndicator
-				toolName="ask"
-				status={status}
-				args={args as Record<string, unknown>}
-			/>
-		),
-	});
-
-	useCopilotAction({
-		name: "get_document",
-		available: "disabled",
-		parameters: [{ name: "query", type: "string" }],
-		render: ({ status, args }) => (
-			<ToolCallIndicator
-				toolName="get_document"
-				status={status}
-				args={args as Record<string, unknown>}
-			/>
-		),
-	});
-
 	return (
-		<>
-			<style>{`
-				.chat-wrapper {
-					display: flex;
-					justify-content: center;
-					align-items: center;
-					min-height: 100vh;
-					padding: 1rem;
-				}
-				.chat-container {
-					width: calc(100% - 2rem);
-					max-width: 1400px;
-					height: 90vh;
-					border-radius: 12px;
-					overflow: hidden;
-					box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-					background: white;
-					display: flex;
-					flex-direction: column;
-				}
-				.chat-header {
-					display: flex;
-					justify-content: flex-end;
-					gap: 0.5rem;
-					padding: 0.5rem 0.75rem;
-					border-bottom: 1px solid #e2e8f0;
-					background: #f8fafc;
-				}
-				.header-btn {
-					display: flex;
-					align-items: center;
-					gap: 0.375rem;
-					padding: 0.375rem 0.625rem;
-					background: white;
-					border: 1px solid #e2e8f0;
-					border-radius: 6px;
-					cursor: pointer;
-					color: #64748b;
-					font-size: 0.8125rem;
-					transition: all 0.15s;
-				}
-				.header-btn:hover {
-					background: #f1f5f9;
-					border-color: #cbd5e1;
-					color: #475569;
-				}
-				.header-btn.has-content {
-					background: #eff6ff;
-					border-color: #bfdbfe;
-					color: #2563eb;
-				}
-				.header-btn.has-content:hover {
-					background: #dbeafe;
-					border-color: #93c5fd;
-				}
-				.chat-content {
-					flex: 1;
-					min-height: 0;
-					display: flex;
-					flex-direction: column;
-				}
-				.chat-content > * {
-					flex: 1;
-					min-height: 0;
-				}
-			`}</style>
+		<ChatStateContext.Provider value={chatState}>
 			<div className="chat-wrapper">
 				<div className="chat-container">
 					<div className="chat-header">
+						<SessionManager
+							activeSessionId={sessionId}
+							onSessionChange={onSessionChange}
+						/>
 						<button
 							type="button"
 							className={`header-btn ${documentFilter.length > 0 ? "has-content" : ""}`}
@@ -612,13 +548,25 @@ function ChatContentInner() {
 						</button>
 					</div>
 					<div className="chat-content">
-						<CopilotChat
-							labels={{
-								title: "haiku.rag Chat",
-								initial:
-									"Hello! I can help you search and answer questions from your knowledge base. Ask me anything!",
+						<CopilotChatView
+							messageView={MessageViewWithCitations}
+							messages={messages}
+							isRunning={agent.isRunning}
+							inputProps={{
+								onSubmitMessage,
+								onStop,
 							}}
-						/>
+						>
+							{({ scrollView, feather, inputContainer }) => (
+								<div className="chat-layout">
+									<div ref={scrollAreaCallbackRef} className="chat-scroll-area">
+										{scrollView}
+										{feather}
+									</div>
+									<div className="chat-input-area">{inputContainer}</div>
+								</div>
+							)}
+						</CopilotChatView>
 					</div>
 					<DbInfo />
 				</div>
@@ -637,18 +585,34 @@ function ChatContentInner() {
 				selected={documentFilter}
 				onApply={handleFilterApply}
 			/>
-		</>
+		</ChatStateContext.Provider>
 	);
 }
 
-function ChatContent() {
-	return <ChatContentInner />;
-}
-
 export default function Chat() {
+	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+	useEffect(() => {
+		let id = getActiveSessionId();
+		if (!id) {
+			id = createSession().id;
+		}
+		setActiveSessionId(id);
+	}, []);
+
+	if (!activeSessionId) return null;
+
 	return (
-		<CopilotKit runtimeUrl="/api/copilotkit" agent="chat_agent">
-			<ChatContent />
-		</CopilotKit>
+		<CopilotKitProvider
+			key={activeSessionId}
+			runtimeUrl="/api/copilotkit"
+			useSingleEndpoint
+			renderToolCalls={toolCallRenderers}
+		>
+			<ChatContentInner
+				sessionId={activeSessionId}
+				onSessionChange={setActiveSessionId}
+			/>
+		</CopilotKitProvider>
 	);
 }
