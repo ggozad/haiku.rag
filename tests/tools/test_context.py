@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 
-from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.context import ToolContext, prepare_context
+from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 
 class TestState(BaseModel):
@@ -440,3 +442,47 @@ def test_restore_state_snapshot_ignores_unknown_fields():
     ns1 = ctx.get("ns1", TestState)
     assert ns1 is not None
     assert ns1.value == 10
+
+
+# --- prepare_context tests ---
+
+
+def test_prepare_context_default_features():
+    """Default features register SessionState only."""
+    ctx = ToolContext()
+    prepare_context(ctx)
+    assert ctx.get(SESSION_NAMESPACE, SessionState) is not None
+    assert ctx.get(QA_SESSION_NAMESPACE, QASessionState) is None
+
+
+def test_prepare_context_with_qa():
+    """QA feature registers both SessionState and QASessionState."""
+    ctx = ToolContext()
+    prepare_context(ctx, features=["search", "qa"])
+    assert ctx.get(SESSION_NAMESPACE, SessionState) is not None
+    assert ctx.get(QA_SESSION_NAMESPACE, QASessionState) is not None
+
+
+def test_prepare_context_sets_state_key():
+    """state_key is set on context when provided."""
+    ctx = ToolContext()
+    prepare_context(ctx, state_key="my_app")
+    assert ctx.state_key == "my_app"
+
+
+def test_prepare_context_no_state_key_by_default():
+    """state_key is not set when not provided."""
+    ctx = ToolContext()
+    prepare_context(ctx)
+    assert ctx.state_key is None
+
+
+def test_prepare_context_idempotent():
+    """Calling prepare_context twice doesn't create duplicate state."""
+    ctx = ToolContext()
+    prepare_context(ctx, features=["search", "qa"])
+    session1 = ctx.get(SESSION_NAMESPACE, SessionState)
+    qa1 = ctx.get(QA_SESSION_NAMESPACE, QASessionState)
+    prepare_context(ctx, features=["search", "qa"])
+    assert ctx.get(SESSION_NAMESPACE, SessionState) is session1
+    assert ctx.get(QA_SESSION_NAMESPACE, QASessionState) is qa1

@@ -10,7 +10,7 @@ from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import AGUI_STATE_KEY
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.context import ToolContext, prepare_context
 from haiku.rag.tools.document import create_document_toolset
 from haiku.rag.tools.qa import (
     QA_SESSION_NAMESPACE,
@@ -18,7 +18,7 @@ from haiku.rag.tools.qa import (
     create_qa_toolset,
 )
 from haiku.rag.tools.search import create_search_toolset
-from haiku.rag.tools.session import SESSION_NAMESPACE, SessionContext, SessionState
+from haiku.rag.tools.session import SessionContext
 from haiku.rag.utils import get_model
 
 FEATURE_SEARCH = "search"
@@ -110,14 +110,7 @@ def prepare_chat_context(
     if features is None:
         features = DEFAULT_FEATURES
 
-    if context.get(SESSION_NAMESPACE, SessionState) is None:
-        context.register(SESSION_NAMESPACE, SessionState())
-    if context.state_key is None:
-        context.state_key = AGUI_STATE_KEY
-
-    if FEATURE_QA in features:
-        if context.get(QA_SESSION_NAMESPACE, QASessionState) is None:
-            context.register(QA_SESSION_NAMESPACE, QASessionState())
+    prepare_context(context, features=features, state_key=AGUI_STATE_KEY)
 
 
 def create_chat_agent(

@@ -180,6 +180,36 @@ class ToolContext(BaseModel):
         return state
 
 
+def prepare_context(
+    context: ToolContext,
+    features: list[str] | None = None,
+    state_key: str | None = None,
+) -> None:
+    """Register required namespaces in a ToolContext based on feature flags.
+
+    Idempotent — safe to call multiple times on the same context.
+
+    Args:
+        context: ToolContext to prepare.
+        features: List of enabled features. Defaults to ["search", "documents"].
+        state_key: Optional AG-UI state key to set on the context.
+    """
+    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+    from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
+
+    if features is None:
+        features = ["search", "documents"]
+
+    if any(f in features for f in ("search", "qa", "analysis")):
+        context.get_or_create(SESSION_NAMESPACE, SessionState)
+
+    if "qa" in features:
+        context.get_or_create(QA_SESSION_NAMESPACE, QASessionState)
+
+    if state_key is not None:
+        context.state_key = state_key
+
+
 class ToolContextCache:
     """In-memory cache for ToolContext instances, keyed by external session/thread ID."""
 
