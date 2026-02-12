@@ -432,27 +432,26 @@ See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
 haiku.rag provides composable toolset factories that can be mixed into any pydantic-ai agent. This lets you build custom agents with exactly the capabilities you need — search, document management, Q&A, or code analysis — sharing state across tools via `ToolContext`.
 
 ```python
-from dataclasses import dataclass
 from pydantic_ai import Agent
-from haiku.rag.tools import ToolContext, RAGDeps, create_search_toolset, create_qa_toolset
-
-@dataclass
-class MyDeps:
-    client: HaikuRAG
-    tool_context: ToolContext | None = None
+from haiku.rag.tools import (
+    AgentDeps, ToolContext, prepare_context,
+    create_search_toolset, create_qa_toolset,
+)
 
 search = create_search_toolset(config)
 qa = create_qa_toolset(config)
 
 agent = Agent(
     "openai:gpt-4o",
-    deps_type=MyDeps,
+    deps_type=AgentDeps,
     instructions="You are a helpful assistant.",
     toolsets=[search, qa],
 )
 
 async with HaikuRAG("path/to/db.lancedb") as client:
-    deps = MyDeps(client=client, tool_context=ToolContext())
+    context = ToolContext()
+    prepare_context(context, features=["search", "qa"])
+    deps = AgentDeps(client=client, tool_context=context)
     result = await agent.run("What are the main findings?", deps=deps)
 ```
 

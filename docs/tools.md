@@ -37,13 +37,37 @@ state = context.get_or_create("my_namespace", MyState)
 The entire context can be serialized and restored:
 
 ```python
-# Serialize all namespaces
+# Serialize all namespaces (keyed by namespace)
 data = context.dump_namespaces()
 # {"my_namespace": {"count": 0}}
 
 # Restore a namespace from serialized data
 context.load_namespace("my_namespace", MyState, data["my_namespace"])
 ```
+
+For AG-UI state management, use flat snapshots:
+
+```python
+# Flat snapshot of all namespaces (for AG-UI state)
+snapshot = context.build_state_snapshot()
+# {"document_filter": [], "citations": [], "citation_registry": {}, "qa_history": []}
+
+# Restore from flat snapshot (updates registered namespaces in place)
+context.restore_state_snapshot(snapshot)
+```
+
+### Preparing context for toolsets
+
+`prepare_context()` registers the required namespaces for a given set of features:
+
+```python
+from haiku.rag.tools import ToolContext, prepare_context
+
+context = ToolContext()
+prepare_context(context, features=["search", "qa"], state_key="my_app")
+```
+
+This is idempotent and registers `SessionState` (for search, QA, and analysis features) and `QASessionState` (for QA). The chat agent's `prepare_chat_context()` is a thin wrapper that defaults to chat features and sets the AG-UI state key.
 
 ## Search Toolset
 
@@ -110,6 +134,7 @@ qa = create_qa_toolset(config)
 | `config` | required | AppConfig |
 | `base_filter` | `None` | SQL WHERE clause applied to searches |
 | `tool_name` | `"ask"` | Name of the tool exposed to the agent |
+| `on_ask_complete` | `None` | Callback `(QASessionState, AppConfig) -> None` invoked after each QA cycle |
 
 **Tool: `ask(question, document_name?)`**
 
@@ -117,7 +142,7 @@ Runs the research graph in conversational mode and returns a `QAResult`. When a 
 
 - Prior answers from `QASessionState.qa_history` are matched via embedding similarity
 - The answer is appended to `qa_history`
-- Background summarization is triggered
+- `on_ask_complete` callback is invoked (if provided)
 - Citations get stable indices via `SessionState.citation_registry`
 
 **State:** QA history accumulates in `QASessionState` under the `haiku.rag.qa_session` namespace.
@@ -136,6 +161,7 @@ result = await run_qa_core(
     document_name="User Guide",       # optional document filter
     context=context,                   # optional ToolContext
     session_context="User is building a web app",  # optional
+    on_qa_complete=my_callback,        # optional post-QA callback
 )
 
 print(result.answer)
@@ -168,42 +194,36 @@ Executes a computational task via code execution and returns an `AnalysisResult`
 
 ## Composing Custom Agents
 
-Toolsets are designed to be composed into custom pydantic-ai agents:
+Toolsets are designed to be composed into custom pydantic-ai agents. Use `AgentDeps` and `prepare_context` for minimal boilerplate:
 
 ```python
-from dataclasses import dataclass
 from pydantic_ai import Agent
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
 from haiku.rag.tools import (
+    AgentDeps,
     ToolContext,
-    RAGDeps,
+    prepare_context,
     create_search_toolset,
     create_qa_toolset,
     create_document_toolset,
 )
 
 # Toolsets are created once at configuration time
-search = create_search_toolset(Config)
-qa = create_qa_toolset(Config)
-docs = create_document_toolset(Config)
-
-@dataclass
-class MyDeps:
-    """Must satisfy the RAGDeps protocol (client + tool_context)."""
-    client: HaikuRAG
-    tool_context: ToolContext | None = None
+search = create_search_toolset(config)
+qa = create_qa_toolset(config)
+docs = create_document_toolset(config)
 
 agent = Agent(
     "openai:gpt-4o",
-    deps_type=MyDeps,
+    deps_type=AgentDeps,
     instructions="You are a helpful research assistant.",
     toolsets=[search, qa, docs],
 )
 
 async with HaikuRAG("path/to/db.lancedb") as client:
     context = ToolContext()
-    deps = MyDeps(client=client, tool_context=context)
+    prepare_context(context, features=["search", "documents", "qa"])
+    deps = AgentDeps(client=client, tool_context=context)
 
     result = await agent.run("What documents do we have about climate?", deps=deps)
     print(result.output)
@@ -215,13 +235,31 @@ async with HaikuRAG("path/to/db.lancedb") as client:
         print(f"Total search results: {len(search_state.results)}")
 ```
 
-Tool functions access `client` and `tool_context` via pydantic-ai's `RunContext.deps`, so toolsets can be created once and reused across requests. Your deps type just needs to satisfy the `RAGDeps` protocol (have `client` and `tool_context` attributes).
+`AgentDeps` satisfies the `RAGDeps` protocol and implements the AG-UI state protocol (`state` getter/setter). For AG-UI streaming, pass a `state_key`:
+
+```python
+deps = AgentDeps(client=client, tool_context=context, state_key="my_app")
+```
+
+Tool functions access `client` and `tool_context` via pydantic-ai's `RunContext.deps`, so toolsets can be created once and reused across requests.
 
 All toolsets respect session-level document filters when a `SessionState` is registered in the context. This means setting `SessionState.document_filter` restricts all tools simultaneously.
 
 ## AG-UI State Management
 
-When using the chat agent with [AG-UI](https://docs.ag-ui.com) streaming, `ChatDeps` implements the `StateHandler` protocol. State is emitted under a namespaced key via `state_key`:
+Both `AgentDeps` and `ChatDeps` implement the AG-UI `StateHandler` protocol. State is emitted under a namespaced key via `state_key`.
+
+**Custom agents** use `AgentDeps` + `prepare_context`:
+
+```python
+from haiku.rag.tools import AgentDeps, ToolContext, ToolContextCache, prepare_context
+
+context = ToolContext()
+prepare_context(context, features=["search", "qa"], state_key="my_app")
+deps = AgentDeps(client=client, tool_context=context, state_key="my_app")
+```
+
+**Chat agent** uses `ChatDeps` + `prepare_chat_context` (adds chat-specific overrides like background summarization and initial context handling):
 
 ```python
 from haiku.rag.agents.chat import (
@@ -229,7 +267,6 @@ from haiku.rag.agents.chat import (
 )
 from haiku.rag.tools import ToolContext, ToolContextCache
 
-# Agent can be created once at startup
 agent = create_chat_agent(config)
 
 # For multi-session apps, cache ToolContext per thread
