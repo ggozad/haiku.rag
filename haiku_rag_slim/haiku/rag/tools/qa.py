@@ -2,7 +2,7 @@ import math
 
 from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic import BaseModel, Field
-from pydantic_ai import FunctionToolset, ToolReturn
+from pydantic_ai import FunctionToolset, RunContext, ToolReturn
 
 from haiku.rag.agents.chat.context import trigger_background_summarization
 from haiku.rag.agents.chat.state import build_chat_state_snapshot
@@ -13,7 +13,7 @@ from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.context import RAGDeps, ToolContext
 from haiku.rag.tools.filters import (
     build_document_filter,
     combine_filters,
@@ -212,34 +212,23 @@ async def run_qa_core(
 
 
 def create_qa_toolset(
-    client: HaikuRAG,
     config: AppConfig,
-    context: ToolContext | None = None,
     base_filter: str | None = None,
     tool_name: str = "ask",
-    session_context: str | None = None,
-    prior_answers: list[SearchAnswer] | None = None,
 ) -> FunctionToolset:
     """Create a toolset with Q&A capabilities using research graph.
 
     Args:
-        client: HaikuRAG client for search operations.
         config: Application configuration.
-        context: Optional ToolContext for state accumulation.
-            If SessionState is registered, it will be used for dynamic
-            document filtering and citation indexing.
         base_filter: Optional base SQL WHERE clause applied to searches.
         tool_name: Name for the ask tool. Defaults to "ask".
-        session_context: Optional session context for the research graph.
-            Overridden by QASessionState.session_context if available.
-        prior_answers: Optional list of prior answers for context.
-            Overridden by similarity-matched answers from QASessionState if available.
 
     Returns:
         FunctionToolset with an ask tool.
     """
 
     async def ask(
+        ctx: RunContext[RAGDeps],
         question: str,
         document_name: str | None = None,
     ) -> ToolReturn | QAResult:
@@ -254,24 +243,25 @@ def create_qa_toolset(
         Returns:
             QAResult with answer, confidence, and citations.
         """
+        client = ctx.deps.client
+        tool_context = ctx.deps.tool_context
+
         session_state: SessionState | None = None
         qa_session_state: QASessionState | None = None
         state_key: str | None = None
 
-        if context is not None:
-            session_state = context.get(SESSION_NAMESPACE, SessionState)
-            qa_session_state = context.get(QA_SESSION_NAMESPACE, QASessionState)
-            state_key = context.state_key
+        if tool_context is not None:
+            session_state = tool_context.get(SESSION_NAMESPACE, SessionState)
+            qa_session_state = tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
+            state_key = tool_context.state_key
 
         qa_result = await run_qa_core(
             client=client,
             config=config,
             question=question,
             document_name=document_name,
-            context=context,
+            context=tool_context,
             base_filter=base_filter,
-            session_context=session_context,
-            prior_answers=prior_answers,
         )
 
         if session_state is not None:

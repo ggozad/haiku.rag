@@ -16,6 +16,9 @@
 
 ### Changed
 
+- **Toolset factories decoupled from runtime dependencies**: `create_search_toolset()`, `create_qa_toolset()`, `create_document_toolset()`, `create_analysis_toolset()`, and `create_chat_agent()` no longer take `client` or `context` parameters. Instead, tool functions receive these via pydantic-ai's `RunContext.deps`. This enables toolset and agent creation at configuration time (cacheable, created once), with only lightweight deps created per-request. Deps must satisfy the `RAGDeps` protocol (`client: HaikuRAG`, `tool_context: ToolContext | None`)
+- **`ChatDeps` now includes `client`**: `ChatDeps(config=..., client=..., tool_context=...)` — the `client` field was added since it's no longer captured by the agent factory
+- **`prepare_chat_context()` helper**: Extracted from `create_chat_agent()` for idempotent namespace registration, since the agent factory no longer has access to the context
 - **Chat agent architecture**: Rebuilt on composable toolsets instead of monolithic tool definitions. Chat agent is now a thin wrapper around `create_search_toolset`, `create_document_toolset`, `create_qa_toolset`, and `create_analysis_toolset`
 - **State management simplified**: Removed `session_id`, `incoming_session_id`, and `incoming_session_context` from the state layer. `ToolContextCache` preserves all state (embeddings, summaries, QA history) on cached `ToolContext` instances, eliminating the need for module-level caches
 - **AG-UI state sync**: `ask` tool now emits `StateSnapshotEvent` instead of `StateDeltaEvent`, ensuring background summarization results are reliably delivered to clients

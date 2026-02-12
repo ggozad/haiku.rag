@@ -8,6 +8,7 @@ from haiku.rag.agents.chat.agent import (
     FEATURE_SEARCH,
     ChatDeps,
     create_chat_agent,
+    prepare_chat_context,
 )
 from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.client import HaikuRAG
@@ -29,9 +30,9 @@ def _count_function_toolsets(agent) -> int:
 
 def test_default_features(temp_db_path):
     """Default features create search + document + qa toolsets and register both states."""
-    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    agent = create_chat_agent(Config, client, context)
+    prepare_chat_context(context)
+    agent = create_chat_agent(Config)
 
     # Should have 3 toolsets (search, document, qa)
     assert _count_function_toolsets(agent) == 3
@@ -39,46 +40,42 @@ def test_default_features(temp_db_path):
     # Both SessionState and QASessionState should be registered
     assert context.get(SESSION_NAMESPACE, SessionState) is not None
     assert context.get(QA_SESSION_NAMESPACE, QASessionState) is not None
-    client.close()
 
 
 def test_search_only(temp_db_path):
     """features=["search"] creates only search toolset, no QASessionState."""
-    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    agent = create_chat_agent(Config, client, context, features=[FEATURE_SEARCH])
+    prepare_chat_context(context, features=[FEATURE_SEARCH])
+    agent = create_chat_agent(Config, features=[FEATURE_SEARCH])
 
     assert _count_function_toolsets(agent) == 1
 
     # SessionState always registered, but QASessionState should NOT be
     assert context.get(SESSION_NAMESPACE, SessionState) is not None
     assert context.get(QA_SESSION_NAMESPACE, QASessionState) is None
-    client.close()
 
 
 def test_search_and_documents(temp_db_path):
     """features=["search", "documents"] creates both toolsets, no QASessionState."""
-    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    agent = create_chat_agent(
-        Config, client, context, features=[FEATURE_SEARCH, FEATURE_DOCUMENTS]
-    )
+    prepare_chat_context(context, features=[FEATURE_SEARCH, FEATURE_DOCUMENTS])
+    agent = create_chat_agent(Config, features=[FEATURE_SEARCH, FEATURE_DOCUMENTS])
 
     assert _count_function_toolsets(agent) == 2
 
     assert context.get(SESSION_NAMESPACE, SessionState) is not None
     assert context.get(QA_SESSION_NAMESPACE, QASessionState) is None
-    client.close()
 
 
 def test_all_features(temp_db_path):
     """All four features create four toolsets."""
-    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
+    prepare_chat_context(
+        context,
+        features=[FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA, FEATURE_ANALYSIS],
+    )
     agent = create_chat_agent(
         Config,
-        client,
-        context,
         features=[FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA, FEATURE_ANALYSIS],
     )
 
@@ -86,28 +83,23 @@ def test_all_features(temp_db_path):
 
     assert context.get(SESSION_NAMESPACE, SessionState) is not None
     assert context.get(QA_SESSION_NAMESPACE, QASessionState) is not None
-    client.close()
 
 
 def test_no_qa_skips_qa_session_state(temp_db_path):
     """Without QA feature, QASessionState is not registered."""
-    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    create_chat_agent(
-        Config, client, context, features=[FEATURE_SEARCH, FEATURE_DOCUMENTS]
-    )
+    prepare_chat_context(context, features=[FEATURE_SEARCH, FEATURE_DOCUMENTS])
 
     assert context.get(QA_SESSION_NAMESPACE, QASessionState) is None
-    client.close()
 
 
 def test_chat_deps_state_without_qa(temp_db_path):
     """ChatDeps.state getter omits qa_history/session_context when QASessionState absent."""
     client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    create_chat_agent(Config, client, context, features=[FEATURE_SEARCH])
+    prepare_chat_context(context, features=[FEATURE_SEARCH])
 
-    deps = ChatDeps(config=Config, tool_context=context)
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
     state = deps.state
 
     # SessionState fields should be present

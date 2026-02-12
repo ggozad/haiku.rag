@@ -1,11 +1,10 @@
 from pydantic import BaseModel
-from pydantic_ai import FunctionToolset, ToolReturn
+from pydantic_ai import FunctionToolset, RunContext, ToolReturn
 
 from haiku.rag.agents.research.models import Citation
-from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
-from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.context import RAGDeps
 from haiku.rag.tools.filters import combine_filters, get_session_filter
 from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState, compute_state_delta
 
@@ -22,9 +21,7 @@ class SearchState(BaseModel):
 
 
 def create_search_toolset(
-    client: HaikuRAG,
     config: AppConfig,
-    context: ToolContext | None = None,
     expand_context: bool = True,
     base_filter: str | None = None,
     tool_name: str = "search",
@@ -32,12 +29,7 @@ def create_search_toolset(
     """Create a toolset with search capabilities.
 
     Args:
-        client: HaikuRAG client for search operations.
         config: Application configuration.
-        context: Optional ToolContext for state accumulation.
-            If provided, search results are accumulated in SearchState.
-            If SessionState is registered, it will be used for dynamic
-            document filtering and citation indexing.
         expand_context: Whether to expand search results with surrounding context.
             Defaults to True.
         base_filter: Optional base SQL WHERE clause applied to all searches.
@@ -47,11 +39,9 @@ def create_search_toolset(
     Returns:
         FunctionToolset with a search tool.
     """
-    search_state: SearchState | None = None
-    if context is not None:
-        search_state = context.get_or_create(SEARCH_NAMESPACE, SearchState)
 
     async def search(
+        ctx: RunContext[RAGDeps],
         query: str,
         limit: int | None = None,
         filter: str | None = None,
@@ -66,18 +56,25 @@ def create_search_toolset(
         Returns:
             Formatted search results with content and metadata.
         """
+        client = ctx.deps.client
+        tool_context = ctx.deps.tool_context
+
+        search_state: SearchState | None = None
+        if tool_context is not None:
+            search_state = tool_context.get_or_create(SEARCH_NAMESPACE, SearchState)
+
         session_state: SessionState | None = None
         old_session_state: SessionState | None = None
         state_key: str | None = None
-        if context is not None:
-            session_state = context.get(SESSION_NAMESPACE, SessionState)
-            state_key = context.state_key
+        if tool_context is not None:
+            session_state = tool_context.get(SESSION_NAMESPACE, SessionState)
+            state_key = tool_context.state_key
             if session_state is not None:
                 old_session_state = session_state.model_copy(deep=True)
 
         # Combine all filters: base_filter AND session_filter AND tool filter
         effective_filter = combine_filters(
-            get_session_filter(context, base_filter), filter
+            get_session_filter(tool_context, base_filter), filter
         )
 
         effective_limit = limit or config.search.limit

@@ -1,9 +1,24 @@
 from datetime import datetime, timedelta
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, overload, runtime_checkable
 
 from pydantic import BaseModel, PrivateAttr
 
+if TYPE_CHECKING:
+    from haiku.rag.client import HaikuRAG
+
 T = TypeVar("T", bound=BaseModel)
+
+
+@runtime_checkable
+class RAGDeps(Protocol):
+    """Contract for toolset dependencies injected via RunContext.
+
+    Any deps object passed to an agent using haiku.rag toolsets must
+    provide these attributes.
+    """
+
+    client: "HaikuRAG"
+    tool_context: "ToolContext | None"
 
 
 class ToolContext(BaseModel):
@@ -24,17 +39,17 @@ class ToolContext(BaseModel):
         SEARCH_NAMESPACE = "haiku.rag.search"
 
         # In toolset factory
-        def create_search_toolset(client, config, context=None):
-            if context:
-                state = context.get_or_create(SEARCH_NAMESPACE, SearchState)
-            ...
+        def create_search_toolset(config):
+            async def search(ctx: RunContext[RAGDeps], query: str):
+                tool_context = ctx.deps.tool_context
+                if tool_context:
+                    state = tool_context.get_or_create(SEARCH_NAMESPACE, SearchState)
+                ...
 
         # Usage
-        context = ToolContext()
-        search_tools = create_search_toolset(client, config, context=context)
-
+        search_tools = create_search_toolset(config)
         agent = Agent(..., toolsets=[search_tools])
-        await agent.run("...")
+        await agent.run("...", deps=my_deps)
 
         # Access accumulated state
         search_state = context.get(SEARCH_NAMESPACE)

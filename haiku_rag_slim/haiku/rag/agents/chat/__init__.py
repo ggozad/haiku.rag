@@ -6,6 +6,7 @@ from haiku.rag.agents.chat.agent import (
     FEATURE_SEARCH,
     ChatDeps,
     create_chat_agent,
+    prepare_chat_context,
     run_chat_agent,
     trigger_background_summarization,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "FEATURE_SEARCH",
     "build_chat_prompt",
     "create_chat_agent",
+    "prepare_chat_context",
     "run_chat_agent",
     "trigger_background_summarization",
     "ChatDeps",

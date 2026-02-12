@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from haiku.rag.tools.document import (
@@ -5,6 +7,11 @@ from haiku.rag.tools.document import (
     DocumentListResponse,
     create_document_toolset,
 )
+
+
+def make_ctx(client, context=None):
+    """Create a lightweight RunContext-like object for direct tool function calls."""
+    return SimpleNamespace(deps=SimpleNamespace(client=client, tool_context=context))
 
 
 class TestDocumentModels:
@@ -38,18 +45,16 @@ class TestDocumentModels:
 class TestDocumentToolset:
     """Tests for create_document_toolset."""
 
-    def test_create_document_toolset_returns_function_toolset(
-        self, doc_client, doc_config
-    ):
+    def test_create_document_toolset_returns_function_toolset(self, doc_config):
         """create_document_toolset returns a FunctionToolset."""
         from pydantic_ai import FunctionToolset
 
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
         assert isinstance(toolset, FunctionToolset)
 
-    def test_document_toolset_has_expected_tools(self, doc_client, doc_config):
+    def test_document_toolset_has_expected_tools(self, doc_config):
         """The toolset includes list_documents, get_document, summarize_document."""
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
 
         assert "list_documents" in toolset.tools
         assert "get_document" in toolset.tools
@@ -65,10 +70,11 @@ class TestDocumentToolExecution:
         self, doc_client, doc_config
     ):
         """list_documents returns DocumentListResponse."""
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
 
         list_tool = toolset.tools["list_documents"]
-        result = await list_tool.function()
+        ctx = make_ctx(doc_client)
+        result = await list_tool.function(ctx)
 
         assert isinstance(result, DocumentListResponse)
         assert result.total_documents == 2
@@ -78,10 +84,11 @@ class TestDocumentToolExecution:
     @pytest.mark.asyncio
     async def test_list_documents_pagination(self, doc_client, doc_config):
         """list_documents supports pagination."""
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
 
         list_tool = toolset.tools["list_documents"]
-        result = await list_tool.function(page=2)
+        ctx = make_ctx(doc_client)
+        result = await list_tool.function(ctx, page=2)
 
         # With only 2 documents and page_size=50, page 2 should be empty
         assert result.page == 2
@@ -90,10 +97,11 @@ class TestDocumentToolExecution:
     @pytest.mark.asyncio
     async def test_get_document_by_title(self, doc_client, doc_config):
         """get_document finds document by title."""
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
 
         get_tool = toolset.tools["get_document"]
-        result = await get_tool.function("Python Guide")
+        ctx = make_ctx(doc_client)
+        result = await get_tool.function(ctx, "Python Guide")
 
         assert "Python Guide" in result
         assert "Python is a programming language" in result
@@ -101,20 +109,22 @@ class TestDocumentToolExecution:
     @pytest.mark.asyncio
     async def test_get_document_by_uri(self, doc_client, doc_config):
         """get_document finds document by URI."""
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
 
         get_tool = toolset.tools["get_document"]
-        result = await get_tool.function("test://python")
+        ctx = make_ctx(doc_client)
+        result = await get_tool.function(ctx, "test://python")
 
         assert "Python Guide" in result
 
     @pytest.mark.asyncio
     async def test_get_document_not_found(self, doc_client, doc_config):
         """get_document returns appropriate message when not found."""
-        toolset = create_document_toolset(doc_client, doc_config)
+        toolset = create_document_toolset(doc_config)
 
         get_tool = toolset.tools["get_document"]
-        result = await get_tool.function("nonexistent")
+        ctx = make_ctx(doc_client)
+        result = await get_tool.function(ctx, "nonexistent")
 
         assert "Document not found" in result
 
@@ -122,11 +132,12 @@ class TestDocumentToolExecution:
     async def test_list_documents_with_base_filter(self, doc_client, doc_config):
         """list_documents respects base_filter."""
         toolset = create_document_toolset(
-            doc_client, doc_config, base_filter="title LIKE '%Python%'"
+            doc_config, base_filter="title LIKE '%Python%'"
         )
 
         list_tool = toolset.tools["list_documents"]
-        result = await list_tool.function()
+        ctx = make_ctx(doc_client)
+        result = await list_tool.function(ctx)
 
         assert result.total_documents == 1
         assert result.documents[0].title == "Python Guide"

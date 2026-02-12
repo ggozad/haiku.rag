@@ -6,25 +6,21 @@ from haiku.rag.tools.analysis import create_analysis_toolset
 class TestAnalysisToolset:
     """Tests for create_analysis_toolset."""
 
-    def test_create_analysis_toolset_returns_function_toolset(
-        self, analysis_client, analysis_config
-    ):
+    def test_create_analysis_toolset_returns_function_toolset(self, analysis_config):
         """create_analysis_toolset returns a FunctionToolset."""
         from pydantic_ai import FunctionToolset
 
-        toolset = create_analysis_toolset(analysis_client, analysis_config)
+        toolset = create_analysis_toolset(analysis_config)
         assert isinstance(toolset, FunctionToolset)
 
-    def test_analysis_toolset_has_analyze_tool(self, analysis_client, analysis_config):
+    def test_analysis_toolset_has_analyze_tool(self, analysis_config):
         """The toolset includes an 'analyze' tool."""
-        toolset = create_analysis_toolset(analysis_client, analysis_config)
+        toolset = create_analysis_toolset(analysis_config)
         assert "analyze" in toolset.tools
 
-    def test_analysis_toolset_custom_tool_name(self, analysis_client, analysis_config):
+    def test_analysis_toolset_custom_tool_name(self, analysis_config):
         """Toolset supports custom tool name."""
-        toolset = create_analysis_toolset(
-            analysis_client, analysis_config, tool_name="run_code"
-        )
+        toolset = create_analysis_toolset(analysis_config, tool_name="run_code")
         assert "run_code" in toolset.tools
         assert "analyze" not in toolset.tools
 

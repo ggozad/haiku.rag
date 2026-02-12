@@ -50,19 +50,16 @@ context.load_namespace("my_namespace", MyState, data["my_namespace"])
 `create_search_toolset()` provides hybrid search (vector + full-text) with context expansion and citation tracking.
 
 ```python
-from haiku.rag.tools import ToolContext, create_search_toolset
+from haiku.rag.tools import create_search_toolset
 
-context = ToolContext()
-search = create_search_toolset(client, config, context=context)
+search = create_search_toolset(config)
 ```
 
 **Parameters:**
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `client` | required | HaikuRAG client |
 | `config` | required | AppConfig |
-| `context` | `None` | ToolContext for state accumulation |
 | `expand_context` | `True` | Expand results with surrounding chunks |
 | `base_filter` | `None` | SQL WHERE clause applied to all searches |
 | `tool_name` | `"search"` | Name of the tool exposed to the agent |
@@ -78,19 +75,16 @@ Searches the knowledge base and returns formatted results. When a `ToolContext` 
 `create_document_toolset()` provides document browsing, retrieval, and summarization.
 
 ```python
-from haiku.rag.tools import ToolContext, create_document_toolset
+from haiku.rag.tools import create_document_toolset
 
-context = ToolContext()
-docs = create_document_toolset(client, config, context=context)
+docs = create_document_toolset(config)
 ```
 
 **Parameters:**
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `client` | required | HaikuRAG client |
 | `config` | required | AppConfig (used for summarization LLM) |
-| `context` | `None` | ToolContext for session filtering |
 | `base_filter` | `None` | SQL WHERE clause for list operations |
 
 **Tools:**
@@ -104,23 +98,18 @@ docs = create_document_toolset(client, config, context=context)
 `create_qa_toolset()` provides question answering via the research graph, with prior answer recall and background summarization.
 
 ```python
-from haiku.rag.tools import ToolContext, create_qa_toolset
+from haiku.rag.tools import create_qa_toolset
 
-context = ToolContext()
-qa = create_qa_toolset(client, config, context=context)
+qa = create_qa_toolset(config)
 ```
 
 **Parameters:**
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `client` | required | HaikuRAG client |
 | `config` | required | AppConfig |
-| `context` | `None` | ToolContext for state accumulation |
 | `base_filter` | `None` | SQL WHERE clause applied to searches |
 | `tool_name` | `"ask"` | Name of the tool exposed to the agent |
-| `session_context` | `None` | Session context for the research graph |
-| `prior_answers` | `None` | Prior answers for context |
 
 **Tool: `ask(question, document_name?)`**
 
@@ -162,16 +151,14 @@ for citation in result.citations:
 ```python
 from haiku.rag.tools import create_analysis_toolset
 
-analysis = create_analysis_toolset(client, config, context=context)
+analysis = create_analysis_toolset(config)
 ```
 
 **Parameters:**
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `client` | required | HaikuRAG client |
 | `config` | required | AppConfig |
-| `context` | `None` | ToolContext for session filtering |
 | `base_filter` | `None` | SQL WHERE clause applied to searches |
 | `tool_name` | `"analyze"` | Name of the tool exposed to the agent |
 
@@ -184,40 +171,51 @@ Executes a computational task via code execution and returns an `AnalysisResult`
 Toolsets are designed to be composed into custom pydantic-ai agents:
 
 ```python
+from dataclasses import dataclass
 from pydantic_ai import Agent
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.tools import (
     ToolContext,
+    RAGDeps,
     create_search_toolset,
     create_qa_toolset,
     create_document_toolset,
 )
 
+# Toolsets are created once at configuration time
+search = create_search_toolset(Config)
+qa = create_qa_toolset(Config)
+docs = create_document_toolset(Config)
+
+@dataclass
+class MyDeps:
+    """Must satisfy the RAGDeps protocol (client + tool_context)."""
+    client: HaikuRAG
+    tool_context: ToolContext | None = None
+
+agent = Agent(
+    "openai:gpt-4o",
+    deps_type=MyDeps,
+    instructions="You are a helpful research assistant.",
+    toolsets=[search, qa, docs],
+)
+
 async with HaikuRAG("path/to/db.lancedb") as client:
-    # Shared context across all toolsets
     context = ToolContext()
+    deps = MyDeps(client=client, tool_context=context)
 
-    # Pick the toolsets you need
-    search = create_search_toolset(client, Config, context=context)
-    qa = create_qa_toolset(client, Config, context=context)
-    docs = create_document_toolset(client, Config, context=context)
-
-    agent = Agent(
-        "openai:gpt-4o",
-        instructions="You are a helpful research assistant.",
-        toolsets=[search, qa, docs],
-    )
-
-    result = await agent.run("What documents do we have about climate?")
+    result = await agent.run("What documents do we have about climate?", deps=deps)
     print(result.output)
 
     # Access accumulated state
-    from haiku.rag.tools import SearchState, SEARCH_NAMESPACE
+    from haiku.rag.tools.search import SearchState, SEARCH_NAMESPACE
     search_state = context.get(SEARCH_NAMESPACE, SearchState)
     if search_state:
         print(f"Total search results: {len(search_state.results)}")
 ```
+
+Tool functions access `client` and `tool_context` via pydantic-ai's `RunContext.deps`, so toolsets can be created once and reused across requests. Your deps type just needs to satisfy the `RAGDeps` protocol (have `client` and `tool_context` attributes).
 
 All toolsets respect session-level document filters when a `SessionState` is registered in the context. This means setting `SessionState.document_filter` restricts all tools simultaneously.
 
@@ -226,16 +224,22 @@ All toolsets respect session-level document filters when a `SessionState` is reg
 When using the chat agent with [AG-UI](https://docs.ag-ui.com) streaming, `ChatDeps` implements the `StateHandler` protocol. State is emitted under a namespaced key via `state_key`:
 
 ```python
-from haiku.rag.agents.chat import AGUI_STATE_KEY, ChatDeps, create_chat_agent
+from haiku.rag.agents.chat import (
+    AGUI_STATE_KEY, ChatDeps, create_chat_agent, prepare_chat_context,
+)
 from haiku.rag.tools import ToolContext, ToolContextCache
+
+# Agent can be created once at startup
+agent = create_chat_agent(config)
 
 # For multi-session apps, cache ToolContext per thread
 cache = ToolContextCache()
 context, _is_new = cache.get_or_create(thread_id)
+prepare_chat_context(context)  # idempotent namespace registration
 
-agent = create_chat_agent(config, client, context)
 deps = ChatDeps(
     config=config,
+    client=client,
     tool_context=context,
     state_key=AGUI_STATE_KEY,  # "haiku.rag.chat"
 )

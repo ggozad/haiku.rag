@@ -8,6 +8,7 @@ from haiku.rag.agents.chat import (
     ChatDeps,
     ChatSessionState,
     create_chat_agent,
+    prepare_chat_context,
 )
 from haiku.rag.agents.chat.context import _summarization_tasks
 from haiku.rag.agents.research.models import Citation
@@ -49,22 +50,22 @@ def vcr_cassette_dir():
 
 def test_create_chat_agent(temp_db_path):
     """Test that create_chat_agent returns a properly configured agent."""
-    client = HaikuRAG(temp_db_path, create=True)
-    context = ToolContext()
-    agent = create_chat_agent(Config, client, context)
+    agent = create_chat_agent(Config)
     assert agent is not None
     assert agent.name == "chat_agent" or agent.name is None
-    client.close()
 
 
 def test_chat_deps_initialization(temp_db_path):
     """Test ChatDeps can be initialized with required fields."""
+    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    deps = ChatDeps(config=Config, tool_context=context)
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
 
     assert deps.config is Config
+    assert deps.client is client
     assert deps.tool_context is context
     assert deps.state_key is None
+    client.close()
 
 
 def test_agui_state_key_constant():
@@ -72,33 +73,42 @@ def test_agui_state_key_constant():
     assert AGUI_STATE_KEY == "haiku.rag.chat"
 
 
-def test_chat_deps_with_state_key():
+def test_chat_deps_with_state_key(temp_db_path):
     """Test ChatDeps can be initialized with state_key for keyed state emission."""
+    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    deps = ChatDeps(config=Config, tool_context=context, state_key="my_state")
+    deps = ChatDeps(
+        config=Config, client=client, tool_context=context, state_key="my_state"
+    )
 
     assert deps.config is Config
     assert deps.state_key == "my_state"
+    client.close()
 
 
-def test_chat_deps_state_key_default_none():
+def test_chat_deps_state_key_default_none(temp_db_path):
     """Test ChatDeps state_key defaults to None."""
+    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    deps = ChatDeps(config=Config, tool_context=context)
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
 
     assert deps.state_key is None
+    client.close()
 
 
-def test_chat_deps_state_setter_handles_initial_context():
+def test_chat_deps_state_setter_handles_initial_context(temp_db_path):
     """Test ChatDeps.state setter transfers initial_context to qa_session_state."""
     from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
+    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
-    # Register QASessionState (normally done by create_chat_agent)
+    # Register QASessionState (normally done by prepare_chat_context)
     context.register(QA_SESSION_NAMESPACE, QASessionState())
     context.register(SESSION_NAMESPACE, SessionState())
 
-    deps = ChatDeps(config=Config, tool_context=context, state_key=AGUI_STATE_KEY)
+    deps = ChatDeps(
+        config=Config, client=client, tool_context=context, state_key=AGUI_STATE_KEY
+    )
 
     # Client sends initial_context with no session_context
     incoming_state = {
@@ -118,17 +128,21 @@ def test_chat_deps_state_setter_handles_initial_context():
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
     assert qa_session_state.session_context == "Background info about the project"
+    client.close()
 
 
-def test_chat_deps_state_setter_parses_session_context_dict():
+def test_chat_deps_state_setter_parses_session_context_dict(temp_db_path):
     """Test ChatDeps.state setter parses session_context dict and extracts summary."""
     from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
+    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
     context.register(QA_SESSION_NAMESPACE, QASessionState())
     context.register(SESSION_NAMESPACE, SessionState())
 
-    deps = ChatDeps(config=Config, tool_context=context, state_key=AGUI_STATE_KEY)
+    deps = ChatDeps(
+        config=Config, client=client, tool_context=context, state_key=AGUI_STATE_KEY
+    )
 
     # Client sends session_context as a dict (as it comes from JSON)
     incoming_state = {
@@ -150,19 +164,23 @@ def test_chat_deps_state_setter_parses_session_context_dict():
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
     assert qa_session_state.session_context == "Previous conversation summary"
+    client.close()
 
 
-def test_chat_deps_state_setter_preserves_server_session_context():
+def test_chat_deps_state_setter_preserves_server_session_context(temp_db_path):
     """Test that server's session_context is preferred over client's stale value."""
     from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
+    client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
     qa_state = QASessionState()
     qa_state.session_context = "Fresh summary from background summarizer"
     context.register(QA_SESSION_NAMESPACE, qa_state)
     context.register(SESSION_NAMESPACE, SessionState())
 
-    deps = ChatDeps(config=Config, tool_context=context, state_key=AGUI_STATE_KEY)
+    deps = ChatDeps(
+        config=Config, client=client, tool_context=context, state_key=AGUI_STATE_KEY
+    )
 
     # Client sends stale session_context
     incoming_state = {
@@ -186,6 +204,7 @@ def test_chat_deps_state_setter_preserves_server_session_context():
     assert (
         qa_session_state.session_context == "Fresh summary from background summarizer"
     )
+    client.close()
 
 
 def test_chat_session_state():
@@ -345,9 +364,11 @@ async def test_chat_agent_search_tool(allow_model_requests, temp_db_path):
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -379,9 +400,11 @@ async def test_chat_agent_search_tool_with_filter(allow_model_requests, temp_db_
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -407,9 +430,11 @@ async def test_chat_agent_get_document_tool(allow_model_requests, temp_db_path):
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -430,9 +455,11 @@ async def test_chat_agent_get_document_not_found(allow_model_requests, temp_db_p
     """Test the chat agent's get_document tool when document is not found."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -458,9 +485,11 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
             state_key=AGUI_STATE_KEY,
         )
@@ -513,9 +542,11 @@ async def test_chat_agent_ask_triggers_background_summarization(
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
             state_key=AGUI_STATE_KEY,
         )
@@ -577,9 +608,11 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
             state_key=AGUI_STATE_KEY,
         )
@@ -676,9 +709,11 @@ async def test_chat_agent_ask_with_prior_answer_retrieval(
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps1 = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
             state_key=AGUI_STATE_KEY,
         )
@@ -779,7 +814,8 @@ async def test_chat_agent_search_with_session_filter(
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
 
         # Set session filter to only include the labels document
         session_state = context.get(SESSION_NAMESPACE)
@@ -788,6 +824,7 @@ async def test_chat_agent_search_with_session_filter(
 
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -1086,9 +1123,11 @@ async def test_list_documents_basic(allow_model_requests, temp_db_path):
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -1126,9 +1165,11 @@ async def test_list_documents_with_session_filter(allow_model_requests, temp_db_
             SESSION_NAMESPACE,
             SessionState(document_filter=["DocLayNet Class Labels"]),
         )
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -1166,9 +1207,11 @@ async def test_list_documents_pagination(allow_model_requests, temp_db_path):
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -1199,9 +1242,11 @@ async def test_summarize_document_found(allow_model_requests, temp_db_path):
         )
 
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 
@@ -1222,9 +1267,11 @@ async def test_summarize_document_not_found(allow_model_requests, temp_db_path):
     """Test that summarize_document handles not found documents gracefully."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         context = ToolContext()
-        agent = create_chat_agent(Config, client, context)
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
         deps = ChatDeps(
             config=Config,
+            client=client,
             tool_context=context,
         )
 

@@ -1,7 +1,14 @@
+from types import SimpleNamespace
+
 import pytest
 
 from haiku.rag.tools import ToolContext
 from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
+
+
+def make_ctx(client, context=None):
+    """Create a lightweight RunContext-like object for direct tool function calls."""
+    return SimpleNamespace(deps=SimpleNamespace(client=client, tool_context=context))
 
 
 class TestSearchState:
@@ -51,50 +58,19 @@ class TestSearchState:
 class TestSearchToolset:
     """Tests for create_search_toolset."""
 
-    def test_create_search_toolset_returns_function_toolset(
-        self, search_client, search_config
-    ):
+    def test_create_search_toolset_returns_function_toolset(self, search_config):
         """create_search_toolset returns a FunctionToolset."""
         from pydantic_ai import FunctionToolset
 
-        context = ToolContext()
-        toolset = create_search_toolset(search_client, search_config, context)
+        toolset = create_search_toolset(search_config)
         assert isinstance(toolset, FunctionToolset)
 
-    def test_search_toolset_has_search_tool(self, search_client, search_config):
+    def test_search_toolset_has_search_tool(self, search_config):
         """The toolset includes a 'search' tool."""
-        context = ToolContext()
-        toolset = create_search_toolset(search_client, search_config, context)
+        toolset = create_search_toolset(search_config)
 
         # toolset.tools is a dict with tool names as keys
         assert "search" in toolset.tools
-
-    def test_search_toolset_registers_state(self, search_client, search_config):
-        """Toolset registers SearchState under SEARCH_NAMESPACE."""
-        context = ToolContext()
-        create_search_toolset(search_client, search_config, context)
-
-        state = context.get(SEARCH_NAMESPACE)
-        assert state is not None
-        assert isinstance(state, SearchState)
-
-    def test_search_toolset_uses_existing_state(self, search_client, search_config):
-        """Toolset uses existing state if already registered."""
-        from haiku.rag.store.models import SearchResult
-
-        context = ToolContext()
-        existing_state = SearchState()
-        existing_state.results.append(
-            SearchResult(content="pre-existing", score=0.5, chunk_id="pre1")
-        )
-        context.register(SEARCH_NAMESPACE, existing_state)
-
-        create_search_toolset(search_client, search_config, context)
-
-        state = context.get(SEARCH_NAMESPACE)
-        assert isinstance(state, SearchState)
-        assert len(state.results) == 1
-        assert state.results[0].chunk_id == "pre1"
 
 
 @pytest.mark.vcr()
@@ -105,11 +81,12 @@ class TestSearchToolExecution:
     async def test_search_returns_formatted_results(self, search_client, search_config):
         """Search tool returns formatted results."""
         context = ToolContext()
-        toolset = create_search_toolset(search_client, search_config, context)
+        toolset = create_search_toolset(search_config)
 
         # Get the search function
         search_tool = toolset.tools["search"]
-        result = await search_tool.function("Python")
+        ctx = make_ctx(search_client, context)
+        result = await search_tool.function(ctx, "Python")
 
         assert "Python" in result or "programming" in result
         assert "No results found" not in result
@@ -118,11 +95,12 @@ class TestSearchToolExecution:
     async def test_search_accumulates_in_state(self, search_client, search_config):
         """Search tool accumulates results in SearchState."""
         context = ToolContext()
-        toolset = create_search_toolset(search_client, search_config, context)
+        toolset = create_search_toolset(search_config)
 
         # Run search
         search_tool = toolset.tools["search"]
-        await search_tool.function("Python")
+        ctx = make_ctx(search_client, context)
+        await search_tool.function(ctx, "Python")
 
         # Check state was updated
         state = context.get(SEARCH_NAMESPACE)
@@ -138,10 +116,11 @@ class TestSearchToolExecution:
         # Use empty database
         async with HaikuRAG(temp_db_path, create=True) as empty_client:
             context = ToolContext()
-            toolset = create_search_toolset(empty_client, search_config, context)
+            toolset = create_search_toolset(search_config)
 
             search_tool = toolset.tools["search"]
-            result = await search_tool.function("anything")
+            ctx = make_ctx(empty_client, context)
+            result = await search_tool.function(ctx, "anything")
 
             assert result == "No results found."
 
@@ -149,11 +128,12 @@ class TestSearchToolExecution:
     async def test_search_with_filter(self, search_client, search_config):
         """Search tool respects filter parameter."""
         context = ToolContext()
-        toolset = create_search_toolset(search_client, search_config, context)
+        toolset = create_search_toolset(search_config)
 
         search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
         # Filter to only Python documents
-        await search_tool.function("programming", filter="title LIKE '%Python%'")
+        await search_tool.function(ctx, "programming", filter="title LIKE '%Python%'")
 
         # Should find Python but not JavaScript
         state = context.get(SEARCH_NAMESPACE)
@@ -164,10 +144,11 @@ class TestSearchToolExecution:
     @pytest.mark.asyncio
     async def test_search_without_context(self, search_client, search_config):
         """Search tool works without ToolContext."""
-        toolset = create_search_toolset(search_client, search_config, context=None)
+        toolset = create_search_toolset(search_config)
 
         search_tool = toolset.tools["search"]
-        result = await search_tool.function("Python")
+        ctx = make_ctx(search_client, None)
+        result = await search_tool.function(ctx, "Python")
 
         # Should still return results
         assert "Python" in result or "programming" in result
@@ -176,15 +157,16 @@ class TestSearchToolExecution:
     async def test_search_multiple_accumulates(self, search_client, search_config):
         """Multiple searches accumulate results in state."""
         context = ToolContext()
-        toolset = create_search_toolset(search_client, search_config, context)
+        toolset = create_search_toolset(search_config)
 
         search_tool = toolset.tools["search"]
-        await search_tool.function("Python")
+        ctx = make_ctx(search_client, context)
+        await search_tool.function(ctx, "Python")
         state = context.get(SEARCH_NAMESPACE)
         assert isinstance(state, SearchState)
         first_count = len(state.results)
 
-        await search_tool.function("JavaScript")
+        await search_tool.function(ctx, "JavaScript")
         state = context.get(SEARCH_NAMESPACE)
         assert isinstance(state, SearchState)
         second_count = len(state.results)
@@ -197,14 +179,13 @@ class TestSearchToolExecution:
         context = ToolContext()
         # Create toolset with base_filter for Python documents only
         toolset = create_search_toolset(
-            search_client,
             search_config,
-            context,
             base_filter="title LIKE '%Python%'",
         )
 
         search_tool = toolset.tools["search"]
-        await search_tool.function("programming")
+        ctx = make_ctx(search_client, context)
+        await search_tool.function(ctx, "programming")
 
         # Should only find Python documents
         state = context.get(SEARCH_NAMESPACE)

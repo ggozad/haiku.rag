@@ -1,5 +1,6 @@
+from dataclasses import dataclass
+
 from pydantic_ai import Agent
-from pydantic_ai.output import ToolOutput
 
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.agents.research.models import (
@@ -15,6 +16,12 @@ from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_
 from haiku.rag.utils import get_model
 
 
+@dataclass
+class _QARunDeps:
+    client: HaikuRAG
+    tool_context: ToolContext | None = None
+
+
 class QuestionAnswerAgent:
     def __init__(
         self,
@@ -25,12 +32,8 @@ class QuestionAnswerAgent:
     ):
         self._client = client
         self._config = config or Config
-        self._agent: Agent[None, RawSearchAnswer] = Agent(
-            model=get_model(model_config, self._config),
-            output_type=ToolOutput(RawSearchAnswer, max_retries=3),
-            instructions=system_prompt or QA_SYSTEM_PROMPT,
-            retries=3,
-        )
+        self._model_config = model_config
+        self._system_prompt = system_prompt or QA_SYSTEM_PROMPT
 
     async def answer(
         self, question: str, filter: str | None = None
@@ -44,17 +47,27 @@ class QuestionAnswerAgent:
         Returns:
             Tuple of (answer text, list of resolved citations)
         """
-        # Create context and search toolset for this run
         context = ToolContext()
         search_toolset = create_search_toolset(
-            self._client,
             self._config,
-            context=context,
             base_filter=filter,
             tool_name="search_documents",
         )
 
-        result = await self._agent.run(question, toolsets=[search_toolset])
+        # Agent created per-call: toolset varies with filter, and Agent
+        # construction is pure Python (no IO).
+        agent = Agent(
+            model=get_model(self._model_config, self._config),
+            deps_type=_QARunDeps,
+            output_type=RawSearchAnswer,
+            output_retries=3,
+            instructions=self._system_prompt,
+            toolsets=[search_toolset],  # ty: ignore[invalid-argument-type]
+            retries=3,
+        )
+
+        deps = _QARunDeps(client=self._client, tool_context=context)
+        result = await agent.run(question, deps=deps)  # ty: ignore[invalid-argument-type]
         output = result.output
 
         # Get search results from context for citation resolution

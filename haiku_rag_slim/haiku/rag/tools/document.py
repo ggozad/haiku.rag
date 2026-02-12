@@ -1,9 +1,9 @@
 from pydantic import BaseModel
-from pydantic_ai import Agent, FunctionToolset
+from pydantic_ai import Agent, FunctionToolset, RunContext
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.context import RAGDeps
 from haiku.rag.tools.filters import get_session_filter
 from haiku.rag.utils import get_model
 
@@ -66,26 +66,22 @@ async def find_document(client: HaikuRAG, query: str):
 
 
 def create_document_toolset(
-    client: HaikuRAG,
     config: AppConfig,
-    context: ToolContext | None = None,
     base_filter: str | None = None,
 ) -> FunctionToolset:
     """Create a toolset with document management capabilities.
 
     Args:
-        client: HaikuRAG client for document operations.
         config: Application configuration (used for summarization LLM).
-        context: Optional ToolContext for state tracking.
-            If SessionState is registered, it will be used for dynamic
-            document filtering.
         base_filter: Optional base SQL WHERE clause applied to list operations.
 
     Returns:
         FunctionToolset with list_documents, get_document, summarize_document tools.
     """
 
-    async def list_documents(page: int = 1) -> DocumentListResponse:
+    async def list_documents(
+        ctx: RunContext[RAGDeps], page: int = 1
+    ) -> DocumentListResponse:
         """List available documents in the knowledge base.
 
         Args:
@@ -94,10 +90,13 @@ def create_document_toolset(
         Returns:
             Paginated list of documents with metadata.
         """
+        client = ctx.deps.client
+        tool_context = ctx.deps.tool_context
+
         page_size = 50
         offset = (page - 1) * page_size
 
-        effective_filter = get_session_filter(context, base_filter)
+        effective_filter = get_session_filter(tool_context, base_filter)
 
         docs = await client.list_documents(
             limit=page_size, offset=offset, filter=effective_filter
@@ -119,7 +118,7 @@ def create_document_toolset(
             total_documents=total,
         )
 
-    async def get_document(query: str) -> str:
+    async def get_document(ctx: RunContext[RAGDeps], query: str) -> str:
         """Retrieve a specific document by title or URI.
 
         Args:
@@ -128,6 +127,8 @@ def create_document_toolset(
         Returns:
             Document content and metadata, or not found message.
         """
+        client = ctx.deps.client
+
         doc = await find_document(client, query)
 
         if doc is None:
@@ -141,7 +142,7 @@ def create_document_toolset(
             f"**Content:**\n{doc.content}"
         )
 
-    async def summarize_document(query: str) -> str:
+    async def summarize_document(ctx: RunContext[RAGDeps], query: str) -> str:
         """Generate a summary of a specific document.
 
         Args:
@@ -150,6 +151,8 @@ def create_document_toolset(
         Returns:
             Generated summary or not found message.
         """
+        client = ctx.deps.client
+
         doc = await find_document(client, query)
 
         if doc is None:

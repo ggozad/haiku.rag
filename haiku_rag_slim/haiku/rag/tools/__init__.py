@@ -1,5 +1,5 @@
 from haiku.rag.tools.analysis import create_analysis_toolset
-from haiku.rag.tools.context import ToolContext, ToolContextCache
+from haiku.rag.tools.context import RAGDeps, ToolContext, ToolContextCache
 from haiku.rag.tools.document import (
     DocumentInfo,
     DocumentListResponse,
@@ -29,6 +29,7 @@ from haiku.rag.tools.session import (
 )
 
 __all__ = [
+    "RAGDeps",
     "ToolContext",
     "ToolContextCache",
     "QAResult",

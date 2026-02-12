@@ -18,6 +18,7 @@ from pydantic_ai.messages import ModelMessage
 from haiku.rag.agents.chat.agent import (
     ChatDeps,
     create_chat_agent,
+    prepare_chat_context,
     trigger_background_summarization,
 )
 from haiku.rag.client import HaikuRAG
@@ -152,7 +153,8 @@ class ChatApp(App):
 
         # Create tool context and agent
         self.tool_context = ToolContext()
-        self.agent = create_chat_agent(self.config, self.client, self.tool_context)
+        prepare_chat_context(self.tool_context)
+        self.agent = create_chat_agent(self.config)
 
         # Sync document filter to tool context
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
@@ -250,6 +252,7 @@ class ChatApp(App):
 
             deps = ChatDeps(
                 config=self.config,
+                client=self.client,
                 tool_context=self.tool_context,
             )
 

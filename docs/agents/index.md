@@ -73,14 +73,15 @@ See [Applications](../apps.md#chat-tui) for the full TUI interface guide.
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.agents.chat import create_chat_agent, ChatDeps
+from haiku.rag.agents.chat import create_chat_agent, prepare_chat_context, ChatDeps
 from haiku.rag.tools import ToolContext
 
+agent = create_chat_agent(config)
+
 async with HaikuRAG(path_to_db) as client:
-    # Create agent with composed toolsets
     context = ToolContext()
-    agent = create_chat_agent(config, client, context)
-    deps = ChatDeps(config=config, tool_context=context)
+    prepare_chat_context(context)
+    deps = ChatDeps(config=config, client=client, tool_context=context)
 
     # First question
     result = await agent.run("What is haiku.rag?", deps=deps)
@@ -105,11 +106,11 @@ from haiku.rag.agents.chat import (
 )
 
 # Search-only agent
-agent = create_chat_agent(config, client, context, features=[FEATURE_SEARCH])
+agent = create_chat_agent(config, features=[FEATURE_SEARCH])
 
 # All features including code analysis
 agent = create_chat_agent(
-    config, client, context,
+    config,
     features=[FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA, FEATURE_ANALYSIS],
 )
 ```

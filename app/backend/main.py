@@ -16,6 +16,7 @@ from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
     ChatDeps,
     create_chat_agent,
+    prepare_chat_context,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
@@ -68,6 +69,10 @@ def get_client() -> HaikuRAG:
     return _client
 
 
+# Agent is created once at module level (no runtime deps needed)
+agent = create_chat_agent(Config)
+
+
 async def stream_chat(request: Request) -> Response:
     """Chat streaming endpoint with AG-UI protocol.
 
@@ -79,11 +84,13 @@ async def stream_chat(request: Request) -> Response:
     run_input = AGUIAdapter.build_run_input(body)
 
     thread_id = getattr(run_input, "thread_id", None) or "default"
-    context, _is_new = context_cache.get_or_create(thread_id)
-    agent = create_chat_agent(Config, get_client(), context)
+    context, is_new = context_cache.get_or_create(thread_id)
+    if is_new:
+        prepare_chat_context(context)
 
     deps = ChatDeps(
         config=Config,
+        client=get_client(),
         tool_context=context,
         state_key=AGUI_STATE_KEY,
     )

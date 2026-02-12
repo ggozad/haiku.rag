@@ -40,9 +40,7 @@ def test_get_qa_agent_with_custom_prompt(temp_db_path):
 
     assert agent is not None
     assert isinstance(agent, QuestionAnswerAgent)
-    # The internal pydantic-ai agent should have instructions set
-    # (pydantic-ai wraps the string in an Instructions object)
-    assert agent._agent.instructions is not None
+    assert agent._system_prompt == custom_prompt
 
     client.close()
 
