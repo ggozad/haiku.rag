@@ -561,7 +561,7 @@ async def test_chat_agent_ask_triggers_background_summarization(
         )
 
         # Patch internal trigger to avoid concurrent HTTP calls during VCR
-        with patch("haiku.rag.agents.chat.context.trigger_background_summarization"):
+        with patch("haiku.rag.agents.chat.agent._trigger_summarization"):
             result = await agent.run(
                 "What is the highest count class in the DocLayNet dataset?",
                 deps=deps,
@@ -650,7 +650,7 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
         # Patch the internal summarization trigger in the ask tool to avoid
         # concurrent HTTP calls that break VCR cassette replay ordering.
         with patch(
-            "haiku.rag.agents.chat.context.trigger_background_summarization",
+            "haiku.rag.agents.chat.agent._trigger_summarization",
         ):
             # First question about class labels
             result1 = await agent.run(
@@ -675,7 +675,7 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
 
         # Second related question - uses prior answers and updated session context
         with patch(
-            "haiku.rag.agents.chat.context.trigger_background_summarization",
+            "haiku.rag.agents.chat.agent._trigger_summarization",
         ):
             result2 = await agent.run(
                 "How were the annotations created and how many annotators were involved?",

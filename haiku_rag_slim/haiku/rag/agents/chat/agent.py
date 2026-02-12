@@ -7,11 +7,7 @@ from haiku.rag.agents.chat.context import (
     trigger_background_summarization as _trigger_summarization,
 )
 from haiku.rag.agents.chat.prompts import build_chat_prompt
-from haiku.rag.agents.chat.state import (
-    AGUI_STATE_KEY,
-    ChatSessionState,
-    build_chat_state_snapshot,
-)
+from haiku.rag.agents.chat.state import AGUI_STATE_KEY
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext
@@ -33,6 +29,10 @@ FEATURE_ANALYSIS = "analysis"
 DEFAULT_FEATURES = [FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA]
 
 
+def _on_qa_complete(qa_session_state: QASessionState, config: AppConfig) -> None:
+    _trigger_summarization(qa_session_state=qa_session_state, config=config)
+
+
 @dataclass
 class ChatDeps:
     """Dependencies for chat agent.
@@ -49,12 +49,10 @@ class ChatDeps:
     def state(self) -> dict[str, Any]:
         """Get current state for AG-UI protocol.
 
-        Combines SessionState and QASessionState into a single state dict
+        Combines all registered namespace states into a single flat dict,
         matching the ChatSessionState schema expected by AG-UI clients.
         """
-        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
-        snapshot = build_chat_state_snapshot(session_state, qa_session_state)
+        snapshot = self.tool_context.build_state_snapshot()
         if self.state_key:
             return {self.state_key: snapshot}
         return snapshot
@@ -72,41 +70,26 @@ class ChatDeps:
             if isinstance(nested, dict):
                 state_data = nested
 
-        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        if session_state is not None:
-            if "document_filter" in state_data:
-                session_state.document_filter = state_data.get("document_filter", [])
-            if "citation_registry" in state_data:
-                session_state.citation_registry = state_data["citation_registry"]
-            if "citations" in state_data:
-                from haiku.rag.agents.research.models import Citation
-
-                session_state.citations = [
-                    Citation(**c) if isinstance(c, dict) else c
-                    for c in state_data.get("citations", [])
-                ]
-
+        # Preserve server's session_context before restore overwrites it
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
+        server_session_context = (
+            qa_session_state.session_context if qa_session_state is not None else None
+        )
+
+        self.tool_context.restore_state_snapshot(state_data)
+
+        # Chat-specific overrides after generic restore
         if qa_session_state is not None:
-            if "qa_history" in state_data:
-                from haiku.rag.tools.qa import QAHistoryEntry
-
-                qa_session_state.qa_history = [
-                    QAHistoryEntry(**qa) if isinstance(qa, dict) else qa
-                    for qa in state_data.get("qa_history", [])
-                ]
-
             # Prefer server's session_context (background summarizer may
             # have updated it since the client's last snapshot).
-            if qa_session_state.session_context is None:
-                session_context = state_data.get("session_context")
-                if isinstance(session_context, dict):
-                    qa_session_state.session_context = SessionContext(**session_context)
+            if server_session_context is not None:
+                qa_session_state.session_context = server_session_context
 
-                # Handle initial_context -> session_context for first message
+            # Handle initial_context -> session_context for first message
+            if qa_session_state.session_context is None:
                 if "initial_context" in state_data:
                     initial = state_data.get("initial_context")
-                    if initial and qa_session_state.session_context is None:
+                    if initial:
                         qa_session_state.session_context = SessionContext(
                             summary=initial
                         )
@@ -169,7 +152,7 @@ def create_chat_agent(
     if FEATURE_DOCUMENTS in features:
         toolsets.append(create_document_toolset(config))
     if FEATURE_QA in features:
-        toolsets.append(create_qa_toolset(config))
+        toolsets.append(create_qa_toolset(config, on_ask_complete=_on_qa_complete))
     if FEATURE_ANALYSIS in features:
         from haiku.rag.tools.analysis import create_analysis_toolset
 
@@ -234,7 +217,6 @@ __all__ = [
     "run_chat_agent",
     "trigger_background_summarization",
     "ChatDeps",
-    "ChatSessionState",
     "AGUI_STATE_KEY",
     "FEATURE_SEARCH",
     "FEATURE_DOCUMENTS",

@@ -14,7 +14,11 @@ from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
+    _rebuild_models,
 )
+from haiku.rag.tools.qa import QAHistoryEntry
+
+_rebuild_models(QAHistoryEntry)
 
 __all__ = [
     "AGUI_STATE_KEY",

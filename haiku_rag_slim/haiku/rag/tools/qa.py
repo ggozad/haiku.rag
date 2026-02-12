@@ -1,4 +1,5 @@
 import math
+from collections.abc import Callable
 
 from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic import BaseModel, Field
@@ -64,15 +65,6 @@ class QAHistoryEntry(BaseModel):
         )
 
 
-def _resolve_chat_state_forward_refs() -> None:
-    from haiku.rag.agents.chat.state import _rebuild_models
-
-    _rebuild_models(QAHistoryEntry)
-
-
-_resolve_chat_state_forward_refs()
-
-
 class QASessionState(BaseModel):
     """Extended session state for QA with embedding cache."""
 
@@ -94,6 +86,7 @@ async def run_qa_core(
     base_filter: str | None = None,
     session_context: str | None = None,
     prior_answers: list[SearchAnswer] | None = None,
+    on_qa_complete: Callable[[QASessionState, AppConfig], None] | None = None,
 ) -> QAResult:
     """Run the QA flow and return a QAResult.
 
@@ -205,12 +198,8 @@ async def run_qa_core(
         # Enforce FIFO limit
         if len(qa_session_state.qa_history) > MAX_QA_HISTORY:
             qa_session_state.qa_history = qa_session_state.qa_history[-MAX_QA_HISTORY:]
-        from haiku.rag.agents.chat.context import trigger_background_summarization
-
-        trigger_background_summarization(
-            qa_session_state=qa_session_state,
-            config=config,
-        )
+        if on_qa_complete is not None:
+            on_qa_complete(qa_session_state, config)
 
     return qa_result
 
@@ -219,6 +208,7 @@ def create_qa_toolset(
     config: AppConfig,
     base_filter: str | None = None,
     tool_name: str = "ask",
+    on_ask_complete: Callable[[QASessionState, AppConfig], None] | None = None,
 ) -> FunctionToolset:
     """Create a toolset with Q&A capabilities using research graph.
 
@@ -226,6 +216,9 @@ def create_qa_toolset(
         config: Application configuration.
         base_filter: Optional base SQL WHERE clause applied to searches.
         tool_name: Name for the ask tool. Defaults to "ask".
+        on_ask_complete: Optional callback invoked after each QA cycle with
+            the updated QASessionState and config. Use this to trigger
+            background summarization or other post-processing.
 
     Returns:
         FunctionToolset with an ask tool.
@@ -250,13 +243,9 @@ def create_qa_toolset(
         client = ctx.deps.client
         tool_context = ctx.deps.tool_context
 
-        session_state: SessionState | None = None
-        qa_session_state: QASessionState | None = None
         state_key: str | None = None
 
         if tool_context is not None:
-            session_state = tool_context.get(SESSION_NAMESPACE, SessionState)
-            qa_session_state = tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
             state_key = tool_context.state_key
 
         qa_result = await run_qa_core(
@@ -266,15 +255,11 @@ def create_qa_toolset(
             document_name=document_name,
             context=tool_context,
             base_filter=base_filter,
+            on_qa_complete=on_ask_complete,
         )
 
-        if session_state is not None:
-            from haiku.rag.agents.chat.state import build_chat_state_snapshot
-
-            snapshot = build_chat_state_snapshot(
-                session_state,
-                qa_session_state,
-            )
+        if tool_context is not None and tool_context.namespaces:
+            snapshot = tool_context.build_state_snapshot()
             if state_key:
                 snapshot = {state_key: snapshot}
 

@@ -312,3 +312,131 @@ def test_tool_context_cache_clear():
     ctx2, is_new2 = cache.get_or_create("thread-2")
     assert is_new1 is True
     assert is_new2 is True
+
+
+# =============================================================================
+# build_state_snapshot / restore_state_snapshot Tests
+# =============================================================================
+
+
+class NestedModel(BaseModel):
+    name: str = ""
+    count: int = 0
+
+
+class StateWithNested(BaseModel):
+    nested: NestedModel | None = None
+    tags: list[str] = []
+
+
+def test_build_state_snapshot_empty():
+    """build_state_snapshot on empty context returns empty dict."""
+    ctx = ToolContext()
+    assert ctx.build_state_snapshot() == {}
+
+
+def test_build_state_snapshot_single_namespace():
+    """build_state_snapshot with one namespace returns its fields."""
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=42))
+    snapshot = ctx.build_state_snapshot()
+    assert snapshot == {"value": 42}
+
+
+def test_build_state_snapshot_multiple_namespaces():
+    """build_state_snapshot merges fields from all namespaces."""
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=42))
+    ctx.register("ns2", TestStateWithList(items=["a", "b"]))
+    snapshot = ctx.build_state_snapshot()
+    assert snapshot == {"value": 42, "items": ["a", "b"]}
+
+
+def test_build_state_snapshot_nested_model():
+    """build_state_snapshot serializes nested models with mode='json'."""
+    from datetime import datetime
+
+    class TimestampState(BaseModel):
+        ts: datetime | None = None
+
+    ctx = ToolContext()
+    ctx.register("ns", TimestampState(ts=datetime(2025, 1, 27, 12, 0, 0)))
+    snapshot = ctx.build_state_snapshot()
+    assert isinstance(snapshot["ts"], str)
+    assert snapshot["ts"] == "2025-01-27T12:00:00"
+
+
+def test_restore_state_snapshot_empty_context():
+    """restore_state_snapshot on empty context is a no-op."""
+    ctx = ToolContext()
+    ctx.restore_state_snapshot({"value": 42})
+    assert ctx.namespaces == []
+
+
+def test_restore_state_snapshot_single_namespace():
+    """restore_state_snapshot updates matching fields in registered namespaces."""
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=0))
+    ctx.restore_state_snapshot({"value": 99})
+    state = ctx.get("ns1", TestState)
+    assert state is not None
+    assert state.value == 99
+
+
+def test_restore_state_snapshot_partial_update():
+    """restore_state_snapshot only touches fields present in data."""
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=42))
+    ctx.register("ns2", TestStateWithList(items=["original"]))
+    # Only update ns2's items, not ns1's value
+    ctx.restore_state_snapshot({"items": ["updated"]})
+    ns1 = ctx.get("ns1", TestState)
+    ns2 = ctx.get("ns2", TestStateWithList)
+    assert ns1 is not None
+    assert ns2 is not None
+    assert ns1.value == 42
+    assert ns2.items == ["updated"]
+
+
+def test_restore_state_snapshot_nested_model():
+    """restore_state_snapshot deserializes nested models from dicts."""
+    ctx = ToolContext()
+    ctx.register("ns", StateWithNested())
+    ctx.restore_state_snapshot({"nested": {"name": "foo", "count": 5}, "tags": ["x"]})
+    state = ctx.get("ns", StateWithNested)
+    assert state is not None
+    assert state.nested is not None
+    assert state.nested.name == "foo"
+    assert state.nested.count == 5
+    assert state.tags == ["x"]
+
+
+def test_state_snapshot_roundtrip():
+    """build then restore produces equivalent state."""
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=42))
+    ctx.register("ns2", TestStateWithList(items=["a", "b"]))
+
+    snapshot = ctx.build_state_snapshot()
+
+    ctx2 = ToolContext()
+    ctx2.register("ns1", TestState())
+    ctx2.register("ns2", TestStateWithList())
+    ctx2.restore_state_snapshot(snapshot)
+
+    ns1 = ctx2.get("ns1", TestState)
+    ns2 = ctx2.get("ns2", TestStateWithList)
+    assert ns1 is not None
+    assert ns2 is not None
+    assert ns1.value == 42
+    assert ns2.items == ["a", "b"]
+
+
+def test_restore_state_snapshot_ignores_unknown_fields():
+    """restore_state_snapshot ignores fields not in any registered namespace."""
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=0))
+    ctx.restore_state_snapshot({"value": 10, "unknown_field": "ignored"})
+    ns1 = ctx.get("ns1", TestState)
+    assert ns1 is not None
+    assert ns1.value == 10

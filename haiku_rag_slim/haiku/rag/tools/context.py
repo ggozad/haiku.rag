@@ -129,6 +129,41 @@ class ToolContext(BaseModel):
         """
         return {ns: state.model_dump() for ns, state in self._namespaces.items()}
 
+    def build_state_snapshot(self) -> dict[str, Any]:
+        """Build a flat snapshot of all namespace states for AG-UI.
+
+        Merges model_dump(mode="json") from every registered namespace
+        into a single flat dict.
+
+        Returns:
+            Combined dict of all namespace fields.
+        """
+        snapshot: dict[str, Any] = {}
+        for state in self._namespaces.values():
+            snapshot.update(state.model_dump(mode="json"))
+        return snapshot
+
+    def restore_state_snapshot(self, data: dict[str, Any]) -> None:
+        """Restore namespace states from a flat snapshot dict.
+
+        For each registered namespace, finds matching fields in *data*,
+        validates them via the namespace model, and updates the state
+        in place.  Fields not present in *data* are left unchanged.
+
+        Args:
+            data: Flat dict as produced by build_state_snapshot().
+        """
+        for state in self._namespaces.values():
+            model_fields = state.model_fields
+            matching = {k: v for k, v in data.items() if k in model_fields}
+            if matching:
+                # Fill in current values for fields not in data
+                current = state.model_dump()
+                current.update(matching)
+                updated = state.model_validate(current)
+                for field_name in matching:
+                    setattr(state, field_name, getattr(updated, field_name))
+
     def load_namespace(self, namespace: str, state_type: type[T], data: dict) -> T:
         """Deserialize and register state for a namespace.
 
