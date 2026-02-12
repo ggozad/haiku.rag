@@ -1,22 +1,15 @@
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from haiku.rag.agents.research.models import Citation
+from haiku.rag.tools.session import SessionContext
 
 if TYPE_CHECKING:
     from haiku.rag.tools.qa import QAHistoryEntry, QASessionState
     from haiku.rag.tools.session import SessionState
 
 AGUI_STATE_KEY = "haiku.rag.chat"
-
-
-class SessionContext(BaseModel):
-    """Compressed summary of conversation history for research graph."""
-
-    summary: str = ""
-    last_updated: datetime | None = None
 
 
 class ChatSessionState(BaseModel):
@@ -66,10 +59,10 @@ def build_chat_state_snapshot(
 
     if qa_state is not None:
         snapshot["qa_history"] = [qa.model_dump() for qa in qa_state.qa_history]
-        if qa_state.session_context:
-            snapshot["session_context"] = SessionContext(
-                summary=qa_state.session_context
-            ).model_dump(mode="json")
+        if qa_state.session_context is not None:
+            snapshot["session_context"] = qa_state.session_context.model_dump(
+                mode="json"
+            )
         else:
             snapshot["session_context"] = None
 

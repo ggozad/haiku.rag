@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 import jsonpatch
@@ -7,6 +8,13 @@ from pydantic import BaseModel
 from haiku.rag.agents.research.models import Citation
 
 SESSION_NAMESPACE = "haiku.rag.session"
+
+
+class SessionContext(BaseModel):
+    """Compressed summary of conversation history for research graph."""
+
+    summary: str = ""
+    last_updated: datetime | None = None
 
 
 class SessionState(BaseModel):

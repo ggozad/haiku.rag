@@ -1,8 +1,5 @@
-from haiku.rag.agents.chat.state import (
-    ChatSessionState,
-    SessionContext,
-)
-from haiku.rag.tools.session import SessionState
+from haiku.rag.agents.chat.state import ChatSessionState
+from haiku.rag.tools.session import SessionContext, SessionState
 
 
 def test_max_qa_history_constant():

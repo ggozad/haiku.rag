@@ -10,7 +10,6 @@ from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
-    SessionContext,
     build_chat_state_snapshot,
 )
 from haiku.rag.client import HaikuRAG
@@ -23,7 +22,7 @@ from haiku.rag.tools.qa import (
     create_qa_toolset,
 )
 from haiku.rag.tools.search import create_search_toolset
-from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionContext, SessionState
 from haiku.rag.utils import get_model
 
 FEATURE_SEARCH = "search"
@@ -99,18 +98,18 @@ class ChatDeps:
 
             # Prefer server's session_context (background summarizer may
             # have updated it since the client's last snapshot).
-            if not qa_session_state.session_context:
+            if qa_session_state.session_context is None:
                 session_context = state_data.get("session_context")
                 if isinstance(session_context, dict):
-                    qa_session_state.session_context = SessionContext(
-                        **session_context
-                    ).summary
+                    qa_session_state.session_context = SessionContext(**session_context)
 
                 # Handle initial_context -> session_context for first message
                 if "initial_context" in state_data:
                     initial = state_data.get("initial_context")
-                    if initial and not qa_session_state.session_context:
-                        qa_session_state.session_context = initial
+                    if initial and qa_session_state.session_context is None:
+                        qa_session_state.session_context = SessionContext(
+                            summary=initial
+                        )
 
 
 def prepare_chat_context(
@@ -236,7 +235,6 @@ __all__ = [
     "trigger_background_summarization",
     "ChatDeps",
     "ChatSessionState",
-    "SessionContext",
     "AGUI_STATE_KEY",
     "FEATURE_SEARCH",
     "FEATURE_DOCUMENTS",

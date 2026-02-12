@@ -8,7 +8,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Markdown, Static, TextArea
 
 if TYPE_CHECKING:
-    from haiku.rag.agents.chat.state import SessionContext
+    from haiku.rag.tools.session import SessionContext
 
 
 class ContextModal(ModalScreen):  # pragma: no cover

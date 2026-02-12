@@ -16,7 +16,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.tools import ToolContext
 from haiku.rag.tools.qa import MAX_QA_HISTORY, QAHistoryEntry
-from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionContext, SessionState
 
 
 def extract_state_from_result(result, state_key: str = AGUI_STATE_KEY) -> dict | None:
@@ -127,7 +127,10 @@ def test_chat_deps_state_setter_handles_initial_context(temp_db_path):
     # initial_context should be copied to qa_session_state.session_context
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
-    assert qa_session_state.session_context == "Background info about the project"
+    assert qa_session_state.session_context is not None
+    assert (
+        qa_session_state.session_context.summary == "Background info about the project"
+    )
     client.close()
 
 
@@ -160,10 +163,12 @@ def test_chat_deps_state_setter_parses_session_context_dict(temp_db_path):
 
     deps.state = incoming_state
 
-    # session_context dict should be parsed and summary extracted
+    # session_context dict should be parsed into SessionContext
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
-    assert qa_session_state.session_context == "Previous conversation summary"
+    assert qa_session_state.session_context is not None
+    assert isinstance(qa_session_state.session_context, SessionContext)
+    assert qa_session_state.session_context.summary == "Previous conversation summary"
     client.close()
 
 
@@ -174,7 +179,9 @@ def test_chat_deps_state_setter_preserves_server_session_context(temp_db_path):
     client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
     qa_state = QASessionState()
-    qa_state.session_context = "Fresh summary from background summarizer"
+    qa_state.session_context = SessionContext(
+        summary="Fresh summary from background summarizer"
+    )
     context.register(QA_SESSION_NAMESPACE, qa_state)
     context.register(SESSION_NAMESPACE, SessionState())
 
@@ -201,8 +208,10 @@ def test_chat_deps_state_setter_preserves_server_session_context(temp_db_path):
     # Server's fresher session_context should be preserved
     qa_session_state = context.get(QA_SESSION_NAMESPACE)
     assert isinstance(qa_session_state, QASessionState)
+    assert qa_session_state.session_context is not None
     assert (
-        qa_session_state.session_context == "Fresh summary from background summarizer"
+        qa_session_state.session_context.summary
+        == "Fresh summary from background summarizer"
     )
     client.close()
 
@@ -552,7 +561,7 @@ async def test_chat_agent_ask_triggers_background_summarization(
         )
 
         # Patch internal trigger to avoid concurrent HTTP calls during VCR
-        with patch("haiku.rag.tools.qa.trigger_background_summarization"):
+        with patch("haiku.rag.agents.chat.context.trigger_background_summarization"):
             result = await agent.run(
                 "What is the highest count class in the DocLayNet dataset?",
                 deps=deps,
@@ -572,7 +581,7 @@ async def test_chat_agent_ask_triggers_background_summarization(
 
         # Verify session_context was populated by background task
         assert qa_session_state.session_context is not None
-        assert qa_session_state.session_context != ""
+        assert qa_session_state.session_context.summary != ""
 
 
 @pytest.mark.asyncio
@@ -632,15 +641,16 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
         # initial_context should be transferred to QASessionState
         qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
         assert qa_session is not None
+        assert qa_session.session_context is not None
         assert (
-            qa_session.session_context
+            qa_session.session_context.summary
             == "The user is researching the DocLayNet dataset for a paper on document layout analysis."
         )
 
         # Patch the internal summarization trigger in the ask tool to avoid
         # concurrent HTTP calls that break VCR cassette replay ordering.
         with patch(
-            "haiku.rag.tools.qa.trigger_background_summarization",
+            "haiku.rag.agents.chat.context.trigger_background_summarization",
         ):
             # First question about class labels
             result1 = await agent.run(
@@ -656,7 +666,7 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
             await _summarization_tasks[key]
 
         assert qa_session.session_context is not None
-        assert qa_session.session_context != ""
+        assert qa_session.session_context.summary != ""
 
         # qa_history should have one entry
         qa_session = context.get(QA_SESSION_NAMESPACE, QASessionState)
@@ -665,7 +675,7 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
 
         # Second related question - uses prior answers and updated session context
         with patch(
-            "haiku.rag.tools.qa.trigger_background_summarization",
+            "haiku.rag.agents.chat.context.trigger_background_summarization",
         ):
             result2 = await agent.run(
                 "How were the annotations created and how many annotators were involved?",
@@ -687,7 +697,7 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
 
         # Session context should be updated with newer summary
         assert qa_session.session_context is not None
-        assert qa_session.session_context != ""
+        assert qa_session.session_context.summary != ""
 
 
 @pytest.mark.asyncio

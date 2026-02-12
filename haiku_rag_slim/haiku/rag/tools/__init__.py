@@ -23,6 +23,7 @@ from haiku.rag.tools.qa import (
 from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
 from haiku.rag.tools.session import (
     SESSION_NAMESPACE,
+    SessionContext,
     SessionState,
     compute_combined_state_delta,
     compute_state_delta,
@@ -52,6 +53,7 @@ __all__ = [
     "run_qa_core",
     "create_analysis_toolset",
     "SESSION_NAMESPACE",
+    "SessionContext",
     "SessionState",
     "compute_state_delta",
     "compute_combined_state_delta",

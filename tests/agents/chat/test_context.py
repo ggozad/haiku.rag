@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.agents.chat.state import SessionContext
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.config import Config
 from haiku.rag.tools.qa import QAHistoryEntry
+from haiku.rag.tools.session import SessionContext
 
 
 @pytest.fixture(scope="module")

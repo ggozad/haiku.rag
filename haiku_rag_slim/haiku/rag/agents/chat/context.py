@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from pydantic_ai import Agent
 
 from haiku.rag.agents.chat.prompts import SESSION_SUMMARY_PROMPT
-from haiku.rag.agents.chat.state import SessionContext
 from haiku.rag.config.models import AppConfig
+from haiku.rag.tools.session import SessionContext
 from haiku.rag.utils import get_model
 
 if TYPE_CHECKING:
@@ -96,14 +96,19 @@ async def _update_context_background(
 ) -> None:
     """Background task to update session context after an ask."""
     try:
+        current_summary = (
+            qa_session_state.session_context.summary
+            if qa_session_state.session_context is not None
+            else None
+        )
         result = await update_session_context(
             qa_history=list(qa_session_state.qa_history),
             config=config,
-            current_context=qa_session_state.session_context,
+            current_context=current_summary,
         )
 
         if result.summary:
-            qa_session_state.session_context = result.summary
+            qa_session_state.session_context = result
 
     except asyncio.CancelledError:
         pass

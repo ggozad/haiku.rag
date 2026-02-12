@@ -14,7 +14,6 @@ from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
     ChatSessionState,
-    SessionContext,
 )
 
 __all__ = [
@@ -31,5 +30,4 @@ __all__ = [
     "trigger_background_summarization",
     "ChatDeps",
     "ChatSessionState",
-    "SessionContext",
 ]

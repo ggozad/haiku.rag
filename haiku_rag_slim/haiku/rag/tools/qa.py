@@ -4,8 +4,6 @@ from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic import BaseModel, Field
 from pydantic_ai import FunctionToolset, RunContext, ToolReturn
 
-from haiku.rag.agents.chat.context import trigger_background_summarization
-from haiku.rag.agents.chat.state import build_chat_state_snapshot
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.models import Citation, SearchAnswer
@@ -22,6 +20,7 @@ from haiku.rag.tools.filters import (
 from haiku.rag.tools.models import QAResult
 from haiku.rag.tools.session import (
     SESSION_NAMESPACE,
+    SessionContext,
     SessionState,
 )
 
@@ -65,17 +64,20 @@ class QAHistoryEntry(BaseModel):
         )
 
 
-# Resolve ChatSessionState forward reference to QAHistoryEntry
-from haiku.rag.agents.chat.state import _rebuild_models  # noqa: E402
+def _resolve_chat_state_forward_refs() -> None:
+    from haiku.rag.agents.chat.state import _rebuild_models
 
-_rebuild_models(QAHistoryEntry)
+    _rebuild_models(QAHistoryEntry)
+
+
+_resolve_chat_state_forward_refs()
 
 
 class QASessionState(BaseModel):
     """Extended session state for QA with embedding cache."""
 
     qa_history: list[QAHistoryEntry] = []
-    session_context: str | None = None
+    session_context: SessionContext | None = None
 
 
 QA_SESSION_NAMESPACE = "haiku.rag.qa_session"
@@ -111,8 +113,8 @@ async def run_qa_core(
     )
 
     effective_session_context = session_context
-    if qa_session_state is not None and qa_session_state.session_context:
-        effective_session_context = qa_session_state.session_context
+    if qa_session_state is not None and qa_session_state.session_context is not None:
+        effective_session_context = qa_session_state.session_context.summary
 
     effective_prior_answers = prior_answers or []
     if qa_session_state is not None and qa_session_state.qa_history:
@@ -203,6 +205,8 @@ async def run_qa_core(
         # Enforce FIFO limit
         if len(qa_session_state.qa_history) > MAX_QA_HISTORY:
             qa_session_state.qa_history = qa_session_state.qa_history[-MAX_QA_HISTORY:]
+        from haiku.rag.agents.chat.context import trigger_background_summarization
+
         trigger_background_summarization(
             qa_session_state=qa_session_state,
             config=config,
@@ -265,6 +269,8 @@ def create_qa_toolset(
         )
 
         if session_state is not None:
+            from haiku.rag.agents.chat.state import build_chat_state_snapshot
+
             snapshot = build_chat_state_snapshot(
                 session_state,
                 qa_session_state,

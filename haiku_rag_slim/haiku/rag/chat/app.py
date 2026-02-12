@@ -247,8 +247,12 @@ class ChatApp(App):
                 QA_SESSION_NAMESPACE, QASessionState
             )
             if qa_session_state is not None:
-                if not qa_session_state.session_context and self._initial_context:
-                    qa_session_state.session_context = self._initial_context
+                if qa_session_state.session_context is None and self._initial_context:
+                    from haiku.rag.tools.session import SessionContext
+
+                    qa_session_state.session_context = SessionContext(
+                        summary=self._initial_context
+                    )
 
             deps = ChatDeps(
                 config=self.config,
@@ -362,17 +366,13 @@ class ChatApp(App):
 
     async def action_show_context(self) -> None:
         """Show context modal (edit initial context or view session context)."""
-        from haiku.rag.agents.chat.state import SessionContext
         from haiku.rag.chat.widgets.context_modal import ContextModal
         from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
         session_context = None
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
-        if qa_session_state and qa_session_state.session_context:
-            session_context = SessionContext(
-                summary=qa_session_state.session_context,
-                last_updated=datetime.now(),
-            )
+        if qa_session_state and qa_session_state.session_context is not None:
+            session_context = qa_session_state.session_context
 
         await self.push_screen(
             ContextModal(
