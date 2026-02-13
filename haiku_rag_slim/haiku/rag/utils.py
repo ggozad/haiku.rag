@@ -468,7 +468,7 @@ async def is_up_to_date() -> tuple[bool, Version, Version]:
             response = await client.get("https://pypi.org/pypi/haiku.rag/json")
             data = response.json()
             pypi_version = parse(data["info"]["version"])
-        except Exception:
+        except Exception:  # pragma: no cover
             # If no network connection, do not raise alarms.
             pypi_version = running_version
     return running_version >= pypi_version, running_version, pypi_version

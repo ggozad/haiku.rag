@@ -34,7 +34,7 @@ try:
 
     logfire.configure(send_to_logfire="if-token-present", console=False)
     logfire.instrument_pydantic_ai()
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 try:
@@ -47,7 +47,7 @@ try:
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 
     TEXTUAL_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     TEXTUAL_AVAILABLE = False
     App = object  # type: ignore
     SystemCommand = object  # type: ignore

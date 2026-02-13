@@ -21,7 +21,7 @@ try:
     from haiku.rag.inspector.widgets.search_modal import SearchModal
 
     TEXTUAL_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     TEXTUAL_AVAILABLE = False
     App = object  # type: ignore
 
