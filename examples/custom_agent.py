@@ -21,6 +21,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.tools import (
     AgentDeps,
     ToolContext,
+    build_tools_prompt,
     create_document_toolset,
     create_qa_toolset,
     create_search_toolset,
@@ -36,13 +37,16 @@ async def main(db_path: str) -> None:
         qa_toolset = create_qa_toolset(config)
         document_toolset = create_document_toolset(config)
 
+        features = ["search", "documents", "qa"]
+        tools_prompt = build_tools_prompt(features)
+
         agent = Agent(
             "anthropic:claude-haiku-4-5-20251001",
             deps_type=AgentDeps,
             output_type=str,
             instructions=(
-                "You are a helpful assistant with access to a knowledge base. "
-                "Use the available tools to answer questions."
+                "You are a helpful assistant with access to a knowledge base.\n"
+                f"{tools_prompt}"
             ),
             toolsets=[search_toolset, qa_toolset, document_toolset],
         )

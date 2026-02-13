@@ -19,6 +19,7 @@ from haiku.rag.tools.filters import (
     get_session_filter,
 )
 from haiku.rag.tools.models import AnalysisResult, QAResult
+from haiku.rag.tools.prompts import build_tools_prompt
 from haiku.rag.tools.qa import (
     QA_SESSION_NAMESPACE,
     QAHistoryEntry,
@@ -37,6 +38,7 @@ from haiku.rag.tools.session import (
 
 __all__ = [
     "AgentDeps",
+    "build_tools_prompt",
     "RAGDeps",
     "ToolContext",
     "ToolContextCache",

@@ -27,6 +27,7 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.tools import (
     AgentDeps,
     ToolContextCache,
+    build_tools_prompt,
     create_qa_toolset,
     create_search_toolset,
     prepare_context,
@@ -57,14 +58,16 @@ def get_client() -> HaikuRAG:
     return _client
 
 
+features = ["search", "qa"]
+tools_prompt = build_tools_prompt(features)
+
 # Create the agent once at module level
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",
     deps_type=AgentDeps,
     output_type=str,
     instructions=(
-        "You are a helpful assistant with access to a knowledge base. "
-        "Use the search and ask tools to answer questions."
+        f"You are a helpful assistant with access to a knowledge base.\n{tools_prompt}"
     ),
     toolsets=[
         create_search_toolset(config),

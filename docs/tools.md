@@ -192,9 +192,42 @@ analysis = create_analysis_toolset(config)
 
 Executes a computational task via code execution and returns an `AnalysisResult`. Requires Docker — see [RLM Agent](agents/rlm.md) for setup.
 
+## Tool Prompts
+
+`build_tools_prompt()` generates system prompt guidance for your toolsets — when to use each tool, the `document_name` parameter pattern, and usage examples. It's designed to be spliced into any agent's instructions alongside your own domain-specific guidance.
+
+```python
+from haiku.rag.tools import build_tools_prompt
+
+# Generate guidance for the toolsets you're using
+tools_prompt = build_tools_prompt(["search", "qa", "documents"])
+```
+
+Combine it with your own instructions:
+
+```python
+from pydantic_ai import Agent
+from haiku.rag.tools import AgentDeps, build_tools_prompt
+
+tools_prompt = build_tools_prompt(["search", "qa"])
+
+agent = Agent(
+    "anthropic:claude-sonnet-4-5-20250929",
+    deps_type=AgentDeps,
+    instructions=f"""You are a medical research assistant.
+{tools_prompt}
+
+You also have access to:
+- "check_interactions" - Use when the user asks about drug interactions.""",
+    toolsets=[search_toolset, qa_toolset, my_custom_toolset],
+)
+```
+
+Available features: `"search"`, `"qa"`, `"documents"`, `"analysis"`.
+
 ## Composing Custom Agents
 
-Toolsets are designed to be composed into custom pydantic-ai agents. Use `AgentDeps` and `prepare_context` for minimal boilerplate:
+Toolsets are designed to be composed into custom pydantic-ai agents. Use `AgentDeps`, `prepare_context`, and `build_tools_prompt` for minimal boilerplate:
 
 ```python
 from pydantic_ai import Agent
@@ -202,6 +235,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.tools import (
     AgentDeps,
     ToolContext,
+    build_tools_prompt,
     prepare_context,
     create_search_toolset,
     create_qa_toolset,
@@ -213,16 +247,19 @@ search = create_search_toolset(config)
 qa = create_qa_toolset(config)
 docs = create_document_toolset(config)
 
+features = ["search", "documents", "qa"]
+tools_prompt = build_tools_prompt(features)
+
 agent = Agent(
     "openai:gpt-4o",
     deps_type=AgentDeps,
-    instructions="You are a helpful research assistant.",
+    instructions=f"You are a helpful research assistant.\n{tools_prompt}",
     toolsets=[search, qa, docs],
 )
 
 async with HaikuRAG("path/to/db.lancedb") as client:
     context = ToolContext()
-    prepare_context(context, features=["search", "documents", "qa"])
+    prepare_context(context, features=features)
     deps = AgentDeps(client=client, tool_context=context)
 
     result = await agent.run("What documents do we have about climate?", deps=deps)
