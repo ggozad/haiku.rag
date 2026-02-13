@@ -57,6 +57,7 @@ a {
 
 .chat-input-area {
 	position: relative;
+	padding: 0 0.75rem 0.5rem;
 }
 
 /* Override CopilotKit's absolute positioning on the input container

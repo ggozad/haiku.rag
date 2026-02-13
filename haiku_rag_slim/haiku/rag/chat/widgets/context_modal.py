@@ -69,6 +69,7 @@ class ContextModal(ModalScreen):  # pragma: no cover
 
     #button-row Button {
         margin-left: 1;
+        min-width: 10;
     }
     """
 

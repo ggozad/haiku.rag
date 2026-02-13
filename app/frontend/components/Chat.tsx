@@ -464,7 +464,9 @@ function ChatContentInner({
 	// container, which we've overridden to flow in a flex layout).
 	// Uses a ref callback so it runs when the element actually mounts.
 	const paddingObserver = useRef<MutationObserver | null>(null);
+	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 	const scrollAreaCallbackRef = useCallback((node: HTMLDivElement | null) => {
+		scrollAreaRef.current = node;
 		if (paddingObserver.current) {
 			paddingObserver.current.disconnect();
 			paddingObserver.current = null;
@@ -486,6 +488,19 @@ function ChatContentInner({
 		});
 		paddingObserver.current = observer;
 	}, []);
+
+	// Auto-scroll to bottom when messages change or agent is streaming
+	// biome-ignore lint/correctness/useExhaustiveDependencies: JSON.stringify tracks content changes
+	useEffect(() => {
+		const el = scrollAreaRef.current;
+		if (!el) return;
+		// Find the actual scrollable child (CopilotKit's scroll container)
+		const scrollable =
+			el.querySelector("[data-radix-scroll-area-viewport]") ??
+			el.querySelector("[style*='overflow']") ??
+			el;
+		scrollable.scrollTop = scrollable.scrollHeight;
+	}, [JSON.stringify(agent.messages), agent.isRunning]);
 
 	const sessionContext = chatState.session_context;
 	const documentFilter = chatState.document_filter;
