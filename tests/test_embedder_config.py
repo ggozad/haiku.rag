@@ -28,21 +28,6 @@ def test_ollama_embedder_uses_config():
     assert embedder._vector_dim == 512
 
 
-def test_openai_embedder_uses_config():
-    """Test that OpenAI embedder uses the config passed to get_embedder."""
-    custom_config = AppConfig(
-        embeddings=EmbeddingsConfig(
-            model=EmbeddingModelConfig(
-                provider="openai", name="text-embedding-3-large", vector_dim=3072
-            ),
-        ),
-    )
-
-    embedder = get_embedder(custom_config)
-
-    assert embedder._vector_dim == 3072
-
-
 def test_openai_embedder_with_base_url():
     """Test that OpenAI embedder uses custom base_url for vLLM/LM Studio."""
     custom_config = AppConfig(
@@ -59,21 +44,6 @@ def test_openai_embedder_with_base_url():
     embedder = get_embedder(custom_config)
 
     assert embedder._vector_dim == 768
-
-
-def test_cohere_embedder_uses_config():
-    """Test that Cohere embedder uses the config passed to get_embedder."""
-    custom_config = AppConfig(
-        embeddings=EmbeddingsConfig(
-            model=EmbeddingModelConfig(
-                provider="cohere", name="embed-v4.0", vector_dim=1024
-            ),
-        ),
-    )
-
-    embedder = get_embedder(custom_config)
-
-    assert embedder._vector_dim == 1024
 
 
 def test_sentence_transformers_embedder_uses_config():

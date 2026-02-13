@@ -1,0 +1,3051 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '730'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - |-
+        DocLayNet Dataset - Class Labels
+        DocLayNet defines 11 distinct class labels for document layout analysis:
+        1. Caption - Text describing figures or tables
+        2. Footnote - Notes at the bottom of pages
+        3. Formula - Mathematical expressions
+        4. List-item - Items in bulleted or numbered lists
+        5. Page-footer - Footer content on pages
+        6. Page-header - Header content on pages
+        7. Picture - Images and diagrams
+        8. Section-header - Headings for document sections
+        9. Table - Tabular data
+        10. Text - Regular paragraph text (highest count: 510,377 instances)
+        11. Title - Document titles
+        The Text class has the highest count with 510,377 instances in the dataset.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 166
+        total_tokens: 166
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '481'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - |-
+        DocLayNet Dataset - Annotation Process
+        The annotation process was organized into 4 phases:
+        - Phase 1: Data selection and preparation by a small team of experts
+        - Phase 2: Label selection and guideline definition
+        - Phase 3: Annotation by 40 dedicated annotators
+        - Phase 4: Quality control and continuous supervision
+        The Corpus Conversion Service (CCS) was used for annotation, providing a visual interface.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 90
+        total_tokens: 90
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '5329'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: "You are a helpful research assistant powered by haiku.rag, a knowledge base system.\n\nYou have access to
+          a knowledge base of documents. Use your tools to search and answer questions.\n\nCRITICAL RULES:\n1. For greetings
+          or casual chat: respond directly WITHOUT using any tools\n2. NEVER call the same tool multiple times for a single
+          user message\n3. NEVER make up information - always use tools to get facts from the knowledge base\n4. For questions:
+          Use the \"ask\" tool EXACTLY ONCE - it automatically uses prior conversation context\n5. For searches: Use the \"search\"
+          tool EXACTLY ONCE - it handles multi-query expansion internally\n\nHow to decide which tool to use:\n- \"list_documents\"
+          - Use when the user wants to browse or see what documents are available (e.g., \"what documents are available?\",
+          \"show me the documents\", \"list available docs\").\n- \"summarize_document\" - Use when the user wants an overview
+          or summary of a specific document (e.g., \"summarize document X\", \"what does Y cover?\", \"give me an overview
+          of Z\").\n- \"get_document\" - Use when the user wants the FULL content of a specific document (e.g., \"get the
+          paper about Y\", \"fetch 2412.00566\", \"show me the full document\").\n- \"ask\" - Use for questions about topics
+          in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across
+          documents to return answers with citations.\n- \"search\" - Use when the user explicitly asks to search/find/explore
+          documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content
+          snippets. Do NOT shorten, summarize, or omit any part of the results.\n\nIMPORTANT - When user mentions a document
+          in search/ask:\n- If user says \"search in <doc>\", \"find in <doc>\", \"answer from <doc>\", or \"<topic> in <doc>\":\n
+          \ - Extract the TOPIC as `query`/`question`\n  - Extract the DOCUMENT NAME as `document_name`\n- Examples for search:\n
+          \ - \"search for embeddings in the ML paper\" → query=\"embeddings\", document_name=\"ML paper\"\n  - \"find transformer
+          architecture in 2412.00566\" → query=\"transformer architecture\", document_name=\"2412.00566\" \n- Examples for
+          ask:\n  - \"what does the ML paper say about embeddings?\" → question=\"what are the embedding methods?\", document_name=\"ML
+          paper\"\n  - \"answer from 2412.00566 about model training\" → question=\"how is the model trained?\", document_name=\"2412.00566\"
+          \nBe friendly and conversational. When you use the \"ask\" tool, summarize the key findings for the user."
+        role: system
+      - content: What are the class labels defined in DocLayNet?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Search the knowledge base for relevant documents.</summary>
+            <returns>
+            <description>Formatted search results with content and metadata.</description>
+            </returns>
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              filter:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional SQL WHERE clause to filter documents.
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: from config).'
+              query:
+                description: The search query (what to search for).
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>List available documents in the knowledge base.</summary>
+            <returns>
+            <description>Paginated list of documents with metadata.</description>
+            </returns>
+          name: list_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              page:
+                default: 1
+                description: 'Page number (default: 1, 50 documents per page)'
+                type: integer
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>Retrieve a specific document by title or URI.</summary>
+            <returns>
+            <description>Document content and metadata, or not found message.</description>
+            </returns>
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Generate a summary of a specific document.</summary>
+            <returns>
+            <description>Generated summary or not found message.</description>
+            </returns>
+          name: summarize_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to summarize.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Answer a question using the knowledge base.
+
+            Uses a research graph for searching and synthesizing answers.</summary>
+            <returns>
+            <description>QAResult with answer, confidence, and citations.</description>
+            </returns>
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within.
+              question:
+                description: The question to answer.
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '540'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: We need answer via ask tool.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"document_name":"DocLayNet","question":"What are the class labels defined in DocLayNet?"}'
+              name: ask
+            id: call_7lvpjbkh
+            index: 0
+            type: function
+      created: 1770802519
+      id: chatcmpl-300
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 47
+        prompt_tokens: 1055
+        total_tokens: 1102
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1871'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are the research orchestrator planning the investigation.
+
+          If a <background> section is provided, use it to understand the conversation context.
+
+          Your task:
+          1. Analyze the original question
+          2. Propose the first question to investigate
+
+          For simple questions, investigate them directly. For composite or complex questions,
+          you may decompose into a focused sub-question. For example:
+          - "What are the benefits and drawbacks of X?" → Start with "What are the benefits of X?"
+          - Ambiguous references should be resolved using background context if available
+
+          Output requirements:
+          - Set is_complete=False (you are just starting the investigation)
+          - Set next_question to the question to investigate
+          - Provide brief reasoning explaining your choice
+
+          The question must be standalone and self-contained:
+          - Include concrete entities, scope, and any qualifiers
+          - Avoid ambiguous pronouns (it/they/this/that)
+        role: system
+      - content: |-
+          Plan the research investigation.
+
+          <context>
+            <background>The user is researching the DocLayNet dataset for a paper on document layout analysis.</background>
+            <question>What are the class labels defined in DocLayNet?</question>
+          </context>
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Output from iterative planning step.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              is_complete:
+                description: Whether research is complete and can be synthesized
+                type: boolean
+              next_question:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Next question to investigate, if not complete
+              reasoning:
+                description: Brief explanation of the decision
+                type: string
+            required:
+            - is_complete
+            - reasoning
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '984'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: 'We need to ask first subquestion: what are class labels. Probably directly ask. So next question: "What
+            are the classification labels used in the DocLayNet dataset for document layout analysis?" That''s fine.'
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"is_complete":false,"next_question":"What are the classification labels used in the DocLayNet dataset
+                for document layout analysis?","reasoning":"The original question asks for the class labels defined in DocLayNet.
+                This is a straightforward research question that can be answered directly by querying the dataset documentation
+                or metadata."}'
+              name: final_result
+            id: call_dhsc3w9h
+            index: 0
+            type: function
+      created: 1770802522
+      id: chatcmpl-211
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 125
+        prompt_tokens: 394
+        total_tokens: 519
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2884'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the classification labels used in the DocLayNet dataset for document layout analysis?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '530'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"DocLayNet dataset classification labels document layout analysis"}'
+              name: search_and_answer
+            id: call_f80pctzy
+            index: 0
+            type: function
+      created: 1770802524
+      id: chatcmpl-384
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 40
+        prompt_tokens: 632
+        total_tokens: 672
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '134'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet dataset classification labels document layout analysis
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 11
+        total_tokens: 11
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4304'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the classification labels used in the DocLayNet dataset for document layout analysis?
+        role: user
+      - content: |-
+          <think>
+          Need search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet dataset classification labels document layout analysis"}'
+            name: search_and_answer
+          id: call_f80pctzy
+          type: function
+      - content: |-
+          [ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a] [rank 1 of 2]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+
+          [9bfc2ccf-2e74-4981-96eb-917e31261b85] [rank 2 of 2]
+          Source: "DocLayNet Annotation"
+          Type: list_item
+          Content:
+          DocLayNet Dataset - Annotation Process
+
+          The annotation process was organized into 4 phases:
+
+          Phase 1: Data selection and preparation by a small team of experts
+
+          Phase 2: Label selection and guideline definition
+
+          Phase 3: Annotation by 40 dedicated annotators
+
+          Phase 4: Quality control and continuous supervision
+
+          The Corpus Conversion Service (CCS) was used for annotation, providing a visual interface.
+        role: tool
+        tool_call_id: call_f80pctzy
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '839'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: "**Question:** What are the classification labels used in the DocLayNet dataset for document layout analysis?
+            \ \n\n**Answer:** DocLayNet defines 11 distinct class labels for document layout analysis:\n\n1. Caption  \n2.
+            Footnote  \n3. Formula  \n4. List-item  \n5. Page-footer  \n6. Page-header  \n7. Picture  \n8. Section-header
+            \ \n9. Table  \n10. Text  \n11. Title  \n\nThese labels cover the major visual and semantic components found in
+            structured documents.  \n\n**Cited chunks:**  \n- [ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a]  \n\n**Confidence:**
+            1.0"
+          role: assistant
+      created: 1770802528
+      id: chatcmpl-925
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 148
+        prompt_tokens: 957
+        total_tokens: 1105
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '5019'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: What are the classification labels used in the DocLayNet dataset for document layout analysis?
+        role: user
+      - content: |-
+          <think>
+          Need search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet dataset classification labels document layout analysis"}'
+            name: search_and_answer
+          id: call_f80pctzy
+          type: function
+      - content: |-
+          [ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a] [rank 1 of 2]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+
+          [9bfc2ccf-2e74-4981-96eb-917e31261b85] [rank 2 of 2]
+          Source: "DocLayNet Annotation"
+          Type: list_item
+          Content:
+          DocLayNet Dataset - Annotation Process
+
+          The annotation process was organized into 4 phases:
+
+          Phase 1: Data selection and preparation by a small team of experts
+
+          Phase 2: Label selection and guideline definition
+
+          Phase 3: Annotation by 40 dedicated annotators
+
+          Phase 4: Quality control and continuous supervision
+
+          The Corpus Conversion Service (CCS) was used for annotation, providing a visual interface.
+        role: tool
+        tool_call_id: call_f80pctzy
+      - content: "**Question:** What are the classification labels used in the DocLayNet dataset for document layout analysis?
+          \ \n\n**Answer:** DocLayNet defines 11 distinct class labels for document layout analysis:\n\n1. Caption  \n2. Footnote
+          \ \n3. Formula  \n4. List-item  \n5. Page-footer  \n6. Page-header  \n7. Picture  \n8. Section-header  \n9. Table
+          \ \n10. Text  \n11. Title  \n\nThese labels cover the major visual and semantic components found in structured documents.
+          \ \n\n**Cited chunks:**  \n- [ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a]  \n\n**Confidence:** 1.0"
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '871'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to use final_result tool.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"DocLayNet defines 11 distinct class labels for document layout analysis: 1. Caption 2.
+                Footnote 3. Formula 4. List‑item 5. Page‑footer 6. Page‑header 7. Picture 8. Section‑header 9. Table 10. Text
+                11. Title","cited_chunks":["ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a"],"confidence":1,"query":"What are the classification
+                labels used in the DocLayNet dataset for document layout analysis?"}'
+              name: final_result
+            id: call_nw4zcob0
+            index: 0
+            type: function
+      created: 1770802532
+      id: chatcmpl-662
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 154
+        prompt_tokens: 1130
+        total_tokens: 1284
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3098'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          Generate a direct, conversational answer
+          to the question based on the gathered evidence.
+
+          Output:
+          - answer: Direct, comprehensive answer with a natural, helpful tone.
+            Write the actual answer, not a description of what you found.
+            Use as many sentences as needed to fully address the question.
+          - confidence: Score from 0.0 to 1.0 indicating answer quality.
+
+          Guidelines:
+          - Base your answer solely on the evidence provided in the context.
+          - If a <background> section is provided, use it to frame your answer appropriately.
+          - Be thorough - include all relevant information from the evidence.
+          - Use formatting (bullet points, numbered lists) when it improves clarity.
+          - Do NOT use meta-commentary like "Based on the research..." or "The evidence shows..."
+            Instead, directly state the information.
+          - If the evidence is incomplete, acknowledge limitations briefly.
+        role: system
+      - content: |-
+          Answer the question based on the gathered evidence.
+
+          <context>
+            <background>The user is researching the DocLayNet dataset for a paper on document layout analysis.</background>
+            <question>What are the class labels defined in DocLayNet?</question>
+            <prior_answers>
+              <item>
+                <question>What are the classification labels used in the DocLayNet dataset for document layout analysis?</question>
+                <answer>DocLayNet defines 11 distinct class labels for document layout analysis: 1. Caption 2. Footnote 3. Formula 4. List‑item 5. Page‑footer 6. Page‑header 7. Picture 8. Section‑header 9. Table 10. Text 11. Title</answer>
+                <confidence>1.0</confidence>
+                <source>DocLayNet Class Labels</source>
+              </item>
+            </prior_answers>
+          </context>
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Conversational answer for chat context.
+          name: final_result
+          parameters:
+            $defs:
+              Citation:
+                additionalProperties: false
+                description: |-
+                  Resolved citation with full metadata for display/visual grounding.
+
+                  Used by both research graph and chat agent. The optional index field
+                  supports UI display ordering in chat contexts.
+                properties:
+                  chunk_id:
+                    type: string
+                  content:
+                    type: string
+                  document_id:
+                    type: string
+                  document_title:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                  document_uri:
+                    type: string
+                  headings:
+                    anyOf:
+                    - items:
+                        type: string
+                      type: array
+                    - type: 'null'
+                    default: null
+                  index:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                  page_numbers:
+                    items:
+                      type: integer
+                    type: array
+                required:
+                - document_id
+                - chunk_id
+                - document_uri
+                - content
+                type: object
+            additionalProperties: false
+            properties:
+              answer:
+                description: Direct answer to the question
+                type: string
+              citations:
+                description: Citations supporting the answer
+                items:
+                  $ref: '#/$defs/Citation'
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+            required:
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '805'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: We have prior answer with labels. Provide answer.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"DocLayNet defines 11 distinct class labels for document layout analysis:\n\n1. **Caption**\n2.
+                **Footnote**\n3. **Formula**\n4. **List‑item**\n5. **Page‑footer**\n6. **Page‑header**\n7. **Picture**\n8.
+                **Section‑header**\n9. **Table**\n10. **Text**\n11. **Title**","citations":[],"confidence":1}'
+              name: final_result
+            id: call_3juuu2zh
+            index: 0
+            type: function
+      created: 1770802536
+      id: chatcmpl-102
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 143
+        prompt_tokens: 527
+        total_tokens: 670
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '5952'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: "You are a helpful research assistant powered by haiku.rag, a knowledge base system.\n\nYou have access to
+          a knowledge base of documents. Use your tools to search and answer questions.\n\nCRITICAL RULES:\n1. For greetings
+          or casual chat: respond directly WITHOUT using any tools\n2. NEVER call the same tool multiple times for a single
+          user message\n3. NEVER make up information - always use tools to get facts from the knowledge base\n4. For questions:
+          Use the \"ask\" tool EXACTLY ONCE - it automatically uses prior conversation context\n5. For searches: Use the \"search\"
+          tool EXACTLY ONCE - it handles multi-query expansion internally\n\nHow to decide which tool to use:\n- \"list_documents\"
+          - Use when the user wants to browse or see what documents are available (e.g., \"what documents are available?\",
+          \"show me the documents\", \"list available docs\").\n- \"summarize_document\" - Use when the user wants an overview
+          or summary of a specific document (e.g., \"summarize document X\", \"what does Y cover?\", \"give me an overview
+          of Z\").\n- \"get_document\" - Use when the user wants the FULL content of a specific document (e.g., \"get the
+          paper about Y\", \"fetch 2412.00566\", \"show me the full document\").\n- \"ask\" - Use for questions about topics
+          in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across
+          documents to return answers with citations.\n- \"search\" - Use when the user explicitly asks to search/find/explore
+          documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content
+          snippets. Do NOT shorten, summarize, or omit any part of the results.\n\nIMPORTANT - When user mentions a document
+          in search/ask:\n- If user says \"search in <doc>\", \"find in <doc>\", \"answer from <doc>\", or \"<topic> in <doc>\":\n
+          \ - Extract the TOPIC as `query`/`question`\n  - Extract the DOCUMENT NAME as `document_name`\n- Examples for search:\n
+          \ - \"search for embeddings in the ML paper\" → query=\"embeddings\", document_name=\"ML paper\"\n  - \"find transformer
+          architecture in 2412.00566\" → query=\"transformer architecture\", document_name=\"2412.00566\" \n- Examples for
+          ask:\n  - \"what does the ML paper say about embeddings?\" → question=\"what are the embedding methods?\", document_name=\"ML
+          paper\"\n  - \"answer from 2412.00566 about model training\" → question=\"how is the model trained?\", document_name=\"2412.00566\"
+          \nBe friendly and conversational. When you use the \"ask\" tool, summarize the key findings for the user."
+        role: system
+      - content: What are the class labels defined in DocLayNet?
+        role: user
+      - content: |-
+          <think>
+          We need answer via ask tool.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"document_name":"DocLayNet","question":"What are the class labels defined in DocLayNet?"}'
+            name: ask
+          id: call_7lvpjbkh
+          type: function
+      - content: |-
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption**
+          2. **Footnote**
+          3. **Formula**
+          4. **List‑item**
+          5. **Page‑footer**
+          6. **Page‑header**
+          7. **Picture**
+          8. **Section‑header**
+          9. **Table**
+          10. **Text**
+          11. **Title**
+
+          Sources: [1]
+        role: tool
+        tool_call_id: call_7lvpjbkh
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Search the knowledge base for relevant documents.</summary>
+            <returns>
+            <description>Formatted search results with content and metadata.</description>
+            </returns>
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              filter:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional SQL WHERE clause to filter documents.
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: from config).'
+              query:
+                description: The search query (what to search for).
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>List available documents in the knowledge base.</summary>
+            <returns>
+            <description>Paginated list of documents with metadata.</description>
+            </returns>
+          name: list_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              page:
+                default: 1
+                description: 'Page number (default: 1, 50 documents per page)'
+                type: integer
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>Retrieve a specific document by title or URI.</summary>
+            <returns>
+            <description>Document content and metadata, or not found message.</description>
+            </returns>
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Generate a summary of a specific document.</summary>
+            <returns>
+            <description>Generated summary or not found message.</description>
+            </returns>
+          name: summarize_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to summarize.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Answer a question using the knowledge base.
+
+            Uses a research graph for searching and synthesizing answers.</summary>
+            <returns>
+            <description>QAResult with answer, confidence, and citations.</description>
+            </returns>
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within.
+              question:
+                description: The question to answer.
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '665'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: "DocLayNet defines **11 distinct class labels** for document layout analysis:\n\n1. **Caption**  \n2. **Footnote**
+            \ \n3. **Formula**  \n4. **List‑item**  \n5. **Page‑footer**  \n6. **Page‑header**  \n7. **Picture**  \n8. **Section‑header**
+            \ \n9. **Table**  \n10. **Text**  \n11. **Title**\n\nThese categories cover the main structural elements that
+            the dataset annotates."
+          role: assistant
+      created: 1770802540
+      id: chatcmpl-798
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 106
+        prompt_tokens: 1201
+        total_tokens: 1307
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1810'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a session summarizer. Given a conversation history of Q&A pairs (and optionally existing context), produce a structured summary that captures key information for future context.
+
+          If a "Current Context" section is provided at the start of the input, incorporate that context into your summary. This might be initial background context from the user or a previous summary - build upon it rather than discard it.
+
+          Your summary should be concise (aim for 500-1500 tokens) and include:
+
+          1. **Key Facts Established** - Specific facts, data, or conclusions learned during the conversation
+          2. **Documents Referenced** - Documents or sources that were cited, with brief notes on what they contain
+          3. **Current Focus** - What topic or question thread the user is currently exploring
+
+          Rules:
+          - Extract only high-signal information that would help answer follow-up questions
+          - When building on existing context, merge new information with prior context
+          - Omit small talk, greetings, or low-confidence answers
+          - Use bullet points for clarity
+          - Keep technical details but compress verbose explanations
+          - Preserve document names/titles when mentioned in sources
+
+          Output the summary directly in markdown format. Do not include meta-commentary about the summary itself.
+        role: system
+      - content: |
+          ## Q1: What are the class labels defined in DocLayNet?
+          **Answer** (confidence: 100%):
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption**
+          2. **Footnote**
+          3. **Formula**
+          4. **List‑item**
+          5. **Page‑footer**
+          6. **Page‑header**
+          7. **Picture**
+          8. **Section‑header**
+          9. **Table**
+          10. **Text**
+          11. **Title**
+          **Sources:** DocLayNet Class Labels
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '826'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: |-
+            **Key Facts Established**
+            - DocLayNet specifies **11** distinct document layout class labels:
+              1. Caption
+              2. Footnote
+              3. Formula
+              4. List‑item
+              5. Page‑footer
+              6. Page‑header
+              7. Picture
+              8. Section‑header
+              9. Table
+             10. Text
+             11. Title
+
+            **Documents Referenced**
+            - *DocLayNet Class Labels* (source listing the 11 category names).
+
+            **Current Focus**
+            - The user is inquiring about the specific class labels defined within the DocLayNet dataset for document layout analysis.
+          reasoning: Need to summarize.
+          role: assistant
+      created: 1770802544
+      id: chatcmpl-212
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 155
+        prompt_tokens: 434
+        total_tokens: 589
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '6464'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: "You are a helpful research assistant powered by haiku.rag, a knowledge base system.\n\nYou have access to
+          a knowledge base of documents. Use your tools to search and answer questions.\n\nCRITICAL RULES:\n1. For greetings
+          or casual chat: respond directly WITHOUT using any tools\n2. NEVER call the same tool multiple times for a single
+          user message\n3. NEVER make up information - always use tools to get facts from the knowledge base\n4. For questions:
+          Use the \"ask\" tool EXACTLY ONCE - it automatically uses prior conversation context\n5. For searches: Use the \"search\"
+          tool EXACTLY ONCE - it handles multi-query expansion internally\n\nHow to decide which tool to use:\n- \"list_documents\"
+          - Use when the user wants to browse or see what documents are available (e.g., \"what documents are available?\",
+          \"show me the documents\", \"list available docs\").\n- \"summarize_document\" - Use when the user wants an overview
+          or summary of a specific document (e.g., \"summarize document X\", \"what does Y cover?\", \"give me an overview
+          of Z\").\n- \"get_document\" - Use when the user wants the FULL content of a specific document (e.g., \"get the
+          paper about Y\", \"fetch 2412.00566\", \"show me the full document\").\n- \"ask\" - Use for questions about topics
+          in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across
+          documents to return answers with citations.\n- \"search\" - Use when the user explicitly asks to search/find/explore
+          documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content
+          snippets. Do NOT shorten, summarize, or omit any part of the results.\n\nIMPORTANT - When user mentions a document
+          in search/ask:\n- If user says \"search in <doc>\", \"find in <doc>\", \"answer from <doc>\", or \"<topic> in <doc>\":\n
+          \ - Extract the TOPIC as `query`/`question`\n  - Extract the DOCUMENT NAME as `document_name`\n- Examples for search:\n
+          \ - \"search for embeddings in the ML paper\" → query=\"embeddings\", document_name=\"ML paper\"\n  - \"find transformer
+          architecture in 2412.00566\" → query=\"transformer architecture\", document_name=\"2412.00566\" \n- Examples for
+          ask:\n  - \"what does the ML paper say about embeddings?\" → question=\"what are the embedding methods?\", document_name=\"ML
+          paper\"\n  - \"answer from 2412.00566 about model training\" → question=\"how is the model trained?\", document_name=\"2412.00566\"
+          \nBe friendly and conversational. When you use the \"ask\" tool, summarize the key findings for the user."
+        role: system
+      - content: What are the class labels defined in DocLayNet?
+        role: user
+      - content: |-
+          <think>
+          We need answer via ask tool.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"document_name":"DocLayNet","question":"What are the class labels defined in DocLayNet?"}'
+            name: ask
+          id: call_7lvpjbkh
+          type: function
+      - content: |-
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption**
+          2. **Footnote**
+          3. **Formula**
+          4. **List‑item**
+          5. **Page‑footer**
+          6. **Page‑header**
+          7. **Picture**
+          8. **Section‑header**
+          9. **Table**
+          10. **Text**
+          11. **Title**
+
+          Sources: [1]
+        role: tool
+        tool_call_id: call_7lvpjbkh
+      - content: "DocLayNet defines **11 distinct class labels** for document layout analysis:\n\n1. **Caption**  \n2. **Footnote**
+          \ \n3. **Formula**  \n4. **List‑item**  \n5. **Page‑footer**  \n6. **Page‑header**  \n7. **Picture**  \n8. **Section‑header**
+          \ \n9. **Table**  \n10. **Text**  \n11. **Title**\n\nThese categories cover the main structural elements that the
+          dataset annotates."
+        role: assistant
+      - content: How were the annotations created and how many annotators were involved?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Search the knowledge base for relevant documents.</summary>
+            <returns>
+            <description>Formatted search results with content and metadata.</description>
+            </returns>
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              filter:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional SQL WHERE clause to filter documents.
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: from config).'
+              query:
+                description: The search query (what to search for).
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>List available documents in the knowledge base.</summary>
+            <returns>
+            <description>Paginated list of documents with metadata.</description>
+            </returns>
+          name: list_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              page:
+                default: 1
+                description: 'Page number (default: 1, 50 documents per page)'
+                type: integer
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>Retrieve a specific document by title or URI.</summary>
+            <returns>
+            <description>Document content and metadata, or not found message.</description>
+            </returns>
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Generate a summary of a specific document.</summary>
+            <returns>
+            <description>Generated summary or not found message.</description>
+            </returns>
+          name: summarize_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to summarize.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Answer a question using the knowledge base.
+
+            Uses a research graph for searching and synthesizing answers.</summary>
+            <returns>
+            <description>QAResult with answer, confidence, and citations.</description>
+            </returns>
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within.
+              question:
+                description: The question to answer.
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '550'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need ask tool.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"document_name":"DocLayNet","question":"How were the annotations created and how many annotators
+                were involved?"}'
+              name: ask
+            id: call_l6xl5m5s
+            index: 0
+            type: function
+      created: 1770802547
+      id: chatcmpl-538
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 46
+        prompt_tokens: 1326
+        total_tokens: 1372
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '141'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - How were the annotations created and how many annotators were involved?
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 14
+        total_tokens: 14
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '117'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - What are the class labels defined in DocLayNet?
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 13
+        total_tokens: 13
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2317'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are the research orchestrator planning the investigation.
+
+          If a <background> section is provided, use it to understand the conversation context.
+
+          Your task:
+          1. Analyze the original question
+          2. Propose the first question to investigate
+
+          For simple questions, investigate them directly. For composite or complex questions,
+          you may decompose into a focused sub-question. For example:
+          - "What are the benefits and drawbacks of X?" → Start with "What are the benefits of X?"
+          - Ambiguous references should be resolved using background context if available
+
+          Output requirements:
+          - Set is_complete=False (you are just starting the investigation)
+          - Set next_question to the question to investigate
+          - Provide brief reasoning explaining your choice
+
+          The question must be standalone and self-contained:
+          - Include concrete entities, scope, and any qualifiers
+          - Avoid ambiguous pronouns (it/they/this/that)
+        role: system
+      - content: |-
+          Plan the research investigation.
+
+          <context>
+            <background>**Key Facts Established**
+          - DocLayNet specifies **11** distinct document layout class labels:
+            1. Caption
+            2. Footnote
+            3. Formula
+            4. List‑item
+            5. Page‑footer
+            6. Page‑header
+            7. Picture
+            8. Section‑header
+            9. Table
+           10. Text
+           11. Title
+
+          **Documents Referenced**
+          - *DocLayNet Class Labels* (source listing the 11 category names).
+
+          **Current Focus**
+          - The user is inquiring about the specific class labels defined within the DocLayNet dataset for document layout analysis.</background>
+            <question>How were the annotations created and how many annotators were involved?</question>
+          </context>
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Output from iterative planning step.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              is_complete:
+                description: Whether research is complete and can be synthesized
+                type: boolean
+              next_question:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Next question to investigate, if not complete
+              reasoning:
+                description: Brief explanation of the decision
+                type: string
+            required:
+            - is_complete
+            - reasoning
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '955'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: 'Need first question: how many annotators? but need first sub question. Probably ask "How many annotators
+            were involved in creating the DocLayNet annotations?" That is direct.'
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"is_complete":false,"next_question":"How many annotators participated in creating the DocLayNet
+                annotations?","reasoning":"The user asks about annotation creation and number of annotators; the first step
+                is to determine the number of annotators involved. This is a straightforward, focused question that sets the
+                stage for deeper investigation."}'
+              name: final_result
+            id: call_5gb445i7
+            index: 0
+            type: function
+      created: 1770802551
+      id: chatcmpl-485
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 122
+        prompt_tokens: 521
+        total_tokens: 643
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2861'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: How many annotators participated in creating the DocLayNet annotations?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '511'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Need to search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"limit":5,"query":"DocLayNet annotations number of annotators"}'
+              name: search_and_answer
+            id: call_21g96kkz
+            index: 0
+            type: function
+      created: 1770802553
+      id: chatcmpl-143
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 43
+        prompt_tokens: 628
+        total_tokens: 671
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '112'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - DocLayNet annotations number of annotators
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 10
+        total_tokens: 10
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4262'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: How many annotators participated in creating the DocLayNet annotations?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet annotations number of annotators"}'
+            name: search_and_answer
+          id: call_21g96kkz
+          type: function
+      - content: |-
+          [ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a] [rank 1 of 2]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+
+          [9bfc2ccf-2e74-4981-96eb-917e31261b85] [rank 2 of 2]
+          Source: "DocLayNet Annotation"
+          Type: list_item
+          Content:
+          DocLayNet Dataset - Annotation Process
+
+          The annotation process was organized into 4 phases:
+
+          Phase 1: Data selection and preparation by a small team of experts
+
+          Phase 2: Label selection and guideline definition
+
+          Phase 3: Annotation by 40 dedicated annotators
+
+          Phase 4: Quality control and continuous supervision
+
+          The Corpus Conversion Service (CCS) was used for annotation, providing a visual interface.
+        role: tool
+        tool_call_id: call_21g96kkz
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '575'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: "- query: How many annotators participated in creating the DocLayNet annotations?  \n- answer: 40 dedicated
+            annotators contributed to the annotation phase of DocLayNet.  \n- cited_chunks: [\"9bfc2ccf-2e74-4981-96eb-917e31261b85\"]
+            \ \n- confidence: 1.0"
+          reasoning: 'The answer: 40 annotators.'
+          role: assistant
+      created: 1770802556
+      id: chatcmpl-53
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 91
+        prompt_tokens: 953
+        total_tokens: 1044
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '4723'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a search and question-answering specialist.
+
+          Process:
+          1. Call search_and_answer with relevant keywords from the question.
+          2. Review the results ordered by relevance.
+          3. If needed, perform follow-up searches with different keywords (max 3 total).
+          4. Provide a concise answer based strictly on the retrieved content.
+
+          The search tool returns results like:
+          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
+          Source: "Document Title" > Section > Subsection
+          Type: paragraph
+          Content:
+          The actual text content here...
+
+          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
+          Source: "Another Document"
+          Type: table
+          Content:
+          | Column 1 | Column 2 |
+          ...
+
+          Each result includes:
+          - chunk_id in brackets and rank position (rank 1 = most relevant)
+          - Source: document title and section hierarchy (when available)
+          - Type: content type like paragraph, table, code, list_item (when available)
+          - Content: the actual text
+
+          Output format:
+          - query: Echo the question you are answering
+          - answer: Your concise answer based on the retrieved content
+          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
+          - confidence: A score from 0.0 to 1.0 indicating answer confidence
+
+          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
+
+          Guidelines:
+          - Base answers strictly on retrieved content - do not use external knowledge.
+          - Use the Source and Type metadata to understand context.
+          - If multiple results are relevant, synthesize them coherently.
+          - If information is insufficient, say so clearly.
+          - Be concise and direct; avoid meta commentary about the process.
+          - Results are ordered by relevance, with rank 1 being most relevant.
+        role: system
+      - content: How many annotators participated in creating the DocLayNet annotations?
+        role: user
+      - content: |-
+          <think>
+          Need to search.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"limit":5,"query":"DocLayNet annotations number of annotators"}'
+            name: search_and_answer
+          id: call_21g96kkz
+          type: function
+      - content: |-
+          [ad1c56de-ccf4-4528-bd02-cfea4f5f1a2a] [rank 1 of 2]
+          Source: "DocLayNet Class Labels"
+          Type: list_item
+          Content:
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          Caption - Text describing figures or tables
+
+          Footnote - Notes at the bottom of pages
+
+          Formula - Mathematical expressions
+
+          List-item - Items in bulleted or numbered lists
+
+          Page-footer - Footer content on pages
+
+          Page-header - Header content on pages
+
+          Picture - Images and diagrams
+
+          Section-header - Headings for document sections
+
+          Table - Tabular data
+
+          [9bfc2ccf-2e74-4981-96eb-917e31261b85] [rank 2 of 2]
+          Source: "DocLayNet Annotation"
+          Type: list_item
+          Content:
+          DocLayNet Dataset - Annotation Process
+
+          The annotation process was organized into 4 phases:
+
+          Phase 1: Data selection and preparation by a small team of experts
+
+          Phase 2: Label selection and guideline definition
+
+          Phase 3: Annotation by 40 dedicated annotators
+
+          Phase 4: Quality control and continuous supervision
+
+          The Corpus Conversion Service (CCS) was used for annotation, providing a visual interface.
+        role: tool
+        tool_call_id: call_21g96kkz
+      - content: "<think>\nThe answer: 40 annotators.\n</think>\n\n- query: How many annotators participated in creating the
+          DocLayNet annotations?  \n- answer: 40 dedicated annotators contributed to the annotation phase of DocLayNet.  \n-
+          cited_chunks: [\"9bfc2ccf-2e74-4981-96eb-917e31261b85\"]  \n- confidence: 1.0"
+        role: assistant
+      - content: |-
+          Validation feedback:
+          Please include your response in a tool call.
+
+          Fix the errors and try again.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Answer to a search query with chunk references.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the question
+                type: string
+              cited_chunks:
+                description: IDs of chunks used to form the answer
+                items:
+                  type: string
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score for this answer (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              query:
+                description: The question that was answered
+                type: string
+            required:
+            - query
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '727'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: We need to produce answer in function final_result.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"40 dedicated annotators contributed to the annotation phase of DocLayNet.","cited_chunks":["9bfc2ccf-2e74-4981-96eb-917e31261b85"],"confidence":1,"query":"How
+                many annotators participated in creating the DocLayNet annotations?"}'
+              name: final_result
+            id: call_qnlw3kqo
+            index: 0
+            type: function
+      created: 1770802558
+      id: chatcmpl-292
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 97
+        prompt_tokens: 1069
+        total_tokens: 1166
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3378'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          Generate a direct, conversational answer
+          to the question based on the gathered evidence.
+
+          Output:
+          - answer: Direct, comprehensive answer with a natural, helpful tone.
+            Write the actual answer, not a description of what you found.
+            Use as many sentences as needed to fully address the question.
+          - confidence: Score from 0.0 to 1.0 indicating answer quality.
+
+          Guidelines:
+          - Base your answer solely on the evidence provided in the context.
+          - If a <background> section is provided, use it to frame your answer appropriately.
+          - Be thorough - include all relevant information from the evidence.
+          - Use formatting (bullet points, numbered lists) when it improves clarity.
+          - Do NOT use meta-commentary like "Based on the research..." or "The evidence shows..."
+            Instead, directly state the information.
+          - If the evidence is incomplete, acknowledge limitations briefly.
+        role: system
+      - content: |-
+          Answer the question based on the gathered evidence.
+
+          <context>
+            <background>**Key Facts Established**
+          - DocLayNet specifies **11** distinct document layout class labels:
+            1. Caption
+            2. Footnote
+            3. Formula
+            4. List‑item
+            5. Page‑footer
+            6. Page‑header
+            7. Picture
+            8. Section‑header
+            9. Table
+           10. Text
+           11. Title
+
+          **Documents Referenced**
+          - *DocLayNet Class Labels* (source listing the 11 category names).
+
+          **Current Focus**
+          - The user is inquiring about the specific class labels defined within the DocLayNet dataset for document layout analysis.</background>
+            <question>How were the annotations created and how many annotators were involved?</question>
+            <prior_answers>
+              <item>
+                <question>How many annotators participated in creating the DocLayNet annotations?</question>
+                <answer>40 dedicated annotators contributed to the annotation phase of DocLayNet.</answer>
+                <confidence>1.0</confidence>
+                <source>DocLayNet Annotation</source>
+              </item>
+            </prior_answers>
+          </context>
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Conversational answer for chat context.
+          name: final_result
+          parameters:
+            $defs:
+              Citation:
+                additionalProperties: false
+                description: |-
+                  Resolved citation with full metadata for display/visual grounding.
+
+                  Used by both research graph and chat agent. The optional index field
+                  supports UI display ordering in chat contexts.
+                properties:
+                  chunk_id:
+                    type: string
+                  content:
+                    type: string
+                  document_id:
+                    type: string
+                  document_title:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                  document_uri:
+                    type: string
+                  headings:
+                    anyOf:
+                    - items:
+                        type: string
+                      type: array
+                    - type: 'null'
+                    default: null
+                  index:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                  page_numbers:
+                    items:
+                      type: integer
+                    type: array
+                required:
+                - document_id
+                - chunk_id
+                - document_uri
+                - content
+                type: object
+            additionalProperties: false
+            properties:
+              answer:
+                description: Direct answer to the question
+                type: string
+              citations:
+                description: Citations supporting the answer
+                items:
+                  $ref: '#/$defs/Citation'
+                type: array
+              confidence:
+                default: 1.0
+                description: Confidence score (0-1)
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+            required:
+            - answer
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1085'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: 'We need answer: How were annotations created and how many annotators. Use prior answer gives 40 annotators.
+            Provide description: manual bounding boxes etc.'
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"answer":"The DocLayNet annotations were made manually by hand.  Annotators drew bounding boxes
+                around every labeled visual element in each page and then selected the appropriate label from the 11‑class
+                set.  The task was distributed among a team of 40 dedicated workers who performed the labeling according to
+                the dataset’s guidelines.\n\n• 40 annotators\n• Manual bounding‑box drawing for each document element\n• Labels
+                chosen from the 11 predefined categories\n","confidence":0.99}'
+              name: final_result
+            id: call_9nsq6z3r
+            index: 0
+            type: function
+      created: 1770802563
+      id: chatcmpl-61
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 152
+        prompt_tokens: 595
+        total_tokens: 747
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '7293'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: "You are a helpful research assistant powered by haiku.rag, a knowledge base system.\n\nYou have access to
+          a knowledge base of documents. Use your tools to search and answer questions.\n\nCRITICAL RULES:\n1. For greetings
+          or casual chat: respond directly WITHOUT using any tools\n2. NEVER call the same tool multiple times for a single
+          user message\n3. NEVER make up information - always use tools to get facts from the knowledge base\n4. For questions:
+          Use the \"ask\" tool EXACTLY ONCE - it automatically uses prior conversation context\n5. For searches: Use the \"search\"
+          tool EXACTLY ONCE - it handles multi-query expansion internally\n\nHow to decide which tool to use:\n- \"list_documents\"
+          - Use when the user wants to browse or see what documents are available (e.g., \"what documents are available?\",
+          \"show me the documents\", \"list available docs\").\n- \"summarize_document\" - Use when the user wants an overview
+          or summary of a specific document (e.g., \"summarize document X\", \"what does Y cover?\", \"give me an overview
+          of Z\").\n- \"get_document\" - Use when the user wants the FULL content of a specific document (e.g., \"get the
+          paper about Y\", \"fetch 2412.00566\", \"show me the full document\").\n- \"ask\" - Use for questions about topics
+          in the knowledge base. It automatically finds relevant prior answers from conversation history and searches across
+          documents to return answers with citations.\n- \"search\" - Use when the user explicitly asks to search/find/explore
+          documents. Call it ONCE. After calling search, copy the ENTIRE tool response to your output INCLUDING the content
+          snippets. Do NOT shorten, summarize, or omit any part of the results.\n\nIMPORTANT - When user mentions a document
+          in search/ask:\n- If user says \"search in <doc>\", \"find in <doc>\", \"answer from <doc>\", or \"<topic> in <doc>\":\n
+          \ - Extract the TOPIC as `query`/`question`\n  - Extract the DOCUMENT NAME as `document_name`\n- Examples for search:\n
+          \ - \"search for embeddings in the ML paper\" → query=\"embeddings\", document_name=\"ML paper\"\n  - \"find transformer
+          architecture in 2412.00566\" → query=\"transformer architecture\", document_name=\"2412.00566\" \n- Examples for
+          ask:\n  - \"what does the ML paper say about embeddings?\" → question=\"what are the embedding methods?\", document_name=\"ML
+          paper\"\n  - \"answer from 2412.00566 about model training\" → question=\"how is the model trained?\", document_name=\"2412.00566\"
+          \nBe friendly and conversational. When you use the \"ask\" tool, summarize the key findings for the user."
+        role: system
+      - content: What are the class labels defined in DocLayNet?
+        role: user
+      - content: |-
+          <think>
+          We need answer via ask tool.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"document_name":"DocLayNet","question":"What are the class labels defined in DocLayNet?"}'
+            name: ask
+          id: call_7lvpjbkh
+          type: function
+      - content: |-
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption**
+          2. **Footnote**
+          3. **Formula**
+          4. **List‑item**
+          5. **Page‑footer**
+          6. **Page‑header**
+          7. **Picture**
+          8. **Section‑header**
+          9. **Table**
+          10. **Text**
+          11. **Title**
+
+          Sources: [1]
+        role: tool
+        tool_call_id: call_7lvpjbkh
+      - content: "DocLayNet defines **11 distinct class labels** for document layout analysis:\n\n1. **Caption**  \n2. **Footnote**
+          \ \n3. **Formula**  \n4. **List‑item**  \n5. **Page‑footer**  \n6. **Page‑header**  \n7. **Picture**  \n8. **Section‑header**
+          \ \n9. **Table**  \n10. **Text**  \n11. **Title**\n\nThese categories cover the main structural elements that the
+          dataset annotates."
+        role: assistant
+      - content: How were the annotations created and how many annotators were involved?
+        role: user
+      - content: |-
+          <think>
+          Need ask tool.
+          </think>
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"document_name":"DocLayNet","question":"How were the annotations created and how many annotators
+              were involved?"}'
+            name: ask
+          id: call_l6xl5m5s
+          type: function
+      - content: |-
+          The DocLayNet annotations were made manually by hand.  Annotators drew bounding boxes around every labeled visual element in each page and then selected the appropriate label from the 11‑class set.  The task was distributed among a team of 40 dedicated workers who performed the labeling according to the dataset’s guidelines.
+
+          • 40 annotators
+          • Manual bounding‑box drawing for each document element
+          • Labels chosen from the 11 predefined categories
+
+
+          Sources: [2]
+        role: tool
+        tool_call_id: call_l6xl5m5s
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Search the knowledge base for relevant documents.</summary>
+            <returns>
+            <description>Formatted search results with content and metadata.</description>
+            </returns>
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              filter:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional SQL WHERE clause to filter documents.
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+                description: 'Number of results to return (default: from config).'
+              query:
+                description: The search query (what to search for).
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>List available documents in the knowledge base.</summary>
+            <returns>
+            <description>Paginated list of documents with metadata.</description>
+            </returns>
+          name: list_documents
+          parameters:
+            additionalProperties: false
+            properties:
+              page:
+                default: 1
+                description: 'Page number (default: 1, 50 documents per page)'
+                type: integer
+            type: object
+        type: function
+      - function:
+          description: |-
+            <summary>Retrieve a specific document by title or URI.</summary>
+            <returns>
+            <description>Document content and metadata, or not found message.</description>
+            </returns>
+          name: get_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to look up.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Generate a summary of a specific document.</summary>
+            <returns>
+            <description>Generated summary or not found message.</description>
+            </returns>
+          name: summarize_document
+          parameters:
+            additionalProperties: false
+            properties:
+              query:
+                description: The document title or URI to summarize.
+                type: string
+            required:
+            - query
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: |-
+            <summary>Answer a question using the knowledge base.
+
+            Uses a research graph for searching and synthesizing answers.</summary>
+            <returns>
+            <description>QAResult with answer, confidence, and citations.</description>
+            </returns>
+          name: ask
+          parameters:
+            additionalProperties: false
+            properties:
+              document_name:
+                anyOf:
+                - type: string
+                - type: 'null'
+                default: null
+                description: Optional document name/title to search within.
+              question:
+                description: The question to answer.
+                type: string
+            required:
+            - question
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '844'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: |-
+            The annotations in **DocLayNet** were created entirely by **manual human labeling**:
+
+            - **Annotation method** – Annotators drew precise bounding boxes around each visual element on every page and then selected the appropriate class from the 11‑label set.
+            - **Annotators involved** – A team of **40 dedicated workers** performed the labeling, following the dataset’s guidelines and quality‑control procedures.
+
+            So, the dataset relies on 40 human annotators using standard bounding‑box annotation tools to produce the labeled layout elements.
+          role: assistant
+      created: 1770802567
+      id: chatcmpl-904
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 110
+        prompt_tokens: 1483
+        total_tokens: 1593
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2427'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a session summarizer. Given a conversation history of Q&A pairs (and optionally existing context), produce a structured summary that captures key information for future context.
+
+          If a "Current Context" section is provided at the start of the input, incorporate that context into your summary. This might be initial background context from the user or a previous summary - build upon it rather than discard it.
+
+          Your summary should be concise (aim for 500-1500 tokens) and include:
+
+          1. **Key Facts Established** - Specific facts, data, or conclusions learned during the conversation
+          2. **Documents Referenced** - Documents or sources that were cited, with brief notes on what they contain
+          3. **Current Focus** - What topic or question thread the user is currently exploring
+
+          Rules:
+          - Extract only high-signal information that would help answer follow-up questions
+          - When building on existing context, merge new information with prior context
+          - Omit small talk, greetings, or low-confidence answers
+          - Use bullet points for clarity
+          - Keep technical details but compress verbose explanations
+          - Preserve document names/titles when mentioned in sources
+
+          Output the summary directly in markdown format. Do not include meta-commentary about the summary itself.
+        role: system
+      - content: |
+          ## Q1: What are the class labels defined in DocLayNet?
+          **Answer** (confidence: 100%):
+          DocLayNet defines 11 distinct class labels for document layout analysis:
+
+          1. **Caption**
+          2. **Footnote**
+          3. **Formula**
+          4. **List‑item**
+          5. **Page‑footer**
+          6. **Page‑header**
+          7. **Picture**
+          8. **Section‑header**
+          9. **Table**
+          10. **Text**
+          11. **Title**
+          **Sources:** DocLayNet Class Labels
+
+          ## Q2: How were the annotations created and how many annotators were involved?
+          **Answer** (confidence: 99%):
+          The DocLayNet annotations were made manually by hand.  Annotators drew bounding boxes around every labeled visual element in each page and then selected the appropriate label from the 11‑class set.  The task was distributed among a team of 40 dedicated workers who performed the labeling according to the dataset’s guidelines.
+
+          • 40 annotators
+          • Manual bounding‑box drawing for each document element
+          • Labels chosen from the 11 predefined categories
+
+          **Sources:** DocLayNet Annotation
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1116'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: "## Summary of Q&A\n\n### Key Facts Established\n- **DocLayNet Class Labels**: 11 distinct labels used
+            for document layout analysis:\n  1. Caption  \n  2. Footnote  \n  3. Formula  \n  4. List‑item  \n  5. Page‑footer
+            \ \n  6. Page‑header  \n  7. Picture  \n  8. Section‑header  \n  9. Table  \n  10. Text  \n  11. Title  \n- **Annotation
+            Process**:\n  - Fully manual bounding‑box drawing per visual element.\n  - Selection of a label from the above
+            11‑class set for each box.\n  - 40 annotators participated in the task, following dataset guidelines.\n\n### Current
+            Focus\nThe user is exploring the basic structure of the DocLayNet dataset, specifically the defined class labels
+            and the manual annotation workflow carried out by a team of 40 workers."
+          reasoning: We need to summarize. No current context provided.
+          role: assistant
+      created: 1770802573
+      id: chatcmpl-389
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 214
+        prompt_tokens: 559
+        total_tokens: 773
+    status:
+      code: 200
+      message: OK
+version: 1

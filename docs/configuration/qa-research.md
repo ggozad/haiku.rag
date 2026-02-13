@@ -79,4 +79,4 @@ rlm:
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 
-See [RLM Agent](../rlm.md) for usage details.
+See [RLM Agent](../agents/rlm.md) for usage details.

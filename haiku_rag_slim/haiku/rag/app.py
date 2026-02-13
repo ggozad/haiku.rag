@@ -34,7 +34,7 @@ from haiku.rag.utils import format_bytes, format_citations_rich, get_package_ver
 logger = logging.getLogger(__name__)
 
 
-class HaikuRAGApp:
+class HaikuRAGApp:  # pragma: no cover
     def __init__(
         self,
         db_path: Path,

@@ -318,3 +318,285 @@ def test_get_package_versions():
     for key, value in versions.items():
         assert isinstance(value, str)
         assert len(value) > 0
+
+
+# --- parse_datetime tests ---
+
+
+def test_parse_datetime_iso8601():
+    from haiku.rag.utils import parse_datetime
+
+    dt = parse_datetime("2025-01-15T14:30:00")
+    assert dt.year == 2025
+    assert dt.month == 1
+    assert dt.day == 15
+    assert dt.hour == 14
+    assert dt.minute == 30
+
+
+def test_parse_datetime_date_only():
+    from haiku.rag.utils import parse_datetime
+
+    dt = parse_datetime("2025-01-15")
+    assert dt.year == 2025
+    assert dt.month == 1
+    assert dt.day == 15
+
+
+def test_parse_datetime_with_timezone():
+    from haiku.rag.utils import parse_datetime
+
+    dt = parse_datetime("2025-01-15T14:30:00+00:00")
+    assert dt.year == 2025
+    assert dt.tzinfo is not None
+
+
+def test_parse_datetime_invalid():
+    from haiku.rag.utils import parse_datetime
+
+    with pytest.raises(ValueError, match="Could not parse datetime"):
+        parse_datetime("not-a-date")
+
+
+# --- to_utc tests ---
+
+
+def test_to_utc_naive_datetime():
+    from datetime import datetime
+
+    from haiku.rag.utils import to_utc
+
+    naive = datetime(2025, 6, 15, 12, 0, 0)
+    result = to_utc(naive)
+    assert result.tzinfo is not None
+
+
+def test_to_utc_utc_datetime():
+    from datetime import UTC, datetime
+
+    from haiku.rag.utils import to_utc
+
+    utc_dt = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
+    result = to_utc(utc_dt)
+    assert result is utc_dt
+
+
+def test_to_utc_aware_non_utc():
+    from datetime import UTC, datetime, timedelta, timezone
+
+    from haiku.rag.utils import to_utc
+
+    eastern = timezone(timedelta(hours=-5))
+    aware = datetime(2025, 6, 15, 12, 0, 0, tzinfo=eastern)
+    result = to_utc(aware)
+    assert result.tzinfo == UTC
+    assert result.hour == 17
+
+
+# --- apply_common_settings tests ---
+
+
+def test_apply_common_settings_no_settings():
+    from haiku.rag.config.models import ModelConfig
+    from haiku.rag.utils import apply_common_settings
+
+    mc = ModelConfig(provider="openai", name="gpt-4o")
+    result = apply_common_settings(None, dict, mc)
+    assert result is None
+
+
+def test_apply_common_settings_temperature():
+    from haiku.rag.config.models import ModelConfig
+    from haiku.rag.utils import apply_common_settings
+
+    mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.7)
+    result = apply_common_settings(None, dict, mc)
+    assert result is not None
+    assert result["temperature"] == 0.7
+
+
+def test_apply_common_settings_max_tokens():
+    from haiku.rag.config.models import ModelConfig
+    from haiku.rag.utils import apply_common_settings
+
+    mc = ModelConfig(provider="openai", name="gpt-4o", max_tokens=500)
+    result = apply_common_settings(None, dict, mc)
+    assert result is not None
+    assert result["max_tokens"] == 500
+
+
+def test_apply_common_settings_existing():
+    from haiku.rag.config.models import ModelConfig
+    from haiku.rag.utils import apply_common_settings
+
+    mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.5)
+    existing = {"some_key": "value"}
+    result = apply_common_settings(existing, dict, mc)
+    assert result is not None
+    assert result["temperature"] == 0.5
+    assert result["some_key"] == "value"
+
+
+# --- format_bytes tests ---
+
+
+def test_format_bytes():
+    from haiku.rag.utils import format_bytes
+
+    assert format_bytes(0) == "0.0 B"
+    assert format_bytes(512) == "512.0 B"
+    assert format_bytes(1024) == "1.0 KB"
+    assert format_bytes(1048576) == "1.0 MB"
+    assert format_bytes(1073741824) == "1.0 GB"
+    assert format_bytes(1099511627776) == "1.0 TB"
+    assert format_bytes(1125899906842624) == "1.0 PB"
+
+
+# --- format_citations tests ---
+
+
+def test_format_citations_empty():
+    from haiku.rag.utils import format_citations
+
+    assert format_citations([]) == ""
+
+
+def test_format_citations_with_citation():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Some content",
+        page_numbers=[1],
+        headings=["Intro"],
+    )
+    result = format_citations([citation])
+    assert "[doc1:chunk1]" in result
+    assert "Test Doc" in result
+    assert "p. 1" in result
+    assert "Section: Intro" in result
+    assert "Some content" in result
+
+
+def test_format_citations_multiple_pages():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        content="Content",
+        page_numbers=[1, 2, 3],
+    )
+    result = format_citations([citation])
+    assert "pp. 1-3" in result
+
+
+def test_format_citations_no_title():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        content="Content",
+    )
+    result = format_citations([citation])
+    assert "test://doc" in result
+
+
+# --- format_citations_rich tests ---
+
+
+def test_format_citations_rich_empty():
+    from haiku.rag.utils import format_citations_rich
+
+    assert format_citations_rich([]) == []
+
+
+def test_format_citations_rich_with_citation():
+    from rich.panel import Panel
+    from rich.text import Text
+
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Some content",
+        page_numbers=[1, 2],
+        headings=["Intro"],
+    )
+    result = format_citations_rich([citation])
+    assert len(result) == 2
+    assert isinstance(result[0], Text)
+    assert isinstance(result[1], Panel)
+
+
+# --- get_default_data_dir tests ---
+
+
+def test_get_default_data_dir():
+    from pathlib import Path
+
+    from haiku.rag.utils import get_default_data_dir
+
+    result = get_default_data_dir()
+    assert isinstance(result, Path)
+    assert "haiku.rag" in str(result)
+
+
+# --- build_prompt tests ---
+
+
+def test_build_prompt_without_preamble():
+    from haiku.rag.config.models import AppConfig
+    from haiku.rag.utils import build_prompt
+
+    config = AppConfig()
+    result = build_prompt("Base prompt", config)
+    assert result == "Base prompt"
+
+
+def test_build_prompt_with_preamble():
+    from haiku.rag.config.models import AppConfig, PromptsConfig
+    from haiku.rag.utils import build_prompt
+
+    config = AppConfig(prompts=PromptsConfig(domain_preamble="You are a legal expert."))
+    result = build_prompt("Base prompt", config)
+    assert result == "You are a legal expert.\n\nBase prompt"
+
+
+# --- is_up_to_date tests ---
+
+
+@pytest.mark.asyncio
+async def test_is_up_to_date(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    import httpx
+
+    from haiku.rag.utils import is_up_to_date
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"info": {"version": "0.0.1"}}
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: mock_client)
+
+    is_current, running, latest = await is_up_to_date()
+    assert is_current is True
+    assert running >= latest

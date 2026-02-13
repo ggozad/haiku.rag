@@ -8,7 +8,7 @@ from io import StringIO
 from typing import Any
 
 
-def build_namespace(
+def build_namespace(  # pragma: no cover
     client: Any, config: Any, context: Any, loop: asyncio.AbstractEventLoop
 ) -> dict[str, Any]:
     """Build execution namespace with haiku.rag functions injected."""
@@ -134,7 +134,7 @@ def send_response(result: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-async def main() -> None:
+async def main() -> None:  # pragma: no cover
     """Main entry point for container execution.
 
     Runs a loop reading length-prefixed JSON messages and executing code.

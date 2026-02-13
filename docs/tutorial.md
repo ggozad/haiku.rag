@@ -206,6 +206,6 @@ The following people are presenting talks at PyCon Finland 2025:
 - **[Chat](apps.md#chat-tui)** - Interactive conversations with `haiku-rag chat`
 - **[CLI Reference](cli.md)** - All available commands and options
 - **[Python API](python.md)** - Use haiku.rag in your Python applications
-- **[Agents](agents.md)** - Deep QA and multi-agent research workflows
+- **[Agents](agents/index.md)** - Deep QA and multi-agent research workflows
 - **[Configuration](configuration/index.md)** - Complete YAML configuration reference
 - **[Server Mode](server.md)** - File monitoring and MCP server

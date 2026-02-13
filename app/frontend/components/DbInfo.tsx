@@ -57,79 +57,28 @@ export default function DbInfo() {
 	}
 
 	return (
-		<>
-			<style>{`
-				.db-info {
-					display: flex;
-					gap: 1.5rem;
-					padding: 0.5rem 1rem;
-					font-size: 0.75rem;
-					color: #64748b;
-					background: #f8fafc;
-					border-top: 1px solid #e2e8f0;
-					justify-content: center;
-				}
-				.db-info-error {
-					color: #dc2626;
-					background: #fef2f2;
-				}
-				.db-info-loading {
-					color: #64748b;
-				}
-				.db-info-empty {
-					color: #f59e0b;
-					background: #fffbeb;
-				}
-				.db-stat {
-					display: flex;
-					align-items: center;
-					gap: 0.375rem;
-				}
-				.db-stat-value {
-					font-weight: 600;
-					color: #334155;
-				}
-				.db-stat-label {
-					color: #94a3b8;
-				}
-				.db-index-badge {
-					padding: 0.125rem 0.375rem;
-					border-radius: 9999px;
-					font-size: 0.625rem;
-					font-weight: 500;
-				}
-				.db-index-badge.indexed {
-					background: #dcfce7;
-					color: #166534;
-				}
-				.db-index-badge.not-indexed {
-					background: #fef3c7;
-					color: #92400e;
-				}
-			`}</style>
-			<div className="db-info">
-				<div className="db-stat">
-					<span className="db-stat-value">{info.documents}</span>
-					<span className="db-stat-label">documents</span>
-				</div>
-				<div className="db-stat">
-					<span className="db-stat-value">{info.chunks}</span>
-					<span className="db-stat-label">chunks</span>
-				</div>
-				<div className="db-stat">
-					<span className="db-stat-value">
-						{formatBytes(info.documents_bytes + info.chunks_bytes)}
-					</span>
-					<span className="db-stat-label">total</span>
-				</div>
-				<div className="db-stat">
-					<span
-						className={`db-index-badge ${info.has_vector_index ? "indexed" : "not-indexed"}`}
-					>
-						{info.has_vector_index ? "indexed" : "no index"}
-					</span>
-				</div>
+		<div className="db-info">
+			<div className="db-stat">
+				<span className="db-stat-value">{info.documents}</span>
+				<span className="db-stat-label">documents</span>
 			</div>
-		</>
+			<div className="db-stat">
+				<span className="db-stat-value">{info.chunks}</span>
+				<span className="db-stat-label">chunks</span>
+			</div>
+			<div className="db-stat">
+				<span className="db-stat-value">
+					{formatBytes(info.documents_bytes + info.chunks_bytes)}
+				</span>
+				<span className="db-stat-label">total</span>
+			</div>
+			<div className="db-stat">
+				<span
+					className={`db-index-badge ${info.has_vector_index ? "indexed" : "not-indexed"}`}
+				>
+					{info.has_vector_index ? "indexed" : "no index"}
+				</span>
+			</div>
+		</div>
 	);
 }

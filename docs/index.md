@@ -64,8 +64,8 @@ haiku-rag chat  # Interactive conversation mode
 - [CLI](cli.md) - Command line interface usage
 - [Python](python.md) - Python API reference
 - [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
-- [Agents](agents.md) - QA, chat, and research agents
-- [RLM Agent](rlm.md) - Complex analytical tasks via code execution
+- [Agents](agents/index.md) - QA, chat, and research agents
+- [RLM Agent](agents/rlm.md) - Complex analytical tasks via code execution
 - [Applications](apps.md) - Chat TUI, web app, and inspector
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration

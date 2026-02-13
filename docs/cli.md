@@ -282,7 +282,7 @@ Flags:
 - `--filter` / `-f`: SQL WHERE clause to restrict document access
 - `--document` / `-d`: Pre-load a document by title or ID (can repeat)
 
-See [RLM Agent](rlm.md) for details on capabilities and configuration.
+See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
 
 ## Server
 
