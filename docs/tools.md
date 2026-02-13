@@ -235,10 +235,12 @@ async with HaikuRAG("path/to/db.lancedb") as client:
         print(f"Total search results: {len(search_state.results)}")
 ```
 
-`AgentDeps` satisfies the `RAGDeps` protocol and implements the AG-UI state protocol (`state` getter/setter). For AG-UI streaming, pass a `state_key`:
+`AgentDeps` satisfies the `RAGDeps` protocol and implements the AG-UI state protocol (`state` getter/setter). For AG-UI streaming, set `state_key` on the `ToolContext` (via `prepare_context`):
 
 ```python
-deps = AgentDeps(client=client, tool_context=context, state_key="my_app")
+context = ToolContext()
+prepare_context(context, features=["search", "qa"], state_key="my_app")
+deps = AgentDeps(client=client, tool_context=context)
 ```
 
 Tool functions access `client` and `tool_context` via pydantic-ai's `RunContext.deps`, so toolsets can be created once and reused across requests.
@@ -247,7 +249,7 @@ All toolsets respect session-level document filters when a `SessionState` is reg
 
 ## AG-UI State Management
 
-Both `AgentDeps` and `ChatDeps` implement the AG-UI `StateHandler` protocol. State is emitted under a namespaced key via `state_key`.
+Both `AgentDeps` and `ChatDeps` implement the AG-UI `StateHandler` protocol. `ChatDeps` extends `AgentDeps` with chat-specific config and state handling. State is emitted under a namespaced key via `state_key` on the `ToolContext` — set it once via `prepare_context()`.
 
 **Custom agents** use `AgentDeps` + `prepare_context`:
 
@@ -256,14 +258,14 @@ from haiku.rag.tools import AgentDeps, ToolContext, ToolContextCache, prepare_co
 
 context = ToolContext()
 prepare_context(context, features=["search", "qa"], state_key="my_app")
-deps = AgentDeps(client=client, tool_context=context, state_key="my_app")
+deps = AgentDeps(client=client, tool_context=context)
 ```
 
 **Chat agent** uses `ChatDeps` + `prepare_chat_context` (adds chat-specific overrides like background summarization and initial context handling):
 
 ```python
 from haiku.rag.agents.chat import (
-    AGUI_STATE_KEY, ChatDeps, create_chat_agent, prepare_chat_context,
+    ChatDeps, create_chat_agent, prepare_chat_context,
 )
 from haiku.rag.tools import ToolContext, ToolContextCache
 
@@ -272,13 +274,12 @@ agent = create_chat_agent(config)
 # For multi-session apps, cache ToolContext per thread
 cache = ToolContextCache()
 context, _is_new = cache.get_or_create(thread_id)
-prepare_chat_context(context)  # idempotent namespace registration
+prepare_chat_context(context)  # idempotent; sets state_key="haiku.rag.chat"
 
 deps = ChatDeps(
     config=config,
     client=client,
     tool_context=context,
-    state_key=AGUI_STATE_KEY,  # "haiku.rag.chat"
 )
 ```
 

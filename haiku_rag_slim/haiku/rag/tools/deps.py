@@ -14,14 +14,14 @@ class AgentDeps:
 
     client: HaikuRAG
     tool_context: ToolContext
-    state_key: str | None = None
 
     @property
     def state(self) -> dict[str, Any]:
         """Get current state for AG-UI protocol."""
         snapshot = self.tool_context.build_state_snapshot()
-        if self.state_key:
-            return {self.state_key: snapshot}
+        state_key = self.tool_context.state_key
+        if state_key:
+            return {state_key: snapshot}
         return snapshot
 
     @state.setter
@@ -29,10 +29,14 @@ class AgentDeps:
         """Set state from AG-UI protocol."""
         if value is None:
             return
-
-        data: dict[str, Any] = value
-        if self.state_key and self.state_key in value:
-            nested = value[self.state_key]
-            if isinstance(nested, dict):
-                data = nested
+        data = self._extract_state_data(value)
         self.tool_context.restore_state_snapshot(data)
+
+    def _extract_state_data(self, value: dict[str, Any]) -> dict[str, Any]:
+        """Extract flat state dict, unwrapping state_key if present."""
+        state_key = self.tool_context.state_key
+        if state_key and state_key in value:
+            nested = value[state_key]
+            if isinstance(nested, dict):
+                return nested
+        return value

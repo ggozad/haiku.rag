@@ -95,6 +95,8 @@ def test_no_qa_skips_qa_session_state(temp_db_path):
 
 def test_chat_deps_state_without_qa(temp_db_path):
     """ChatDeps.state getter omits qa_history/session_context when QASessionState absent."""
+    from haiku.rag.agents.chat.state import AGUI_STATE_KEY
+
     client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
     prepare_chat_context(context, features=[FEATURE_SEARCH])
@@ -102,13 +104,17 @@ def test_chat_deps_state_without_qa(temp_db_path):
     deps = ChatDeps(config=Config, client=client, tool_context=context)
     state = deps.state
 
+    # State is wrapped under the AGUI state key
+    assert AGUI_STATE_KEY in state
+    inner = state[AGUI_STATE_KEY]
+
     # SessionState fields should be present
-    assert "document_filter" in state
-    assert "citation_registry" in state
-    assert "citations" in state
+    assert "document_filter" in inner
+    assert "citation_registry" in inner
+    assert "citations" in inner
     # QA fields should NOT be present
-    assert "qa_history" not in state
-    assert "session_context" not in state
+    assert "qa_history" not in inner
+    assert "session_context" not in inner
     client.close()
 
 

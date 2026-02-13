@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai import Agent
@@ -8,9 +8,9 @@ from haiku.rag.agents.chat.context import (
 )
 from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import AGUI_STATE_KEY
-from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext, prepare_context
+from haiku.rag.tools.deps import AgentDeps
 from haiku.rag.tools.document import create_document_toolset
 from haiku.rag.tools.qa import (
     QA_SESSION_NAMESPACE,
@@ -34,41 +34,21 @@ def _on_qa_complete(qa_session_state: QASessionState, config: AppConfig) -> None
 
 
 @dataclass
-class ChatDeps:
+class ChatDeps(AgentDeps):
     """Dependencies for chat agent.
 
-    Implements RAGDeps protocol and StateHandler protocol for AG-UI state management.
+    Extends AgentDeps with chat-specific config and state handling.
     """
 
-    config: AppConfig
-    client: HaikuRAG
-    tool_context: ToolContext
-    state_key: str | None = None
+    config: AppConfig = field(default_factory=AppConfig)
 
-    @property
-    def state(self) -> dict[str, Any]:
-        """Get current state for AG-UI protocol.
-
-        Combines all registered namespace states into a single flat dict,
-        matching the ChatSessionState schema expected by AG-UI clients.
-        """
-        snapshot = self.tool_context.build_state_snapshot()
-        if self.state_key:
-            return {self.state_key: snapshot}
-        return snapshot
-
-    @state.setter
+    @AgentDeps.state.setter
     def state(self, value: dict[str, Any] | None) -> None:
-        """Set state from AG-UI protocol."""
+        """Set state from AG-UI protocol with chat-specific overrides."""
         if value is None:
             return
 
-        # Extract from namespaced key if present
-        state_data: dict[str, Any] = value
-        if self.state_key and self.state_key in value:
-            nested = value[self.state_key]
-            if isinstance(nested, dict):
-                state_data = nested
+        state_data = self._extract_state_data(value)
 
         # Preserve server's session_context before restore overwrites it
         qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)

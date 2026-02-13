@@ -13,7 +13,6 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.agents.chat import (
-    AGUI_STATE_KEY,
     ChatDeps,
     create_chat_agent,
     prepare_chat_context,
@@ -92,7 +91,6 @@ async def stream_chat(request: Request) -> Response:
         config=Config,
         client=get_client(),
         tool_context=context,
-        state_key=AGUI_STATE_KEY,
     )
 
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)

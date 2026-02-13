@@ -31,10 +31,11 @@ def test_agent_deps_state_getter_with_session(mock_client):
 
 
 def test_agent_deps_state_getter_with_state_key(mock_client):
-    """state wraps snapshot under state_key when set."""
+    """state wraps snapshot under state_key when set on context."""
     ctx = ToolContext()
+    ctx.state_key = "my_app"
     ctx.register(SESSION_NAMESPACE, SessionState())
-    deps = AgentDeps(client=mock_client, tool_context=ctx, state_key="my_app")
+    deps = AgentDeps(client=mock_client, tool_context=ctx)
     snapshot = deps.state
     assert "my_app" in snapshot
     assert "citations" in snapshot["my_app"]
@@ -54,8 +55,9 @@ def test_agent_deps_state_setter_restores(mock_client):
 def test_agent_deps_state_setter_with_state_key(mock_client):
     """state setter extracts data from namespaced key."""
     ctx = ToolContext()
+    ctx.state_key = "my_app"
     ctx.register(SESSION_NAMESPACE, SessionState())
-    deps = AgentDeps(client=mock_client, tool_context=ctx, state_key="my_app")
+    deps = AgentDeps(client=mock_client, tool_context=ctx)
     deps.state = {"my_app": {"document_filter": ["doc1"]}}
     session = ctx.get(SESSION_NAMESPACE, SessionState)
     assert session is not None
@@ -76,16 +78,18 @@ def test_agent_deps_state_setter_ignores_none(mock_client):
 def test_agent_deps_state_roundtrip(mock_client):
     """Build snapshot then restore produces equivalent state."""
     ctx = ToolContext()
+    ctx.state_key = "app"
     ctx.register(SESSION_NAMESPACE, SessionState(document_filter=["doc1"]))
     ctx.register(QA_SESSION_NAMESPACE, QASessionState())
-    deps = AgentDeps(client=mock_client, tool_context=ctx, state_key="app")
+    deps = AgentDeps(client=mock_client, tool_context=ctx)
 
     snapshot = deps.state
 
     ctx2 = ToolContext()
+    ctx2.state_key = "app"
     ctx2.register(SESSION_NAMESPACE, SessionState())
     ctx2.register(QA_SESSION_NAMESPACE, QASessionState())
-    deps2 = AgentDeps(client=mock_client, tool_context=ctx2, state_key="app")
+    deps2 = AgentDeps(client=mock_client, tool_context=ctx2)
     deps2.state = snapshot
 
     session = ctx2.get(SESSION_NAMESPACE, SessionState)

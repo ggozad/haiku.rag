@@ -64,7 +64,17 @@ def test_chat_deps_initialization(temp_db_path):
     assert deps.config is Config
     assert deps.client is client
     assert deps.tool_context is context
-    assert deps.state_key is None
+    client.close()
+
+
+def test_chat_deps_is_agent_deps(temp_db_path):
+    """Test ChatDeps is a subclass of AgentDeps."""
+    from haiku.rag.tools.deps import AgentDeps
+
+    client = HaikuRAG(temp_db_path, create=True)
+    context = ToolContext()
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
+    assert isinstance(deps, AgentDeps)
     client.close()
 
 
@@ -73,42 +83,18 @@ def test_agui_state_key_constant():
     assert AGUI_STATE_KEY == "haiku.rag.chat"
 
 
-def test_chat_deps_with_state_key(temp_db_path):
-    """Test ChatDeps can be initialized with state_key for keyed state emission."""
-    client = HaikuRAG(temp_db_path, create=True)
-    context = ToolContext()
-    deps = ChatDeps(
-        config=Config, client=client, tool_context=context, state_key="my_state"
-    )
-
-    assert deps.config is Config
-    assert deps.state_key == "my_state"
-    client.close()
-
-
-def test_chat_deps_state_key_default_none(temp_db_path):
-    """Test ChatDeps state_key defaults to None."""
-    client = HaikuRAG(temp_db_path, create=True)
-    context = ToolContext()
-    deps = ChatDeps(config=Config, client=client, tool_context=context)
-
-    assert deps.state_key is None
-    client.close()
-
-
 def test_chat_deps_state_setter_handles_initial_context(temp_db_path):
     """Test ChatDeps.state setter transfers initial_context to qa_session_state."""
     from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 
     client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
+    context.state_key = AGUI_STATE_KEY
     # Register QASessionState (normally done by prepare_chat_context)
     context.register(QA_SESSION_NAMESPACE, QASessionState())
     context.register(SESSION_NAMESPACE, SessionState())
 
-    deps = ChatDeps(
-        config=Config, client=client, tool_context=context, state_key=AGUI_STATE_KEY
-    )
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
 
     # Client sends initial_context with no session_context
     incoming_state = {
@@ -140,12 +126,11 @@ def test_chat_deps_state_setter_parses_session_context_dict(temp_db_path):
 
     client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
+    context.state_key = AGUI_STATE_KEY
     context.register(QA_SESSION_NAMESPACE, QASessionState())
     context.register(SESSION_NAMESPACE, SessionState())
 
-    deps = ChatDeps(
-        config=Config, client=client, tool_context=context, state_key=AGUI_STATE_KEY
-    )
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
 
     # Client sends session_context as a dict (as it comes from JSON)
     incoming_state = {
@@ -178,6 +163,7 @@ def test_chat_deps_state_setter_preserves_server_session_context(temp_db_path):
 
     client = HaikuRAG(temp_db_path, create=True)
     context = ToolContext()
+    context.state_key = AGUI_STATE_KEY
     qa_state = QASessionState()
     qa_state.session_context = SessionContext(
         summary="Fresh summary from background summarizer"
@@ -185,9 +171,7 @@ def test_chat_deps_state_setter_preserves_server_session_context(temp_db_path):
     context.register(QA_SESSION_NAMESPACE, qa_state)
     context.register(SESSION_NAMESPACE, SessionState())
 
-    deps = ChatDeps(
-        config=Config, client=client, tool_context=context, state_key=AGUI_STATE_KEY
-    )
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
 
     # Client sends stale session_context
     incoming_state = {
@@ -500,7 +484,6 @@ async def test_chat_agent_ask_adds_citations(allow_model_requests, temp_db_path)
             config=Config,
             client=client,
             tool_context=context,
-            state_key=AGUI_STATE_KEY,
         )
 
         # Ask a question that should use the ask tool
@@ -557,7 +540,6 @@ async def test_chat_agent_ask_triggers_background_summarization(
             config=Config,
             client=client,
             tool_context=context,
-            state_key=AGUI_STATE_KEY,
         )
 
         # Patch internal trigger to avoid concurrent HTTP calls during VCR
@@ -623,7 +605,6 @@ async def test_chat_agent_multi_turn_with_context(allow_model_requests, temp_db_
             config=Config,
             client=client,
             tool_context=context,
-            state_key=AGUI_STATE_KEY,
         )
 
         # Set initial state with initial_context (mimicking AG-UI client)
@@ -725,7 +706,6 @@ async def test_chat_agent_ask_with_prior_answer_retrieval(
             config=Config,
             client=client,
             tool_context=context,
-            state_key=AGUI_STATE_KEY,
         )
 
         # First ask - establishes qa_history
