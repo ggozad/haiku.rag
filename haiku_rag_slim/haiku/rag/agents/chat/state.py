@@ -16,6 +16,7 @@ class ChatSessionState(BaseModel):
 
     initial_context: str | None = None
     citations: list[Citation] = []
+    citations_history: list[list[Citation]] = []
     qa_history: list["QAHistoryEntry"] = []
     session_context: SessionContext | None = None
     document_filter: list[str] = []

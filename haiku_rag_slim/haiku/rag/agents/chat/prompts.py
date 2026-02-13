@@ -26,7 +26,10 @@ _PROMPT_QA_CLOSING = (
 )
 
 
-def build_chat_prompt(features: list[str]) -> str:
+def build_chat_prompt(
+    features: list[str],
+    preamble: str | None = None,
+) -> str:
     """Build a chat system prompt from the given feature list.
 
     Each feature adds its relevant tool guidance to the prompt.
@@ -34,11 +37,14 @@ def build_chat_prompt(features: list[str]) -> str:
 
     Args:
         features: List of feature names (e.g., ["search", "documents", "qa"]).
+        preamble: Optional custom identity/rules section. When provided,
+            replaces the default identity prompt. Tool guidance, feature
+            rules, and closing are still appended.
 
     Returns:
         The composed system prompt string.
     """
-    parts = [_PROMPT_BASE]
+    parts = [preamble if preamble is not None else _PROMPT_BASE]
 
     # Add feature-specific critical rules
     if "qa" in features:

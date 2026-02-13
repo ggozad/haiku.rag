@@ -1,4 +1,5 @@
 from haiku.rag.agents.chat.state import ChatSessionState
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.tools.session import SessionContext, SessionState
 
 
@@ -113,3 +114,28 @@ def test_chat_session_state_model_dump_json_serializes_datetime():
     # datetime should be serialized as ISO string, not datetime object
     assert isinstance(snapshot["session_context"]["last_updated"], str)
     assert snapshot["session_context"]["last_updated"] == "2025-01-27T12:00:00"
+
+
+def test_chat_session_state_citations_history_default():
+    """citations_history defaults to empty list."""
+    state = ChatSessionState()
+    assert state.citations_history == []
+
+
+def test_chat_session_state_citations_history_roundtrip():
+    """citations_history serializes and deserializes correctly."""
+    citation = Citation(
+        index=1,
+        document_id="d1",
+        chunk_id="c1",
+        document_uri="test://doc",
+        document_title="Doc",
+        page_numbers=[],
+        headings=None,
+        content="content",
+    )
+    state = ChatSessionState(citations_history=[[citation]])
+    data = state.model_dump(mode="json")
+    restored = ChatSessionState.model_validate(data)
+    assert len(restored.citations_history) == 1
+    assert restored.citations_history[0][0].chunk_id == "c1"

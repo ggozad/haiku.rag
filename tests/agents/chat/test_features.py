@@ -155,3 +155,35 @@ def test_build_chat_prompt_includes_analysis():
     assert "analyze" in prompt
     assert "search" in prompt
     assert "ask" in prompt
+
+
+def test_build_chat_prompt_with_preamble():
+    """Custom preamble replaces the default identity section."""
+    custom = "You are a custom assistant."
+    prompt = build_chat_prompt(DEFAULT_FEATURES, preamble=custom)
+
+    assert prompt.startswith(custom)
+    # Tool guidance should still be appended
+    assert "search" in prompt
+    assert "ask" in prompt
+    # Default identity should NOT be present
+    assert "haiku.rag" not in prompt
+
+
+def test_build_chat_prompt_without_preamble_uses_default():
+    """Without preamble, the default identity section is used."""
+    prompt = build_chat_prompt(DEFAULT_FEATURES)
+
+    assert "haiku.rag" in prompt
+
+
+def test_create_chat_agent_with_preamble():
+    """create_chat_agent passes preamble through to build_chat_prompt."""
+    custom = "You are a domain expert."
+    agent = create_chat_agent(Config, preamble=custom)
+
+    assert agent is not None
+    # _instructions is the internal list of instruction strings/callables
+    assert any(
+        custom in instr for instr in agent._instructions if isinstance(instr, str)
+    )

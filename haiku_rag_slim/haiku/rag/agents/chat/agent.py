@@ -92,6 +92,7 @@ def prepare_chat_context(
 def create_chat_agent(
     config: AppConfig,
     features: list[str] | None = None,
+    preamble: str | None = None,
 ) -> Agent[ChatDeps, str]:
     """Create the chat agent with composed toolsets.
 
@@ -100,6 +101,9 @@ def create_chat_agent(
         features: List of features to enable. Defaults to DEFAULT_FEATURES
             (search, documents, qa). Available features: "search",
             "documents", "qa", "analysis".
+        preamble: Optional custom identity/rules section for the system prompt.
+            When provided, replaces the default identity prompt. Tool guidance,
+            feature rules, and closing are still appended by the builder.
 
     Returns:
         The configured chat agent.
@@ -133,7 +137,7 @@ def create_chat_agent(
         model,
         deps_type=ChatDeps,
         output_type=str,
-        instructions=build_chat_prompt(features),
+        instructions=build_chat_prompt(features, preamble=preamble),
         toolsets=toolsets,
         retries=3,
     )
