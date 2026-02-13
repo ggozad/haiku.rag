@@ -12,11 +12,7 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import ToolContext, prepare_context
 from haiku.rag.tools.deps import AgentDeps
 from haiku.rag.tools.document import create_document_toolset
-from haiku.rag.tools.qa import (
-    QA_SESSION_NAMESPACE,
-    QASessionState,
-    create_qa_toolset,
-)
+from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState, create_qa_toolset
 from haiku.rag.tools.search import create_search_toolset
 from haiku.rag.tools.session import SessionContext
 from haiku.rag.utils import get_model
@@ -167,9 +163,7 @@ async def run_chat_agent(
     deps: ChatDeps,
     message: str,
 ) -> str:
-    """Run the chat agent and trigger background summarization.
-
-    This wrapper handles post-processing like background summarization.
+    """Run the chat agent.
 
     Args:
         agent: The chat agent.
@@ -180,7 +174,6 @@ async def run_chat_agent(
         Agent response.
     """
     result = await agent.run(message, deps=deps)
-    trigger_background_summarization(deps)
     return result.output
 
 
