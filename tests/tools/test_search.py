@@ -1,9 +1,17 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import ToolReturn
 
-from haiku.rag.tools import ToolContext
+from haiku.rag.tools import ToolContext, prepare_context
 from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
+from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent / "cassettes" / "test_search_tools")
 
 
 def make_ctx(client, context=None):
@@ -212,6 +220,86 @@ async def search_client(temp_db_path):
             title="JavaScript Guide",
         )
         yield rag
+
+
+@pytest.mark.vcr()
+class TestSearchWithSessionState:
+    """Tests for search tool with session state (citation indexing path)."""
+
+    @pytest.mark.asyncio
+    async def test_search_with_session_state_returns_tool_return(
+        self, search_client, search_config
+    ):
+        """Search with SessionState returns ToolReturn with StateDeltaEvent."""
+        context = ToolContext()
+        prepare_context(context, features=["search"])
+        toolset = create_search_toolset(search_config)
+
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
+        result = await search_tool.function(ctx, "Python")
+
+        assert isinstance(result, ToolReturn)
+        assert result.metadata is not None
+        assert len(result.metadata) > 0
+
+    @pytest.mark.asyncio
+    async def test_search_with_session_state_populates_citations(
+        self, search_client, search_config
+    ):
+        """Search populates SessionState.citation_registry and citations."""
+        context = ToolContext()
+        prepare_context(context, features=["search"])
+        toolset = create_search_toolset(search_config)
+
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
+        await search_tool.function(ctx, "Python")
+
+        session_state = context.get(SESSION_NAMESPACE, SessionState)
+        assert session_state is not None
+        assert len(session_state.citation_registry) > 0
+        assert len(session_state.citations) > 0
+
+    @pytest.mark.asyncio
+    async def test_search_with_session_state_formatted_output(
+        self, search_client, search_config
+    ):
+        """Search with SessionState formats results with [index] **Title**."""
+        context = ToolContext()
+        prepare_context(context, features=["search"])
+        toolset = create_search_toolset(search_config)
+
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
+        result = await search_tool.function(ctx, "Python")
+
+        assert isinstance(result, ToolReturn)
+        output = result.return_value
+        assert "Found" in output
+        assert "[1]" in output
+        assert "**" in output
+
+    @pytest.mark.asyncio
+    async def test_search_citations_accumulate_across_calls(
+        self, search_client, search_config
+    ):
+        """Multiple searches accumulate citation indices across calls."""
+        context = ToolContext()
+        prepare_context(context, features=["search"])
+        toolset = create_search_toolset(search_config)
+
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
+
+        await search_tool.function(ctx, "Python")
+        session_state = context.get(SESSION_NAMESPACE, SessionState)
+        assert session_state is not None
+        first_count = len(session_state.citation_registry)
+
+        await search_tool.function(ctx, "JavaScript")
+        # New chunks should get higher indices
+        assert len(session_state.citation_registry) >= first_count
 
 
 @pytest.fixture

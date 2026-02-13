@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,11 @@ from haiku.rag.tools.document import (
     DocumentListResponse,
     create_document_toolset,
 )
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent / "cassettes" / "test_document_tools")
 
 
 def make_ctx(client, context=None):
@@ -141,6 +147,45 @@ class TestDocumentToolExecution:
 
         assert result.total_documents == 1
         assert result.documents[0].title == "Python Guide"
+
+
+@pytest.mark.vcr()
+class TestFindDocument:
+    """Tests for find_document helper function."""
+
+    @pytest.mark.asyncio
+    async def test_find_document_partial_uri(self, doc_client):
+        """find_document resolves partial URI match."""
+        from haiku.rag.tools.document import find_document
+
+        doc = await find_document(doc_client, "python")
+        assert doc is not None
+        assert doc.uri == "test://python"
+
+    @pytest.mark.asyncio
+    async def test_find_document_partial_title(self, doc_client):
+        """find_document resolves partial title match."""
+        from haiku.rag.tools.document import find_document
+
+        doc = await find_document(doc_client, "JavaScript")
+        assert doc is not None
+        assert doc.title == "JavaScript Guide"
+
+
+@pytest.mark.vcr()
+class TestSummarizeDocumentTool:
+    """Tests for summarize_document tool."""
+
+    @pytest.mark.asyncio
+    async def test_summarize_document_not_found(self, doc_client, doc_config):
+        """summarize_document returns not-found message for nonexistent document."""
+        toolset = create_document_toolset(doc_config)
+
+        summarize_tool = toolset.tools["summarize_document"]
+        ctx = make_ctx(doc_client)
+        result = await summarize_tool.function(ctx, "nonexistent document")
+
+        assert "Document not found" in result
 
 
 @pytest.fixture

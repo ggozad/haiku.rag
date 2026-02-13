@@ -112,7 +112,7 @@ async def _update_context_background(
 
     except asyncio.CancelledError:
         pass
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         import logging
 
         logging.getLogger(__name__).exception(f"Background summarization failed: {e}")

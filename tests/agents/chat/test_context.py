@@ -230,6 +230,74 @@ class TestUpdateSessionContext:
         assert result.summary == ""
 
 
+class TestTriggerBackgroundSummarization:
+    """Tests for trigger_background_summarization."""
+
+    def test_trigger_with_empty_qa_history(self):
+        """trigger_background_summarization returns early with empty qa_history."""
+        from haiku.rag.agents.chat.context import (
+            _summarization_tasks,
+            trigger_background_summarization,
+        )
+        from haiku.rag.tools.qa import QASessionState
+
+        tasks_before = len(_summarization_tasks)
+
+        qa_session_state = QASessionState()
+        assert len(qa_session_state.qa_history) == 0
+
+        trigger_background_summarization(qa_session_state, config=Config)
+
+        # No new task should have been created
+        assert len(_summarization_tasks) == tasks_before
+
+    @pytest.mark.asyncio
+    async def test_trigger_cancels_existing_task(self):
+        """Second trigger cancels the previous background task."""
+        import asyncio
+        from unittest.mock import patch
+
+        from haiku.rag.agents.chat.context import (
+            _summarization_tasks,
+            trigger_background_summarization,
+        )
+        from haiku.rag.tools.qa import QAHistoryEntry, QASessionState
+
+        _summarization_tasks.clear()
+
+        qa_session_state = QASessionState(
+            qa_history=[QAHistoryEntry(question="Q1", answer="A1", confidence=0.9)]
+        )
+
+        # Patch _update_context_background to be a slow coroutine
+        async def slow_background(*args, **kwargs):
+            await asyncio.sleep(10)
+
+        with patch(
+            "haiku.rag.agents.chat.context._update_context_background",
+            new=slow_background,
+        ):
+            # First trigger creates a task
+            trigger_background_summarization(qa_session_state, config=Config)
+            key = id(qa_session_state)
+            assert key in _summarization_tasks
+            first_task = _summarization_tasks[key]
+
+            # Second trigger should cancel the first
+            trigger_background_summarization(qa_session_state, config=Config)
+            await asyncio.sleep(0)  # Let cancellation propagate
+            assert first_task.cancelled() or first_task.done()
+
+            # Cleanup
+            if key in _summarization_tasks:
+                _summarization_tasks[key].cancel()
+                try:
+                    await _summarization_tasks[key]
+                except asyncio.CancelledError:
+                    pass
+            _summarization_tasks.clear()
+
+
 class TestUpdateSessionContextPassesCurrentContext:
     """Tests for update_session_context current_context forwarding."""
 

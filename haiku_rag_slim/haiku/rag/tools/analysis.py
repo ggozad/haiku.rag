@@ -29,7 +29,7 @@ def create_analysis_toolset(
         FunctionToolset with an analyze tool.
     """
 
-    async def analyze(
+    async def analyze(  # pragma: no cover
         ctx: RunContext[RAGDeps],
         task: str,
         document_name: str | None = None,

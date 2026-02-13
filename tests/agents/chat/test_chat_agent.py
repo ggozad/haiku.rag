@@ -9,6 +9,7 @@ from haiku.rag.agents.chat import (
     ChatSessionState,
     create_chat_agent,
     prepare_chat_context,
+    run_chat_agent,
 )
 from haiku.rag.agents.chat.context import _summarization_tasks
 from haiku.rag.agents.research.models import Citation
@@ -81,6 +82,26 @@ def test_chat_deps_is_agent_deps(temp_db_path):
 def test_agui_state_key_constant():
     """Test AGUI_STATE_KEY is exported with correct value."""
     assert AGUI_STATE_KEY == "haiku.rag.chat"
+
+
+def test_chat_deps_state_setter_none(temp_db_path):
+    """Test ChatDeps.state setter handles None gracefully."""
+    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+
+    client = HaikuRAG(temp_db_path, create=True)
+    context = ToolContext()
+    context.register(QA_SESSION_NAMESPACE, QASessionState())
+    context.register(SESSION_NAMESPACE, SessionState())
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
+
+    # Setting state to None should be a no-op
+    deps.state = None
+
+    # State should remain unchanged
+    qa_session_state = context.get(QA_SESSION_NAMESPACE)
+    assert isinstance(qa_session_state, QASessionState)
+    assert qa_session_state.session_context is None
+    client.close()
 
 
 def test_chat_deps_state_setter_handles_initial_context(temp_db_path):
@@ -197,6 +218,24 @@ def test_chat_deps_state_setter_preserves_server_session_context(temp_db_path):
         qa_session_state.session_context.summary
         == "Fresh summary from background summarizer"
     )
+    client.close()
+
+
+def test_trigger_background_summarization_no_qa_history(temp_db_path):
+    """Test trigger_background_summarization returns early when qa_history is empty."""
+    from haiku.rag.agents.chat.agent import trigger_background_summarization
+    from haiku.rag.agents.chat.context import _summarization_tasks
+    from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+
+    client = HaikuRAG(temp_db_path, create=True)
+    context = ToolContext()
+    context.register(QA_SESSION_NAMESPACE, QASessionState())
+    context.register(SESSION_NAMESPACE, SessionState())
+    deps = ChatDeps(config=Config, client=client, tool_context=context)
+
+    tasks_before = len(_summarization_tasks)
+    trigger_background_summarization(deps)
+    assert len(_summarization_tasks) == tasks_before
     client.close()
 
 
@@ -337,6 +376,31 @@ The data sources for DocLayNet include:
 
 Scanned documents were excluded to avoid rotation and skewing issues.
 """
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_run_chat_agent(allow_model_requests, temp_db_path):
+    """Test run_chat_agent returns agent output string."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document(
+            content=DOCLAYNET_CLASS_LABELS,
+            uri="doclaynet-labels",
+            title="DocLayNet Class Labels",
+        )
+
+        context = ToolContext()
+        prepare_chat_context(context)
+        agent = create_chat_agent(Config)
+        deps = ChatDeps(
+            config=Config,
+            client=client,
+            tool_context=context,
+        )
+
+        output = await run_chat_agent(agent, deps, "Search for class labels")
+        assert isinstance(output, str)
+        assert len(output) > 0
 
 
 @pytest.mark.asyncio

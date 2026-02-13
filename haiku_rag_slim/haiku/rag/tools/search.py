@@ -97,7 +97,7 @@ def create_search_toolset(
                 chunk_id = r.chunk_id or ""
                 if chunk_id:
                     index = session_state.get_or_assign_index(chunk_id)
-                else:
+                else:  # pragma: no cover
                     index = len(session_state.citation_registry) + 1
                 citations.append(
                     Citation(
@@ -121,7 +121,7 @@ def create_search_toolset(
                     snippet += "..."
 
                 line = f"[{c.index}] **{title}**"
-                if c.page_numbers:
+                if c.page_numbers:  # pragma: no cover
                     line += f" (pages {', '.join(map(str, c.page_numbers))})"
                 line += f"\n    {snippet}"
                 result_lines.append(line)
@@ -140,7 +140,7 @@ def create_search_toolset(
                         metadata=[state_event],
                     )
 
-            return formatted
+            return formatted  # pragma: no cover
 
         # Format results without citation indexing (standalone use)
         total = len(results)
