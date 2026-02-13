@@ -455,4 +455,4 @@ async with HaikuRAG("path/to/db.lancedb") as client:
     result = await agent.run("What are the main findings?", deps=deps)
 ```
 
-See [Toolsets](tools.md) for the full API reference and composition guide.
+See [Toolsets](tools.md) for the full API reference and composition guide, and the [`examples/`](https://github.com/ggozad/haiku.rag/tree/main/examples) directory for runnable scripts.

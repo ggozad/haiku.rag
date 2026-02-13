@@ -245,6 +245,8 @@ deps = AgentDeps(client=client, tool_context=context)
 
 Tool functions access `client` and `tool_context` via pydantic-ai's `RunContext.deps`, so toolsets can be created once and reused across requests.
 
+For complete runnable examples, see [`examples/custom_agent.py`](https://github.com/ggozad/haiku.rag/tree/main/examples/custom_agent.py) (standalone) and [`examples/custom_agent_agui.py`](https://github.com/ggozad/haiku.rag/tree/main/examples/custom_agent_agui.py) (AG-UI streaming server).
+
 All toolsets respect session-level document filters when a `SessionState` is registered in the context. This means setting `SessionState.document_filter` restricts all tools simultaneously.
 
 ## AG-UI State Management
