@@ -29,6 +29,7 @@ class SessionState(BaseModel):
     document_filter: list[str] = []
     citation_registry: dict[str, int] = {}
     citations: list[Citation] = []
+    citations_history: list[list[Citation]] = []
 
     def get_or_assign_index(self, chunk_id: str) -> int:
         """Get or assign a stable citation index for a chunk_id.

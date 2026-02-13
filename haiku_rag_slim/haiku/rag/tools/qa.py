@@ -185,6 +185,7 @@ async def run_qa_core(
 
     if session_state is not None:
         session_state.citations = citations
+        session_state.citations_history.append(citations)
 
     if qa_session_state is not None:
         qa_session_state.qa_history.append(

@@ -1,10 +1,39 @@
 from ag_ui.core import EventType, StateDeltaEvent
 
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.tools.session import (
     SessionState,
     compute_combined_state_delta,
     compute_state_delta,
 )
+
+
+class TestSessionState:
+    """Tests for SessionState model."""
+
+    def test_citations_history_defaults_to_empty(self):
+        """SessionState.citations_history defaults to empty list."""
+        state = SessionState()
+        assert state.citations_history == []
+
+    def test_citations_history_serialization_roundtrip(self):
+        """citations_history survives serialize/deserialize."""
+        citation = Citation(
+            index=1,
+            document_id="d1",
+            chunk_id="c1",
+            document_uri="test://doc",
+            document_title="Doc",
+            page_numbers=[],
+            headings=None,
+            content="some content",
+        )
+        state = SessionState(citations_history=[[citation]])
+        data = state.model_dump(mode="json")
+        restored = SessionState.model_validate(data)
+        assert len(restored.citations_history) == 1
+        assert len(restored.citations_history[0]) == 1
+        assert restored.citations_history[0][0].chunk_id == "c1"
 
 
 class TestComputeStateDelta:

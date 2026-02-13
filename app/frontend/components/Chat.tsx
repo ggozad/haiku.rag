@@ -272,7 +272,7 @@ function MessageViewWithCitations({
 	return (
 		<CopilotChatMessageView messages={messages} isRunning={isRunning}>
 			{({ messageElements }) => {
-				if (!chatState?.qa_history?.length) {
+				if (!chatState?.citations_history?.length) {
 					return (
 						<>
 							{messageElements}
@@ -285,13 +285,11 @@ function MessageViewWithCitations({
 				// message (tool messages produce nothing). We correlate elements with
 				// messages to inject CitationBlocks after the right assistant responses.
 				//
-				// Tool call objects on messages only carry `id` (no `name`), so we
-				// can't identify which tool was called from the message alone. Instead
-				// we rely on the fact that qa_history only grows when the `ask` tool
-				// runs: after each assistant text response that followed tool calls,
-				// we inject any new qa_history citations.
+				// Both search and ask tools append to citations_history in order,
+				// so after each assistant text response that followed tool calls,
+				// we inject the next citations_history entry.
 				const result: React.ReactNode[] = [];
-				let qaIdx = 0;
+				let citIdx = 0;
 				let seenToolCalls = false;
 				let elemIdx = 0;
 
@@ -320,19 +318,19 @@ function MessageViewWithCitations({
 					}
 
 					// After an assistant text response that followed tool calls,
-					// inject the next qa_history entry's citations (one per turn)
+					// inject the next citations_history entry (one per turn)
 					if (msg.role === "assistant" && msg.content && seenToolCalls) {
-						if (qaIdx < chatState.qa_history.length) {
-							const qa = chatState.qa_history[qaIdx];
-							if (qa.citations?.length) {
+						if (citIdx < chatState.citations_history.length) {
+							const citations = chatState.citations_history[citIdx];
+							if (citations?.length) {
 								result.push(
 									<CitationBlock
-										key={`citations-${qaIdx}`}
-										citations={qa.citations}
+										key={`citations-${citIdx}`}
+										citations={citations}
 									/>,
 								);
 							}
-							qaIdx++;
+							citIdx++;
 						}
 						seenToolCalls = false;
 					}

@@ -77,6 +77,26 @@ class TestRunQACore:
             assert len(session_state.citation_registry) > 0
 
     @pytest.mark.asyncio
+    async def test_run_qa_core_populates_citations_history(
+        self, allow_model_requests, qa_client, qa_config
+    ):
+        """run_qa_core appends to SessionState.citations_history."""
+        context = ToolContext()
+        prepare_context(context, features=["qa"])
+
+        await run_qa_core(
+            client=qa_client,
+            config=qa_config,
+            question="What is Python?",
+            context=context,
+        )
+
+        session_state = context.get(SESSION_NAMESPACE, SessionState)
+        assert session_state is not None
+        assert len(session_state.citations_history) == 1
+        assert session_state.citations_history[0] == session_state.citations
+
+    @pytest.mark.asyncio
     async def test_run_qa_core_without_context(
         self, allow_model_requests, qa_client, qa_config
     ):

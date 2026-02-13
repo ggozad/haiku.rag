@@ -24,6 +24,7 @@ export interface SessionContext {
 export interface ChatSessionState {
 	initial_context: string | null;
 	citations: Citation[];
+	citations_history: Citation[][];
 	qa_history: QAResponse[];
 	session_context: SessionContext | null;
 	document_filter: string[];
@@ -53,6 +54,7 @@ export function normalizeChatState(state?: ChatSessionState): ChatSessionState {
 	return {
 		initial_context: state?.initial_context ?? null,
 		citations: state?.citations ?? [],
+		citations_history: state?.citations_history ?? [],
 		qa_history: state?.qa_history ?? [],
 		session_context: state?.session_context ?? null,
 		document_filter: state?.document_filter ?? [],

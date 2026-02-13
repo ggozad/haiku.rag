@@ -301,6 +301,44 @@ class TestSearchWithSessionState:
         # New chunks should get higher indices
         assert len(session_state.citation_registry) >= first_count
 
+    @pytest.mark.asyncio
+    async def test_search_populates_citations_history(
+        self, search_client, search_config
+    ):
+        """Search appends to SessionState.citations_history."""
+        context = ToolContext()
+        prepare_context(context, features=["search"])
+        toolset = create_search_toolset(search_config)
+
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
+        await search_tool.function(ctx, "Python")
+
+        session_state = context.get(SESSION_NAMESPACE, SessionState)
+        assert session_state is not None
+        assert len(session_state.citations_history) == 1
+        assert session_state.citations_history[0] == session_state.citations
+
+    @pytest.mark.asyncio
+    async def test_search_multiple_appends_separate_entries(
+        self, search_client, search_config
+    ):
+        """Multiple searches append separate entries to citations_history."""
+        context = ToolContext()
+        prepare_context(context, features=["search"])
+        toolset = create_search_toolset(search_config)
+
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client, context)
+        await search_tool.function(ctx, "Python")
+        await search_tool.function(ctx, "JavaScript")
+
+        session_state = context.get(SESSION_NAMESPACE, SessionState)
+        assert session_state is not None
+        assert len(session_state.citations_history) == 2
+        # Latest citations should match the last entry
+        assert session_state.citations_history[1] == session_state.citations
+
 
 @pytest.fixture
 def search_config():

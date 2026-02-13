@@ -112,6 +112,7 @@ def create_search_toolset(
                     )
                 )
             session_state.citations = citations
+            session_state.citations_history.append(citations)
 
             result_lines = []
             for c in citations:
