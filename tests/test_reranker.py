@@ -108,52 +108,14 @@ class TestGetReranker:
         result = get_reranker(config)
         assert result is None
 
-    def test_mxbai_provider(self):
-        try:
-            from haiku.rag.reranking.mxbai import MxBAIReranker
-
-            config = AppConfig(
-                reranking=RerankingConfig(
-                    model=ModelConfig(
-                        provider="mxbai", name="mixedbread-ai/mxbai-rerank-base-v2"
-                    )
-                )
-            )
-            result = get_reranker(config)
-            assert isinstance(result, MxBAIReranker)
-        except ImportError:
-            pytest.skip("MxBAI package not installed")
-
-    def test_cohere_provider(self):
-        try:
-            from haiku.rag.reranking.cohere import CohereReranker
-
-            config = AppConfig(
-                reranking=RerankingConfig(
-                    model=ModelConfig(provider="cohere", name="rerank-v3.5")
-                )
-            )
-            result = get_reranker(config)
-            assert isinstance(result, CohereReranker)
-        except ImportError:
-            pytest.skip("Cohere package not installed")
-
-    def test_vllm_provider_with_base_url(self):
-        from haiku.rag.reranking.vllm import VLLMReranker
-
+    def test_unknown_provider_returns_none(self):
         config = AppConfig(
             reranking=RerankingConfig(
-                model=ModelConfig(
-                    provider="vllm",
-                    name="BAAI/bge-reranker-v2-m3",
-                    base_url="http://localhost:8000",
-                )
+                model=ModelConfig(provider="unknown_provider", name="some-model")
             )
         )
         result = get_reranker(config)
-        assert isinstance(result, VLLMReranker)
-        assert result._model == "BAAI/bge-reranker-v2-m3"
-        assert result._base_url == "http://localhost:8000"
+        assert result is None
 
     def test_vllm_provider_without_base_url_raises_error(self):
         config = AppConfig(
@@ -164,75 +126,115 @@ class TestGetReranker:
         with pytest.raises(ValueError, match="vLLM reranker requires base_url"):
             get_reranker(config)
 
-    def test_zeroentropy_provider(self):
-        try:
-            from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
+    @pytest.mark.parametrize(
+        "provider, model_name, class_module, class_name, extra_model_kwargs, expected_attrs, env_vars",
+        [
+            (
+                "mxbai",
+                "mixedbread-ai/mxbai-rerank-base-v2",
+                "haiku.rag.reranking.mxbai",
+                "MxBAIReranker",
+                {},
+                {},
+                {},
+            ),
+            (
+                "cohere",
+                "rerank-v3.5",
+                "haiku.rag.reranking.cohere",
+                "CohereReranker",
+                {},
+                {},
+                {},
+            ),
+            (
+                "vllm",
+                "BAAI/bge-reranker-v2-m3",
+                "haiku.rag.reranking.vllm",
+                "VLLMReranker",
+                {"base_url": "http://localhost:8000"},
+                {
+                    "_model": "BAAI/bge-reranker-v2-m3",
+                    "_base_url": "http://localhost:8000",
+                },
+                {},
+            ),
+            (
+                "zeroentropy",
+                "zerank-1",
+                "haiku.rag.reranking.zeroentropy",
+                "ZeroEntropyReranker",
+                {},
+                {"_model": "zerank-1"},
+                {},
+            ),
+            (
+                "zeroentropy",
+                "",
+                "haiku.rag.reranking.zeroentropy",
+                "ZeroEntropyReranker",
+                {},
+                {"_model": "zerank-1"},
+                {},
+            ),
+            (
+                "jina",
+                "jina-reranker-v3",
+                "haiku.rag.reranking.jina",
+                "JinaReranker",
+                {},
+                {"_model": "jina-reranker-v3"},
+                {"JINA_API_KEY": "test-api-key"},
+            ),
+            (
+                "jina-local",
+                "jinaai/jina-reranker-v3",
+                "haiku.rag.reranking.jina_local",
+                "JinaLocalReranker",
+                {},
+                {"_model": "jinaai/jina-reranker-v3"},
+                {},
+            ),
+        ],
+        ids=[
+            "mxbai",
+            "cohere",
+            "vllm",
+            "zeroentropy",
+            "zeroentropy-default",
+            "jina",
+            "jina-local",
+        ],
+    )
+    def test_provider(
+        self,
+        provider,
+        model_name,
+        class_module,
+        class_name,
+        extra_model_kwargs,
+        expected_attrs,
+        env_vars,
+        monkeypatch,
+    ):
+        mod = pytest.importorskip(class_module)
+        expected_class = getattr(mod, class_name)
 
-            config = AppConfig(
-                reranking=RerankingConfig(
-                    model=ModelConfig(provider="zeroentropy", name="zerank-1")
-                )
-            )
-            result = get_reranker(config)
-            assert isinstance(result, ZeroEntropyReranker)
-            assert result._model == "zerank-1"
-        except ImportError:
-            pytest.skip("Zero Entropy package not installed")
+        for key, value in env_vars.items():
+            monkeypatch.setenv(key, value)
 
-    def test_zeroentropy_provider_default_model(self):
-        try:
-            from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
-
-            config = AppConfig(
-                reranking=RerankingConfig(
-                    model=ModelConfig(provider="zeroentropy", name="")
-                )
-            )
-            result = get_reranker(config)
-            assert isinstance(result, ZeroEntropyReranker)
-            assert result._model == "zerank-1"
-        except ImportError:
-            pytest.skip("Zero Entropy package not installed")
-
-    def test_unknown_provider_returns_none(self):
         config = AppConfig(
             reranking=RerankingConfig(
-                model=ModelConfig(provider="unknown_provider", name="some-model")
+                model=ModelConfig(
+                    provider=provider, name=model_name, **extra_model_kwargs
+                )
             )
         )
         result = get_reranker(config)
-        assert result is None
+        assert isinstance(result, expected_class)
 
-    def test_jina_provider(self, monkeypatch):
-        monkeypatch.setenv("JINA_API_KEY", "test-api-key")
-
-        from haiku.rag.reranking.jina import JinaReranker
-
-        config = AppConfig(
-            reranking=RerankingConfig(
-                model=ModelConfig(provider="jina", name="jina-reranker-v3")
-            )
-        )
-        result = get_reranker(config)
-        assert isinstance(result, JinaReranker)
-        assert result._model == "jina-reranker-v3"
-
-    def test_jina_local_provider(self):
-        try:
-            from haiku.rag.reranking.jina_local import JinaLocalReranker
-
-            config = AppConfig(
-                reranking=RerankingConfig(
-                    model=ModelConfig(
-                        provider="jina-local", name="jinaai/jina-reranker-v3"
-                    )
-                )
-            )
-            result = get_reranker(config)
-            assert isinstance(result, JinaLocalReranker)
-            assert result._model == "jinaai/jina-reranker-v3"
-        except ImportError:
-            pytest.skip("Jina local dependencies not installed")
+        for attr, value in expected_attrs.items():
+            assert getattr(result, attr) == value
 
 
 def test_jina_reranker_missing_api_key(monkeypatch):

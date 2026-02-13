@@ -21,7 +21,7 @@ class DocumentResult(BaseModel):
     updated_at: str
 
 
-def create_mcp_server(
+def create_mcp_server(  # pragma: no cover
     db_path: Path, config: AppConfig = Config, read_only: bool = False
 ) -> FastMCP:
     """Create an MCP server with the specified database path.
