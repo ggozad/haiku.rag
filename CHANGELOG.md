@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.30.0] - 2026-02-16
+
 ### Added
 
 - **Composable toolsets**: New `haiku.rag.tools` module with reusable `FunctionToolset` factories that can be mixed into any pydantic-ai agent
