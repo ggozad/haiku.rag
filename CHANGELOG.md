@@ -8,6 +8,7 @@
   - `create_document_toolset()` — document listing, retrieval, and summarization
   - `create_qa_toolset()` — question answering via research graph with prior answer recall
   - `create_analysis_toolset()` — computational analysis via RLM agent (Docker sandbox)
+- **`Toolkit` and `build_toolkit()`**: High-level factory that bundles toolsets, prompt, and context creation for a given feature set. Reduces agent composition from ~15 lines to ~5. `build_chat_toolkit()` adds chat-specific defaults (background summarization callback)
 - **`ToolContext`**: Namespace-based state container shared across toolsets. Toolsets register Pydantic models under string namespaces, enabling state accumulation (search results, citations, QA history) across invocations
 - **`ToolContextCache`**: In-memory TTL-based cache for `ToolContext` instances, keyed by external session/thread ID. Replaces module-level caches for embeddings and summaries
 - **`run_qa_core()`**: Extracted core QA function for direct programmatic use without an agent
@@ -17,6 +18,8 @@
 ### Changed
 
 - **Toolset factories decoupled from runtime dependencies**: `create_search_toolset()`, `create_qa_toolset()`, `create_document_toolset()`, `create_analysis_toolset()`, and `create_chat_agent()` no longer take `client` or `context` parameters. Instead, tool functions receive these via pydantic-ai's `RunContext.deps`. This enables toolset and agent creation at configuration time (cacheable, created once), with only lightweight deps created per-request. Deps must satisfy the `RAGDeps` protocol (`client: HaikuRAG`, `tool_context: ToolContext | None`)
+- **Toolset factory return types narrowed to `FunctionToolset[RAGDeps]`**: All four toolset factories now declare their return type as `FunctionToolset[RAGDeps]` instead of bare `FunctionToolset`
+- **`create_chat_agent()` accepts optional `toolkit` parameter**: Pass a pre-built `Toolkit` to share toolsets between agent and context creation, avoiding duplicate construction
 - **`ChatDeps` now includes `client`**: `ChatDeps(config=..., client=..., tool_context=...)` — the `client` field was added since it's no longer captured by the agent factory
 - **`prepare_chat_context()` helper**: Extracted from `create_chat_agent()` for idempotent namespace registration, since the agent factory no longer has access to the context
 - **Chat agent architecture**: Rebuilt on composable toolsets instead of monolithic tool definitions. Chat agent is now a thin wrapper around `create_search_toolset`, `create_document_toolset`, `create_qa_toolset`, and `create_analysis_toolset`

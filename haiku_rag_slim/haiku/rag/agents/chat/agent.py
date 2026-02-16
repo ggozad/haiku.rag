@@ -9,18 +9,19 @@ from haiku.rag.agents.chat.context import (
 from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import AGUI_STATE_KEY
 from haiku.rag.config.models import AppConfig
-from haiku.rag.tools.context import ToolContext, prepare_context
+from haiku.rag.tools.context import ToolContext
 from haiku.rag.tools.deps import AgentDeps
-from haiku.rag.tools.document import create_document_toolset
-from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState, create_qa_toolset
-from haiku.rag.tools.search import create_search_toolset
+from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
 from haiku.rag.tools.session import SessionContext
+from haiku.rag.tools.toolkit import (
+    FEATURE_ANALYSIS,
+    FEATURE_DOCUMENTS,
+    FEATURE_QA,
+    FEATURE_SEARCH,
+    Toolkit,
+    build_toolkit,
+)
 from haiku.rag.utils import get_model
-
-FEATURE_SEARCH = "search"
-FEATURE_DOCUMENTS = "documents"
-FEATURE_QA = "qa"
-FEATURE_ANALYSIS = "analysis"
 
 DEFAULT_FEATURES = [FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA]
 
@@ -71,6 +72,28 @@ class ChatDeps(AgentDeps):
                         )
 
 
+def build_chat_toolkit(
+    config: AppConfig,
+    features: list[str] | None = None,
+) -> Toolkit:
+    """Build a Toolkit configured for the chat agent.
+
+    Includes the on_qa_complete callback that triggers background
+    session summarization.
+
+    Args:
+        config: Application configuration.
+        features: List of features to enable. Defaults to DEFAULT_FEATURES.
+
+    Returns:
+        A Toolkit ready for chat agent composition and context creation.
+    """
+    if features is None:
+        features = DEFAULT_FEATURES
+
+    return build_toolkit(config, features=features, on_qa_complete=_on_qa_complete)
+
+
 def prepare_chat_context(
     context: ToolContext,
     features: list[str] | None = None,
@@ -83,6 +106,8 @@ def prepare_chat_context(
         context: ToolContext to prepare.
         features: List of enabled features. Defaults to DEFAULT_FEATURES.
     """
+    from haiku.rag.tools.context import prepare_context
+
     if features is None:
         features = DEFAULT_FEATURES
 
@@ -93,6 +118,7 @@ def create_chat_agent(
     config: AppConfig,
     features: list[str] | None = None,
     preamble: str | None = None,
+    toolkit: Toolkit | None = None,
 ) -> Agent[ChatDeps, str]:
     """Create the chat agent with composed toolsets.
 
@@ -104,32 +130,26 @@ def create_chat_agent(
         preamble: Optional custom identity/rules section for the system prompt.
             When provided, replaces the default identity prompt. Tool guidance,
             feature rules, and closing are still appended by the builder.
+        toolkit: Optional pre-built Toolkit. When provided, its toolsets are
+            used directly. When omitted, a toolkit is built from config and
+            features.
 
     Returns:
         The configured chat agent.
 
     Example:
         async with HaikuRAG(db_path, create=True) as client:
-            context = ToolContext()
-            prepare_chat_context(context)
-            agent = create_chat_agent(config)
+            toolkit = build_chat_toolkit(config)
+            context = toolkit.create_context(state_key=AGUI_STATE_KEY)
+            agent = create_chat_agent(config, toolkit=toolkit)
             deps = ChatDeps(config=config, client=client, tool_context=context)
             result = await agent.run("Search for X", deps=deps)
     """
     if features is None:
         features = DEFAULT_FEATURES
 
-    toolsets = []
-    if FEATURE_SEARCH in features:
-        toolsets.append(create_search_toolset(config))
-    if FEATURE_DOCUMENTS in features:
-        toolsets.append(create_document_toolset(config))
-    if FEATURE_QA in features:
-        toolsets.append(create_qa_toolset(config, on_ask_complete=_on_qa_complete))
-    if FEATURE_ANALYSIS in features:
-        from haiku.rag.tools.analysis import create_analysis_toolset
-
-        toolsets.append(create_analysis_toolset(config))
+    if toolkit is None:
+        toolkit = build_chat_toolkit(config, features=features)
 
     model = get_model(config.qa.model, config)
 
@@ -138,7 +158,7 @@ def create_chat_agent(
         deps_type=ChatDeps,
         output_type=str,
         instructions=build_chat_prompt(features, preamble=preamble),
-        toolsets=toolsets,
+        toolsets=toolkit.toolsets,
         retries=3,
     )
 
@@ -182,6 +202,7 @@ async def run_chat_agent(
 
 
 __all__ = [
+    "build_chat_toolkit",
     "create_chat_agent",
     "prepare_chat_context",
     "run_chat_agent",

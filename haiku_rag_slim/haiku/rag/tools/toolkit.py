@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic_ai import FunctionToolset
 
@@ -21,7 +22,7 @@ class Toolkit:
     an agent with haiku.rag toolsets and create matching ToolContexts.
     """
 
-    toolsets: list[FunctionToolset] = field(default_factory=list)
+    toolsets: list[FunctionToolset[Any]] = field(default_factory=list)
     prompt: str = ""
     features: list[str] = field(default_factory=list)
 
@@ -72,7 +73,7 @@ def build_toolkit(
     if features is None:
         features = [FEATURE_SEARCH, FEATURE_DOCUMENTS]
 
-    toolsets: list[FunctionToolset] = []
+    toolsets: list[FunctionToolset[Any]] = []
 
     if FEATURE_SEARCH in features:
         from haiku.rag.tools.search import create_search_toolset

@@ -13,9 +13,10 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.agents.chat import (
+    AGUI_STATE_KEY,
     ChatDeps,
+    build_chat_toolkit,
     create_chat_agent,
-    prepare_chat_context,
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
@@ -68,8 +69,9 @@ def get_client() -> HaikuRAG:
     return _client
 
 
-# Agent is created once at module level (no runtime deps needed)
-agent = create_chat_agent(Config)
+# Toolkit and agent are created once at module level
+chat_toolkit = build_chat_toolkit(Config)
+agent = create_chat_agent(Config, toolkit=chat_toolkit)
 
 
 async def stream_chat(request: Request) -> Response:
@@ -85,7 +87,7 @@ async def stream_chat(request: Request) -> Response:
     thread_id = getattr(run_input, "thread_id", None) or "default"
     context, is_new = context_cache.get_or_create(thread_id)
     if is_new:
-        prepare_chat_context(context)
+        chat_toolkit.prepare(context, state_key=AGUI_STATE_KEY)
 
     deps = ChatDeps(
         config=Config,

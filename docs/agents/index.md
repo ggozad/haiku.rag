@@ -35,17 +35,16 @@ haiku-rag ask "What are the main features of haiku.rag?" --deep
 
 ```python
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import ModelConfig
 from haiku.rag.agents.qa.agent import QuestionAnswerAgent
 
 async with HaikuRAG(path_to_db) as client:
     agent = QuestionAnswerAgent(
         client=client,
-        provider="openai",
-        model="gpt-4o-mini",
-        use_citations=False,
+        model_config=ModelConfig(provider="openai", name="gpt-4o-mini"),
     )
 
-    answer = await agent.answer("What is climate change?")
+    answer, citations = await agent.answer("What is climate change?")
     print(answer)
 ```
 
@@ -256,15 +255,14 @@ async with HaikuRAG(path_to_db) as client:
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import AppConfig, ResearchConfig
+from haiku.rag.config.models import AppConfig, ModelConfig, ResearchConfig
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
 custom_config = AppConfig(
     research=ResearchConfig(
-        provider="openai",
-        model="gpt-4o-mini",
+        model=ModelConfig(provider="openai", name="gpt-4o-mini"),
         max_iterations=5,
         max_concurrency=3,
     )
@@ -282,6 +280,7 @@ async with HaikuRAG(path_to_db) as client:
 **Conversational mode with prior answers:**
 
 ```python
+from haiku.rag.config import Config
 from haiku.rag.agents.research.dependencies import ResearchContext
 from haiku.rag.agents.research.graph import build_research_graph
 from haiku.rag.agents.research.models import SearchAnswer

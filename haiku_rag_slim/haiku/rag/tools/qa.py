@@ -210,7 +210,7 @@ def create_qa_toolset(
     base_filter: str | None = None,
     tool_name: str = "ask",
     on_ask_complete: Callable[[QASessionState, AppConfig], None] | None = None,
-) -> FunctionToolset:
+) -> FunctionToolset[RAGDeps]:
     """Create a toolset with Q&A capabilities using research graph.
 
     Args:
@@ -277,6 +277,6 @@ def create_qa_toolset(
 
         return qa_result
 
-    toolset = FunctionToolset()
+    toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(ask, name=tool_name)
     return toolset

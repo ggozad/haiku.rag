@@ -17,7 +17,7 @@ def create_analysis_toolset(
     config: AppConfig,
     base_filter: str | None = None,
     tool_name: str = "analyze",
-) -> FunctionToolset:
+) -> FunctionToolset[RAGDeps]:
     """Create a toolset with code analysis capabilities via RLM agent.
 
     Args:
@@ -77,6 +77,6 @@ def create_analysis_toolset(
                 code_executed=bool(program),
             )
 
-    toolset = FunctionToolset()
+    toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(analyze, name=tool_name)
     return toolset

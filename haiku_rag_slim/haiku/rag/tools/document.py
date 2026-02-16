@@ -68,7 +68,7 @@ async def find_document(client: HaikuRAG, query: str):
 def create_document_toolset(
     config: AppConfig,
     base_filter: str | None = None,
-) -> FunctionToolset:
+) -> FunctionToolset[RAGDeps]:
     """Create a toolset with document management capabilities.
 
     Args:
@@ -169,7 +169,7 @@ def create_document_toolset(
 
         return f"**Summary of {doc.title or doc.uri}:**\n\n{result.output}"
 
-    toolset = FunctionToolset()
+    toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(list_documents)
     toolset.add_function(get_document)
     toolset.add_function(summarize_document)

@@ -56,18 +56,18 @@ class QuestionAnswerAgent:
 
         # Agent created per-call: toolset varies with filter, and Agent
         # construction is pure Python (no IO).
-        agent = Agent(
+        agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
             model=get_model(self._model_config, self._config),
             deps_type=_QARunDeps,
             output_type=RawSearchAnswer,
             output_retries=3,
             instructions=self._system_prompt,
-            toolsets=[search_toolset],  # ty: ignore[invalid-argument-type]
+            toolsets=[search_toolset],
             retries=3,
         )
 
         deps = _QARunDeps(client=self._client, tool_context=context)
-        result = await agent.run(question, deps=deps)  # ty: ignore[invalid-argument-type]
+        result = await agent.run(question, deps=deps)
         output = result.output
 
         # Get search results from context for citation resolution

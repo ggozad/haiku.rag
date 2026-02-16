@@ -17,13 +17,13 @@ from pydantic_ai.messages import ModelMessage
 
 from haiku.rag.agents.chat.agent import (
     ChatDeps,
+    build_chat_toolkit,
     create_chat_agent,
-    prepare_chat_context,
     trigger_background_summarization,
 )
+from haiku.rag.agents.chat.state import AGUI_STATE_KEY
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
-from haiku.rag.tools.context import ToolContext
 from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
 
 if TYPE_CHECKING:
@@ -151,10 +151,10 @@ class ChatApp(App):
         )
         await self.client.__aenter__()
 
-        # Create tool context and agent
-        self.tool_context = ToolContext()
-        prepare_chat_context(self.tool_context)
-        self.agent = create_chat_agent(self.config)
+        # Create toolkit, context, and agent
+        self.toolkit = build_chat_toolkit(self.config)
+        self.tool_context = self.toolkit.create_context(state_key=AGUI_STATE_KEY)
+        self.agent = create_chat_agent(self.config, toolkit=self.toolkit)
 
         # Sync document filter to tool context
         session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)

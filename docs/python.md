@@ -433,24 +433,19 @@ haiku.rag provides composable toolset factories that can be mixed into any pydan
 
 ```python
 from pydantic_ai import Agent
-from haiku.rag.tools import (
-    AgentDeps, ToolContext, prepare_context,
-    create_search_toolset, create_qa_toolset,
-)
+from haiku.rag.tools import AgentDeps, build_toolkit
 
-search = create_search_toolset(config)
-qa = create_qa_toolset(config)
+toolkit = build_toolkit(config, features=["search", "qa"])
 
 agent = Agent(
     "openai:gpt-4o",
     deps_type=AgentDeps,
-    instructions="You are a helpful assistant.",
-    toolsets=[search, qa],
+    instructions=f"You are a helpful assistant.\n{toolkit.prompt}",
+    toolsets=toolkit.toolsets,
 )
 
 async with HaikuRAG("path/to/db.lancedb") as client:
-    context = ToolContext()
-    prepare_context(context, features=["search", "qa"])
+    context = toolkit.create_context()
     deps = AgentDeps(client=client, tool_context=context)
     result = await agent.run("What are the main findings?", deps=deps)
 ```

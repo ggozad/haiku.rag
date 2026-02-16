@@ -25,7 +25,7 @@ def create_search_toolset(
     expand_context: bool = True,
     base_filter: str | None = None,
     tool_name: str = "search",
-) -> FunctionToolset:
+) -> FunctionToolset[RAGDeps]:
     """Create a toolset with search capabilities.
 
     Args:
@@ -150,6 +150,6 @@ def create_search_toolset(
         ]
         return "\n\n".join(formatted)
 
-    toolset = FunctionToolset()
+    toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(search, name=tool_name)
     return toolset

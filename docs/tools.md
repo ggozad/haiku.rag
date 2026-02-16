@@ -227,7 +227,59 @@ Available features: `"search"`, `"qa"`, `"documents"`, `"analysis"`.
 
 ## Composing Custom Agents
 
-Toolsets are designed to be composed into custom pydantic-ai agents. Use `AgentDeps`, `prepare_context`, and `build_tools_prompt` for minimal boilerplate:
+### Using `build_toolkit` (recommended)
+
+`build_toolkit()` bundles toolsets, prompt, and context creation for a given feature set:
+
+```python
+from pydantic_ai import Agent
+from haiku.rag.client import HaikuRAG
+from haiku.rag.tools import AgentDeps, build_toolkit
+
+toolkit = build_toolkit(config, features=["search", "documents", "qa"])
+
+agent = Agent(
+    "openai:gpt-4o",
+    deps_type=AgentDeps,
+    instructions=f"You are a helpful research assistant.\n{toolkit.prompt}",
+    toolsets=toolkit.toolsets,
+)
+
+async with HaikuRAG("path/to/db.lancedb") as client:
+    context = toolkit.create_context()
+    deps = AgentDeps(client=client, tool_context=context)
+
+    result = await agent.run("What documents do we have about climate?", deps=deps)
+    print(result.output)
+
+    # Access accumulated state
+    from haiku.rag.tools.search import SearchState, SEARCH_NAMESPACE
+    search_state = context.get(SEARCH_NAMESPACE, SearchState)
+    if search_state:
+        print(f"Total search results: {len(search_state.results)}")
+```
+
+**Parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `config` | required | AppConfig |
+| `features` | `["search", "documents"]` | Features to enable |
+| `base_filter` | `None` | SQL WHERE clause applied to all toolsets |
+| `expand_context` | `True` | Expand search results with surrounding chunks |
+| `on_qa_complete` | `None` | Callback invoked after each QA cycle |
+
+**`Toolkit` properties:**
+
+- `toolsets` — list of `FunctionToolset` instances to pass to the Agent
+- `prompt` — tool guidance text for the system prompt
+- `features` — the feature list this toolkit was built from
+- `create_context(state_key=None)` — create a prepared `ToolContext` matching these features
+- `prepare(context, state_key=None)` — register namespaces on an existing `ToolContext`
+
+### Using individual factories
+
+For full control, create toolsets individually with `create_*_toolset()`, `build_tools_prompt()`, and `prepare_context()`:
 
 ```python
 from pydantic_ai import Agent
@@ -242,7 +294,6 @@ from haiku.rag.tools import (
     create_document_toolset,
 )
 
-# Toolsets are created once at configuration time
 search = create_search_toolset(config)
 qa = create_qa_toolset(config)
 docs = create_document_toolset(config)
@@ -264,19 +315,12 @@ async with HaikuRAG("path/to/db.lancedb") as client:
 
     result = await agent.run("What documents do we have about climate?", deps=deps)
     print(result.output)
-
-    # Access accumulated state
-    from haiku.rag.tools.search import SearchState, SEARCH_NAMESPACE
-    search_state = context.get(SEARCH_NAMESPACE, SearchState)
-    if search_state:
-        print(f"Total search results: {len(search_state.results)}")
 ```
 
-`AgentDeps` satisfies the `RAGDeps` protocol and implements the AG-UI state protocol (`state` getter/setter). For AG-UI streaming, set `state_key` on the `ToolContext` (via `prepare_context`):
+`AgentDeps` satisfies the `RAGDeps` protocol and implements the AG-UI state protocol (`state` getter/setter). For AG-UI streaming, set `state_key` on the `ToolContext` (via `prepare_context` or `toolkit.create_context`):
 
 ```python
-context = ToolContext()
-prepare_context(context, features=["search", "qa"], state_key="my_app")
+context = toolkit.create_context(state_key="my_app")
 deps = AgentDeps(client=client, tool_context=context)
 ```
 
@@ -300,20 +344,22 @@ prepare_context(context, features=["search", "qa"], state_key="my_app")
 deps = AgentDeps(client=client, tool_context=context)
 ```
 
-**Chat agent** uses `ChatDeps` + `prepare_chat_context` (adds chat-specific overrides like background summarization and initial context handling):
+**Chat agent** uses `ChatDeps` + `build_chat_toolkit` (adds chat-specific defaults like background summarization):
 
 ```python
 from haiku.rag.agents.chat import (
-    ChatDeps, create_chat_agent, prepare_chat_context,
+    AGUI_STATE_KEY, ChatDeps, build_chat_toolkit, create_chat_agent,
 )
-from haiku.rag.tools import ToolContext, ToolContextCache
+from haiku.rag.tools import ToolContextCache
 
-agent = create_chat_agent(config)
+chat_toolkit = build_chat_toolkit(config)
+agent = create_chat_agent(config, toolkit=chat_toolkit)
 
 # For multi-session apps, cache ToolContext per thread
 cache = ToolContextCache()
-context, _is_new = cache.get_or_create(thread_id)
-prepare_chat_context(context)  # idempotent; sets state_key="haiku.rag.chat"
+context, is_new = cache.get_or_create(thread_id)
+if is_new:
+    chat_toolkit.prepare(context, state_key=AGUI_STATE_KEY)
 
 deps = ChatDeps(
     config=config,
