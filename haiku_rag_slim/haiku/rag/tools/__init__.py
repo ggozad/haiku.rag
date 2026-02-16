@@ -17,16 +17,30 @@ from haiku.rag.tools.models import AnalysisResult, QAResult
 from haiku.rag.tools.prompts import build_tools_prompt
 from haiku.rag.tools.qa import create_qa_toolset
 from haiku.rag.tools.search import create_search_toolset
+from haiku.rag.tools.toolkit import (
+    FEATURE_ANALYSIS,
+    FEATURE_DOCUMENTS,
+    FEATURE_QA,
+    FEATURE_SEARCH,
+    Toolkit,
+    build_toolkit,
+)
 
 __all__ = [
     "AgentDeps",
     "AnalysisResult",
+    "FEATURE_ANALYSIS",
+    "FEATURE_DOCUMENTS",
+    "FEATURE_QA",
+    "FEATURE_SEARCH",
     "QAResult",
     "RAGDeps",
     "ToolContext",
     "ToolContextCache",
+    "Toolkit",
     "build_document_filter",
     "build_multi_document_filter",
+    "build_toolkit",
     "build_tools_prompt",
     "combine_filters",
     "create_analysis_toolset",
