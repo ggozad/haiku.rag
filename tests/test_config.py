@@ -79,6 +79,19 @@ def test_find_config_file_env_var(tmp_path, monkeypatch):
     assert found == config_file
 
 
+def test_find_config_file_env_var_tilde_expansion(tmp_path, monkeypatch):
+    """Test that ~ in HAIKU_RAG_CONFIG_PATH is expanded."""
+    config_file = tmp_path / "from-env.yaml"
+    config_file.write_text("environment: production")
+
+    # Point HOME to tmp_path so ~ expands there
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", "~/from-env.yaml")
+
+    found = find_config_file()
+    assert found == config_file
+
+
 def test_find_config_file_not_found(tmp_path, monkeypatch):
     """Test returning None when no config found."""
     monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)

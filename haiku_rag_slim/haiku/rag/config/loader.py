@@ -18,7 +18,7 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     if not cli_path:
         env_path = os.getenv("HAIKU_RAG_CONFIG_PATH")
         if env_path:
-            cli_path = Path(env_path)
+            cli_path = Path(env_path).expanduser()
 
     if cli_path:
         if cli_path.exists():
