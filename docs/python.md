@@ -398,7 +398,7 @@ The QA agent searches your documents for relevant information and uses the confi
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
-See also: [Agents](agents.md) for details on the QA agent and the multi‑agent research workflow.
+See also: [Agents](agents/index.md) for details on the QA agent and the multi‑agent research workflow.
 
 ## RLM (Recursive Language Model)
 
@@ -425,4 +425,29 @@ result = await client.rlm(
 
 The RLM agent writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
 
-See [RLM Agent](rlm.md) for details on capabilities and configuration.
+See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
+
+## Building Custom Agents
+
+haiku.rag provides composable toolset factories that can be mixed into any pydantic-ai agent. This lets you build custom agents with exactly the capabilities you need — search, document management, Q&A, or code analysis — sharing state across tools via `ToolContext`.
+
+```python
+from pydantic_ai import Agent
+from haiku.rag.tools import AgentDeps, build_toolkit
+
+toolkit = build_toolkit(config, features=["search", "qa"])
+
+agent = Agent(
+    "openai:gpt-4o",
+    deps_type=AgentDeps,
+    instructions=f"You are a helpful assistant.\n{toolkit.prompt}",
+    toolsets=toolkit.toolsets,
+)
+
+async with HaikuRAG("path/to/db.lancedb") as client:
+    context = toolkit.create_context()
+    deps = AgentDeps(client=client, tool_context=context)
+    result = await agent.run("What are the main findings?", deps=deps)
+```
+
+See [Toolsets](tools.md) for the full API reference and composition guide, and the [`examples/`](https://github.com/ggozad/haiku.rag/tree/main/examples) directory for runnable scripts.

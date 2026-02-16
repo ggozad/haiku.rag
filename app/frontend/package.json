@@ -7,14 +7,13 @@
 		"build": "next build",
 		"start": "next start",
 		"lint": "next lint",
-		"check": "biome check app components",
-		"format": "biome check --write app components"
+		"check": "biome check app components lib",
+		"format": "biome check --write app components lib"
 	},
 	"dependencies": {
 		"@ag-ui/client": "^0.0.42",
-		"@copilotkit/react-core": "^1.50.0",
-		"@copilotkit/react-ui": "^1.50.0",
-		"@copilotkit/runtime": "^1.50.0",
+		"@copilotkit/react-core": "^1.51.3",
+		"@copilotkit/runtime": "^1.51.3",
 		"next": "^16.1.1",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0"

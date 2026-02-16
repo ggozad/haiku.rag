@@ -8,7 +8,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Markdown, Static, TextArea
 
 if TYPE_CHECKING:
-    from haiku.rag.agents.chat.state import ChatSessionState
+    from haiku.rag.tools.session import SessionContext
 
 
 class ContextModal(ModalScreen):  # pragma: no cover
@@ -69,6 +69,7 @@ class ContextModal(ModalScreen):  # pragma: no cover
 
     #button-row Button {
         margin-left: 1;
+        min-width: 10;
     }
     """
 
@@ -80,20 +81,20 @@ class ContextModal(ModalScreen):  # pragma: no cover
             self.context = context
 
     def __init__(
-        self, session_state: "ChatSessionState | None", is_locked: bool = False
+        self,
+        initial_context: str | None = None,
+        session_context: "SessionContext | None" = None,
+        is_locked: bool = False,
     ) -> None:
         super().__init__()
-        self.session_state = session_state
+        self._initial_context = initial_context
+        self._session_context = session_context
         self._is_locked = is_locked
 
     @property
     def _is_edit_mode(self) -> bool:
         """Edit mode when not locked and no session context yet."""
-        has_session_context = (
-            self.session_state
-            and self.session_state.session_context
-            and self.session_state.session_context.summary
-        )
+        has_session_context = self._session_context and self._session_context.summary
         return not self._is_locked and not has_session_context
 
     def compose(self) -> ComposeResult:
@@ -105,9 +106,7 @@ class ContextModal(ModalScreen):  # pragma: no cover
                     "This will be locked after you send your first message.",
                     id="context-description",
                 )
-                initial_value = ""
-                if self.session_state and self.session_state.initial_context:
-                    initial_value = self.session_state.initial_context
+                initial_value = self._initial_context or ""
                 yield TextArea(initial_value, id="context-editor")
                 with Horizontal(id="button-row"):
                     yield Button("Cancel", id="cancel-btn", variant="default")
@@ -124,13 +123,10 @@ class ContextModal(ModalScreen):  # pragma: no cover
                     yield Button("Close", id="cancel-btn", variant="primary")
 
     def _get_session_content(self) -> str:
-        if not self.session_state:
-            return "*No session state.*"
-
-        if not self.session_state.session_context:
+        if not self._session_context:
             return "*No session context yet. Ask a question first.*"
 
-        ctx = self.session_state.session_context
+        ctx = self._session_context
         updated = (
             ctx.last_updated.strftime("%Y-%m-%d %H:%M:%S")
             if ctx.last_updated

@@ -1,6 +1,6 @@
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.output import ToolOutput
+from dataclasses import dataclass
+
+from pydantic_ai import Agent
 
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.agents.research.models import (
@@ -9,16 +9,17 @@ from haiku.rag.agents.research.models import (
     resolve_citations,
 )
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
-from haiku.rag.store.models import SearchResult
+from haiku.rag.tools.context import ToolContext
+from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
 from haiku.rag.utils import get_model
 
 
-class Dependencies(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+@dataclass
+class _QARunDeps:
     client: HaikuRAG
-    search_results: list[SearchResult] = []
-    search_filter: str | None = None
+    tool_context: ToolContext | None = None
 
 
 class QuestionAnswerAgent:
@@ -30,40 +31,9 @@ class QuestionAnswerAgent:
         system_prompt: str | None = None,
     ):
         self._client = client
-        model_obj = get_model(model_config, config)
-
-        self._agent: Agent[Dependencies, RawSearchAnswer] = Agent(
-            model=model_obj,
-            deps_type=Dependencies,
-            output_type=ToolOutput(RawSearchAnswer, max_retries=3),
-            instructions=system_prompt or QA_SYSTEM_PROMPT,
-            retries=3,
-        )
-
-        @self._agent.tool
-        async def search_documents(
-            ctx: RunContext[Dependencies],
-            query: str,
-            limit: int | None = None,
-        ) -> str:
-            """Search the knowledge base for relevant documents.
-
-            Returns results with chunk IDs and rank positions.
-            Reference results by their chunk_id in cited_chunks.
-            """
-            results = await ctx.deps.client.search(
-                query, limit=limit, filter=ctx.deps.search_filter
-            )
-            results = await ctx.deps.client.expand_context(results)
-            # Store results for citation resolution
-            ctx.deps.search_results = results
-            # Format with rank instead of raw score to avoid confusing LLMs
-            total = len(results)
-            parts = [
-                r.format_for_agent(rank=i + 1, total=total)
-                for i, r in enumerate(results)
-            ]
-            return "\n\n".join(parts) if parts else "No results found."
+        self._config = config or Config
+        self._model_config = model_config
+        self._system_prompt = system_prompt or QA_SYSTEM_PROMPT
 
     async def answer(
         self, question: str, filter: str | None = None
@@ -77,8 +47,34 @@ class QuestionAnswerAgent:
         Returns:
             Tuple of (answer text, list of resolved citations)
         """
-        deps = Dependencies(client=self._client, search_filter=filter)
-        result = await self._agent.run(question, deps=deps)
+        context = ToolContext()
+        search_toolset = create_search_toolset(
+            self._config,
+            base_filter=filter,
+            tool_name="search_documents",
+        )
+
+        # Agent created per-call: toolset varies with filter, and Agent
+        # construction is pure Python (no IO).
+        agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
+            model=get_model(self._model_config, self._config),
+            deps_type=_QARunDeps,
+            output_type=RawSearchAnswer,
+            output_retries=3,
+            instructions=self._system_prompt,
+            toolsets=[search_toolset],
+            retries=3,
+        )
+
+        deps = _QARunDeps(client=self._client, tool_context=context)
+        result = await agent.run(question, deps=deps)
         output = result.output
-        citations = resolve_citations(output.cited_chunks, deps.search_results)
+
+        # Get search results from context for citation resolution
+        search_state = context.get(SEARCH_NAMESPACE)
+        search_results = (
+            search_state.results if isinstance(search_state, SearchState) else []
+        )
+
+        citations = resolve_citations(output.cited_chunks, search_results)
         return output.answer, citations

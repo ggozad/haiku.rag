@@ -108,20 +108,19 @@ flowchart TB
     end
 
     subgraph Chat["Chat Agent"]
-        Q2[Question] --> Expand[Query Expansion]
-        Expand --> S2[Search/Ask]
+        Q2[Question] --> Tools[Tool Selection]
+        Tools --> S2[Search / Ask / Get]
         S2 --> A2[Answer]
         A2 --> History[Session History]
         History -.-> Q2
     end
 
     subgraph Research["Research Graph"]
-        Q3[Question] --> Plan[Plan]
-        Plan --> Batch[Get Batch]
-        Batch --> SearchN[Search × N]
-        SearchN --> Evaluate[Evaluate]
-        Evaluate -->|Continue| Batch
-        Evaluate -->|Done| Synthesize[Synthesize]
+        Q3[Question] --> Plan[Plan Next]
+        Plan --> SearchOne[Search One]
+        SearchOne --> Eval[Evaluate]
+        Eval -->|Continue| Plan
+        Eval -->|Done| Synthesize[Synthesize]
     end
 
     subgraph RLM["RLM Agent"]
@@ -141,17 +140,17 @@ flowchart TB
 
 **Chat Agent** - Multi-turn conversational RAG:
 
-- Maintains session history
-- Uses previous Q/A pairs as context
-- Query expansion for better recall
-- Natural language document filtering
+- Composed from reusable [toolsets](tools.md) (search, documents, QA, analysis)
+- Maintains session history with prior answer recall
+- Background summarization for context continuity
+- Session-level document filtering
 
-**Research Graph** - Multi-step research workflow:
+**Research Graph** - Iterative research workflow:
 
-- Decomposes questions into sub-questions
-- Parallel search execution
-- Iterative refinement based on confidence
-- Synthesizes structured research report
+- Proposes one question at a time, evaluates the answer, then decides whether to continue
+- Session context resolves ambiguous references
+- Prior answers let the planner skip redundant searches
+- Synthesizes structured report or conversational answer
 
 **RLM Agent** - Complex analytical tasks via code execution:
 

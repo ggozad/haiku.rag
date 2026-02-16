@@ -1,9 +1,43 @@
 # Changelog
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **TUI session context not updating**: The Chat TUI now generates a UUID `session_id` on mount and on chat clear, fixing background summarization which requires a non-empty `session_id`.
+- **Composable toolsets**: New `haiku.rag.tools` module with reusable `FunctionToolset` factories that can be mixed into any pydantic-ai agent
+  - `create_search_toolset()` — hybrid search with context expansion and citation tracking
+  - `create_document_toolset()` — document listing, retrieval, and summarization
+  - `create_qa_toolset()` — question answering via research graph with prior answer recall
+  - `create_analysis_toolset()` — computational analysis via RLM agent (Docker sandbox)
+- **`Toolkit` and `build_toolkit()`**: High-level factory that bundles toolsets, prompt, and context creation for a given feature set. Reduces agent composition from ~15 lines to ~5. `build_chat_toolkit()` adds chat-specific defaults (background summarization callback)
+- **`ToolContext`**: Namespace-based state container shared across toolsets. Toolsets register Pydantic models under string namespaces, enabling state accumulation (search results, citations, QA history) across invocations
+- **`ToolContextCache`**: In-memory TTL-based cache for `ToolContext` instances, keyed by external session/thread ID. Replaces module-level caches for embeddings and summaries
+- **`run_qa_core()`**: Extracted core QA function for direct programmatic use without an agent
+- **Feature-based chat agent**: `create_chat_agent()` accepts a `features` list to select which toolsets are enabled (`search`, `documents`, `qa`, `analysis`). System prompt is composed to match
+- **New documentation**: `docs/tools.md` covers all toolsets, `ToolContext`, state management, filter helpers, and composing custom agents
+
+### Changed
+
+- **Toolset factories decoupled from runtime dependencies**: `create_search_toolset()`, `create_qa_toolset()`, `create_document_toolset()`, `create_analysis_toolset()`, and `create_chat_agent()` no longer take `client` or `context` parameters. Instead, tool functions receive these via pydantic-ai's `RunContext.deps`. This enables toolset and agent creation at configuration time (cacheable, created once), with only lightweight deps created per-request. Deps must satisfy the `RAGDeps` protocol (`client: HaikuRAG`, `tool_context: ToolContext | None`)
+- **Toolset factory return types narrowed to `FunctionToolset[RAGDeps]`**: All four toolset factories now declare their return type as `FunctionToolset[RAGDeps]` instead of bare `FunctionToolset`
+- **`create_chat_agent()` accepts optional `toolkit` parameter**: Pass a pre-built `Toolkit` to share toolsets between agent and context creation, avoiding duplicate construction
+- **`ChatDeps` now includes `client`**: `ChatDeps(config=..., client=..., tool_context=...)` — the `client` field was added since it's no longer captured by the agent factory
+- **`prepare_chat_context()` helper**: Extracted from `create_chat_agent()` for idempotent namespace registration, since the agent factory no longer has access to the context
+- **Chat agent architecture**: Rebuilt on composable toolsets instead of monolithic tool definitions. Chat agent is now a thin wrapper around `create_search_toolset`, `create_document_toolset`, `create_qa_toolset`, and `create_analysis_toolset`
+- **State management simplified**: Removed `session_id`, `incoming_session_id`, and `incoming_session_context` from the state layer. `ToolContextCache` preserves all state (embeddings, summaries, QA history) on cached `ToolContext` instances, eliminating the need for module-level caches
+- **AG-UI state sync**: `ask` tool now emits `StateSnapshotEvent` instead of `StateDeltaEvent`, ensuring background summarization results are reliably delivered to clients
+- **TUI simplified**: Chat TUI reads directly from `ToolContext` namespace states instead of maintaining a separate `ChatSessionState` and manually syncing via AG-UI state events
+- **AG-UI web app**: Uses `ToolContextCache` to maintain per-thread state across requests
+- **Frontend session management**: Persistent chat sessions with localStorage, wired to backend `ToolContextCache` via CopilotKit `threadId`
+  - Session manager dropdown: create, switch, delete, and export sessions to markdown
+  - Messages, chat state, and citations restored on session switch
+  - Session title derived from first user message
+  - Inline citation blocks injected after assistant responses via `qa_history` correlation
+
+### Removed
+
+- **`SearchAgent`**: Replaced by `create_search_toolset()`
+- **Module-level session caches**: `_session_cache`, `cache_session_context`, `get_cached_session_context`, `cache_question_embedding`, `get_cached_embedding` — all replaced by cached `ToolContext`
+- **`ChatSessionState` from TUI**: TUI no longer maintains its own copy of session state
 
 ## [0.29.1] - 2026-02-10
 

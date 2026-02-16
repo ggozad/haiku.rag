@@ -1,33 +1,39 @@
-from haiku.rag.agents.chat.agent import create_chat_agent
-from haiku.rag.agents.chat.context import (
-    summarize_session,
-    update_session_context,
+from haiku.rag.agents.chat.agent import (
+    DEFAULT_FEATURES,
+    FEATURE_ANALYSIS,
+    FEATURE_DOCUMENTS,
+    FEATURE_QA,
+    FEATURE_SEARCH,
+    ChatDeps,
+    build_chat_toolkit,
+    create_chat_agent,
+    prepare_chat_context,
+    run_chat_agent,
+    trigger_background_summarization,
 )
-from haiku.rag.agents.chat.search import SearchAgent
+from haiku.rag.agents.chat.prompts import build_chat_prompt
 from haiku.rag.agents.chat.state import (
     AGUI_STATE_KEY,
-    ChatDeps,
     ChatSessionState,
-    DocumentInfo,
-    DocumentListResponse,
-    QAResponse,
-    SearchDeps,
-    SessionContext,
-    build_document_filter,
+    _rebuild_models,
 )
+from haiku.rag.tools.qa import QAHistoryEntry
+
+_rebuild_models(QAHistoryEntry)
 
 __all__ = [
     "AGUI_STATE_KEY",
+    "DEFAULT_FEATURES",
+    "FEATURE_ANALYSIS",
+    "FEATURE_DOCUMENTS",
+    "FEATURE_QA",
+    "FEATURE_SEARCH",
+    "build_chat_prompt",
+    "build_chat_toolkit",
     "create_chat_agent",
-    "SearchAgent",
+    "prepare_chat_context",
+    "run_chat_agent",
+    "trigger_background_summarization",
     "ChatDeps",
     "ChatSessionState",
-    "DocumentInfo",
-    "DocumentListResponse",
-    "QAResponse",
-    "SearchDeps",
-    "SessionContext",
-    "build_document_filter",
-    "summarize_session",
-    "update_session_context",
 ]
