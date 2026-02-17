@@ -48,7 +48,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7753'
+      - '7117'
       content-type:
       - application/json
       host:
@@ -65,7 +65,7 @@ interactions:
           - search("query")  ✓ CORRECT
           - from haiku.rag import search  ✗ WRONG - will fail
 
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly, no imports needed):
 
           ## Available Functions
 
@@ -81,10 +81,10 @@ interactions:
           Get the full text content of a document by ID, title, or URI.
           Returns the document content as a string, or None if not found.
 
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
+          ### get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
 
           ### llm(prompt) -> str
           Call an LLM directly with the given prompt. Returns the response as a string.
@@ -101,8 +101,13 @@ interactions:
           ```
           Check if it exists with: `if 'documents' in dir(): ...`
 
-          ## Standard Library Modules
-          You can import any Python standard library module.
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
 
           ## Strategy Guide
 
@@ -110,51 +115,9 @@ interactions:
           2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
           6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "header" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
 
           ## Example Patterns
 
@@ -170,23 +133,31 @@ interactions:
           print(f"Total: {count}")
           ```
 
-          ### Aggregating data across documents
+          ### Extracting data with llm()
           ```python
-          import re
           numbers = []
           results = search("financial data", limit=20)
           for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+              extracted = llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = search("safety requirements", limit=5)
+          for r in results:
+              chunk = get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
           ```
 
           ### Using llm() for classification
           ```python
-          # Get document content
           content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
           sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
           print(sentiment)
           ```
@@ -263,7 +234,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '495'
+      - '593'
       content-type:
       - application/json
     parsed_body:
@@ -272,24 +243,25 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need to search for animals.
+          reasoning: We need to search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"search(''animals'', limit=10)"}'
+              arguments: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''],
+                r[''chunk_id''], r[''page_numbers''][:5])\n"}'
               name: execute_code
-            id: call_mn3wbs1z
+            id: call_tpl0j81u
             index: 0
             type: function
-      created: 1771336318
-      id: chatcmpl-377
+      created: 1771336724
+      id: chatcmpl-115
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 38
-        prompt_tokens: 1740
-        total_tokens: 1778
+        completion_tokens: 67
+        prompt_tokens: 1568
+        total_tokens: 1635
     status:
       code: 200
       message: OK
@@ -342,7 +314,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8426'
+      - '7760'
       content-type:
       - application/json
       host:
@@ -359,7 +331,7 @@ interactions:
           - search("query")  ✓ CORRECT
           - from haiku.rag import search  ✗ WRONG - will fail
 
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly, no imports needed):
 
           ## Available Functions
 
@@ -375,10 +347,10 @@ interactions:
           Get the full text content of a document by ID, title, or URI.
           Returns the document content as a string, or None if not found.
 
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
+          ### get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
 
           ### llm(prompt) -> str
           Call an LLM directly with the given prompt. Returns the response as a string.
@@ -395,8 +367,13 @@ interactions:
           ```
           Check if it exists with: `if 'documents' in dir(): ...`
 
-          ## Standard Library Modules
-          You can import any Python standard library module.
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
 
           ## Strategy Guide
 
@@ -404,51 +381,9 @@ interactions:
           2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
           4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
           6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "header" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
 
           ## Example Patterns
 
@@ -464,23 +399,31 @@ interactions:
           print(f"Total: {count}")
           ```
 
-          ### Aggregating data across documents
+          ### Extracting data with llm()
           ```python
-          import re
           numbers = []
           results = search("financial data", limit=20)
           for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+              extracted = llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = search("safety requirements", limit=5)
+          for r in results:
+              chunk = get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
           ```
 
           ### Using llm() for classification
           ```python
-          # Get document content
           content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
           sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
           print(sentiment)
           ```
@@ -508,20 +451,19 @@ interactions:
       - content: Search for content about animals and tell me which document it came from.
         role: user
       - content: null
-        reasoning: We need to search for animals.
+        reasoning: We need to search.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"search(''animals'', limit=10)"}'
+            arguments: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''],
+              r[''chunk_id''], r[''page_numbers''][:5])\n"}'
             name: execute_code
-          id: call_mn3wbs1z
+          id: call_tpl0j81u
           type: function
-      - content: '{"code":"search(''animals'', limit=10)","stdout":"[{''chunk_id'': ''4f359f54-704f-45f9-87cc-a9b324bd8c94'',
-          ''content'': ''The quick brown fox jumps over the lazy dog.'', ''document_id'': ''d85af197-c6f8-4ca5-893d-e6b2de835758'',
-          ''document_title'': ''Animal Facts'', ''document_uri'': None, ''score'': 0.016393441706895828, ''page_numbers'':
-          [], ''headings'': None}]","stderr":"","success":true}'
+      - content: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''], r[''chunk_id''],
+          r[''page_numbers''][:5])\n","stdout":"Animal Facts eb0e1e92-35b2-4f5e-8011-2a67f3dadf00 []\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_mn3wbs1z
+        tool_call_id: call_tpl0j81u
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -572,7 +514,567 @@ interactions:
   response:
     headers:
       content-length:
-      - '585'
+      - '613'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Only one result? Let's list maybe more.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"results = search(\"animals\", limit=20)\nfor r in results:\n    print(r[''document_title''],
+                r[''chunk_id''], r[''page_numbers''][:5])\n"}'
+              name: execute_code
+            id: call_orialuab
+            index: 0
+            type: function
+      created: 1771336725
+      id: chatcmpl-99
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 71
+        prompt_tokens: 1730
+        total_tokens: 1801
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '77'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - animals
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 2
+        total_tokens: 2
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '8424'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              extracted = llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = search("safety requirements", limit=5)
+          for r in results:
+              chunk = get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = get_document("Q1 Report")
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Search for content about animals and tell me which document it came from.
+        role: user
+      - content: null
+        reasoning: We need to search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''],
+              r[''chunk_id''], r[''page_numbers''][:5])\n"}'
+            name: execute_code
+          id: call_tpl0j81u
+          type: function
+      - content: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''], r[''chunk_id''],
+          r[''page_numbers''][:5])\n","stdout":"Animal Facts eb0e1e92-35b2-4f5e-8011-2a67f3dadf00 []\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_tpl0j81u
+      - content: null
+        reasoning: Only one result? Let's list maybe more.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"animals\", limit=20)\nfor r in results:\n    print(r[''document_title''],
+              r[''chunk_id''], r[''page_numbers''][:5])\n"}'
+            name: execute_code
+          id: call_orialuab
+          type: function
+      - content: '{"code":"results = search(\"animals\", limit=20)\nfor r in results:\n    print(r[''document_title''], r[''chunk_id''],
+          r[''page_numbers''][:5])\n","stdout":"Animal Facts eb0e1e92-35b2-4f5e-8011-2a67f3dadf00 []\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_orialuab
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '583'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Only that document returned. Let's get chunk details.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"chunk = get_chunk(''eb0e1e92-35b2-4f5e-8011-2a67f3dadf00'')\nprint(chunk[''content''][:200])\n"}'
+              name: execute_code
+            id: call_hgxkkg8j
+            index: 0
+            type: function
+      created: 1771336727
+      id: chatcmpl-276
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 78
+        prompt_tokens: 1896
+        total_tokens: 1974
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '9004'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              extracted = llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = search("safety requirements", limit=5)
+          for r in results:
+              chunk = get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = get_document("Q1 Report")
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Search for content about animals and tell me which document it came from.
+        role: user
+      - content: null
+        reasoning: We need to search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''],
+              r[''chunk_id''], r[''page_numbers''][:5])\n"}'
+            name: execute_code
+          id: call_tpl0j81u
+          type: function
+      - content: '{"code":"results = search(\"animals\", limit=10)\nfor r in results:\n    print(r[''document_title''], r[''chunk_id''],
+          r[''page_numbers''][:5])\n","stdout":"Animal Facts eb0e1e92-35b2-4f5e-8011-2a67f3dadf00 []\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_tpl0j81u
+      - content: null
+        reasoning: Only one result? Let's list maybe more.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"animals\", limit=20)\nfor r in results:\n    print(r[''document_title''],
+              r[''chunk_id''], r[''page_numbers''][:5])\n"}'
+            name: execute_code
+          id: call_orialuab
+          type: function
+      - content: '{"code":"results = search(\"animals\", limit=20)\nfor r in results:\n    print(r[''document_title''], r[''chunk_id''],
+          r[''page_numbers''][:5])\n","stdout":"Animal Facts eb0e1e92-35b2-4f5e-8011-2a67f3dadf00 []\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_orialuab
+      - content: null
+        reasoning: Only that document returned. Let's get chunk details.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"chunk = get_chunk(''eb0e1e92-35b2-4f5e-8011-2a67f3dadf00'')\nprint(chunk[''content''][:200])\n"}'
+            name: execute_code
+          id: call_hgxkkg8j
+          type: function
+      - content: '{"code":"chunk = get_chunk(''eb0e1e92-35b2-4f5e-8011-2a67f3dadf00'')\nprint(chunk[''content''][:200])\n","stdout":"The
+          quick brown fox jumps over the lazy dog.\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_hgxkkg8j
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1164'
       content-type:
       - application/json
     parsed_body:
@@ -580,20 +1082,24 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: '{"answer":"The search found a chunk about animals in a document titled \"Animal Facts\" (document_id:
-            d85af197-c6f8-4ca5-893d-e6b2de835758). The chunk content is: \"The quick brown fox jumps over the lazy dog.\"","program":"search(''animals'',
-            limit=10)"}'
-          reasoning: Return in JSON.
+          content: '{"answer":"The search for the term \"animals\" returned content from a single document titled **\"Animal
+            Facts\"** (document ID: eb0e1e92-35b2-4f5e-8011-2a67f3dadf00). The retrieved chunk contains the sentence: \"The
+            quick brown fox jumps over the lazy dog.\".","program":"# Search for the term \"animals\"\nresults = search(\"animals\",
+            limit=20)\n# Print document titles and chunk IDs for reference\nfor r in results:\n    print(f\"Document: {r[''document_title'']},
+            Chunk ID: {r[''chunk_id'']}\")\n\n# Retrieve the first (and only) chunk from the search results\nchunk = get_chunk(results[0][''chunk_id''])\nprint(\"\\n---
+            Chunk Content ---\")\nprint(chunk[''content''][:200])\n# The chunk content is the source of the animal-related
+            text.\n"}'
+          reasoning: 'Content is placeholder. So answer: document "Animal Facts". Provide code.'
           role: assistant
-      created: 1771336320
-      id: chatcmpl-438
+      created: 1771336733
+      id: chatcmpl-589
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 99
-        prompt_tokens: 1920
-        total_tokens: 2019
+        completion_tokens: 240
+        prompt_tokens: 2054
+        total_tokens: 2294
     status:
       code: 200
       message: OK
