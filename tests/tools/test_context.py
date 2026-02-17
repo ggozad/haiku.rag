@@ -444,6 +444,30 @@ def test_restore_state_snapshot_ignores_unknown_fields():
     assert ns1.value == 10
 
 
+def test_restore_state_snapshot_captures_client_snapshot():
+    """restore_state_snapshot stores the restored state as client_snapshot.
+
+    This baseline is used by tools to compute deltas against what the
+    client actually has, so server-side changes (e.g. background
+    summarization) appear in the delta.
+    """
+    ctx = ToolContext()
+    ctx.register("ns1", TestState(value=0))
+    ctx.register("ns2", TestStateWithList(items=[]))
+
+    assert ctx.client_snapshot is None
+
+    ctx.restore_state_snapshot({"value": 10, "items": ["a"]})
+
+    assert ctx.client_snapshot == {"value": 10, "items": ["a"]}
+
+    # Mutating state after restore doesn't affect the captured snapshot
+    ns1 = ctx.get("ns1", TestState)
+    assert ns1 is not None
+    ns1.value = 99
+    assert ctx.client_snapshot == {"value": 10, "items": ["a"]}
+
+
 # --- prepare_context tests ---
 
 
