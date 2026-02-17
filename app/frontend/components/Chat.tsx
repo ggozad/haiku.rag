@@ -15,7 +15,6 @@ import {
 	useContext,
 	useEffect,
 	useMemo,
-	useRef,
 	useState,
 } from "react";
 import { BrainIcon, FilterIcon } from "../lib/icons";
@@ -459,49 +458,6 @@ function ChatContentInner({
 		}
 	}, [agent, ck]);
 
-	// Strip the scroll view's internal paddingBottom (inline style set by
-	// CopilotChatView to reserve space for its absolutely-positioned input
-	// container, which we've overridden to flow in a flex layout).
-	// Uses a ref callback so it runs when the element actually mounts.
-	const paddingObserver = useRef<MutationObserver | null>(null);
-	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
-	const scrollAreaCallbackRef = useCallback((node: HTMLDivElement | null) => {
-		scrollAreaRef.current = node;
-		if (paddingObserver.current) {
-			paddingObserver.current.disconnect();
-			paddingObserver.current = null;
-		}
-		if (!node) return;
-		const strip = () => {
-			for (const div of node.querySelectorAll<HTMLElement>("div")) {
-				if (div.style.paddingBottom && div.style.paddingBottom !== "1rem") {
-					div.style.paddingBottom = "1rem";
-				}
-			}
-		};
-		strip();
-		const observer = new MutationObserver(strip);
-		observer.observe(node, {
-			subtree: true,
-			attributes: true,
-			attributeFilter: ["style"],
-		});
-		paddingObserver.current = observer;
-	}, []);
-
-	// Auto-scroll to bottom when messages change or agent is streaming
-	// biome-ignore lint/correctness/useExhaustiveDependencies: JSON.stringify tracks content changes
-	useEffect(() => {
-		const el = scrollAreaRef.current;
-		if (!el) return;
-		// Find the actual scrollable child (CopilotKit's scroll container)
-		const scrollable =
-			el.querySelector("[data-radix-scroll-area-viewport]") ??
-			el.querySelector("[style*='overflow']") ??
-			el;
-		scrollable.scrollTop = scrollable.scrollHeight;
-	}, [JSON.stringify(agent.messages), agent.isRunning]);
-
 	const sessionContext = chatState.session_context;
 	const documentFilter = chatState.document_filter;
 	const initialContext = chatState.initial_context ?? "";
@@ -565,18 +521,13 @@ function ChatContentInner({
 							messageView={MessageViewWithCitations}
 							messages={messages}
 							isRunning={agent.isRunning}
-							inputProps={{
-								onSubmitMessage,
-								onStop,
-							}}
+							onSubmitMessage={onSubmitMessage}
+							onStop={onStop}
 						>
-							{({ scrollView, feather, inputContainer }) => (
+							{({ scrollView, input }) => (
 								<div className="chat-layout">
-									<div ref={scrollAreaCallbackRef} className="chat-scroll-area">
-										{scrollView}
-										{feather}
-									</div>
-									<div className="chat-input-area">{inputContainer}</div>
+									<div className="chat-scroll-area">{scrollView}</div>
+									<div className="chat-input-area">{input}</div>
 								</div>
 							)}
 						</CopilotChatView>
