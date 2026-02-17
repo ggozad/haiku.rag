@@ -267,9 +267,7 @@ def create_qa_toolset(
         if client_snapshot is not None and tool_context is not None:
             new_snapshot = tool_context.build_state_snapshot()
             state_event = compute_combined_state_delta(
-                client_snapshot,
-                new_snapshot,
-                state_key=state_key,
+                client_snapshot, new_snapshot, state_key=state_key
             )
 
             if state_event is not None:
