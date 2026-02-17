@@ -32,11 +32,10 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
 
     @agent.tool
     async def execute_code(ctx: RunContext[RLMDeps], code: str) -> CodeExecution:
-        """Execute Python code in a Docker-sandboxed environment.
+        """Execute Python code in a sandboxed interpreter.
 
         The code has access to haiku.rag functions (search, list_documents,
-        get_document, get_docling_document, llm) and any Python standard
-        library module.
+        get_document, get_chunk, llm).
 
         Use print() to output results.
 

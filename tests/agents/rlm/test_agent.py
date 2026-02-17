@@ -47,9 +47,7 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_count_documents(
-        self, allow_model_requests, temp_db_path, test_docker_image
-    ):
+    async def test_rlm_count_documents(self, allow_model_requests, temp_db_path):
         """Test RLM agent can count documents.
 
         Agent program:
@@ -59,7 +57,7 @@ class TestClientRLMIntegration:
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
-        config.rlm.docker_image = test_docker_image
+
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document("First document about cats.", title="Doc 1")
             await client.create_document("Second document about dogs.", title="Doc 2")
@@ -71,9 +69,7 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_aggregation(
-        self, allow_model_requests, temp_db_path, test_docker_image
-    ):
+    async def test_rlm_aggregation(self, allow_model_requests, temp_db_path):
         """Test RLM agent can perform aggregation across documents.
 
         Agent program:
@@ -95,7 +91,7 @@ class TestClientRLMIntegration:
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
-        config.rlm.docker_image = test_docker_image
+
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document(
                 "Sales report Q1: Revenue was $100,000.", title="Q1 Report"
@@ -115,9 +111,7 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_with_filter(
-        self, allow_model_requests, temp_db_path, test_docker_image
-    ):
+    async def test_rlm_with_filter(self, allow_model_requests, temp_db_path):
         """Test RLM agent respects filter parameter.
 
         Agent program:
@@ -130,7 +124,7 @@ class TestClientRLMIntegration:
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
-        config.rlm.docker_image = test_docker_image
+
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document("Cat document.", title="Cats")
             await client.create_document("Dog document.", title="Dogs")
@@ -145,42 +139,36 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_docling_document_structure(
-        self, allow_model_requests, temp_db_path, test_docker_image
-    ):
-        """Test RLM agent can analyze document structure using DoclingDocument.
+    async def test_rlm_search_and_get_chunk(self, allow_model_requests, temp_db_path):
+        """Test RLM agent can search and use get_chunk for citations.
 
         Agent program:
-            docs = list_documents(limit=20)
-            print(docs)
-
-            doc = get_docling_document('<doc_id>')
-            print(doc.name)
-            print('tables:', len(doc.tables))
-            print('pictures:', len(doc.pictures))
+            results = search("content", limit=5)
+            for r in results:
+                chunk = get_chunk(r['chunk_id'])
+                print(chunk['document_title'], chunk['chunk_id'])
         """
         from haiku.rag.client import HaikuRAG
 
-        pdf_path = Path("tests/data/doclaynet.pdf")
         config = AppConfig()
-        config.processing.conversion_options.do_ocr = False
-        config.rlm.docker_image = test_docker_image
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-            await client.create_document_from_source(pdf_path)
-
-            result = await client.rlm(
-                "How many tables are in the document? "
-                "Also tell me how many pictures/figures it contains."
+            await client.create_document(
+                "The quick brown fox jumps over the lazy dog.",
+                title="Animal Facts",
             )
 
-            # The doclaynet.pdf has 1 table and 1 picture
-            assert "1" in result.answer
+            result = await client.rlm(
+                "Search for content about animals and tell me "
+                "which document it came from."
+            )
+
+            assert "Animal Facts" in result.answer
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_rlm_semantic_analysis_with_llm(
-        self, allow_model_requests, temp_db_path, test_docker_image
+        self, allow_model_requests, temp_db_path
     ):
         """Test RLM agent can use llm() for semantic analysis combined with computation.
 
@@ -200,7 +188,7 @@ class TestClientRLMIntegration:
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
-        config.rlm.docker_image = test_docker_image
+
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document(
                 "The new product launch exceeded expectations. Sales grew 40% "
@@ -232,9 +220,7 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_search_and_extract(
-        self, allow_model_requests, temp_db_path, test_docker_image
-    ):
+    async def test_rlm_search_and_extract(self, allow_model_requests, temp_db_path):
         """Test RLM agent can use search() to find content and extract information.
 
         Agent program:
@@ -252,7 +238,6 @@ class TestClientRLMIntegration:
         pdf_path = Path("tests/data/doclaynet.pdf")
         config = AppConfig()
         config.processing.conversion_options.do_ocr = False
-        config.rlm.docker_image = test_docker_image
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document_from_source(pdf_path)
@@ -293,7 +278,7 @@ class TestClientRLMIntegration:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_rlm_with_preloaded_documents(
-        self, allow_model_requests, temp_db_path, test_docker_image
+        self, allow_model_requests, temp_db_path
     ):
         """Test RLM agent can use pre-loaded documents variable.
 
@@ -307,7 +292,7 @@ class TestClientRLMIntegration:
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
-        config.rlm.docker_image = test_docker_image
+
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document(
                 "The company was founded in 1985 by Jane Smith.",

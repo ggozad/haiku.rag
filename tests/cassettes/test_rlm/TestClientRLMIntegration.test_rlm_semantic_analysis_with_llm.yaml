@@ -131,7 +131,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7836'
+      - '7781'
       content-type:
       - application/json
       host:
@@ -192,7 +192,7 @@ interactions:
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
           2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
           6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
@@ -303,11 +303,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -347,7 +346,244 @@ interactions:
   response:
     headers:
       content-length:
-      - '592'
+      - '184'
+      content-type:
+      - application/json
+    parsed_body:
+      error:
+        code: null
+        message: 'error parsing tool call: raw=''{"code":"search(''quarterly update'', limit=20)"'', err=unexpected end of
+          JSON input'
+        param: null
+        type: api_error
+    status:
+      code: 500
+      message: Internal Server Error
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '7781'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '656'
       content-type:
       - application/json
     parsed_body:
@@ -356,24 +592,25 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to search for quarterly updates documents. Use search.
+          reasoning: We need documents about quarterly updates. Search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nprint(results[:3])"}'
+              arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+                r[''page_numbers''][:3], r[''score''])\n"}'
               name: execute_code
-            id: call_vnbck7g3
+            id: call_0g817w8v
             index: 0
             type: function
-      created: 1770373405
-      id: chatcmpl-477
+      created: 1771336329
+      id: chatcmpl-80
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 58
-        prompt_tokens: 1758
-        total_tokens: 1816
+        completion_tokens: 81
+        prompt_tokens: 1745
+        total_tokens: 1826
     status:
       code: 200
       message: OK
@@ -386,7 +623,47 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '9608'
+      - '86'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - quarterly update
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 4
+        total_tokens: 4
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '8576'
       content-type:
       - application/json
       host:
@@ -447,7 +724,7 @@ interactions:
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
           2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
           6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
@@ -551,31 +828,21 @@ interactions:
         role: system
       - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
         role: user
-      - content: |-
-          <think>
-          Need to search for quarterly updates documents. Use search.
-          </think>
+      - content: null
+        reasoning: We need documents about quarterly updates. Search.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nprint(results[:3])"}'
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+              r[''page_numbers''][:3], r[''score''])\n"}'
             name: execute_code
-          id: call_vnbck7g3
+          id: call_0g817w8v
           type: function
-      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nprint(results[:3])","stdout":"3\n[{''chunk_id'':
-          ''f43599fd-f1ef-456d-8aee-28467c9e467b'', ''content'': ''Mixed results this quarter. While product quality improved,
-          marketing campaigns underperformed. Revenue was flat compared to last year but customer retention increased.'',
-          ''document_id'': ''1c58eccc-aad4-4b4e-8632-854dfbafc78e'', ''document_title'': ''Q3 Update'', ''document_uri'':
-          None, ''score'': 0.032786883413791656, ''page_numbers'': [], ''headings'': None}, {''chunk_id'': ''ce740ef8-ae7f-4efb-81c1-1ffa34323f56'',
-          ''content'': ''We faced significant challenges this quarter. Supply chain issues caused delays, and we missed our
-          revenue target by 15%. Several key employees left the company.'', ''document_id'': ''afb82f72-2eb0-4d3e-ad45-95c641e8cb71'',
-          ''document_title'': ''Q2 Update'', ''document_uri'': None, ''score'': 0.032258063554763794, ''page_numbers'': [],
-          ''headings'': None}, {''chunk_id'': ''77a36420-7c61-4881-bd05-ba7aec532934'', ''content'': ''The new product launch
-          exceeded expectations. Sales grew 40% and customer feedback has been overwhelmingly positive. Team morale is at
-          an all-time high.'', ''document_id'': ''bea81446-5d06-489f-9309-e97aa9762a96'', ''document_title'': ''Q1 Update'',
-          ''document_uri'': None, ''score'': 0.01587301678955555, ''page_numbers'': [], ''headings'': None}]\n","stderr":"","success":true}'
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+          r[''page_numbers''][:3], r[''score''])\n","stdout":"3\nQ3 Update [] 0.032786883413791656\nQ2 Update [] 0.032258063554763794\nQ1
+          Update [] 0.01587301678955555\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_vnbck7g3
+        tool_call_id: call_0g817w8v
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -583,11 +850,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -627,7 +893,68 @@ interactions:
   response:
     headers:
       content-length:
-      - '1333'
+      - '763'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: 'Three documents: Q1, Q2, Q3. We need sentiment. Use llm on each content.'
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+                = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+                resp)\n"}'
+              name: execute_code
+            id: call_stqc44dk
+            index: 0
+            type: function
+      created: 1771336331
+      id: chatcmpl-88
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 115
+        prompt_tokens: 1943
+        total_tokens: 2058
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '342'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          Classify the sentiment of this quarterly update text as positive, negative, or mixed.
+
+          The new product launch exceeded expectations. Sales grew 40% and customer feedback has been overwhelmingly positive. Team morale is at an all-time high.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '399'
       content-type:
       - application/json
     parsed_body:
@@ -635,25 +962,1724 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: '{"answer":"Among the quarterly updates examined, there is one positive quarter (Q1), one negative quarter
-            (Q2), and one mixed quarter (Q3).","program":"# Find quarterly update chunks\nresults = search(\"quarterly update\",
-            limit=50)\n# Classify sentiment via llm\nsentiment_counts = {\"positive\":0, \"negative\":0, \"mixed\":0}\nfor
-            res in results:\n    content = res[''content'']\n    sentiment = llm(f\"Classify the sentiment of the following
-            corporate update as ''positive'', ''negative'', or ''mixed'':\\n\\n{content}\")\n    # Normalize output\n    sentiment
-            = sentiment.lower().split()[0]\n    if sentiment in sentiment_counts:\n        sentiment_counts[sentiment] +=
-            1\n    else:\n        sentiment_counts[''mixed''] += 1\nprint(sentiment_counts)\n# Output the counts\nprint(f\"Positive:
-            {sentiment_counts[''positive'']}\\nNegative: {sentiment_counts[''negative'']}\\nMixed: {sentiment_counts[''mixed'']}\")"}'
-          reasoning: We have 3 quarterly updates Q1 positive, Q2 negative, Q3 mixed. Need count.
+          content: Positive
+          reasoning: 'We need sentiment classification: overall appears positive. No negative. So output positive.'
           role: assistant
-      created: 1770373411
-      id: chatcmpl-392
+      created: 1771336332
+      id: chatcmpl-540
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 264
-        prompt_tokens: 2257
-        total_tokens: 2521
+        completion_tokens: 27
+        prompt_tokens: 113
+        total_tokens: 140
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '351'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          Classify the sentiment of this quarterly update text as positive, negative, or mixed.
+
+          We faced significant challenges this quarter. Supply chain issues caused delays, and we missed our revenue target by 15%. Several key employees left the company.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '374'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: '**Sentiment:** **Negative**'
+          reasoning: Need sentiment classification. Text is negative.
+          role: assistant
+      created: 1771336333
+      id: chatcmpl-627
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 25
+        prompt_tokens: 114
+        total_tokens: 139
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '358'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          Classify the sentiment of this quarterly update text as positive, negative, or mixed.
+
+          Mixed results this quarter. While product quality improved, marketing campaigns underperformed. Revenue was flat compared to last year but customer retention increased.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '428'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: Mixed (the update contains both positive and negative elements)
+          reasoning: We need decide sentiment. Mixed positives and negatives. So mixed.
+          role: assistant
+      created: 1771336334
+      id: chatcmpl-802
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 34
+        prompt_tokens: 111
+        total_tokens: 145
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '9587'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
+        role: user
+      - content: null
+        reasoning: We need documents about quarterly updates. Search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+              r[''page_numbers''][:3], r[''score''])\n"}'
+            name: execute_code
+          id: call_0g817w8v
+          type: function
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+          r[''page_numbers''][:3], r[''score''])\n","stdout":"3\nQ3 Update [] 0.032786883413791656\nQ2 Update [] 0.032258063554763794\nQ1
+          Update [] 0.01587301678955555\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_0g817w8v
+      - content: null
+        reasoning: 'Three documents: Q1, Q2, Q3. We need sentiment. Use llm on each content.'
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+              = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+              resp)\n"}'
+            name: execute_code
+          id: call_stqc44dk
+          type: function
+      - content: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+          = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+          resp)\n","stdout":"Q1 Update Positive\nQ2 Update **Sentiment:** **Negative**\nQ3 Update Mixed (the update contains
+          both positive and negative elements)\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_stqc44dk
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '639'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Count.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+                s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n"}'
+              name: execute_code
+            id: call_upa0r5we
+            index: 0
+            type: function
+      created: 1771336339
+      id: chatcmpl-547
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 82
+        prompt_tokens: 2183
+        total_tokens: 2265
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '10597'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
+        role: user
+      - content: null
+        reasoning: We need documents about quarterly updates. Search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+              r[''page_numbers''][:3], r[''score''])\n"}'
+            name: execute_code
+          id: call_0g817w8v
+          type: function
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+          r[''page_numbers''][:3], r[''score''])\n","stdout":"3\nQ3 Update [] 0.032786883413791656\nQ2 Update [] 0.032258063554763794\nQ1
+          Update [] 0.01587301678955555\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_0g817w8v
+      - content: null
+        reasoning: 'Three documents: Q1, Q2, Q3. We need sentiment. Use llm on each content.'
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+              = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+              resp)\n"}'
+            name: execute_code
+          id: call_stqc44dk
+          type: function
+      - content: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+          = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+          resp)\n","stdout":"Q1 Update Positive\nQ2 Update **Sentiment:** **Negative**\nQ3 Update Mixed (the update contains
+          both positive and negative elements)\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_stqc44dk
+      - content: null
+        reasoning: Count.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_upa0r5we
+          type: function
+      - content: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 158..167, value: Name(ExprName { node_index: NodeIndex(None), range: 158..164,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 165..166, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_upa0r5we
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '618'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Syntax error. Use proper dict.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+                s in sentiments:\n    counts[s]+=1\nprint(counts)\n"}'
+              name: execute_code
+            id: call_qdq26q8o
+            index: 0
+            type: function
+      created: 1771336341
+      id: chatcmpl-905
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 73
+        prompt_tokens: 2439
+        total_tokens: 2512
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '11541'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
+        role: user
+      - content: null
+        reasoning: We need documents about quarterly updates. Search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+              r[''page_numbers''][:3], r[''score''])\n"}'
+            name: execute_code
+          id: call_0g817w8v
+          type: function
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+          r[''page_numbers''][:3], r[''score''])\n","stdout":"3\nQ3 Update [] 0.032786883413791656\nQ2 Update [] 0.032258063554763794\nQ1
+          Update [] 0.01587301678955555\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_0g817w8v
+      - content: null
+        reasoning: 'Three documents: Q1, Q2, Q3. We need sentiment. Use llm on each content.'
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+              = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+              resp)\n"}'
+            name: execute_code
+          id: call_stqc44dk
+          type: function
+      - content: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+          = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+          resp)\n","stdout":"Q1 Update Positive\nQ2 Update **Sentiment:** **Negative**\nQ3 Update Mixed (the update contains
+          both positive and negative elements)\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_stqc44dk
+      - content: null
+        reasoning: Count.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_upa0r5we
+          type: function
+      - content: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 158..167, value: Name(ExprName { node_index: NodeIndex(None), range: 158..164,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 165..166, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_upa0r5we
+      - content: null
+        reasoning: Syntax error. Use proper dict.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments:\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_qdq26q8o
+          type: function
+      - content: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments:\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 113..122, value: Name(ExprName { node_index: NodeIndex(None), range: 113..119,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 120..121, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_qdq26q8o
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '659'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Forgot python version issues? Actually counts[s]+=1 fine. The error due to stray? Let's rewrite.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    counts[s]+=1\nprint(counts)\n"}'
+              name: execute_code
+            id: call_990j0hbg
+            index: 0
+            type: function
+      created: 1771336343
+      id: chatcmpl-71
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 82
+        prompt_tokens: 2672
+        total_tokens: 2754
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '12498'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
+        role: user
+      - content: null
+        reasoning: We need documents about quarterly updates. Search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+              r[''page_numbers''][:3], r[''score''])\n"}'
+            name: execute_code
+          id: call_0g817w8v
+          type: function
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+          r[''page_numbers''][:3], r[''score''])\n","stdout":"3\nQ3 Update [] 0.032786883413791656\nQ2 Update [] 0.032258063554763794\nQ1
+          Update [] 0.01587301678955555\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_0g817w8v
+      - content: null
+        reasoning: 'Three documents: Q1, Q2, Q3. We need sentiment. Use llm on each content.'
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+              = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+              resp)\n"}'
+            name: execute_code
+          id: call_stqc44dk
+          type: function
+      - content: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+          = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+          resp)\n","stdout":"Q1 Update Positive\nQ2 Update **Sentiment:** **Negative**\nQ3 Update Mixed (the update contains
+          both positive and negative elements)\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_stqc44dk
+      - content: null
+        reasoning: Count.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_upa0r5we
+          type: function
+      - content: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 158..167, value: Name(ExprName { node_index: NodeIndex(None), range: 158..164,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 165..166, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_upa0r5we
+      - content: null
+        reasoning: Syntax error. Use proper dict.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments:\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_qdq26q8o
+          type: function
+      - content: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments:\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 113..122, value: Name(ExprName { node_index: NodeIndex(None), range: 113..119,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 120..121, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_qdq26q8o
+      - content: null
+        reasoning: Forgot python version issues? Actually counts[s]+=1 fine. The error due to stray? Let's rewrite.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_990j0hbg
+          type: function
+      - content: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected
+          name, got Subscript(ExprSubscript { node_index: NodeIndex(None), range: 91..100, value: Name(ExprName { node_index:
+          NodeIndex(None), range: 91..97, id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None),
+          range: 98..99, id: Name(\"s\"), ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_990j0hbg
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '784'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: It seems the environment might interpret `counts[s]` as something else? Maybe eval of counts? Could be
+            that counts is overwritten? Let's print variable names.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nprint(''counts'',counts)\nfor s in
+                [''Positive'',''Negative'',''Mixed'']:\n    print(''s'',s)\n    counts[s]=counts[s]+1\nprint(''final'',counts)\n"}'
+              name: execute_code
+            id: call_c4wf4hqw
+            index: 0
+            type: function
+      created: 1771336346
+      id: chatcmpl-313
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 113
+        prompt_tokens: 2909
+        total_tokens: 3022
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '13465'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
+          - search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+
+          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+
+          ## Available Functions
+
+          ### search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### get_docling_document(id_or_title) -> DoclingDocument | None
+          Get the structured DoclingDocument object for advanced analysis.
+          Returns a DoclingDocument object, or None if not found.
+          See "DoclingDocument API" section below for how to use it.
+
+          ### llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Standard Library Modules
+          You can import any Python standard library module.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
+          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
+
+          ## DoclingDocument API
+
+          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
+
+          ### Properties
+          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
+          - `doc.tables` - List of all tables
+          - `doc.pictures` - List of all pictures/figures
+          - `doc.name` - Document name
+
+          ### Methods
+          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
+            Returns tuples of (item, level) where level is nesting depth
+          - `doc.export_to_markdown()` - Export entire document as markdown string
+
+          ### Text Item Properties
+          - `item.text` - The text content
+          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
+          - `item.prov` - Provenance (page numbers, bounding boxes)
+
+          ### Table Access
+          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
+          - `table.data.table_cells` - List of TableCell objects
+          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
+
+          ### Example Usage
+          ```python
+          doc = get_docling_document("My Document")
+
+          # Get all headings
+          headings = [t.text for t in doc.texts if "header" in str(t.label)]
+
+          # Iterate with structure
+          for item, level in doc.iterate_items():
+              print("  " * level + item.text[:50])
+
+          # Extract table data
+          for table in doc.tables:
+              for cell in table.data.table_cells:
+                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+          ```
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Aggregating data across documents
+          ```python
+          import re
+          numbers = []
+          results = search("financial data", limit=20)
+          for r in results:
+              matches = re.findall(r'\$([\d,]+)', r['content'])
+              for m in matches:
+                  numbers.append(int(m.replace(',', '')))
+          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          # Get document content
+          content = get_document("Q1 Report")
+          # Use llm() to classify sentiment
+          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Analyze the sentiment of each quarterly update. How many quarters were positive, negative, and mixed?
+        role: user
+      - content: null
+        reasoning: We need documents about quarterly updates. Search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+              r[''page_numbers''][:3], r[''score''])\n"}'
+            name: execute_code
+          id: call_0g817w8v
+          type: function
+      - content: '{"code":"results = search(\"quarterly update\", limit=50)\nprint(len(results))\nfor r in results[:5]:\n    print(r[''document_title''],
+          r[''page_numbers''][:3], r[''score''])\n","stdout":"3\nQ3 Update [] 0.032786883413791656\nQ2 Update [] 0.032258063554763794\nQ1
+          Update [] 0.01587301678955555\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_0g817w8v
+      - content: null
+        reasoning: 'Three documents: Q1, Q2, Q3. We need sentiment. Use llm on each content.'
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+              = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+              resp)\n"}'
+            name: execute_code
+          id: call_stqc44dk
+          type: function
+      - content: '{"code":"for quarter in [''Q1 Update'',''Q2 Update'',''Q3 Update'']:\n    content = get_document(quarter)\n    resp
+          = llm(f\"Classify the sentiment of this quarterly update text as positive, negative, or mixed.\\n\\n{content}\")\n    print(quarter,
+          resp)\n","stdout":"Q1 Update Positive\nQ2 Update **Sentiment:** **Negative**\nQ3 Update Mixed (the update contains
+          both positive and negative elements)\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_stqc44dk
+      - content: null
+        reasoning: Count.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_upa0r5we
+          type: function
+      - content: '{"code":"sentiments={''Q1 Update'':''Positive'',''Q2 Update'':''Negative'',''Q3 Update'':''Mixed''}\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments.values():\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 158..167, value: Name(ExprName { node_index: NodeIndex(None), range: 158..164,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 165..166, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_upa0r5we
+      - content: null
+        reasoning: Syntax error. Use proper dict.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+              s in sentiments:\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_qdq26q8o
+          type: function
+      - content: '{"code":"sentiments=[''Positive'',''Negative'',''Mixed'']\ncounts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor
+          s in sentiments:\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected name, got Subscript(ExprSubscript
+          { node_index: NodeIndex(None), range: 113..122, value: Name(ExprName { node_index: NodeIndex(None), range: 113..119,
+          id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None), range: 120..121, id: Name(\"s\"),
+          ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_qdq26q8o
+      - content: null
+        reasoning: Forgot python version issues? Actually counts[s]+=1 fine. The error due to stray? Let's rewrite.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    counts[s]+=1\nprint(counts)\n"}'
+            name: execute_code
+          id: call_990j0hbg
+          type: function
+      - content: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    counts[s]+=1\nprint(counts)\n","stdout":"","stderr":"Expected
+          name, got Subscript(ExprSubscript { node_index: NodeIndex(None), range: 91..100, value: Name(ExprName { node_index:
+          NodeIndex(None), range: 91..97, id: Name(\"counts\"), ctx: Load }), slice: Name(ExprName { node_index: NodeIndex(None),
+          range: 98..99, id: Name(\"s\"), ctx: Load }), ctx: Store })","success":false}'
+        role: tool
+        tool_call_id: call_990j0hbg
+      - content: null
+        reasoning: It seems the environment might interpret `counts[s]` as something else? Maybe eval of counts? Could be
+          that counts is overwritten? Let's print variable names.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nprint(''counts'',counts)\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    print(''s'',s)\n    counts[s]=counts[s]+1\nprint(''final'',counts)\n"}'
+            name: execute_code
+          id: call_c4wf4hqw
+          type: function
+      - content: '{"code":"counts={''Positive'':0,''Negative'':0,''Mixed'':0}\nprint(''counts'',counts)\nfor s in [''Positive'',''Negative'',''Mixed'']:\n    print(''s'',s)\n    counts[s]=counts[s]+1\nprint(''final'',counts)\n","stdout":"counts
+          {''Positive'': 0, ''Negative'': 0, ''Mixed'': 0}\ns Positive\ns Negative\ns Mixed\nfinal {''Positive'': 1, ''Negative'':
+          1, ''Mixed'': 1}\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_c4wf4hqw
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1669'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: '{"answer":"After classifying each quarterly update:\n- Positive: 1 quarter (Q1 Update)\n- Negative: 1
+            quarter (Q2 Update)\n- Mixed: 1 quarter (Q3 Update)\n\nThe counts indicate that across the three available quarterly
+            updates, sentiment is evenly distributed with one quarter in each category.", "program":"# -*- coding: utf-8 -*-\n#
+            Sentiment analysis of quarterly updates\n\n# Define the quarterly update document titles\nquarters = [''Q1 Update'',
+            ''Q2 Update'', ''Q3 Update'']\n\n# Get LLM classification for each quarter\nsentiments = []\nfor q in quarters:\n    content
+            = get_document(q)\n    # Ask LLM to classify sentiment\n    response = llm(f\"Classify the sentiment of this quarterly
+            update text as positive, negative, or mixed.\\n\\n{content}\")\n    # Extract the first word that matches the
+            expected sentiment\n    if ''Positive'' in response:\n        sentiments.append(''Positive'')\n    elif ''Negative''
+            in response:\n        sentiments.append(''Negative'')\n    else:\n        sentiments.append(''Mixed'')\n\n# Count
+            occurrences of each sentiment\ncounts = {''Positive'': 0, ''Negative'': 0, ''Mixed'': 0}\nfor s in sentiments:\n    counts[s]
+            += 1\n\n# Print results\nprint(''Positive:'', counts[''Positive''])\nprint(''Negative:'', counts[''Negative''])\nprint(''Mixed:'',
+            counts[''Mixed''])\n"}'
+          reasoning: Okay works. So final counts 1 each.
+          role: assistant
+      created: 1771336355
+      id: chatcmpl-205
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 349
+        prompt_tokens: 3152
+        total_tokens: 3501
     status:
       code: 200
       message: OK

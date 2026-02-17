@@ -128,7 +128,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7768'
+      - '7713'
       content-type:
       - application/json
       host:
@@ -189,7 +189,7 @@ interactions:
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
           2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
           6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
@@ -300,11 +300,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -344,7 +343,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '517'
+      - '527'
       content-type:
       - application/json
     parsed_body:
@@ -353,24 +352,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to get list_documents.
+          reasoning: Need to call list_documents to count.
           role: assistant
           tool_calls:
           - function:
               arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
               name: execute_code
-            id: call_ly3bn3y0
+            id: call_9nd3m1g0
             index: 0
             type: function
-      created: 1770373376
-      id: chatcmpl-196
+      created: 1771336314
+      id: chatcmpl-255
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 44
-        prompt_tokens: 1745
-        total_tokens: 1789
+        completion_tokens: 46
+        prompt_tokens: 1732
+        total_tokens: 1778
     status:
       code: 200
       message: OK
@@ -383,7 +382,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8201'
+      - '8154'
       content-type:
       - application/json
       host:
@@ -444,7 +443,7 @@ interactions:
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
           2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
           5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
           6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
           7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
@@ -548,20 +547,18 @@ interactions:
         role: system
       - content: How many documents are available?
         role: user
-      - content: |-
-          <think>
-          Need to get list_documents.
-          </think>
+      - content: null
+        reasoning: Need to call list_documents to count.
         role: assistant
         tool_calls:
         - function:
             arguments: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
             name: execute_code
-          id: call_ly3bn3y0
+          id: call_9nd3m1g0
           type: function
       - content: '{"code":"docs = list_documents(limit=1000)\nprint(len(docs))","stdout":"1\n","stderr":"","success":true}'
         role: tool
-        tool_call_id: call_ly3bn3y0
+        tool_call_id: call_9nd3m1g0
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -569,11 +566,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -623,15 +619,15 @@ interactions:
         message:
           content: '{"answer":"There is 1 document available in the knowledge base.","program":"docs = list_documents(limit=1000)\nprint(len(docs))"}'
           role: assistant
-      created: 1770373377
-      id: chatcmpl-195
+      created: 1771336315
+      id: chatcmpl-500
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
         completion_tokens: 39
-        prompt_tokens: 1836
-        total_tokens: 1875
+        prompt_tokens: 1819
+        total_tokens: 1858
     status:
       code: 200
       message: OK
