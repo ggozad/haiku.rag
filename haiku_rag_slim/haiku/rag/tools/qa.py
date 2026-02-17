@@ -1,7 +1,6 @@
 import math
 from collections.abc import Callable
 
-from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic import BaseModel, Field
 from pydantic_ai import FunctionToolset, RunContext, ToolReturn
 
@@ -23,6 +22,7 @@ from haiku.rag.tools.session import (
     SESSION_NAMESPACE,
     SessionContext,
     SessionState,
+    compute_combined_state_delta,
 )
 
 PRIOR_ANSWER_RELEVANCE_THRESHOLD = 0.7
@@ -245,9 +245,14 @@ def create_qa_toolset(
         tool_context = ctx.deps.tool_context
 
         state_key: str | None = None
+        client_snapshot: dict | None = None
 
         if tool_context is not None:
             state_key = tool_context.state_key
+            if tool_context.namespaces:
+                client_snapshot = (
+                    tool_context.client_snapshot or tool_context.build_state_snapshot()
+                )
 
         qa_result = await run_qa_core(
             client=client,
@@ -259,21 +264,22 @@ def create_qa_toolset(
             on_qa_complete=on_ask_complete,
         )
 
-        if tool_context is not None and tool_context.namespaces:
-            snapshot = tool_context.build_state_snapshot()
-            if state_key:
-                snapshot = {state_key: snapshot}
-
-            answer_text = qa_result.answer
-            if qa_result.citations:
-                citation_refs = " ".join(f"[{c.index}]" for c in qa_result.citations)
-                answer_text = f"{answer_text}\n\nSources: {citation_refs}"
-
-            state_event = StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=snapshot,
+        if client_snapshot is not None and tool_context is not None:
+            new_snapshot = tool_context.build_state_snapshot()
+            state_event = compute_combined_state_delta(
+                client_snapshot,
+                new_snapshot,
+                state_key=state_key,
             )
-            return ToolReturn(return_value=answer_text, metadata=[state_event])
+
+            if state_event is not None:
+                answer_text = qa_result.answer
+                if qa_result.citations:
+                    citation_refs = " ".join(
+                        f"[{c.index}]" for c in qa_result.citations
+                    )
+                    answer_text = f"{answer_text}\n\nSources: {citation_refs}"
+                return ToolReturn(return_value=answer_text, metadata=[state_event])
 
         return qa_result
 

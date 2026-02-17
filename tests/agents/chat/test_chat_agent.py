@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from ag_ui.core import StateDeltaEvent, StateSnapshotEvent
+from ag_ui.core import StateDeltaEvent
 
 from haiku.rag.agents.chat import (
     AGUI_STATE_KEY,
@@ -23,7 +23,7 @@ from haiku.rag.tools.session import SESSION_NAMESPACE, SessionContext, SessionSt
 def extract_state_from_result(result, state_key: str = AGUI_STATE_KEY) -> dict | None:
     """Extract emitted state from agent result's tool return metadata.
 
-    For deltas, applies the patch to an empty state to get the final state.
+    Applies the JSON Patch delta to an empty state to get the final state.
     """
     import jsonpatch
 
@@ -32,10 +32,7 @@ def extract_state_from_result(result, state_key: str = AGUI_STATE_KEY) -> dict |
             for part in message.parts:
                 if hasattr(part, "metadata") and part.metadata:
                     for meta in part.metadata:
-                        if isinstance(meta, StateSnapshotEvent):
-                            return meta.snapshot.get(state_key)
-                        elif isinstance(meta, StateDeltaEvent):
-                            # Apply delta to empty state to get final state
+                        if isinstance(meta, StateDeltaEvent):
                             empty_state = {
                                 state_key: ChatSessionState().model_dump(mode="json")
                             }

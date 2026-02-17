@@ -62,6 +62,7 @@ class ToolContext(BaseModel):
 
     state_key: str | None = None
     _namespaces: dict[str, BaseModel] = PrivateAttr(default_factory=dict)
+    _client_snapshot: dict[str, Any] | None = PrivateAttr(default=None)
 
     def register(self, namespace: str, state: BaseModel) -> None:
         """Register state for a namespace.
@@ -121,6 +122,16 @@ class ToolContext(BaseModel):
         """List all registered namespaces."""
         return list(self._namespaces.keys())
 
+    @property
+    def client_snapshot(self) -> dict[str, Any] | None:
+        """Snapshot captured after the last restore_state_snapshot call.
+
+        Represents what the client has, before any server-side overrides.
+        Tools use this as the baseline for delta computation so that
+        server-side changes (e.g. background summarization) are included.
+        """
+        return self._client_snapshot
+
     def dump_namespaces(self) -> dict[str, dict[str, Any]]:
         """Serialize all namespace states to a dictionary.
 
@@ -150,6 +161,9 @@ class ToolContext(BaseModel):
         validates them via the namespace model, and updates the state
         in place.  Fields not present in *data* are left unchanged.
 
+        After restoring, captures a snapshot as ``client_snapshot`` so
+        tools can compute deltas against what the client actually has.
+
         Args:
             data: Flat dict as produced by build_state_snapshot().
         """
@@ -163,6 +177,7 @@ class ToolContext(BaseModel):
                 updated = state.model_validate(current)
                 for field_name in matching:
                     setattr(state, field_name, getattr(updated, field_name))
+        self._client_snapshot = self.build_state_snapshot()
 
     def load_namespace(self, namespace: str, state_type: type[T], data: dict) -> T:
         """Deserialize and register state for a namespace.
