@@ -108,9 +108,7 @@ class SearchModal(Screen):
             self.chunks = []
             for result in self.search_results:
                 if result.chunk_id:
-                    chunk = await self.client.chunk_repository.get_by_id(
-                        result.chunk_id
-                    )
+                    chunk = await self.client.get_chunk_by_id(result.chunk_id)
                     if chunk:
                         self.chunks.append(chunk)
 

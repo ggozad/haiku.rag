@@ -732,6 +732,17 @@ class HaikuRAG:
         """
         return await self.document_repository.get_by_id(document_id)
 
+    async def get_chunk_by_id(self, chunk_id: str) -> Chunk | None:
+        """Get a chunk by its ID.
+
+        Args:
+            chunk_id: The unique identifier of the chunk.
+
+        Returns:
+            The Chunk instance if found, None otherwise.
+        """
+        return await self.chunk_repository.get_by_id(chunk_id)
+
     async def get_document_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI.
 
@@ -1379,9 +1390,9 @@ class HaikuRAG:
             RLMResult with the answer and the final consolidated program.
         """
         from haiku.rag.agents.rlm import (
-            DockerSandbox,
             RLMContext,
             RLMDeps,
+            Sandbox,
             create_rlm_agent,
         )
 
@@ -1395,11 +1406,10 @@ class HaikuRAG:
                     loaded_docs.append(doc)
             context.documents = loaded_docs if loaded_docs else None
 
-        async with DockerSandbox(
+        async with Sandbox(
             client=self,
-            config=self._config.rlm,
+            config=self._config,
             context=context,
-            image=self._config.rlm.docker_image,
         ) as sandbox:
             deps = RLMDeps(
                 sandbox=sandbox,

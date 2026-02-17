@@ -31,6 +31,7 @@ dependencies = [
     "pathspec>=1.0.3",
     "pydantic>=2.12.5",
     "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.46.0",
+    "pydantic-monty>=0.0.6",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.3",
     "rich>=14.2.0",

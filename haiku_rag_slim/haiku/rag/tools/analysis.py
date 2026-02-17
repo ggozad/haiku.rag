@@ -3,7 +3,7 @@ from pydantic_ai import FunctionToolset, RunContext
 
 from haiku.rag.agents.rlm.agent import create_rlm_agent
 from haiku.rag.agents.rlm.dependencies import RLMContext, RLMDeps
-from haiku.rag.agents.rlm.docker_sandbox import DockerSandbox
+from haiku.rag.agents.rlm.sandbox import Sandbox
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import RAGDeps
 from haiku.rag.tools.filters import (
@@ -62,11 +62,10 @@ def create_analysis_toolset(
 
         rlm_context = RLMContext(filter=effective_filter)
 
-        async with DockerSandbox(
+        async with Sandbox(
             client=client,
-            config=config.rlm,
+            config=config,
             context=rlm_context,
-            image=config.rlm.docker_image,
         ) as sandbox:
             deps = RLMDeps(
                 sandbox=sandbox,

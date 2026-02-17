@@ -354,7 +354,7 @@ class HaikuRAGApp:  # pragma: no cover
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            chunk = await self.client.chunk_repository.get_by_id(chunk_id)
+            chunk = await self.client.get_chunk_by_id(chunk_id)
             if not chunk:
                 self.console.print(f"[red]Chunk with id {chunk_id} not found.[/red]")
                 return
