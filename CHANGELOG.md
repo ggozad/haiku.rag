@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.30.1] - 2026-02-17
+
 ### Changed
 
 - **AG-UI state sync**: `ask` tool now emits `StateDeltaEvent` (JSON Patch) instead of `StateSnapshotEvent`, consistent with the `search` tool
