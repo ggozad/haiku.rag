@@ -6,7 +6,7 @@ CRITICAL: Inside execute_code, these functions are ALREADY available in the name
 - search("query")  ✓ CORRECT
 - from haiku.rag import search  ✗ WRONG - will fail
 
-You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly, no imports needed):
 
 ## Available Functions
 
@@ -22,10 +22,10 @@ Returns list of dicts with keys: id, title, uri, created_at
 Get the full text content of a document by ID, title, or URI.
 Returns the document content as a string, or None if not found.
 
-### get_docling_document(id_or_title) -> DoclingDocument | None
-Get the structured DoclingDocument object for advanced analysis.
-Returns a DoclingDocument object, or None if not found.
-See "DoclingDocument API" section below for how to use it.
+### get_chunk(chunk_id) -> dict | None
+Get a specific chunk by its ID (from search results).
+Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+Use this to retrieve full chunk details and metadata for citation.
 
 ### llm(prompt) -> str
 Call an LLM directly with the given prompt. Returns the response as a string.
@@ -42,8 +42,13 @@ for doc in documents:
 ```
 Check if it exists with: `if 'documents' in dir(): ...`
 
-## Standard Library Modules
-You can import any Python standard library module.
+## Available Python Features
+
+The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+
+Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
 
 ## Strategy Guide
 
@@ -51,51 +56,9 @@ You can import any Python standard library module.
 2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
 3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
 4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
-5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
+5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
 6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-## DoclingDocument API
-
-When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-### Properties
-- `doc.texts` - List of all text items (paragraphs, headings, etc.)
-- `doc.tables` - List of all tables
-- `doc.pictures` - List of all pictures/figures
-- `doc.name` - Document name
-
-### Methods
-- `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-  Returns tuples of (item, level) where level is nesting depth
-- `doc.export_to_markdown()` - Export entire document as markdown string
-
-### Text Item Properties
-- `item.text` - The text content
-- `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
-- `item.prov` - Provenance (page numbers, bounding boxes)
-
-### Table Access
-- `table.data.num_rows`, `table.data.num_cols` - Dimensions
-- `table.data.table_cells` - List of TableCell objects
-- `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-### Example Usage
-```python
-doc = get_docling_document("My Document")
-
-# Get all headings
-headings = [t.text for t in doc.texts if "header" in str(t.label)]
-
-# Iterate with structure
-for item, level in doc.iterate_items():
-    print("  " * level + item.text[:50])
-
-# Extract table data
-for table in doc.tables:
-    for cell in table.data.table_cells:
-        print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-```
+7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
 
 ## Example Patterns
 
@@ -111,23 +74,31 @@ for doc in docs:
 print(f"Total: {count}")
 ```
 
-### Aggregating data across documents
+### Extracting data with llm()
 ```python
-import re
 numbers = []
 results = search("financial data", limit=20)
 for r in results:
-    matches = re.findall(r'\\$([\\d,]+)', r['content'])
-    for m in matches:
-        numbers.append(int(m.replace(',', '')))
-print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+    extracted = llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+    for part in extracted.split(','):
+        part = part.strip().replace(',', '')
+        if part.isdigit():
+            numbers.append(int(part))
+if numbers:
+    print(f"Average: {sum(numbers) / len(numbers)}")
+```
+
+### Using search results with get_chunk for citations
+```python
+results = search("safety requirements", limit=5)
+for r in results:
+    chunk = get_chunk(r['chunk_id'])
+    print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
 ```
 
 ### Using llm() for classification
 ```python
-# Get document content
 content = get_document("Q1 Report")
-# Use llm() to classify sentiment
 sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
 print(sentiment)
 ```
