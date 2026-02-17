@@ -6,6 +6,7 @@ from haiku.rag.agents.rlm.dependencies import RLMContext
 from haiku.rag.agents.rlm.sandbox import Sandbox, SandboxResult
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.models import Document
 
 
 @pytest.fixture(scope="module")
@@ -188,6 +189,81 @@ class TestSandboxHaikuRAG:
         assert "True" in result.stdout
 
 
+class TestSandboxExternalFunctionEdgeCases:
+    """Test edge cases in external function dispatch."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_external_function(self, sandbox):
+        """Test that calling an unregistered external function resumes with KeyError."""
+        original_build = sandbox._build_external_functions
+
+        def patched_build():
+            fns = original_build()
+            fns["search"] = None
+            return fns
+
+        sandbox._build_external_functions = patched_build
+
+        result = await sandbox.execute(
+            "try:\n    search('hello')\nexcept:\n    print('caught')\nprint('done')"
+        )
+        assert result.success
+        assert "caught" in result.stdout
+        assert "done" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_external_function_raises_exception(self, sandbox):
+        """Test that exceptions from external functions are propagated to Monty."""
+        original_build = sandbox._build_external_functions
+
+        def patched_build():
+            fns = original_build()
+
+            async def failing_search(*args, **kwargs):
+                raise ValueError("external error")
+
+            fns["search"] = failing_search
+            return fns
+
+        sandbox._build_external_functions = patched_build
+
+        result = await sandbox.execute(
+            "try:\n    search('hello')\nexcept:\n    print('caught')\nprint('done')"
+        )
+        assert result.success
+        assert "caught" in result.stdout
+        assert "done" in result.stdout
+
+
+class TestSandboxOutputTruncation:
+    """Test output truncation behavior."""
+
+    @pytest.mark.asyncio
+    async def test_truncate_stdout_on_runtime_error(self, empty_client):
+        """Test stdout is truncated when a runtime error occurs after large output."""
+        config = AppConfig()
+        config.rlm.max_output_chars = 20
+        context = RLMContext()
+        async with Sandbox(client=empty_client, config=config, context=context) as sb:
+            result = await sb.execute("print('a' * 100)\nx = 1/0")
+            assert not result.success
+            assert "ZeroDivisionError" in result.stderr
+            assert result.stdout.endswith("... (output truncated)")
+            assert len(result.stdout) < 100
+
+    @pytest.mark.asyncio
+    async def test_truncate_successful_output(self, empty_client):
+        """Test output is truncated on successful execution with large output."""
+        config = AppConfig()
+        config.rlm.max_output_chars = 20
+        context = RLMContext()
+        async with Sandbox(client=empty_client, config=config, context=context) as sb:
+            result = await sb.execute("print('b' * 100)")
+            assert result.success
+            assert result.stdout.endswith("... (output truncated)")
+            assert len(result.stdout) < 100
+
+
 class TestSandboxContextFilter:
     """Test context filter is applied."""
 
@@ -231,3 +307,41 @@ class TestSandboxPreloadedDocuments:
         result = await sandbox.execute("print(documents)")
         assert not result.success
         assert "NameError" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_documents_variable_available_with_preload(self, empty_client):
+        """documents variable is available when context.documents is set."""
+        config = AppConfig()
+        docs = [
+            Document(id="1", content="Content A", title="Doc A", uri="a://1"),
+            Document(id="2", content="Content B", title="Doc B", uri="b://2"),
+        ]
+        context = RLMContext(documents=docs)
+        async with Sandbox(client=empty_client, config=config, context=context) as sb:
+            result = await sb.execute(
+                "print(len(documents))\n"
+                "print(documents[0]['title'])\n"
+                "print(documents[1]['title'])"
+            )
+            assert result.success
+            assert "2" in result.stdout
+            assert "Doc A" in result.stdout
+            assert "Doc B" in result.stdout
+
+
+class TestSandboxLLM:
+    """Test llm() external function."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_llm_function(self, allow_model_requests, empty_client):
+        """Test llm() calls the model and returns a string."""
+        config = AppConfig()
+        context = RLMContext()
+        async with Sandbox(client=empty_client, config=config, context=context) as sb:
+            result = await sb.execute(
+                "answer = llm('What is 2 + 2? Reply with just the number.')\n"
+                "print(answer)"
+            )
+            assert result.success
+            assert "4" in result.stdout
