@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Added `cachetools` as an explicit dependency (was only available transitively, causing `ModuleNotFoundError` for some installations)
+
 ## [0.30.1] - 2026-02-17
 
 ### Changed
