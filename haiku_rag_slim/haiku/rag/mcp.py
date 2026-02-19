@@ -171,42 +171,19 @@ def create_mcp_server(  # pragma: no cover
     async def ask_question(
         question: str,
         cite: bool = False,
-        deep: bool = False,
     ) -> str:
         """Ask a question using the QA agent.
 
         Args:
             question: The question to ask.
             cite: Whether to include citations in the response.
-            deep: Use deep multi-agent QA for complex questions that require decomposition.
 
         Returns:
             The answer as a string.
         """
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                if deep:
-                    from haiku.rag.agents.research.dependencies import ResearchContext
-                    from haiku.rag.agents.research.graph import build_research_graph
-                    from haiku.rag.agents.research.state import (
-                        ResearchDeps,
-                        ResearchState,
-                    )
-
-                    graph = build_research_graph(config=config)
-                    context = ResearchContext(original_question=question)
-                    state = ResearchState.from_config(
-                        context=context,
-                        config=config,
-                        max_iterations=2,
-                    )
-                    deps = ResearchDeps(client=rag)
-
-                    result = await graph.run(state=state, deps=deps)
-                    answer = result.executive_summary
-                    citations = []
-                else:
-                    answer, citations = await rag.ask(question)
+                answer, citations = await rag.ask(question)
                 if cite and citations:
                     answer += "\n\n" + format_citations(citations)
                 return answer
@@ -229,19 +206,8 @@ def create_mcp_server(  # pragma: no cover
             A research report with findings, or None if an error occurred.
         """
         try:
-            from haiku.rag.agents.research.dependencies import ResearchContext
-            from haiku.rag.agents.research.graph import build_research_graph
-            from haiku.rag.agents.research.state import ResearchDeps, ResearchState
-
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                graph = build_research_graph(config=config)
-                context = ResearchContext(original_question=question)
-                state = ResearchState.from_config(context=context, config=config)
-                deps = ResearchDeps(client=rag)
-
-                result = await graph.run(state=state, deps=deps)
-
-                return result
+                return await rag.research(question=question)
         except Exception:
             return None
 

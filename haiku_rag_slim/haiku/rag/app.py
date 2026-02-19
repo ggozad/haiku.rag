@@ -18,9 +18,6 @@ from rich.progress import (
 )
 from rich.syntax import Syntax
 
-from haiku.rag.agents.research.dependencies import ResearchContext
-from haiku.rag.agents.research.graph import build_research_graph
-from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
@@ -375,7 +372,6 @@ class HaikuRAGApp:  # pragma: no cover
         self,
         question: str,
         cite: bool = False,
-        deep: bool = False,
         filter: str | None = None,
     ):
         """Ask a question using the RAG system.
@@ -383,7 +379,6 @@ class HaikuRAGApp:  # pragma: no cover
         Args:
             question: The question to ask
             cite: Include citations in the answer
-            deep: Use deep QA mode (multi-step reasoning)
             filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(
@@ -392,46 +387,15 @@ class HaikuRAGApp:  # pragma: no cover
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            citations = []
-            if deep:
-                graph = build_research_graph(config=self.config)
-                context = ResearchContext(original_question=question)
-                state = ResearchState.from_config(
-                    context=context,
-                    config=self.config,
-                    max_iterations=1,
-                )
-                state.search_filter = filter
-                deps = ResearchDeps(client=self.client)
+            answer, citations = await self.client.ask(question, filter=filter)
 
-                report = await graph.run(state=state, deps=deps)
-
-                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                self.console.print()
-                if report:
-                    self.console.print("[bold green]Answer:[/bold green]")
-                    self.console.print(Markdown(report.executive_summary))
-                    if report.main_findings:
-                        self.console.print()
-                        self.console.print("[bold cyan]Key Findings:[/bold cyan]")
-                        for finding in report.main_findings:
-                            self.console.print(f"• {finding}")
-                    if report.sources_summary:
-                        self.console.print()
-                        self.console.print("[bold cyan]Sources:[/bold cyan]")
-                        self.console.print(report.sources_summary)
-                else:
-                    self.console.print("[yellow]No answer generated.[/yellow]")
-            else:
-                answer, citations = await self.client.ask(question, filter=filter)
-
-                self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-                self.console.print()
-                self.console.print("[bold green]Answer:[/bold green]")
-                self.console.print(Markdown(answer))
-                if cite and citations:
-                    for renderable in format_citations_rich(citations):
-                        self.console.print(renderable)
+            self.console.print(f"[bold blue]Question:[/bold blue] {question}")
+            self.console.print()
+            self.console.print("[bold green]Answer:[/bold green]")
+            self.console.print(Markdown(answer))
+            if cite and citations:
+                for renderable in format_citations_rich(citations):
+                    self.console.print(renderable)
 
     async def rlm(
         self,
@@ -488,13 +452,7 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
 
-            graph = build_research_graph(config=self.config)
-            context = ResearchContext(original_question=question)
-            state = ResearchState.from_config(context=context, config=self.config)
-            state.search_filter = filter
-            deps = ResearchDeps(client=client)
-
-            report = await graph.run(state=state, deps=deps)
+            report = await client.research(question=question, filter=filter)
 
             if report is None:
                 self.console.print("[red]Research did not produce a report.[/red]")

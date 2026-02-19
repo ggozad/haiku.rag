@@ -341,11 +341,6 @@ def ask(  # pragma: no cover
         "--cite",
         help="Include citations in the response",
     ),
-    deep: bool = typer.Option(
-        False,
-        "--deep",
-        help="Use deep multi-agent QA for complex questions",
-    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
@@ -358,7 +353,6 @@ def ask(  # pragma: no cover
         app.ask(
             question=question,
             cite=cite,
-            deep=deep,
             filter=filter,
         )
     )

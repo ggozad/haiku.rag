@@ -1449,6 +1449,7 @@ source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "cachetools" },
     { name = "docling-core" },
+    { name = "haiku-skills" },
     { name = "httpx" },
     { name = "jsonpatch" },
     { name = "lancedb" },
@@ -1512,6 +1513,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.73.1" },
     { name = "docling-core", specifier = "==2.65.1" },
+    { name = "haiku-skills", specifier = ">=0.3.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.29.2" },
@@ -1539,6 +1541,20 @@ requires-dist = [
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a7" },
 ]
 provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jina", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+
+[[package]]
+name = "haiku-skills"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-ai-slim", extra = ["mcp"] },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/d6/11dbef98d7b04f5aacc7da3354fbe7bbb9ab5aa5948517d135f68f457d7d/haiku_skills-0.3.0.tar.gz", hash = "sha256:191414a840653ba938aa8ce1804f10cc489426d44fdcc7f261feb2e32e1be041", size = 158600, upload-time = "2026-02-19T10:34:28.851Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/a2/279333965841a2ecda2e5cc695306998f9770ac5b92b2d6ad8c50206b162/haiku_skills-0.3.0-py3-none-any.whl", hash = "sha256:ac5ddaea07d920ffec368ea7cf8e88963e727feece01571fd40dfc31da4b3ccd", size = 20359, upload-time = "2026-02-19T10:34:27.235Z" },
+]
 
 [[package]]
 name = "hf-xet"
@@ -3648,6 +3664,9 @@ groq = [
 ]
 logfire = [
     { name = "logfire", extra = ["httpx"] },
+]
+mcp = [
+    { name = "mcp" },
 ]
 mistral = [
     { name = "mistralai" },
