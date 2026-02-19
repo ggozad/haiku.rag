@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 
 from pydantic import BaseModel, Field
@@ -24,18 +23,9 @@ from haiku.rag.tools.session import (
     SessionState,
     compute_combined_state_delta,
 )
+from haiku.rag.utils import cosine_similarity
 
 PRIOR_ANSWER_RELEVANCE_THRESHOLD = 0.7
-
-
-def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
-    """Compute cosine similarity between two vectors."""
-    dot_product = sum(a * b for a, b in zip(vec1, vec2))
-    norm1 = math.sqrt(sum(a * a for a in vec1))
-    norm2 = math.sqrt(sum(b * b for b in vec2))
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    return dot_product / (norm1 * norm2)
 
 
 class QAHistoryEntry(BaseModel):
@@ -129,7 +119,7 @@ async def run_qa_core(
         matched_answers = []
         for qa in qa_session_state.qa_history:
             if qa.question_embedding is not None:
-                similarity = _cosine_similarity(
+                similarity = cosine_similarity(
                     question_embedding, qa.question_embedding
                 )
                 if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:

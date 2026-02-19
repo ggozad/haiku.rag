@@ -1,0 +1,373 @@
+from unittest.mock import AsyncMock
+
+from haiku.rag.agents.research.models import Citation, ResearchReport
+from haiku.rag.agents.rlm.models import RLMResult
+from haiku.rag.client import HaikuRAG
+from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.tools.document import DocumentInfo
+from haiku.rag.tools.qa import QAHistoryEntry
+
+from .conftest import _get_tool, _make_ctx
+
+
+class TestRAGSkillCreation:
+    def test_create_skill_returns_valid_skill(self, temp_db_path):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=temp_db_path)
+        assert skill.metadata.name == "rag"
+        assert skill.metadata.description
+        assert skill.instructions
+
+    def test_create_skill_has_expected_tools(self, temp_db_path):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=temp_db_path)
+        tool_names = {getattr(t, "__name__") for t in skill.tools if callable(t)}
+        assert tool_names == {
+            "search",
+            "list_documents",
+            "get_document",
+            "ask",
+            "analyze",
+            "research",
+            "get_session_context",
+        }
+
+    def test_create_skill_has_state(self, temp_db_path):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=temp_db_path)
+        assert skill._state_type is RAGState
+        assert skill._state_namespace == "rag"
+
+    def test_create_skill_from_env(self, monkeypatch, temp_db_path):
+        monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill()
+        assert skill.metadata.name == "rag"
+
+
+class TestSearchTool:
+    async def test_search_returns_formatted_string(self, rag_db):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        ctx = _make_ctx()
+        result = await search(ctx, query="artificial intelligence")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    async def test_search_updates_state(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await search(ctx, query="artificial intelligence")
+        assert "artificial intelligence" in state.searches
+        results = state.searches["artificial intelligence"]
+        assert len(results) > 0
+        assert isinstance(results[0], SearchResult)
+
+    async def test_search_without_state(self, rag_db):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        ctx = _make_ctx(state=None)
+        result = await search(ctx, query="artificial intelligence")
+        assert isinstance(result, str)
+
+
+class TestListDocumentsTool:
+    async def test_list_documents_returns_results(self, rag_db):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        list_docs = _get_tool(skill, "list_documents")
+        ctx = _make_ctx()
+        results = await list_docs(ctx)
+        assert isinstance(results, list)
+        assert len(results) == 2
+
+    async def test_list_documents_updates_state(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        list_docs = _get_tool(skill, "list_documents")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await list_docs(ctx)
+        assert len(state.documents) == 2
+        assert isinstance(state.documents[0], DocumentInfo)
+        assert state.documents[0].id is not None
+
+    async def test_list_documents_no_duplicates_in_state(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        list_docs = _get_tool(skill, "list_documents")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await list_docs(ctx)
+        await list_docs(ctx)
+        assert len(state.documents) == 2
+
+
+class TestGetDocumentTool:
+    async def test_get_document_by_title(self, rag_db):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        get_doc = _get_tool(skill, "get_document")
+        ctx = _make_ctx()
+        result = await get_doc(ctx, query="AI Overview")
+        assert result is not None
+        assert result["title"] == "AI Overview"
+
+    async def test_get_document_updates_state(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        get_doc = _get_tool(skill, "get_document")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await get_doc(ctx, query="AI Overview")
+        assert len(state.documents) == 1
+        assert isinstance(state.documents[0], DocumentInfo)
+        assert state.documents[0].title == "AI Overview"
+
+    async def test_get_document_not_found(self, rag_db):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        get_doc = _get_tool(skill, "get_document")
+        ctx = _make_ctx()
+        result = await get_doc(ctx, query="nonexistent document xyz")
+        assert result is None
+
+
+class TestAskTool:
+    async def test_ask_returns_answer_with_citations(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import create_skill
+
+        citations = [
+            Citation(
+                document_id="d1",
+                chunk_id="c1",
+                document_uri="test://ai-overview",
+                document_title="AI Overview",
+                content="AI is transforming industries.",
+            )
+        ]
+        monkeypatch.setattr(
+            HaikuRAG,
+            "ask",
+            AsyncMock(return_value=("AI transforms industries worldwide.", citations)),
+        )
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+        ctx = _make_ctx()
+        result = await ask(ctx, question="What is AI?")
+        assert isinstance(result, str)
+        assert "AI transforms industries" in result
+
+    async def test_ask_updates_state(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        citations = [
+            Citation(
+                document_id="d1",
+                chunk_id="c1",
+                document_uri="test://ai-overview",
+                content="AI content",
+            )
+        ]
+        monkeypatch.setattr(
+            HaikuRAG,
+            "ask",
+            AsyncMock(return_value=("AI transforms industries.", citations)),
+        )
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await ask(ctx, question="What is AI?")
+        assert len(state.citations) == 1
+        assert len(state.qa_history) == 1
+        assert isinstance(state.qa_history[0], QAHistoryEntry)
+        assert state.qa_history[0].question == "What is AI?"
+        assert state.qa_history[0].citations == citations
+
+
+class TestAnalyzeTool:
+    async def test_analyze_returns_result(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import create_skill
+
+        monkeypatch.setattr(
+            HaikuRAG,
+            "rlm",
+            AsyncMock(return_value=RLMResult(answer="42", program="print(42)")),
+        )
+
+        skill = create_skill(db_path=rag_db)
+        analyze = _get_tool(skill, "analyze")
+        ctx = _make_ctx()
+        result = await analyze(ctx, question="How many documents?")
+        assert isinstance(result, str)
+        assert "42" in result
+
+    async def test_analyze_updates_state(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        monkeypatch.setattr(
+            HaikuRAG,
+            "rlm",
+            AsyncMock(return_value=RLMResult(answer="42", program="print(42)")),
+        )
+
+        skill = create_skill(db_path=rag_db)
+        analyze = _get_tool(skill, "analyze")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await analyze(ctx, question="How many documents?")
+        assert len(state.qa_history) == 1
+        assert state.qa_history[0].question == "How many documents?"
+
+
+class TestGetSessionContextTool:
+    async def test_no_prior_questions(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        get_ctx = _get_tool(skill, "get_session_context")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        result = await get_ctx(ctx, query="What is AI?")
+        assert "no prior" in result.lower()
+
+    async def test_returns_relevant_prior_qa(self, rag_db):
+        import random
+
+        from haiku.rag.skills.rag import RAGState, create_skill
+        from tests.skills.conftest import VECTOR_DIM
+
+        skill = create_skill(db_path=rag_db)
+        get_ctx = _get_tool(skill, "get_session_context")
+        # Pre-compute the embedding that the fake embedder will produce
+        # for the query, so we can set it on the prior entry for high similarity
+        query_text = "Tell me about artificial intelligence"
+        random.seed(hash(query_text) % (2**32))
+        query_embedding = [random.random() for _ in range(VECTOR_DIM)]
+        state = RAGState(
+            qa_history=[
+                QAHistoryEntry(
+                    question="What is artificial intelligence?",
+                    answer="AI is the simulation of human intelligence by machines.",
+                    question_embedding=query_embedding,
+                ),
+            ]
+        )
+        ctx = _make_ctx(state)
+        result = await get_ctx(ctx, query=query_text)
+        assert "artificial intelligence" in result.lower()
+        assert "simulation" in result.lower()
+
+    async def test_no_relevant_matches(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+        from tests.skills.conftest import VECTOR_DIM
+
+        skill = create_skill(db_path=rag_db)
+        get_ctx = _get_tool(skill, "get_session_context")
+        # Use alternating ±1 embedding which is near-orthogonal to the
+        # all-positive vectors produced by the fake embedder
+        orthogonal = [1.0 if i % 2 == 0 else -1.0 for i in range(VECTOR_DIM)]
+        state = RAGState(
+            qa_history=[
+                QAHistoryEntry(
+                    question="What is the weather?",
+                    answer="It is sunny today.",
+                    question_embedding=orthogonal,
+                ),
+            ]
+        )
+        ctx = _make_ctx(state)
+        result = await get_ctx(ctx, query="Explain quantum computing")
+        assert "no relevant" in result.lower()
+
+    async def test_without_state(self, rag_db):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        get_ctx = _get_tool(skill, "get_session_context")
+        ctx = _make_ctx(state=None)
+        result = await get_ctx(ctx, query="What is AI?")
+        assert "no prior" in result.lower()
+
+
+class TestResearchTool:
+    async def test_research_returns_report(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import create_skill
+
+        report = ResearchReport(
+            title="AI Research",
+            executive_summary="AI is transforming industries.",
+            main_findings=["Finding 1"],
+            conclusions=["Conclusion 1"],
+            sources_summary="Multiple sources consulted.",
+        )
+        monkeypatch.setattr(HaikuRAG, "research", AsyncMock(return_value=report))
+
+        skill = create_skill(db_path=rag_db)
+        research = _get_tool(skill, "research")
+        ctx = _make_ctx()
+        result = await research(ctx, question="What is AI?")
+        assert isinstance(result, str)
+        assert "AI Research" in result
+
+    async def test_research_updates_state(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        report = ResearchReport(
+            title="AI Research",
+            executive_summary="AI is transforming industries.",
+            main_findings=["Finding 1"],
+            conclusions=["Conclusion 1"],
+            sources_summary="Multiple sources consulted.",
+        )
+        monkeypatch.setattr(HaikuRAG, "research", AsyncMock(return_value=report))
+
+        skill = create_skill(db_path=rag_db)
+        research = _get_tool(skill, "research")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        await research(ctx, question="What is AI?")
+        assert len(state.reports) == 1
+        assert state.reports[0].question == "What is AI?"
+        assert len(state.qa_history) == 1
+        assert state.qa_history[0].question == "What is AI?"
+        assert state.qa_history[0].answer == "AI is transforming industries."
+
+    async def test_research_without_state(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import create_skill
+
+        report = ResearchReport(
+            title="AI Research",
+            executive_summary="Summary.",
+            main_findings=["Finding"],
+            conclusions=["Conclusion"],
+            sources_summary="Sources.",
+        )
+        monkeypatch.setattr(HaikuRAG, "research", AsyncMock(return_value=report))
+
+        skill = create_skill(db_path=rag_db)
+        research = _get_tool(skill, "research")
+        ctx = _make_ctx(state=None)
+        result = await research(ctx, question="What is AI?")
+        assert isinstance(result, str)

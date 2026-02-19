@@ -24,6 +24,7 @@ Document content:
 class DocumentInfo(BaseModel):
     """Document info for list_documents response."""
 
+    id: str | None = None
     title: str
     uri: str
     created: str
@@ -107,6 +108,7 @@ def create_document_toolset(
         return DocumentListResponse(
             documents=[
                 DocumentInfo(
+                    id=doc.id,
                     title=doc.title or "Untitled",
                     uri=doc.uri or "",
                     created=doc.created_at.strftime("%Y-%m-%d"),

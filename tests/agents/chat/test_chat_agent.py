@@ -999,41 +999,41 @@ def test_search_tool_citation_registry_logic():
 # =============================================================================
 
 
-def test_cosine_similarity_identical_vectors():
+def testcosine_similarity_identical_vectors():
     """Test cosine similarity returns 1.0 for identical vectors."""
-    from haiku.rag.tools.qa import _cosine_similarity
+    from haiku.rag.utils import cosine_similarity
 
     vec = [1.0, 2.0, 3.0]
-    assert _cosine_similarity(vec, vec) == pytest.approx(1.0)
+    assert cosine_similarity(vec, vec) == pytest.approx(1.0)
 
 
-def test_cosine_similarity_orthogonal_vectors():
+def testcosine_similarity_orthogonal_vectors():
     """Test cosine similarity returns 0.0 for orthogonal vectors."""
-    from haiku.rag.tools.qa import _cosine_similarity
+    from haiku.rag.utils import cosine_similarity
 
     vec1 = [1.0, 0.0, 0.0]
     vec2 = [0.0, 1.0, 0.0]
-    assert _cosine_similarity(vec1, vec2) == pytest.approx(0.0)
+    assert cosine_similarity(vec1, vec2) == pytest.approx(0.0)
 
 
-def test_cosine_similarity_opposite_vectors():
+def testcosine_similarity_opposite_vectors():
     """Test cosine similarity returns -1.0 for opposite vectors."""
-    from haiku.rag.tools.qa import _cosine_similarity
+    from haiku.rag.utils import cosine_similarity
 
     vec1 = [1.0, 2.0, 3.0]
     vec2 = [-1.0, -2.0, -3.0]
-    assert _cosine_similarity(vec1, vec2) == pytest.approx(-1.0)
+    assert cosine_similarity(vec1, vec2) == pytest.approx(-1.0)
 
 
-def test_cosine_similarity_zero_vector():
+def testcosine_similarity_zero_vector():
     """Test cosine similarity handles zero vectors gracefully."""
-    from haiku.rag.tools.qa import _cosine_similarity
+    from haiku.rag.utils import cosine_similarity
 
     vec = [1.0, 2.0, 3.0]
     zero = [0.0, 0.0, 0.0]
-    assert _cosine_similarity(vec, zero) == 0.0
-    assert _cosine_similarity(zero, vec) == 0.0
-    assert _cosine_similarity(zero, zero) == 0.0
+    assert cosine_similarity(vec, zero) == 0.0
+    assert cosine_similarity(zero, vec) == 0.0
+    assert cosine_similarity(zero, zero) == 0.0
 
 
 def test_prior_answer_relevance_threshold_constant():
@@ -1047,14 +1047,14 @@ def test_prior_answer_matching_above_threshold():
     """Test that similar questions (above threshold) are matched."""
     from haiku.rag.tools.qa import (
         PRIOR_ANSWER_RELEVANCE_THRESHOLD,
-        _cosine_similarity,
+        cosine_similarity,
     )
 
     # Simulate two nearly identical question embeddings
     question_embedding = [0.5, 0.5, 0.5, 0.5]
     prior_embedding = [0.51, 0.49, 0.5, 0.5]  # Very similar
 
-    similarity = _cosine_similarity(question_embedding, prior_embedding)
+    similarity = cosine_similarity(question_embedding, prior_embedding)
     assert similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD
 
 
@@ -1062,14 +1062,14 @@ def test_prior_answer_matching_below_threshold():
     """Test that dissimilar questions (below threshold) are not matched."""
     from haiku.rag.tools.qa import (
         PRIOR_ANSWER_RELEVANCE_THRESHOLD,
-        _cosine_similarity,
+        cosine_similarity,
     )
 
     # Simulate two different question embeddings
     question_embedding = [1.0, 0.0, 0.0, 0.0]
     prior_embedding = [0.0, 1.0, 0.0, 0.0]  # Orthogonal = very different
 
-    similarity = _cosine_similarity(question_embedding, prior_embedding)
+    similarity = cosine_similarity(question_embedding, prior_embedding)
     assert similarity < PRIOR_ANSWER_RELEVANCE_THRESHOLD
 
 
