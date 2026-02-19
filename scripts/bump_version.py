@@ -70,7 +70,7 @@ def update_changelog(changelog_path: Path, new_version: str) -> None:
     # Update comparison links
     # Find the old [Unreleased] link
     old_unreleased_match = re.search(
-        r"\[Unreleased\]: https://github\.com/ggozad/haiku\.rag/compare/([^.]+)\.\.\.HEAD",
+        r"\[Unreleased\]: https://github\.com/ggozad/haiku\.rag/compare/(.+?)\.\.\.HEAD",
         updated,
     )
 
@@ -79,7 +79,7 @@ def update_changelog(changelog_path: Path, new_version: str) -> None:
 
         # Update [Unreleased] link
         updated = re.sub(
-            r"\[Unreleased\]: https://github\.com/ggozad/haiku\.rag/compare/[^.]+\.\.\.HEAD",
+            r"\[Unreleased\]: https://github\.com/ggozad/haiku\.rag/compare/.+?\.\.\.HEAD",
             f"[Unreleased]: https://github.com/ggozad/haiku.rag/compare/{new_version}...HEAD",
             updated,
         )
