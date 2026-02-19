@@ -1,3 +1,4 @@
+from pydantic import BaseModel, Field
 from pydantic_ai import FunctionToolset, RunContext
 
 from haiku.rag.agents.rlm.agent import create_rlm_agent
@@ -8,9 +9,17 @@ from haiku.rag.tools.context import RAGDeps
 from haiku.rag.tools.filters import (
     build_document_filter,
     combine_filters,
-    get_session_filter,
 )
-from haiku.rag.tools.models import AnalysisResult
+
+
+class AnalysisResult(BaseModel):
+    """Result from the analysis toolset (RLM execution)."""
+
+    answer: str = Field(description="The answer produced by analysis")
+    code_executed: bool = Field(
+        default=True,
+        description="Whether code was executed to produce this answer",
+    )
 
 
 def create_analysis_toolset(
@@ -47,12 +56,9 @@ def create_analysis_toolset(
             AnalysisResult with answer and execution metadata.
         """
         client = ctx.deps.client
-        tool_context = ctx.deps.tool_context
 
         doc_filter = build_document_filter(document_name) if document_name else None
-        effective_filter = combine_filters(
-            get_session_filter(tool_context, base_filter), doc_filter
-        )
+        effective_filter = combine_filters(base_filter, doc_filter)
 
         rlm_context = RLMContext(filter=effective_filter)
 

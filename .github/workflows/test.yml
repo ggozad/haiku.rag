@@ -68,6 +68,8 @@ jobs:
         run: uv run python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-0.6B')"
       - name: Run tests with coverage
         run: uv run pytest -m "not integration" --cov=haiku --cov-report=xml
+        env:
+          HF_HUB_OFFLINE: "1"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
