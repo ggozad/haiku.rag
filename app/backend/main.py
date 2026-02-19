@@ -3,8 +3,9 @@ import os
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
+from pydantic_ai import Agent
+from pydantic_ai.ag_ui import AGUIAdapter
 from pydantic_ai.ui import SSE_CONTENT_TYPE
-from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -12,21 +13,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from haiku.rag.agents.chat import (
-    AGUI_STATE_KEY,
-    ChatDeps,
-    build_chat_toolkit,
-    create_chat_agent,
-)
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.tools.context import ToolContextCache
+from haiku.rag.skills.rag import create_skill
+from haiku.skills.agent import SkillToolset
 
 load_dotenv(find_dotenv(usecwd=True))
-
-# Cache ToolContext instances by thread_id across requests
-context_cache = ToolContextCache()
 
 # Configure logfire (only sends data if LOGFIRE_TOKEN is present)
 try:
@@ -69,34 +62,24 @@ def get_client() -> HaikuRAG:
     return _client
 
 
-# Toolkit and agent are created once at module level
-chat_toolkit = build_chat_toolkit(Config)
-agent = create_chat_agent(Config, toolkit=chat_toolkit)
+# Create skill, toolset, and agent
+skill = create_skill(db_path=db_path, config=Config)
+toolset = SkillToolset(skills=[skill])
+agent = Agent(
+    os.getenv("HAIKU_CHAT_MODEL", "openai:gpt-4o"),
+    instructions=toolset.system_prompt,
+    toolsets=[toolset],
+)
 
 
 async def stream_chat(request: Request) -> Response:
-    """Chat streaming endpoint with AG-UI protocol.
-
-    Uses ToolContextCache to maintain state across requests for the same thread.
-    AGUIAdapter restores client-sent state via ChatDeps.state setter.
-    """
+    """Chat streaming endpoint with AG-UI protocol."""
     body = await request.body()
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    thread_id = getattr(run_input, "thread_id", None) or "default"
-    context, is_new = context_cache.get_or_create(thread_id)
-    if is_new:
-        chat_toolkit.prepare(context, state_key=AGUI_STATE_KEY)
-
-    deps = ChatDeps(
-        config=Config,
-        client=get_client(),
-        tool_context=context,
-    )
-
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
-    event_stream = adapter.run_stream(deps=deps)
+    event_stream = adapter.run_stream()
     sse_event_stream = adapter.encode_stream(event_stream)
 
     return StreamingResponse(

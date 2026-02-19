@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
@@ -32,52 +32,48 @@ class ChatMessage(Static):
 
 
 class ToolCallWidget(Static):
-    """Styled inline display of a tool call."""
+    """Displays a single tool call with status indicator."""
 
-    TOOL_LABELS = {
-        "search": "Searching",
-        "ask": "Asking",
-        "get_document": "Fetching",
-    }
-
-    def __init__(self, tool_name: str, args: dict | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        tool_call_id: str,
+        tool_name: str,
+        args: dict[str, Any] | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
+        self.tool_call_id = tool_call_id
         self.tool_name = tool_name
         self.args = args or {}
-        self._complete = False
+        self._completed = False
 
     def compose(self) -> "ComposeResult":
-        label = self.TOOL_LABELS.get(self.tool_name, self.tool_name)
-
-        # Build description based on tool type
-        if self.tool_name == "search":
-            query = self.args.get("query", "...")
-            doc = self.args.get("document_name")
-            desc = f'"{query}"'
-            if doc:
-                desc += f" in {doc}"
-        elif self.tool_name == "ask":
-            question = self.args.get("question", "...")
-            doc = self.args.get("document_name")
-            desc = f'"{question}"'
-            if doc:
-                desc += f" from {doc}"
-        elif self.tool_name == "get_document":
-            query = self.args.get("query", "...")
-            desc = f'"{query}"'
-        else:
-            desc = str(self.args) if self.args else ""
-
         with Horizontal(classes="tool-row"):
-            if self._complete:
+            if self._completed:
                 yield Static("✓", classes="tool-status")
             else:
                 yield LoadingIndicator(classes="tool-spinner")
-            yield Static(label, classes="tool-badge")
-            yield Static(desc, classes="tool-desc")
+            yield Static(self.tool_name, classes="tool-badge")
+            desc = self._build_description()
+            if desc:
+                yield Static(desc, classes="tool-desc")
 
-    def mark_complete(self) -> None:
-        self._complete = True
+    def _build_description(self) -> str:
+        if self.tool_name == "search":
+            query = self.args.get("query", "...")
+            return f'"{query}"'
+        elif self.tool_name == "ask":
+            question = self.args.get("question", "...")
+            return f'"{question}"'
+        elif self.tool_name == "get_document":
+            query = self.args.get("query", "...")
+            return f'"{query}"'
+        elif self.args:
+            return str(self.args)
+        return ""
+
+    def mark_completed(self) -> None:
+        self._completed = True
         self.refresh(recompose=True)
 
 
@@ -102,7 +98,6 @@ class CitationWidget(Collapsible):
                 pages += "..."
             title += f" (p.{pages})"
 
-        # Build content widgets
         content = citation.content
         if len(content) > 500:
             content = content[:500] + "..."
@@ -132,10 +127,22 @@ class CitationWidget(Collapsible):
 class ThinkingWidget(Static):
     """Thinking indicator shown while agent is processing."""
 
+    def __init__(self, text: str = "Thinking...", **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._text = text
+
     def compose(self) -> "ComposeResult":
         with Horizontal(classes="thinking-row"):
             yield LoadingIndicator(classes="thinking-spinner")
-            yield Static("Thinking...", classes="thinking-text")
+            yield Static(self._text, classes="thinking-text", id="thinking-label")
+
+    def update_text(self, text: str) -> None:
+        self._text = text
+        try:
+            label = self.query_one("#thinking-label", Static)
+            label.update(text)
+        except Exception:
+            pass
 
 
 class SourcesHeader(Static):
@@ -303,6 +310,7 @@ class ChatHistory(VerticalScroll):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.messages: list[tuple[str, str]] = []
+        self._tool_widgets: dict[str, ToolCallWidget] = {}
 
     async def add_message(self, role: str, content: str = "") -> ChatMessage:
         """Add a message to the chat history."""
@@ -313,18 +321,24 @@ class ChatHistory(VerticalScroll):
         return message_widget
 
     async def add_tool_call(
-        self, tool_name: str, args: dict | None = None
+        self,
+        tool_call_id: str,
+        tool_name: str,
+        args: dict[str, Any] | None = None,
     ) -> ToolCallWidget:
         """Add an inline tool call indicator."""
-        widget = ToolCallWidget(tool_name, args)
+        widget = ToolCallWidget(tool_call_id, tool_name, args)
+        self._tool_widgets[tool_call_id] = widget
         await self.mount(widget)
         self.scroll_end(animate=False)
         return widget
 
-    def mark_tool_complete(self, widget: ToolCallWidget) -> None:
-        """Mark a tool call as complete."""
-        widget.mark_complete()
-        widget.add_class("complete")
+    def mark_tool_complete(self, tool_call_id: str) -> None:
+        """Mark a tool call as complete by its ID."""
+        widget = self._tool_widgets.get(tool_call_id)
+        if widget:
+            widget.mark_completed()
+            widget.add_class("complete")
 
     async def add_citations(self, citations: list[Citation]) -> None:
         """Add citations inline after a response."""
@@ -336,9 +350,12 @@ class ChatHistory(VerticalScroll):
             await self.mount(widget)
         self.scroll_end(animate=False)
 
-    async def show_thinking(self) -> None:
+    async def show_thinking(self, text: str = "Thinking...") -> None:
         """Show the thinking indicator."""
-        await self.mount(ThinkingWidget(id="thinking"))
+        try:
+            self.query_one("#thinking", ThinkingWidget).update_text(text)
+        except Exception:
+            await self.mount(ThinkingWidget(text, id="thinking"))
         self.scroll_end(animate=False)
 
     def hide_thinking(self) -> None:
@@ -351,4 +368,5 @@ class ChatHistory(VerticalScroll):
     async def clear_messages(self) -> None:
         """Clear all messages from the chat history."""
         self.messages.clear()
+        self._tool_widgets.clear()
         await self.remove_children()

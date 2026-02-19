@@ -620,10 +620,10 @@ def chat(  # pragma: no cover
         "--db",
         help="Path to the LanceDB database file",
     ),
-    initial_context: str | None = typer.Option(
+    model: str | None = typer.Option(
         None,
-        "--initial-context",
-        help="Initial background context to provide to the conversation",
+        "--model",
+        help="Model to use for the chat agent (e.g. openai:gpt-4o)",
     ),
 ):
     """Launch the chat TUI for conversational RAG."""
@@ -635,7 +635,7 @@ def chat(  # pragma: no cover
         db_path,
         read_only=_read_only,
         before=_before,
-        initial_context=initial_context,
+        model=model,
     )
 
 
