@@ -1846,35 +1846,41 @@ class HaikuRAG:
 
         base_url = self._config.providers.ollama.base_url
 
-        async with httpx.AsyncClient(timeout=None) as client:
-            for model in sorted(required_models):
-                yield DownloadProgress(model=model, status="pulling")
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                for model in sorted(required_models):
+                    yield DownloadProgress(model=model, status="pulling")
 
-                async with client.stream(
-                    "POST", f"{base_url}/api/pull", json={"model": model}
-                ) as r:
-                    async for line in r.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                            status = data.get("status", "")
-                            digest = data.get("digest", "")
+                    async with client.stream(
+                        "POST", f"{base_url}/api/pull", json={"model": model}
+                    ) as r:
+                        async for line in r.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                data = json.loads(line)
+                                status = data.get("status", "")
+                                digest = data.get("digest", "")
 
-                            if digest and "total" in data:
-                                yield DownloadProgress(
-                                    model=model,
-                                    status="downloading",
-                                    total=data.get("total", 0),
-                                    completed=data.get("completed", 0),
-                                    digest=digest,
-                                )
-                            elif status:
-                                yield DownloadProgress(model=model, status=status)
-                        except json.JSONDecodeError:
-                            pass
+                                if digest and "total" in data:
+                                    yield DownloadProgress(
+                                        model=model,
+                                        status="downloading",
+                                        total=data.get("total", 0),
+                                        completed=data.get("completed", 0),
+                                        digest=digest,
+                                    )
+                                elif status:
+                                    yield DownloadProgress(model=model, status=status)
+                            except json.JSONDecodeError:
+                                pass
 
-                yield DownloadProgress(model=model, status="done")
+                    yield DownloadProgress(model=model, status="done")
+        except httpx.ConnectError:
+            raise ConnectionError(
+                f"Cannot connect to Ollama at {base_url}. "
+                "Is Ollama running? Start it with 'ollama serve'."
+            )
 
     def close(self):
         """Close the underlying store connection."""

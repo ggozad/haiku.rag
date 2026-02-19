@@ -4,6 +4,7 @@
 ### Fixed
 
 - Added `cachetools` as an explicit dependency (was only available transitively, causing `ModuleNotFoundError` for some installations)
+- **download-models**: Show actionable error message when Ollama is not running instead of cryptic "All connection attempts failed" (#277)
 
 ## [0.30.1] - 2026-02-17
 
