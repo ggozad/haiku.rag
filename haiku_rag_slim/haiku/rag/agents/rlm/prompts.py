@@ -44,7 +44,7 @@ Check if it exists with: `if 'documents' in dir(): ...`
 
 ## Available Python Features
 
-The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
 
 Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
 
