@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.31.0] - 2026-02-20
+
 ### Added
 
 - **RAG skill** (`haiku.rag.skills.rag`): haiku.skills integration with search, list_documents, get_document, ask, and research tools plus managed `RAGState`
@@ -1122,7 +1124,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.30.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.31.0...HEAD
+[0.31.0]: https://github.com/ggozad/haiku.rag/compare/0.30.2...0.31.0
 [0.30.2]: https://github.com/ggozad/haiku.rag/compare/0.30.1...0.30.2
 [0.30.1]: https://github.com/ggozad/haiku.rag/compare/0.30.0...0.30.1
 [0.30.0]: https://github.com/ggozad/haiku.rag/compare/0.29.1...0.30.0
