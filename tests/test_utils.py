@@ -579,6 +579,14 @@ def test_build_prompt_with_preamble():
 # --- is_up_to_date tests ---
 
 
+def test_cosine_similarity_zero_norm():
+    from haiku.rag.utils import cosine_similarity
+
+    assert cosine_similarity([0, 0, 0], [1, 2, 3]) == 0.0
+    assert cosine_similarity([1, 2, 3], [0, 0, 0]) == 0.0
+    assert cosine_similarity([0, 0], [0, 0]) == 0.0
+
+
 @pytest.mark.asyncio
 async def test_is_up_to_date(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock

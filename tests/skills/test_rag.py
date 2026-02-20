@@ -337,6 +337,48 @@ class TestAskTool:
         # State should store the original question, not the augmented one
         assert state.qa_history[-1].question == query_text
 
+    async def test_ask_embeds_prior_qa_on_demand(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+        from tests.skills.conftest import VECTOR_DIM
+
+        captured_questions = []
+
+        async def mock_ask(self, question, **kwargs):
+            captured_questions.append(question)
+            return ("Answer about AI.", [])
+
+        monkeypatch.setattr(HaikuRAG, "ask", mock_ask)
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+
+        # Use the same question text for the prior QA entry and query so
+        # their fake embeddings are identical (cosine similarity = 1.0).
+        prior_question = "Tell me about AI"
+        query_text = prior_question
+
+        # Leave question_embedding=None to exercise the lazy embedding path
+        state = RAGState(
+            qa_history=[
+                QAHistoryEntry(
+                    question=prior_question,
+                    answer="AI is the simulation of human intelligence by machines.",
+                    question_embedding=None,
+                ),
+            ]
+        )
+        ctx = _make_ctx(state)
+        await ask(ctx, question=query_text)
+
+        # The lazy embedding should have populated question_embedding
+        assert state.qa_history[0].question_embedding is not None
+        assert len(state.qa_history[0].question_embedding) == VECTOR_DIM
+
+        # The augmented question should include prior context
+        assert len(captured_questions) == 1
+        assert "Context from prior questions" in captured_questions[0]
+        assert prior_question in captured_questions[0]
+
     async def test_ask_no_prior_qa_context_when_irrelevant(self, rag_db, monkeypatch):
         from haiku.rag.skills.rag import RAGState, create_skill
         from tests.skills.conftest import VECTOR_DIM

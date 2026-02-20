@@ -21,6 +21,15 @@ def test_chat_command():
         mock_chat.assert_called_once()
 
 
+def test_run_chat_creates_app_and_runs(temp_db_path: Path):
+    """Test run_chat() creates a ChatApp and calls run()."""
+    with patch("haiku.rag.chat.app.ChatApp.run") as mock_run:
+        from haiku.rag.chat import run_chat
+
+        run_chat(db_path=temp_db_path)
+        mock_run.assert_called_once()
+
+
 def _make_mock_client():
     """Create a mock HaikuRAG client."""
     mock_client = AsyncMock()
