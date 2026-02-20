@@ -56,6 +56,40 @@ def create_skill(
     path = Path(__file__).parent / "rag"
     metadata, instructions = parse_skill_md(path / "SKILL.md")
 
+    async def _find_relevant_prior_qa(
+        state: RAGState, query: str
+    ) -> list[QAHistoryEntry]:
+        from haiku.rag.embeddings import get_embedder
+        from haiku.rag.tools.qa import PRIOR_ANSWER_RELEVANCE_THRESHOLD
+        from haiku.rag.utils import cosine_similarity
+
+        if not state.qa_history:
+            return []
+
+        embedder = get_embedder(config)
+        query_embedding = await embedder.embed_query(query)
+
+        to_embed = []
+        to_embed_indices = []
+        for i, qa in enumerate(state.qa_history):
+            if qa.question_embedding is None:
+                to_embed.append(qa.question)
+                to_embed_indices.append(i)
+
+        if to_embed:
+            new_embeddings = await embedder.embed_documents(to_embed)
+            for i, idx in enumerate(to_embed_indices):
+                state.qa_history[idx].question_embedding = new_embeddings[i]
+
+        matches = []
+        for qa in state.qa_history:
+            if qa.question_embedding is not None:
+                similarity = cosine_similarity(query_embedding, qa.question_embedding)
+                if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
+                    matches.append(qa)
+
+        return matches
+
     async def search(
         ctx: RunContext[SkillRunDeps], query: str, limit: int | None = None
     ) -> str:
@@ -168,8 +202,31 @@ def create_skill(
         from haiku.rag.client import HaikuRAG
         from haiku.rag.utils import format_citations
 
+        state = (
+            ctx.deps.state
+            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
+            else None
+        )
+
+        ask_question = question
+        if state:
+            matches = await _find_relevant_prior_qa(state, question)
+            if matches:
+                prior_parts = []
+                for qa in matches:
+                    part = f"Q: {qa.question}\nA: {qa.answer}"
+                    if qa.citations:
+                        part += "\n" + format_citations(qa.citations)
+                    prior_parts.append(part)
+                ask_question = (
+                    "Context from prior questions in this session:\n\n"
+                    + "\n\n---\n\n".join(prior_parts)
+                    + "\n\n---\n\nCurrent question: "
+                    + question
+                )
+
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            answer, citations = await rag.ask(question)
+            answer, citations = await rag.ask(ask_question)
 
         if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
             next_index = len(ctx.deps.state.citations) + 1
@@ -217,58 +274,6 @@ def create_skill(
             )
 
         return output
-
-    async def get_session_context(ctx: RunContext[SkillRunDeps], query: str) -> str:
-        """Retrieve relevant prior Q&A from the current session.
-
-        Call this before other tools when there may be prior questions
-        in the session that are relevant to the current query.
-
-        Args:
-            query: The current question or topic to find relevant context for.
-        """
-        from haiku.rag.embeddings import get_embedder
-        from haiku.rag.tools.qa import PRIOR_ANSWER_RELEVANCE_THRESHOLD
-        from haiku.rag.utils import cosine_similarity
-
-        state = (
-            ctx.deps.state
-            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
-            else None
-        )
-
-        if state is None or not state.qa_history:
-            return "No prior questions in this session."
-
-        embedder = get_embedder(config)
-        query_embedding = await embedder.embed_query(query)
-
-        to_embed = []
-        to_embed_indices = []
-        for i, qa in enumerate(state.qa_history):
-            if qa.question_embedding is None:
-                to_embed.append(qa.question)
-                to_embed_indices.append(i)
-
-        if to_embed:
-            new_embeddings = await embedder.embed_documents(to_embed)
-            for i, idx in enumerate(to_embed_indices):
-                state.qa_history[idx].question_embedding = new_embeddings[i]
-
-        matches = []
-        for qa in state.qa_history:
-            if qa.question_embedding is not None:
-                similarity = cosine_similarity(query_embedding, qa.question_embedding)
-                if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
-                    matches.append(qa)
-
-        if not matches:
-            return "No relevant prior questions found for this query."
-
-        parts = []
-        for qa in matches:
-            parts.append(f"Q: {qa.question}\nA: {qa.answer}")
-        return "Relevant prior Q&A:\n\n" + "\n\n---\n\n".join(parts)
 
     async def research(ctx: RunContext[SkillRunDeps], question: str) -> str:
         """Conduct deep multi-agent research on a question.
@@ -333,7 +338,6 @@ def create_skill(
             ask,
             analyze,
             research,
-            get_session_context,
         ],
         state_type=RAGState,
         state_namespace="rag",

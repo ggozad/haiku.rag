@@ -31,7 +31,6 @@ class TestRAGSkillCreation:
             "ask",
             "analyze",
             "research",
-            "get_session_context",
         }
 
     def test_create_skill_has_state(self, temp_db_path):
@@ -253,6 +252,95 @@ class TestAskTool:
         await ask(ctx, question="Second question")
         assert state.citations[2].index == 3
 
+    async def test_ask_includes_prior_qa_context(self, rag_db, monkeypatch):
+        import random
+
+        from haiku.rag.skills.rag import RAGState, create_skill
+        from tests.skills.conftest import VECTOR_DIM
+
+        captured_questions = []
+
+        async def mock_ask(self, question, **kwargs):
+            captured_questions.append(question)
+            return ("Answer about AI.", [])
+
+        monkeypatch.setattr(HaikuRAG, "ask", mock_ask)
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+
+        # Pre-compute the embedding the fake embedder will produce for "Tell me about AI"
+        query_text = "Tell me about AI"
+        random.seed(hash(query_text) % (2**32))
+        query_embedding = [random.random() for _ in range(VECTOR_DIM)]
+
+        prior_citations = [
+            Citation(
+                document_id="d1",
+                chunk_id="c1",
+                document_uri="test://ai-overview",
+                document_title="AI Overview",
+                content="AI content from source.",
+            )
+        ]
+        state = RAGState(
+            qa_history=[
+                QAHistoryEntry(
+                    question="What is artificial intelligence?",
+                    answer="AI is the simulation of human intelligence by machines.",
+                    question_embedding=query_embedding,
+                    citations=prior_citations,
+                ),
+            ]
+        )
+        ctx = _make_ctx(state)
+        await ask(ctx, question=query_text)
+
+        # rag.ask() should receive augmented question with prior context
+        assert len(captured_questions) == 1
+        augmented = captured_questions[0]
+        assert "Context from prior questions" in augmented
+        assert "What is artificial intelligence?" in augmented
+        assert "AI is the simulation" in augmented
+        assert "AI Overview" in augmented
+        assert query_text in augmented
+
+        # State should store the original question, not the augmented one
+        assert state.qa_history[-1].question == query_text
+
+    async def test_ask_no_prior_qa_context_when_irrelevant(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+        from tests.skills.conftest import VECTOR_DIM
+
+        captured_questions = []
+
+        async def mock_ask(self, question, **kwargs):
+            captured_questions.append(question)
+            return ("Answer.", [])
+
+        monkeypatch.setattr(HaikuRAG, "ask", mock_ask)
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+
+        # Use orthogonal embedding — won't match the fake embedder's output
+        orthogonal = [1.0 if i % 2 == 0 else -1.0 for i in range(VECTOR_DIM)]
+        state = RAGState(
+            qa_history=[
+                QAHistoryEntry(
+                    question="What is the weather?",
+                    answer="It is sunny today.",
+                    question_embedding=orthogonal,
+                ),
+            ]
+        )
+        ctx = _make_ctx(state)
+        await ask(ctx, question="Explain quantum computing")
+
+        # rag.ask() should receive the original question unchanged
+        assert len(captured_questions) == 1
+        assert captured_questions[0] == "Explain quantum computing"
+
 
 class TestAnalyzeTool:
     async def test_analyze_returns_result(self, rag_db, monkeypatch):
@@ -287,76 +375,6 @@ class TestAnalyzeTool:
         await analyze(ctx, question="How many documents?")
         assert len(state.qa_history) == 1
         assert state.qa_history[0].question == "How many documents?"
-
-
-class TestGetSessionContextTool:
-    async def test_no_prior_questions(self, rag_db):
-        from haiku.rag.skills.rag import RAGState, create_skill
-
-        skill = create_skill(db_path=rag_db)
-        get_ctx = _get_tool(skill, "get_session_context")
-        state = RAGState()
-        ctx = _make_ctx(state)
-        result = await get_ctx(ctx, query="What is AI?")
-        assert "no prior" in result.lower()
-
-    async def test_returns_relevant_prior_qa(self, rag_db):
-        import random
-
-        from haiku.rag.skills.rag import RAGState, create_skill
-        from tests.skills.conftest import VECTOR_DIM
-
-        skill = create_skill(db_path=rag_db)
-        get_ctx = _get_tool(skill, "get_session_context")
-        # Pre-compute the embedding that the fake embedder will produce
-        # for the query, so we can set it on the prior entry for high similarity
-        query_text = "Tell me about artificial intelligence"
-        random.seed(hash(query_text) % (2**32))
-        query_embedding = [random.random() for _ in range(VECTOR_DIM)]
-        state = RAGState(
-            qa_history=[
-                QAHistoryEntry(
-                    question="What is artificial intelligence?",
-                    answer="AI is the simulation of human intelligence by machines.",
-                    question_embedding=query_embedding,
-                ),
-            ]
-        )
-        ctx = _make_ctx(state)
-        result = await get_ctx(ctx, query=query_text)
-        assert "artificial intelligence" in result.lower()
-        assert "simulation" in result.lower()
-
-    async def test_no_relevant_matches(self, rag_db):
-        from haiku.rag.skills.rag import RAGState, create_skill
-        from tests.skills.conftest import VECTOR_DIM
-
-        skill = create_skill(db_path=rag_db)
-        get_ctx = _get_tool(skill, "get_session_context")
-        # Use alternating ±1 embedding which is near-orthogonal to the
-        # all-positive vectors produced by the fake embedder
-        orthogonal = [1.0 if i % 2 == 0 else -1.0 for i in range(VECTOR_DIM)]
-        state = RAGState(
-            qa_history=[
-                QAHistoryEntry(
-                    question="What is the weather?",
-                    answer="It is sunny today.",
-                    question_embedding=orthogonal,
-                ),
-            ]
-        )
-        ctx = _make_ctx(state)
-        result = await get_ctx(ctx, query="Explain quantum computing")
-        assert "no relevant" in result.lower()
-
-    async def test_without_state(self, rag_db):
-        from haiku.rag.skills.rag import create_skill
-
-        skill = create_skill(db_path=rag_db)
-        get_ctx = _get_tool(skill, "get_session_context")
-        ctx = _make_ctx(state=None)
-        result = await get_ctx(ctx, query="What is AI?")
-        assert "no prior" in result.lower()
 
 
 class TestResearchTool:

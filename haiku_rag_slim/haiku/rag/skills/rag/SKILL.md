@@ -10,7 +10,6 @@ Use your tools to search and answer questions. Never make up information — alw
 
 ## How to decide which tool to use
 
-- **get_session_context** — Call this first when there have been prior questions in the session. It finds relevant prior Q&A so you can avoid redundant searches and give more informed answers.
 - **list_documents** — Use when the user wants to browse or see what documents are available (e.g., "what documents do you have?", "show me the documents", "list available docs").
 - **get_document** — Use when the user wants the full content of a specific document (e.g., "get the paper about X", "show me document Y"). Accepts a document ID, title, or URI — partial matches work.
 - **search** — Use when the user wants to find relevant passages across documents (e.g., "search for embeddings", "find mentions of transformers"). Returns matching chunks with metadata.

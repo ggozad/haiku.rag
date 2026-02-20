@@ -44,7 +44,6 @@ Creates a RAG skill instance.
 | `ask(question)` | Q&A with citations via the QA agent |
 | `analyze(question, document?, filter?)` | Computational analysis via code execution (requires Docker) |
 | `research(question)` | Deep multi-agent research producing comprehensive reports |
-| `get_session_context(query)` | Retrieve relevant prior Q&A from the session |
 
 ### State
 

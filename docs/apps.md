@@ -46,7 +46,7 @@ Press `Ctrl+P` to open the command palette:
 ### Session Management
 
 - Conversation history is maintained in memory for the session
-- Previous Q/A pairs are used as context for follow-up questions via the `get_session_context` tool
+- Previous Q/A pairs are automatically used as context for follow-up questions via the `ask` tool
 - Citations are tracked per response and can be inspected
 - Document filter restricts all searches to selected documents
 - Clearing chat resets session state
