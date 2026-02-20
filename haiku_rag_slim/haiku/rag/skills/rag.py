@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic_ai import RunContext
 
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.tools.qa import QAHistoryEntry
@@ -20,7 +21,7 @@ class ResearchEntry(BaseModel):
 
 
 class RAGState(BaseModel):
-    citations: list[Any] = []
+    citations: list[Citation] = []
     qa_history: list[QAHistoryEntry] = []
     document_filter: str | None = None
     searches: dict[str, list[SearchResult]] = {}
