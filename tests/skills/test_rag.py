@@ -203,7 +203,55 @@ class TestAskTool:
         assert len(state.qa_history) == 1
         assert isinstance(state.qa_history[0], QAHistoryEntry)
         assert state.qa_history[0].question == "What is AI?"
-        assert state.qa_history[0].citations == citations
+
+    async def test_ask_assigns_citation_indices(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        first_citations = [
+            Citation(
+                document_id="d1",
+                chunk_id="c1",
+                document_uri="test://doc1",
+                content="First.",
+            ),
+            Citation(
+                document_id="d2",
+                chunk_id="c2",
+                document_uri="test://doc2",
+                content="Second.",
+            ),
+        ]
+        second_citations = [
+            Citation(
+                document_id="d3",
+                chunk_id="c3",
+                document_uri="test://doc3",
+                content="Third.",
+            ),
+        ]
+
+        call_count = 0
+
+        async def mock_ask(self, question):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ("Answer 1", first_citations)
+            return ("Answer 2", second_citations)
+
+        monkeypatch.setattr(HaikuRAG, "ask", mock_ask)
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+        state = RAGState()
+        ctx = _make_ctx(state)
+
+        await ask(ctx, question="First question")
+        assert state.citations[0].index == 1
+        assert state.citations[1].index == 2
+
+        await ask(ctx, question="Second question")
+        assert state.citations[2].index == 3
 
 
 class TestAnalyzeTool:

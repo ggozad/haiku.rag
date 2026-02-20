@@ -172,6 +172,10 @@ def create_skill(
             answer, citations = await rag.ask(question)
 
         if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
+            next_index = len(ctx.deps.state.citations) + 1
+            for citation in citations:
+                citation.index = next_index
+                next_index += 1
             ctx.deps.state.citations.extend(citations)
             ctx.deps.state.qa_history.append(
                 QAHistoryEntry(question=question, answer=answer, citations=citations)

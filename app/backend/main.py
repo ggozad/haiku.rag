@@ -65,9 +65,20 @@ def get_client() -> HaikuRAG:
 # Create skill, toolset, and agent
 skill = create_skill(db_path=db_path, config=Config)
 toolset = SkillToolset(skills=[skill])
+
+AGENT_PREAMBLE = """You are a helpful research assistant powered by haiku.rag, a knowledge base system.
+
+CRITICAL RULES:
+1. For greetings or casual chat: respond directly WITHOUT using any tools
+2. NEVER make up information - always use tools to get facts from the knowledge base
+3. For questions: Use the "ask" tool - it handles search and citation automatically
+4. For searches: Use the "search" tool - copy the ENTIRE tool response to your output INCLUDING content snippets
+5. When you use the "ask" tool, summarize the key findings and always include citations in your response
+"""
+
 agent = Agent(
     os.getenv("HAIKU_CHAT_MODEL", "openai:gpt-4o"),
-    instructions=toolset.system_prompt,
+    instructions=AGENT_PREAMBLE + toolset.system_prompt,
     toolsets=[toolset],
 )
 
