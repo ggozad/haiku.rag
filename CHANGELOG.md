@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.31.1] - 2026-02-20
+
 ### Fixed
 
 - **`info` and `history` commands**: Open database in read-only mode to prevent write failures on read-only filesystems
@@ -1128,7 +1130,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.31.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.31.1...HEAD
+[0.31.1]: https://github.com/ggozad/haiku.rag/compare/0.31.0...0.31.1
 [0.31.0]: https://github.com/ggozad/haiku.rag/compare/0.30.2...0.31.0
 [0.30.2]: https://github.com/ggozad/haiku.rag/compare/0.30.1...0.30.2
 [0.30.1]: https://github.com/ggozad/haiku.rag/compare/0.30.0...0.30.1
