@@ -15,9 +15,9 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent.parent / "cassettes" / "test_document_tools")
 
 
-def make_ctx(client, context=None):
+def make_ctx(client):
     """Create a lightweight RunContext-like object for direct tool function calls."""
-    return SimpleNamespace(deps=SimpleNamespace(client=client, tool_context=context))
+    return SimpleNamespace(deps=SimpleNamespace(client=client))
 
 
 class TestDocumentModels:

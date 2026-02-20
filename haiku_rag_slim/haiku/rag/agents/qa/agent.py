@@ -11,15 +11,14 @@ from haiku.rag.agents.research.models import (
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
-from haiku.rag.tools.context import ToolContext
-from haiku.rag.tools.search import SEARCH_NAMESPACE, SearchState, create_search_toolset
+from haiku.rag.store.models import SearchResult
+from haiku.rag.tools.search import create_search_toolset
 from haiku.rag.utils import get_model
 
 
 @dataclass
 class _QARunDeps:
     client: HaikuRAG
-    tool_context: ToolContext | None = None
 
 
 class QuestionAnswerAgent:
@@ -47,11 +46,12 @@ class QuestionAnswerAgent:
         Returns:
             Tuple of (answer text, list of resolved citations)
         """
-        context = ToolContext()
+        accumulated_results: list[SearchResult] = []
         search_toolset = create_search_toolset(
             self._config,
             base_filter=filter,
             tool_name="search_documents",
+            on_results=accumulated_results.extend,
         )
 
         # Agent created per-call: toolset varies with filter, and Agent
@@ -66,15 +66,9 @@ class QuestionAnswerAgent:
             retries=3,
         )
 
-        deps = _QARunDeps(client=self._client, tool_context=context)
+        deps = _QARunDeps(client=self._client)
         result = await agent.run(question, deps=deps)
         output = result.output
 
-        # Get search results from context for citation resolution
-        search_state = context.get(SEARCH_NAMESPACE)
-        search_results = (
-            search_state.results if isinstance(search_state, SearchState) else []
-        )
-
-        citations = resolve_citations(output.cited_chunks, search_results)
+        citations = resolve_citations(output.cited_chunks, accumulated_results)
         return output.answer, citations

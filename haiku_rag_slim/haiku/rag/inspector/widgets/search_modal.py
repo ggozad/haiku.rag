@@ -11,7 +11,7 @@ from haiku.rag.inspector.widgets.detail_view import DetailView
 from haiku.rag.store.models import Chunk, SearchResult
 
 
-class SearchModal(Screen):  # pragma: no cover
+class SearchModal(Screen):
     """Screen for searching chunks."""
 
     BINDINGS = [

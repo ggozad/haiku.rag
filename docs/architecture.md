@@ -24,7 +24,7 @@ flowchart TB
 
     subgraph Agents["Agent Layer"]
         QA[QA Agent]
-        Chat[Chat Agent]
+        Skill[RAG Skill]
         Research[Research Graph]
         RLM[RLM Agent]
     end
@@ -98,7 +98,7 @@ flowchart LR
 
 ### Agent Layer
 
-Four agent types for different use cases:
+Three agent types and a RAG skill for different use cases:
 
 ```mermaid
 flowchart TB
@@ -107,12 +107,12 @@ flowchart TB
         S1 --> A1[Answer]
     end
 
-    subgraph Chat["Chat Agent"]
+    subgraph Skill["RAG Skill"]
         Q2[Question] --> Tools[Tool Selection]
-        Tools --> S2[Search / Ask / Get]
+        Tools --> S2[Search / Ask / Analyze]
         S2 --> A2[Answer]
-        A2 --> History[Session History]
-        History -.-> Q2
+        A2 --> State[RAG State]
+        State -.-> Q2
     end
 
     subgraph Research["Research Graph"]
@@ -138,19 +138,18 @@ flowchart TB
 - Expands context around results
 - Generates answer with optional citations
 
-**Chat Agent** - Multi-turn conversational RAG:
+**RAG Skill** - Multi-turn conversational RAG via [haiku.skills](https://github.com/ggozad/haiku.skills):
 
-- Composed from reusable [toolsets](tools.md) (search, documents, QA, analysis)
-- Maintains session history with prior answer recall
-- Background summarization for context continuity
-- Session-level document filtering
+- Bundles search, list_documents, get_document, ask, analyze, and research tools
+- Managed `RAGState` for session state (citations, QA history, document filters)
+- Integrates with any pydantic-ai agent via `SkillToolset`
+- Powers both the Chat TUI and web application
 
 **Research Graph** - Iterative research workflow:
 
 - Proposes one question at a time, evaluates the answer, then decides whether to continue
-- Session context resolves ambiguous references
 - Prior answers let the planner skip redundant searches
-- Synthesizes structured report or conversational answer
+- Synthesizes structured report
 
 **RLM Agent** - Complex analytical tasks via code execution:
 

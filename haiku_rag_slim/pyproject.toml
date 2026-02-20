@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "cachetools>=5.5.0",
     "docling-core==2.65.1",
+    "haiku.skills>=0.4.2",
     "httpx>=0.28.1",
     "jsonpatch>=1.33",
     "lancedb==0.29.2",
@@ -56,6 +57,10 @@ google = ["pydantic-ai-slim[google]"]
 mistral = ["pydantic-ai-slim[mistral]"]
 bedrock = ["pydantic-ai-slim[bedrock]"]
 vertexai = ["pydantic-ai-slim[vertexai]"]
+
+[project.entry-points."haiku.skills"]
+rag = "haiku.rag.skills.rag:create_skill"
+rag-rlm = "haiku.rag.skills.rlm:create_skill"
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"

@@ -1,7 +1,5 @@
 ITERATIVE_PLAN_PROMPT = """You are the research orchestrator planning the investigation.
 
-If a <background> section is provided, use it to understand the conversation context.
-
 Your task:
 1. Analyze the original question
 2. Propose the first question to investigate
@@ -23,7 +21,6 @@ The question must be standalone and self-contained:
 ITERATIVE_PLAN_PROMPT_WITH_CONTEXT = """You are the research orchestrator evaluating gathered evidence.
 
 You have access to context that may include:
-- <background>: Domain context for the conversation
 - <prior_answers>: Previous Q&A pairs with confidence scores
 
 Your task:
@@ -115,21 +112,3 @@ Style:
 - Be professional, objective, and specific.
 - NEVER use meta-commentary like "This report covers..." or "The findings show...".
   Instead, state the actual information directly."""
-
-CONVERSATIONAL_SYNTHESIS_PROMPT = """Generate a direct, conversational answer
-to the question based on the gathered evidence.
-
-Output:
-- answer: Direct, comprehensive answer with a natural, helpful tone.
-  Write the actual answer, not a description of what you found.
-  Use as many sentences as needed to fully address the question.
-- confidence: Score from 0.0 to 1.0 indicating answer quality.
-
-Guidelines:
-- Base your answer solely on the evidence provided in the context.
-- If a <background> section is provided, use it to frame your answer appropriately.
-- Be thorough - include all relevant information from the evidence.
-- Use formatting (bullet points, numbered lists) when it improves clarity.
-- Do NOT use meta-commentary like "Based on the research..." or "The evidence shows..."
-  Instead, directly state the information.
-- If the evidence is incomplete, acknowledge limitations briefly."""

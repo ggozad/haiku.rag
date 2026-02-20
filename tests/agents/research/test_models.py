@@ -25,7 +25,7 @@ class TestCitation:
         assert citation.index is None
 
     def test_citation_with_index(self):
-        """Test Citation can be created with index (chat agent use case)."""
+        """Test Citation can be created with index (chat use case)."""
         citation = Citation(
             index=1,
             document_id="doc-1",

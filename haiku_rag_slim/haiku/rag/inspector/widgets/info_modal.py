@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
 
 
-class InfoModal(ModalScreen):  # pragma: no cover
+class InfoModal(ModalScreen):
     """Modal screen for displaying database information."""
 
     BINDINGS = [

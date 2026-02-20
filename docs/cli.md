@@ -143,20 +143,9 @@ Ask questions with citations showing source documents:
 haiku-rag ask "Who is the author of haiku.rag?" --cite
 ```
 
-Use deep QA for complex questions (multi-agent decomposition):
-```bash
-haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --cite
-```
-
 Filter to specific documents:
 ```bash
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
-```
-
-Provide background context for the question:
-```bash
-haiku-rag ask "What are the protocols?" --context "Focus on security best practices"
-haiku-rag ask "Summarize the findings" --context-file background.txt
 ```
 
 The QA agent searches your documents for relevant information and provides a comprehensive answer. When available, citations use the document title; otherwise they fall back to the URI.
@@ -164,10 +153,7 @@ The QA agent searches your documents for relevant information and provides a com
 Flags:
 
 - `--cite`: Include citations showing which documents were used
-- `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
-- `--context`: Background context for the question (passed to the agent as system context)
-- `--context-file`: Path to a file containing background context
 
 ## Chat
 
@@ -176,11 +162,6 @@ Launch an interactive chat session for multi-turn conversations:
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
-```
-
-Provide initial background context for the conversation:
-```bash
-haiku-rag chat --initial-context "Focus on Python programming concepts"
 ```
 
 !!! note
@@ -192,18 +173,6 @@ The chat interface provides:
 - Expandable citations with source metadata
 - Session memory for context-aware follow-up questions
 - Visual grounding to inspect chunk source locations
-- Initial context that can be edited before the first message
-
-**Initial Context Behavior:**
-
-- Edit initial context via command palette before sending your first message
-- Once you send a message, initial context becomes read-only
-- The agent uses initial context as a starting point for session summarization
-- Clearing chat resets to the CLI-provided context and unlocks editing
-
-Flags:
-
-- `--initial-context`: Initial background context for the conversation (editable until first message)
 
 See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
 
@@ -242,18 +211,9 @@ Filter to specific documents:
 haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
 ```
 
-Provide background context for the research:
-
-```bash
-haiku-rag research "What are the safety protocols?" --context "Industrial manufacturing context"
-haiku-rag research "Analyze the methodology" --context-file research-background.txt
-```
-
 Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
-- `--context`: Background context for the research
-- `--context-file`: Path to a file containing background context
 
 Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 

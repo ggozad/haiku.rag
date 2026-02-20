@@ -8,7 +8,7 @@ from textual.widgets import Button, Checkbox, Input, Static
 from haiku.rag.client import HaikuRAG
 
 
-class DocumentFilterModal(ModalScreen):  # pragma: no cover
+class DocumentFilterModal(ModalScreen):
     """Modal screen for selecting documents to filter searches."""
 
     BINDINGS = [

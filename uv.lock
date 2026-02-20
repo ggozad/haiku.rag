@@ -1449,6 +1449,7 @@ source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "cachetools" },
     { name = "docling-core" },
+    { name = "haiku-skills" },
     { name = "httpx" },
     { name = "jsonpatch" },
     { name = "lancedb" },
@@ -1512,6 +1513,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.73.1" },
     { name = "docling-core", specifier = "==2.65.1" },
+    { name = "haiku-skills", specifier = ">=0.4.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.29.2" },
@@ -1539,6 +1541,21 @@ requires-dist = [
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a7" },
 ]
 provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jina", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+
+[[package]]
+name = "haiku-skills"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-ai-slim", extra = ["mcp"] },
+    { name = "pyyaml" },
+    { name = "skills-ref" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3b/13/96cb8124fd47d9f7b752f835b8c751bc67908a061a53a2ba392509d1fe68/haiku_skills-0.4.2.tar.gz", hash = "sha256:4846e7ebc1c7919faa576badd77723a0d681cf3a92d90f7b97edf3f6eca8ea8d", size = 119892, upload-time = "2026-02-20T11:18:47.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/77/2f94bf41b4b0f0af62431f9c9753db9343a44d1012cadb2e277210b69dae/haiku_skills-0.4.2-py3-none-any.whl", hash = "sha256:08ec15f3a9c894ef33d989850e2b73e78a2a9364056e997bff7cd910a0c4cfe9", size = 21077, upload-time = "2026-02-20T11:18:45.593Z" },
+]
 
 [[package]]
 name = "hf-xet"
@@ -3649,6 +3666,9 @@ groq = [
 logfire = [
     { name = "logfire", extra = ["httpx"] },
 ]
+mcp = [
+    { name = "mcp" },
+]
 mistral = [
     { name = "mistralai" },
 ]
@@ -4706,6 +4726,19 @@ wheels = [
 ]
 
 [[package]]
+name = "skills-ref"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "strictyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/23/42/943d3ba8b097af7068b7178563a5062ad8a977982f4a7b4f67facfc575e9/skills_ref-0.1.1.tar.gz", hash = "sha256:6b400ca6e0049be62dca0167ff943ba2745fd67efb37fbba4d0ee341fccd2695", size = 93519, upload-time = "2026-01-10T13:23:41.423Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/25/36a43c3a61fb6cc3984e6ad5e556929b8ae71c95eba615dae4cf2f427964/skills_ref-0.1.1-py3-none-any.whl", hash = "sha256:d35db5bb8de71ae301daf5ca9cb71f8a555e8c6f83a6d40e46a5bc09f8f461b5", size = 12918, upload-time = "2026-01-10T13:23:40.106Z" },
+]
+
+[[package]]
 name = "sniffio"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -4756,6 +4789,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c4/68/79977123bb7be889ad680d79a40f339082c1978b5cfcf62c2d8d196873ac/starlette-0.52.1.tar.gz", hash = "sha256:834edd1b0a23167694292e94f597773bc3f89f362be6effee198165a35d62933", size = 2653702, upload-time = "2026-01-18T13:34:11.062Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/0d/13d1d239a25cbfb19e740db83143e95c772a1fe10202dda4b76792b114dd/starlette-0.52.1-py3-none-any.whl", hash = "sha256:0029d43eb3d273bc4f83a08720b4912ea4b071087a3b48db01b7c839f7954d74", size = 74272, upload-time = "2026-01-18T13:34:09.188Z" },
+]
+
+[[package]]
+name = "strictyaml"
+version = "1.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b3/08/efd28d49162ce89c2ad61a88bd80e11fb77bc9f6c145402589112d38f8af/strictyaml-1.7.3.tar.gz", hash = "sha256:22f854a5fcab42b5ddba8030a0e4be51ca89af0267961c8d6cfa86395586c407", size = 115206, upload-time = "2023-03-10T12:50:27.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl", hash = "sha256:fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7", size = 123917, upload-time = "2023-03-10T12:50:17.242Z" },
 ]
 
 [[package]]

@@ -68,62 +68,13 @@ def test_iterative_plan_result_model():
     assert continue_result.next_question == "What are the specific requirements?"
 
 
-# =============================================================================
-# Conversational Graph Tests
-# =============================================================================
-
-
-def test_build_research_graph_conversational_mode_returns_graph():
-    """Test build_research_graph with output_mode='conversational' returns a valid Graph instance."""
+def test_build_research_graph_returns_graph():
+    """Test build_research_graph returns a valid Graph instance."""
     from pydantic_graph.beta import Graph
 
-    graph = build_research_graph(output_mode="conversational")
+    graph = build_research_graph()
     assert graph is not None
     assert isinstance(graph, Graph)
-
-
-def test_build_research_graph_report_mode_returns_graph():
-    """Test build_research_graph with output_mode='report' returns a valid Graph instance."""
-    from pydantic_graph.beta import Graph
-
-    graph = build_research_graph(output_mode="report")
-    assert graph is not None
-    assert isinstance(graph, Graph)
-
-
-def test_conversational_answer_model():
-    """Test ConversationalAnswer model can be created with all fields."""
-    from haiku.rag.agents.research.models import Citation, ConversationalAnswer
-
-    citation = Citation(
-        index=1,
-        document_id="doc-1",
-        chunk_id="chunk-1",
-        document_uri="test.md",
-        document_title="Test Doc",
-        content="Test content",
-    )
-
-    answer = ConversationalAnswer(
-        answer="The answer is 42.",
-        citations=[citation],
-        confidence=0.95,
-    )
-
-    assert answer.answer == "The answer is 42."
-    assert len(answer.citations) == 1
-    assert answer.confidence == 0.95
-
-
-def test_conversational_answer_default_values():
-    """Test ConversationalAnswer uses correct default values."""
-    from haiku.rag.agents.research.models import ConversationalAnswer
-
-    answer = ConversationalAnswer(answer="Just the answer.")
-
-    assert answer.answer == "Just the answer."
-    assert answer.citations == []
-    assert answer.confidence == 1.0
 
 
 def test_format_context_for_prompt_basic():
@@ -136,22 +87,6 @@ def test_format_context_for_prompt_basic():
 
     assert "<context>" in result
     assert "What is X?" in result
-
-
-def test_format_context_for_prompt_with_session_context():
-    """Test format_context_for_prompt includes session_context as background."""
-    from haiku.rag.agents.research.dependencies import ResearchContext
-    from haiku.rag.agents.research.graph import format_context_for_prompt
-
-    context = ResearchContext(
-        original_question="What is Y?",
-        session_context="Previous discussion about topic Z.",
-    )
-    result = format_context_for_prompt(context)
-
-    assert "<background>" in result
-    assert "Previous discussion" in result
-    assert "What is Y?" in result
 
 
 def test_format_context_for_prompt_with_prior_answers():

@@ -60,26 +60,8 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--deep` - Use deep QA mode (multi-step reasoning with research graph)
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
-
-### Deep QA Mode
-
-The `--deep` flag enables multi-step reasoning using the research graph instead of the simple QA agent:
-
-```bash
-evaluations run repliqa --skip-db --deep
-```
-
-In deep mode:
-
-- Questions are decomposed into sub-questions by a planning agent
-- Each sub-question is answered by searching the knowledge base
-- A synthesis agent combines findings into a comprehensive answer
-- The graph runs for up to 2 iterations with no early exit (confidence threshold disabled)
-
-This matches the behavior of `haiku-rag ask --deep` in the CLI. Deep mode typically produces more thorough answers but requires more LLM calls per question.
 
 ## Methodology
 

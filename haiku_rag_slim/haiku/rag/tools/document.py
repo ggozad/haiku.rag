@@ -4,7 +4,6 @@ from pydantic_ai import Agent, FunctionToolset, RunContext
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.context import RAGDeps
-from haiku.rag.tools.filters import get_session_filter
 from haiku.rag.utils import get_model
 
 DOCUMENT_SUMMARY_PROMPT = """Generate a summary of the document content provided below.
@@ -24,6 +23,7 @@ Document content:
 class DocumentInfo(BaseModel):
     """Document info for list_documents response."""
 
+    id: str | None = None
     title: str
     uri: str
     created: str
@@ -91,22 +91,20 @@ def create_document_toolset(
             Paginated list of documents with metadata.
         """
         client = ctx.deps.client
-        tool_context = ctx.deps.tool_context
 
         page_size = 50
         offset = (page - 1) * page_size
 
-        effective_filter = get_session_filter(tool_context, base_filter)
-
         docs = await client.list_documents(
-            limit=page_size, offset=offset, filter=effective_filter
+            limit=page_size, offset=offset, filter=base_filter
         )
-        total = await client.count_documents(filter=effective_filter)
+        total = await client.count_documents(filter=base_filter)
         total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
         return DocumentListResponse(
             documents=[
                 DocumentInfo(
+                    id=doc.id,
                     title=doc.title or "Untitled",
                     uri=doc.uri or "",
                     created=doc.created_at.strftime("%Y-%m-%d"),

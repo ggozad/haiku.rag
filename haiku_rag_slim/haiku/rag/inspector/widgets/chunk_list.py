@@ -10,7 +10,7 @@ from haiku.rag.store.models import Chunk
 BATCH_SIZE = 50
 
 
-class ChunkList(VerticalScroll):  # pragma: no cover
+class ChunkList(VerticalScroll):
     """Widget for displaying and browsing chunks."""
 
     can_focus = False

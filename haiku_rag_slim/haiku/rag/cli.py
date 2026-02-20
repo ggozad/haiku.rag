@@ -341,11 +341,6 @@ def ask(  # pragma: no cover
         "--cite",
         help="Include citations in the response",
     ),
-    deep: bool = typer.Option(
-        False,
-        "--deep",
-        help="Use deep multi-agent QA for complex questions",
-    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
@@ -358,7 +353,6 @@ def ask(  # pragma: no cover
         app.ask(
             question=question,
             cite=cite,
-            deep=deep,
             filter=filter,
         )
     )
@@ -626,10 +620,10 @@ def chat(  # pragma: no cover
         "--db",
         help="Path to the LanceDB database file",
     ),
-    initial_context: str | None = typer.Option(
+    model: str | None = typer.Option(
         None,
-        "--initial-context",
-        help="Initial background context to provide to the conversation",
+        "--model",
+        help="Model to use for the chat (e.g. openai:gpt-4o)",
     ),
 ):
     """Launch the chat TUI for conversational RAG."""
@@ -641,7 +635,7 @@ def chat(  # pragma: no cover
         db_path,
         read_only=_read_only,
         before=_before,
-        initial_context=initial_context,
+        model=model,
     )
 
 

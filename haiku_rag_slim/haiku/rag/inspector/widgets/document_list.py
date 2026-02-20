@@ -10,7 +10,7 @@ from haiku.rag.store.models import Document
 BATCH_SIZE = 50
 
 
-class DocumentList(VerticalScroll):  # pragma: no cover
+class DocumentList(VerticalScroll):
     """Widget for displaying and browsing documents."""
 
     can_focus = False

@@ -31,7 +31,10 @@ from haiku.rag.store.repositories.settings import SettingsRepository
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.agents.research.models import (
+        Citation,
+        ResearchReport,
+    )
     from haiku.rag.agents.rlm.models import RLMResult
 
 logger = logging.getLogger(__name__)
@@ -1323,6 +1326,37 @@ class HaikuRAG:
 
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question, filter=filter)
+
+    async def research(
+        self,
+        question: str,
+        *,
+        filter: str | None = None,
+        max_iterations: int | None = None,
+    ) -> "ResearchReport":
+        """Run multi-agent research to investigate a question.
+
+        Args:
+            question: The research question to investigate.
+            filter: SQL WHERE clause to filter documents.
+            max_iterations: Override max iterations (None uses config default).
+
+        Returns:
+            ResearchReport with structured findings.
+        """
+        from haiku.rag.agents.research.dependencies import ResearchContext
+        from haiku.rag.agents.research.graph import build_research_graph
+        from haiku.rag.agents.research.state import ResearchDeps, ResearchState
+
+        graph = build_research_graph(config=self._config)
+        context = ResearchContext(original_question=question)
+        state = ResearchState.from_config(
+            context=context, config=self._config, max_iterations=max_iterations
+        )
+        state.search_filter = filter
+        deps = ResearchDeps(client=self)
+
+        return await graph.run(state=state, deps=deps)
 
     async def rlm(
         self,

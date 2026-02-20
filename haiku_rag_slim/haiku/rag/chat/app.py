@@ -1,30 +1,17 @@
 # pyright: reportPossiblyUnboundVariable=false
 import asyncio
+import json
 import uuid
-from collections.abc import AsyncIterable, Iterable
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pydantic_ai import (
-    Agent,
-    AgentStreamEvent,
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
-    RunContext,
-)
-from pydantic_ai.messages import ModelMessage
-
-from haiku.rag.agents.chat.agent import (
-    ChatDeps,
-    build_chat_toolkit,
-    create_chat_agent,
-    trigger_background_summarization,
-)
-from haiku.rag.agents.chat.state import AGUI_STATE_KEY
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
-from haiku.rag.tools.session import SESSION_NAMESPACE, SessionState
+from haiku.rag.skills.rag import AGENT_PREAMBLE, RAGState
+from haiku.skills.agent import SkillToolset
+from haiku.skills.models import Skill
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -34,11 +21,26 @@ try:
 
     logfire.configure(send_to_logfire="if-token-present", console=False)
     logfire.instrument_pydantic_ai()
-except ImportError:  # pragma: no cover
+except ImportError:
     pass
 
 try:
     import textual_image.widget  # noqa: F401 - import early for renderer detection
+    from ag_ui.core import (
+        AssistantMessage,
+        BaseEvent,
+        EventType,
+        RunAgentInput,
+        StateDeltaEvent,
+        TextMessageContentEvent,
+        ToolCallArgsEvent,
+        ToolCallEndEvent,
+        ToolCallStartEvent,
+        UserMessage,
+    )
+    from jsonpatch import JsonPatch
+    from pydantic_ai import Agent
+    from pydantic_ai.ag_ui import AGUIAdapter
     from textual.app import App, SystemCommand
     from textual.binding import Binding
     from textual.widgets import Footer, Header, Input
@@ -47,10 +49,13 @@ try:
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 
     TEXTUAL_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     TEXTUAL_AVAILABLE = False
     App = object  # type: ignore
     SystemCommand = object  # type: ignore
+
+
+RAG_STATE_NAMESPACE = "rag"
 
 
 class ChatApp(App):
@@ -86,23 +91,25 @@ class ChatApp(App):
     def __init__(
         self,
         db_path: Path,
+        skill: Skill,
         read_only: bool = False,
         before: datetime | None = None,
-        initial_context: str | None = None,
+        model: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
+        self._skill = skill
         self.read_only = read_only
         self.before = before
-        self._initial_context = initial_context
-        self._context_locked = False
+        self._model = model or "openai:gpt-4o"
         self.client: HaikuRAG | None = None
         self.config = get_config()
-        self.agent: Agent[ChatDeps, str] | None = None
+        self._toolset: SkillToolset | None = None
+        self._agent: Agent[None, str] | None = None
+        self._messages: list[Any] = []
+        self._state: dict[str, Any] = {}
         self._is_processing = False
-        self._tool_call_widgets: dict[str, Any] = {}
         self._current_worker: Worker[None] | None = None
-        self._message_history: list[ModelMessage] = []
         self._document_filter: list[str] = []
 
     def compose(self) -> "ComposeResult":
@@ -136,9 +143,9 @@ class ChatApp(App):
             self.action_show_info,
         )
         yield SystemCommand(
-            "Memory",
-            "View/edit context (editable before first message)",
-            self.action_show_context,
+            "View state",
+            "Show the current session state",
+            self.action_view_state,
         )
 
     async def on_mount(self) -> None:
@@ -151,17 +158,14 @@ class ChatApp(App):
         )
         await self.client.__aenter__()
 
-        # Create toolkit, context, and agent
-        self.toolkit = build_chat_toolkit(self.config)
-        self.tool_context = self.toolkit.create_context(state_key=AGUI_STATE_KEY)
-        self.agent = create_chat_agent(self.config, toolkit=self.toolkit)
+        self._toolset = SkillToolset(skills=[self._skill])
+        self._agent = Agent(
+            self._model,
+            instructions=AGENT_PREAMBLE + self._toolset.system_prompt,
+            toolsets=[self._toolset],
+        )
+        self._state = self._toolset.build_state_snapshot()
 
-        # Sync document filter to tool context
-        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        if session_state is not None:
-            session_state.document_filter = self._document_filter
-
-        # Focus the input field
         self.query_one(Input).focus()
 
     async def on_unmount(self) -> None:
@@ -169,60 +173,25 @@ class ChatApp(App):
         if self.client:
             await self.client.__aexit__(None, None, None)
 
-    async def _handle_stream_event(self, event: AgentStreamEvent) -> None:
-        """Handle streaming events from the agent."""
-        chat_history = self.query_one(ChatHistory)
-
-        if isinstance(event, FunctionToolCallEvent):
-            tool_name = event.part.tool_name
-            tool_call_id = event.part.tool_call_id or str(uuid.uuid4())
-            args = event.part.args_as_dict()
-            widget = await chat_history.add_tool_call(tool_name, args)
-            self._tool_call_widgets[tool_call_id] = widget
-
-        elif isinstance(event, FunctionToolResultEvent):
-            tool_call_id = event.tool_call_id
-            if tool_call_id and tool_call_id in self._tool_call_widgets:
-                widget = self._tool_call_widgets[tool_call_id]
-                chat_history.mark_tool_complete(widget)
-
-    async def _event_stream_handler(
-        self,
-        _ctx: RunContext[ChatDeps],
-        event_stream: AsyncIterable[AgentStreamEvent],
-    ) -> None:
-        """Handle streaming events from the agent."""
-        async for event in event_stream:
-            await self._handle_stream_event(event)
-            # Yield to event loop to keep UI responsive
-            await asyncio.sleep(0)
-
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle user input submission."""
         user_message = event.value.strip()
         if not user_message or self._is_processing:
             return
 
-        if not self.client or not self.agent:
-            return
-
-        # Lock context after first message
-        self._context_locked = True
-
-        # Clear the input
         event.input.clear()
 
-        # Add user message to history
         chat_history = self.query_one(ChatHistory)
         await chat_history.add_message("user", user_message)
 
-        # Clear for new query
-        self._tool_call_widgets.clear()
-        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        if session_state:
-            session_state.citations.clear()
+        self._messages.append(
+            UserMessage(
+                id=str(uuid.uuid4()),
+                role="user",
+                content=user_message,
+            )
+        )
 
-        # Run agent in a worker to keep UI responsive
         self._is_processing = True
         self.query_one(Input).disabled = True
         self._current_worker = self.run_worker(
@@ -231,64 +200,87 @@ class ChatApp(App):
 
     async def _run_agent(self, user_message: str) -> None:
         """Run the agent in a background worker."""
-        if not self.client or not self.agent:
+        if not self._agent or not self._toolset:
             return
 
         chat_history = self.query_one(ChatHistory)
-
-        # Show thinking indicator
         await chat_history.show_thinking()
 
+        run_input = RunAgentInput(
+            thread_id="tui",
+            run_id=str(uuid.uuid4()),
+            messages=self._messages,
+            state=self._state,
+            tools=[],
+            context=[],
+            forwarded_props={},
+        )
+
+        adapter = AGUIAdapter(agent=self._agent, run_input=run_input)
+
+        message = None
+        accumulated_text = ""
+        tool_args_deltas: dict[str, str] = {}
+
         try:
-            # Promote initial_context to QA session context on first run
-            from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
-
-            qa_session_state = self.tool_context.get(
-                QA_SESSION_NAMESPACE, QASessionState
-            )
-            if qa_session_state is not None:
-                if qa_session_state.session_context is None and self._initial_context:
-                    from haiku.rag.tools.session import SessionContext
-
-                    qa_session_state.session_context = SessionContext(
-                        summary=self._initial_context
+            async for event in adapter.run_stream():
+                if not isinstance(event, BaseEvent):
+                    continue
+                if event.type == EventType.TEXT_MESSAGE_START:
+                    chat_history.hide_thinking()
+                    message = await chat_history.add_message("assistant")
+                    accumulated_text = ""
+                elif event.type == EventType.TEXT_MESSAGE_CONTENT:
+                    assert isinstance(event, TextMessageContentEvent)
+                    accumulated_text += event.delta
+                    if message:
+                        message.update_content(accumulated_text)
+                        chat_history.scroll_end(animate=False)
+                elif event.type == EventType.TEXT_MESSAGE_END:
+                    self._messages.append(
+                        AssistantMessage(
+                            id=str(uuid.uuid4()),
+                            role="assistant",
+                            content=accumulated_text,
+                        )
                     )
-
-            deps = ChatDeps(
-                config=self.config,
-                client=self.client,
-                tool_context=self.tool_context,
-            )
-
-            async with self.agent.run_stream(
-                user_message,
-                deps=deps,
-                message_history=self._message_history,
-                event_stream_handler=self._event_stream_handler,
-            ) as stream:
-                # Hide thinking when we start getting content
-                chat_history.hide_thinking()
-
-                # Create assistant message for streaming
-                assistant_msg = await chat_history.add_message("assistant", "")
-
-                # Stream text updates
-                async for text in stream.stream_text():
-                    assistant_msg.update_content(text)
-                    chat_history.scroll_end(animate=False)
-                    # Yield to event loop to keep UI responsive
-                    await asyncio.sleep(0)
-
-                # Update message history with this conversation
-                self._message_history = stream.all_messages()
-
-                # Add citations from ToolContext
-                session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-                if session_state and session_state.citations:
-                    await chat_history.add_citations(session_state.citations)
-
-                # Trigger background summarization
-                trigger_background_summarization(deps)
+                    # Show citations from RAG state
+                    await self._show_citations(chat_history)
+                elif event.type == EventType.TOOL_CALL_START:
+                    assert isinstance(event, ToolCallStartEvent)
+                    chat_history.hide_thinking()
+                    await chat_history.add_tool_call(
+                        event.tool_call_id, event.tool_call_name
+                    )
+                    tool_args_deltas[event.tool_call_id] = ""
+                    await chat_history.show_thinking("Executing tasks...")
+                elif event.type == EventType.TOOL_CALL_ARGS:
+                    assert isinstance(event, ToolCallArgsEvent)
+                    tool_args_deltas[event.tool_call_id] = (
+                        tool_args_deltas.get(event.tool_call_id, "") + event.delta
+                    )
+                    try:
+                        args = json.loads(tool_args_deltas[event.tool_call_id])
+                        chat_history.update_tool_args(event.tool_call_id, args)
+                    except json.JSONDecodeError:
+                        pass
+                elif event.type == EventType.TOOL_CALL_END:
+                    assert isinstance(event, ToolCallEndEvent)
+                    chat_history.mark_tool_complete(event.tool_call_id)
+                elif event.type == EventType.STATE_DELTA:
+                    assert isinstance(event, StateDeltaEvent)
+                    patch = JsonPatch(event.delta)
+                    self._state = patch.apply(self._state)
+                    self._toolset.restore_state_snapshot(self._state)
+                elif event.type == EventType.STATE_SNAPSHOT:
+                    self._state = getattr(event, "snapshot", self._state)
+                    self._toolset.restore_state_snapshot(self._state)
+                elif event.type == EventType.RUN_FINISHED:
+                    chat_history.hide_thinking()
+                elif event.type == EventType.RUN_ERROR:
+                    chat_history.hide_thinking()
+                    error_msg = getattr(event, "message", "Unknown error")
+                    await chat_history.add_message("assistant", f"Error: {error_msg}")
 
         except asyncio.CancelledError:
             chat_history.hide_thinking()
@@ -303,20 +295,26 @@ class ChatApp(App):
             chat_input.disabled = False
             chat_input.focus()
 
+    async def _show_citations(self, chat_history: "ChatHistory") -> None:
+        """Show citations from the RAG state after an agent response."""
+        if not self._toolset:
+            return
+        rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
+        if rag_state is None:
+            return
+        citations = getattr(rag_state, "citations", [])
+        if citations:
+            # Show only new citations (since last response)
+            await chat_history.add_citations(citations)
+
     async def action_clear_chat(self) -> None:
         """Clear the chat history and reset session."""
-        from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
-
         chat_history = self.query_one(ChatHistory)
         await chat_history.clear_messages()
-        self._message_history.clear()
-        self._context_locked = False
-        # Re-register fresh states in ToolContext
-        self.tool_context.register(
-            SESSION_NAMESPACE,
-            SessionState(document_filter=self._document_filter),
-        )
-        self.tool_context.register(QA_SESSION_NAMESPACE, QASessionState())
+        self._messages.clear()
+        # Reset state
+        if self._toolset:
+            self._state = self._toolset.build_state_snapshot()
 
     def action_focus_input(self) -> None:
         """Focus the input field, or cancel if processing."""
@@ -340,7 +338,6 @@ class ChatApp(App):
         if not self.client:
             return
 
-        # Get citation from selected widget directly
         chat_history = self.query_one(ChatHistory)
         selected_widgets = list(chat_history.query(CitationWidget).filter(".selected"))
         if not selected_widgets:
@@ -364,38 +361,19 @@ class ChatApp(App):
 
         await self.push_screen(InfoModal(self.client, self.db_path))
 
-    async def action_show_context(self) -> None:
-        """Show context modal (edit initial context or view session context)."""
-        from haiku.rag.chat.widgets.context_modal import ContextModal
-        from haiku.rag.tools.qa import QA_SESSION_NAMESPACE, QASessionState
+    def action_view_state(self) -> None:
+        """Show the current session state."""
+        from haiku.skills.chat.app import StateScreen
 
-        session_context = None
-        qa_session_state = self.tool_context.get(QA_SESSION_NAMESPACE, QASessionState)
-        if qa_session_state and qa_session_state.session_context is not None:
-            session_context = qa_session_state.session_context
-
-        await self.push_screen(
-            ContextModal(
-                initial_context=self._initial_context,
-                session_context=session_context,
-                is_locked=self._context_locked,
-            )
-        )
-
-    def on_context_modal_context_updated(self, event: Any) -> None:
-        """Handle context updates from modal."""
-        if not self._context_locked:
-            self._initial_context = event.context or None
+        self.push_screen(StateScreen(self._state))
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""
         chat_history = self.query_one(ChatHistory)
 
-        # Remove selected class from all citations
         for widget in chat_history.query(CitationWidget):
             widget.remove_class("selected")
 
-        # Add selected class to the widget that was focused
         event.widget.add_class("selected")
 
     async def action_show_filter(self) -> None:
@@ -414,7 +392,14 @@ class ChatApp(App):
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
         """Handle document filter changes from modal."""
+        from haiku.rag.tools.filters import build_multi_document_filter
+
         self._document_filter = event.selected
-        session_state = self.tool_context.get(SESSION_NAMESPACE, SessionState)
-        if session_state:
-            session_state.document_filter = self._document_filter
+
+        if self._toolset:
+            rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
+            if isinstance(rag_state, RAGState):
+                rag_state.document_filter = build_multi_document_filter(
+                    self._document_filter
+                )
+                self._state = self._toolset.build_state_snapshot()
