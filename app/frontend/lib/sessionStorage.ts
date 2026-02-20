@@ -9,26 +9,33 @@ export interface Citation {
 	content: string;
 }
 
-export interface QAResponse {
+export interface QAHistoryEntry {
 	question: string;
 	answer: string;
-	confidence: number;
 	citations: Citation[];
 }
 
-export interface SessionContext {
-	summary: string;
-	last_updated: string | null;
+export interface DocumentInfo {
+	id: string;
+	title: string;
+	uri: string;
+	created: string;
 }
 
-export interface ChatSessionState {
-	initial_context: string | null;
+export interface ResearchEntry {
+	question: string;
+	title: string;
+	executive_summary: string;
+}
+
+// Matches RAGState from the backend skill
+export interface RAGState {
 	citations: Citation[];
-	citations_history: Citation[][];
-	qa_history: QAResponse[];
-	session_context: SessionContext | null;
-	document_filter: string[];
-	citation_registry: Record<string, number>;
+	qa_history: QAHistoryEntry[];
+	document_filter: string | null;
+	searches: Record<string, unknown[]>;
+	documents: DocumentInfo[];
+	reports: ResearchEntry[];
 }
 
 export interface StoredMessage {
@@ -42,7 +49,7 @@ export interface StoredSession {
 	id: string;
 	title: string;
 	messages: StoredMessage[];
-	chatState: ChatSessionState;
+	ragState: RAGState;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -50,16 +57,22 @@ export interface StoredSession {
 const SESSIONS_KEY = "haiku.rag.sessions";
 const ACTIVE_SESSION_KEY = "haiku.rag.activeSession";
 
-export function normalizeChatState(state?: ChatSessionState): ChatSessionState {
+export function normalizeRAGState(state?: Partial<RAGState>): RAGState {
 	return {
-		initial_context: state?.initial_context ?? null,
 		citations: state?.citations ?? [],
-		citations_history: state?.citations_history ?? [],
 		qa_history: state?.qa_history ?? [],
-		session_context: state?.session_context ?? null,
-		document_filter: state?.document_filter ?? [],
-		citation_registry: state?.citation_registry ?? {},
+		document_filter: state?.document_filter ?? null,
+		searches: state?.searches ?? {},
+		documents: state?.documents ?? [],
+		reports: state?.reports ?? [],
 	};
+}
+
+// Derive per-turn citation arrays from qa_history
+export function deriveCitationsHistory(state: RAGState): Citation[][] {
+	return state.qa_history
+		.filter((entry) => entry.citations?.length > 0)
+		.map((entry) => entry.citations);
 }
 
 export function getAllSessions(): StoredSession[] {
@@ -90,7 +103,7 @@ export function createSession(): StoredSession {
 		id: crypto.randomUUID(),
 		title: "New Session",
 		messages: [],
-		chatState: normalizeChatState(),
+		ragState: normalizeRAGState(),
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -115,7 +128,7 @@ export function saveSession(session: StoredSession): void {
 export function updateSessionMessages(
 	id: string,
 	messages: StoredMessage[],
-	chatState: ChatSessionState,
+	ragState: RAGState,
 ): void {
 	const sessions = getAllSessions();
 	const idx = sessions.findIndex((s) => s.id === id);
@@ -123,7 +136,7 @@ export function updateSessionMessages(
 
 	const session = sessions[idx];
 	session.messages = messages;
-	session.chatState = chatState;
+	session.ragState = ragState;
 	session.updatedAt = new Date().toISOString();
 
 	// Derive title from first user message

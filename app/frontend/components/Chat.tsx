@@ -17,27 +17,27 @@ import {
 	useMemo,
 	useState,
 } from "react";
-import { BrainIcon, FilterIcon } from "../lib/icons";
-import type { ChatSessionState } from "../lib/sessionStorage";
+import { FilterIcon } from "../lib/icons";
+import type { RAGState } from "../lib/sessionStorage";
 import {
 	createSession,
+	deriveCitationsHistory,
 	getActiveSessionId,
 	getSession,
-	normalizeChatState,
+	normalizeRAGState,
 	updateSessionMessages,
 } from "../lib/sessionStorage";
 import CitationBlock from "./CitationBlock";
-import ContextPanel from "./ContextPanel";
 import DbInfo from "./DbInfo";
 import DocumentFilter from "./DocumentFilter";
 import SessionManager from "./SessionManager";
 
-// Must match AGUI_STATE_KEY from haiku.rag.agents.chat
-const AGUI_STATE_KEY = "haiku.rag.chat";
+// Must match state_namespace from haiku.rag.skills.rag
+const AGUI_STATE_KEY = "rag";
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
 interface AgentState {
-	[AGUI_STATE_KEY]?: ChatSessionState;
+	[AGUI_STATE_KEY]?: RAGState;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: CopilotKit message objects vary at runtime
@@ -165,6 +165,10 @@ function ToolCallIndicator({
 				return "Ask";
 			case "get_document":
 				return "Document";
+			case "analyze":
+				return "Analyze";
+			case "research":
+				return "Research";
 			default:
 				return toolName;
 		}
@@ -174,36 +178,18 @@ function ToolCallIndicator({
 		switch (toolName) {
 			case "search": {
 				const query = args.query as string;
-				const docName = args.document_name as string | undefined;
-				return (
-					<>
-						<span className="tool-query">{query}</span>
-						{docName && (
-							<span className="tool-context">
-								{" "}
-								in <em>{docName}</em>
-							</span>
-						)}
-					</>
-				);
+				return <span className="tool-query">{query}</span>;
 			}
 			case "ask": {
 				const question = args.question as string;
-				const docName = args.document_name as string | undefined;
-				return (
-					<>
-						<span className="tool-query">{question}</span>
-						{docName && (
-							<span className="tool-context">
-								{" "}
-								from <em>{docName}</em>
-							</span>
-						)}
-					</>
-				);
+				return <span className="tool-query">{question}</span>;
 			}
 			case "get_document":
 				return <span className="tool-query">{args.query as string}</span>;
+			case "analyze":
+				return <span className="tool-query">{args.question as string}</span>;
+			case "research":
+				return <span className="tool-query">{args.question as string}</span>;
 			default:
 				return <span>Processing...</span>;
 		}
@@ -231,7 +217,7 @@ function ToolCallIndicator({
 }
 
 // Context for sharing chat state with the message view
-const ChatStateContext = createContext<ChatSessionState | null>(null);
+const ChatStateContext = createContext<RAGState | null>(null);
 
 // Wildcard tool call renderer for all server-side tools
 const toolCallRenderers = [
@@ -258,7 +244,8 @@ function MessageViewWithCitations({
 	messages: any[];
 	isRunning: boolean;
 }) {
-	const chatState = useContext(ChatStateContext);
+	const ragState = useContext(ChatStateContext);
+	const citationsHistory = ragState ? deriveCitationsHistory(ragState) : [];
 
 	const cursor = isRunning ? (
 		<div key="cursor" className="streaming-cursor">
@@ -271,7 +258,7 @@ function MessageViewWithCitations({
 	return (
 		<CopilotChatMessageView messages={messages} isRunning={isRunning}>
 			{({ messageElements }) => {
-				if (!chatState?.citations_history?.length) {
+				if (!citationsHistory.length) {
 					return (
 						<>
 							{messageElements}
@@ -284,9 +271,9 @@ function MessageViewWithCitations({
 				// message (tool messages produce nothing). We correlate elements with
 				// messages to inject CitationBlocks after the right assistant responses.
 				//
-				// Both search and ask tools append to citations_history in order,
+				// Both search and ask tools append to citations via qa_history,
 				// so after each assistant text response that followed tool calls,
-				// we inject the next citations_history entry.
+				// we inject the next citations entry.
 				const result: React.ReactNode[] = [];
 				let citIdx = 0;
 				let seenToolCalls = false;
@@ -317,10 +304,10 @@ function MessageViewWithCitations({
 					}
 
 					// After an assistant text response that followed tool calls,
-					// inject the next citations_history entry (one per turn)
+					// inject the next citations entry (one per turn)
 					if (msg.role === "assistant" && msg.content && seenToolCalls) {
-						if (citIdx < chatState.citations_history.length) {
-							const citations = chatState.citations_history[citIdx];
+						if (citIdx < citationsHistory.length) {
+							const citations = citationsHistory[citIdx];
 							if (citations?.length) {
 								result.push(
 									<CitationBlock
@@ -358,8 +345,9 @@ function ChatContentInner({
 	sessionId: string;
 	onSessionChange: (id: string) => void;
 }) {
-	const [contextOpen, setContextOpen] = useState(false);
 	const [filterOpen, setFilterOpen] = useState(false);
+	// Track selected document names locally (frontend-only)
+	const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
 	const { agent } = useAgent({
 		agentId: "chat_agent",
@@ -376,22 +364,9 @@ function ChatContentInner({
 		agent.threadId = sessionId;
 	}, [agent, sessionId]);
 
-	const chatState = normalizeChatState(
+	const ragState = normalizeRAGState(
 		(agent.state as AgentState)?.[AGUI_STATE_KEY],
 	);
-
-	const mergeChatState = (partial: Partial<ChatSessionState>) => {
-		const current = normalizeChatState(
-			(agent.state as AgentState)?.[AGUI_STATE_KEY],
-		);
-		agent.setState({
-			...agent.state,
-			[AGUI_STATE_KEY]: {
-				...current,
-				...partial,
-			},
-		});
-	};
 
 	// Restore session from localStorage when agent reference changes.
 	// useAgent returns a provisional agent initially, then the real agent
@@ -400,9 +375,9 @@ function ChatContentInner({
 		if (agent.messages.length > 0) return;
 		const session = getSession(sessionId);
 		if (!session) return;
-		if (session.chatState) {
+		if (session.ragState) {
 			agent.setState({
-				[AGUI_STATE_KEY]: normalizeChatState(session.chatState),
+				[AGUI_STATE_KEY]: normalizeRAGState(session.ragState),
 			});
 		}
 		if (session.messages.length > 0) {
@@ -412,21 +387,21 @@ function ChatContentInner({
 	}, [agent, sessionId]);
 
 	// Persist messages and state to localStorage.
-	// Read chatState from agent.state at effect time (not render time) so that
+	// Read ragState from agent.state at effect time (not render time) so that
 	// restore and persist effects in the same commit see consistent state.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: JSON.stringify tracks content changes
 	useEffect(() => {
 		if (sessionId && agent.messages.length > 0) {
-			const currentChatState = normalizeChatState(
+			const currentRagState = normalizeRAGState(
 				(agent.state as AgentState)?.[AGUI_STATE_KEY],
 			);
 			updateSessionMessages(
 				sessionId,
 				serializeMessages(agent.messages),
-				currentChatState,
+				currentRagState,
 			);
 		}
-	}, [JSON.stringify(agent.messages), chatState, sessionId]);
+	}, [JSON.stringify(agent.messages), ragState, sessionId]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: stable identity via agent ref
 	const messages = useMemo(
@@ -458,24 +433,29 @@ function ChatContentInner({
 		}
 	}, [agent, ck]);
 
-	const sessionContext = chatState.session_context;
-	const documentFilter = chatState.document_filter;
-	const initialContext = chatState.initial_context ?? "";
-
-	// Context is locked after first message (qa_history has entries)
-	const isContextLocked = (chatState.qa_history?.length ?? 0) > 0;
-
 	const handleFilterApply = (selected: string[]) => {
-		mergeChatState({ document_filter: selected });
-	};
-
-	const handleInitialContextChange = (value: string) => {
-		if (isContextLocked) return;
-		mergeChatState({ initial_context: value || null });
+		setSelectedDocuments(selected);
+		// Convert selected document names to SQL filter for the backend
+		const filter =
+			selected.length > 0
+				? selected
+						.map(
+							(name) =>
+								`(title LIKE '%${name.replace(/'/g, "''")}%' OR uri LIKE '%${name.replace(/'/g, "''")}%')`,
+						)
+						.join(" OR ")
+				: null;
+		agent.setState({
+			...agent.state,
+			[AGUI_STATE_KEY]: {
+				...ragState,
+				document_filter: filter,
+			},
+		});
 	};
 
 	return (
-		<ChatStateContext.Provider value={chatState}>
+		<ChatStateContext.Provider value={ragState}>
 			<div className="chat-wrapper">
 				<div className="chat-container">
 					<div className="chat-header">
@@ -485,35 +465,18 @@ function ChatContentInner({
 						/>
 						<button
 							type="button"
-							className={`header-btn ${documentFilter.length > 0 ? "has-content" : ""}`}
+							className={`header-btn ${selectedDocuments.length > 0 ? "has-content" : ""}`}
 							onClick={() => setFilterOpen(true)}
 							title={
-								documentFilter.length > 0
-									? `Filtering: ${documentFilter.length} document(s)`
+								selectedDocuments.length > 0
+									? `Filtering: ${selectedDocuments.length} document(s)`
 									: "Filter documents"
 							}
 						>
 							<FilterIcon />
-							{documentFilter.length > 0
-								? `Filter (${documentFilter.length})`
+							{selectedDocuments.length > 0
+								? `Filter (${selectedDocuments.length})`
 								: "Filter"}
-						</button>
-						<button
-							type="button"
-							className={`header-btn ${initialContext || sessionContext?.summary ? "has-content" : ""}`}
-							onClick={() => setContextOpen(true)}
-							title={
-								isContextLocked
-									? sessionContext?.summary
-										? "View session context"
-										: "No session context yet"
-									: initialContext
-										? "Edit initial context"
-										: "Set initial context"
-							}
-						>
-							<BrainIcon />
-							Memory
 						</button>
 					</div>
 					<div className="chat-content">
@@ -535,18 +498,10 @@ function ChatContentInner({
 					<DbInfo />
 				</div>
 			</div>
-			<ContextPanel
-				isOpen={contextOpen}
-				onClose={() => setContextOpen(false)}
-				sessionContext={sessionContext}
-				initialContext={initialContext}
-				onInitialContextChange={handleInitialContextChange}
-				isLocked={isContextLocked}
-			/>
 			<DocumentFilter
 				isOpen={filterOpen}
 				onClose={() => setFilterOpen(false)}
-				selected={documentFilter}
+				selected={selectedDocuments}
 				onApply={handleFilterApply}
 			/>
 		</ChatStateContext.Provider>
