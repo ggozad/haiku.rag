@@ -17,7 +17,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rag import create_skill
-from haiku.skills.agent import SkillToolset
+from haiku.skills import SkillDeps, SkillToolset
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -80,6 +80,7 @@ agent = Agent(
     os.getenv("HAIKU_CHAT_MODEL", "openai:gpt-4o"),
     instructions=AGENT_PREAMBLE + toolset.system_prompt,
     toolsets=[toolset],
+    deps_type=SkillDeps,
 )
 
 
@@ -90,7 +91,7 @@ async def stream_chat(request: Request) -> Response:
     run_input = AGUIAdapter.build_run_input(body)
 
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
-    event_stream = adapter.run_stream()
+    event_stream = adapter.run_stream(deps=SkillDeps())
     sse_event_stream = adapter.encode_stream(event_stream)
 
     return StreamingResponse(

@@ -1513,7 +1513,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.73.1" },
     { name = "docling-core", specifier = "==2.65.1" },
-    { name = "haiku-skills", specifier = ">=0.4.0" },
+    { name = "haiku-skills", specifier = ">=0.4.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.29.2" },
@@ -1544,7 +1544,7 @@ provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jin
 
 [[package]]
 name = "haiku-skills"
-version = "0.4.0"
+version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -1552,9 +1552,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "skills-ref" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/3b/7545006f8e034926b615fdc09a61340f87a2ddb288c96af9532f490c089e/haiku_skills-0.4.0.tar.gz", hash = "sha256:98d6c454da419f31fb8275608bf5ef057c6e7fa9cfecd594d0958617633a479c", size = 159518, upload-time = "2026-02-19T13:36:22.887Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/13/96cb8124fd47d9f7b752f835b8c751bc67908a061a53a2ba392509d1fe68/haiku_skills-0.4.2.tar.gz", hash = "sha256:4846e7ebc1c7919faa576badd77723a0d681cf3a92d90f7b97edf3f6eca8ea8d", size = 119892, upload-time = "2026-02-20T11:18:47.434Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/6e/340c6162b1de5cdefdd532c435e08eb053920c07b880c87c8d901c046192/haiku_skills-0.4.0-py3-none-any.whl", hash = "sha256:d12b6cfdfb276ba902d9e98a5582b408e0f1e6989c513bccdf45438ec80f2d38", size = 20565, upload-time = "2026-02-19T13:36:21.35Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/77/2f94bf41b4b0f0af62431f9c9753db9343a44d1012cadb2e277210b69dae/haiku_skills-0.4.2-py3-none-any.whl", hash = "sha256:08ec15f3a9c894ef33d989850e2b73e78a2a9364056e997bff7cd910a0c4cfe9", size = 21077, upload-time = "2026-02-20T11:18:45.593Z" },
 ]
 
 [[package]]
