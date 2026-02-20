@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock
 
 from haiku.rag.agents.research.models import Citation, ResearchReport
-from haiku.rag.agents.rlm.models import RLMResult
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
@@ -29,7 +28,6 @@ class TestRAGSkillCreation:
             "list_documents",
             "get_document",
             "ask",
-            "analyze",
             "research",
         }
 
@@ -411,41 +409,6 @@ class TestAskTool:
         # rag.ask() should receive the original question unchanged
         assert len(captured_questions) == 1
         assert captured_questions[0] == "Explain quantum computing"
-
-
-class TestAnalyzeTool:
-    async def test_analyze_returns_result(self, rag_db, monkeypatch):
-        from haiku.rag.skills.rag import create_skill
-
-        monkeypatch.setattr(
-            HaikuRAG,
-            "rlm",
-            AsyncMock(return_value=RLMResult(answer="42", program="print(42)")),
-        )
-
-        skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
-        ctx = _make_ctx()
-        result = await analyze(ctx, question="How many documents?")
-        assert isinstance(result, str)
-        assert "42" in result
-
-    async def test_analyze_updates_state(self, rag_db, monkeypatch):
-        from haiku.rag.skills.rag import RAGState, create_skill
-
-        monkeypatch.setattr(
-            HaikuRAG,
-            "rlm",
-            AsyncMock(return_value=RLMResult(answer="42", program="print(42)")),
-        )
-
-        skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
-        state = RAGState()
-        ctx = _make_ctx(state)
-        await analyze(ctx, question="How many documents?")
-        assert len(state.qa_history) == 1
-        assert state.qa_history[0].question == "How many documents?"
 
 
 class TestResearchTool:

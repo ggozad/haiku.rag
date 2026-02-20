@@ -267,38 +267,6 @@ def create_skill(
 
         return answer
 
-    async def analyze(
-        ctx: RunContext[SkillRunDeps],
-        question: str,
-        document: str | None = None,
-        filter: str | None = None,
-    ) -> str:
-        """Answer complex analytical questions using code execution.
-
-        Use this for questions requiring computation, aggregation, or
-        data traversal across documents.
-
-        Args:
-            question: The question to answer.
-            document: Optional document ID or title to pre-load for analysis.
-            filter: Optional SQL WHERE clause to filter documents.
-        """
-        from haiku.rag.client import HaikuRAG
-
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            documents = [document] if document else None
-            result = await rag.rlm(question, documents=documents, filter=filter)
-            output = result.answer
-            if result.program:
-                output += f"\n\nProgram:\n{result.program}"
-
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
-            ctx.deps.state.qa_history.append(
-                QAHistoryEntry(question=question, answer=output)
-            )
-
-        return output
-
     async def research(ctx: RunContext[SkillRunDeps], question: str) -> str:
         """Conduct deep multi-agent research on a question.
 
@@ -368,7 +336,6 @@ def create_skill(
             list_documents,
             get_document,
             ask,
-            analyze,
             research,
         ],
         state_type=RAGState,

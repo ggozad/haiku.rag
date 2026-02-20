@@ -60,6 +60,7 @@ vertexai = ["pydantic-ai-slim[vertexai]"]
 
 [project.entry-points."haiku.skills"]
 rag = "haiku.rag.skills.rag:create_skill"
+rag-rlm = "haiku.rag.skills.rlm:create_skill"
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
