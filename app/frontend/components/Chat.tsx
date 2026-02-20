@@ -152,6 +152,8 @@ function ToolCallIndicator({
 				return <MessageIcon />;
 			case "get_document":
 				return <FileIcon />;
+			case "execute_skill":
+				return <MessageIcon />;
 			default:
 				return <SearchIcon />;
 		}
@@ -165,6 +167,8 @@ function ToolCallIndicator({
 				return "Ask";
 			case "get_document":
 				return "Document";
+			case "execute_skill":
+				return "Skill";
 			case "analyze":
 				return "Analyze";
 			case "research":
@@ -176,6 +180,16 @@ function ToolCallIndicator({
 
 	const getDescription = () => {
 		switch (toolName) {
+			case "execute_skill": {
+				const skill = args.skill_name as string | undefined;
+				const request = args.request as string | undefined;
+				return (
+					<span className="tool-query">
+						{skill ? `${skill}: ` : ""}
+						{request ?? "Processing..."}
+					</span>
+				);
+			}
 			case "search": {
 				const query = args.query as string;
 				return <span className="tool-query">{query}</span>;

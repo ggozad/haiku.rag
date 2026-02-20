@@ -1,5 +1,6 @@
 # pyright: reportPossiblyUnboundVariable=false
 import asyncio
+import json
 import uuid
 from collections.abc import Iterable
 from datetime import datetime
@@ -32,6 +33,7 @@ try:
         RunAgentInput,
         StateDeltaEvent,
         TextMessageContentEvent,
+        ToolCallArgsEvent,
         ToolCallEndEvent,
         ToolCallStartEvent,
         UserMessage,
@@ -218,6 +220,7 @@ class ChatApp(App):
 
         message = None
         accumulated_text = ""
+        tool_args_deltas: dict[str, str] = {}
 
         try:
             async for event in adapter.run_stream():
@@ -249,7 +252,18 @@ class ChatApp(App):
                     await chat_history.add_tool_call(
                         event.tool_call_id, event.tool_call_name
                     )
+                    tool_args_deltas[event.tool_call_id] = ""
                     await chat_history.show_thinking("Executing tasks...")
+                elif event.type == EventType.TOOL_CALL_ARGS:
+                    assert isinstance(event, ToolCallArgsEvent)
+                    tool_args_deltas[event.tool_call_id] = (
+                        tool_args_deltas.get(event.tool_call_id, "") + event.delta
+                    )
+                    try:
+                        args = json.loads(tool_args_deltas[event.tool_call_id])
+                        chat_history.update_tool_args(event.tool_call_id, args)
+                    except json.JSONDecodeError:
+                        pass
                 elif event.type == EventType.TOOL_CALL_END:
                     assert isinstance(event, ToolCallEndEvent)
                     chat_history.mark_tool_complete(event.tool_call_id)

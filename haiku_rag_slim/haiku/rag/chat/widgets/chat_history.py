@@ -59,7 +59,12 @@ class ToolCallWidget(Static):
                 yield Static(desc, classes="tool-desc")
 
     def _build_description(self) -> str:
-        if self.tool_name == "search":
+        if self.tool_name == "execute_skill":
+            skill = self.args.get("skill_name", "")
+            request = self.args.get("request", "...")
+            prefix = f"{skill}: " if skill else ""
+            return f'{prefix}"{request}"'
+        elif self.tool_name == "search":
             query = self.args.get("query", "...")
             return f'"{query}"'
         elif self.tool_name == "ask":
@@ -71,6 +76,10 @@ class ToolCallWidget(Static):
         elif self.args:
             return str(self.args)
         return ""
+
+    def update_args(self, args: dict[str, Any]) -> None:
+        self.args = args
+        self.refresh(recompose=True)
 
     def mark_completed(self) -> None:
         self._completed = True
@@ -332,6 +341,12 @@ class ChatHistory(VerticalScroll):
         await self.mount(widget)
         self.scroll_end(animate=False)
         return widget
+
+    def update_tool_args(self, tool_call_id: str, args: dict[str, Any]) -> None:
+        """Update the args of a tool call widget."""
+        widget = self._tool_widgets.get(tool_call_id)
+        if widget:
+            widget.update_args(args)
 
     def mark_tool_complete(self, tool_call_id: str) -> None:
         """Mark a tool call as complete by its ID."""
