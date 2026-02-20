@@ -16,10 +16,6 @@ class ResearchContext(BaseModel):
     qa_responses: list[Any] = Field(
         default_factory=list, description="Structured QA pairs used during research"
     )
-    session_context: str | None = Field(
-        default=None,
-        description="Session context from previous Q&A summarization",
-    )
 
     def add_qa_response(self, qa: "SearchAnswer") -> None:
         """Add a structured QA response."""

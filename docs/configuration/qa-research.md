@@ -40,8 +40,6 @@ qa:
 - **max_iterations**: Maximum search iterations (default: 2)
 - **max_concurrency**: Number of concurrent search operations (default: 1)
 
-Deep QA mode (`haiku-rag ask --deep`) uses the research graph with a single iteration for quick, focused answers.
-
 ## Research Configuration
 
 Configure the multi-agent research workflow:

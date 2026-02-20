@@ -143,20 +143,9 @@ Ask questions with citations showing source documents:
 haiku-rag ask "Who is the author of haiku.rag?" --cite
 ```
 
-Use deep QA for complex questions (multi-agent decomposition):
-```bash
-haiku-rag ask "What are the main features and architecture of haiku.rag?" --deep --cite
-```
-
 Filter to specific documents:
 ```bash
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
-```
-
-Provide background context for the question:
-```bash
-haiku-rag ask "What are the protocols?" --context "Focus on security best practices"
-haiku-rag ask "Summarize the findings" --context-file background.txt
 ```
 
 The QA agent searches your documents for relevant information and provides a comprehensive answer. When available, citations use the document title; otherwise they fall back to the URI.
@@ -164,10 +153,7 @@ The QA agent searches your documents for relevant information and provides a com
 Flags:
 
 - `--cite`: Include citations showing which documents were used
-- `--deep`: Decompose the question into sub-questions answered in parallel before synthesizing a final answer
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
-- `--context`: Background context for the question (passed to the agent as system context)
-- `--context-file`: Path to a file containing background context
 
 ## Chat
 
@@ -242,18 +228,9 @@ Filter to specific documents:
 haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
 ```
 
-Provide background context for the research:
-
-```bash
-haiku-rag research "What are the safety protocols?" --context "Industrial manufacturing context"
-haiku-rag research "Analyze the methodology" --context-file research-background.txt
-```
-
 Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
-- `--context`: Background context for the research
-- `--context-file`: Path to a file containing background context
 
 Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 

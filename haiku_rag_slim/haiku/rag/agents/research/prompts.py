@@ -1,7 +1,5 @@
 ITERATIVE_PLAN_PROMPT = """You are the research orchestrator planning the investigation.
 
-If a <background> section is provided, use it to understand the conversation context.
-
 Your task:
 1. Analyze the original question
 2. Propose the first question to investigate
@@ -23,7 +21,6 @@ The question must be standalone and self-contained:
 ITERATIVE_PLAN_PROMPT_WITH_CONTEXT = """You are the research orchestrator evaluating gathered evidence.
 
 You have access to context that may include:
-- <background>: Domain context for the conversation
 - <prior_answers>: Previous Q&A pairs with confidence scores
 
 Your task:

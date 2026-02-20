@@ -1,6 +1,26 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **RAG skill** (`haiku.rag.skills.rag`): haiku.skills integration with search, list_documents, get_document, ask, analyze, and research tools plus managed `RAGState`
+- **`HaikuRAG.research()`**: Client method for multi-agent research
+- **haiku.skills entry point**: `rag = "haiku.rag.skills.rag:create_skill"`
+
+### Changed
+
+- **Chat TUI**: Rebuilt on RAG skill + haiku.skills `SkillToolset`
+- **Web app backend**: Rebuilt on RAG skill + `AGUIAdapter`
+- **Toolsets simplified**: Removed `ToolContext`, `SessionState`, `AgentDeps`, `Toolkit`; kept core `FunctionToolset` factories
+- **Research graph**: Removed `session_context` and conversational output mode
+
+### Removed
+
+- **`agents/chat/`**: Entire chat agent module (replaced by RAG skill)
+- **`--deep` flag**: Removed from `ask` CLI (use `research` command instead)
+- **`--context`/`--context-file`**: Removed from `ask` CLI
+- **`tools/` state machinery**: `ToolContext`, `ToolContextCache`, `SessionState`, `AgentDeps`, `Toolkit`, etc.
+
 ## [0.30.2] - 2026-02-19
 
 ### Fixed

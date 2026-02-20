@@ -89,22 +89,6 @@ def test_format_context_for_prompt_basic():
     assert "What is X?" in result
 
 
-def test_format_context_for_prompt_with_session_context():
-    """Test format_context_for_prompt includes session_context as background."""
-    from haiku.rag.agents.research.dependencies import ResearchContext
-    from haiku.rag.agents.research.graph import format_context_for_prompt
-
-    context = ResearchContext(
-        original_question="What is Y?",
-        session_context="Previous discussion about topic Z.",
-    )
-    result = format_context_for_prompt(context)
-
-    assert "<background>" in result
-    assert "Previous discussion" in result
-    assert "What is Y?" in result
-
-
 def test_format_context_for_prompt_with_prior_answers():
     """Test format_context_for_prompt includes prior_answers."""
     from haiku.rag.agents.research.dependencies import ResearchContext

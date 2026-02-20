@@ -27,9 +27,6 @@ def format_context_for_prompt(context: ResearchContext) -> str:
     """Format the research context as XML for prompts."""
     context_data: dict[str, object] = {}
 
-    if context.session_context:
-        context_data["background"] = context.session_context
-
     context_data["question"] = context.original_question
 
     if context.qa_responses:

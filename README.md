@@ -59,9 +59,6 @@ haiku-rag search "attention mechanism"
 # Ask questions with citations
 haiku-rag ask "What datasets were used for evaluation?" --cite
 
-# Deep QA — decomposes complex questions into sub-queries
-haiku-rag ask "How does the proposed method compare to the baseline on MMLU?" --deep
-
 # Research mode — iterative planning and search
 haiku-rag research "What are the limitations of the approach?"
 

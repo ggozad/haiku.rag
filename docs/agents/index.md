@@ -64,8 +64,7 @@ stateDiagram-v2
   synthesize --> [*]
 
   note right of plan_next
-    Receives session_context as background
-    and prior_answers from conversation history.
+    Uses prior_answers from previous iterations.
     Uses a different prompt when prior answers exist.
   end note
 ```
@@ -73,8 +72,7 @@ stateDiagram-v2
 The graph receives a `ResearchContext` containing:
 
 - `original_question` — the user's question
-- `session_context` — summary of conversation history (injected as `<background>` XML)
-- `qa_responses` — prior answers from semantic matching or previous iterations (injected as `<prior_answers>` XML)
+- `qa_responses` — prior answers from previous iterations (injected as `<prior_answers>` XML)
 
 When prior answers are provided, the planner uses a context-aware prompt that evaluates whether existing evidence is sufficient. If it is, the planner marks `is_complete=True` and the graph skips directly to synthesis without any searches.
 
@@ -88,7 +86,6 @@ When prior answers are provided, the planner uses a context-aware prompt that ev
 
 - Each iteration: planner evaluates context → proposes one question → search answers it → loop back
 - Planner can decompose complex questions (e.g., "benefits and drawbacks" → start with "benefits")
-- Session context resolves ambiguous references and informs planning
 - Prior answers let the planner skip redundant searches
 - Loop terminates when planner marks `is_complete=True` or `max_iterations` is reached
 
