@@ -5,13 +5,13 @@ The RLM agent enables complex analytical tasks by writing and executing Python c
 - **Aggregation**: "How many documents mention security vulnerabilities?"
 - **Computation**: "What's the average revenue across all quarterly reports?"
 - **Multi-document analysis**: "Compare the key findings between Report A and Report B"
-- **Structured data extraction**: "Extract all tables from the document and summarize them"
+- **Structured data extraction**: "Extract all dollar amounts and compute totals"
 
 ## How It Works
 
 1. The agent receives a question
 2. It writes Python code to explore the knowledge base
-3. Code executes in a sandboxed environment with access to haiku.rag functions
+3. Code executes in a sandboxed Python interpreter with access to haiku.rag functions
 4. The agent iterates: run code, examine results, refine approach
 5. Final answer is synthesized from the gathered data
 
@@ -93,21 +93,18 @@ if content:
 
 Returns the document content as a string, or `None` if not found.
 
-### get_docling_document(id_or_title)
+### get_chunk(chunk_id)
 
-Get the structured DoclingDocument object for advanced analysis of tables, figures, and document structure.
+Get a specific chunk by its ID (from search results). Use this to retrieve full chunk details and metadata for citations.
 
 ```python
-doc = get_docling_document("Technical Manual")
-if doc:
-    print(f"Tables: {len(doc.tables)}")
-    print(f"Pictures: {len(doc.pictures)}")
-
-    # Extract table data
-    for table in doc.tables:
-        for cell in table.data.table_cells:
-            print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
+results = search("safety requirements", limit=5)
+for r in results:
+    chunk = get_chunk(r['chunk_id'])
+    print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
 ```
+
+Returns dict with keys: `chunk_id`, `content`, `document_id`, `document_title`, `headings`, `page_numbers`, `labels`
 
 ### llm(prompt)
 
@@ -133,36 +130,39 @@ for doc in documents:
 
 Each document dict has keys: `id`, `title`, `uri`, `content`
 
-## Imports
+## Python Features
 
-The sandbox runs in a Docker container with full Python available. Any module installed in the container image can be imported:
+The sandbox uses [pydantic-monty](https://github.com/pydantic/monty), a minimal secure Python interpreter written in Rust. It supports a subset of Python:
+
+**Supported:** variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, try/except, and the `json` module.
+
+**Not supported:** imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function:
 
 ```python
-import re
-import json
-from collections import Counter
-
-# Extract and count patterns
-results = search("error", limit=50)
-error_types = []
+# Extract data with llm() instead of regex
+numbers = []
+results = search("financial data", limit=20)
 for r in results:
-    matches = re.findall(r'Error: (\w+)', r['content'])
-    error_types.extend(matches)
-
-print(Counter(error_types).most_common(10))
+    extracted = llm(f"Extract all dollar amounts as a comma-separated list of numbers (no $ signs): {r['content']}")
+    for part in extracted.split(','):
+        part = part.strip().replace(',', '')
+        if part.isdigit():
+            numbers.append(int(part))
+if numbers:
+    print(f"Average: {sum(numbers) / len(numbers)}")
 ```
 
-The default image (`ghcr.io/ggozad/haiku.rag-slim`) includes the Python standard library. Custom images can add additional packages like `pandas` or `numpy`.
+## Sandboxed Execution
 
-## Docker Sandbox
+Code executes in an isolated interpreter with:
 
-Code executes in an isolated Docker container with:
-
-- **Read-only database**: The LanceDB database is mounted read-only
-- **Memory limits**: Configurable memory limit (default 512MB)
+- **No filesystem access**: Code cannot read or write files
+- **No network access**: Code cannot make HTTP requests or open sockets
+- **No imports**: Only the `json` module is available
 - **Execution timeout**: Code times out after configurable limit (default 60s)
 - **Output truncation**: Large outputs are truncated to prevent memory issues
-- **Container reuse**: Within a single `rlm()` call, the container stays warm for multiple code executions
 
 ## Context Filter
 
@@ -193,26 +193,4 @@ rlm:
     name: claude-sonnet-4-20250514
   code_timeout: 60.0      # Max seconds for code execution
   max_output_chars: 50000 # Truncate output after this many chars
-  docker_image: "ghcr.io/ggozad/haiku.rag-slim:latest"  # Container image
-  docker_memory_limit: "512m"  # Container memory limit
-```
-
-### Custom Docker Image
-
-To add additional Python packages, create a custom Dockerfile:
-
-```dockerfile
-FROM ghcr.io/ggozad/haiku.rag-slim:latest
-RUN pip install pandas numpy
-```
-
-Build and configure:
-
-```bash
-docker build -t my-rlm-image .
-```
-
-```yaml
-rlm:
-  docker_image: "my-rlm-image"
 ```
