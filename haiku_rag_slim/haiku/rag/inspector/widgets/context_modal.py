@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from haiku.rag.store.models import Chunk
 
 
-class ContextModal(Screen):  # pragma: no cover
+class ContextModal(Screen):
     """Modal screen for displaying how a chunk appears to agents."""
 
     BINDINGS = [

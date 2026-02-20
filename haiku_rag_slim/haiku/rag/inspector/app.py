@@ -21,12 +21,12 @@ try:
     from haiku.rag.inspector.widgets.search_modal import SearchModal
 
     TEXTUAL_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     TEXTUAL_AVAILABLE = False
     App = object  # type: ignore
 
 
-class InspectorApp(App):  # pragma: no cover
+class InspectorApp(App):
     """Textual TUI for inspecting LanceDB data."""
 
     TITLE = "haiku.rag DB Inspector"
@@ -243,7 +243,7 @@ def run_inspector(
     db_path: Path | None = None,
     read_only: bool = False,
     before: datetime | None = None,
-) -> None:  # pragma: no cover
+) -> None:
     """Run the inspector TUI.
 
     Args:

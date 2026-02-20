@@ -131,6 +131,10 @@ filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]
 
 [tool.coverage.run]
 source = ["haiku_rag_slim"]
+omit = [
+    "haiku_rag_slim/haiku/rag/chat/*",
+    "haiku_rag_slim/haiku/rag/inspector/*",
+]
 
 [tool.coverage.report]
 show_missing = true

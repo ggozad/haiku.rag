@@ -5,7 +5,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Markdown, Static
 
 
-class ContextModal(ModalScreen):  # pragma: no cover
+class ContextModal(ModalScreen):
     """Modal screen for viewing session Q&A history."""
 
     BINDINGS = [

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from haiku.rag.store.models import Chunk
 
 
-class VisualGroundingModal(Screen):  # pragma: no cover
+class VisualGroundingModal(Screen):
     """Modal screen for displaying visual grounding with bounding boxes."""
 
     BINDINGS = [
