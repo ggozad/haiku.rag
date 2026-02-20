@@ -429,25 +429,23 @@ See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
 
 ## Building Custom Agents
 
-haiku.rag provides composable toolset factories that can be mixed into any pydantic-ai agent. This lets you build custom agents with exactly the capabilities you need — search, document management, Q&A, or code analysis — sharing state across tools via `ToolContext`.
+haiku.rag provides a RAG skill built on [haiku.skills](https://github.com/ggozad/haiku.skills) that bundles all capabilities into a composable agent:
 
 ```python
 from pydantic_ai import Agent
-from haiku.rag.tools import AgentDeps, build_toolkit
+from haiku.rag.skills.rag import create_skill
+from haiku.skills.agent import SkillToolset
 
-toolkit = build_toolkit(config, features=["search", "qa"])
+skill = create_skill(db_path=db_path, config=config)
+toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
     "openai:gpt-4o",
-    deps_type=AgentDeps,
-    instructions=f"You are a helpful assistant.\n{toolkit.prompt}",
-    toolsets=toolkit.toolsets,
+    instructions=toolset.system_prompt,
+    toolsets=[toolset],
 )
 
-async with HaikuRAG("path/to/db.lancedb") as client:
-    context = toolkit.create_context()
-    deps = AgentDeps(client=client, tool_context=context)
-    result = await agent.run("What are the main findings?", deps=deps)
+result = await agent.run("What are the main findings?")
 ```
 
-See [Toolsets](tools.md) for the full API reference and composition guide, and the [`examples/`](https://github.com/ggozad/haiku.rag/tree/main/examples) directory for runnable scripts.
+See [Tools & Skills](tools.md) for the full API reference.

@@ -1,11 +1,12 @@
 # Agents
 
-Four agentic flows are provided by haiku.rag:
+Three agentic flows are provided by haiku.rag:
 
 - **Simple QA Agent** — a focused question answering agent
-- **Chat Agent** — multi-turn conversational RAG with session memory
 - **Research Graph** — a multi-step research workflow with question decomposition
 - **RLM Agent** — complex analytical tasks via sandboxed Python code execution (see [RLM Agent](rlm.md))
+
+For multi-turn conversational RAG, haiku.rag provides a [RAG skill](../tools.md#rag-skill) built on [haiku.skills](https://github.com/ggozad/haiku.skills). The skill bundles search, Q&A, analysis, and research tools with session state management.
 
 See [QA and Research Configuration](../configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
 
@@ -26,9 +27,6 @@ haiku-rag ask "What is climate change?"
 
 # With citations
 haiku-rag ask "What is climate change?" --cite
-
-# Deep mode (uses research graph with optimized settings)
-haiku-rag ask "What are the main features of haiku.rag?" --deep
 ```
 
 **Python usage:**
@@ -47,121 +45,6 @@ async with HaikuRAG(path_to_db) as client:
     answer, citations = await agent.answer("What is climate change?")
     print(answer)
 ```
-
-## Chat Agent
-
-The chat agent enables multi-turn conversational RAG. It is built from composable [toolsets](../tools.md) and maintains session state to improve follow-up answers.
-
-Key features:
-
-- **Composable toolsets**: Built from reusable `FunctionToolset` factories — see [Toolsets](../tools.md)
-- **Semantic prior answer recall**: Similar prior Q/A pairs are retrieved and passed to the research planner, which can skip searching when they suffice
-- **Background summarization**: After each `ask` call, the QA history is summarized into a compact session context for the next request
-- **Document filtering**: Session-level or per-query document filtering
-
-### CLI Usage
-
-```bash
-haiku-rag chat
-haiku-rag chat --db /path/to/database.lancedb
-```
-
-See [Applications](../apps.md#chat-tui) for the full TUI interface guide.
-
-### Python Usage
-
-```python
-from haiku.rag.client import HaikuRAG
-from haiku.rag.agents.chat import create_chat_agent, prepare_chat_context, ChatDeps
-from haiku.rag.tools import ToolContext
-
-agent = create_chat_agent(config)
-
-async with HaikuRAG(path_to_db) as client:
-    context = ToolContext()
-    prepare_chat_context(context)
-    deps = ChatDeps(config=config, client=client, tool_context=context)
-
-    # First question
-    result = await agent.run("What is haiku.rag?", deps=deps)
-    print(result.output)
-
-    # Follow-up (uses session context)
-    result = await agent.run("How does it handle PDFs?", deps=deps)
-    print(result.output)
-```
-
-### Feature Selection
-
-By default, `create_chat_agent` enables search, documents, and QA toolsets. You can customize which capabilities the agent has via the `features` parameter:
-
-```python
-from haiku.rag.agents.chat import (
-    create_chat_agent,
-    FEATURE_SEARCH,
-    FEATURE_DOCUMENTS,
-    FEATURE_QA,
-    FEATURE_ANALYSIS,
-)
-
-# Search-only agent
-agent = create_chat_agent(config, features=[FEATURE_SEARCH])
-
-# All features including code analysis
-agent = create_chat_agent(
-    config,
-    features=[FEATURE_SEARCH, FEATURE_DOCUMENTS, FEATURE_QA, FEATURE_ANALYSIS],
-)
-```
-
-Available features:
-
-| Feature | Constant | Tools added |
-|---------|----------|-------------|
-| Search | `FEATURE_SEARCH` | `search` |
-| Documents | `FEATURE_DOCUMENTS` | `list_documents`, `get_document`, `summarize_document` |
-| QA | `FEATURE_QA` | `ask` |
-| Analysis | `FEATURE_ANALYSIS` | `analyze` |
-
-The system prompt is automatically composed to match the selected features. See [Toolsets](../tools.md) for details on each toolset's parameters and behavior.
-
-### Session State
-
-Session state is managed through `ToolContext` — a namespace-based state container shared across all toolsets. The chat agent uses two namespaces:
-
-**`SessionState`** (session management):
-
-- `document_filter` — List of document titles/URIs to restrict searches
-- `citation_registry` — Stable mapping of chunk IDs to citation indices
-- `citations` — Citations from the current query
-
-**`QASessionState`** (QA history and context):
-
-- `qa_history` — List of previous Q/A pairs with embeddings
-- `session_context` — Automatically maintained session context summary
-
-For multi-session applications (e.g., web backends), use `ToolContextCache` to cache `ToolContext` instances by external session/thread ID:
-
-```python
-from haiku.rag.tools import ToolContext, ToolContextCache
-
-cache = ToolContextCache()  # TTL-based, defaults to 1 hour
-context, _is_new = cache.get_or_create(thread_id)
-```
-
-**Citation Registry**: Citation indices persist across tool calls within a session. The same `chunk_id` always returns the same citation index (first-occurrence-wins). This ensures consistent citation numbering in multi-turn conversations — `[1]` always refers to the same source.
-
-### Conversational Memory
-
-The chat agent maintains two layers of conversational memory:
-
-**1. Semantic prior answer recall**
-
-When the `ask` tool receives a question, it embeds the question and compares it against prior Q/A embeddings. Sufficiently similar prior answers are passed to the research planner, which can skip searching entirely if they already cover the question.
-
-**2. Background session summarization**
-
-After each `ask` call, a background task summarizes the full QA history into a compact session context. This summary is injected into the research planner on the next request, allowing it to resolve ambiguous references ("Tell me more about the authentication part") without having seen the full conversation.
 
 ## Research Graph
 

@@ -1,7 +1,7 @@
 """Custom agent with AG-UI streaming.
 
-A Starlette app that composes haiku.rag toolsets into an AG-UI compatible
-agent. Multi-session support via ToolContextCache.
+A Starlette app that serves an AG-UI streaming endpoint using the
+haiku.rag RAG skill with haiku.skills SkillToolset.
 
 Requirements:
     - An Ollama instance running locally (default embedder)
@@ -13,25 +13,18 @@ Usage:
 
 import os
 import sys
+from pathlib import Path
 
 from pydantic_ai import Agent
+from pydantic_ai.ag_ui import AGUIAdapter
 from pydantic_ai.ui import SSE_CONTENT_TYPE
-from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import AppConfig
-from haiku.rag.tools import (
-    AgentDeps,
-    ToolContextCache,
-    build_tools_prompt,
-    create_qa_toolset,
-    create_search_toolset,
-    prepare_context,
-)
+from haiku.rag.skills.rag import create_skill
+from haiku.skills.agent import SkillToolset
 
 db_path = os.environ.get("DB_PATH")
 if not db_path:
@@ -40,39 +33,13 @@ if not db_path:
     )
     sys.exit(1)
 
-AGUI_STATE_KEY = "my_app"
+skill = create_skill(db_path=Path(db_path))
+toolset = SkillToolset(skills=[skill])
 
-config = AppConfig()
-
-# ToolContextCache maintains per-thread state across requests
-context_cache = ToolContextCache()
-
-# Singleton client
-_client: HaikuRAG | None = None
-
-
-def get_client() -> HaikuRAG:
-    global _client
-    if _client is None:
-        _client = HaikuRAG(db_path=db_path)
-    return _client
-
-
-features = ["search", "qa"]
-tools_prompt = build_tools_prompt(features)
-
-# Create the agent once at module level
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",
-    deps_type=AgentDeps,
-    output_type=str,
-    instructions=(
-        f"You are a helpful assistant with access to a knowledge base.\n{tools_prompt}"
-    ),
-    toolsets=[
-        create_search_toolset(config),
-        create_qa_toolset(config),
-    ],
+    instructions=toolset.system_prompt,
+    toolsets=[toolset],
 )
 
 
@@ -81,19 +48,8 @@ async def stream_chat(request: Request) -> Response:
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(body)
 
-    thread_id = getattr(run_input, "thread_id", None) or "default"
-    context, is_new = context_cache.get_or_create(thread_id)
-    if is_new:
-        prepare_context(
-            context,
-            features=["search", "qa"],
-            state_key=AGUI_STATE_KEY,
-        )
-
-    deps = AgentDeps(client=get_client(), tool_context=context)
-
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
-    event_stream = adapter.run_stream(deps=deps)
+    event_stream = adapter.run_stream()
     sse_event_stream = adapter.encode_stream(event_stream)
 
     return StreamingResponse(

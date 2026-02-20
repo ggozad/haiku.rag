@@ -37,7 +37,7 @@ Press `Ctrl+P` to open the command palette:
 
 | Command | Description |
 |---------|-------------|
-| Memory | Edit initial context (before first message) or view session context (after) |
+| View state | View the current session state |
 | Filter documents | Select documents to restrict searches |
 | Show database info | View document/chunk counts and storage info |
 | Visual grounding | View chunk source location in document |
@@ -46,12 +46,10 @@ Press `Ctrl+P` to open the command palette:
 ### Session Management
 
 - Conversation history is maintained in memory for the session
-- Previous Q/A pairs are used as context for follow-up questions
+- Previous Q/A pairs are used as context for follow-up questions via the `get_session_context` tool
 - Citations are tracked per response and can be inspected
 - Document filter restricts all searches to selected documents
-- Initial context can be set via CLI (`--initial-context`) or command palette
-- Initial context is editable until the first message is sent, then becomes read-only
-- Clearing chat resets session state, restores CLI-provided context, and unlocks editing
+- Clearing chat resets session state
 
 ## Web Application
 
@@ -63,7 +61,7 @@ Browser-based conversational RAG with a CopilotKit frontend.
 - Expandable citations with source documents, pages, and headings
 - Visual grounding to view chunk source locations in documents
 - Document filter to restrict searches to selected documents
-- Memory panel: set initial context before first message, view session context after
+- Session state view for inspecting accumulated Q&A history, citations, and documents
 
 ### Quick Start
 

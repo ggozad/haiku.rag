@@ -16,7 +16,7 @@ See `docker/README.md` for setup instructions.
 
 **Script:** `custom_agent.py`
 
-Composes `search`, `qa`, and `document` toolsets into a pydantic-ai `Agent` using `AgentDeps` and `prepare_context`. Shows how to run queries and inspect accumulated state (citations, QA history).
+Uses the RAG skill with `SkillToolset` to build a conversational agent.
 
 ```bash
 uv run python examples/custom_agent.py /path/to/db.lancedb
@@ -26,7 +26,7 @@ uv run python examples/custom_agent.py /path/to/db.lancedb
 
 **Script:** `custom_agent_agui.py`
 
-A Starlette app that serves an AG-UI streaming endpoint using composed toolsets, `AgentDeps`, and `ToolContextCache` for multi-session support.
+A Starlette app that serves an AG-UI streaming endpoint using the RAG skill with `SkillToolset`.
 
 ```bash
 DB_PATH=/path/to/db.lancedb uv run uvicorn examples.custom_agent_agui:app --reload --port 8000

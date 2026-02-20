@@ -1,7 +1,7 @@
-"""Custom agent using haiku.rag composable toolsets.
+"""Custom agent using the haiku.rag RAG skill.
 
-Demonstrates how to compose search, QA, and document toolsets into a
-pydantic-ai Agent using AgentDeps and prepare_context.
+Demonstrates how to use the RAG skill with haiku.skills SkillToolset
+to build a conversational agent.
 
 Requirements:
     - An Ollama instance running locally (default embedder)
@@ -14,61 +14,36 @@ Usage:
 
 import asyncio
 import sys
+from pathlib import Path
 
 from pydantic_ai import Agent
 
-from haiku.rag.client import HaikuRAG
-from haiku.rag.tools import (
-    AgentDeps,
-    ToolContext,
-    build_tools_prompt,
-    create_document_toolset,
-    create_qa_toolset,
-    create_search_toolset,
-    prepare_context,
-)
+from haiku.rag.skills.rag import create_skill
+from haiku.skills.agent import SkillToolset
 
 
 async def main(db_path: str) -> None:
-    async with HaikuRAG(db_path) as client:
-        # Compose toolsets into an agent
-        config = client.config
-        search_toolset = create_search_toolset(config)
-        qa_toolset = create_qa_toolset(config)
-        document_toolset = create_document_toolset(config)
+    skill = create_skill(db_path=Path(db_path))
+    toolset = SkillToolset(skills=[skill])
 
-        features = ["search", "documents", "qa"]
-        tools_prompt = build_tools_prompt(features)
+    agent = Agent(
+        "anthropic:claude-haiku-4-5-20251001",
+        instructions=toolset.system_prompt,
+        toolsets=[toolset],
+    )
 
-        agent = Agent(
-            "anthropic:claude-haiku-4-5-20251001",
-            deps_type=AgentDeps,
-            output_type=str,
-            instructions=(
-                "You are a helpful assistant with access to a knowledge base.\n"
-                f"{tools_prompt}"
-            ),
-            toolsets=[search_toolset, qa_toolset, document_toolset],
-        )
+    print("Custom agent ready. Ctrl+C to exit.\n")
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
 
-        # Prepare a shared ToolContext
-        context = ToolContext()
-        prepare_context(context, features=["search", "documents", "qa"])
+        if not user_input:
+            continue
 
-        deps = AgentDeps(client=client, tool_context=context)
-
-        print("Custom agent ready. Ctrl+C to exit.\n")
-        while True:
-            try:
-                user_input = input("You: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                break
-
-            if not user_input:
-                continue
-
-            result = await agent.run(user_input, deps=deps)
-            print(f"\nAgent: {result.output}\n")
+        result = await agent.run(user_input)
+        print(f"\nAgent: {result.output}\n")
 
 
 if __name__ == "__main__":
