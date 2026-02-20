@@ -205,7 +205,14 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        store = Store(self.db_path, config=self.config, skip_validation=True)
+        store = Store(
+            self.db_path,
+            config=self.config,
+            skip_validation=True,
+            read_only=True,
+            skip_migration_check=True,
+            before=self.before,
+        )
 
         tables = ["documents", "chunks", "settings"]
         if table:
