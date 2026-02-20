@@ -448,4 +448,4 @@ agent = Agent(
 result = await agent.run("What are the main findings?")
 ```
 
-See [Tools & Skills](tools.md) for the full API reference.
+See [Toolsets](tools.md) for the full API reference.

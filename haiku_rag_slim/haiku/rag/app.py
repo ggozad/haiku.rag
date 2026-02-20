@@ -476,8 +476,6 @@ class HaikuRAGApp:  # pragma: no cover
                     self.console.print(f"• {finding}")
                 self.console.print()
 
-            # (Themes section removed)
-
             # Conclusions
             if report.conclusions:
                 self.console.print("[bold cyan]Conclusions:[/bold cyan]")

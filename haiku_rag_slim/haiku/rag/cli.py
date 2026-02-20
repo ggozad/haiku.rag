@@ -623,7 +623,7 @@ def chat(  # pragma: no cover
     model: str | None = typer.Option(
         None,
         "--model",
-        help="Model to use for the chat agent (e.g. openai:gpt-4o)",
+        help="Model to use for the chat (e.g. openai:gpt-4o)",
     ),
 ):
     """Launch the chat TUI for conversational RAG."""

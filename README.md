@@ -137,7 +137,7 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA, chat, and research agents
+- [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA and research agents
 - [RLM Agent](https://ggozad.github.io/haiku.rag/rlm/) - Complex analytical tasks via code execution
 - [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
 - [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring and MCP

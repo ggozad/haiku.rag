@@ -14,7 +14,7 @@ def run_chat(
         db_path: Path to the LanceDB database. If None, uses default from config.
         read_only: Whether to open the database in read-only mode.
         before: Query database as it existed before this datetime.
-        model: Model to use for the chat agent.
+        model: Model to use for the chat.
     """
     try:
         from haiku.rag.chat.app import ChatApp

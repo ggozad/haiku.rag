@@ -46,7 +46,7 @@ A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) a
 
 ### haiku.rag.yaml
 
-Configure the chat agent's LLM, embeddings, and search settings:
+Configure the LLM, embeddings, and search settings:
 
 ```yaml
 qa:
@@ -100,7 +100,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 ## Chat Capabilities
 
-The chat agent can:
+The chat can:
 
 - **Search** your documents with hybrid vector + full-text search
 - **Answer questions** with citations from your knowledge base

@@ -21,7 +21,7 @@ class IterativePlanResult(BaseModel):
 class Citation(BaseModel):
     """Resolved citation with full metadata for display/visual grounding.
 
-    Used by both research graph and chat agent. The optional index field
+    Used by research graph and chat applications. The optional index field
     supports UI display ordering in chat contexts.
     """
 

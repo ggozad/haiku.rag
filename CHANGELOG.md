@@ -3,9 +3,10 @@
 
 ### Added
 
-- **RAG skill** (`haiku.rag.skills.rag`): haiku.skills integration with search, list_documents, get_document, ask, analyze, and research tools plus managed `RAGState`
+- **RAG skill** (`haiku.rag.skills.rag`): haiku.skills integration with search, list_documents, get_document, ask, and research tools plus managed `RAGState`
+- **RLM skill** (`haiku.rag.skills.rlm`): haiku.skills integration with analyze tool for computational analysis via code execution
 - **`HaikuRAG.research()`**: Client method for multi-agent research
-- **haiku.skills entry point**: `rag = "haiku.rag.skills.rag:create_skill"`
+- **haiku.skills entry points**: `rag = "haiku.rag.skills.rag:create_skill"`, `rag-rlm = "haiku.rag.skills.rlm:create_skill"`
 
 ### Changed
 
