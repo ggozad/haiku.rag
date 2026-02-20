@@ -80,10 +80,16 @@ class HaikuRAGApp:  # pragma: no cover
 
         versions = get_package_versions()
 
-        # Get comprehensive table statistics (this also runs migrations)
         from haiku.rag.store.engine import Store
 
-        store = Store(self.db_path, config=self.config, skip_validation=True)
+        store = Store(
+            self.db_path,
+            config=self.config,
+            skip_validation=True,
+            read_only=True,
+            skip_migration_check=True,
+            before=self.before,
+        )
         table_stats = store.get_stats()
 
         # Read settings after Store init (migrations have run)
@@ -199,7 +205,14 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        store = Store(self.db_path, config=self.config, skip_validation=True)
+        store = Store(
+            self.db_path,
+            config=self.config,
+            skip_validation=True,
+            read_only=True,
+            skip_migration_check=True,
+            before=self.before,
+        )
 
         tables = ["documents", "chunks", "settings"]
         if table:
