@@ -103,12 +103,22 @@ def create_skill(
         """
         from haiku.rag.client import HaikuRAG
 
+        state = (
+            ctx.deps.state
+            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
+            else None
+        )
+
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            results = await rag.search(query, limit=limit)
+            results = await rag.search(
+                query,
+                limit=limit,
+                filter=state.document_filter if state else None,
+            )
             results = await rag.expand_context(results)
 
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
-            ctx.deps.state.searches[query] = list(results)
+        if state:
+            state.searches[query] = list(results)
 
         return "\n\n---\n\n".join(
             r.format_for_agent(rank=i + 1, total=len(results))
@@ -226,7 +236,10 @@ def create_skill(
                 )
 
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            answer, citations = await rag.ask(ask_question)
+            answer, citations = await rag.ask(
+                ask_question,
+                filter=state.document_filter if state else None,
+            )
 
         if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
             next_index = len(ctx.deps.state.citations) + 1
@@ -287,18 +300,26 @@ def create_skill(
         """
         from haiku.rag.client import HaikuRAG
 
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            report = await rag.research(question)
+        state = (
+            ctx.deps.state
+            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
+            else None
+        )
 
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
-            ctx.deps.state.reports.append(
+        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+            report = await rag.research(
+                question, filter=state.document_filter if state else None
+            )
+
+        if state:
+            state.reports.append(
                 ResearchEntry(
                     question=question,
                     title=report.title,
                     executive_summary=report.executive_summary,
                 )
             )
-            ctx.deps.state.qa_history.append(
+            state.qa_history.append(
                 QAHistoryEntry(question=question, answer=report.executive_summary)
             )
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.skills.rag import RAGState
 from haiku.skills.agent import SkillToolset
 from haiku.skills.models import Skill
 
@@ -387,4 +388,14 @@ class ChatApp(App):
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
         """Handle document filter changes from modal."""
+        from haiku.rag.tools.filters import build_multi_document_filter
+
         self._document_filter = event.selected
+
+        if self._toolset:
+            rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
+            if isinstance(rag_state, RAGState):
+                rag_state.document_filter = build_multi_document_filter(
+                    self._document_filter
+                )
+                self._state = self._toolset.build_state_snapshot()

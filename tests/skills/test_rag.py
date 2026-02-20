@@ -72,6 +72,17 @@ class TestSearchTool:
         assert len(results) > 0
         assert isinstance(results[0], SearchResult)
 
+    async def test_search_applies_document_filter_from_state(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        state = RAGState(document_filter="title = 'AI Overview'")
+        ctx = _make_ctx(state)
+        result = await search(ctx, query="artificial intelligence")
+        assert "AI Overview" in result
+        assert "ML Basics" not in result
+
     async def test_search_without_state(self, rag_db):
         from haiku.rag.skills.rag import create_skill
 
@@ -231,7 +242,7 @@ class TestAskTool:
 
         call_count = 0
 
-        async def mock_ask(self, question):
+        async def mock_ask(self, question, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -251,6 +262,24 @@ class TestAskTool:
 
         await ask(ctx, question="Second question")
         assert state.citations[2].index == 3
+
+    async def test_ask_applies_document_filter_from_state(self, rag_db, monkeypatch):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        captured_kwargs = {}
+
+        async def mock_ask(self, question, **kwargs):
+            captured_kwargs.update(kwargs)
+            return ("Answer.", [])
+
+        monkeypatch.setattr(HaikuRAG, "ask", mock_ask)
+
+        skill = create_skill(db_path=rag_db)
+        ask = _get_tool(skill, "ask")
+        state = RAGState(document_filter="title = 'AI Overview'")
+        ctx = _make_ctx(state)
+        await ask(ctx, question="What is AI?")
+        assert captured_kwargs.get("filter") == "title = 'AI Overview'"
 
     async def test_ask_includes_prior_qa_context(self, rag_db, monkeypatch):
         import random
@@ -419,6 +448,34 @@ class TestResearchTool:
         assert len(state.qa_history) == 1
         assert state.qa_history[0].question == "What is AI?"
         assert state.qa_history[0].answer == "AI is transforming industries."
+
+    async def test_research_applies_document_filter_from_state(
+        self, rag_db, monkeypatch
+    ):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        captured_kwargs = {}
+
+        report = ResearchReport(
+            title="AI Research",
+            executive_summary="Summary.",
+            main_findings=["Finding"],
+            conclusions=["Conclusion"],
+            sources_summary="Sources.",
+        )
+
+        async def mock_research(self, question, **kwargs):
+            captured_kwargs.update(kwargs)
+            return report
+
+        monkeypatch.setattr(HaikuRAG, "research", mock_research)
+
+        skill = create_skill(db_path=rag_db)
+        research = _get_tool(skill, "research")
+        state = RAGState(document_filter="title = 'AI Overview'")
+        ctx = _make_ctx(state)
+        await research(ctx, question="What is AI?")
+        assert captured_kwargs.get("filter") == "title = 'AI Overview'"
 
     async def test_research_without_state(self, rag_db, monkeypatch):
         from haiku.rag.skills.rag import create_skill

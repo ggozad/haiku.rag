@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
+from haiku.rag.skills.rag import RAGState
 
 runner = CliRunner()
 
@@ -44,6 +45,29 @@ def _make_app(db_path: Path, mock_client: AsyncMock | None = None):
     skill.metadata = MagicMock()
     skill.metadata.name = "rag"
     skill.metadata.description = "RAG skill"
+
+    return ChatApp(
+        db_path=db_path,
+        skill=skill,
+        read_only=True,
+    ), mock_client
+
+
+def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
+    """Create a ChatApp with a skill that has RAGState."""
+    from haiku.rag.chat.app import ChatApp
+    from haiku.skills.models import Skill, SkillMetadata, SkillSource
+
+    if mock_client is None:
+        mock_client = _make_mock_client()
+
+    skill = Skill(
+        metadata=SkillMetadata(name="rag", description="RAG skill"),
+        source=SkillSource.ENTRYPOINT,
+        tools=[],
+        state_type=RAGState,
+        state_namespace="rag",
+    )
 
     return ChatApp(
         db_path=db_path,
@@ -241,3 +265,55 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
             await pilot.press("enter")
             await pilot.pause()
             assert citation_widget.collapsed is True
+
+
+@pytest.mark.asyncio
+async def test_document_filter_updates_rag_state(temp_db_path: Path):
+    """Test that selecting document filters updates RAGState.document_filter."""
+    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+    from haiku.rag.tools.filters import build_multi_document_filter
+
+    app, mock_client = _make_app_with_state(temp_db_path)
+
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+        async with app.run_test():
+            # Simulate the FilterChanged message
+            selected = ["AI Overview", "ML Basics"]
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged(selected)
+            )
+
+            # RAGState.document_filter should be set
+            rag_state = app._toolset.get_namespace(RAG_STATE_NAMESPACE)
+            assert rag_state is not None
+            expected_filter = build_multi_document_filter(selected)
+            assert rag_state.document_filter == expected_filter
+
+            # The state snapshot should also reflect the change
+            assert app._state["rag"]["document_filter"] == expected_filter
+
+
+@pytest.mark.asyncio
+async def test_document_filter_cleared_when_empty(temp_db_path: Path):
+    """Test that clearing all document filters sets document_filter to None."""
+    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+
+    app, mock_client = _make_app_with_state(temp_db_path)
+
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+        async with app.run_test():
+            # First set a filter
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged(["AI Overview"])
+            )
+            rag_state = app._toolset.get_namespace(RAG_STATE_NAMESPACE)
+            assert rag_state.document_filter is not None
+
+            # Then clear it
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged([])
+            )
+            assert rag_state.document_filter is None
+            assert app._state["rag"]["document_filter"] is None
