@@ -84,15 +84,6 @@ When prior answers are provided, the planner uses a context-aware prompt that ev
 - **search_one**: Answers a single question using the knowledge base (up to 3 search calls per question). Each answer is added to `ResearchContext.qa_responses` for the next planning iteration.
 - **synthesize**: Generates the final output from all gathered evidence.
 
-**Output modes:**
-
-The graph supports two output modes via `build_research_graph(output_mode=...)`:
-
-| Mode | Output type | Used by |
-|------|-------------|---------|
-| `"report"` | `ResearchReport` (title, executive summary, findings, conclusions, recommendations) | CLI `haiku-rag research`, Python API |
-| `"conversational"` | `ConversationalAnswer` (answer, citations, confidence) | Chat agent's `ask` tool |
-
 **Iterative flow:**
 
 - Each iteration: planner evaluates context → proposes one question → search answers it → loop back
@@ -158,40 +149,6 @@ async with HaikuRAG(path_to_db) as client:
     deps = ResearchDeps(client=client)
 
     report = await graph.run(state=state, deps=deps)
-```
-
-**Conversational mode with prior answers:**
-
-```python
-from haiku.rag.config import Config
-from haiku.rag.agents.research.dependencies import ResearchContext
-from haiku.rag.agents.research.graph import build_research_graph
-from haiku.rag.agents.research.models import SearchAnswer
-from haiku.rag.agents.research.state import ResearchDeps, ResearchState
-
-# Conversational mode returns ConversationalAnswer instead of ResearchReport
-graph = build_research_graph(config=Config, output_mode="conversational")
-
-# Pass session context and prior answers from conversation history
-context = ResearchContext(
-    original_question="How does it handle authentication?",
-    session_context="User is building a Python web app with FastAPI.",
-    qa_responses=[
-        SearchAnswer(
-            query="What authentication methods are supported?",
-            answer="JWT and OAuth2 are supported.",
-            confidence=0.95,
-            cited_chunks=["chunk-1"],
-        )
-    ],
-)
-state = ResearchState.from_config(context=context, config=Config)
-deps = ResearchDeps(client=client)
-
-result = await graph.run(state=state, deps=deps)
-print(result.answer)       # Direct conversational answer
-print(result.confidence)   # 0.0-1.0
-print(result.citations)    # Deduplicated citations from all searches
 ```
 
 ### Filtering Documents

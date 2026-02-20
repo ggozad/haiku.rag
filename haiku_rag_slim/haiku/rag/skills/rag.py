@@ -13,6 +13,16 @@ from haiku.skills.models import Skill, SkillSource
 from haiku.skills.parser import parse_skill_md
 from haiku.skills.state import SkillRunDeps
 
+AGENT_PREAMBLE = """You are a helpful research assistant powered by haiku.rag, a knowledge base system.
+
+CRITICAL RULES:
+1. For greetings or casual chat: respond directly WITHOUT using any tools
+2. NEVER make up information - always use tools to get facts from the knowledge base
+3. For questions: Use the "ask" tool - it handles search and citation automatically
+4. For searches: Use the "search" tool - copy the ENTIRE tool response to your output INCLUDING content snippets
+5. When you use the "ask" tool, summarize the key findings and always include citations in your response
+"""
+
 
 class ResearchEntry(BaseModel):
     question: str

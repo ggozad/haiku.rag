@@ -1,5 +1,4 @@
 import asyncio
-from typing import Literal, overload
 
 from pydantic_ai import Agent, RunContext, format_as_xml
 from pydantic_ai.output import ToolOutput
@@ -7,15 +6,12 @@ from pydantic_graph.beta import Graph, GraphBuilder, StepContext
 
 from haiku.rag.agents.research.dependencies import ResearchContext, ResearchDependencies
 from haiku.rag.agents.research.models import (
-    Citation,
-    ConversationalAnswer,
     IterativePlanResult,
     RawSearchAnswer,
     ResearchReport,
     SearchAnswer,
 )
 from haiku.rag.agents.research.prompts import (
-    CONVERSATIONAL_SYNTHESIS_PROMPT,
     ITERATIVE_PLAN_PROMPT,
     ITERATIVE_PLAN_PROMPT_WITH_CONTEXT,
     SEARCH_PROMPT,
@@ -169,29 +165,13 @@ async def _search_one_step_logic(
         return SearchAnswer(query=sub_q, answer="", confidence=0.0)
 
 
-@overload
-def build_research_graph(
-    config: AppConfig = ...,
-    output_mode: Literal["report"] = ...,
-) -> Graph[ResearchState, ResearchDeps, None, ResearchReport]: ...
-
-
-@overload
-def build_research_graph(
-    config: AppConfig = ...,
-    output_mode: Literal["conversational"] = ...,
-) -> Graph[ResearchState, ResearchDeps, None, ConversationalAnswer]: ...
-
-
 def build_research_graph(
     config: AppConfig = Config,
-    output_mode: Literal["report", "conversational"] = "report",
-) -> Graph[ResearchState, ResearchDeps, None, ResearchReport | ConversationalAnswer]:
+) -> Graph[ResearchState, ResearchDeps, None, ResearchReport]:
     """Build the iterative research graph.
 
     Args:
         config: AppConfig object (uses config.research for provider, model, and graph parameters)
-        output_mode: Output format - "report" for ResearchReport, "conversational" for ConversationalAnswer
 
     Returns:
         Configured research graph with iterative planning
@@ -199,18 +179,14 @@ def build_research_graph(
     model_config = config.research.model
 
     search_prompt = build_prompt(SEARCH_PROMPT, config)
-
-    if output_mode == "report":
-        synthesis_prompt = build_prompt(
-            config.prompts.synthesis or SYNTHESIS_PROMPT, config
-        )
-    else:
-        synthesis_prompt = build_prompt(CONVERSATIONAL_SYNTHESIS_PROMPT, config)
+    synthesis_prompt = build_prompt(
+        config.prompts.synthesis or SYNTHESIS_PROMPT, config
+    )
 
     g = GraphBuilder(
         state_type=ResearchState,
         deps_type=ResearchDeps,
-        output_type=ResearchReport if output_mode == "report" else ConversationalAnswer,
+        output_type=ResearchReport,
     )
 
     @g.step
@@ -236,81 +212,35 @@ def build_research_graph(
                 confidence=0.0,
             )
 
-    if output_mode == "report":
+    @g.step
+    async def synthesize(
+        ctx: StepContext[ResearchState, ResearchDeps, IterativePlanResult],
+    ) -> ResearchReport:
+        """Generate final research report."""
+        state = ctx.state
+        deps = ctx.deps
 
-        @g.step
-        async def synthesize(
-            ctx: StepContext[ResearchState, ResearchDeps, IterativePlanResult],
-        ) -> ResearchReport:
-            """Generate final research report."""
-            state = ctx.state
-            deps = ctx.deps
+        agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
+            model=get_model(model_config, config),
+            output_type=ResearchReport,
+            instructions=synthesis_prompt,
+            retries=3,
+            output_retries=3,
+            deps_type=ResearchDependencies,
+        )
 
-            agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
-                model=get_model(model_config, config),
-                output_type=ResearchReport,
-                instructions=synthesis_prompt,
-                retries=3,
-                output_retries=3,
-                deps_type=ResearchDependencies,
-            )
-
-            context_xml = format_context_for_prompt(state.context)
-            prompt = (
-                "Generate a comprehensive research report based on all gathered information.\n\n"
-                f"{context_xml}\n\n"
-                "Create a detailed report that synthesizes all findings into a coherent response."
-            )
-            agent_deps = ResearchDependencies(
-                client=deps.client,
-                context=state.context,
-            )
-            result = await agent.run(prompt, deps=agent_deps)
-            return result.output
-
-    else:
-
-        @g.step
-        async def synthesize(
-            ctx: StepContext[ResearchState, ResearchDeps, IterativePlanResult],
-        ) -> ConversationalAnswer:
-            """Generate conversational answer from gathered evidence."""
-            state = ctx.state
-            deps = ctx.deps
-
-            agent: Agent[ResearchDependencies, ConversationalAnswer] = Agent(  # type: ignore[assignment]
-                model=get_model(model_config, config),
-                output_type=ConversationalAnswer,
-                instructions=synthesis_prompt,
-                retries=3,
-                output_retries=3,
-                deps_type=ResearchDependencies,
-            )
-
-            context_xml = format_context_for_prompt(state.context)
-            prompt = (
-                f"Answer the question based on the gathered evidence.\n\n{context_xml}"
-            )
-            agent_deps = ResearchDependencies(
-                client=deps.client,
-                context=state.context,
-            )
-            result = await agent.run(prompt, deps=agent_deps)
-
-            # Collect unique citations from qa_responses (dedupe by chunk_id)
-            seen_chunks: set[str] = set()
-            unique_citations: list[Citation] = []
-            for qa in state.context.qa_responses:
-                for c in qa.citations:
-                    if c.chunk_id not in seen_chunks:
-                        seen_chunks.add(c.chunk_id)
-                        unique_citations.append(c)
-
-            return ConversationalAnswer(
-                answer=result.output.answer,
-                citations=unique_citations,
-                confidence=result.output.confidence,
-            )
+        context_xml = format_context_for_prompt(state.context)
+        prompt = (
+            "Generate a comprehensive research report based on all gathered information.\n\n"
+            f"{context_xml}\n\n"
+            "Create a detailed report that synthesizes all findings into a coherent response."
+        )
+        agent_deps = ResearchDependencies(
+            client=deps.client,
+            context=state.context,
+        )
+        result = await agent.run(prompt, deps=agent_deps)
+        return result.output
 
     # Build graph edges: iterative loop
     #

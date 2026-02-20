@@ -111,18 +111,6 @@ def resolve_citations(
     return citations
 
 
-class ConversationalAnswer(BaseModel):
-    """Conversational answer for chat context."""
-
-    answer: str = Field(description="Direct answer to the question")
-    citations: list[Citation] = Field(
-        default_factory=list, description="Citations supporting the answer"
-    )
-    confidence: float = Field(
-        default=1.0, description="Confidence score (0-1)", ge=0.0, le=1.0
-    )
-
-
 class ResearchReport(BaseModel):
     """Final research report structure."""
 

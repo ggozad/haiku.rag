@@ -150,7 +150,7 @@ flowchart TB
 - Proposes one question at a time, evaluates the answer, then decides whether to continue
 - Session context resolves ambiguous references
 - Prior answers let the planner skip redundant searches
-- Synthesizes structured report or conversational answer
+- Synthesizes structured report
 
 **RLM Agent** - Complex analytical tasks via code execution:
 

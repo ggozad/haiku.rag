@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, overload
 from urllib.parse import urlparse
 
 import httpx
@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 
     from haiku.rag.agents.research.models import (
         Citation,
-        ConversationalAnswer,
         ResearchReport,
     )
     from haiku.rag.agents.rlm.models import RLMResult
@@ -1328,50 +1327,28 @@ class HaikuRAG:
         qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
         return await qa_agent.answer(question, filter=filter)
 
-    @overload
     async def research(
         self,
         question: str,
         *,
-        output_mode: Literal["report"] = ...,
-        filter: str | None = ...,
-        max_iterations: int | None = ...,
-    ) -> "ResearchReport": ...
-
-    @overload
-    async def research(
-        self,
-        question: str,
-        *,
-        output_mode: Literal["conversational"],
-        filter: str | None = ...,
-        max_iterations: int | None = ...,
-    ) -> "ConversationalAnswer": ...
-
-    async def research(
-        self,
-        question: str,
-        *,
-        output_mode: Literal["report", "conversational"] = "report",
         filter: str | None = None,
         max_iterations: int | None = None,
-    ) -> "ResearchReport | ConversationalAnswer":
+    ) -> "ResearchReport":
         """Run multi-agent research to investigate a question.
 
         Args:
             question: The research question to investigate.
-            output_mode: "report" for ResearchReport, "conversational" for ConversationalAnswer.
             filter: SQL WHERE clause to filter documents.
             max_iterations: Override max iterations (None uses config default).
 
         Returns:
-            ResearchReport or ConversationalAnswer based on output_mode.
+            ResearchReport with structured findings.
         """
         from haiku.rag.agents.research.dependencies import ResearchContext
         from haiku.rag.agents.research.graph import build_research_graph
         from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 
-        graph = build_research_graph(config=self._config, output_mode=output_mode)
+        graph = build_research_graph(config=self._config)
         context = ResearchContext(original_question=question)
         state = ResearchState.from_config(
             context=context, config=self._config, max_iterations=max_iterations
