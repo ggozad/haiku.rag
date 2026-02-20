@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **`info` command**: Open database in read-only mode to prevent write failures on read-only filesystems
+
 ## [0.31.0] - 2026-02-20
 
 ### Added
