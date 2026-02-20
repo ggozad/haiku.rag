@@ -237,12 +237,12 @@ const toolCallRenderers = [
 // Uses CopilotChatMessageView's children render prop to post-process the
 // rendered message elements and inject citations at the right positions.
 function MessageViewWithCitations({
-	messages,
-	isRunning,
+	messages = [],
+	isRunning = false,
 }: {
 	// biome-ignore lint/suspicious/noExplicitAny: AG-UI Message type is a broad union
-	messages: any[];
-	isRunning: boolean;
+	messages?: any[];
+	isRunning?: boolean;
 }) {
 	const ragState = useContext(ChatStateContext);
 	const citationsHistory = ragState ? deriveCitationsHistory(ragState) : [];
@@ -337,6 +337,7 @@ function MessageViewWithCitations({
 		</CopilotChatMessageView>
 	);
 }
+MessageViewWithCitations.Cursor = CopilotChatMessageView.Cursor;
 
 function ChatContentInner({
 	sessionId,
