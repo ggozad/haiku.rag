@@ -11,7 +11,7 @@ class QAHistoryEntry(BaseModel):
     question: str
     answer: str
     confidence: float = 0.9
-    citations: list[Citation] = []
+    citations: list[Citation] = Field(default_factory=list)
     question_embedding: list[float] | None = Field(default=None, exclude=True)
 
     @property

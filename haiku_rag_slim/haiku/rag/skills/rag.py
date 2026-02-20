@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
 from haiku.rag.agents.research.models import Citation
@@ -31,12 +31,12 @@ class ResearchEntry(BaseModel):
 
 
 class RAGState(BaseModel):
-    citations: list[Citation] = []
-    qa_history: list[QAHistoryEntry] = []
+    citations: list[Citation] = Field(default_factory=list)
+    qa_history: list[QAHistoryEntry] = Field(default_factory=list)
     document_filter: str | None = None
-    searches: dict[str, list[SearchResult]] = {}
-    documents: list[DocumentInfo] = []
-    reports: list[ResearchEntry] = []
+    searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
+    documents: list[DocumentInfo] = Field(default_factory=list)
+    reports: list[ResearchEntry] = Field(default_factory=list)
 
 
 def create_skill(
