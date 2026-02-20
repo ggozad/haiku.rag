@@ -74,6 +74,10 @@ nav:
       - Agents:
           - agents/index.md
           - RLM Agent: agents/rlm.md
+      - Skills:
+          - skills/index.md
+          - RAG: skills/rag.md
+          - RLM: skills/rlm.md
       - Toolsets: tools.md
       - Applications: apps.md
       - Server: server.md

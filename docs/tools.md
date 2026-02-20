@@ -1,86 +1,8 @@
-# Tools & Skills
+# Toolsets
 
-haiku.rag exposes its RAG capabilities through a [haiku.skills](https://github.com/ggozad/haiku.skills) skill. The skill provides tools for search, Q&A, analysis, and research that can be composed into any pydantic-ai agent via `SkillToolset`.
+haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggozad/haiku.skills) skills. See the [Skills](skills/index.md) section for the primary way to use haiku.rag tools.
 
 For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` factories used internally by agents.
-
-## RAG Skill
-
-The RAG skill is the primary way to use haiku.rag tools. It bundles all capabilities into a single skill with managed state.
-
-```python
-from haiku.rag.skills.rag import create_skill
-from haiku.skills.agent import SkillToolset
-from pydantic_ai import Agent
-
-skill = create_skill(db_path=db_path, config=config)
-toolset = SkillToolset(skills=[skill])
-
-agent = Agent(
-    "openai:gpt-4o",
-    instructions=toolset.system_prompt,
-    toolsets=[toolset],
-)
-
-result = await agent.run("What documents do we have?")
-```
-
-### `create_skill(db_path?, config?)`
-
-Creates a RAG skill instance.
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `db_path` | `None` | Path to LanceDB database. Falls back to `HAIKU_RAG_DB` env var, then config default. |
-| `config` | `None` | `AppConfig` instance. If None, uses `get_config()`. |
-
-### Tools
-
-| Tool | Purpose |
-|------|---------|
-| `search(query, limit?)` | Hybrid search (vector + full-text) with context expansion |
-| `list_documents(limit?, offset?, filter?)` | Paginated document listing |
-| `get_document(query)` | Retrieve a document by ID, title, or URI |
-| `ask(question)` | Q&A with citations via the QA agent |
-| `analyze(question, document?, filter?)` | Computational analysis via code execution (requires Docker) |
-| `research(question)` | Deep multi-agent research producing comprehensive reports |
-
-### State
-
-The skill manages a `RAGState` under the `"rag"` namespace:
-
-```python
-class RAGState(BaseModel):
-    citations: list[Any] = []
-    qa_history: list[QAHistoryEntry] = []
-    document_filter: str | None = None
-    searches: dict[str, list[SearchResult]] = {}
-    documents: list[DocumentInfo] = []
-    reports: list[ResearchEntry] = []
-```
-
-State is automatically synced via the AG-UI protocol when using `AGUIAdapter`. Access it programmatically:
-
-```python
-rag_state = toolset.get_namespace("rag")
-if rag_state:
-    print(f"Citations: {len(rag_state.citations)}")
-    print(f"Q&A history: {len(rag_state.qa_history)}")
-```
-
-### AG-UI Streaming
-
-For web applications, use pydantic-ai's `AGUIAdapter` to stream tool calls, text, and state deltas:
-
-```python
-from pydantic_ai.ag_ui import AGUIAdapter
-
-adapter = AGUIAdapter(agent=agent, run_input=run_input)
-event_stream = adapter.run_stream()
-sse_event_stream = adapter.encode_stream(event_stream)
-```
-
-See the [Web Application](apps.md#web-application) for a complete implementation.
 
 ## Low-Level Toolsets
 
