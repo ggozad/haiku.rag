@@ -28,6 +28,16 @@ Get a specific chunk by its ID (from search results).
 Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
 Use this to retrieve full chunk details and metadata for citation.
 
+### await get_docling_document(document_id) -> dict | None
+Get the full document structure as a dict (DoclingDocument format).
+Use `list_documents()` or search results to get document IDs first.
+Top-level keys: name, texts, tables, pictures, body, pages, key_value_items, furniture, groups.
+- `texts`: list of text items, each with `text`, `label` (e.g. "title", "text", "section_header", "list_item"), and `prov` (provenance with page/bounding box)
+- `tables`: list of tables, each with `data` containing `grid` (list of rows, each row a list of cells with `text`), `num_rows`, `num_cols`
+- `pictures`: list of figures/images with metadata
+- `pages`: page dimensions and metadata
+Use this for structural analysis: extracting table data, counting sections, analyzing layout.
+
 ### await llm(prompt) -> str
 Call an LLM directly with the given prompt. Returns the response as a string.
 Use this for classification, summarization, extraction, or any task where you
@@ -95,6 +105,22 @@ results = await search("safety requirements", limit=5)
 for r in results:
     chunk = await get_chunk(r['chunk_id'])
     print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+```
+
+### Extracting tables from a document
+```python
+docs = await list_documents(limit=10)
+for d in docs:
+    doc = await get_docling_document(d['id'])
+    if doc:
+        tables = doc.get('tables', [])
+        if tables:
+            print(f"{d['title']}: {len(tables)} table(s)")
+            for i, table in enumerate(tables):
+                grid = table.get('data', {}).get('grid', [])
+                for row in grid:
+                    cells = [cell.get('text', '') for cell in row]
+                    print(f"  Table {i}: {cells}")
 ```
 
 ### Using llm() for classification

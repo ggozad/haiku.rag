@@ -337,6 +337,43 @@ class TestSandboxPreloadedDocuments:
         assert "Doc B" in result.stdout
 
 
+class TestSandboxDoclingDocument:
+    """Test get_docling_document() external function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_missing_document(self, sandbox):
+        """get_docling_document returns None for a non-existent document."""
+        result = await sandbox.execute(
+            "doc = await get_docling_document('nonexistent-id')\nprint(doc is None)"
+        )
+        assert result.success
+        assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_returns_dict_for_document_with_docling_data(self, temp_db_path):
+        """get_docling_document returns a dict for a document with docling data."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Docling processed content",
+                uri="test://docling",
+                title="Docling Doc",
+            )
+
+            context = RLMContext()
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                f"doc = await get_docling_document('{doc.id}')\n"
+                "print(type(doc).__name__)\n"
+                "print(doc['name'])\n"
+                "print('texts' in doc)"
+            )
+            assert result.success
+            assert "dict" in result.stdout
+            assert "True" in result.stdout
+
+
 class TestSandboxLLM:
     """Test llm() external function."""
 

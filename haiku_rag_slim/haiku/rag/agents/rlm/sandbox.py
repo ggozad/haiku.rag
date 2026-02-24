@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -5,6 +6,7 @@ import pydantic_monty
 
 from haiku.rag.agents.rlm.dependencies import RLMContext
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.compression import decompress_json
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -106,6 +108,15 @@ class Sandbox:
                 "labels": meta.labels,
             }
 
+        async def get_docling_document(
+            document_id: str,
+        ) -> dict[str, Any] | None:
+            doc = await client.get_document_by_id(document_id)
+            if not doc or not doc.docling_document:
+                return None
+            json_str = decompress_json(doc.docling_document)
+            return json.loads(json_str)
+
         async def llm(prompt: str) -> str:
             from pydantic_ai import Agent
 
@@ -121,6 +132,7 @@ class Sandbox:
             "list_documents": list_documents,
             "get_document": get_document,
             "get_chunk": get_chunk,
+            "get_docling_document": get_docling_document,
             "llm": llm,
         }
 
