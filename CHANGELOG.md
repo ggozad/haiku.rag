@@ -1,6 +1,21 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **RLM sandbox**: Replaced Docker-based code execution with [pydantic-monty](https://github.com/pydantic/monty), a minimal secure Python interpreter written in Rust. Eliminates Docker as a runtime dependency for RLM with sub-millisecond sandbox startup
+- **RLM sandbox functions**: Added `get_chunk(chunk_id)` for retrieving chunk content and metadata from search results. `get_docling_document(document_id)` now returns the full document structure as a JSON dict. All sandbox functions now require `await`
+- **`RLMConfig`**: Removed `docker_image` and `docker_memory_limit` fields
+
+### Added
+
+- **RLM sandbox regex functions**: `regex_findall`, `regex_sub`, `regex_search`, `regex_split` for pattern matching without LLM calls
+- **`HaikuRAG.get_chunk_by_id()`**: Public method for chunk lookup by ID
+
+### Removed
+
+- **`docker_sandbox.py`**, **`runner.py`**: Docker container plumbing replaced by `sandbox.py`
+
 ## [0.31.1] - 2026-02-20
 
 ### Fixed

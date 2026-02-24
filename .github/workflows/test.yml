@@ -76,22 +76,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           fail_ci_if_error: false
-
-  test-docker-sandbox:
-    needs: [lint]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version-file: "pyproject.toml"
-      - name: Install dependencies
-        run: uv sync --all-extras
-      - name: Build Docker image
-        run: docker build -t haiku-rag-slim:test -f docker/Dockerfile.slim .
-      - name: Run Docker integration tests
-        run: uv run pytest tests/agents/rlm/test_sandbox.py -v

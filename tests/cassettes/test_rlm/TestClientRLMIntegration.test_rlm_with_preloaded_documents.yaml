@@ -88,7 +88,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '7839'
+      - '7390'
       content-type:
       - application/json
       host:
@@ -101,32 +101,33 @@ interactions:
 
           IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
 
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
           - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
 
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
 
           ## Available Functions
 
-          ### search(query, limit=10) -> list[dict]
+          ### await search(query, limit=10) -> list[dict]
           Search the knowledge base using hybrid search (vector + full-text).
           Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
 
-          ### list_documents(limit=10, offset=0) -> list[dict]
+          ### await list_documents(limit=10, offset=0) -> list[dict]
           List available documents in the knowledge base.
           Returns list of dicts with keys: id, title, uri, created_at
 
-          ### get_document(id_or_title) -> str | None
+          ### await get_document(id_or_title) -> str | None
           Get the full text content of a document by ID, title, or URI.
           Returns the document content as a string, or None if not found.
 
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
 
-          ### llm(prompt) -> str
+          ### await llm(prompt) -> str
           Call an LLM directly with the given prompt. Returns the response as a string.
           Use this for classification, summarization, extraction, or any task where you
           already have the content and just need LLM reasoning.
@@ -141,93 +142,64 @@ interactions:
           ```
           Check if it exists with: `if 'documents' in dir(): ...`
 
-          ## Standard Library Modules
-          You can import any Python standard library module.
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
 
           ## Strategy Guide
 
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "header" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
 
           ## Example Patterns
 
           ### Counting documents matching a condition
           ```python
-          docs = list_documents(limit=100)
+          docs = await list_documents(limit=100)
           count = 0
           for doc in docs:
-              content = get_document(doc['id'])
+              content = await get_document(doc['id'])
               if content and 'keyword' in content.lower():
                   count += 1
                   print(f"Found in: {doc['title']}")
           print(f"Total: {count}")
           ```
 
-          ### Aggregating data across documents
+          ### Extracting data with llm()
           ```python
-          import re
           numbers = []
-          results = search("financial data", limit=20)
+          results = await search("financial data", limit=20)
           for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
           ```
 
           ### Using llm() for classification
           ```python
-          # Get document content
-          content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
-          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
           print(sentiment)
           ```
 
@@ -260,11 +232,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -304,7 +275,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '622'
+      - '610'
       content-type:
       - application/json
     parsed_body:
@@ -313,25 +284,25 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to inspect documents variable.
+          reasoning: Need check documents variable?
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
-                preloaded documents'')"}'
+              arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+                documents'')\n"}'
               name: execute_code
-            id: call_dk6bzypo
+            id: call_2ao52bvz
             index: 0
             type: function
-      created: 1770373463
-      id: chatcmpl-869
+      created: 1771924591
+      id: chatcmpl-850
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 69
-        prompt_tokens: 1759
-        total_tokens: 1828
+        completion_tokens: 68
+        prompt_tokens: 1635
+        total_tokens: 1703
     status:
       code: 200
       message: OK
@@ -344,7 +315,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8495'
+      - '8037'
       content-type:
       - application/json
       host:
@@ -357,32 +328,33 @@ interactions:
 
           IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
 
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
           - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
 
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
 
           ## Available Functions
 
-          ### search(query, limit=10) -> list[dict]
+          ### await search(query, limit=10) -> list[dict]
           Search the knowledge base using hybrid search (vector + full-text).
           Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
 
-          ### list_documents(limit=10, offset=0) -> list[dict]
+          ### await list_documents(limit=10, offset=0) -> list[dict]
           List available documents in the knowledge base.
           Returns list of dicts with keys: id, title, uri, created_at
 
-          ### get_document(id_or_title) -> str | None
+          ### await get_document(id_or_title) -> str | None
           Get the full text content of a document by ID, title, or URI.
           Returns the document content as a string, or None if not found.
 
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
 
-          ### llm(prompt) -> str
+          ### await llm(prompt) -> str
           Call an LLM directly with the given prompt. Returns the response as a string.
           Use this for classification, summarization, extraction, or any task where you
           already have the content and just need LLM reasoning.
@@ -397,93 +369,64 @@ interactions:
           ```
           Check if it exists with: `if 'documents' in dir(): ...`
 
-          ## Standard Library Modules
-          You can import any Python standard library module.
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
 
           ## Strategy Guide
 
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "header" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
 
           ## Example Patterns
 
           ### Counting documents matching a condition
           ```python
-          docs = list_documents(limit=100)
+          docs = await list_documents(limit=100)
           count = 0
           for doc in docs:
-              content = get_document(doc['id'])
+              content = await get_document(doc['id'])
               if content and 'keyword' in content.lower():
                   count += 1
                   print(f"Found in: {doc['title']}")
           print(f"Total: {count}")
           ```
 
-          ### Aggregating data across documents
+          ### Extracting data with llm()
           ```python
-          import re
           numbers = []
-          results = search("financial data", limit=20)
+          results = await search("financial data", limit=20)
           for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
           ```
 
           ### Using llm() for classification
           ```python
-          # Get document content
-          content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
-          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
           print(sentiment)
           ```
 
@@ -509,22 +452,20 @@ interactions:
         role: system
       - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
         role: user
-      - content: |-
-          <think>
-          Need to inspect documents variable.
-          </think>
+      - content: null
+        reasoning: Need check documents variable?
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
-              preloaded documents'')"}'
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
             name: execute_code
-          id: call_dk6bzypo
+          id: call_2ao52bvz
           type: function
-      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
-          preloaded documents'')","stdout":"No preloaded documents\n","stderr":"","success":true}'
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
         role: tool
-        tool_call_id: call_dk6bzypo
+        tool_call_id: call_2ao52bvz
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -532,11 +473,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -576,7 +516,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '661'
+      - '524'
       content-type:
       - application/json
     parsed_body:
@@ -585,25 +525,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: No preloaded docs. Need to search.
+          reasoning: The environment may not provide dir(); use globals(). Check.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"results = search(''company founded mission'', limit=10)\nfor r in results:\n    print(''Title:'',
-                r[''document_title''], ''Score:'', r[''score''])\n    print(r[''content''][:200])\n    print(''---'')"}'
+              arguments: '{"code":"print(globals().keys())\n"}'
               name: execute_code
-            id: call_zf1l4x9e
+            id: call_rjj1hq9z
             index: 0
             type: function
-      created: 1770373465
-      id: chatcmpl-682
+      created: 1771924592
+      id: chatcmpl-798
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 86
-        prompt_tokens: 1903
-        total_tokens: 1989
+        completion_tokens: 43
+        prompt_tokens: 1777
+        total_tokens: 1820
     status:
       code: 200
       message: OK
@@ -616,7 +555,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '9434'
+      - '8486'
       content-type:
       - application/json
       host:
@@ -629,32 +568,33 @@ interactions:
 
           IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
 
-          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just use them directly:
-          - search("query")  ✓ CORRECT
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
           - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
 
-          You have access to a sandboxed Python environment with these haiku.rag functions (use them directly, no imports needed):
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
 
           ## Available Functions
 
-          ### search(query, limit=10) -> list[dict]
+          ### await search(query, limit=10) -> list[dict]
           Search the knowledge base using hybrid search (vector + full-text).
           Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
 
-          ### list_documents(limit=10, offset=0) -> list[dict]
+          ### await list_documents(limit=10, offset=0) -> list[dict]
           List available documents in the knowledge base.
           Returns list of dicts with keys: id, title, uri, created_at
 
-          ### get_document(id_or_title) -> str | None
+          ### await get_document(id_or_title) -> str | None
           Get the full text content of a document by ID, title, or URI.
           Returns the document content as a string, or None if not found.
 
-          ### get_docling_document(id_or_title) -> DoclingDocument | None
-          Get the structured DoclingDocument object for advanced analysis.
-          Returns a DoclingDocument object, or None if not found.
-          See "DoclingDocument API" section below for how to use it.
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
 
-          ### llm(prompt) -> str
+          ### await llm(prompt) -> str
           Call an LLM directly with the given prompt. Returns the response as a string.
           Use this for classification, summarization, extraction, or any task where you
           already have the content and just need LLM reasoning.
@@ -669,93 +609,64 @@ interactions:
           ```
           Check if it exists with: `if 'documents' in dir(): ...`
 
-          ## Standard Library Modules
-          You can import any Python standard library module.
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
 
           ## Strategy Guide
 
           1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
-          2. **If get_document returns None**: Use `list_documents()` to see actual document titles, or `search()` to find relevant content.
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
           3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-          4. **Use print() Liberally**: The REPL captures stdout - print intermediate results to see what you're working with.
-          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and use collections.
-          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use llm().
-          7. **Cite Your Sources**: Track which documents/chunks informed your answer for citation.
-
-          ## DoclingDocument API
-
-          When you call `get_docling_document(id_or_title)`, you get a DoclingDocument object for structured document analysis.
-
-          ### Properties
-          - `doc.texts` - List of all text items (paragraphs, headings, etc.)
-          - `doc.tables` - List of all tables
-          - `doc.pictures` - List of all pictures/figures
-          - `doc.name` - Document name
-
-          ### Methods
-          - `doc.iterate_items(with_groups=False)` - Iterate all items with hierarchy level
-            Returns tuples of (item, level) where level is nesting depth
-          - `doc.export_to_markdown()` - Export entire document as markdown string
-
-          ### Text Item Properties
-          - `item.text` - The text content
-          - `item.label` - Type: title, paragraph, section_header, list_item, etc. (lowercase enum values)
-          - `item.prov` - Provenance (page numbers, bounding boxes)
-
-          ### Table Access
-          - `table.data.num_rows`, `table.data.num_cols` - Dimensions
-          - `table.data.table_cells` - List of TableCell objects
-          - `cell.text`, `cell.start_row_offset_idx`, `cell.start_col_offset_idx`
-
-          ### Example Usage
-          ```python
-          doc = get_docling_document("My Document")
-
-          # Get all headings
-          headings = [t.text for t in doc.texts if "header" in str(t.label)]
-
-          # Iterate with structure
-          for item, level in doc.iterate_items():
-              print("  " * level + item.text[:50])
-
-          # Extract table data
-          for table in doc.tables:
-              for cell in table.data.table_cells:
-                  print(f"Row {cell.start_row_offset_idx}, Col {cell.start_col_offset_idx}: {cell.text}")
-          ```
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
 
           ## Example Patterns
 
           ### Counting documents matching a condition
           ```python
-          docs = list_documents(limit=100)
+          docs = await list_documents(limit=100)
           count = 0
           for doc in docs:
-              content = get_document(doc['id'])
+              content = await get_document(doc['id'])
               if content and 'keyword' in content.lower():
                   count += 1
                   print(f"Found in: {doc['title']}")
           print(f"Total: {count}")
           ```
 
-          ### Aggregating data across documents
+          ### Extracting data with llm()
           ```python
-          import re
           numbers = []
-          results = search("financial data", limit=20)
+          results = await search("financial data", limit=20)
           for r in results:
-              matches = re.findall(r'\$([\d,]+)', r['content'])
-              for m in matches:
-                  numbers.append(int(m.replace(',', '')))
-          print(f"Average: ${sum(numbers)/len(numbers):,.2f}")
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
           ```
 
           ### Using llm() for classification
           ```python
-          # Get document content
-          content = get_document("Q1 Report")
-          # Use llm() to classify sentiment
-          sentiment = llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
           print(sentiment)
           ```
 
@@ -781,40 +692,32 @@ interactions:
         role: system
       - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
         role: user
-      - content: |-
-          <think>
-          Need to inspect documents variable.
-          </think>
+      - content: null
+        reasoning: Need check documents variable?
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
-              preloaded documents'')"}'
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
             name: execute_code
-          id: call_dk6bzypo
+          id: call_2ao52bvz
           type: function
-      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''No
-          preloaded documents'')","stdout":"No preloaded documents\n","stderr":"","success":true}'
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
         role: tool
-        tool_call_id: call_dk6bzypo
-      - content: |-
-          <think>
-          No preloaded docs. Need to search.
-          </think>
+        tool_call_id: call_2ao52bvz
+      - content: null
+        reasoning: The environment may not provide dir(); use globals(). Check.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"results = search(''company founded mission'', limit=10)\nfor r in results:\n    print(''Title:'',
-              r[''document_title''], ''Score:'', r[''score''])\n    print(r[''content''][:200])\n    print(''---'')"}'
+            arguments: '{"code":"print(globals().keys())\n"}'
             name: execute_code
-          id: call_zf1l4x9e
+          id: call_rjj1hq9z
           type: function
-      - content: '{"code":"results = search(''company founded mission'', limit=10)\nfor r in results:\n    print(''Title:'',
-          r[''document_title''], ''Score:'', r[''score''])\n    print(r[''content''][:200])\n    print(''---'')","stdout":"Title:
-          Mission Statement Score: 0.032522473484277725\nOur mission is to make technology accessible to everyone.\n---\nTitle:
-          Company History Score: 0.032522473484277725\nThe company was founded in 1985 by Jane Smith.\n---\n","stderr":"","success":true}'
+      - content: '{"code":"print(globals().keys())\n","stdout":"","stderr":"NameError: name ''globals'' is not defined","success":false}'
         role: tool
-        tool_call_id: call_zf1l4x9e
+        tool_call_id: call_rjj1hq9z
       model: gpt-oss
       reasoning_effort: low
       stream: false
@@ -822,11 +725,10 @@ interactions:
       tools:
       - function:
           description: |-
-            <summary>Execute Python code in a Docker-sandboxed environment.
+            <summary>Execute Python code in a sandboxed interpreter.
 
             The code has access to haiku.rag functions (search, list_documents,
-            get_document, get_docling_document, llm) and any Python standard
-            library module.
+            get_document, get_chunk, llm).
 
             Use print() to output results.</summary>
             <returns>
@@ -866,7 +768,1544 @@ interactions:
   response:
     headers:
       content-length:
-      - '1256'
+      - '581'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Probably no python environment? Might need simple print? Might fail. Probably cannot see documents. Could
+            search.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"query":"founded mission company","limit":5}'
+              name: search
+            id: call_ee8bn4w7
+            index: 0
+            type: function
+      created: 1771924593
+      id: chatcmpl-566
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 51
+        prompt_tokens: 1862
+        total_tokens: 1913
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '8970'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: null
+        reasoning: Need check documents variable?
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
+            name: execute_code
+          id: call_2ao52bvz
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_2ao52bvz
+      - content: null
+        reasoning: The environment may not provide dir(); use globals(). Check.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"print(globals().keys())\n"}'
+            name: execute_code
+          id: call_rjj1hq9z
+          type: function
+      - content: '{"code":"print(globals().keys())\n","stdout":"","stderr":"NameError: name ''globals'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_rjj1hq9z
+      - content: null
+        reasoning: Probably no python environment? Might need simple print? Might fail. Probably cannot see documents. Could
+          search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"founded mission company","limit":5}'
+            name: search
+          id: call_ee8bn4w7
+          type: function
+      - content: |-
+          Unknown tool name: 'search'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_ee8bn4w7
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '550'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: The tool is execute_code. Use that.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n"}'
+              name: execute_code
+            id: call_o1c87rz5
+            index: 0
+            type: function
+      created: 1771924595
+      id: chatcmpl-37
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 51
+        prompt_tokens: 1948
+        total_tokens: 1999
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '93'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - founded mission company
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: HaaUuUY7DjwkkL886DwEPD/tp7p9I6g9BJSDPULKvzwghos8OX6tPOKTEb3FQ9q8nrkju0dJKby3ovg8ewSku9oQTTsy4ZC9eXlwvBkVB7weOoq82C2qPPmziD1J+DU9cNzaPO5/Uryt+Oy8NIIjvcUdirzmCxQ8KhmXvNdJ5bwuilA8N/WFvMOL6TpOhVG8BNb0u6FlPrzURxM8f5dtPFmuEj2vYRS95l+NPAGbpzxBVLG83cy+PH4DHjvNTts74otTu0Rwory48kg8HJGcu0bjtTw1rM+8j0UIPJoNKrzovP88wxZ0uwBPG73FS6Y6Z3IbO4lwiryI+q+8G1QJvePwXLu5VLG8QeFtvNSJDb2qoro7v90fu/gFqLxO9D88zeIwvGaNuThV7ym7vUoOvT5hrrsFebg8C+J+vKdAyLqTZbE78cQ6OyCvyDyOEw07DwrCPHGMjbycNzc81UQAPJFvoLwbRsw7vDuJPDkTjLoY0KI4+uqHPB6dP7sZSSM8Ze6kvKx2Q7zVL/28WVZ1O+hYYbwQgnq7RQaAO0Pl2rzr0lc7eHH6vPMbzbx7JxS8pdCgO8axP7wCRmU8dY7MOtN6uTyiUaY8mPaUvNAYUrzF0pC8BBuTPKFZlTuskDQ8ltznu8sGzzzZUiQ8SvBHPHyJD7wfcw+8NIb9uolZA72rxKa6qnrfPIkCDz3vyMW8FHYwvKBDhLyMoTC8n/YBOsyOAj3aObi8IZMhvXOxg7pouH28m9s8PM/+njx++rk723yuu+Ppx7zCfS68RrCMPL5okDwjSA88zErtPOSz0LtPBXM8ECBYPKQcmrsuUvA79IPmvMKoCz0ZYK88JamwPLBcyzztK2Y854SqugZSuTqSry47vYkrPOC8cbxJTK48VaDKvB0wX705Vlc8FYrEu7mXybzj0Fe8HK9svBuCODzmA+68f2lduoQiC7sQzAA9+sv9uqbXlzsYc3c8hXL/u20PdzxOTpw7afxQvPwaazx4x2U8CsujuAjwgLztaO+8HxTiu/mJqDpeFxm8BbFevGMg3LsZ96W8WmktPAqJED1tRDE7w2wcvPd+oLz1EgM8OHV5PF5grLt20Ym851bCuxyK8bo+/6K8x2lcu3jgjLzKQlW8JqI6PG9OP7umISg8FSEZvNsHn7x0W888fzayuvLfxzukZ5M6B2KauyBZkTxq2te8icqXO5rPSjzwCHe7Z2EUvIKid7txjxI9nHQPPYh5jrkp+B28F4wmOx/mCbs1Tdc8Wb9lvCDXRDxm3bA7JGaZu4bForwrPAg8hg4nu1ddgrw+VdG8cPtDPKOhBjt45h87xbuZvJRVKbyYU827/hC6OzYW17xjcv08Bbl7vBuh0bywLCI8VDpEu2S5Zjyt3WU743gbvBSmuLyRTiW8qqxou2DkEzxxz8w5d5FWO8zyF7otYRQ6GmVTPeHvSryJxAc7x1kRvLLsmDweyty84ps1O3xYMjzA6Rg8MACVPH1IBL296I07fWSpPAmnMTwYYye8tRtCvNRHID3ahpE8+UMYvZ0EfTyB+X47CULlPKc7qzwJ6PW7GFKrPNr5pbwCHM47EyE4vA93CLy0Zeq8fSMEvJAQxLthfz06ozCpuwTz2Du2I+s8k8Wruqu7FLxnBgq7R5QrvV8ziTs2AMG8Hsr9O+Ps5DsK+xm8cDMDvQMe37lggsA7c46svC9/rLv493k70R2DvfnCxLqWWFO8EMDDuuZEYTzb3tc8piuAuzlOlTyQMZ68RH9PvKL4kjzW0ay8HGPAujVz3LtV6HO61qeiuapRkzxe1Io8iLUPPOaHOzzkoZa8uCrSvON4q7zHpIC7FWIuvExZj7xvt7Q4xMpPvCMwMr240Jk6+VWqvL7/djzdcu+7IA7AvD/84TvQWB+8kpJwul8UGbwd3BK8zXmjvMmL+LssArA7/KDXuIt2cDwb/5q7ZhJvvEWwMD3/Rwc8HZ91vDDdhjxW7Qy9VEvcOwNeGb2rHJO8cWqWvEB9rjrLxHS8KIRCO1W/gLxFNrM8+DiKvH3IB70WzAU8BNx7vPzFqjx2em27+XE4PP3HsTy3/ga8OYuIvOxKMTxXe1w8tFbxOp6rBr0QucI7Z+HeO9YnjTwVZC88BJ9EvL5fATztnuy8PQqzvFOjIzzxy+e8EqbIvHS3wjqWE/g8dVW1PD2MH7xUxPi8vqG0PKT1ujvZpxW95OYaPBrIvDuN05W8XDJivcps5zzi9sY7/iLEvJN2froipo47nhRHO3WrqbxavC07HUKGPBZTDD3F9oM7qdZVO5tZX7yMcvA8vbCfPAFyHD1LhHw8ZL5qPCb4h7wqLgq8+p2aPH3ffLsD0py7e32fPGriAz170+k8SuPuvKAmnLyMXo88FK6dPGlCnjw64Ry9DR5JvG95ST2DuDg8SzkxOk/ObzyaZfg6gBNAPOAzUTtIKTi96gh0OzWTmb3x3qU65AxjPRRzEr2kjZw7dldavDVXgrw4s7e7gXWAvBJ59TygnRe9gJIrvNqMBb2Ojew8DbiGPGtQJDtveBE7pkZhvKEQSzwL4t08EOJHPIZOXro3BEo90g6pPBvB1bwqcM08FPmKPDz/7zwW1vE8b69+vKEx/TsEWbI8c2rsvIs47bziwsy7kES7u6GNBT1gcsm80dNiPOsTzDvjbmA8ofnGu3sjGz1ksCK8Txq2vHqMz7odUnk8RBi7PJBrB7vYmYs85rQKPA1C4jyk9zW9t68cvTXjPjxqIVS8LR4HvNaSnDzyrIC854iEvHSSnLxrKJI863cWPWTEJb1xY0u8s3rNPM5kQDytLA29v5G4ulvUujvHdAa9tDYAO7ORdLtcGAk86GtRvWHjdTwDFXQ88jEyPe/QiLxKUCe7F0uIOim417srQMI8Vgf+u8kU/zuIX3m8fS7zO4OVoTw/WcW8NbBGPXgP5Ttg+NS63YjgPAt2MLyBn4e8L9dfPLToyTyL85y8nPkUvEWagrsnbxm8uZtVvGx/4zvI3iU88MDJPB9WRzxc8is9A7AlvDMB/juw+Py88IoGO3rdTTvrzNc776SdPOIm4DsVxsW8tZXRvAegc7ltBYq8ItytvLKYeTsJDaU8P6EGO/hx+7tc1q088eeAPJna8DwjYK88OP2dO3Vfg7szNBG82QIuu3nE9rrF4Be8GCYCPdbvE73R1Ti7kPGvvG1iEbwfBry8XdYJPT/0urzg+aS8oaIvPbWD7rvuxdu8MajsPNlYZzztxx69JdoyPFmnvTrPCyq8HfMzvPveHDzFsRQ9nzZsvVXnGr0Vfrw6ezmyu3eJR7wovnW8SoQdvG4gP7zEbRu8fSfUuqIAR71Guhq8q80/uvGPhTuiQcU8XFpAO9hUBb2j8s48wcm1vND6EzwVyLW8hp9FvextabymhZA4Nx49O8HXbjtCv2W8BXzqPNNc/DqlACO8B8UHvexj6LxfFXq8N+LQvLPlDrviDvc5JtrEPP36u7yRbVs8eeCPPBZwPbzXRWg6mSDYvCsS9zz7upY7HfhFuiC2JbyQh0c8ruafPBRHBL0ea4o7d7b5vOfbcLu4t2o9a+6MvIWNyLxACRU9b/C3vFfd0Lz0qfE8ZB4dvcWzV7vsRKw55PAmPacfibxHWKi8F9mpu4xlBz3EFum7IoomO87/Yzwbni68F0vrvJ00OTwdQKA8gHMHPBudIbvNUR49Xee7PB+1KzxDCfI8zVzUu4PkzjxT0VK8attDvYj4Bbslmos8EwhrPPJnbTsch5S7or3OOxqPzTzdaBI8lpnqPIQ85DzSLsM7KTwrvUn9k7zjwei8/l+SO91T+rzBhTq9mpF9vNgVerwKwLs7gFpyPGZfMb3qKQm9IyAhvFCT6bxczNA8heRevCziIDwEr7w6LpaPPVjdAjwKQoe8q5eqvCkA+Tz1Od67xN07PBljMrzX0oS7KuKyuwYfJrwYJMg8hnskPIxfbrvmY0s8CQgPvRsLrTtoEuy8a16xO6UZbjyoVIo8fcvmPKiA5Ds5Izk8uUG1vEDsoTthnwE9BS1mPOUpITwwLfQ6nZDmvIIPNTvdzZi7x8CAvOm2hTv98JO8ePzhuzxbJDroIxI8/jwUvddBOjyFzQG9LlDkPBtn6TtFPpE7KwGcPO7shbzpRgS9RlBLvFwcVz3kSFK8loPwPEom3ryHiYI7lMykPA+CDL0AFso8vDlrvAn+Qzr6mV+8inr+uzY+fDwflug5OtQvvFZjhryyIHU6db6PvLjmYjuZX407Si3QvBHGNbz483K8igbYvNUmEruW5SA9spLvO2MaETystSs8LgYPuxb4qTzml4s8bW6eO8X5Hb2xqsS8MK/ZO3Ryk7z+6ZY8CbJ1O1O4CDryJi28K/HhO/z8c7y4W808cqLXvELrBrsr/Uo8Lq6ZO2irKz0CDBk8b4Gxu1s6t7vqWHy8KBjFPACgYDxO7qo8BVyDu9WH3brl7727QW0VvQaD+ru5lAk8jvhiPD/A1DyEgSo9+RjtvMFwhjwkwAC9VbS9u4tZ4rtWNii9mzlHO+tdHz2xjhA96doyPPl+hzw8Jby88FQqvIDylzynI5o8V3DAvLCn5bxuGTs8o8xqvQw8KzpMlKu8VYYLvFJHY7yY/5E8m/AMvRyllTsBUCS9QOKRPOqKxDvxcze8lcQEPIngaD2q0bo6WKj6uey4DTyYwxa7idVLvP/WHLv34IC8tnMHPTUQMTwRYsi853d1PIdoXrttVDg5ZdVjvARllbzHwU87gHJrPOV2DT0I+kE8ZFlFPP3zBjywr+c7CZ2XvPQNHj1sH1i8dS4ZvHkmfjw0+w48h9/RO9HBLT1DthU8hCPlPKU6gLwJig48zUjKO0FsRzz/QsS7EkYzO/HGqrmFVdq8CuqMu64icTt5z4m6qiBOvOPDQryswrU8GR/APFJa5bwL/UY51S0fPUeJSbyXG7W7zMcrOwekM73mBzC8O+8UvLaPID2SNwS9xhjMO04No7xcmDe74g5OvCaMQjyLho48wY3PPIePML1pZGM91fbEO8l58TyE5HG8G/wuPOlO+jvTMgo8OX0evADq1Dz810U8IFBDujayyLz0C5s5iJbyO0tPSDumdh48ruZ9PJWRmDxEnAQ8ZePlvOGT07wM4ju8L2LJPPVLqTu2Lxy7iu9hPLDI6jof2ai858wAvCb0nbwqWnO77EG0vPLjPDsAhDw6WiCqu/V7qrtBRAw9GmfmPGvq3jmM7je9E8fwO272Wzx4rnq7NpkZvHqNT7xJJYg86sBcPO3HRTtQTTe8yWzovO51aTxCyMs7RzDSPO8cRjt3Ut88i9pvvMrjVjxgxeS6PfJxPOVBhLynkmY8iX50Owma8bxyHN+8XwU4vZDgcLxZ53075bGEPFldZryGGIu85IeqPOz4EDz1rsO8CCRaPCfqDz3EVUe8Bx68PHDiW7wv2CM9HffMu6l4HLyNP327BhlpPGHw4jy6t4W81HTSPKuJTbzvFJi8uSowvGKWPbxaqkG8OWejPIYqgjy4c128S0S9PPAzJDw2Fd+7Q+YEPTNBlbq8fwu9PpqUuxC5Pb3wYgy91VDFvK2VvbwmjAI9uXglO32RRDyP3ii8uwEvPHrPCj3yjso7BBu4u3xAJruIyDA8c5qbvOJHcjuQO3M8UfAIPV7BnTyIYCq8CJf7uwggT7sYDO+8AXCUvAkX0Tw65yE7I9luvCfgD7yac0K9dHNxvL82obw1At67bvEOPHpGZTuJ5wm7CzXpu9QngLxknAi9oRRXu/4ckjwfiK+8/IEKvZAY+btjGqC8IvbAPDKx3jocs0W82FVEPKapAz253c07oZrgvFCh/TsS1w893umQvDD/ibndKXc8eV5PvIpJOzyCnaw8mbK7PCFHpjwf8Qw8YKEtPFMwfLpt4Ae7ye8xPTsdarx4vwI80yxsvK8uQ7tJaRM57iNWPJmXNjxTYuy8A6eYvJw3ALw5ZCo8+A35O6zwhDxFShE8LRF3vFiyoTxANx08MdUCOx1LJD0GLtM7I40JPBNL1zz8/9y7lSWPPFeFKTyYauI52zVTPVOJ5zwP5Jc8nhD2vMfo3jwzT648mKtIvKxfIzz8C9M8nocBvF85STyj8xg9bynjO4RPWj1eYVS7qS1oOl7rbrwyI5c8m7B0vP8eyjunSSo8f2SnPG0nrbsjBaY8/Bk2vUkzl7y7F4k7tmqzPAGYHDzf3ZQ8XPEqveErBjx1EKC8OBUcO7j4vbyU9XW8lut9Oypmxrxd/NY83YDJO6PHEDzqzLE80CcDPNekuTzX/w68/5yYvAXybjzWRai8pddcPOevSr3V/We8JWAIPbORSjw8GBY8g6EfPKxCebwy2gQ9+LOlu2mQnzbk8XW7DJUqu8eDO71zIpQ8f/+VPDiK0bzU4KK8GBYhu7q+jLy+8Ec7mS/bOkDpwrw0Gjy8tDUFvNfyljwxvZm7P1PdPOJ4tzyYJP08WuESu0W1Hzy7nh47ELzpuLK/ozzh1wa9au3FPHOjS7xvhJS8fiABPFZLTDuCHgK9PJnHvKpGBb2c1XG8+uABPSvVMDyri3m81skmu7BofTrtKRM9HUe+u+AeT7zRm688MZg5OqdaqLypDmo8rbiHPProETwwI8w71KsYPcwWLjyQX4o997W7PClahryB7Og7/6X+urndgbyMwR88IcgPvS22V7zFeuS8ISCqO+PsIDx+WNg7Vn7HuzD32jsBpD49LS8dvdHs4bwJqqY6piN+vK6ktDzCKDw76ywJOwhm3bt6pb281fdRPD8qAD074nc8euUyPLhLmDzmeHC8mvvQupeVGLzZksC8Q2DYuzDif7uLj6q7dUsGO+0WGDw+PBg7Nu1wO+PHK72s2um8HRGCPN0kpbzL8XO8xDtVOxZf3TwU2ka8mhTrvJ/oxzv7XCi7JSrJPLezMbpiKKW7wIaYu2QaSjyMku47VUC3PBZEl7x6ZA68T8z/vDK3Cz2VVZg84XONu0UewbzBM5c8RuMkvcNTy7zye8U8XheovPOVVbxMQ6K8q5mduz98hLxJD8y6/HD4vAtmm7z44Xe6TbuSuxFmBT0XBYO8ehwivJ4ujbzHHIe7MU3ZvDKoHzwUthY812kLvVQlcDy6BW67uS7UO6lXST1e03M8ajURPaQiK70QBfq82Q/TO/V79rwnhx486ejdOwJ5EDtjMi+93cY3PY9RI7zBDKS7nRIVPL9G57wc0ys8D7aOvPVpq7w57xm8EOOZPOJnvbtORL28BlgePFvfAzwmyQ69uqXoO0gz5LxaNke8+K9lPHpjFz0fVi08bXLKvPcU7zzpqfm2r7FwPQQtGry/lpw8Q0jBO9TxljtKc5w8Tq0kPJvw6TyfUxW8ViTRPB5Z7LyLeWQ8IXysuyz3sTwS/AU8Bco9vRbNIj0sPTw8YK54PEE2hby7ry28x5n9OksV6DujUSA4FwwUvayQID1mc9o8J8w1vJyeSzwbg4w8UsLAPC0MDrw1M5m8lbKAPJr/BDt9xzY9RlM2PMEqDLvMXAC9PfSovPHJCj2tOFW7vvkAvYASJbym8yA8c0yWu95ODb0zdB48UgDRvATtUTxex/q6B3CHumT1jrxg8XG7exYfvSh+HD08W9q8z5JtvFk+xjuG6d467Xi8vL/riLz85Cq8w0qZPDq3ojpYDWQ8URi4PO88Az3jvCw8YiGbvKyWnby+pz08Y99jvNanhjxKa2A7+RlevLaOaDufOAG99AzxPNSQX7yH3WA7MdsgPRfB0DtzQU48BOy6vPd7gDxU5AA7p7vEOowp8Lv69ZE8PfukPL2+ZLys8Rc8V1uEPDBxDL1/g7a8PKl9vOnpaDzhWga9zV8IvcAYrTybJyM8FXg+vC+Av7sfVbs8+NLPPPhe3LzTIis8KFTJvDeCdzxtwJ48uAIUPK5ESDwVN5q85dwGvShTkrx+RJy8IlPWPKnjfLwK7h897e8qPMy1lDzknkq83C6EPITtCbYYV4i80O7svOm3NrtUdxi96+zSO5vzkrxJCsI8D1FSu54xzzrTVhe8UqUuPaQ3Fjp89Sw9R9S3u1No6ruFXlA8o2X2OzuO4btzWQO9SxryPCsVSjrteby70GI2vLD3wbsRR607SeumvGlu9jzf0A69xFC1PJTrrrzx+2M8DFmjPDIhgjwCICE7nap+vGbLULy6/5w85SOCPE/zWbwQEbQ7eR2zvPzad7xTap+8su4Qu7a5VbyJiZc7ScyDvEKKljszeBQ8U2nfvAwLgrxaFZ+87akoO26KtDxVv908y6WLO7Ihmjyk/wI95092us8G/TnpEGg8voKuPOzUy7xRGYY7SuKtuojQEj2z02e72LnTPOK1irynl/68ojO2vLD+vjzSLs+8L2acPBTlrryy1WI8wS9LPLKRRDzGpqC8IfoJO+f1JDxKT4o8GD5UPFoEyDymNyw8vQmMO1q0uzvRfTW7wlv5u3YjsbsHs+88WJkAPUUPOjwE7+e8Js4NvLH0jjvbSWs8Zxw3vFI0DTyIFN68VaTAPLGSh7yk07s8CJGEux9EdryTrrG8kcpZvOT2zTzehw+9SBhovJzLnTybc8C8Yc2oumvdYboIAQA86S6Eu7V137sYt/I7zpofvLmmm7xOvJM7NZPrPGejcbzQUEQ8o1dqPaVg5zvgMw88/h6tuyxzTzw66oc8jFgouqpq4rucbuI76xo7vMiHmDxxw5O8XgQvvAvHbjx/F9e8i46CvPtvQbovNzU95OUqvMQouLyRCTC7EB8Wu/2J5jteBNa7r1aSO3wJZ7wT7oc7WKVeutYEkbxTw3c7gvzPO5ccDT1OIze8BNMAvOZhGLu8yxE8505JvB9/Mbx97Iw8vr6RPGoi9zupKKa6Cky2PNPJtDwPSju9YhEDPbBnaDsWDOW82M8dvCQyrDvshto7Ye03vfD9jTyOZSk92FoqvNYuE7xBEd47wzNYPHVLF71Rc4g7NTu1vBEYDL1NQHO7TqRau/xhb7zWqE+90KRCPFR4oTy0LxW7HxwRPfnKo7vXDYi8isbdOhCw+TvgjQW8wGVSPMTZgbpmJgO9cU7PvI6Q6DzBgIS8pAbqugmjbLrtM8q71jRDvPN29Dz80SK9fhdEuQU6i7yzXsG7sUgGugvn6jtS0iE8fzfSPB5pKTzpb7w6+llRO+kjwDvOgHC776svPJpxTjyvygo91JNXvDBxhDzn3ts7k0uyPL/XQzyM40s8/X8HPA2GyzxL49e7CTfTPJlamTynAe286ZGBvCOjgrt0ZoM8g8dEPL4DyzsjGui8PFmJu5OTvDxilIK8gO5WPJmqVDtvwPG7OMXjvAhZkTxAZTw84Q3Hu6epsLyW/o48NfXnu6UjFLv7dja8KNzMPAapHzzYhTE9Wt6aO575oTz/MXY6QDNSvBRcnLwvvZu7L7bIOofOX7w0Crm8sjgausMhmTu52Oq6+YgFu0dbEzzK3Ow8I9sAPaPUhzzt3xS8Tf7Mu2lBtzypoO+7R1ePvMEChzuRybA7saUFvXT3jrxVkBQ9ZjdMOyCPELvgq0S8LP9cPEJPvzwprVI78kcXPJchnLtj6J+8NKeBPAkfFTug1u05HKT5PB6eFL03VsI8Y/OcOpx9Ar09d/g8VMbau+6hfjzv8pY6XUH9vHFyoTxp6Og8QsKjO6lVOz0UkjA8Ka6hOEJYMTzV75A60YTFu4peJzs7GZk8NeiqvLOsV7wjOqi86a11u7WtzrweNmU85PmTvE14mbtYPsU7qFlmvCAppzyvela8mSmRvH5TOjyvXqy8HhgtveQotDwxrMu703mxPHo6yrwZG3U5GwzCvFlsTDwzVbo8QNLDu8LNqzrRhOa83NhPvG3Pw7yYxZ68094fvHiswjxOF58835PbvFWWC7zxFfo7Lvt6vKJCY7pBUNy7GjrGPOToiTwtCw281JqVvMEayTu3G508x1D/PCA7jjsEJK68MbW1vFvkdrxiIga9Joq5PLZ+azqvwlI7hi9COrhIJrwECjW86SURPUVZrDwEMyu8W97KPE7DG7zR9Wc8mdiOPBd9djy+6ym6vk2VPBFaFzygL5s8SCc9PfPJnTuQnMa847GOuzf+9DwKLZc8K/gruzO6HDxoWQe8+SAdvEIuAT1+VqW8ODOPvKiMy7y4SY66KZguvfZ1EDzFJcM8UoUSPPH0rjzuQYS8h7izvDOZAzwtWBW9/NLEuyt0I7xr+rO7ocbFu4IEkTyR6oI8vE4TPbEVubv2RMG7+05nvE2u4zzazCI9CthAO0yUnjyI7yo8bbf8Oz7qILxuQ3o6pN+rPHVpurvz0L28WW8oPAW51LxLkHA8vMugPHFTBTzH7866rRzbPJiTbTzXvXy8hQ6nO4G9v7oGiD0613TQPG/tibzEQ5g8zBdYvIXw3jwRsdS8eTLZOq83VbzBT1y8HqgzvGbTYbwHQ2q7/2ixPGoni7yyB8I7p1MQPUZNGzw3lIo8fHl3vXDc77zSZz+8qaR/vKc6+LrsoAa98wxVPGdQPL3C2ES7at2/ugOCb7xDAUi809TiPHQrOjyKfPS8M+QsvEwwB72CNlO9DfOAPHdtp7xHZfq8hjDCPPxVrjvgQ7C8ebn8POjuDjwreBY8/00ZPZF3H7wJQSK8gZlFvaRKt7tubpc8LtCmusz+iDwyDj09NhPyu1owLDwE5gu9Y/6YPMEpuTyT5q87m3covGRtoLzqK1G8d6nLvB/vdLyfucy8I/ZmO1oQNL2dmam7Mbp+vKlf+rtIUTY7wG76Oj6tzDzlc+Q7saCGvKZlQrx8DH67v2aTvILmC7w82cW6yJGcvA4jqDxHq5e8nY5FvJXDLDylv087cIv/u7qCVryhaS0985sPPHUzMr3pI0i90XbAvCkr5DwoPh48QcWKPL4YCj0cmjK7FOkFPYAChrzhDOc7Ev6JvLe+9rvhxLA7qLz7PAESg7xwXY886yVBvM8djjrg7ai8CZ2cvMwNaz196Zy6RIRyvNK7nTq+eY28rwvgPGB95TuU6Ku8rnLhuTAtdLuJ8UG89LXnOzbuMrvSBWy81RmHu3j0+zshIuq8quGJO0ZWfLxAnrm81mAjvMC5BT0r16a8zE40vPpVgryEeS69+myKu3JjlzxvV227aL0GvZ6sTryjI3a81f1iOfVl/7tiQze8xBuOO5jxujxk0Tg88lctO2b0Uzwc2Sk8M1BfPHEYibySzwW9cG5dPKwc8TzDrYU7eT4UumIumDwkJDw8eSwFPWXrEjsDOna8VMsJvZGdHr0IiDW9mJzqPL/qhDuUtHQ8tNMGPJ1WMLwFRXe8OEUwPMHLijwQ1wE9HQI5PAMcTrxc3ss7EXJDO7av6Lzf8148Ap+BPN8/R7x7Iw68oVPcu9ZEI7zqJkU8RNcPPKNMDTzn9VG8vzzLPFRSgDxxfcS864KWvLRChrxbFOK8ekccPQGOMbw052G8C16PO20/tDzJM3A8H3TZPBw9jzyqKrK8VgIwPUzpH7zptO87MIKKPOFVJrz0rGk81fG8OwhQSLzGcYK7wb5xPMgrW7wDBKg8cbczvIaXAbsBRZG8kP3pvMrJq7xpMn670pOGvN5uoLxEJIC8U0YOPaINvLsg8aY7x886vR9Sb7wGsxA7xUomux2xJTtKf687axBgOy7N/bvb9iU81wFWu4l/abvBZwO9MQMouhIwNTwYyC08J9iPPDYdwzv36vo8kP9FvKsjYbq4ZCI8heWyPH4+lLzLmm29CDOFtwdF7bssgCU8URJrOsXuKTyRRv27Q0irvHitVjwDWHg7S81DPEhGRzuDIRO9PSfIvK6D7Lx5OPQ8OBgsvfYaTjz3WJu7JlYIvWUh5Tt6VB28IiKaup0iN7uJsJs7fdqvOZair7u12ZA8997AO4bhujzh2y+8tlv5Oy0KADzOb4M6VTkMPfkjILw3RZQ8mYGiu4JgEjuYDww8FPkTPBoj9TwWUgm8B5qIvBXzAr2zCD69LIk9PLGDxjzMvbE6XVClvEQ4g7wJxhm97ysHvRnOvbuH9De8nAF2u/YbK7xLlQS7OJIkvFM6EbsVoW48yuZdumJ2gjx3RrA71oWlPCgyAD30yBa88/SRvECH3LlQpC+9OZEPvT6JIb1FvZg8V8o4vGWPmrwBOO48Sqh5PHI5uDzhCsO8oGtGvAXkhTuy1Fy8ulI7vKdBEbxrExA9n0EFvXibg7ypY0m8EA+Duyx/mjuYjS08HJHNPDbg0jvvpMQ8JQEMu8zIuTumSm87mKv7O8D8sTxLTb87z0kMu1ag9jv9xOk7j/QGvCcdIjwQTqK7ON4mu/95mLxtukq8NJy5vCaZ17s5X+o8fREFPK9jfjxOxAo860R5OoO48LyBKok7q0WNvIrKnzzPMKo8/T0evUJpgbpUuJo887QhPVCNcjx7xHU82dwMPD/+KbvLuwU88VsVPGb1IbyXkHS8Ib4XvUkNmzqwjqy8TvdLuWg5hjwD24W8y+2UvEHrPzu47P88KNIPPSLcbLzwNs67NE0YvOiQ3TtF3o67uYIYvJpMHT23pza9v5nPuld1R7vjZ+u7aQkJPCSAe7xAnIc88llpvDP8zDuPDL68XmXVvDmCSLwWWiO9+qP3O8XaSzvWrYw8mj/0O5gSczzWypa7v2azO7qWG71igAI8aOuoO3jstjeV5Qa9UtbvPBZGK7lxq6+7sqcjPYhl+bxOFTm7PdFrPMPhw7x3VJI8dRFlu+krkzsPTbg6xojtvAPcHDzdwrc75uTPO7OI0TuIoIY8vSizvEHCx7xrlK08mNvgPL54tbtc6gk9w0AWvQQm6roRU2G8DluDPFNjiLuFaSK8aQQhPCSRPrwQuOW8l3uovJnu7LuN0R47QAiIvLZ8Gz2RYDG8Hb8vvfU4TTwMLhG9YvIvvMQRojxRCB88+vMzvJEXTbw+Rui8OPrKO8E61Tn6i788x9QPvJ+JCb3exvG86wj5PCF+RjyccUK92aF3vCzu/bsnfpQ8Vt2HvMDnkDwL9sa8+oOYPC4J+LxiJyC9njElPXZmbTxbFtQ7ImEAPWXm2bwUTwe6Uby6O/x67jvUlsA8baffO3aKIDxbz4o8/HR8POhSKTxlABU8hJV1PMwyVLzv/rG8Y9UFvZsW4jwgFhu8BZM9PK23LrzGQwg8RMJpPJt+Sjsp2tW7nGEeO4WeF71LS+E7hq9Au2qLxjxg1x07XpspvLRKuDsywiu9sAURvMtOADsqESq8CQR/vI5Hq7wFrFA7v2KzPFcnlLxPkqU8LfCfvMHIPrxDpMm6TfSvvP6bdzsnpP285FS3POriirxb3Wo8CHTsO9fH3LuwdIY82v3/POHJmLtNTsm7I7xeOxFBSTrDvfe7LMpVvF6tarsN7bu8crHMu1liEbzI/O+7SwEvO4iLbbyCngc85h9XPPhgyDqC52c8MQk9unYurDzVcAI8xX+yvMDENDvP+XQ8IuR7u1dc0zp81FG7cgAXu818UDybR5i8C0ACPMVF/biNMMA7CYZbPHfIcjvK28C6jsQ9vAC37bxh0J087o/LOkYjlbwEvyk98uEUuoKS7jz3FPa8aJogPLDPDLss+Ke7qu+GPJRahDtKE2M6uAP3Ox+Dfrs4YYW7h2gVPDnHBzxgst48PREGOgJCVLsoWwc84wGivHIcPrw71N46JVQIvA==
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 5
+        total_tokens: 5
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '10069'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: null
+        reasoning: Need check documents variable?
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
+            name: execute_code
+          id: call_2ao52bvz
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_2ao52bvz
+      - content: null
+        reasoning: The environment may not provide dir(); use globals(). Check.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"print(globals().keys())\n"}'
+            name: execute_code
+          id: call_rjj1hq9z
+          type: function
+      - content: '{"code":"print(globals().keys())\n","stdout":"","stderr":"NameError: name ''globals'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_rjj1hq9z
+      - content: null
+        reasoning: Probably no python environment? Might need simple print? Might fail. Probably cannot see documents. Could
+          search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"founded mission company","limit":5}'
+            name: search
+          id: call_ee8bn4w7
+          type: function
+      - content: |-
+          Unknown tool name: 'search'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_ee8bn4w7
+      - content: null
+        reasoning: The tool is execute_code. Use that.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n"}'
+            name: execute_code
+          id: call_o1c87rz5
+          type: function
+      - content: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n","stdout":"[{''chunk_id'':
+          ''d43b4445-8425-4434-bc36-e28e6f7e573e'', ''content'': ''Our mission is to make technology accessible to everyone.'',
+          ''document_id'': ''bb1e588e-8014-4607-bf9b-a077c16d1cdf'', ''document_title'': ''Mission Statement'', ''document_uri'':
+          None, ''score'': 0.032522473484277725, ''page_numbers'': [], ''headings'': None}, {''chunk_id'': ''6d291645-590e-498c-a22c-0883e7b1582b'',
+          ''content'': ''The company was founded in 1985 by Jane Smith.'', ''document_id'': ''a2e1e13c-e316-4198-a5a8-49353eaa7337'',
+          ''document_title'': ''Company History'', ''document_uri'': None, ''score'': 0.032522473484277725, ''page_numbers'':
+          [], ''headings'': None}]\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_o1c87rz5
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '509'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Got info. Need citation get_chunk.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"chunk_id":"6d291645-590e-498c-a22c-0883e7b1582b"}'
+              name: get_chunk
+            id: call_b0i0vdgg
+            index: 0
+            type: function
+      created: 1771924596
+      id: chatcmpl-840
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 54
+        prompt_tokens: 2265
+        total_tokens: 2319
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '10484'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: null
+        reasoning: Need check documents variable?
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
+            name: execute_code
+          id: call_2ao52bvz
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_2ao52bvz
+      - content: null
+        reasoning: The environment may not provide dir(); use globals(). Check.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"print(globals().keys())\n"}'
+            name: execute_code
+          id: call_rjj1hq9z
+          type: function
+      - content: '{"code":"print(globals().keys())\n","stdout":"","stderr":"NameError: name ''globals'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_rjj1hq9z
+      - content: null
+        reasoning: Probably no python environment? Might need simple print? Might fail. Probably cannot see documents. Could
+          search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"founded mission company","limit":5}'
+            name: search
+          id: call_ee8bn4w7
+          type: function
+      - content: |-
+          Unknown tool name: 'search'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_ee8bn4w7
+      - content: null
+        reasoning: The tool is execute_code. Use that.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n"}'
+            name: execute_code
+          id: call_o1c87rz5
+          type: function
+      - content: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n","stdout":"[{''chunk_id'':
+          ''d43b4445-8425-4434-bc36-e28e6f7e573e'', ''content'': ''Our mission is to make technology accessible to everyone.'',
+          ''document_id'': ''bb1e588e-8014-4607-bf9b-a077c16d1cdf'', ''document_title'': ''Mission Statement'', ''document_uri'':
+          None, ''score'': 0.032522473484277725, ''page_numbers'': [], ''headings'': None}, {''chunk_id'': ''6d291645-590e-498c-a22c-0883e7b1582b'',
+          ''content'': ''The company was founded in 1985 by Jane Smith.'', ''document_id'': ''a2e1e13c-e316-4198-a5a8-49353eaa7337'',
+          ''document_title'': ''Company History'', ''document_uri'': None, ''score'': 0.032522473484277725, ''page_numbers'':
+          [], ''headings'': None}]\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_o1c87rz5
+      - content: null
+        reasoning: Got info. Need citation get_chunk.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"chunk_id":"6d291645-590e-498c-a22c-0883e7b1582b"}'
+            name: get_chunk
+          id: call_b0i0vdgg
+          type: function
+      - content: |-
+          Unknown tool name: 'get_chunk'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_b0i0vdgg
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '573'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: We need to call get_chunk via execute_code.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"chunk = await get_chunk(''6d291645-590e-498c-a22c-0883e7b1582b'')\nprint(chunk[''content''])\n"}'
+              name: execute_code
+            id: call_1o9o5lvl
+            index: 0
+            type: function
+      created: 1771924598
+      id: chatcmpl-401
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 71
+        prompt_tokens: 2356
+        total_tokens: 2427
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '11056'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: null
+        reasoning: Need check documents variable?
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
+            name: execute_code
+          id: call_2ao52bvz
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_2ao52bvz
+      - content: null
+        reasoning: The environment may not provide dir(); use globals(). Check.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"print(globals().keys())\n"}'
+            name: execute_code
+          id: call_rjj1hq9z
+          type: function
+      - content: '{"code":"print(globals().keys())\n","stdout":"","stderr":"NameError: name ''globals'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_rjj1hq9z
+      - content: null
+        reasoning: Probably no python environment? Might need simple print? Might fail. Probably cannot see documents. Could
+          search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"founded mission company","limit":5}'
+            name: search
+          id: call_ee8bn4w7
+          type: function
+      - content: |-
+          Unknown tool name: 'search'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_ee8bn4w7
+      - content: null
+        reasoning: The tool is execute_code. Use that.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n"}'
+            name: execute_code
+          id: call_o1c87rz5
+          type: function
+      - content: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n","stdout":"[{''chunk_id'':
+          ''d43b4445-8425-4434-bc36-e28e6f7e573e'', ''content'': ''Our mission is to make technology accessible to everyone.'',
+          ''document_id'': ''bb1e588e-8014-4607-bf9b-a077c16d1cdf'', ''document_title'': ''Mission Statement'', ''document_uri'':
+          None, ''score'': 0.032522473484277725, ''page_numbers'': [], ''headings'': None}, {''chunk_id'': ''6d291645-590e-498c-a22c-0883e7b1582b'',
+          ''content'': ''The company was founded in 1985 by Jane Smith.'', ''document_id'': ''a2e1e13c-e316-4198-a5a8-49353eaa7337'',
+          ''document_title'': ''Company History'', ''document_uri'': None, ''score'': 0.032522473484277725, ''page_numbers'':
+          [], ''headings'': None}]\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_o1c87rz5
+      - content: null
+        reasoning: Got info. Need citation get_chunk.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"chunk_id":"6d291645-590e-498c-a22c-0883e7b1582b"}'
+            name: get_chunk
+          id: call_b0i0vdgg
+          type: function
+      - content: |-
+          Unknown tool name: 'get_chunk'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_b0i0vdgg
+      - content: null
+        reasoning: We need to call get_chunk via execute_code.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"chunk = await get_chunk(''6d291645-590e-498c-a22c-0883e7b1582b'')\nprint(chunk[''content''])\n"}'
+            name: execute_code
+          id: call_1o9o5lvl
+          type: function
+      - content: '{"code":"chunk = await get_chunk(''6d291645-590e-498c-a22c-0883e7b1582b'')\nprint(chunk[''content''])\n","stdout":"The
+          company was founded in 1985 by Jane Smith.\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_1o9o5lvl
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '550'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: Similarly mission.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"chunk2 = await get_chunk(''d43b4445-8425-4434-bc36-e28e6f7e573e'')\nprint(chunk2[''content''])\n"}'
+              name: execute_code
+            id: call_dn2a823n
+            index: 0
+            type: function
+      created: 1771924600
+      id: chatcmpl-408
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 67
+        prompt_tokens: 2502
+        total_tokens: 2569
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '11618'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Using the pre-loaded documents variable, tell me when was the company founded and what is their mission?
+        role: user
+      - content: null
+        reasoning: Need check documents variable?
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+              documents'')\n"}'
+            name: execute_code
+          id: call_2ao52bvz
+          type: function
+      - content: '{"code":"if ''documents'' in dir():\n    for doc in documents:\n        print(doc[''title''], len(doc[''content'']))\nelse:\n    print(''no
+          documents'')\n","stdout":"","stderr":"NameError: name ''dir'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_2ao52bvz
+      - content: null
+        reasoning: The environment may not provide dir(); use globals(). Check.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"print(globals().keys())\n"}'
+            name: execute_code
+          id: call_rjj1hq9z
+          type: function
+      - content: '{"code":"print(globals().keys())\n","stdout":"","stderr":"NameError: name ''globals'' is not defined","success":false}'
+        role: tool
+        tool_call_id: call_rjj1hq9z
+      - content: null
+        reasoning: Probably no python environment? Might need simple print? Might fail. Probably cannot see documents. Could
+          search.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"query":"founded mission company","limit":5}'
+            name: search
+          id: call_ee8bn4w7
+          type: function
+      - content: |-
+          Unknown tool name: 'search'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_ee8bn4w7
+      - content: null
+        reasoning: The tool is execute_code. Use that.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n"}'
+            name: execute_code
+          id: call_o1c87rz5
+          type: function
+      - content: '{"code":"results = await search(''founded mission company'', limit=5)\nprint(results)\n","stdout":"[{''chunk_id'':
+          ''d43b4445-8425-4434-bc36-e28e6f7e573e'', ''content'': ''Our mission is to make technology accessible to everyone.'',
+          ''document_id'': ''bb1e588e-8014-4607-bf9b-a077c16d1cdf'', ''document_title'': ''Mission Statement'', ''document_uri'':
+          None, ''score'': 0.032522473484277725, ''page_numbers'': [], ''headings'': None}, {''chunk_id'': ''6d291645-590e-498c-a22c-0883e7b1582b'',
+          ''content'': ''The company was founded in 1985 by Jane Smith.'', ''document_id'': ''a2e1e13c-e316-4198-a5a8-49353eaa7337'',
+          ''document_title'': ''Company History'', ''document_uri'': None, ''score'': 0.032522473484277725, ''page_numbers'':
+          [], ''headings'': None}]\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_o1c87rz5
+      - content: null
+        reasoning: Got info. Need citation get_chunk.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"chunk_id":"6d291645-590e-498c-a22c-0883e7b1582b"}'
+            name: get_chunk
+          id: call_b0i0vdgg
+          type: function
+      - content: |-
+          Unknown tool name: 'get_chunk'. Available tools: 'final_result', 'execute_code'
+
+          Fix the errors and try again.
+        role: tool
+        tool_call_id: call_b0i0vdgg
+      - content: null
+        reasoning: We need to call get_chunk via execute_code.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"chunk = await get_chunk(''6d291645-590e-498c-a22c-0883e7b1582b'')\nprint(chunk[''content''])\n"}'
+            name: execute_code
+          id: call_1o9o5lvl
+          type: function
+      - content: '{"code":"chunk = await get_chunk(''6d291645-590e-498c-a22c-0883e7b1582b'')\nprint(chunk[''content''])\n","stdout":"The
+          company was founded in 1985 by Jane Smith.\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_1o9o5lvl
+      - content: null
+        reasoning: Similarly mission.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"chunk2 = await get_chunk(''d43b4445-8425-4434-bc36-e28e6f7e573e'')\nprint(chunk2[''content''])\n"}'
+            name: execute_code
+          id: call_dn2a823n
+          type: function
+      - content: '{"code":"chunk2 = await get_chunk(''d43b4445-8425-4434-bc36-e28e6f7e573e'')\nprint(chunk2[''content''])\n","stdout":"Our
+          mission is to make technology accessible to everyone.\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_dn2a823n
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '1388'
       content-type:
       - application/json
     parsed_body:
@@ -874,24 +2313,26 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: '{"answer":"The company was founded in 1985. Its mission is to make technology accessible to everyone.","program":"#
-            Get relevant documents via search\nresults = search(''company founded mission'', limit=10)\n# Find founded year
-            and mission statement\nfounded_year = None\nmission = None\nfor r in results:\n    text = r[''content'']\n    if
-            ''founded'' in text.lower() and founded_year is None:\n        import re\n        m = re.search(r''\\b(19\\d{2}|20\\d{2})\\b'',
-            text)\n        if m:\n            founded_year = m.group(1)\n    if ''mission'' in text.lower() and mission is
-            None:\n        # simple extraction of the sentence containing \"mission\"\n        sentences = re.split(r''(?<=[.!?])\\s+'',
-            text)\n        for s in sentences:\n            if ''mission'' in s.lower():\n                mission = s.strip()\n                break\n#
-            Output\nprint(f\"Founded year: {founded_year}\")\nprint(f\"Mission: {mission}\")"}'
+          content: '{"answer":"The company was founded in 1985 by Jane Smith. Its mission is to make technology accessible
+            to everyone.","program":"# Consolidated program to extract founding year and mission\nimport json\n\nasync def
+            main():\n    # Search for founding year and mission statements\n    results = await search(''founded mission company'',
+            limit=10)\n    founded = None\n    mission = None\n    for r in results:\n        if ''founded'' in r[''content''].lower()
+            and not founded:\n            founded = r[''content'']\n        if ''mission'' in r[''content''].lower() and not
+            mission:\n            mission = r[''content'']\n    # Fallback to chunk extraction if needed\n    if not founded:\n        chunk
+            = await get_chunk(''6d291645-590e-498c-a22c-0883e7b1582b'')\n        founded = chunk[''content'']\n    if not
+            mission:\n        chunk2 = await get_chunk(''d43b4445-8425-4434-bc36-e28e6f7e573e'')\n        mission = chunk2[''content'']\n    #
+            Print results\n    print(''Founded:'', founded)\n    print(''Mission:'', mission)\n\n# Run the async main function\nimport
+            asyncio\nasyncio.run(main())"}'
           role: assistant
-      created: 1770373471
-      id: chatcmpl-972
+      created: 1771924607
+      id: chatcmpl-899
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 246
-        prompt_tokens: 2135
-        total_tokens: 2381
+        completion_tokens: 296
+        prompt_tokens: 2645
+        total_tokens: 2941
     status:
       code: 200
       message: OK

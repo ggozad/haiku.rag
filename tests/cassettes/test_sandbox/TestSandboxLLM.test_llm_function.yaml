@@ -1,0 +1,51 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '143'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: What is 2 + 2? Reply with just the number.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '311'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: '4'
+          reasoning: Just reply 4.
+          role: assistant
+      created: 1771924616
+      id: chatcmpl-525
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 16
+        prompt_tokens: 81
+        total_tokens: 97
+    status:
+      code: 200
+      message: OK
+version: 1

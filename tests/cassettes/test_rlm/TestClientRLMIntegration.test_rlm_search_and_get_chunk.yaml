@@ -1,0 +1,545 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '114'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - The quick brown fox jumps over the lazy dog.
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 11
+        total_tokens: 11
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '7359'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Search for content about animals and tell me which document it came from.
+        role: user
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '537'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: We need to search for animals.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"code":"results = await search(\"animals\", limit=10)\nprint(results)\n"}'
+              name: execute_code
+            id: call_pvjujvr9
+            index: 0
+            type: function
+      created: 1771924521
+      id: chatcmpl-217
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 46
+        prompt_tokens: 1629
+        total_tokens: 1675
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '77'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      encoding_format: base64
+      input:
+      - animals
+      model: qwen3-embedding:4b
+    uri: http://localhost:11434/v1/embeddings
+  response:
+    headers:
+      content-type:
+      - application/json
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      data:
+      - embedding: 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
+        index: 0
+        object: embedding
+      model: qwen3-embedding:4b
+      object: list
+      usage:
+        prompt_tokens: 2
+        total_tokens: 2
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '8119'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          You are a Recursive Language Model (RLM) agent that solves complex research questions by writing and executing Python code.
+
+          IMPORTANT: You MUST use the `execute_code` tool to run Python code. The functions described below are ONLY available inside the execute_code tool - you cannot access them any other way. Always execute code to answer questions; do not just describe what code would do.
+
+          CRITICAL: Inside execute_code, these functions are ALREADY available in the namespace. Do NOT import them - just call them with `await`:
+          - results = await search("query")  ✓ CORRECT
+          - from haiku.rag import search  ✗ WRONG - will fail
+          - results = search("query")  ✗ WRONG - must use await
+
+          You have access to a sandboxed Python interpreter with these haiku.rag functions (use them directly with `await`, no imports needed):
+
+          ## Available Functions
+
+          ### await search(query, limit=10) -> list[dict]
+          Search the knowledge base using hybrid search (vector + full-text).
+          Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
+
+          ### await list_documents(limit=10, offset=0) -> list[dict]
+          List available documents in the knowledge base.
+          Returns list of dicts with keys: id, title, uri, created_at
+
+          ### await get_document(id_or_title) -> str | None
+          Get the full text content of a document by ID, title, or URI.
+          Returns the document content as a string, or None if not found.
+
+          ### await get_chunk(chunk_id) -> dict | None
+          Get a specific chunk by its ID (from search results).
+          Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
+          Use this to retrieve full chunk details and metadata for citation.
+
+          ### await llm(prompt) -> str
+          Call an LLM directly with the given prompt. Returns the response as a string.
+          Use this for classification, summarization, extraction, or any task where you
+          already have the content and just need LLM reasoning.
+
+          ## Pre-loaded Documents Variable
+
+          If documents were pre-loaded for this session, a `documents` variable is available:
+          ```python
+          # documents is a list of dicts with keys: id, title, uri, content
+          for doc in documents:
+              print(doc['title'], len(doc['content']))
+          ```
+          Check if it exists with: `if 'documents' in dir(): ...`
+
+          ## Available Python Features
+
+          The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+
+          Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+
+          For pattern matching or text extraction, use string methods (`str.split`, `str.find`, `str.startswith`, `in` operator) or the `llm()` function.
+
+          ## Strategy Guide
+
+          1. **Explore First**: Start by listing documents or searching to understand what's available. Document names may differ from filenames (e.g., "tbmed593.pdf" might be stored as "TB MED 593" or similar).
+          2. **If get_document returns None**: Use `await list_documents()` to see actual document titles, or `await search()` to find relevant content.
+          3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
+          4. **Use print() Liberally**: The sandbox captures stdout - print intermediate results to see what you're working with.
+          5. **Aggregate with Code**: For counting, averaging, or comparing across documents, write loops and data structures.
+          6. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
+          7. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+
+          ## Example Patterns
+
+          ### Counting documents matching a condition
+          ```python
+          docs = await list_documents(limit=100)
+          count = 0
+          for doc in docs:
+              content = await get_document(doc['id'])
+              if content and 'keyword' in content.lower():
+                  count += 1
+                  print(f"Found in: {doc['title']}")
+          print(f"Total: {count}")
+          ```
+
+          ### Extracting data with llm()
+          ```python
+          numbers = []
+          results = await search("financial data", limit=20)
+          for r in results:
+              extracted = await llm(f"Extract all dollar amounts from this text as a comma-separated list of numbers (no $ signs): {r['content']}")
+              for part in extracted.split(','):
+                  part = part.strip().replace(',', '')
+                  if part.isdigit():
+                      numbers.append(int(part))
+          if numbers:
+              print(f"Average: {sum(numbers) / len(numbers)}")
+          ```
+
+          ### Using search results with get_chunk for citations
+          ```python
+          results = await search("safety requirements", limit=5)
+          for r in results:
+              chunk = await get_chunk(r['chunk_id'])
+              print(f"From '{chunk['document_title']}', page {chunk['page_numbers']}: {chunk['content'][:100]}")
+          ```
+
+          ### Using llm() for classification
+          ```python
+          content = await get_document("Q1 Report")
+          sentiment = await llm(f"Classify the sentiment as positive, negative, or mixed: {content}")
+          print(sentiment)
+          ```
+
+          ## Workflow
+
+          1. **ALWAYS start by using execute_code** to explore the knowledge base
+          2. Run multiple code blocks as needed to gather information
+          3. After collecting data, provide your final answer
+
+          ## Output Format
+
+          CRITICAL: Your final response MUST be valid JSON matching this exact schema:
+          ```json
+          {"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+          ```
+
+          - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
+          - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+
+          Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+
+          CRITICAL: You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first.
+        role: system
+      - content: Search for content about animals and tell me which document it came from.
+        role: user
+      - content: null
+        reasoning: We need to search for animals.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"results = await search(\"animals\", limit=10)\nprint(results)\n"}'
+            name: execute_code
+          id: call_pvjujvr9
+          type: function
+      - content: '{"code":"results = await search(\"animals\", limit=10)\nprint(results)\n","stdout":"[{''chunk_id'': ''503004ae-51ea-4953-93c3-48acac4a929c'',
+          ''content'': ''The quick brown fox jumps over the lazy dog.'', ''document_id'': ''ee57cfe6-fe82-4162-afd9-f206002ae08e'',
+          ''document_title'': ''Animal Facts'', ''document_uri'': None, ''score'': 0.016393441706895828, ''page_numbers'':
+          [], ''headings'': None}]\n","stderr":"","success":true}'
+        role: tool
+        tool_call_id: call_pvjujvr9
+      model: gpt-oss
+      reasoning_effort: low
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: |-
+            <summary>Execute Python code in a sandboxed interpreter.
+
+            The code has access to haiku.rag functions (search, list_documents,
+            get_document, get_chunk, llm).
+
+            Use print() to output results.</summary>
+            <returns>
+            <description>Structured result with success status, stdout, and stderr.</description>
+            </returns>
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                description: Python code to execute.
+                type: string
+            required:
+            - code
+            type: object
+          strict: true
+        type: function
+      - function:
+          description: Result from RLM agent execution.
+          name: final_result
+          parameters:
+            additionalProperties: false
+            properties:
+              answer:
+                description: The answer to the user's question
+                type: string
+              program:
+                description: The final consolidated program
+                type: string
+            required:
+            - answer
+            - program
+            type: object
+          strict: true
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '888'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: stop
+        index: 0
+        message:
+          content: '{"answer":"The document containing content about animals is \"Animal Facts\" (document ID: ee57cfe6-fe82-4162-afd9-f206002ae08e).","program":"import
+            asyncio\n\nasync def main():\n    results = await search(\"animals\", limit=10)\n    if results:\n        chunk
+            = results[0]\n        print(f\"Document: {chunk[''document_title'']} (ID: {chunk[''document_id'']})\")\n    else:\n        print(\"No
+            animal-related content found.\")\n\nasyncio.run(main())"}'
+          reasoning: It found one chunk. We need to give answer with source. Provide program that searches and prints answer.
+          role: assistant
+      created: 1771924525
+      id: chatcmpl-109
+      model: gpt-oss
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 168
+        prompt_tokens: 1822
+        total_tokens: 1990
+    status:
+      code: 200
+      message: OK
+version: 1

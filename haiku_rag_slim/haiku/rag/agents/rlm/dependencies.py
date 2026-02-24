@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from haiku.rag.store.models import Document
 
 if TYPE_CHECKING:
-    from haiku.rag.agents.rlm.docker_sandbox import DockerSandbox
+    from haiku.rag.agents.rlm.sandbox import Sandbox
 
 
 @dataclass
@@ -19,5 +19,5 @@ class RLMContext:
 class RLMDeps:
     """Dependencies for RLM agent."""
 
-    sandbox: "DockerSandbox"
+    sandbox: "Sandbox"
     context: RLMContext = field(default_factory=RLMContext)

@@ -344,7 +344,7 @@ class ChatApp(App):
             return
 
         citation = selected_widgets[0].citation
-        chunk = await self.client.chunk_repository.get_by_id(citation.chunk_id)
+        chunk = await self.client.get_chunk_by_id(citation.chunk_id)
         if not chunk:
             return
 
