@@ -4,7 +4,7 @@
 ### Changed
 
 - **RLM sandbox**: Replaced Docker-based code execution with [pydantic-monty](https://github.com/pydantic/monty), a minimal secure Python interpreter written in Rust. Eliminates Docker as a runtime dependency for RLM with sub-millisecond sandbox startup
-- **RLM sandbox functions**: Added `get_chunk(chunk_id)` for retrieving chunk content and metadata from search results. `get_docling_document(document_id)` now returns the full document structure as a JSON dict
+- **RLM sandbox functions**: Added `get_chunk(chunk_id)` for retrieving chunk content and metadata from search results. `get_docling_document(document_id)` now returns the full document structure as a JSON dict. All sandbox functions now require `await`
 - **`RLMConfig`**: Removed `docker_image` and `docker_memory_limit` fields
 
 ### Added

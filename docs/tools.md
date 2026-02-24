@@ -61,7 +61,7 @@ docs = create_document_toolset(config)
 
 ### Analysis Toolset
 
-`create_analysis_toolset()` provides computational analysis via the RLM agent (Docker sandbox).
+`create_analysis_toolset()` provides computational analysis via the RLM agent.
 
 ```python
 from haiku.rag.tools import create_analysis_toolset

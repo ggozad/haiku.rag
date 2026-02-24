@@ -1,9 +1,6 @@
 # RLM Skill
 
-The RLM (Reflexion Language Model) skill provides computational analysis via code execution. It writes and runs Python code in an isolated Docker sandbox to answer questions that require computation, aggregation, or data traversal.
-
-!!! warning "Requires Docker"
-    The `analyze` tool executes code in a Docker sandbox. Docker must be running on the host machine. This skill is not suitable for Docker-deployed applications — use the [`rag`](rag.md) skill alone in those environments.
+The RLM (Recursive Language Model) skill provides computational analysis via code execution. It writes and runs Python code in a sandboxed interpreter to answer questions that require computation, aggregation, or data traversal.
 
 ## `create_skill(db_path?, config?)`
 
