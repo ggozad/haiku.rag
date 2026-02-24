@@ -162,7 +162,10 @@ class Sandbox:
                 inputs=input_names,
                 external_functions=list(external_fns.keys()),
             )
-        except pydantic_monty.MontySyntaxError as e:
+        except (
+            pydantic_monty.MontySyntaxError,
+            pydantic_monty.MontyRuntimeError,
+        ) as e:
             return SandboxResult(stdout="", stderr=str(e), success=False)
 
         stdout_lines: list[str] = []

@@ -66,6 +66,13 @@ class TestSandboxErrors:
         assert not result.success
         assert "NameError" in result.stderr
 
+    @pytest.mark.asyncio
+    async def test_multi_module_import(self, sandbox):
+        """Test that unsupported multi-module imports are caught gracefully."""
+        result = await sandbox.execute("import json, string")
+        assert not result.success
+        assert result.stderr != ""
+
 
 class TestSandboxHaikuRAG:
     """Test haiku.rag functions in sandbox."""
