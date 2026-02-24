@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.32.0] - 2026-02-24
+
 ### Changed
 
 - **RLM sandbox**: Replaced Docker-based code execution with [pydantic-monty](https://github.com/pydantic/monty), a minimal secure Python interpreter written in Rust. Eliminates Docker as a runtime dependency for RLM with sub-millisecond sandbox startup
@@ -1145,7 +1147,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.31.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.0...HEAD
+[0.32.0]: https://github.com/ggozad/haiku.rag/compare/0.31.1...0.32.0
 [0.31.1]: https://github.com/ggozad/haiku.rag/compare/0.31.0...0.31.1
 [0.31.0]: https://github.com/ggozad/haiku.rag/compare/0.30.2...0.31.0
 [0.30.2]: https://github.com/ggozad/haiku.rag/compare/0.30.1...0.30.2
