@@ -74,7 +74,7 @@ class TestSandboxHaikuRAG:
     async def test_list_documents_empty(self, sandbox):
         """Test list_documents returns empty list for empty database."""
         result = await sandbox.execute(
-            "docs = list_documents()\nprint(type(docs).__name__, len(docs))"
+            "docs = await list_documents()\nprint(type(docs).__name__, len(docs))"
         )
         assert result.success
         assert "list 0" in result.stdout
@@ -92,13 +92,15 @@ class TestSandboxHaikuRAG:
             )
 
             context = RLMContext()
-            async with Sandbox(client=client, config=config, context=context) as sb:
-                result = await sb.execute(
-                    "docs = list_documents()\nprint(len(docs))\nprint(docs[0]['title'])"
-                )
-                assert result.success
-                assert "1" in result.stdout
-                assert "Test Document" in result.stdout
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "docs = await list_documents()\n"
+                "print(len(docs))\n"
+                "print(docs[0]['title'])"
+            )
+            assert result.success
+            assert "1" in result.stdout
+            assert "Test Document" in result.stdout
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -113,15 +115,15 @@ class TestSandboxHaikuRAG:
             )
 
             context = RLMContext()
-            async with Sandbox(client=client, config=config, context=context) as sb:
-                result = await sb.execute(
-                    "results = search('fox', limit=5)\n"
-                    "print(len(results))\n"
-                    "if results:\n"
-                    "    print('fox' in results[0]['content'].lower())"
-                )
-                assert result.success
-                assert "True" in result.stdout or "1" in result.stdout
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "results = await search('fox', limit=5)\n"
+                "print(len(results))\n"
+                "if results:\n"
+                "    print('fox' in results[0]['content'].lower())"
+            )
+            assert result.success
+            assert "True" in result.stdout or "1" in result.stdout
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -136,19 +138,19 @@ class TestSandboxHaikuRAG:
             )
 
             context = RLMContext()
-            async with Sandbox(client=client, config=config, context=context) as sb:
-                result = await sb.execute(
-                    f"content = get_document('{doc.id}')\n"
-                    "print('foxes' in content.lower() if content else 'None')"
-                )
-                assert result.success
-                assert "True" in result.stdout
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                f"content = await get_document('{doc.id}')\n"
+                "print('foxes' in content.lower() if content else 'None')"
+            )
+            assert result.success
+            assert "True" in result.stdout
 
     @pytest.mark.asyncio
     async def test_get_document_not_found(self, sandbox):
         """Test get_document returns None for missing document."""
         result = await sandbox.execute(
-            "content = get_document('nonexistent-id')\nprint(content is None)"
+            "content = await get_document('nonexistent-id')\nprint(content is None)"
         )
         assert result.success
         assert "True" in result.stdout
@@ -166,24 +168,24 @@ class TestSandboxHaikuRAG:
             )
 
             context = RLMContext()
-            async with Sandbox(client=client, config=config, context=context) as sb:
-                # First search to get a chunk_id
-                result = await sb.execute(
-                    "results = search('foxes', limit=1)\n"
-                    "chunk_id = results[0]['chunk_id']\n"
-                    "chunk = get_chunk(chunk_id)\n"
-                    "print(chunk['document_title'])\n"
-                    "print('content' in chunk)"
-                )
-                assert result.success
-                assert "Fox Document" in result.stdout
-                assert "True" in result.stdout
+            sb = Sandbox(client=client, config=config, context=context)
+            # First search to get a chunk_id
+            result = await sb.execute(
+                "results = await search('foxes', limit=1)\n"
+                "chunk_id = results[0]['chunk_id']\n"
+                "chunk = await get_chunk(chunk_id)\n"
+                "print(chunk['document_title'])\n"
+                "print('content' in chunk)"
+            )
+            assert result.success
+            assert "Fox Document" in result.stdout
+            assert "True" in result.stdout
 
     @pytest.mark.asyncio
     async def test_get_chunk_not_found(self, sandbox):
         """Test get_chunk returns None for missing chunk."""
         result = await sandbox.execute(
-            "chunk = get_chunk('nonexistent-id')\nprint(chunk is None)"
+            "chunk = await get_chunk('nonexistent-id')\nprint(chunk is None)"
         )
         assert result.success
         assert "True" in result.stdout
@@ -205,7 +207,11 @@ class TestSandboxExternalFunctionEdgeCases:
         sandbox._build_external_functions = patched_build
 
         result = await sandbox.execute(
-            "try:\n    search('hello')\nexcept:\n    print('caught')\nprint('done')"
+            "try:\n"
+            "    await search('hello')\n"
+            "except:\n"
+            "    print('caught')\n"
+            "print('done')"
         )
         assert result.success
         assert "caught" in result.stdout
@@ -213,7 +219,12 @@ class TestSandboxExternalFunctionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_external_function_raises_exception(self, sandbox):
-        """Test that exceptions from external functions are propagated to Monty."""
+        """Test that exceptions from async external functions surface as errors.
+
+        With run_monty_async, exceptions from async external functions
+        propagate as MontyRuntimeError rather than being catchable inside
+        Monty's try/except.
+        """
         original_build = sandbox._build_external_functions
 
         def patched_build():
@@ -227,12 +238,9 @@ class TestSandboxExternalFunctionEdgeCases:
 
         sandbox._build_external_functions = patched_build
 
-        result = await sandbox.execute(
-            "try:\n    search('hello')\nexcept:\n    print('caught')\nprint('done')"
-        )
-        assert result.success
-        assert "caught" in result.stdout
-        assert "done" in result.stdout
+        result = await sandbox.execute("await search('hello')")
+        assert not result.success
+        assert "external error" in result.stderr
 
 
 class TestSandboxOutputTruncation:
@@ -244,12 +252,12 @@ class TestSandboxOutputTruncation:
         config = AppConfig()
         config.rlm.max_output_chars = 20
         context = RLMContext()
-        async with Sandbox(client=empty_client, config=config, context=context) as sb:
-            result = await sb.execute("print('a' * 100)\nx = 1/0")
-            assert not result.success
-            assert "ZeroDivisionError" in result.stderr
-            assert result.stdout.endswith("... (output truncated)")
-            assert len(result.stdout) < 100
+        sb = Sandbox(client=empty_client, config=config, context=context)
+        result = await sb.execute("print('a' * 100)\nx = 1/0")
+        assert not result.success
+        assert "ZeroDivisionError" in result.stderr
+        assert result.stdout.endswith("... (output truncated)")
+        assert len(result.stdout) < 100
 
     @pytest.mark.asyncio
     async def test_truncate_successful_output(self, empty_client):
@@ -257,11 +265,11 @@ class TestSandboxOutputTruncation:
         config = AppConfig()
         config.rlm.max_output_chars = 20
         context = RLMContext()
-        async with Sandbox(client=empty_client, config=config, context=context) as sb:
-            result = await sb.execute("print('b' * 100)")
-            assert result.success
-            assert result.stdout.endswith("... (output truncated)")
-            assert len(result.stdout) < 100
+        sb = Sandbox(client=empty_client, config=config, context=context)
+        result = await sb.execute("print('b' * 100)")
+        assert result.success
+        assert result.stdout.endswith("... (output truncated)")
+        assert len(result.stdout) < 100
 
 
 class TestSandboxContextFilter:
@@ -285,17 +293,17 @@ class TestSandboxContextFilter:
             )
 
             context = RLMContext(filter="uri LIKE 'public://%'")
-            async with Sandbox(client=client, config=config, context=context) as sb:
-                result = await sb.execute(
-                    "docs = list_documents()\n"
-                    "print(len(docs))\n"
-                    "if docs:\n"
-                    "    print(docs[0]['title'])"
-                )
-                assert result.success
-                assert "1" in result.stdout
-                assert "Public Doc" in result.stdout
-                assert "Private Doc" not in result.stdout
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "docs = await list_documents()\n"
+                "print(len(docs))\n"
+                "if docs:\n"
+                "    print(docs[0]['title'])"
+            )
+            assert result.success
+            assert "1" in result.stdout
+            assert "Public Doc" in result.stdout
+            assert "Private Doc" not in result.stdout
 
 
 class TestSandboxPreloadedDocuments:
@@ -317,16 +325,16 @@ class TestSandboxPreloadedDocuments:
             Document(id="2", content="Content B", title="Doc B", uri="b://2"),
         ]
         context = RLMContext(documents=docs)
-        async with Sandbox(client=empty_client, config=config, context=context) as sb:
-            result = await sb.execute(
-                "print(len(documents))\n"
-                "print(documents[0]['title'])\n"
-                "print(documents[1]['title'])"
-            )
-            assert result.success
-            assert "2" in result.stdout
-            assert "Doc A" in result.stdout
-            assert "Doc B" in result.stdout
+        sb = Sandbox(client=empty_client, config=config, context=context)
+        result = await sb.execute(
+            "print(len(documents))\n"
+            "print(documents[0]['title'])\n"
+            "print(documents[1]['title'])"
+        )
+        assert result.success
+        assert "2" in result.stdout
+        assert "Doc A" in result.stdout
+        assert "Doc B" in result.stdout
 
 
 class TestSandboxLLM:
@@ -338,10 +346,10 @@ class TestSandboxLLM:
         """Test llm() calls the model and returns a string."""
         config = AppConfig()
         context = RLMContext()
-        async with Sandbox(client=empty_client, config=config, context=context) as sb:
-            result = await sb.execute(
-                "answer = llm('What is 2 + 2? Reply with just the number.')\n"
-                "print(answer)"
-            )
-            assert result.success
-            assert "4" in result.stdout
+        sb = Sandbox(client=empty_client, config=config, context=context)
+        result = await sb.execute(
+            "answer = await llm('What is 2 + 2? Reply with just the number.')\n"
+            "print(answer)"
+        )
+        assert result.success
+        assert "4" in result.stdout

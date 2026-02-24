@@ -62,25 +62,25 @@ def create_analysis_toolset(
 
         rlm_context = RLMContext(filter=effective_filter)
 
-        async with Sandbox(
+        sandbox = Sandbox(
             client=client,
             config=config,
             context=rlm_context,
-        ) as sandbox:
-            deps = RLMDeps(
-                sandbox=sandbox,
-                context=rlm_context,
-            )
+        )
+        deps = RLMDeps(
+            sandbox=sandbox,
+            context=rlm_context,
+        )
 
-            rlm_agent = create_rlm_agent(config)
-            result = await rlm_agent.run(task, deps=deps)
+        rlm_agent = create_rlm_agent(config)
+        result = await rlm_agent.run(task, deps=deps)
 
-            program = result.output.program
+        program = result.output.program
 
-            return AnalysisResult(
-                answer=result.output.answer,
-                code_executed=bool(program),
-            )
+        return AnalysisResult(
+            answer=result.output.answer,
+            code_executed=bool(program),
+        )
 
     toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(analyze, name=tool_name)

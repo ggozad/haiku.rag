@@ -1,7 +1,4 @@
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
@@ -27,12 +24,10 @@ class Sandbox:
 
     Uses pydantic-monty, a minimal secure Python interpreter written in Rust.
     External functions (search, list_documents, etc.) are called by Monty code
-    and resolved asynchronously on the host.
+    using ``await`` and resolved asynchronously on the host.
 
-    Use as an async context manager:
-
-        async with Sandbox(client, config, context) as sandbox:
-            result = await sandbox.execute("print('hello')")
+        sandbox = Sandbox(client, config, context)
+        result = await sandbox.execute("print('hello')")
     """
 
     _client: "HaikuRAG"
@@ -48,14 +43,6 @@ class Sandbox:
         self._client = client
         self._config = config
         self._context = context
-
-    async def __aenter__(self) -> "Sandbox":
-        return self
-
-    async def __aexit__(
-        self, exc_type: object, exc_val: object, exc_tb: object
-    ) -> None:
-        pass
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -138,12 +125,7 @@ class Sandbox:
         }
 
     async def execute(self, code: str) -> SandboxResult:
-        """Execute Python code in the Monty interpreter.
-
-        Uses a manual start/resume loop so that async external functions
-        are awaited on the host while Monty code calls them synchronously
-        (without ``await``).
-        """
+        """Execute Python code in the Monty interpreter."""
         external_fns = self._build_external_functions()
 
         input_names: list[str] = []
@@ -181,45 +163,14 @@ class Sandbox:
             "max_duration_secs": self._config.rlm.code_timeout,
         }
 
-        loop = asyncio.get_running_loop()
-
         try:
-            with ThreadPoolExecutor() as pool:
-
-                async def run_in_pool(func: Any) -> Any:
-                    return await loop.run_in_executor(pool, func)
-
-                progress = await run_in_pool(
-                    partial(
-                        monty.start,
-                        inputs=inputs,
-                        limits=limits,
-                        print_callback=print_callback,
-                    )
-                )
-
-                while not isinstance(progress, pydantic_monty.MontyComplete):
-                    assert isinstance(progress, pydantic_monty.MontySnapshot)
-                    fn = external_fns.get(progress.function_name)
-                    if fn is None:
-                        exc = KeyError(f"Function {progress.function_name} not found")
-                        progress = await run_in_pool(
-                            partial(progress.resume, exception=exc)
-                        )
-                        continue
-
-                    try:
-                        result = await fn(*progress.args, **progress.kwargs)
-                    except Exception as exc:
-                        progress = await run_in_pool(
-                            partial(progress.resume, exception=exc)
-                        )
-                    else:
-                        progress = await run_in_pool(
-                            partial(progress.resume, return_value=result)
-                        )
-
-                output = progress.output
+            output = await pydantic_monty.run_monty_async(
+                monty,
+                inputs=inputs,
+                external_functions=external_fns,
+                limits=limits,
+                print_callback=print_callback,
+            )
         except pydantic_monty.MontyRuntimeError as e:
             stdout = "".join(stdout_lines)
             if len(stdout) > max_chars:

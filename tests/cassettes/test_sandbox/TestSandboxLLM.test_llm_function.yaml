@@ -25,7 +25,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '307'
+      - '311'
       content-type:
       - application/json
     parsed_body:
@@ -34,17 +34,17 @@ interactions:
         index: 0
         message:
           content: '4'
-          reasoning: Answer 4.
+          reasoning: Just reply 4.
           role: assistant
-      created: 1771338974
-      id: chatcmpl-199
+      created: 1771924616
+      id: chatcmpl-525
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 15
+        completion_tokens: 16
         prompt_tokens: 81
-        total_tokens: 96
+        total_tokens: 97
     status:
       code: 200
       message: OK

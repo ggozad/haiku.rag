@@ -18,5 +18,4 @@ async def sandbox(empty_client):
     """Create a Monty sandbox for testing."""
     config = AppConfig()
     context = RLMContext()
-    async with Sandbox(client=empty_client, config=config, context=context) as sandbox:
-        yield sandbox
+    return Sandbox(client=empty_client, config=config, context=context)

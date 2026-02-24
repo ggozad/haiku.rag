@@ -1406,20 +1406,20 @@ class HaikuRAG:
                     loaded_docs.append(doc)
             context.documents = loaded_docs if loaded_docs else None
 
-        async with Sandbox(
+        sandbox = Sandbox(
             client=self,
             config=self._config,
             context=context,
-        ) as sandbox:
-            deps = RLMDeps(
-                sandbox=sandbox,
-                context=context,
-            )
+        )
+        deps = RLMDeps(
+            sandbox=sandbox,
+            context=context,
+        )
 
-            agent = create_rlm_agent(self._config)
-            result = await agent.run(question, deps=deps)
+        agent = create_rlm_agent(self._config)
+        result = await agent.run(question, deps=deps)
 
-            return result.output
+        return result.output
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.
