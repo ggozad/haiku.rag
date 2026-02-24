@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -127,6 +128,26 @@ class Sandbox:
             result = await agent.run(prompt)
             return result.output
 
+        async def regex_findall(pattern: str, text: str) -> list[str]:
+            return re.findall(pattern, text)
+
+        async def regex_sub(pattern: str, repl: str, text: str) -> str:
+            return re.sub(pattern, repl, text)
+
+        async def regex_search(pattern: str, text: str) -> dict[str, Any] | None:
+            m = re.search(pattern, text)
+            if m is None:
+                return None
+            return {
+                "group": m.group(),
+                "groups": list(m.groups()),
+                "start": m.start(),
+                "end": m.end(),
+            }
+
+        async def regex_split(pattern: str, text: str) -> list[str]:
+            return re.split(pattern, text)
+
         return {
             "search": search,
             "list_documents": list_documents,
@@ -134,6 +155,10 @@ class Sandbox:
             "get_chunk": get_chunk,
             "get_docling_document": get_docling_document,
             "llm": llm,
+            "regex_findall": regex_findall,
+            "regex_sub": regex_sub,
+            "regex_search": regex_search,
+            "regex_split": regex_split,
         }
 
     async def execute(self, code: str) -> SandboxResult:

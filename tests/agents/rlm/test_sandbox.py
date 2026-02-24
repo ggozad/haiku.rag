@@ -381,6 +381,70 @@ class TestSandboxDoclingDocument:
             assert "True" in result.stdout
 
 
+class TestSandboxRegex:
+    """Test regex external functions."""
+
+    @pytest.mark.asyncio
+    async def test_regex_findall(self, sandbox):
+        """regex_findall extracts all matches."""
+        result = await sandbox.execute(
+            r"matches = await regex_findall(r'\d+', 'abc 123 def 456')"
+            "\nprint(matches)"
+        )
+        assert result.success
+        assert "['123', '456']" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_regex_sub(self, sandbox):
+        """regex_sub replaces matches."""
+        result = await sandbox.execute(
+            r"out = await regex_sub(r'\d+', 'X', 'abc 123 def 456')"
+            "\nprint(out)"
+        )
+        assert result.success
+        assert "abc X def X" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_regex_search_match(self, sandbox):
+        """regex_search returns match dict when pattern matches."""
+        result = await sandbox.execute(
+            r"m = await regex_search(r'(\d+)', 'abc 123')"
+            "\nprint(m['group'])"
+            "\nprint(m['start'])"
+            "\nprint(m['end'])"
+        )
+        assert result.success
+        assert "123" in result.stdout
+        assert "4" in result.stdout
+        assert "7" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_regex_search_no_match(self, sandbox):
+        """regex_search returns None when pattern doesn't match."""
+        result = await sandbox.execute(
+            r"m = await regex_search(r'\d+', 'abc')"
+            "\nprint(m is None)"
+        )
+        assert result.success
+        assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_regex_split(self, sandbox):
+        """regex_split splits on pattern."""
+        result = await sandbox.execute(
+            "out = await regex_split(',', 'a,b,,c')\nprint(out)"
+        )
+        assert result.success
+        assert "['a', 'b', '', 'c']" in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_regex_invalid_pattern(self, sandbox):
+        """Invalid regex pattern surfaces as an error."""
+        result = await sandbox.execute("await regex_findall('[invalid', 'text')")
+        assert not result.success
+        assert result.stderr != ""
+
+
 class TestSandboxLLM:
     """Test llm() external function."""
 

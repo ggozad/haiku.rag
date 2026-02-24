@@ -9,6 +9,7 @@
 
 ### Added
 
+- **RLM sandbox regex functions**: `regex_findall`, `regex_sub`, `regex_search`, `regex_split` for pattern matching without LLM calls
 - **`HaikuRAG.get_chunk_by_id()`**: Public method for chunk lookup by ID
 
 ### Removed
