@@ -248,6 +248,95 @@ class HaikuRAG:
 
         return result
 
+    # =========================================================================
+    # Title Generation
+    # =========================================================================
+
+    def _extract_structural_title(
+        self, docling_document: "DoclingDocument"
+    ) -> str | None:
+        """Extract a title from DoclingDocument structural metadata.
+
+        Priority: FURNITURE TITLE > BODY TITLE > first SECTION_HEADER.
+        """
+        from docling_core.types.doc.document import ContentLayer
+        from docling_core.types.doc.labels import DocItemLabel
+
+        furniture_title = None
+        body_title = None
+        first_section_header = None
+
+        for item in docling_document.texts:
+            if item.label == DocItemLabel.TITLE:
+                text = item.text.strip()
+                if not text:
+                    continue
+                if item.content_layer == ContentLayer.FURNITURE:
+                    furniture_title = text
+                elif body_title is None:
+                    body_title = text
+            elif (
+                item.label == DocItemLabel.SECTION_HEADER
+                and first_section_header is None
+            ):
+                text = item.text.strip()
+                if text:
+                    first_section_header = text
+
+        return furniture_title or body_title or first_section_header
+
+    async def _generate_title_with_llm(self, content: str) -> str | None:
+        """Generate a title using LLM from document content."""
+        from pydantic_ai import Agent
+
+        from haiku.rag.utils import get_model
+
+        # Truncate content to limit token usage
+        truncated = content[:2000]
+
+        model = get_model(self._config.processing.title_model, self._config)
+        agent: Agent[None, str] = Agent(
+            model=model,
+            output_type=str,
+            instructions=(
+                "Generate a concise, descriptive title for the following document. "
+                "The title should be at most 10 words. "
+                "Return ONLY the title text, nothing else."
+            ),
+        )
+        try:
+            result = await agent.run(truncated)
+            title = result.output.strip()
+            return title if title else None
+        except Exception:
+            logger.warning("LLM title generation failed", exc_info=True)
+            return None
+
+    async def _resolve_title(
+        self,
+        title: str | None,
+        docling_document: "DoclingDocument",
+        content: str,
+    ) -> str | None:
+        """Resolve the title for a document.
+
+        1. Explicit title always wins.
+        2. If auto_title is disabled, return None.
+        3. Try structural extraction from docling metadata.
+        4. Fall back to LLM generation.
+        """
+        if title is not None:
+            return title
+
+        if not self._config.processing.auto_title:
+            return None
+
+        structural = self._extract_structural_title(docling_document)
+        if structural:
+            return structural
+
+        return await self._generate_title_with_llm(content)
+
     async def _store_document_with_chunks(
         self,
         document: Document,
@@ -383,6 +472,8 @@ class HaikuRAG:
         # The original content is preserved in docling_document
         stored_content = docling_document.export_to_markdown()
 
+        title = await self._resolve_title(title, docling_document, stored_content)
+
         # Create document model
         document = Document(
             content=stored_content,
@@ -420,8 +511,11 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
+        content = docling_document.export_to_markdown()
+        title = await self._resolve_title(title, docling_document, content)
+
         document = Document(
-            content=docling_document.export_to_markdown(),
+            content=content,
             uri=uri,
             title=title,
             metadata=metadata or {},
@@ -556,9 +650,11 @@ class HaikuRAG:
         chunks = await self.chunk(docling_document)
         embedded_chunks = await embed_chunks(chunks, self._config)
 
+        stored_content = docling_document.export_to_markdown()
+
         if existing_doc:
             # Update existing document and rechunk
-            existing_doc.content = docling_document.export_to_markdown()
+            existing_doc.content = stored_content
             existing_doc.metadata = metadata
             existing_doc.docling_document = compress_json(
                 docling_document.model_dump_json()
@@ -566,13 +662,18 @@ class HaikuRAG:
             existing_doc.docling_version = docling_document.version
             if title is not None:
                 existing_doc.title = title
+            elif existing_doc.title is None:
+                existing_doc.title = await self._resolve_title(
+                    None, docling_document, stored_content
+                )
             return await self._update_document_with_chunks(
                 existing_doc, embedded_chunks
             )
         else:
             # Create new document
+            title = await self._resolve_title(title, docling_document, stored_content)
             document = Document(
-                content=docling_document.export_to_markdown(),
+                content=stored_content,
                 uri=uri,
                 title=title,
                 metadata=metadata,
@@ -665,9 +766,11 @@ class HaikuRAG:
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
 
+            stored_content = docling_document.export_to_markdown()
+
             if existing_doc:
                 # Update existing document and rechunk
-                existing_doc.content = docling_document.export_to_markdown()
+                existing_doc.content = stored_content
                 existing_doc.metadata = metadata
                 existing_doc.docling_document = compress_json(
                     docling_document.model_dump_json()
@@ -675,13 +778,20 @@ class HaikuRAG:
                 existing_doc.docling_version = docling_document.version
                 if title is not None:
                     existing_doc.title = title
+                elif existing_doc.title is None:
+                    existing_doc.title = await self._resolve_title(
+                        None, docling_document, stored_content
+                    )
                 return await self._update_document_with_chunks(
                     existing_doc, embedded_chunks
                 )
             else:
                 # Create new document
+                title = await self._resolve_title(
+                    title, docling_document, stored_content
+                )
                 document = Document(
-                    content=docling_document.export_to_markdown(),
+                    content=stored_content,
                     uri=url,
                     title=title,
                     metadata=metadata,

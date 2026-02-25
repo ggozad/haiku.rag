@@ -156,6 +156,14 @@ class ProcessingConfig(BaseModel):
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
+    auto_title: bool = False
+    title_model: ModelConfig = Field(
+        default_factory=lambda: ModelConfig(
+            provider="ollama",
+            name="gpt-oss",
+            enable_thinking=False,
+        )
+    )
 
 
 class SearchConfig(BaseModel):
