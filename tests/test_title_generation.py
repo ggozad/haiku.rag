@@ -144,23 +144,13 @@ class TestResolveTitle:
         return HaikuRAG(tmp_path / "test.lancedb", config=config, create=True)
 
     @pytest.mark.asyncio
-    async def test_explicit_title_always_wins(self, tmp_path):
-        """Caller-supplied title is never overridden."""
-        doc = DoclingDocument(name="test")
-        doc.add_text(label=DocItemLabel.TITLE, text="Structural Title")
-
-        client = self._make_client(tmp_path)
-        result = await client._resolve_title("My Explicit Title", doc, "some content")
-        assert result == "My Explicit Title"
-
-    @pytest.mark.asyncio
     async def test_auto_title_disabled_returns_none(self, tmp_path):
         """When auto_title is False, returns None (no title generation)."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.TITLE, text="Structural Title")
 
         client = self._make_client(tmp_path, auto_title=False)
-        result = await client._resolve_title(None, doc, "some content")
+        result = await client._resolve_title(doc, "some content")
         assert result is None
 
     @pytest.mark.asyncio
@@ -170,7 +160,7 @@ class TestResolveTitle:
         doc.add_text(label=DocItemLabel.TITLE, text="Auto Extracted Title")
 
         client = self._make_client(tmp_path)
-        result = await client._resolve_title(None, doc, "some content")
+        result = await client._resolve_title(doc, "some content")
         assert result == "Auto Extracted Title"
 
     @pytest.mark.asyncio
@@ -185,7 +175,7 @@ class TestResolveTitle:
             raise RuntimeError("LLM is down")
 
         monkeypatch.setattr(HaikuRAG, "_generate_title_with_llm", exploding_llm)
-        result = await client._resolve_title(None, doc, "some content")
+        result = await client._resolve_title(doc, "some content")
         assert result is None
 
 

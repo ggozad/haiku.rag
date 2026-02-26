@@ -310,20 +310,13 @@ class HaikuRAG:
 
     async def _resolve_title(
         self,
-        title: str | None,
         docling_document: "DoclingDocument",
         content: str,
     ) -> str | None:
-        """Resolve the title for a document.
+        """Auto-generate a title from document structure or LLM.
 
-        1. Explicit title always wins.
-        2. If auto_title is disabled, return None.
-        3. Try structural extraction from docling metadata.
-        4. Fall back to LLM generation.
+        Returns None if auto_title is disabled or generation fails.
         """
-        if title is not None:
-            return title
-
         if not self._config.processing.auto_title:
             return None
 
@@ -493,7 +486,8 @@ class HaikuRAG:
         # The original content is preserved in docling_document
         stored_content = docling_document.export_to_markdown()
 
-        title = await self._resolve_title(title, docling_document, stored_content)
+        if title is None:
+            title = await self._resolve_title(docling_document, stored_content)
 
         # Create document model
         document = Document(
@@ -533,7 +527,8 @@ class HaikuRAG:
             The created Document instance.
         """
         content = docling_document.export_to_markdown()
-        title = await self._resolve_title(title, docling_document, content)
+        if title is None:
+            title = await self._resolve_title(docling_document, content)
 
         document = Document(
             content=content,
@@ -685,14 +680,15 @@ class HaikuRAG:
                 existing_doc.title = title
             elif existing_doc.title is None:
                 existing_doc.title = await self._resolve_title(
-                    None, docling_document, stored_content
+                    docling_document, stored_content
                 )
             return await self._update_document_with_chunks(
                 existing_doc, embedded_chunks
             )
         else:
             # Create new document
-            title = await self._resolve_title(title, docling_document, stored_content)
+            if title is None:
+                title = await self._resolve_title(docling_document, stored_content)
             document = Document(
                 content=stored_content,
                 uri=uri,
@@ -801,16 +797,15 @@ class HaikuRAG:
                     existing_doc.title = title
                 elif existing_doc.title is None:
                     existing_doc.title = await self._resolve_title(
-                        None, docling_document, stored_content
+                        docling_document, stored_content
                     )
                 return await self._update_document_with_chunks(
                     existing_doc, embedded_chunks
                 )
             else:
                 # Create new document
-                title = await self._resolve_title(
-                    title, docling_document, stored_content
-                )
+                if title is None:
+                    title = await self._resolve_title(docling_document, stored_content)
                 document = Document(
                     content=stored_content,
                     uri=url,
