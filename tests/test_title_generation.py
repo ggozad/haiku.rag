@@ -256,3 +256,104 @@ class TestImportDocumentAutoTitle:
                 title="Keep This Title",
             )
             assert doc.title == "Keep This Title"
+
+
+# =========================================================================
+# generate_title() public method
+# =========================================================================
+
+
+class TestGenerateTitle:
+    @pytest.mark.asyncio
+    async def test_structural_title(self, temp_db_path):
+        """generate_title extracts structural title from document."""
+        config = AppConfig(processing=ProcessingConfig(auto_title=True))
+        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+            doc = await client.create_document(
+                "# Great Heading\n\nSome content.", uri="test://gen-title"
+            )
+            title = await client.generate_title(doc)
+            assert title == "Great Heading"
+
+    @pytest.mark.asyncio
+    async def test_no_structural_title_no_llm(self, temp_db_path):
+        """generate_title returns None when no structural title and LLM unavailable."""
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                "Just plain text without headings.",
+                uri="test://gen-no-title",
+                format="plain",
+            )
+            title = await client.generate_title(doc)
+            # LLM blocked by ALLOW_MODEL_REQUESTS=False, so falls back to None
+            assert title is None
+
+    @pytest.mark.asyncio
+    async def test_bypasses_auto_title_config(self, temp_db_path):
+        """generate_title works even when auto_title is False."""
+        config = AppConfig(processing=ProcessingConfig(auto_title=False))
+        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+            doc = await client.create_document(
+                "# Heading Present\n\nBody text.", uri="test://gen-bypass"
+            )
+            title = await client.generate_title(doc)
+            assert title == "Heading Present"
+
+
+# =========================================================================
+# rebuild --title-only
+# =========================================================================
+
+
+class TestRebuildTitleOnly:
+    @pytest.mark.asyncio
+    async def test_generates_titles_for_untitled_docs(self, temp_db_path):
+        """TITLE_ONLY mode generates titles for documents without one."""
+        from haiku.rag.client import RebuildMode
+
+        config = AppConfig(processing=ProcessingConfig(auto_title=True))
+        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+            doc1 = await client.create_document(
+                "# Doc With Heading\n\nContent.",
+                uri="test://titled",
+            )
+            assert doc1.title == "Doc With Heading"
+
+            # Simulate an untitled doc
+            doc1.title = None
+            await client.document_repository.update(doc1)
+
+            doc2 = await client.create_document(
+                "# Another Heading\n\nMore content.",
+                uri="test://also-titled",
+            )
+            assert doc2.title == "Another Heading"
+
+            processed_ids = []
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+                processed_ids.append(doc_id)
+
+            assert len(processed_ids) == 1
+            assert doc1.id in processed_ids
+
+            updated_doc1 = await client.get_document_by_id(doc1.id)
+            assert updated_doc1 is not None
+            assert updated_doc1.title == "Doc With Heading"
+
+    @pytest.mark.asyncio
+    async def test_skips_already_titled_docs(self, temp_db_path):
+        """TITLE_ONLY mode skips documents that already have titles."""
+        from haiku.rag.client import RebuildMode
+
+        config = AppConfig(processing=ProcessingConfig(auto_title=True))
+        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+            await client.create_document(
+                "# Has Title\n\nContent.",
+                uri="test://has-title",
+            )
+
+            processed_ids = []
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+                processed_ids.append(doc_id)
+
+            assert len(processed_ids) == 0

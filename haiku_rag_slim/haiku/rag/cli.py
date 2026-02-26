@@ -200,6 +200,11 @@ def add_document_text(  # pragma: no cover
     text: str = typer.Argument(
         help="The text content of the document to add",
     ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Optional title for the document",
+    ),
     meta: list[str] | None = typer.Option(
         None,
         "--meta",
@@ -214,7 +219,9 @@ def add_document_text(  # pragma: no cover
 ):
     app = create_app(db)
     metadata = _parse_meta_options(meta)
-    asyncio.run(app.add_document_from_text(text=text, metadata=metadata or None))
+    asyncio.run(
+        app.add_document_from_text(text=text, title=title, metadata=metadata or None)
+    )
 
 
 @_cli.command("add-src", help="Add a document from a file path, directory, or URL")
@@ -469,17 +476,27 @@ def rebuild(
         "--rechunk",
         help="Re-chunk from existing content without accessing source files",
     ),
+    title_only: bool = typer.Option(
+        False,
+        "--title-only",
+        help="Only generate titles for documents without one",
+    ),
 ):
     from haiku.rag.client import RebuildMode
 
-    if embed_only and rechunk:
-        typer.echo("Error: --embed-only and --rechunk are mutually exclusive")
+    exclusive = sum([embed_only, rechunk, title_only])
+    if exclusive > 1:
+        typer.echo(
+            "Error: --embed-only, --rechunk, and --title-only are mutually exclusive"
+        )
         raise typer.Exit(1)
 
     if embed_only:  # pragma: no cover
         mode = RebuildMode.EMBED_ONLY
     elif rechunk:  # pragma: no cover
         mode = RebuildMode.RECHUNK
+    elif title_only:  # pragma: no cover
+        mode = RebuildMode.TITLE_ONLY
     else:  # pragma: no cover
         mode = RebuildMode.FULL
 

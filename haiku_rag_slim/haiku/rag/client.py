@@ -46,6 +46,7 @@ class RebuildMode(Enum):
     FULL = "full"  # Re-convert from source, re-chunk, re-embed
     RECHUNK = "rechunk"  # Re-chunk from existing content, re-embed
     EMBED_ONLY = "embed_only"  # Keep chunks, only regenerate embeddings
+    TITLE_ONLY = "title_only"  # Only generate titles for untitled documents
 
 
 @dataclass
@@ -291,7 +292,6 @@ class HaikuRAG:
 
         from haiku.rag.utils import get_model
 
-        # Truncate content to limit token usage
         truncated = content[:2000]
 
         model = get_model(self._config.processing.title_model, self._config)
@@ -334,6 +334,25 @@ class HaikuRAG:
         structural = self._extract_structural_title(docling_document)
         if structural:
             return structural
+
+        return await self._generate_title_with_llm(content)
+
+    async def generate_title(self, document: Document) -> str | None:
+        """Generate a title for a document.
+
+        Attempts structural extraction from the stored DoclingDocument,
+        then falls back to LLM generation. Bypasses the auto_title config
+        since this is an explicit call.
+
+        Does NOT update the document — caller decides.
+        """
+        docling_doc = document.get_docling_document()
+        content = document.content or ""
+
+        if docling_doc is not None:
+            structural = self._extract_structural_title(docling_doc)
+            if structural:
+                return structural
 
         return await self._generate_title_with_llm(content)
 
@@ -1629,6 +1648,7 @@ class HaikuRAG:
                 - FULL: Re-convert from source files, re-chunk, re-embed (default)
                 - RECHUNK: Re-chunk from existing content, re-embed (no source access)
                 - EMBED_ONLY: Keep existing chunks, only regenerate embeddings
+                - TITLE_ONLY: Only generate titles for untitled documents
 
         Yields:
             The ID of the document currently being processed.
@@ -1639,7 +1659,10 @@ class HaikuRAG:
 
         documents = await self.list_documents(include_content=True)
 
-        if mode == RebuildMode.EMBED_ONLY:
+        if mode == RebuildMode.TITLE_ONLY:
+            async for doc_id in self._rebuild_title_only(documents):
+                yield doc_id
+        elif mode == RebuildMode.EMBED_ONLY:
             async for doc_id in self._rebuild_embed_only(documents):
                 yield doc_id
         elif mode == RebuildMode.RECHUNK:
@@ -1659,6 +1682,20 @@ class HaikuRAG:
                 await self.store.vacuum()
             except Exception:
                 pass
+
+    async def _rebuild_title_only(
+        self, documents: list[Document]
+    ) -> AsyncGenerator[str, None]:
+        """Generate titles for documents that don't have one."""
+        for doc in documents:
+            if doc.title is not None:
+                continue
+            assert doc.id is not None
+            title = await self.generate_title(doc)
+            if title is not None:
+                doc.title = title
+                await self.document_repository.update(doc)
+                yield doc.id
 
     async def _rebuild_embed_only(
         self, documents: list[Document]
