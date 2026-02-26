@@ -50,6 +50,9 @@ From text:
 ```bash
 haiku-rag add "Your document content here"
 
+# Set a title
+haiku-rag add "Your document content here" --title "My Document"
+
 # Attach metadata (repeat --meta for multiple entries)
 haiku-rag add "Your document content here" --meta author=alice --meta topic=notes
 ```
@@ -391,6 +394,9 @@ haiku-rag rebuild --rechunk
 
 # Only regenerate embeddings (fastest, keeps existing chunks)
 haiku-rag rebuild --embed-only
+
+# Only generate titles for untitled documents
+haiku-rag rebuild --title-only
 ```
 
 **Rebuild modes:**
@@ -400,6 +406,7 @@ haiku-rag rebuild --embed-only
 | Full | (default) | Changed converter, source files updated |
 | Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
 | Embed only | `--embed-only` | Changed embedding model or vector dimensions |
+| Title only | `--title-only` | Generate titles for documents without one |
 
 ### Download Models
 
