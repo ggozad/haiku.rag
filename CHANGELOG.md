@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Automatic title generation**: Documents can now have titles auto-generated during ingestion via `processing.auto_title: true`. Uses two-tier extraction: structural metadata from DoclingDocument (HTML `<title>`, h1, section headers) first, with LLM fallback via configurable `processing.title_model`
+- **`generate_title()`**: Public method on `HaikuRAG` to generate a title for an existing document on demand
+- **`rebuild --title-only`**: New rebuild mode that generates titles only for untitled documents without re-chunking or re-embedding
+- **`add --title`**: CLI option to set a title when adding text documents
+
 ## [0.32.0] - 2026-02-24
 
 ### Changed

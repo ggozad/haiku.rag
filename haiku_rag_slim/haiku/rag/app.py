@@ -261,14 +261,18 @@ class HaikuRAGApp:  # pragma: no cover
             for doc in documents:
                 self._rich_print_document(doc, truncate=True)
 
-    async def add_document_from_text(self, text: str, metadata: dict | None = None):
+    async def add_document_from_text(
+        self, text: str, title: str | None = None, metadata: dict | None = None
+    ):
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            doc = await self.client.create_document(text, metadata=metadata)
+            doc = await self.client.create_document(
+                text, title=title, metadata=metadata
+            )
             self._rich_print_document(doc, truncate=True)
             self.console.print(
                 f"[bold green]Document {doc.id} added successfully.[/bold green]"
@@ -534,6 +538,7 @@ class HaikuRAGApp:  # pragma: no cover
                 RebuildMode.FULL: "full rebuild",
                 RebuildMode.RECHUNK: "rechunk",
                 RebuildMode.EMBED_ONLY: "embed only",
+                RebuildMode.TITLE_ONLY: "title only",
             }[mode]
 
             self.console.print(

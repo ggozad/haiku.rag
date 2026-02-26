@@ -229,6 +229,28 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
 - `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default)
 - `RebuildMode.RECHUNK` - Re-chunk from existing document content, re-embed
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
+- `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
+
+### Generating Titles
+
+Generate a title for an existing document on demand:
+
+```python
+title = await client.generate_title(doc)
+if title:
+    await client.update_document(document_id=doc.id, title=title)
+```
+
+Uses the same two-tier approach as automatic ingestion: structural extraction from DoclingDocument metadata first, with LLM fallback via `processing.title_model`. Unlike ingestion, this method does not catch exceptions — if the LLM call fails, the error propagates.
+
+To batch-generate titles for all untitled documents, use `RebuildMode.TITLE_ONLY`:
+
+```python
+async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+    print(f"Generated title for {doc_id}")
+```
+
+See [Automatic Title Generation](configuration/processing.md#automatic-title-generation) for configuration details.
 
 ## Maintenance
 

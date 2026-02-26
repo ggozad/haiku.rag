@@ -46,6 +46,7 @@ class RebuildMode(Enum):
     FULL = "full"  # Re-convert from source, re-chunk, re-embed
     RECHUNK = "rechunk"  # Re-chunk from existing content, re-embed
     EMBED_ONLY = "embed_only"  # Keep chunks, only regenerate embeddings
+    TITLE_ONLY = "title_only"  # Only generate titles for untitled documents
 
 
 @dataclass
@@ -248,6 +249,108 @@ class HaikuRAG:
 
         return result
 
+    # =========================================================================
+    # Title Generation
+    # =========================================================================
+
+    def _extract_structural_title(
+        self, docling_document: "DoclingDocument"
+    ) -> str | None:
+        """Extract a title from DoclingDocument structural metadata.
+
+        Priority: FURNITURE TITLE > BODY TITLE > first SECTION_HEADER.
+        """
+        from docling_core.types.doc.document import ContentLayer
+        from docling_core.types.doc.labels import DocItemLabel
+
+        furniture_title = None
+        body_title = None
+        first_section_header = None
+
+        for item in docling_document.texts:
+            if item.label == DocItemLabel.TITLE:
+                text = item.text.strip()
+                if not text:
+                    continue
+                if item.content_layer == ContentLayer.FURNITURE:
+                    furniture_title = text
+                elif body_title is None:
+                    body_title = text
+            elif (
+                item.label == DocItemLabel.SECTION_HEADER
+                and first_section_header is None
+            ):
+                text = item.text.strip()
+                if text:
+                    first_section_header = text
+
+        return furniture_title or body_title or first_section_header
+
+    async def _generate_title_with_llm(self, content: str) -> str | None:
+        """Generate a title using LLM from document content."""
+        from pydantic_ai import Agent
+
+        from haiku.rag.utils import get_model
+
+        truncated = content[:2000]
+
+        model = get_model(self._config.processing.title_model, self._config)
+        agent: Agent[None, str] = Agent(
+            model=model,
+            output_type=str,
+            instructions=(
+                "Generate a concise, descriptive title for the following document. "
+                "The title should be at most 10 words. "
+                "Return ONLY the title text, nothing else."
+            ),
+        )
+        result = await agent.run(truncated)
+        title = result.output.strip()
+        return title if title else None
+
+    async def _resolve_title(
+        self,
+        docling_document: "DoclingDocument",
+        content: str,
+    ) -> str | None:
+        """Auto-generate a title from document structure or LLM.
+
+        Returns None if auto_title is disabled or generation fails.
+        """
+        if not self._config.processing.auto_title:
+            return None
+
+        structural = self._extract_structural_title(docling_document)
+        if structural:
+            return structural
+
+        try:
+            return await self._generate_title_with_llm(content)
+        except Exception:
+            logger.warning(
+                "LLM title generation failed during ingestion", exc_info=True
+            )
+            return None
+
+    async def generate_title(self, document: Document) -> str | None:
+        """Generate a title for a document.
+
+        Attempts structural extraction from the stored DoclingDocument,
+        then falls back to LLM generation. Bypasses the auto_title config
+        since this is an explicit call.
+
+        Does NOT update the document — caller decides.
+        """
+        docling_doc = document.get_docling_document()
+        content = document.content or ""
+
+        if docling_doc is not None:
+            structural = self._extract_structural_title(docling_doc)
+            if structural:
+                return structural
+
+        return await self._generate_title_with_llm(content)
+
     async def _store_document_with_chunks(
         self,
         document: Document,
@@ -383,6 +486,9 @@ class HaikuRAG:
         # The original content is preserved in docling_document
         stored_content = docling_document.export_to_markdown()
 
+        if title is None:
+            title = await self._resolve_title(docling_document, stored_content)
+
         # Create document model
         document = Document(
             content=stored_content,
@@ -420,8 +526,12 @@ class HaikuRAG:
         Returns:
             The created Document instance.
         """
+        content = docling_document.export_to_markdown()
+        if title is None:
+            title = await self._resolve_title(docling_document, content)
+
         document = Document(
-            content=docling_document.export_to_markdown(),
+            content=content,
             uri=uri,
             title=title,
             metadata=metadata or {},
@@ -556,9 +666,11 @@ class HaikuRAG:
         chunks = await self.chunk(docling_document)
         embedded_chunks = await embed_chunks(chunks, self._config)
 
+        stored_content = docling_document.export_to_markdown()
+
         if existing_doc:
             # Update existing document and rechunk
-            existing_doc.content = docling_document.export_to_markdown()
+            existing_doc.content = stored_content
             existing_doc.metadata = metadata
             existing_doc.docling_document = compress_json(
                 docling_document.model_dump_json()
@@ -566,13 +678,19 @@ class HaikuRAG:
             existing_doc.docling_version = docling_document.version
             if title is not None:
                 existing_doc.title = title
+            elif existing_doc.title is None:
+                existing_doc.title = await self._resolve_title(
+                    docling_document, stored_content
+                )
             return await self._update_document_with_chunks(
                 existing_doc, embedded_chunks
             )
         else:
             # Create new document
+            if title is None:
+                title = await self._resolve_title(docling_document, stored_content)
             document = Document(
-                content=docling_document.export_to_markdown(),
+                content=stored_content,
                 uri=uri,
                 title=title,
                 metadata=metadata,
@@ -665,9 +783,11 @@ class HaikuRAG:
             # Merge metadata with contentType and md5
             metadata.update({"contentType": content_type, "md5": md5_hash})
 
+            stored_content = docling_document.export_to_markdown()
+
             if existing_doc:
                 # Update existing document and rechunk
-                existing_doc.content = docling_document.export_to_markdown()
+                existing_doc.content = stored_content
                 existing_doc.metadata = metadata
                 existing_doc.docling_document = compress_json(
                     docling_document.model_dump_json()
@@ -675,13 +795,19 @@ class HaikuRAG:
                 existing_doc.docling_version = docling_document.version
                 if title is not None:
                     existing_doc.title = title
+                elif existing_doc.title is None:
+                    existing_doc.title = await self._resolve_title(
+                        docling_document, stored_content
+                    )
                 return await self._update_document_with_chunks(
                     existing_doc, embedded_chunks
                 )
             else:
                 # Create new document
+                if title is None:
+                    title = await self._resolve_title(docling_document, stored_content)
                 document = Document(
-                    content=docling_document.export_to_markdown(),
+                    content=stored_content,
                     uri=url,
                     title=title,
                     metadata=metadata,
@@ -1519,6 +1645,7 @@ class HaikuRAG:
                 - FULL: Re-convert from source files, re-chunk, re-embed (default)
                 - RECHUNK: Re-chunk from existing content, re-embed (no source access)
                 - EMBED_ONLY: Keep existing chunks, only regenerate embeddings
+                - TITLE_ONLY: Only generate titles for untitled documents
 
         Yields:
             The ID of the document currently being processed.
@@ -1529,7 +1656,10 @@ class HaikuRAG:
 
         documents = await self.list_documents(include_content=True)
 
-        if mode == RebuildMode.EMBED_ONLY:
+        if mode == RebuildMode.TITLE_ONLY:
+            async for doc_id in self._rebuild_title_only(documents):
+                yield doc_id
+        elif mode == RebuildMode.EMBED_ONLY:
             async for doc_id in self._rebuild_embed_only(documents):
                 yield doc_id
         elif mode == RebuildMode.RECHUNK:
@@ -1549,6 +1679,26 @@ class HaikuRAG:
                 await self.store.vacuum()
             except Exception:
                 pass
+
+    async def _rebuild_title_only(
+        self, documents: list[Document]
+    ) -> AsyncGenerator[str, None]:
+        """Generate titles for documents that don't have one."""
+        for doc in documents:
+            if doc.title is not None:
+                continue
+            assert doc.id is not None
+            try:
+                title = await self.generate_title(doc)
+            except Exception:
+                logger.warning(
+                    "Failed to generate title for document %s", doc.id, exc_info=True
+                )
+                continue
+            if title is not None:
+                doc.title = title
+                await self.document_repository.update(doc)
+                yield doc.id
 
     async def _rebuild_embed_only(
         self, documents: list[Document]
@@ -1884,6 +2034,11 @@ class HaikuRAG:
         pic_desc = self._config.processing.conversion_options.picture_description
         if pic_desc.enabled and pic_desc.model.provider == "ollama":
             required_models.add(pic_desc.model.name)
+        if (
+            self._config.processing.auto_title
+            and self._config.processing.title_model.provider == "ollama"
+        ):
+            required_models.add(self._config.processing.title_model.name)
 
         if not required_models:
             return

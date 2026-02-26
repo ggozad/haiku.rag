@@ -21,6 +21,13 @@ processing:
   chunking_merge_peers: true                 # Merge undersized successive chunks
   chunking_use_markdown_tables: false        # Use markdown tables vs narrative format
 
+  # Automatic title generation
+  auto_title: false                          # Auto-generate titles on ingestion
+  title_model:                               # LLM for title generation (fallback)
+    provider: ollama
+    name: gpt-oss
+    enable_thinking: false
+
   # Conversion options (works with both local and remote converters)
   conversion_options:
     # OCR settings
@@ -200,6 +207,30 @@ picture_description:
 ```
 
 See [VLM Picture Description with docling-serve](../remote-processing.md#vlm-picture-description-with-docling-serve) for a complete example.
+
+### Automatic Title Generation
+
+Enable automatic title generation during document ingestion:
+
+```yaml
+processing:
+  auto_title: true
+  title_model:
+    provider: ollama
+    name: gpt-oss
+    enable_thinking: false
+```
+
+When `auto_title` is enabled, haiku.rag attempts to extract a title for each document during ingestion using a two-tier approach:
+
+1. **Structural extraction** (free, no model calls): Scans the DoclingDocument for semantic labels — HTML `<title>` tags, `<h1>` headings, PDF title blocks, and section headers
+2. **LLM fallback**: When no structural title is found (e.g., plain text), generates a title using the configured `title_model`
+
+Priority order: HTML `<title>` (furniture layer) → h1/PDF title (body layer) → first section header → LLM generation.
+
+Explicit titles passed via `title=` parameter always take precedence and are never overridden. When updating documents, existing titles are preserved — auto-generation only applies to untitled documents.
+
+To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild-database).
 
 ### Local vs Remote Processing
 
