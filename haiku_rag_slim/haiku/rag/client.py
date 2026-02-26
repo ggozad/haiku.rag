@@ -2034,6 +2034,11 @@ class HaikuRAG:
         pic_desc = self._config.processing.conversion_options.picture_description
         if pic_desc.enabled and pic_desc.model.provider == "ollama":
             required_models.add(pic_desc.model.name)
+        if (
+            self._config.processing.auto_title
+            and self._config.processing.title_model.provider == "ollama"
+        ):
+            required_models.add(self._config.processing.title_model.name)
 
         if not required_models:
             return

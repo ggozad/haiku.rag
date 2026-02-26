@@ -117,6 +117,11 @@ processing:
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
   chunking_use_markdown_tables: false
+  auto_title: false              # Auto-generate titles on ingestion
+  title_model:
+    provider: ollama
+    name: gpt-oss
+    enable_thinking: false
   conversion_options:
     do_ocr: true
     force_ocr: false
