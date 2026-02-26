@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.32.1] - 2026-02-26
+
 ### Added
 
 - **Automatic title generation**: Documents can now have titles auto-generated during ingestion via `processing.auto_title: true`. Uses two-tier extraction: structural metadata from DoclingDocument (HTML `<title>`, h1, section headers) first, with LLM fallback via configurable `processing.title_model`
@@ -1154,7 +1156,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.1...HEAD
+[0.32.1]: https://github.com/ggozad/haiku.rag/compare/0.32.0...0.32.1
 [0.32.0]: https://github.com/ggozad/haiku.rag/compare/0.31.1...0.32.0
 [0.31.1]: https://github.com/ggozad/haiku.rag/compare/0.31.0...0.31.1
 [0.31.0]: https://github.com/ggozad/haiku.rag/compare/0.30.2...0.31.0
