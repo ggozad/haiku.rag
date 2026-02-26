@@ -174,14 +174,18 @@ class TestResolveTitle:
         assert result == "Auto Extracted Title"
 
     @pytest.mark.asyncio
-    async def test_no_structural_title_no_llm_returns_none(self, tmp_path):
-        """Returns None when no structural title and no LLM available."""
+    async def test_llm_failure_returns_none(self, tmp_path, monkeypatch):
+        """LLM failure during ingestion returns None instead of raising."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.PARAGRAPH, text="Just text")
 
         client = self._make_client(tmp_path)
+
+        async def exploding_llm(self, content):
+            raise RuntimeError("LLM is down")
+
+        monkeypatch.setattr(HaikuRAG, "_generate_title_with_llm", exploding_llm)
         result = await client._resolve_title(None, doc, "some content")
-        # LLM call will fail without allow_model_requests, so we get None
         assert result is None
 
 
@@ -277,16 +281,15 @@ class TestGenerateTitle:
 
     @pytest.mark.asyncio
     async def test_no_structural_title_no_llm(self, temp_db_path):
-        """generate_title returns None when no structural title and LLM unavailable."""
+        """generate_title raises when no structural title and LLM unavailable."""
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc = await client.create_document(
                 "Just plain text without headings.",
                 uri="test://gen-no-title",
                 format="plain",
             )
-            title = await client.generate_title(doc)
-            # LLM blocked by ALLOW_MODEL_REQUESTS=False, so falls back to None
-            assert title is None
+            with pytest.raises(RuntimeError):
+                await client.generate_title(doc)
 
     @pytest.mark.asyncio
     async def test_bypasses_auto_title_config(self, temp_db_path):
@@ -357,3 +360,44 @@ class TestRebuildTitleOnly:
                 processed_ids.append(doc_id)
 
             assert len(processed_ids) == 0
+
+    @pytest.mark.asyncio
+    async def test_continues_on_per_document_failure(self, temp_db_path, monkeypatch):
+        """TITLE_ONLY mode continues when generate_title fails for a document."""
+        from haiku.rag.client import RebuildMode
+
+        config = AppConfig(processing=ProcessingConfig(auto_title=True))
+        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+            doc1 = await client.create_document(
+                "# First Heading\n\nContent.",
+                uri="test://first",
+            )
+            doc2 = await client.create_document(
+                "# Second Heading\n\nContent.",
+                uri="test://second",
+            )
+            # Clear both titles
+            doc1.title = None
+            await client.document_repository.update(doc1)
+            doc2.title = None
+            await client.document_repository.update(doc2)
+
+            # Make generate_title fail for the first doc, succeed for the second
+            original = HaikuRAG.generate_title
+            call_count = 0
+
+            async def flaky_generate(self, document):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise RuntimeError("LLM failed")
+                return await original(self, document)
+
+            monkeypatch.setattr(HaikuRAG, "generate_title", flaky_generate)
+
+            processed_ids = []
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+                processed_ids.append(doc_id)
+
+            # Only the second doc should have been processed
+            assert len(processed_ids) == 1

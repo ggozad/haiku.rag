@@ -304,13 +304,9 @@ class HaikuRAG:
                 "Return ONLY the title text, nothing else."
             ),
         )
-        try:
-            result = await agent.run(truncated)
-            title = result.output.strip()
-            return title if title else None
-        except Exception:
-            logger.warning("LLM title generation failed", exc_info=True)
-            return None
+        result = await agent.run(truncated)
+        title = result.output.strip()
+        return title if title else None
 
     async def _resolve_title(
         self,
@@ -335,7 +331,13 @@ class HaikuRAG:
         if structural:
             return structural
 
-        return await self._generate_title_with_llm(content)
+        try:
+            return await self._generate_title_with_llm(content)
+        except Exception:
+            logger.warning(
+                "LLM title generation failed during ingestion", exc_info=True
+            )
+            return None
 
     async def generate_title(self, document: Document) -> str | None:
         """Generate a title for a document.
@@ -1691,7 +1693,13 @@ class HaikuRAG:
             if doc.title is not None:
                 continue
             assert doc.id is not None
-            title = await self.generate_title(doc)
+            try:
+                title = await self.generate_title(doc)
+            except Exception:
+                logger.warning(
+                    "Failed to generate title for document %s", doc.id, exc_info=True
+                )
+                continue
             if title is not None:
                 doc.title = title
                 await self.document_repository.update(doc)
