@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.32.2] - 2026-02-28
+
 ### Fixed
 
 - **Compatibility with haiku.skills 0.5.1**: Replaced removed `SkillToolset.system_prompt` with `build_system_prompt(toolset.skill_catalog)` across chat TUI, backend app, and examples
@@ -1162,7 +1164,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.2...HEAD
+[0.32.2]: https://github.com/ggozad/haiku.rag/compare/0.32.1...0.32.2
 [0.32.1]: https://github.com/ggozad/haiku.rag/compare/0.32.0...0.32.1
 [0.32.0]: https://github.com/ggozad/haiku.rag/compare/0.31.1...0.32.0
 [0.31.1]: https://github.com/ggozad/haiku.rag/compare/0.31.0...0.31.1
