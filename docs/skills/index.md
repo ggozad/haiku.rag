@@ -24,6 +24,7 @@ haiku-skills list --use-entrypoints
 ```python
 from haiku.rag.skills.rag import create_skill
 from haiku.skills.agent import SkillToolset
+from haiku.skills.prompts import build_system_prompt
 from pydantic_ai import Agent
 
 skill = create_skill(db_path=db_path, config=config)
@@ -31,7 +32,7 @@ toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
     "openai:gpt-4o",
-    instructions=toolset.system_prompt,
+    instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )
 

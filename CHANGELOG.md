@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Compatibility with haiku.skills 0.5.1**: Replaced removed `SkillToolset.system_prompt` with `build_system_prompt(toolset.skill_catalog)` across chat TUI, backend app, and examples
+- **Minimum dependency**: Bumped `haiku.skills` requirement to `>=0.5.1`
+
 ## [0.32.1] - 2026-02-26
 
 ### Added

@@ -457,13 +457,14 @@ haiku.rag provides a RAG skill built on [haiku.skills](https://github.com/ggozad
 from pydantic_ai import Agent
 from haiku.rag.skills.rag import create_skill
 from haiku.skills.agent import SkillToolset
+from haiku.skills.prompts import build_system_prompt
 
 skill = create_skill(db_path=db_path, config=config)
 toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
     "openai:gpt-4o",
-    instructions=toolset.system_prompt,
+    instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )
 
