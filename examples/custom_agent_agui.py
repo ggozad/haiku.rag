@@ -25,6 +25,7 @@ from starlette.routing import Route
 
 from haiku.rag.skills.rag import create_skill
 from haiku.skills.agent import SkillToolset
+from haiku.skills.prompts import build_system_prompt
 
 db_path = os.environ.get("DB_PATH")
 if not db_path:
@@ -38,7 +39,7 @@ toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",
-    instructions=toolset.system_prompt,
+    instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )
 

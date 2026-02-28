@@ -12,6 +12,7 @@ from haiku.rag.config import get_config
 from haiku.rag.skills.rag import AGENT_PREAMBLE, RAGState
 from haiku.skills.agent import SkillToolset
 from haiku.skills.models import Skill
+from haiku.skills.prompts import build_system_prompt
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -161,7 +162,9 @@ class ChatApp(App):
         self._toolset = SkillToolset(skills=[self._skill])
         self._agent = Agent(
             self._model,
-            instructions=AGENT_PREAMBLE + self._toolset.system_prompt,
+            instructions=build_system_prompt(
+                self._toolset.skill_catalog, preamble=AGENT_PREAMBLE
+            ),
             toolsets=[self._toolset],
         )
         self._state = self._toolset.build_state_snapshot()

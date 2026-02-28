@@ -51,6 +51,7 @@ Combine both skills to give the agent full RAG + analysis capabilities:
 from haiku.rag.skills.rag import create_skill as create_rag_skill
 from haiku.rag.skills.rlm import create_skill as create_rlm_skill
 from haiku.skills.agent import SkillToolset
+from haiku.skills.prompts import build_system_prompt
 from pydantic_ai import Agent
 
 rag = create_rag_skill(db_path=db_path)
@@ -59,7 +60,7 @@ toolset = SkillToolset(skills=[rag, rlm])
 
 agent = Agent(
     "openai:gpt-4o",
-    instructions=toolset.system_prompt,
+    instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )
 ```
