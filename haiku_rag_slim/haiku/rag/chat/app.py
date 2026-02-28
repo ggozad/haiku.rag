@@ -102,7 +102,7 @@ class ChatApp(App):
         self._skill = skill
         self.read_only = read_only
         self.before = before
-        self._model = model or "openai:gpt-4o"
+        self._model = model
         self.client: HaikuRAG | None = None
         self.config = get_config()
         self._toolset: SkillToolset | None = None

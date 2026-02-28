@@ -25,6 +25,7 @@ def run_chat(
 
     from haiku.rag.config import get_config
     from haiku.rag.skills.rag import create_skill
+    from haiku.rag.utils import get_model
 
     config = get_config()
     if db_path is None:
@@ -37,6 +38,6 @@ def run_chat(
         skill=skill,
         read_only=read_only,
         before=before,
-        model=model,
+        model=model or get_model(config.qa.model, config),
     )
     app.run()

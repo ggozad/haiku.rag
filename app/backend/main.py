@@ -17,6 +17,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rag import AGENT_PREAMBLE, create_skill
+from haiku.rag.utils import get_model
 from haiku.skills import SkillDeps, SkillToolset
 from haiku.skills.prompts import build_system_prompt
 
@@ -68,7 +69,7 @@ skill = create_skill(db_path=db_path, config=Config)
 toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
-    os.getenv("HAIKU_CHAT_MODEL", "openai:gpt-4o"),
+    get_model(Config.qa.model, Config),
     instructions=build_system_prompt(toolset.skill_catalog, preamble=AGENT_PREAMBLE),
     toolsets=[toolset],
     deps_type=SkillDeps,
