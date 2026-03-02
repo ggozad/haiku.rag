@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **AG-UI skill streaming**: Tool calls within skills are now streamed as real-time AG-UI events to the frontend. Requires `haiku.skills>=0.6.0`
+
 ### Fixed
 
 - **Search tool regression**: Removed LLM-facing `filter` parameter from search and list_documents tools. The SQL WHERE clause description confused LLMs, degrading QA accuracy. Document filtering is now handled programmatically via `base_filter` and `state.document_filter`

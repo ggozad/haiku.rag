@@ -1490,7 +1490,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.73.1" },
     { name = "docling-core", specifier = "==2.65.1" },
-    { name = "haiku-skills", specifier = ">=0.5.1" },
+    { name = "haiku-skills", specifier = ">=0.6.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.29.2" },
@@ -1522,7 +1522,7 @@ provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jin
 
 [[package]]
 name = "haiku-skills"
-version = "0.5.1"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -1530,9 +1530,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "skills-ref" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/4f/82d171478efe6c008705d3c2622009e5e5e18e6f4f2e4b9ad4916920d5d8/haiku_skills-0.5.1.tar.gz", hash = "sha256:8e46e7deac377a5f8fe7e4e61f8a3eca6328e069cd8b5aa63c4929a3b4f1bb6c", size = 122423, upload-time = "2026-02-27T09:31:30.785Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/0f/97d95a6814cec171d97ca7eec6365468f6cbdbfc9fbb2d6346494035aa8a/haiku_skills-0.6.0.tar.gz", hash = "sha256:8352c9157260742b475315f92191fe0c9149aa0faa8c9d20af8c201f1bc71e87", size = 132772, upload-time = "2026-03-03T08:55:59.909Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/18/98/99b1e5b0a2513abb82e7d8cd657d9ad548031c927344ca666eb92f588738/haiku_skills-0.5.1-py3-none-any.whl", hash = "sha256:662684ef13448c7b9c3c8c8d1f46256fe0a76bd5832dfb08a8f8933fc610e4c9", size = 23134, upload-time = "2026-02-27T09:31:29.624Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/c4/f9f8892da06bdc2defb12191e765486dd8dd87155c63dc6ca045f75c8211/haiku_skills-0.6.0-py3-none-any.whl", hash = "sha256:adfbe2206eb238abb0dfe376ffede669860ffd45a2f4647090dfbd787842cf7f", size = 24631, upload-time = "2026-03-03T08:55:58.901Z" },
 ]
 
 [[package]]
