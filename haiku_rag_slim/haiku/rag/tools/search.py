@@ -5,7 +5,6 @@ from pydantic_ai import FunctionToolset, RunContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import RAGDeps
-from haiku.rag.tools.filters import combine_filters
 
 
 def create_search_toolset(
@@ -35,21 +34,19 @@ def create_search_toolset(
         ctx: RunContext[RAGDeps],
         query: str,
         limit: int | None = None,
-        filter: str | None = None,
     ) -> str:
         """Search the knowledge base for relevant documents.
 
         Args:
             query: The search query (what to search for).
             limit: Number of results to return (default: from config).
-            filter: Optional SQL WHERE clause to filter documents.
 
         Returns:
             Formatted search results with content and metadata.
         """
         client = ctx.deps.client
 
-        effective_filter = combine_filters(base_filter, filter)
+        effective_filter = base_filter
         effective_limit = limit or config.search.limit
         results = await client.search(
             query, limit=effective_limit, filter=effective_filter

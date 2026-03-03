@@ -68,19 +68,6 @@ class TestSearchToolExecution:
             assert result == "No results found."
 
     @pytest.mark.asyncio
-    async def test_search_with_filter(self, search_client, search_config):
-        """Search tool respects filter parameter."""
-        accumulated: list[SearchResult] = []
-        toolset = create_search_toolset(search_config, on_results=accumulated.extend)
-
-        search_tool = toolset.tools["search"]
-        ctx = make_ctx(search_client)
-        await search_tool.function(ctx, "programming", filter="title LIKE '%Python%'")
-
-        for r in accumulated:
-            assert "JavaScript" not in (r.document_title or "")
-
-    @pytest.mark.asyncio
     async def test_search_with_base_filter(self, search_client, search_config):
         """Search toolset respects base_filter parameter."""
         accumulated: list[SearchResult] = []

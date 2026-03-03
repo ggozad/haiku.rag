@@ -140,19 +140,17 @@ def create_skill(
         ctx: RunContext[SkillRunDeps],
         limit: int | None = None,
         offset: int | None = None,
-        filter: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List documents in the knowledge base with optional pagination and filtering.
+        """List documents in the knowledge base with optional pagination.
 
         Args:
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
-            filter: Optional SQL WHERE clause to filter documents.
         """
         from haiku.rag.client import HaikuRAG
 
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            documents = await rag.list_documents(limit, offset, filter)
+            documents = await rag.list_documents(limit, offset)
             result = [
                 {
                     "id": doc.id,
