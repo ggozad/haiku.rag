@@ -68,10 +68,9 @@ async def _iterative_plan_logic(
 
     plan_agent: Agent[ResearchDependencies, IterativePlanResult] = Agent(  # type: ignore[assignment]
         model=get_model(model_config, config),
-        output_type=IterativePlanResult,
+        output_type=ToolOutput(IterativePlanResult, max_retries=3),
         instructions=effective_prompt,
         retries=3,
-        output_retries=3,
         deps_type=ResearchDependencies,
     )
 
@@ -219,10 +218,9 @@ def build_research_graph(
 
         agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
             model=get_model(model_config, config),
-            output_type=ResearchReport,
+            output_type=ToolOutput(ResearchReport, max_retries=3),
             instructions=synthesis_prompt,
             retries=3,
-            output_retries=3,
             deps_type=ResearchDependencies,
         )
 

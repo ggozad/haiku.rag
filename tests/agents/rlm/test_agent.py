@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from pydantic_ai import Agent
+from pydantic_ai.output import ToolOutput
 
 from haiku.rag.agents.rlm.agent import create_rlm_agent
 from haiku.rag.agents.rlm.dependencies import RLMDeps
@@ -19,7 +20,8 @@ class TestCreateRLMAgent:
         agent = create_rlm_agent(Config)
         assert isinstance(agent, Agent)
         assert agent.deps_type is RLMDeps
-        assert agent.output_type is RLMResult
+        assert isinstance(agent.output_type, ToolOutput)
+        assert agent.output_type.output is RLMResult
 
     def test_agent_has_execute_code_tool(self):
         agent = create_rlm_agent(Config)
