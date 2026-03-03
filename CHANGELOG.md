@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Search tool regression**: Removed LLM-facing `filter` parameter from search and list_documents tools. The SQL WHERE clause description confused LLMs, degrading QA accuracy. Document filtering is now handled programmatically via `base_filter` and `state.document_filter`
+
 ## [0.32.2] - 2026-02-28
 
 ### Fixed
