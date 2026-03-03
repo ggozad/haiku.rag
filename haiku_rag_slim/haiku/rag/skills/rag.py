@@ -36,6 +36,27 @@ class RAGState(BaseModel):
     documents: list[DocumentInfo] = Field(default_factory=list)
     reports: list[ResearchEntry] = Field(default_factory=list)
 
+STATE_NAMESPACE = "haiku.rag.skills.rag"
+STATE_TYPE = RAGState
+
+_skill_path = Path(__file__).parent / "rag"
+_skill_metadata = None
+_instructions = None
+
+def _parse_skill():
+    global _skill_metadata
+    global _instructions
+    _skill_metadata, _instructions = parse_skill_md(_skill_path / "SKILL.md")
+
+def skill_metadata():
+    if _skill_metadata is None:
+        _parse_skill()
+    return _skill_metadata
+
+def instructions():
+    if _instructions is None:
+        _parse_skill()
+    return _instructions
 
 def create_skill(
     db_path: Path | None = None,
@@ -61,9 +82,6 @@ def create_skill(
             db_path = Path(env_db).expanduser()
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
-
-    path = Path(__file__).parent / "rag"
-    metadata, instructions = parse_skill_md(path / "SKILL.md")
 
     async def _find_relevant_prior_qa(
         state: RAGState, query: str
@@ -323,10 +341,10 @@ def create_skill(
         return "\n".join(parts)
 
     return Skill(
-        metadata=metadata,
+        metadata=skill_metadata(),
         source=SkillSource.ENTRYPOINT,
-        path=path,
-        instructions=instructions,
+        path=_skill_path,
+        instructions=instructions(),
         tools=[
             search,
             list_documents,

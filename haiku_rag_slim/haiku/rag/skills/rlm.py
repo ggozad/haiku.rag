@@ -19,6 +19,27 @@ class AnalysisEntry(BaseModel):
 class RLMState(BaseModel):
     analyses: list[AnalysisEntry] = []
 
+STATE_NAMESPACE = "haiku.rag.skills.rag-rlm"
+STATE_TYPE = RLMState
+
+_skill_path = Path(__file__).parent / "rag-rlm"
+_skill_metadata = None
+_instructions = None
+
+def _parse_skill():
+    global _skill_metadata
+    global _instructions
+    _skill_metadata, _instructions = parse_skill_md(_skill_path / "SKILL.md")
+
+def skill_metadata():
+    if _skill_metadata is None:
+        _parse_skill()
+    return _skill_metadata
+
+def instructions():
+    if _instructions is None:
+        _parse_skill()
+    return _instructions
 
 def create_skill(
     db_path: Path | None = None,
@@ -44,9 +65,6 @@ def create_skill(
             db_path = Path(env_db).expanduser()
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
-
-    path = Path(__file__).parent / "rag-rlm"
-    metadata, instructions = parse_skill_md(path / "SKILL.md")
 
     async def analyze(
         ctx: RunContext[SkillRunDeps],
@@ -85,10 +103,10 @@ def create_skill(
         return output
 
     return Skill(
-        metadata=metadata,
+        metadata=skill_metadata(),
         source=SkillSource.ENTRYPOINT,
-        path=path,
-        instructions=instructions,
+        path=_skill_path,
+        instructions=instructions(),
         tools=[analyze],
         state_type=RLMState,
         state_namespace="rlm",
