@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, Any
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.skills.rag import AGENT_PREAMBLE, RAGState
-from haiku.skills.agent import SkillToolset
+from haiku.skills.agent import (
+    SkillToolset,
+    run_agui_stream,
+)
 from haiku.skills.models import Skill
 from haiku.skills.prompts import build_system_prompt
 
@@ -29,7 +32,6 @@ try:
     import textual_image.widget  # noqa: F401 - import early for renderer detection
     from ag_ui.core import (
         AssistantMessage,
-        BaseEvent,
         EventType,
         RunAgentInput,
         StateDeltaEvent,
@@ -226,64 +228,65 @@ class ChatApp(App):
         tool_args_deltas: dict[str, str] = {}
 
         try:
-            async for event in adapter.run_stream():
-                if not isinstance(event, BaseEvent):
-                    continue
-                if event.type == EventType.TEXT_MESSAGE_START:
-                    chat_history.hide_thinking()
-                    message = await chat_history.add_message("assistant")
-                    accumulated_text = ""
-                elif event.type == EventType.TEXT_MESSAGE_CONTENT:
-                    assert isinstance(event, TextMessageContentEvent)
-                    accumulated_text += event.delta
-                    if message:
-                        message.update_content(accumulated_text)
-                        chat_history.scroll_end(animate=False)
-                elif event.type == EventType.TEXT_MESSAGE_END:
-                    self._messages.append(
-                        AssistantMessage(
-                            id=str(uuid.uuid4()),
-                            role="assistant",
-                            content=accumulated_text,
+            async with run_agui_stream(self._toolset, adapter) as stream:
+                async for event in stream:
+                    if event.type == EventType.TEXT_MESSAGE_START:
+                        chat_history.hide_thinking()
+                        message = await chat_history.add_message("assistant")
+                        accumulated_text = ""
+                    elif event.type == EventType.TEXT_MESSAGE_CONTENT:
+                        assert isinstance(event, TextMessageContentEvent)
+                        accumulated_text += event.delta
+                        if message:
+                            message.update_content(accumulated_text)
+                            chat_history.scroll_end(animate=False)
+                    elif event.type == EventType.TEXT_MESSAGE_END:
+                        self._messages.append(
+                            AssistantMessage(
+                                id=str(uuid.uuid4()),
+                                role="assistant",
+                                content=accumulated_text,
+                            )
                         )
-                    )
-                    # Show citations from RAG state
-                    await self._show_citations(chat_history)
-                elif event.type == EventType.TOOL_CALL_START:
-                    assert isinstance(event, ToolCallStartEvent)
-                    chat_history.hide_thinking()
-                    await chat_history.add_tool_call(
-                        event.tool_call_id, event.tool_call_name
-                    )
-                    tool_args_deltas[event.tool_call_id] = ""
-                    await chat_history.show_thinking("Executing tasks...")
-                elif event.type == EventType.TOOL_CALL_ARGS:
-                    assert isinstance(event, ToolCallArgsEvent)
-                    tool_args_deltas[event.tool_call_id] = (
-                        tool_args_deltas.get(event.tool_call_id, "") + event.delta
-                    )
-                    try:
-                        args = json.loads(tool_args_deltas[event.tool_call_id])
-                        chat_history.update_tool_args(event.tool_call_id, args)
-                    except json.JSONDecodeError:
-                        pass
-                elif event.type == EventType.TOOL_CALL_END:
-                    assert isinstance(event, ToolCallEndEvent)
-                    chat_history.mark_tool_complete(event.tool_call_id)
-                elif event.type == EventType.STATE_DELTA:
-                    assert isinstance(event, StateDeltaEvent)
-                    patch = JsonPatch(event.delta)
-                    self._state = patch.apply(self._state)
-                    self._toolset.restore_state_snapshot(self._state)
-                elif event.type == EventType.STATE_SNAPSHOT:
-                    self._state = getattr(event, "snapshot", self._state)
-                    self._toolset.restore_state_snapshot(self._state)
-                elif event.type == EventType.RUN_FINISHED:
-                    chat_history.hide_thinking()
-                elif event.type == EventType.RUN_ERROR:
-                    chat_history.hide_thinking()
-                    error_msg = getattr(event, "message", "Unknown error")
-                    await chat_history.add_message("assistant", f"Error: {error_msg}")
+                        # Show citations from RAG state
+                        await self._show_citations(chat_history)
+                    elif event.type == EventType.TOOL_CALL_START:
+                        assert isinstance(event, ToolCallStartEvent)
+                        chat_history.hide_thinking()
+                        await chat_history.add_tool_call(
+                            event.tool_call_id, event.tool_call_name
+                        )
+                        tool_args_deltas[event.tool_call_id] = ""
+                        await chat_history.show_thinking("Executing tasks...")
+                    elif event.type == EventType.TOOL_CALL_ARGS:
+                        assert isinstance(event, ToolCallArgsEvent)
+                        tool_args_deltas[event.tool_call_id] = (
+                            tool_args_deltas.get(event.tool_call_id, "") + event.delta
+                        )
+                        try:
+                            args = json.loads(tool_args_deltas[event.tool_call_id])
+                            chat_history.update_tool_args(event.tool_call_id, args)
+                        except json.JSONDecodeError:
+                            pass
+                    elif event.type == EventType.TOOL_CALL_END:
+                        assert isinstance(event, ToolCallEndEvent)
+                        chat_history.mark_tool_complete(event.tool_call_id)
+                    elif event.type == EventType.STATE_DELTA:
+                        assert isinstance(event, StateDeltaEvent)
+                        patch = JsonPatch(event.delta)
+                        self._state = patch.apply(self._state)
+                        self._toolset.restore_state_snapshot(self._state)
+                    elif event.type == EventType.STATE_SNAPSHOT:
+                        self._state = getattr(event, "snapshot", self._state)
+                        self._toolset.restore_state_snapshot(self._state)
+                    elif event.type == EventType.RUN_FINISHED:
+                        chat_history.hide_thinking()
+                    elif event.type == EventType.RUN_ERROR:
+                        chat_history.hide_thinking()
+                        error_msg = getattr(event, "message", "Unknown error")
+                        await chat_history.add_message(
+                            "assistant", f"Error: {error_msg}"
+                        )
 
         except asyncio.CancelledError:
             chat_history.hide_thinking()

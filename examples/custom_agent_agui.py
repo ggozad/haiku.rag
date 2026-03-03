@@ -24,7 +24,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.skills.rag import create_skill
-from haiku.skills.agent import SkillToolset
+from haiku.skills.agent import SkillToolset, run_agui_stream
 from haiku.skills.prompts import build_system_prompt
 
 db_path = os.environ.get("DB_PATH")
@@ -50,11 +50,14 @@ async def stream_chat(request: Request) -> Response:
     run_input = AGUIAdapter.build_run_input(body)
 
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
-    event_stream = adapter.run_stream()
-    sse_event_stream = adapter.encode_stream(event_stream)
+
+    async def event_stream():
+        async with run_agui_stream(toolset, adapter) as stream:
+            async for chunk in adapter.encode_stream(stream):
+                yield chunk
 
     return StreamingResponse(
-        sse_event_stream,
+        event_stream(),
         media_type=accept,
         headers={
             "Cache-Control": "no-cache",
