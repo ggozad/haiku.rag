@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from pydantic_ai import Agent
+from pydantic_ai.output import ToolOutput
 
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.agents.research.models import (
@@ -59,8 +60,7 @@ class QuestionAnswerAgent:
         agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
             model=get_model(self._model_config, self._config),
             deps_type=_QARunDeps,
-            output_type=RawSearchAnswer,
-            output_retries=3,
+            output_type=ToolOutput(RawSearchAnswer, max_retries=3),
             instructions=self._system_prompt,
             toolsets=[search_toolset],
             retries=3,

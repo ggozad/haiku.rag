@@ -1,4 +1,5 @@
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.output import ToolOutput
 
 from haiku.rag.agents.rlm.dependencies import RLMDeps
 from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
@@ -25,7 +26,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
     agent: Agent[RLMDeps, RLMResult] = Agent(  # type: ignore[invalid-assignment]
         model,
         deps_type=RLMDeps,
-        output_type=RLMResult,
+        output_type=ToolOutput(RLMResult, max_retries=3),
         instructions=RLM_SYSTEM_PROMPT,
         retries=3,
     )
