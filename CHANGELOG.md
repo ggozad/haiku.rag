@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.32.3] - 2026-03-03
+
 ### Changed
 
 - **AG-UI skill streaming**: Tool calls within skills are now streamed as real-time AG-UI events to the frontend. Requires `haiku.skills>=0.6.0`
@@ -1172,7 +1174,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.3...HEAD
+[0.32.3]: https://github.com/ggozad/haiku.rag/compare/0.32.2...0.32.3
 [0.32.2]: https://github.com/ggozad/haiku.rag/compare/0.32.1...0.32.2
 [0.32.1]: https://github.com/ggozad/haiku.rag/compare/0.32.0...0.32.1
 [0.32.0]: https://github.com/ggozad/haiku.rag/compare/0.31.1...0.32.0
