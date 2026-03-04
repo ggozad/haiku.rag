@@ -1,11 +1,12 @@
 import os
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import RunContext
 
-from haiku.skills.models import Skill, SkillSource
+from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 from haiku.skills.state import SkillRunDeps
 
@@ -18,6 +19,32 @@ class AnalysisEntry(BaseModel):
 
 class RLMState(BaseModel):
     analyses: list[AnalysisEntry] = []
+
+
+STATE_TYPE = RLMState
+STATE_NAMESPACE = "rlm"
+
+_skill_path = Path(__file__).parent / "rag-rlm"
+
+
+@cache
+def skill_metadata() -> SkillMetadata:
+    metadata, _ = parse_skill_md(_skill_path / "SKILL.md")
+    return metadata
+
+
+@cache
+def instructions() -> str | None:
+    _, instr = parse_skill_md(_skill_path / "SKILL.md")
+    return instr
+
+
+def state_metadata() -> StateMetadata:
+    return StateMetadata(
+        namespace=STATE_NAMESPACE,
+        type=STATE_TYPE,
+        schema=STATE_TYPE.model_json_schema(),
+    )
 
 
 def create_skill(
@@ -44,9 +71,6 @@ def create_skill(
             db_path = Path(env_db).expanduser()
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
-
-    path = Path(__file__).parent / "rag-rlm"
-    metadata, instructions = parse_skill_md(path / "SKILL.md")
 
     async def analyze(
         ctx: RunContext[SkillRunDeps],
@@ -85,11 +109,11 @@ def create_skill(
         return output
 
     return Skill(
-        metadata=metadata,
+        metadata=skill_metadata(),
         source=SkillSource.ENTRYPOINT,
-        path=path,
-        instructions=instructions,
+        path=_skill_path,
+        instructions=instructions(),
         tools=[analyze],
-        state_type=RLMState,
-        state_namespace="rlm",
+        state_type=STATE_TYPE,
+        state_namespace=STATE_NAMESPACE,
     )
