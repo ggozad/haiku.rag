@@ -2,11 +2,54 @@ from unittest.mock import AsyncMock
 
 from haiku.rag.agents.research.models import Citation, ResearchReport
 from haiku.rag.client import HaikuRAG
+from haiku.rag.skills.rag import (
+    STATE_NAMESPACE,
+    STATE_TYPE,
+    RAGState,
+    instructions,
+    skill_metadata,
+    state_metadata,
+)
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.tools.qa import QAHistoryEntry
+from haiku.skills.models import SkillMetadata, StateMetadata
 
 from .conftest import _get_tool, _make_ctx
+
+
+class TestRAGModuleAPI:
+    def test_state_type_is_rag_state(self):
+        assert STATE_TYPE is RAGState
+
+    def test_state_namespace(self):
+        assert STATE_NAMESPACE == "rag"
+
+    def test_state_metadata_returns_state_metadata(self):
+        result = state_metadata()
+        assert isinstance(result, StateMetadata)
+        assert result.namespace == "rag"
+        assert result.type is RAGState
+        assert result.schema == RAGState.model_json_schema()
+
+    def test_skill_metadata_returns_skill_metadata(self):
+        result = skill_metadata()
+        assert isinstance(result, SkillMetadata)
+        assert result.name == "rag"
+
+    def test_instructions_returns_string(self):
+        result = instructions()
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_constants_match_create_skill(self, temp_db_path):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=temp_db_path)
+        assert skill.state_type is STATE_TYPE
+        assert skill.state_namespace == STATE_NAMESPACE
+        assert skill.metadata == skill_metadata()
+        assert skill.instructions == instructions()
 
 
 class TestRAGSkillCreation:

@@ -1,4 +1,5 @@
 import os
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ from haiku.rag.agents.research.models import Citation
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.tools.qa import QAHistoryEntry
-from haiku.skills.models import Skill, SkillSource
+from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 from haiku.skills.state import SkillRunDeps
 
@@ -37,6 +38,32 @@ class RAGState(BaseModel):
     reports: list[ResearchEntry] = Field(default_factory=list)
 
 
+STATE_TYPE = RAGState
+STATE_NAMESPACE = "rag"
+
+_skill_path = Path(__file__).parent / "rag"
+
+
+@cache
+def skill_metadata() -> SkillMetadata:
+    metadata, _ = parse_skill_md(_skill_path / "SKILL.md")
+    return metadata
+
+
+@cache
+def instructions() -> str | None:
+    _, instr = parse_skill_md(_skill_path / "SKILL.md")
+    return instr
+
+
+def state_metadata() -> StateMetadata:
+    return StateMetadata(
+        namespace=STATE_NAMESPACE,
+        type=STATE_TYPE,
+        schema=STATE_TYPE.model_json_schema(),
+    )
+
+
 def create_skill(
     db_path: Path | None = None,
     config: Any = None,
@@ -61,9 +88,6 @@ def create_skill(
             db_path = Path(env_db).expanduser()
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
-
-    path = Path(__file__).parent / "rag"
-    metadata, instructions = parse_skill_md(path / "SKILL.md")
 
     async def _find_relevant_prior_qa(
         state: RAGState, query: str
@@ -323,10 +347,10 @@ def create_skill(
         return "\n".join(parts)
 
     return Skill(
-        metadata=metadata,
+        metadata=skill_metadata(),
         source=SkillSource.ENTRYPOINT,
-        path=path,
-        instructions=instructions,
+        path=_skill_path,
+        instructions=instructions(),
         tools=[
             search,
             list_documents,
@@ -334,6 +358,6 @@ def create_skill(
             ask,
             research,
         ],
-        state_type=RAGState,
-        state_namespace="rag",
+        state_type=STATE_TYPE,
+        state_namespace=STATE_NAMESPACE,
     )

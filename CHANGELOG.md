@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Module-level skill introspection API**: `STATE_TYPE`, `STATE_NAMESPACE`, `skill_metadata()`, `instructions()`, and `state_metadata()` on `haiku.rag.skills.rag` and `haiku.rag.skills.rlm` — allows introspecting skill configuration without calling `create_skill()`
+
+### Changed
+
+- **`haiku.skills` dependency**: Bumped to `>=0.7.0` for `StateMetadata` dataclass
+
 ## [0.32.3] - 2026-03-03
 
 ### Changed
