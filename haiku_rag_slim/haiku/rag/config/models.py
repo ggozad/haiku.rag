@@ -25,7 +25,6 @@ class ModelConfig(BaseModel):
     enable_thinking: bool | None = None
     temperature: float | None = None
     max_tokens: int | None = None
-    structured_output: Literal["tool", "native"] = "tool"
 
 
 class EmbeddingModelConfig(BaseModel):

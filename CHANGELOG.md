@@ -4,7 +4,7 @@
 ### Added
 
 - **Module-level skill introspection API**: `STATE_TYPE`, `STATE_NAMESPACE`, `skill_metadata()`, `instructions()`, and `state_metadata()` on `haiku.rag.skills.rag` and `haiku.rag.skills.rlm` — allows introspecting skill configuration without calling `create_skill()`
-- **Configurable structured output mode**: New `structured_output` setting on model config (`"tool"` or `"native"`). Models like OpenAI and Anthropic can use native JSON schema enforcement instead of the default tool-call approach
+- **Automatic structured output detection**: Native JSON schema output is used automatically when the model supports it, with tool-call fallback otherwise. No configuration needed.
 
 ### Changed
 

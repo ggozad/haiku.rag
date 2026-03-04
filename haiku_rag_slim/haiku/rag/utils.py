@@ -308,13 +308,14 @@ def get_model(
 
 def structured_output_type(
     result_type: type,
-    model_config: "ModelConfig",
+    model: Any,
     max_retries: int = 3,
 ) -> Any:
-    """Return a ToolOutput or NativeOutput wrapper based on model config."""
+    """Return a NativeOutput or ToolOutput wrapper based on model capability."""
+    from pydantic_ai.models import Model
     from pydantic_ai.output import NativeOutput, ToolOutput
 
-    if model_config.structured_output == "native":
+    if isinstance(model, Model) and model.profile.supports_json_schema_output:
         return NativeOutput(result_type)
     return ToolOutput(result_type, max_retries=max_retries)
 

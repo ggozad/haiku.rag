@@ -56,10 +56,11 @@ class QuestionAnswerAgent:
 
         # Agent created per-call: toolset varies with filter, and Agent
         # construction is pure Python (no IO).
+        model = get_model(self._model_config, self._config)
         agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
-            model=get_model(self._model_config, self._config),
+            model=model,
             deps_type=_QARunDeps,
-            output_type=structured_output_type(RawSearchAnswer, self._model_config),
+            output_type=structured_output_type(RawSearchAnswer, model),
             instructions=self._system_prompt,
             toolsets=[search_toolset],
             retries=3,

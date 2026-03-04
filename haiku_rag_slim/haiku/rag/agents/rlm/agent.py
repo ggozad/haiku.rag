@@ -25,7 +25,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
     agent: Agent[RLMDeps, RLMResult] = Agent(  # type: ignore[invalid-assignment]
         model,
         deps_type=RLMDeps,
-        output_type=structured_output_type(RLMResult, config.rlm.model),
+        output_type=structured_output_type(RLMResult, model),
         instructions=RLM_SYSTEM_PROMPT,
         retries=3,
     )
