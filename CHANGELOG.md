@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.33.0] - 2026-03-04
+
 ### Added
 
 - **Module-level skill introspection API**: `STATE_TYPE`, `STATE_NAMESPACE`, `skill_metadata()`, `instructions()`, and `state_metadata()` on `haiku.rag.skills.rag` and `haiku.rag.skills.rlm` — allows introspecting skill configuration without calling `create_skill()`
@@ -1183,7 +1185,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.32.3...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.0...HEAD
+[0.33.0]: https://github.com/ggozad/haiku.rag/compare/0.32.3...0.33.0
 [0.32.3]: https://github.com/ggozad/haiku.rag/compare/0.32.2...0.32.3
 [0.32.2]: https://github.com/ggozad/haiku.rag/compare/0.32.1...0.32.2
 [0.32.1]: https://github.com/ggozad/haiku.rag/compare/0.32.0...0.32.1
