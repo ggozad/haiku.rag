@@ -88,7 +88,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1730'
+      - '1652'
       content-type:
       - application/json
       host:
@@ -98,8 +98,6 @@ interactions:
       messages:
       - content: |-
           You are the research orchestrator planning the investigation.
-
-          If a <background> section is provided, use it to understand the conversation context.
 
           Your task:
           1. Analyze the original question
@@ -128,13 +126,11 @@ interactions:
         role: user
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
+      response_format:
+        json_schema:
           description: Output from iterative planning step.
-          name: final_result
-          parameters:
+          name: IterativePlanResult
+          schema:
             additionalProperties: false
             properties:
               is_complete:
@@ -153,42 +149,40 @@ interactions:
             - is_complete
             - reasoning
             type: object
-        type: function
+          strict: false
+        type: json_schema
+      stream: false
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '993'
+      - '934'
       content-type:
       - application/json
     parsed_body:
       choices:
-      - finish_reason: tool_calls
+      - finish_reason: stop
         index: 0
         message:
-          content: ''
-          reasoning: 'We need to propose first question to investigate. It should be specific: e.g., what animals? Might ask
-            for types, categories. Probably "What are examples of animals and their classifications?" But standalone: maybe
-            "What are the major categories of animals in biology?" Let''s choose that.'
+          content: |-
+            {
+              "is_complete": false,
+              "reasoning": "To begin a broad inquiry about animals, the most fundamental starting point is to understand the major taxonomic categories that define animal diversity. This will provide a clear framework for subsequent, more detailed questions.",
+              "next_question": "What are the major taxonomic groups (e.g., kingdoms, phyla) that classify animals?"
+            }
+          reasoning: 'We need to propose first question: likely "What are some examples of animals?" but need concrete. Perhaps
+            ask "What are the main categories of animals?" Choose focused: "What are the major taxonomic groups of animals?"
+            Provide reasoning.'
           role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"is_complete":false,"next_question":"What are the major taxonomic categories of animals in biological
-                classification?","reasoning":"The user asked broadly about animals. To start, identify the main taxonomic
-                groups (phylum, class, etc.) that define animal diversity."}'
-              name: final_result
-            id: call_rykigexw
-            index: 0
-            type: function
-      created: 1769799538
-      id: chatcmpl-517
+      created: 1772626907
+      id: chatcmpl-0
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 132
-        prompt_tokens: 366
-        total_tokens: 498
+        completion_tokens: 82
+        prompt_tokens: 313
+        total_tokens: 395
     status:
       code: 200
       message: OK
@@ -201,7 +195,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2870'
+      - '2910'
       content-type:
       - application/json
       host:
@@ -254,34 +248,15 @@ interactions:
           - Be concise and direct; avoid meta commentary about the process.
           - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: What are the major taxonomic categories of animals in biological classification?
+      - content: What are the major taxonomic groups (e.g., kingdoms, phyla) that classify animals?
         role: user
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
+      response_format:
+        json_schema:
           description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
+          name: RawSearchAnswer
+          schema:
             additionalProperties: false
             properties:
               answer:
@@ -305,12 +280,33 @@ interactions:
             - query
             - answer
             type: object
+          strict: false
+        type: json_schema
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '535'
+      - '519'
       content-type:
       - application/json
     parsed_body:
@@ -319,24 +315,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Need to search.
+          reasoning: Need query.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"query":"major taxonomic categories of animals in biological classification","limit":5}'
+              arguments: '{"query":"major taxonomic groups classify animals kingdoms phyla","limit":5}'
               name: search_and_answer
-            id: call_nj05050d
+            id: call_ufynikdb
             index: 0
             type: function
-      created: 1769799540
-      id: chatcmpl-928
+      created: 1772626908
+      id: chatcmpl-724
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 41
-        prompt_tokens: 628
-        total_tokens: 669
+        completion_tokens: 40
+        prompt_tokens: 555
+        total_tokens: 595
     status:
       code: 200
       message: OK
@@ -349,7 +345,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '136'
+      - '124'
       content-type:
       - application/json
       host:
@@ -358,7 +354,7 @@ interactions:
     parsed_body:
       encoding_format: base64
       input:
-      - major taxonomic categories of animals in biological classification
+      - major taxonomic groups classify animals kingdoms phyla
       model: qwen3-embedding:4b
     uri: http://localhost:11434/v1/embeddings
   response:
@@ -369,7 +365,7 @@ interactions:
       - chunked
     parsed_body:
       data:
-      - embedding: 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
+      - embedding: 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
         index: 0
         object: embedding
       model: qwen3-embedding:4b
@@ -389,7 +385,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '3362'
+      - '3384'
       content-type:
       - application/json
       host:
@@ -442,53 +438,32 @@ interactions:
           - Be concise and direct; avoid meta commentary about the process.
           - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: What are the major taxonomic categories of animals in biological classification?
+      - content: What are the major taxonomic groups (e.g., kingdoms, phyla) that classify animals?
         role: user
-      - content: |-
-          <think>
-          Need to search.
-          </think>
+      - content: null
+        reasoning: Need query.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"query":"major taxonomic categories of animals in biological classification","limit":5}'
+            arguments: '{"query":"major taxonomic groups classify animals kingdoms phyla","limit":5}'
             name: search_and_answer
-          id: call_nj05050d
+          id: call_ufynikdb
           type: function
       - content: |-
-          [633a4240-bcd5-434a-bffb-63975abd3ee0] [rank 1 of 1]
+          [dedd022a-1771-4ea0-930b-4ada5a3f9060] [rank 1 of 1]
           Source: "Cat Facts"
           Type: text
           Content:
           Document about cats: Cats are small furry mammals that purr.
         role: tool
-        tool_call_id: call_nj05050d
+        tool_call_id: call_ufynikdb
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
+      response_format:
+        json_schema:
           description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
+          name: RawSearchAnswer
+          schema:
             additionalProperties: false
             properties:
               answer:
@@ -512,12 +487,33 @@ interactions:
             - query
             - answer
             type: object
+          strict: false
+        type: json_schema
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '544'
+      - '536'
       content-type:
       - application/json
     parsed_body:
@@ -526,24 +522,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: Search not finding. Maybe refine.
+          reasoning: No relevant. Maybe need broader search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"limit":5,"query":"kingdom phylum class order genus species animals taxonomy"}'
+              arguments: '{"limit":5,"query":"animal taxonomy kingdoms phyla major groups"}'
               name: search_and_answer
-            id: call_dtyqrnlk
+            id: call_qetyqik6
             index: 0
             type: function
-      created: 1769799543
-      id: chatcmpl-574
+      created: 1772626910
+      id: chatcmpl-276
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 45
-        prompt_tokens: 742
-        total_tokens: 787
+        completion_tokens: 43
+        prompt_tokens: 664
+        total_tokens: 707
     status:
       code: 200
       message: OK
@@ -556,7 +552,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '127'
+      - '113'
       content-type:
       - application/json
       host:
@@ -565,7 +561,7 @@ interactions:
     parsed_body:
       encoding_format: base64
       input:
-      - kingdom phylum class order genus species animals taxonomy
+      - animal taxonomy kingdoms phyla major groups
       model: qwen3-embedding:4b
     uri: http://localhost:11434/v1/embeddings
   response:
@@ -576,14 +572,14 @@ interactions:
       - chunked
     parsed_body:
       data:
-      - embedding: 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
+      - embedding: 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
         index: 0
         object: embedding
       model: qwen3-embedding:4b
       object: list
       usage:
-        prompt_tokens: 11
-        total_tokens: 11
+        prompt_tokens: 8
+        total_tokens: 8
     status:
       code: 200
       message: OK
@@ -596,7 +592,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '3863'
+      - '3875'
       content-type:
       - application/json
       host:
@@ -649,72 +645,49 @@ interactions:
           - Be concise and direct; avoid meta commentary about the process.
           - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: What are the major taxonomic categories of animals in biological classification?
+      - content: What are the major taxonomic groups (e.g., kingdoms, phyla) that classify animals?
         role: user
-      - content: |-
-          <think>
-          Need to search.
-          </think>
+      - content: null
+        reasoning: Need query.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"query":"major taxonomic categories of animals in biological classification","limit":5}'
+            arguments: '{"query":"major taxonomic groups classify animals kingdoms phyla","limit":5}'
             name: search_and_answer
-          id: call_nj05050d
+          id: call_ufynikdb
           type: function
       - content: |-
-          [633a4240-bcd5-434a-bffb-63975abd3ee0] [rank 1 of 1]
+          [dedd022a-1771-4ea0-930b-4ada5a3f9060] [rank 1 of 1]
           Source: "Cat Facts"
           Type: text
           Content:
           Document about cats: Cats are small furry mammals that purr.
         role: tool
-        tool_call_id: call_nj05050d
-      - content: |-
-          <think>
-          Search not finding. Maybe refine.
-          </think>
+        tool_call_id: call_ufynikdb
+      - content: null
+        reasoning: No relevant. Maybe need broader search.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"limit":5,"query":"kingdom phylum class order genus species animals taxonomy"}'
+            arguments: '{"limit":5,"query":"animal taxonomy kingdoms phyla major groups"}'
             name: search_and_answer
-          id: call_dtyqrnlk
+          id: call_qetyqik6
           type: function
       - content: |-
-          [633a4240-bcd5-434a-bffb-63975abd3ee0] [rank 1 of 1]
+          [dedd022a-1771-4ea0-930b-4ada5a3f9060] [rank 1 of 1]
           Source: "Cat Facts"
           Type: text
           Content:
           Document about cats: Cats are small furry mammals that purr.
         role: tool
-        tool_call_id: call_dtyqrnlk
+        tool_call_id: call_qetyqik6
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
+      response_format:
+        json_schema:
           description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
+          name: RawSearchAnswer
+          schema:
             additionalProperties: false
             properties:
               answer:
@@ -738,12 +711,33 @@ interactions:
             - query
             - answer
             type: object
+          strict: false
+        type: json_schema
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '345'
+      - '621'
       content-type:
       - application/json
     parsed_body:
@@ -751,17 +745,19 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: I couldn't find relevant excerpts in the available documents.
+          content: '{"query":"What are the major taxonomic groups (e.g., kingdoms, phyla) that classify animals?","answer":"I’m
+            sorry, but I don’t have enough information to answer that question based on the available records.","cited_chunks":[],"confidence":0.1}'
+          reasoning: No result. Probably no knowledge base. I'll state insufficient.
           role: assistant
-      created: 1769799544
-      id: chatcmpl-821
+      created: 1772626912
+      id: chatcmpl-473
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 14
-        prompt_tokens: 860
-        total_tokens: 874
+        completion_tokens: 59
+        prompt_tokens: 795
+        total_tokens: 854
     status:
       code: 200
       message: OK
@@ -774,326 +770,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '4086'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a search and question-answering specialist.
-
-          Process:
-          1. Call search_and_answer with relevant keywords from the question.
-          2. Review the results ordered by relevance.
-          3. If needed, perform follow-up searches with different keywords (max 3 total).
-          4. Provide a concise answer based strictly on the retrieved content.
-
-          The search tool returns results like:
-          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
-          Source: "Document Title" > Section > Subsection
-          Type: paragraph
-          Content:
-          The actual text content here...
-
-          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
-          Source: "Another Document"
-          Type: table
-          Content:
-          | Column 1 | Column 2 |
-          ...
-
-          Each result includes:
-          - chunk_id in brackets and rank position (rank 1 = most relevant)
-          - Source: document title and section hierarchy (when available)
-          - Type: content type like paragraph, table, code, list_item (when available)
-          - Content: the actual text
-
-          Output format:
-          - query: Echo the question you are answering
-          - answer: Your concise answer based on the retrieved content
-          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
-          - confidence: A score from 0.0 to 1.0 indicating answer confidence
-
-          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
-
-          Guidelines:
-          - Base answers strictly on retrieved content - do not use external knowledge.
-          - Use the Source and Type metadata to understand context.
-          - If multiple results are relevant, synthesize them coherently.
-          - If information is insufficient, say so clearly.
-          - Be concise and direct; avoid meta commentary about the process.
-          - Results are ordered by relevance, with rank 1 being most relevant.
-        role: system
-      - content: What are the major taxonomic categories of animals in biological classification?
-        role: user
-      - content: |-
-          <think>
-          Need to search.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"query":"major taxonomic categories of animals in biological classification","limit":5}'
-            name: search_and_answer
-          id: call_nj05050d
-          type: function
-      - content: |-
-          [633a4240-bcd5-434a-bffb-63975abd3ee0] [rank 1 of 1]
-          Source: "Cat Facts"
-          Type: text
-          Content:
-          Document about cats: Cats are small furry mammals that purr.
-        role: tool
-        tool_call_id: call_nj05050d
-      - content: |-
-          <think>
-          Search not finding. Maybe refine.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"limit":5,"query":"kingdom phylum class order genus species animals taxonomy"}'
-            name: search_and_answer
-          id: call_dtyqrnlk
-          type: function
-      - content: |-
-          [633a4240-bcd5-434a-bffb-63975abd3ee0] [rank 1 of 1]
-          Source: "Cat Facts"
-          Type: text
-          Content:
-          Document about cats: Cats are small furry mammals that purr.
-        role: tool
-        tool_call_id: call_dtyqrnlk
-      - content: I couldn't find relevant excerpts in the available documents.
-        role: assistant
-      - content: |-
-          Validation feedback:
-          Please include your response in a tool call.
-
-          Fix the errors and try again.
-        role: user
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
-          description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the question
-                type: string
-              cited_chunks:
-                description: IDs of chunks used to form the answer
-                items:
-                  type: string
-                type: array
-              confidence:
-                default: 1.0
-                description: Confidence score for this answer (0-1)
-                maximum: 1.0
-                minimum: 0.0
-                type: number
-              query:
-                description: The question that was answered
-                type: string
-            required:
-            - query
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '659'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: We must use function call final_result.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"query":"major taxonomic categories of animals in biological classification","answer":"I couldn’t
-                find relevant excerpts in the available documents.","cited_chunks":[],"confidence":0.1}'
-              name: final_result
-            id: call_lak3at6h
-            index: 0
-            type: function
-      created: 1769799546
-      id: chatcmpl-66
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 64
-        prompt_tokens: 899
-        total_tokens: 963
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '2104'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are the research orchestrator evaluating gathered evidence.
-
-          You have access to context that may include:
-          - <background>: Domain context for the conversation
-          - <prior_answers>: Previous Q&A pairs with confidence scores
-
-          Your task:
-          1. Review the provided evidence carefully
-          2. Assess whether it sufficiently answers the original question
-          3. Decide whether to continue research or synthesize
-
-          Decision criteria:
-          - Set is_complete=True if the evidence adequately answers the question
-          - Set is_complete=False with a next_question if important gaps remain
-
-          If not complete, propose exactly ONE high-value follow-up question in next_question:
-          - Focus on the most critical gap not covered by prior_answers
-          - The question must be standalone and self-contained
-          - Avoid repeating questions that have already been answered
-          - Include concrete entities, scope, and any qualifiers
-
-          Provide brief reasoning explaining your decision.
-        role: system
-      - content: |-
-          Review the gathered evidence and decide whether to continue or synthesize.
-
-          <context>
-            <question>Tell me about animals</question>
-            <prior_answers>
-              <item>
-                <question>major taxonomic categories of animals in biological classification</question>
-                <answer>I couldn’t find relevant excerpts in the available documents.</answer>
-                <confidence>0.1</confidence>
-                <source>null</source>
-              </item>
-            </prior_answers>
-          </context>
-        role: user
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Output from iterative planning step.
-          name: final_result
-          parameters:
-            additionalProperties: false
-            properties:
-              is_complete:
-                description: Whether research is complete and can be synthesized
-                type: boolean
-              next_question:
-                anyOf:
-                - type: string
-                - type: 'null'
-                default: null
-                description: Next question to investigate, if not complete
-              reasoning:
-                description: Brief explanation of the decision
-                type: string
-            required:
-            - is_complete
-            - reasoning
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '1152'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: 'Need decide completeness. Question: "Tell me about animals". Prior answer only about major taxonomic
-            categories, no info. So incomplete. Need follow-up: ask for overview of animal kingdom characteristics. Provide
-            question.'
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"is_complete":false,"next_question":"What are the defining characteristics, major groups, and general
-                diversity of the Animal Kingdom (Kingdom Animalia), including its key organ systems, reproductive strategies,
-                and ecological roles?","reasoning":"The prior answer only noted a lack of information on taxonomic categories
-                and did not provide any substantive overview of animals. Therefore, the question remains unanswerable and
-                further research is needed to cover the basic biology of animals."}'
-              name: final_result
-            id: call_liiru1im
-            index: 0
-            type: function
-      created: 1769799552
-      id: chatcmpl-945
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 154
-        prompt_tokens: 436
-        total_tokens: 590
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '3203'
+      - '3268'
       content-type:
       - application/json
       host:
@@ -1138,8 +815,8 @@ interactions:
             <question>Tell me about animals</question>
             <prior_answers>
               <item>
-                <question>major taxonomic categories of animals in biological classification</question>
-                <answer>I couldn’t find relevant excerpts in the available documents.</answer>
+                <question>What are the major taxonomic groups (e.g., kingdoms, phyla) that classify animals?</question>
+                <answer>I’m sorry, but I don’t have enough information to answer that question based on the available records.</answer>
                 <confidence>0.1</confidence>
                 <source>null</source>
               </item>
@@ -1150,13 +827,11 @@ interactions:
         role: user
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
+      response_format:
+        json_schema:
           description: Final research report structure.
-          name: final_result
-          parameters:
+          name: ResearchReport
+          schema:
             additionalProperties: false
             properties:
               conclusions:
@@ -1197,7 +872,9 @@ interactions:
             - conclusions
             - sources_summary
             type: object
-        type: function
+          strict: false
+        type: json_schema
+      stream: false
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
@@ -1207,52 +884,40 @@ interactions:
       - chunked
     parsed_body:
       choices:
-      - finish_reason: tool_calls
+      - finish_reason: stop
         index: 0
         message:
-          content: ''
-          reasoning: Need to call function.
+          content: '{"title":"Overview of Animal Classification","executive_summary":"Animals occupy a single kingdom—Animalia—and
+            are divided into several major phyla such as Chordata, Arthropoda, Mollusca, Annelida, Echinodermata, and Platyhelminthes.
+            Within each phylum, organisms are grouped into classes, orders, families, genera, and species according to shared
+            anatomical, genetic, and evolutionary traits. The classification system provides a framework for understanding
+            animal diversity, evolutionary relationships, and ecological roles.","main_findings":["Animals form the kingdom
+            Animalia, distinguished by multicellularity, lack of cell walls, and heterotrophic nutrition.","Major phyla include
+            Chordata (vertebrates), Arthropoda (insects, crustaceans), Mollusca (snails, cephalopods), Annelida (segmented
+            worms), Echinodermata (starfish, sea urchins), and Platyhelminthes (flatworms).","Each phylum is subdivided into
+            classes that reflect significant morphological and developmental differences, e.g., Mammalia, Aves, Reptilia within
+            Chordata.","Taxonomic ranks below class (orders, families, genera, species) are used to capture finer evolutionary
+            distinctions and to facilitate scientific communication.","Phylogenetic studies based on DNA sequencing increasingly
+            refine and sometimes reorganize traditional groupings, such as reshaping relationships within Arthropoda and Mollusca.","The
+            Linnaean hierarchy remains the standard for naming and classifying animals worldwide, enabling cross‑disciplinary
+            research and biodiversity conservation efforts.","Ecological and evolutionary research relies on accurate classification
+            to assess species interactions, biogeography, and response to environmental change."],"conclusions":["Animal classification
+            follows a standardized hierarchical system that enables scientists to categorize the vast diversity of animal
+            life.","Recent genetic data are refining traditional phyla and higher‑rank groupings, but the core framework remains
+            useful.","Accurate taxonomy is essential for ecological studies, conservation planning, and understanding evolutionary
+            processes."],"sources_summary":"No specific external sources accessed; information is based on the general scientific
+            consensus regarding animal taxonomy."}'
+          reasoning: Need to provide report. No sources given. So limit.
           role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"title":"Overview of Animal Taxonomy","executive_summary":"Animals belong to the kingdom Animalia,
-                which is subdivided into several major taxonomic groups: (1) Phylum Chordata – animals with a notochord, including
-                vertebrates and some invertebrates; (2) Phylum Arthropoda – the most diverse group, encompassing insects,
-                arachnids, crustaceans, and myriapods; (3) Phylum Mollusca – includes mollusks such as snails, clams, and
-                cephalopods; (4) Phylum Echinodermata – marine animals like starfish and sea urchins; (5) Phylum Annelida
-                – segmented worms; (6) Phylum Porifera – sponges; (7) Phylum Cnidaria – jellyfish, corals, and sea anemones;
-                and (8) various other minor phyla such as Chordata, Mollusca, etc. Within each phylum, organisms are further
-                classified into classes, orders, families, genera, and species. The classification is based on shared morphological
-                and genetic traits, evolutionary relationships, and ecological roles.","conclusions":["The major taxonomic
-                categories of animals are represented by distinct phyla within the kingdom Animalia.","Phylum Chordata includes
-                all vertebrates and some invertebrates, while Arthropoda is the largest phylum.","Classification within each
-                phylum follows a hierarchical system of class, order, family, genus, and species.","Evolutionary relationships
-                and genetic data are essential for accurate placement of organisms in their respective categories."],"recommendations":["Compile
-                a comprehensive database of animal phyla with representative species for educational purposes.","Integrate
-                genetic sequencing data to refine phylogenetic trees for each phylum.","Provide accessible visual aids (charts,
-                phylogenetic trees) for quick reference to major animal groups.","Encourage ongoing taxonomic revisions as
-                new species are discovered and molecular techniques improve."],"limitations":["The report is based on available
-                summaries and lacks specific citations from primary literature.","Information on lesser-known or recently
-                discovered phyla may be incomplete.","Evolutionary relationships are dynamic and may change with future research."],"sources_summary":"No
-                primary sources available; information derived from general biological taxonomy knowledge.","main_findings":["Phylum
-                Chordata includes animals with a notochord, such as vertebrates and some invertebrates.","Phylum Arthropoda
-                is the most diverse animal phylum, comprising insects, arachnids, crustaceans, and myriapods.","Phylum Mollusca
-                contains mollusks like snails, clams, and cephalopods.","Phylum Echinodermata comprises marine animals such
-                as starfish and sea urchins.","Phylum Annelida consists of segmented worms.","Phylum Porifera includes sponges.","Phylum
-                Cnidaria consists of jellyfish, corals, and sea anemones."]}'
-              name: final_result
-            id: call_07hjnzi9
-            index: 0
-            type: function
-      created: 1769799575
-      id: chatcmpl-977
+      created: 1772626922
+      id: chatcmpl-53
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 622
-        prompt_tokens: 618
-        total_tokens: 1240
+        completion_tokens: 439
+        prompt_tokens: 517
+        total_tokens: 956
     status:
       code: 200
       message: OK

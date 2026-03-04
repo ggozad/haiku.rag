@@ -86,7 +86,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1786'
+      - '1708'
       content-type:
       - application/json
       host:
@@ -96,8 +96,6 @@ interactions:
       messages:
       - content: |-
           You are the research orchestrator planning the investigation.
-
-          If a <background> section is provided, use it to understand the conversation context.
 
           Your task:
           1. Analyze the original question
@@ -126,13 +124,11 @@ interactions:
         role: user
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
+      response_format:
+        json_schema:
           description: Output from iterative planning step.
-          name: final_result
-          parameters:
+          name: IterativePlanResult
+          schema:
             additionalProperties: false
             properties:
               is_complete:
@@ -151,44 +147,39 @@ interactions:
             - is_complete
             - reasoning
             type: object
-        type: function
+          strict: false
+        type: json_schema
+      stream: false
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '1141'
+      - '842'
       content-type:
       - application/json
     parsed_body:
       choices:
-      - finish_reason: tool_calls
+      - finish_reason: stop
         index: 0
         message:
-          content: ''
-          reasoning: 'Need first question: identify the upstart candidate known for social activism in Jakarta election. Likely
-            Anies Baswedan? No upstart candidate: maybe "Kusno" no. Upstart candidate known for activism: "Reza Rahadian"?
-            Actually "Siti Wirastuti"? Not sure. Let''s ask: "Who is the upstart candidate in Jakarta''s 2024 mayoral election
-            that is known for social activism?"'
+          content: |-
+            {
+              "is_complete": false,
+              "reasoning": "The original question asks for the identity of the upstart Jakarta election candidate noted for social activism. To investigate this, we first need to gather basic information about who that candidate is.",
+              "next_question": "Which upstart candidate in Jakarta's current election is known for social activism?"
+            }
+          reasoning: 'Need first question: identify candidate in Jakarta election known for social activism. So ask: "Which
+            upstart candidate in Jakarta''s election is known for social activism?"'
           role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"is_complete":false,"next_question":"What is the name of the upstart candidate in Jakarta''s 2024
-                mayoral election who is known for social activism?","reasoning":"The question needs to be precise; identifying
-                the candidate requires specifying the election year and that the candidate is known for social activism to
-                resolve ambiguity."}'
-              name: final_result
-            id: call_z1eo6ehj
-            index: 0
-            type: function
-      created: 1769800539
-      id: chatcmpl-728
+      created: 1772626888
+      id: chatcmpl-629
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 174
-        prompt_tokens: 376
-        total_tokens: 550
+        completion_tokens: 73
+        prompt_tokens: 307
+        total_tokens: 380
     status:
       code: 200
       message: OK
@@ -201,7 +192,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '2900'
+      - '2911'
       content-type:
       - application/json
       host:
@@ -254,34 +245,15 @@ interactions:
           - Be concise and direct; avoid meta commentary about the process.
           - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: What is the name of the upstart candidate in Jakarta's 2024 mayoral election who is known for social activism?
+      - content: Which upstart candidate in Jakarta's current election is known for social activism?
         role: user
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
+      response_format:
+        json_schema:
           description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
+          name: RawSearchAnswer
+          schema:
             additionalProperties: false
             properties:
               answer:
@@ -305,12 +277,33 @@ interactions:
             - query
             - answer
             type: object
+          strict: false
+        type: json_schema
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '610'
+      - '534'
       content-type:
       - application/json
     parsed_body:
@@ -319,24 +312,24 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: We need upstart candidate in Jakarta 2024 mayoral election known for social activism. Search.
+          reasoning: Need search.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"query":"upstart candidate Jakarta 2024 mayoral election social activism","limit":5}'
+              arguments: '{"limit":3,"query":"Jakarta current election upstart candidate known for social activism"}'
               name: search_and_answer
-            id: call_6gzq7v5v
+            id: call_pzmpok4y
             index: 0
             type: function
-      created: 1769800543
-      id: chatcmpl-328
+      created: 1772626890
+      id: chatcmpl-212
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 60
-        prompt_tokens: 640
-        total_tokens: 700
+        completion_tokens: 42
+        prompt_tokens: 550
+        total_tokens: 592
     status:
       code: 200
       message: OK
@@ -349,7 +342,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '133'
+      - '138'
       content-type:
       - application/json
       host:
@@ -358,7 +351,7 @@ interactions:
     parsed_body:
       encoding_format: base64
       input:
-      - upstart candidate Jakarta 2024 mayoral election social activism
+      - Jakarta current election upstart candidate known for social activism
       model: qwen3-embedding:4b
     uri: http://localhost:11434/v1/embeddings
   response:
@@ -369,14 +362,14 @@ interactions:
       - chunked
     parsed_body:
       data:
-      - embedding: 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
+      - embedding: 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
         index: 0
         object: embedding
       model: qwen3-embedding:4b
       object: list
       usage:
-        prompt_tokens: 15
-        total_tokens: 15
+        prompt_tokens: 12
+        total_tokens: 12
     status:
       code: 200
       message: OK
@@ -389,7 +382,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8201'
+      - '6148'
       content-type:
       - application/json
       host:
@@ -442,21 +435,19 @@ interactions:
           - Be concise and direct; avoid meta commentary about the process.
           - Results are ordered by relevance, with rank 1 being most relevant.
         role: system
-      - content: What is the name of the upstart candidate in Jakarta's 2024 mayoral election who is known for social activism?
+      - content: Which upstart candidate in Jakarta's current election is known for social activism?
         role: user
-      - content: |-
-          <think>
-          We need upstart candidate in Jakarta 2024 mayoral election known for social activism. Search.
-          </think>
+      - content: null
+        reasoning: Need search.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"query":"upstart candidate Jakarta 2024 mayoral election social activism","limit":5}'
+            arguments: '{"limit":3,"query":"Jakarta current election upstart candidate known for social activism"}'
             name: search_and_answer
-          id: call_6gzq7v5v
+          id: call_pzmpok4y
           type: function
       - content: |-
-          [b9711035-47af-4f3a-8607-d41b1cfd4aba] [rank 1 of 1]
+          [5c0350d5-dd0c-483f-aa6d-fd105a8915bc] [rank 1 of 3]
           Type: text
           Content:
           Jakarta Election Campaigns Heat Up: Here's How to Understand the System
@@ -471,14 +462,9 @@ interactions:
 
           Campaign strategies have taken an advanced turn as candidates leverage digital media to reach a wider audience. Hashtags, viral videos, targeted ads and targeted messaging can all play an influential role in changing public opinion with just a tweet or meme. At the grassroots level candidates engage in door-to-door campaigns personalized for individual voters in an attempt to connect.
 
-          Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement, while Harahap launched a series of webinars featuring experts discussing economic growth under his administration.
-
-          Rallies and Persuasion
-
-          Jakartan politicians know the power of an impassioned speech cannot be underrated, and candidates have been taking full advantage of its effectiveness at rallies. Rallies feature vibrant colors, banners and impassioned discourse in an attempt to win converts over. At one high-spirited rally on October 22, Bintang outlined her policy plans for improving education and healthcare to an appreciative crowd while Harahap's rallies often consist of shows of solidarity from various political allies united behind his plea for continuity and stability.
-
-          Debates: Clashes Between Visions and Policies
-
+          [b0415699-c082-4b41-bf53-2dd0a21af86c] [rank 2 of 3]
+          Type: text
+          Content:
           Debates are one of the highlights of Jakarta election campaigns, allowing candidates to outline their platforms and discuss critical issues. On November 5th, citizens witnessed an exhilarating debate between candidates Bintang and Harahap over whether the city was prepared for digital transformation in public services; Bintang advocated an aggressive move toward smart city model while Harahap advocated a more measured approach so as not to alienate less tech-savvy residents.
 
           Voter Engagement: Making Every Vote Count
@@ -487,47 +473,19 @@ interactions:
 
           Campaign Financing: Transparency and Accountability
 
-          Campaign financing has always been a contentious topic in elections, and this election cycle is no exception. Bintang's campaign, funded largely through crowdfunders online supporters, stands in stark contrast with Harahap's sophisticated machine backed by both private donors and party funds. To protect democratic decision making processes from any
-
-          undue influences on decision-making processes, Jakarta Election Commission mandated strict reporting and transparency measures during campaign financing decisions.
-
-          Before Election Day: Submit Final Appeals Now
-
-          As election day nears, candidates make their last appeals to voters. Bintang plans a visit through key neighborhoods while Harahap plans a final rally scheduled for late November. Both camps are honing their messaging and policy proposals while encouraging supporters to make an appearance at polling booths on November 8th.
-
-          Polling Day: The Final Act of Campaign Activities
-
-          On December 6th, voting booths across Jakarta will open their doors, signalling the culmination of weeks of intense campaigning. Voters will cast their vote and candidates await results that depend on how effective their strategies, speeches and outreach initiatives have been.
-
+          [d18fb450-cc25-45a1-a311-62bde95a5ca9] [rank 3 of 3]
+          Type: text
+          Content:
           Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
         role: tool
-        tool_call_id: call_6gzq7v5v
+        tool_call_id: call_pzmpok4y
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
+      response_format:
+        json_schema:
           description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
+          name: RawSearchAnswer
+          schema:
             additionalProperties: false
             properties:
               answer:
@@ -551,12 +509,33 @@ interactions:
             - query
             - answer
             type: object
+          strict: false
+        type: json_schema
+      stream: false
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for relevant documents.
+          name: search_and_answer
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
         type: function
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '547'
+      - '612'
       content-type:
       - application/json
     parsed_body:
@@ -564,22 +543,19 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: |-
-            - query: What is the name of the upstart candidate in Jakarta's 2024 mayoral election who is known for social activism?
-            - answer: Amira Bintang
-            - cited_chunks: ["b9711035-47af-4f3a-8607-d41b1cfd4aba"]
-            - confidence: 0.97
+          content: '{"query":"Which upstart candidate in Jakarta''s current election is known for social activism?","answer":"Amira Bintang
+            is the upstart candidate noted for her extensive social‑activism background.","cited_chunks":["5c0350d5-dd0c-483f-aa6d-fd105a8915bc"],"confidence":0.95}'
           reasoning: 'Answer: Amira Bintang.'
           role: assistant
-      created: 1769800548
-      id: chatcmpl-631
+      created: 1772626893
+      id: chatcmpl-736
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 89
-        prompt_tokens: 1596
-        total_tokens: 1685
+        completion_tokens: 76
+        prompt_tokens: 1193
+        total_tokens: 1269
     status:
       code: 200
       message: OK
@@ -592,230 +568,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '8632'
-      content-type:
-      - application/json
-      host:
-      - localhost:11434
-    method: POST
-    parsed_body:
-      messages:
-      - content: |-
-          You are a search and question-answering specialist.
-
-          Process:
-          1. Call search_and_answer with relevant keywords from the question.
-          2. Review the results ordered by relevance.
-          3. If needed, perform follow-up searches with different keywords (max 3 total).
-          4. Provide a concise answer based strictly on the retrieved content.
-
-          The search tool returns results like:
-          [9bde5847-44c9-400a-8997-0e6b65babf92] [rank 1 of 5]
-          Source: "Document Title" > Section > Subsection
-          Type: paragraph
-          Content:
-          The actual text content here...
-
-          [d5a63c82-cb40-439f-9b2e-de7d177829b7] [rank 2 of 5]
-          Source: "Another Document"
-          Type: table
-          Content:
-          | Column 1 | Column 2 |
-          ...
-
-          Each result includes:
-          - chunk_id in brackets and rank position (rank 1 = most relevant)
-          - Source: document title and section hierarchy (when available)
-          - Type: content type like paragraph, table, code, list_item (when available)
-          - Content: the actual text
-
-          Output format:
-          - query: Echo the question you are answering
-          - answer: Your concise answer based on the retrieved content
-          - cited_chunks: List of plain strings containing only the chunk UUIDs (not objects)
-          - confidence: A score from 0.0 to 1.0 indicating answer confidence
-
-          IMPORTANT: Use the EXACT, COMPLETE chunk ID (full UUID). Do NOT truncate IDs.
-
-          Guidelines:
-          - Base answers strictly on retrieved content - do not use external knowledge.
-          - Use the Source and Type metadata to understand context.
-          - If multiple results are relevant, synthesize them coherently.
-          - If information is insufficient, say so clearly.
-          - Be concise and direct; avoid meta commentary about the process.
-          - Results are ordered by relevance, with rank 1 being most relevant.
-        role: system
-      - content: What is the name of the upstart candidate in Jakarta's 2024 mayoral election who is known for social activism?
-        role: user
-      - content: |-
-          <think>
-          We need upstart candidate in Jakarta 2024 mayoral election known for social activism. Search.
-          </think>
-        role: assistant
-        tool_calls:
-        - function:
-            arguments: '{"query":"upstart candidate Jakarta 2024 mayoral election social activism","limit":5}'
-            name: search_and_answer
-          id: call_6gzq7v5v
-          type: function
-      - content: |-
-          [b9711035-47af-4f3a-8607-d41b1cfd4aba] [rank 1 of 1]
-          Type: text
-          Content:
-          Jakarta Election Campaigns Heat Up: Here's How to Understand the System
-
-          As election day in Jakarta draws nearer, candidates are out in force using various strategies to woo voters and prepare to exercise their democratic rights. Citizens make their voices heard as the city vibrates with life. This coverage offers valuable insight into campaign activities while offering an in-depth guide for understanding electoral processes in Jakarta.
-
-          Initial Launch of Candidates' Campaign Plans on September 1
-
-          After September 1st, when campaign season officially kicked off, candidates have moved swiftly to engage their bases. Amira Bintang, an upstart candidate with extensive social activism experience and promising urban development and public transportation reform as key platforms of her candidacy speech in Jakarta; incumbent Rizal Harahap relies heavily on his track record and highlights all infrastructure projects completed during his term.
-
-          Campaign Strategies: From Digital Battlegrounds to Door-toDoor Outreach
-
-          Campaign strategies have taken an advanced turn as candidates leverage digital media to reach a wider audience. Hashtags, viral videos, targeted ads and targeted messaging can all play an influential role in changing public opinion with just a tweet or meme. At the grassroots level candidates engage in door-to-door campaigns personalized for individual voters in an attempt to connect.
-
-          Bintang's interactive app for gathering real-time feedback from citizens about daily commute challenges was applauded as an innovative form of civic engagement, while Harahap launched a series of webinars featuring experts discussing economic growth under his administration.
-
-          Rallies and Persuasion
-
-          Jakartan politicians know the power of an impassioned speech cannot be underrated, and candidates have been taking full advantage of its effectiveness at rallies. Rallies feature vibrant colors, banners and impassioned discourse in an attempt to win converts over. At one high-spirited rally on October 22, Bintang outlined her policy plans for improving education and healthcare to an appreciative crowd while Harahap's rallies often consist of shows of solidarity from various political allies united behind his plea for continuity and stability.
-
-          Debates: Clashes Between Visions and Policies
-
-          Debates are one of the highlights of Jakarta election campaigns, allowing candidates to outline their platforms and discuss critical issues. On November 5th, citizens witnessed an exhilarating debate between candidates Bintang and Harahap over whether the city was prepared for digital transformation in public services; Bintang advocated an aggressive move toward smart city model while Harahap advocated a more measured approach so as not to alienate less tech-savvy residents.
-
-          Voter Engagement: Making Every Vote Count
-
-          Ensuring every eligible voter is engaged and informed remains an ongoing challenge for Jakartans. Civil society groups and independent bodies host workshops and publish voter guides to inform voters of their rights and choices, while an annual democracy festival such as that held on November 20 featured interactive exhibits on Jakarta's electoral history as well as mock voting booths for first-time voters.
-
-          Campaign Financing: Transparency and Accountability
-
-          Campaign financing has always been a contentious topic in elections, and this election cycle is no exception. Bintang's campaign, funded largely through crowdfunders online supporters, stands in stark contrast with Harahap's sophisticated machine backed by both private donors and party funds. To protect democratic decision making processes from any
-
-          undue influences on decision-making processes, Jakarta Election Commission mandated strict reporting and transparency measures during campaign financing decisions.
-
-          Before Election Day: Submit Final Appeals Now
-
-          As election day nears, candidates make their last appeals to voters. Bintang plans a visit through key neighborhoods while Harahap plans a final rally scheduled for late November. Both camps are honing their messaging and policy proposals while encouraging supporters to make an appearance at polling booths on November 8th.
-
-          Polling Day: The Final Act of Campaign Activities
-
-          On December 6th, voting booths across Jakarta will open their doors, signalling the culmination of weeks of intense campaigning. Voters will cast their vote and candidates await results that depend on how effective their strategies, speeches and outreach initiatives have been.
-
-          Jakarta's vibrant election campaign offers an insight into its flourishing democracy. As the city looks ahead to an exciting new chapter in its political history, electoral processes demonstrate the significance of people-power in shaping our collective futures.
-        role: tool
-        tool_call_id: call_6gzq7v5v
-      - content: |-
-          <think>
-          Answer: Amira Bintang.
-          </think>
-
-          - query: What is the name of the upstart candidate in Jakarta's 2024 mayoral election who is known for social activism?
-          - answer: Amira Bintang
-          - cited_chunks: ["b9711035-47af-4f3a-8607-d41b1cfd4aba"]
-          - confidence: 0.97
-        role: assistant
-      - content: |-
-          Validation feedback:
-          Please include your response in a tool call.
-
-          Fix the errors and try again.
-        role: user
-      model: gpt-oss
-      reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
-          description: Search the knowledge base for relevant documents.
-          name: search_and_answer
-          parameters:
-            additionalProperties: false
-            properties:
-              limit:
-                anyOf:
-                - type: integer
-                - type: 'null'
-                default: null
-              query:
-                type: string
-            required:
-            - query
-            type: object
-        type: function
-      - function:
-          description: Answer to a search query with chunk references.
-          name: final_result
-          parameters:
-            additionalProperties: false
-            properties:
-              answer:
-                description: The answer to the question
-                type: string
-              cited_chunks:
-                description: IDs of chunks used to form the answer
-                items:
-                  type: string
-                type: array
-              confidence:
-                default: 1.0
-                description: Confidence score for this answer (0-1)
-                maximum: 1.0
-                minimum: 0.0
-                type: number
-              query:
-                description: The question that was answered
-                type: string
-            required:
-            - query
-            - answer
-            type: object
-        type: function
-    uri: http://localhost:11434/v1/chat/completions
-  response:
-    headers:
-      content-length:
-      - '690'
-      content-type:
-      - application/json
-    parsed_body:
-      choices:
-      - finish_reason: tool_calls
-        index: 0
-        message:
-          content: ''
-          reasoning: Need to output via final_result.
-          role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"answer":"Amira Bintang","cited_chunks":["b9711035-47af-4f3a-8607-d41b1cfd4aba"],"confidence":0.97,"query":"What
-                is the name of the upstart candidate in Jakarta''s 2024 mayoral election who is known for social activism?"}'
-              name: final_result
-            id: call_h37dorqy
-            index: 0
-            type: function
-      created: 1769800552
-      id: chatcmpl-541
-      model: gpt-oss
-      object: chat.completion
-      system_fingerprint: fp_ollama
-      usage:
-        completion_tokens: 97
-        prompt_tokens: 1710
-        total_tokens: 1807
-    status:
-      code: 200
-      message: OK
-- request:
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '3258'
+      - '3318'
       content-type:
       - application/json
       host:
@@ -860,9 +613,9 @@ interactions:
             <question>Who is the upstart candidate in Jakarta's election known for social activism?</question>
             <prior_answers>
               <item>
-                <question>What is the name of the upstart candidate in Jakarta's 2024 mayoral election who is known for social activism?</question>
-                <answer>Amira Bintang</answer>
-                <confidence>0.97</confidence>
+                <question>Which upstart candidate in Jakarta's current election is known for social activism?</question>
+                <answer>Amira Bintang is the upstart candidate noted for her extensive social‑activism background.</answer>
+                <confidence>0.95</confidence>
                 <source>mljudppg</source>
               </item>
             </prior_answers>
@@ -872,13 +625,11 @@ interactions:
         role: user
       model: gpt-oss
       reasoning_effort: low
-      stream: false
-      tool_choice: auto
-      tools:
-      - function:
+      response_format:
+        json_schema:
           description: Final research report structure.
-          name: final_result
-          parameters:
+          name: ResearchReport
+          schema:
             additionalProperties: false
             properties:
               conclusions:
@@ -919,48 +670,49 @@ interactions:
             - conclusions
             - sources_summary
             type: object
-        type: function
+          strict: false
+        type: json_schema
+      stream: false
     uri: http://localhost:11434/v1/chat/completions
   response:
     headers:
       content-length:
-      - '1796'
+      - '1335'
       content-type:
       - application/json
     parsed_body:
       choices:
-      - finish_reason: tool_calls
+      - finish_reason: stop
         index: 0
         message:
-          content: ''
-          reasoning: 'We need to produce final_result. The answer known: Amira Bintang. Provide report.'
+          content: |-
+            {
+              "title": "Jakarta Election Upstart Candidate – Social Activist",
+              "executive_summary": "The upstart candidate in Jakarta's election known for social activism is Amira Bintang.",
+              "main_findings": [
+                "Amira Bintang is identified as the upstart candidate.",
+                "She has an extensive background in social activism.",
+                "No other upstart candidate with a comparable activist profile is mentioned.",
+                "The information is drawn from a reliable election‑analysis source."
+              ],
+              "conclusions": [
+                "Amira Bintang is the sole upstart candidate in the Jakarta election who is specifically recognized for her social‑activism work.",
+                "Her activist credentials distinguish her within the candidate field."
+              ],
+              "sources_summary": "mljudppg (question/answer reference, page not specified – source document)"
+            }
+          reasoning: We need to answer who is the upstart candidate in Jakarta election known for social activism. Prior answer
+            says Amira Bintang. Must cite source. Provide report.
           role: assistant
-          tool_calls:
-          - function:
-              arguments: '{"title":"Jakarta Upstart Candidate with Social Activism","executive_summary":"The upstart candidate
-                in Jakarta''s 2024 mayoral election who is known for social activism is Amira Bintang.","main_findings":["Amira
-                Bintang is a prominent Jakarta-based social activist.","She ran as an independent in the 2024 mayoral race.","Her
-                platform focuses on community engagement and anti-corruption.","She gained national media attention for grassroots
-                initiatives.","She is recognized for advocacy on housing and environmental issues."],"conclusions":["Amira
-                Bintang represents the social activism faction in Jakarta politics.","She leverages her activist background
-                to engage voters.","Her candidacy reflects a trend toward grassroots leadership in Indonesian elections."],"recommendations":["Monitor
-                her campaign developments for shifts in voter sentiment.","Analyze her policy proposals for practical feasibility.","Engage
-                with her grassroots networks to assess on-the-ground support."],"limitations":["Information reflects early
-                2024 campaign coverage; later developments may alter context.","Sources are limited to pre‑election reporting;
-                post‑election data not yet available."],"sources_summary":"mljudppg – internal dataset, page not applicable"}'
-              name: final_result
-            id: call_ntatrps2
-            index: 0
-            type: function
-      created: 1769800563
-      id: chatcmpl-46
+      created: 1772626899
+      id: chatcmpl-165
       model: gpt-oss
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 269
-        prompt_tokens: 642
-        total_tokens: 911
+        completion_tokens: 185
+        prompt_tokens: 547
+        total_tokens: 732
     status:
       code: 200
       message: OK

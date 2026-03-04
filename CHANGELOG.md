@@ -4,6 +4,7 @@
 ### Added
 
 - **Module-level skill introspection API**: `STATE_TYPE`, `STATE_NAMESPACE`, `skill_metadata()`, `instructions()`, and `state_metadata()` on `haiku.rag.skills.rag` and `haiku.rag.skills.rlm` — allows introspecting skill configuration without calling `create_skill()`
+- **Automatic structured output detection**: Native JSON schema output is used automatically when the model supports it, with tool-call fallback otherwise. No configuration needed.
 
 ### Changed
 

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from pydantic_ai import Agent
-from pydantic_ai.output import ToolOutput
 
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.agents.research.models import (
@@ -14,7 +13,7 @@ from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.search import create_search_toolset
-from haiku.rag.utils import get_model
+from haiku.rag.utils import get_model, structured_output_type
 
 
 @dataclass
@@ -57,10 +56,11 @@ class QuestionAnswerAgent:
 
         # Agent created per-call: toolset varies with filter, and Agent
         # construction is pure Python (no IO).
+        model = get_model(self._model_config, self._config)
         agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
-            model=get_model(self._model_config, self._config),
+            model=model,
             deps_type=_QARunDeps,
-            output_type=ToolOutput(RawSearchAnswer, max_retries=3),
+            output_type=structured_output_type(RawSearchAnswer, model),
             instructions=self._system_prompt,
             toolsets=[search_toolset],
             retries=3,
