@@ -1,7 +1,6 @@
 import asyncio
 
 from pydantic_ai import Agent, RunContext, format_as_xml
-from pydantic_ai.output import ToolOutput
 from pydantic_graph.beta import Graph, GraphBuilder, StepContext
 
 from haiku.rag.agents.research.dependencies import ResearchContext, ResearchDependencies
@@ -20,7 +19,7 @@ from haiku.rag.agents.research.prompts import (
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.utils import build_prompt, get_model
+from haiku.rag.utils import build_prompt, get_model, structured_output_type
 
 
 def format_context_for_prompt(context: ResearchContext) -> str:
@@ -68,7 +67,7 @@ async def _iterative_plan_logic(
 
     plan_agent: Agent[ResearchDependencies, IterativePlanResult] = Agent(  # type: ignore[assignment]
         model=get_model(model_config, config),
-        output_type=ToolOutput(IterativePlanResult, max_retries=3),
+        output_type=structured_output_type(IterativePlanResult, model_config),
         instructions=effective_prompt,
         retries=3,
         deps_type=ResearchDependencies,
@@ -117,7 +116,7 @@ async def _search_one_step_logic(
     async with deps.semaphore:
         agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(  # type: ignore[assignment]
             model=get_model(model_config, config),
-            output_type=ToolOutput(RawSearchAnswer, max_retries=3),
+            output_type=structured_output_type(RawSearchAnswer, model_config),
             instructions=search_prompt,
             retries=3,
             deps_type=ResearchDependencies,
@@ -218,7 +217,7 @@ def build_research_graph(
 
         agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
             model=get_model(model_config, config),
-            output_type=ToolOutput(ResearchReport, max_retries=3),
+            output_type=structured_output_type(ResearchReport, model_config),
             instructions=synthesis_prompt,
             retries=3,
             deps_type=ResearchDependencies,

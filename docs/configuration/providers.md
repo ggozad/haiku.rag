@@ -29,6 +29,7 @@ qa:
 - **max_tokens**: Maximum tokens in response
 - **enable_thinking**: Control reasoning behavior (see below)
 - **base_url**: Custom endpoint for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+- **structured_output**: How the model returns structured data — `"tool"` (default) or `"native"` (see below)
 
 ### Thinking Control
 
@@ -65,6 +66,23 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 **When to use:**
 - Disable for simple queries, RAG workflows, speed-critical applications
 - Enable for complex reasoning, mathematical problems, research tasks
+
+### Structured Output Mode
+
+The `structured_output` setting controls how the model returns structured data (JSON responses for QA citations, research reports, etc.).
+
+```yaml
+qa:
+  model:
+    provider: openai
+    name: gpt-4o
+    structured_output: native  # Use model's native JSON schema enforcement
+```
+
+**Values:**
+
+- `"tool"` (default): Uses a fake tool call to extract structured output. Works with all providers that support tool calling.
+- `"native"`: Uses the model's native JSON schema enforcement. Can be more reliable for models that support it well (OpenAI, Anthropic), but may not work with all models.
 
 ## Embedding Providers
 

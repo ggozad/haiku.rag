@@ -139,6 +139,28 @@ Emoji test: 🚀 ✅ 📝"""
     assert "🚀" in result_markdown
 
 
+def test_structured_output_type_default():
+    from pydantic_ai.output import ToolOutput
+
+    from haiku.rag.utils import structured_output_type
+
+    mc = ModelConfig(provider="openai", name="gpt-4o")
+    result = structured_output_type(str, mc)
+    assert isinstance(result, ToolOutput)
+    assert result.output is str
+
+
+def test_structured_output_type_native():
+    from pydantic_ai.output import NativeOutput
+
+    from haiku.rag.utils import structured_output_type
+
+    mc = ModelConfig(provider="openai", name="gpt-4o", structured_output="native")
+    result = structured_output_type(str, mc)
+    assert isinstance(result, NativeOutput)
+    assert result.outputs is str
+
+
 def test_get_model_ollama():
     """Test get_model returns OpenAIChatModel for Ollama."""
     model_config = ModelConfig(provider="ollama", name="llama3")

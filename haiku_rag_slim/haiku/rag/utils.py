@@ -306,6 +306,19 @@ def get_model(
         return f"{provider}:{model}"
 
 
+def structured_output_type(
+    result_type: type,
+    model_config: "ModelConfig",
+    max_retries: int = 3,
+) -> Any:
+    """Return a ToolOutput or NativeOutput wrapper based on model config."""
+    from pydantic_ai.output import NativeOutput, ToolOutput
+
+    if model_config.structured_output == "native":
+        return NativeOutput(result_type)
+    return ToolOutput(result_type, max_retries=max_retries)
+
+
 def format_bytes(num_bytes: int) -> str:
     """Format bytes as human-readable string."""
     size = float(num_bytes)
