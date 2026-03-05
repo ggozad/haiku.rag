@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Test suite cleanup**: Removed stale VCR cassettes, dead fixtures, orphaned directories, and redundant tests. Strengthened weak assertions across search, context enhancement, and converter tests. Relocated misplaced `SearchResult._get_primary_label` test to `test_search.py`
+
 ## [0.33.0] - 2026-03-04
 
 ### Added

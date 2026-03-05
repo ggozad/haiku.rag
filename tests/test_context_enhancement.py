@@ -642,6 +642,10 @@ First paragraph of results.
                 assert len(r.content) > 0
                 # Score should be preserved (best score)
                 assert r.score in [0.9, 0.8]
+                # Expanded content should have docling refs
+                assert r.doc_item_refs is not None and len(r.doc_item_refs) > 0
+                # Document has headings, expanded result should too
+                assert r.headings is not None and len(r.headings) > 0
 
 
 def create_picture_document() -> DoclingDocument:
