@@ -85,6 +85,7 @@ qa:
     provider: ollama
     name: gpt-oss
     enable_thinking: false
+    temperature: 0.3
   max_iterations: 2
   max_concurrency: 1
 
@@ -93,6 +94,7 @@ research:
     provider: ""  # Empty to use qa settings
     name: ""
     enable_thinking: false
+    temperature: 0.3
   max_iterations: 3
   max_concurrency: 1
 
@@ -122,6 +124,8 @@ processing:
     provider: ollama
     name: gpt-oss
     enable_thinking: false
+    temperature: 0.3
+    max_tokens: 100
   conversion_options:
     do_ocr: true
     force_ocr: false
@@ -156,7 +160,7 @@ custom_config = AppConfig(
         model=ModelConfig(
             provider="openai",
             name="gpt-4o",
-            temperature=0.7
+            temperature=0.3
         )
     ),
     embeddings=EmbeddingsConfig(

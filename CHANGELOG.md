@@ -3,6 +3,8 @@
 
 ### Changed
 
+- **Default model temperatures**: Set task-appropriate temperature defaults — 0.3 for QA, research, and title generation; 0.0 for RLM and picture description. Previously unset (provider defaults, typically 0.7–1.0).
+- **Default title max_tokens**: Set `max_tokens=100` for title generation model to keep titles concise
 - **Test suite cleanup**: Removed stale VCR cassettes, dead fixtures, orphaned directories, and redundant tests. Strengthened weak assertions across search, context enhancement, and converter tests. Relocated misplaced `SearchResult._get_primary_label` test to `test_search.py`
 - **Parallel test execution**: Added `pytest-xdist` and enabled parallel test runs by default (`-n auto`), reducing test suite time from ~3.5 min to ~2 min
 

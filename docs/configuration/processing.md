@@ -120,6 +120,7 @@ conversion_options:
     model:
       provider: ollama             # ollama, openai, or custom
       name: ministral-3            # VLM model name
+      temperature: 0.0             # Default: 0.0 (factual descriptions)
     timeout: 90                    # Request timeout in seconds
     max_tokens: 200                # Maximum tokens in response
 ```

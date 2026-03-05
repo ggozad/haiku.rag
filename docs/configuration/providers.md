@@ -16,17 +16,17 @@ qa:
   model:
     provider: ollama
     name: gpt-oss
-    temperature: 0.7
+    temperature: 0.3
     max_tokens: 500
 ```
 
 **Available options:**
 
-- **temperature**: Sampling temperature (0.0-1.0+)
+- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA, research, and title generation; 0.0 for RLM and picture description.
   - Lower (0.0-0.3): Deterministic, focused responses
   - Medium (0.4-0.7): Balanced
   - Higher (0.8-1.0+): Creative, varied responses
-- **max_tokens**: Maximum tokens in response
+- **max_tokens**: Maximum tokens in response. Default: unset (provider default), except title generation (100).
 - **enable_thinking**: Control reasoning behavior (see below)
 - **base_url**: Custom endpoint for OpenAI-compatible servers (vLLM, LM Studio, etc.)
 

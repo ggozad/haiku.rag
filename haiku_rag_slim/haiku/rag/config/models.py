@@ -76,6 +76,7 @@ class QAConfig(BaseModel):
             provider="ollama",
             name="gpt-oss",
             enable_thinking=False,
+            temperature=0.3,
         )
     )
     max_iterations: int = 2
@@ -88,6 +89,7 @@ class ResearchConfig(BaseModel):
             provider="ollama",
             name="gpt-oss",
             enable_thinking=False,
+            temperature=0.3,
         )
     )
     max_iterations: int = 3
@@ -100,6 +102,7 @@ class RLMConfig(BaseModel):
             provider="ollama",
             name="gpt-oss",
             enable_thinking=False,
+            temperature=0.0,
         )
     )
     code_timeout: float = 60.0
@@ -114,6 +117,7 @@ class PictureDescriptionConfig(BaseModel):
         default_factory=lambda: ModelConfig(
             provider="ollama",
             name="ministral-3",
+            temperature=0.0,
         )
     )
     timeout: int = 90
@@ -162,6 +166,8 @@ class ProcessingConfig(BaseModel):
             provider="ollama",
             name="gpt-oss",
             enable_thinking=False,
+            temperature=0.3,
+            max_tokens=100,
         )
     )
 
