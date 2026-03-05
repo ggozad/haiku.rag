@@ -1067,6 +1067,8 @@ class TestDoclingServeConverterIntegration:
 
         doc = await converter.convert_file(pdf_path)
         assert isinstance(doc, DoclingDocument)
+        assert len(doc.pages) > 0
+        assert len(doc.export_to_markdown().strip()) > 100
 
     @pytest.mark.xfail(
         reason="docling-serve does not return picture image data in JSON response "

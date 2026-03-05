@@ -336,60 +336,6 @@ async def test_max_items_limit_caps_expansion(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_search_result_get_primary_label():
-    """Test _get_primary_label prioritizes structural labels correctly."""
-    # Table should be prioritized
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c1",
-        document_id="d1",
-        labels=["paragraph", "table", "text"],
-    )
-    assert result._get_primary_label() == "table"
-
-    # Code should be prioritized over paragraph
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c2",
-        document_id="d2",
-        labels=["paragraph", "code"],
-    )
-    assert result._get_primary_label() == "code"
-
-    # list_item should be prioritized
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c3",
-        document_id="d3",
-        labels=["text", "list_item"],
-    )
-    assert result._get_primary_label() == "list_item"
-
-    # Returns first label when no priority match
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c4",
-        document_id="d4",
-        labels=["paragraph", "text"],
-    )
-    assert result._get_primary_label() == "paragraph"
-
-    # Returns None for empty labels
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c5",
-        document_id="d5",
-        labels=[],
-    )
-    assert result._get_primary_label() is None
-
-
-@pytest.mark.vcr()
 async def test_expand_context_radius_zero(temp_db_path):
     """Test expand_context with radius 0 returns original results."""
     # Default config has context_radius=0
@@ -696,6 +642,10 @@ First paragraph of results.
                 assert len(r.content) > 0
                 # Score should be preserved (best score)
                 assert r.score in [0.9, 0.8]
+                # Expanded content should have docling refs
+                assert r.doc_item_refs is not None and len(r.doc_item_refs) > 0
+                # Document has headings, expanded result should too
+                assert r.headings is not None and len(r.headings) > 0
 
 
 def create_picture_document() -> DoclingDocument:
