@@ -83,6 +83,9 @@ class DoclingLocalChunker(DocumentChunker):
                 tokenizer=tokenizer,
                 merge_peers=config.processing.chunking_merge_peers,
                 serializer_provider=serializer_provider,
+                # Context expansion reconstructs full tables, so repeating
+                # headers in each chunk is redundant and inflates chunk count.
+                repeat_table_header=False,
             )
         elif self.chunker_type == "hierarchical":
             serializer_provider = _create_markdown_serializer_provider(
