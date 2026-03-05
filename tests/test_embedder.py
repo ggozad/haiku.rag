@@ -154,8 +154,7 @@ async def test_embed_chunks_returns_new_objects(allow_model_requests):
     assert embedded[0] is not original
 
 
-@pytest.mark.vcr()
-async def test_embed_chunks_empty_list(allow_model_requests):
+async def test_embed_chunks_empty_list():
     """Test that embed_chunks handles empty list."""
     result = await embed_chunks([])
     assert result == []

@@ -1,16 +1,10 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from haiku.rag.client import HaikuRAG
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_download_models")
 
 
 @pytest.fixture

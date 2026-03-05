@@ -1,15 +1,7 @@
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
-
-import pytest
 
 from haiku.rag.agents.research.models import ResearchReport
 from haiku.rag.client import HaikuRAG
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_client_research")
 
 
 async def test_client_research_report(temp_db_path):
