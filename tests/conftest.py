@@ -17,13 +17,14 @@ embeddings:
     vector_dim: 2560
 """)
 os.environ["HAIKU_RAG_CONFIG_PATH"] = str(_test_config_path)
+os.environ["HF_HUB_OFFLINE"] = "1"
 
 import pydantic_ai.models  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
-from datasets import Dataset, load_dataset, load_from_disk  # noqa: E402
 
 if TYPE_CHECKING:
+    from datasets import Dataset
     from vcr import VCR
 
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
@@ -31,7 +32,9 @@ logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="session")
-def qa_corpus() -> Dataset:
+def qa_corpus() -> "Dataset":
+    from datasets import Dataset, load_dataset, load_from_disk
+
     ds_path = Path(__file__).parent / "data" / "dataset"
     ds_path.mkdir(parents=True, exist_ok=True)
     try:
