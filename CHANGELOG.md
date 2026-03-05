@@ -4,6 +4,7 @@
 ### Changed
 
 - **Test suite cleanup**: Removed stale VCR cassettes, dead fixtures, orphaned directories, and redundant tests. Strengthened weak assertions across search, context enhancement, and converter tests. Relocated misplaced `SearchResult._get_primary_label` test to `test_search.py`
+- **Parallel test execution**: Added `pytest-xdist` and enabled parallel test runs by default (`-n auto`), reducing test suite time from ~3.5 min to ~2 min
 
 ## [0.33.0] - 2026-03-04
 
