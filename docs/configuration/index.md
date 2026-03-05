@@ -44,7 +44,7 @@ qa:
   model:
     provider: ollama
     name: gpt-oss
-    enable_thinking: false
+    enable_thinking: true
 ```
 
 ## Complete Configuration Example
@@ -84,7 +84,7 @@ qa:
   model:
     provider: ollama
     name: gpt-oss
-    enable_thinking: false
+    enable_thinking: true
     temperature: 0.3
   max_iterations: 2
   max_concurrency: 1

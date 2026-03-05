@@ -37,7 +37,7 @@ The `enable_thinking` setting controls whether models use explicit reasoning ste
 ```yaml
 qa:
   model:
-    enable_thinking: false  # Faster responses
+    enable_thinking: true   # Better grounded answers
 
 research:
   model:
@@ -63,8 +63,8 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
 **When to use:**
-- Disable for simple queries, RAG workflows, speed-critical applications
-- Enable for complex reasoning, mathematical problems, research tasks
+- Enable for QA, research, complex reasoning, and mathematical problems
+- Disable for speed-critical applications, title generation, and simple tasks
 
 ## Embedding Providers
 

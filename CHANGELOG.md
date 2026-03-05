@@ -4,6 +4,7 @@
 ### Changed
 
 - **Default model temperatures**: Set task-appropriate temperature defaults — 0.3 for QA, research, and title generation; 0.0 for RLM and picture description. Previously unset (provider defaults, typically 0.7–1.0).
+- **QA thinking enabled by default**: `enable_thinking` now defaults to `True` for QA agent, improving answer quality with reasoning models.
 - **Default title max_tokens**: Set `max_tokens=100` for title generation model to keep titles concise
 - **Evaluation judge**: Set `temperature=0.0` and `enable_thinking=True` for deterministic, higher-quality judging. Removed unused judge config from retrieval benchmarks.
 - **Test suite cleanup**: Removed stale VCR cassettes, dead fixtures, orphaned directories, and redundant tests. Strengthened weak assertions across search, context enhancement, and converter tests. Relocated misplaced `SearchResult._get_primary_label` test to `test_search.py`

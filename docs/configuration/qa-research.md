@@ -31,7 +31,7 @@ qa:
   model:
     provider: ollama
     name: gpt-oss
-    enable_thinking: false
+    enable_thinking: true
     temperature: 0.3          # Default: 0.3
   max_iterations: 2     # Maximum search iterations
   max_concurrency: 1    # Concurrent search operations

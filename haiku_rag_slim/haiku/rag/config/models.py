@@ -75,7 +75,7 @@ class QAConfig(BaseModel):
         default_factory=lambda: ModelConfig(
             provider="ollama",
             name="gpt-oss",
-            enable_thinking=False,
+            enable_thinking=True,
             temperature=0.3,
         )
     )
