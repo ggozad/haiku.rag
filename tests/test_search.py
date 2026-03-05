@@ -60,11 +60,11 @@ async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_chunks_include_document_info(temp_db_path):
-    """Test that search results include document URI and metadata."""
+async def test_search_chunk_includes_document_provenance(temp_db_path):
+    """Test that raw chunk search results include document URI, metadata, and ID."""
     client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
 
-    # Create a document with URI and metadata
+    # Create a document with URI and metadata but no title
     created_document = await client.create_document(
         content="This is a test document with some content for searching.",
         uri="https://example.com/test.html",
@@ -87,32 +87,7 @@ async def test_chunks_include_document_info(temp_db_path):
     assert chunk.document_uri == "https://example.com/test.html"
     assert chunk.document_meta == {"title": "Test Document", "author": "Test Author"}
     assert chunk.document_id == created_document.id
-
-    client.close()
-
-
-@pytest.mark.vcr()
-async def test_chunks_include_document_title(temp_db_path):
-    """Test that search results include the parent document title when present."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
-
-    # Create a document with URI and title
-    await client.create_document(
-        content="This is a test document with a custom title to verify enrichment.",
-        uri="file:///tmp/title-test.md",
-        title="My Custom Title",
-    )
-
-    # Perform a search that should find this document
-    results = await client.chunk_repository.search(
-        "custom title", limit=3, search_type="hybrid"
-    )
-
-    assert results, "Expected at least one search result"
-    for chunk, _ in results:
-        # All returned chunks for this doc should carry the document title
-        if chunk.document_uri == "file:///tmp/title-test.md":
-            assert chunk.document_title == "My Custom Title"
+    assert chunk.document_title is None
 
     client.close()
 
@@ -207,9 +182,12 @@ async def test_search_returns_search_result(temp_db_path):
     assert result.score > 0
     assert result.document_uri == "https://example.com/ml.html"
     assert result.document_title == "ML Guide"
+    assert result.chunk_id is not None
+    assert result.document_id is not None
     # page_numbers and headings come from chunk metadata
     assert isinstance(result.page_numbers, list)
     assert isinstance(result.labels, list)
+    assert len(result.labels) > 0
 
     client.close()
 
@@ -272,3 +250,56 @@ async def test_search_result_format_includes_metadata(temp_db_path):
         # Should include content
         assert "Content:" in formatted
         assert "machine learning" in formatted.lower()
+
+
+def test_search_result_primary_label_prioritizes_structural_types():
+    """Test _get_primary_label prioritizes structural labels correctly."""
+    # Table should be prioritized
+    result = SearchResult(
+        content="test",
+        score=0.5,
+        chunk_id="c1",
+        document_id="d1",
+        labels=["paragraph", "table", "text"],
+    )
+    assert result._get_primary_label() == "table"
+
+    # Code should be prioritized over paragraph
+    result = SearchResult(
+        content="test",
+        score=0.5,
+        chunk_id="c2",
+        document_id="d2",
+        labels=["paragraph", "code"],
+    )
+    assert result._get_primary_label() == "code"
+
+    # list_item should be prioritized
+    result = SearchResult(
+        content="test",
+        score=0.5,
+        chunk_id="c3",
+        document_id="d3",
+        labels=["text", "list_item"],
+    )
+    assert result._get_primary_label() == "list_item"
+
+    # Returns first label when no priority match
+    result = SearchResult(
+        content="test",
+        score=0.5,
+        chunk_id="c4",
+        document_id="d4",
+        labels=["paragraph", "text"],
+    )
+    assert result._get_primary_label() == "paragraph"
+
+    # Returns None for empty labels
+    result = SearchResult(
+        content="test",
+        score=0.5,
+        chunk_id="c5",
+        document_id="d5",
+        labels=[],
+    )
+    assert result._get_primary_label() is None
