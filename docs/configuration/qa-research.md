@@ -31,7 +31,8 @@ qa:
   model:
     provider: ollama
     name: gpt-oss
-    enable_thinking: false
+    enable_thinking: true
+    temperature: 0.3          # Default: 0.3
   max_iterations: 2     # Maximum search iterations
   max_concurrency: 1    # Concurrent search operations
 ```
@@ -50,6 +51,7 @@ research:
     provider: ""            # Empty to use qa settings
     name: ""               # Empty to use qa model
     enable_thinking: false
+    temperature: 0.3        # Default: 0.3
   max_iterations: 3
   max_concurrency: 1
 ```
@@ -69,6 +71,7 @@ rlm:
   model:
     provider: anthropic
     name: claude-sonnet-4-20250514
+    temperature: 0.0        # Default: 0.0 (deterministic for code generation)
   code_timeout: 60.0      # Max seconds for code execution
   max_output_chars: 50000 # Truncate output after this many chars
 ```
