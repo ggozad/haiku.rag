@@ -36,7 +36,9 @@ class LLMJudge:
     """LLM-as-judge for evaluating answer equivalence using Pydantic AI."""
 
     def __init__(self, model: str = "gpt-oss", config: AppConfig | None = None):
-        model_config = ModelConfig(provider="ollama", name=model, enable_thinking=False)
+        model_config = ModelConfig(
+            provider="ollama", name=model, enable_thinking=True, temperature=0.0
+        )
         model_obj = get_model(model_config, config)
 
         # Create Pydantic AI agent

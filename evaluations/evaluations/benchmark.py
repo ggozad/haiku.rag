@@ -38,10 +38,10 @@ def build_experiment_metadata(
     dataset_key: str,
     test_cases: int,
     config: AppConfig,
-    judge_config: ModelConfig,
+    judge_config: ModelConfig | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
-    return {
+    metadata: dict[str, Any] = {
         "dataset": dataset_key,
         "test_cases": test_cases,
         "embedder_provider": config.embeddings.model.provider,
@@ -61,12 +61,18 @@ def build_experiment_metadata(
         "qa_temperature": config.qa.model.temperature,
         "qa_max_tokens": config.qa.model.max_tokens,
         "qa_enable_thinking": config.qa.model.enable_thinking,
-        "judge_provider": judge_config.provider,
-        "judge_model": judge_config.name,
-        "judge_temperature": judge_config.temperature,
-        "judge_max_tokens": judge_config.max_tokens,
-        "judge_enable_thinking": judge_config.enable_thinking,
     }
+    if judge_config is not None:
+        metadata.update(
+            {
+                "judge_provider": judge_config.provider,
+                "judge_model": judge_config.name,
+                "judge_temperature": judge_config.temperature,
+                "judge_max_tokens": judge_config.max_tokens,
+                "judge_enable_thinking": judge_config.enable_thinking,
+            }
+        )
+    return metadata
 
 
 async def populate_db(
@@ -220,14 +226,10 @@ async def run_retrieval_benchmark(
 
         eval_name = name if name is not None else f"{spec.key}_retrieval_evaluation"
 
-        judge_config = ModelConfig(
-            provider="ollama", name="gpt-oss", enable_thinking=False
-        )
         experiment_metadata = build_experiment_metadata(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
-            judge_config=judge_config,
         )
 
         report = await dataset.evaluate(
@@ -275,7 +277,9 @@ async def run_qa_benchmark(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    judge_config = ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
+    judge_config = ModelConfig(
+        provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
+    )
     judge_model = get_model(judge_config, config)
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
