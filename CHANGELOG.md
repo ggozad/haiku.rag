@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.33.1] - 2026-03-06
+
 ### Changed
 
 - **Default model temperatures**: Set task-appropriate temperature defaults — 0.3 for QA, research, and title generation; 0.0 for RLM and picture description. Previously unset (provider defaults, typically 0.7–1.0).
@@ -1194,7 +1196,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.1...HEAD
+[0.33.1]: https://github.com/ggozad/haiku.rag/compare/0.33.0...0.33.1
 [0.33.0]: https://github.com/ggozad/haiku.rag/compare/0.32.3...0.33.0
 [0.32.3]: https://github.com/ggozad/haiku.rag/compare/0.32.2...0.32.3
 [0.32.2]: https://github.com/ggozad/haiku.rag/compare/0.32.1...0.32.2
