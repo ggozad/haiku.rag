@@ -207,7 +207,7 @@ class ReflectionLM:
         return result.output
 
 
-async def run_optimization(
+def run_optimization(
     spec: DatasetSpec,
     config: AppConfig,
     cases: list[QACase],

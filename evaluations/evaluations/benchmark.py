@@ -494,15 +494,13 @@ def optimize(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    asyncio.run(
-        run_optimization(
-            spec=spec,
-            config=app_config,
-            cases=cases,
-            max_calls=max_calls,
-            db_path=db,
-            output=output,
-        )
+    run_optimization(
+        spec=spec,
+        config=app_config,
+        cases=cases,
+        max_calls=max_calls,
+        db_path=db,
+        output=output,
     )
 
 
