@@ -28,6 +28,10 @@ load_dotenv(find_dotenv(usecwd=True))
 
 HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
+JUDGE_MODEL_CONFIG = ModelConfig(
+    provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
+)
+
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
@@ -278,10 +282,7 @@ async def run_qa_benchmark(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    judge_config = ModelConfig(
-        provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
-    )
-    judge_model = get_model(judge_config, config)
+    judge_model = get_model(JUDGE_MODEL_CONFIG, config)
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
         name=spec.key,
@@ -314,7 +315,7 @@ async def run_qa_benchmark(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
-            judge_config=judge_config,
+            judge_config=JUDGE_MODEL_CONFIG,
         )
 
         report = await evaluation_dataset.evaluate(
@@ -334,11 +335,10 @@ async def run_qa_benchmark(
     total_processed = len(report.cases)
     failures = report.failures
 
-    total_cases = total_processed
-    accuracy = passing_cases / total_cases if total_cases > 0 else 0
+    accuracy = passing_cases / total_processed if total_processed > 0 else 0
 
     console.print("\n=== QA Benchmark Results ===", style="bold cyan")
-    console.print(f"Total questions: {total_cases}")
+    console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
 
@@ -418,6 +418,19 @@ def _resolve_dataset(dataset: str) -> DatasetSpec:
             f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
         )
     return spec
+
+
+def _resolve_datasets(dataset: str) -> list[DatasetSpec]:
+    """Resolve 'all' or a single dataset key to a list of DatasetSpecs."""
+    if dataset.lower() == "all":
+        return list(DATASETS.values())
+    spec = DATASETS.get(dataset.lower())
+    if spec is None:
+        valid_datasets = ", ".join(sorted(DATASETS))
+        raise typer.BadParameter(
+            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
+        )
+    return [spec]
 
 
 @app.command()
@@ -514,16 +527,7 @@ def download(
     force: bool = typer.Option(False, "--force", help="Overwrite existing database."),
 ) -> None:
     """Download pre-built evaluation database from HuggingFace."""
-    if dataset.lower() == "all":
-        specs = list(DATASETS.values())
-    else:
-        spec = DATASETS.get(dataset.lower())
-        if spec is None:
-            valid_datasets = ", ".join(sorted(DATASETS))
-            raise typer.BadParameter(
-                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
-            )
-        specs = [spec]
+    specs = _resolve_datasets(dataset)
 
     for spec in specs:
         db = spec.db_path()
@@ -574,16 +578,7 @@ def upload(
     dataset: str = typer.Argument(..., help="Dataset key or 'all' to upload all."),
 ) -> None:
     """Upload evaluation database to HuggingFace (maintainer only)."""
-    if dataset.lower() == "all":
-        specs = list(DATASETS.values())
-    else:
-        spec = DATASETS.get(dataset.lower())
-        if spec is None:
-            valid_datasets = ", ".join(sorted(DATASETS))
-            raise typer.BadParameter(
-                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
-            )
-        specs = [spec]
+    specs = _resolve_datasets(dataset)
 
     api = HfApi()
 

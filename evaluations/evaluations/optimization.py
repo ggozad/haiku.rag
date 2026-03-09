@@ -9,6 +9,7 @@ from pydantic_evals.evaluators.llm_as_a_judge import judge_input_output_expected
 
 from gepa.core.adapter import EvaluationBatch
 
+from evaluations.benchmark import JUDGE_MODEL_CONFIG
 from evaluations.config import DatasetSpec
 from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
@@ -204,10 +205,7 @@ def run_optimization(
 
     console = Console()
 
-    judge_config = ModelConfig(
-        provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
-    )
-    judge_model = get_model(judge_config, config)
+    judge_model = get_model(JUDGE_MODEL_CONFIG, config)
 
     db = spec.db_path(db_path)
     adapter = QAPromptAdapter(
