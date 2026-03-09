@@ -257,8 +257,8 @@ Once retrieval is tuned (steps 1-6), you can automatically optimize the QA syste
 # Basic optimization against a dataset
 evaluations optimize wix
 
-# Limit QA cases and optimization budget
-evaluations optimize repliqa --limit 20 --max-calls 30
+# Limit QA cases and iteration count
+evaluations optimize repliqa --limit 40 --iterations 30
 
 # Save the optimized prompt to a file
 evaluations optimize wix --output optimized_prompt.txt
@@ -269,13 +269,13 @@ evaluations optimize wix --config haiku.rag.yaml --db /path/to/wix.lancedb
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--limit` | all cases | Number of QA cases to use for optimization |
-| `--max-calls` | 50 | Maximum GEPA metric calls (optimization budget) |
+| `--limit` | all cases | Number of QA cases (split 50/50 into train/val) |
+| `--iterations` | 50 | Number of optimization iterations |
 | `--output` | — | Save optimized prompt to a file |
 | `--config` | auto | Path to haiku.rag YAML config file |
 | `--db` | auto | Override the database path |
 
-**Cost note:** Each metric call evaluates a minibatch of 3 QA cases, requiring 3 QA calls plus 3 judge calls per batch. With `--max-calls 50`, expect 300+ LLM calls total. Start with `--limit 10 --max-calls 10` to verify your setup before running a full optimization.
+**Cost note:** Each iteration evaluates a minibatch of 3 QA cases twice (current + mutant), plus a full valset evaluation on accepted mutations. The GEPA budget is computed automatically from `--iterations` and dataset size. Start with `--limit 20 --iterations 10` to verify your setup before running a full optimization.
 
 **Applying the result:** Use `--output` to save the optimized prompt, then set it in your config:
 

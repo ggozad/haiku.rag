@@ -294,6 +294,18 @@ class TestProposalAttribute:
         assert adapter.propose_new_texts is None
 
 
+def _make_cases(n: int) -> list[Case[str, str, dict[str, str]]]:
+    return [
+        Case(
+            name=f"q{i}",
+            inputs=f"Question {i}?",
+            expected_output=f"Answer {i}.",
+            metadata={"case_index": str(i)},
+        )
+        for i in range(1, n + 1)
+    ]
+
+
 class TestRunOptimization:
     def _make_spec(self, db_path: Path) -> DatasetSpec:
         return DatasetSpec(
@@ -308,14 +320,7 @@ class TestRunOptimization:
 
     def test_returns_results(self, tmp_path: Path) -> None:
         spec = self._make_spec(tmp_path / "test.lancedb")
-        cases: list[Case[str, str, dict[str, str]]] = [
-            Case(
-                name="q1",
-                inputs="Q?",
-                expected_output="A.",
-                metadata={"case_index": "1"},
-            ),
-        ]
+        cases = _make_cases(4)
 
         mock_result = MagicMock()
         mock_result.best_idx = 0
@@ -333,7 +338,7 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                max_calls=10,
+                iterations=10,
                 db_path=tmp_path / "test.lancedb",
             )
 
@@ -344,14 +349,7 @@ class TestRunOptimization:
 
     def test_saves_output_file(self, tmp_path: Path) -> None:
         spec = self._make_spec(tmp_path / "test.lancedb")
-        cases: list[Case[str, str, dict[str, str]]] = [
-            Case(
-                name="q1",
-                inputs="Q?",
-                expected_output="A.",
-                metadata={"case_index": "1"},
-            ),
-        ]
+        cases = _make_cases(4)
         output_path = tmp_path / "prompt.txt"
 
         mock_result = MagicMock()
@@ -370,7 +368,7 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                max_calls=5,
+                iterations=5,
                 db_path=tmp_path / "test.lancedb",
                 output=output_path,
             )
@@ -386,14 +384,7 @@ class TestRunOptimization:
             qa_loader=lambda: None,  # type: ignore[return-value]
             qa_case_builder=lambda idx, doc: None,  # type: ignore[return-value]
         )
-        cases: list[Case[str, str, dict[str, str]]] = [
-            Case(
-                name="q1",
-                inputs="Q?",
-                expected_output="A.",
-                metadata={"case_index": "1"},
-            ),
-        ]
+        cases = _make_cases(4)
 
         mock_result = MagicMock()
         mock_result.best_idx = 0
@@ -411,7 +402,7 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                max_calls=1,
+                iterations=1,
                 db_path=tmp_path / "test.lancedb",
             )
 
@@ -423,3 +414,33 @@ class TestRunOptimization:
         seed = call_kwargs["seed_candidate"]
         assert seed["instructions"] is not None
         assert len(seed["instructions"]) > 0
+
+    def test_splits_cases_into_train_and_val(self, tmp_path: Path) -> None:
+        spec = self._make_spec(tmp_path / "test.lancedb")
+        cases = _make_cases(10)
+
+        mock_result = MagicMock()
+        mock_result.best_idx = 0
+        mock_result.val_aggregate_scores = [0.7]
+        mock_result.best_candidate = {"instructions": "prompt"}
+        mock_result.total_metric_calls = 50
+        mock_result.num_candidates = 1
+
+        with (
+            patch("evaluations.optimization.get_model"),
+            patch("evaluations.optimization.ReflectionLM"),
+            patch("gepa.optimize", return_value=mock_result) as mock_gepa,
+        ):
+            run_optimization(
+                spec=spec,
+                config=AppConfig(),
+                cases=cases,
+                iterations=5,
+                db_path=tmp_path / "test.lancedb",
+            )
+
+        call_kwargs = mock_gepa.call_args[1]
+        assert len(call_kwargs["trainset"]) == 5
+        assert len(call_kwargs["valset"]) == 5
+        # Budget = valset_size + iterations * (2*minibatch + valset_size)
+        assert call_kwargs["max_metric_calls"] == 5 + 5 * (2 * 3 + 5)

@@ -5,6 +5,11 @@
 
 - **GEPA prompt optimization**: `evaluations optimize` command for automated QA system prompt improvement using evolutionary optimization with LLM-judged scoring
 - **Tuning docs**: Added step 7 (Optimize QA Prompts) to the tuning workflow in `docs/tuning.md`
+- **Evaluations test coverage**: Tests for evaluators (MAP, MRR), config, benchmark helpers, dataset mappers/builders, and optimization
+
+### Changed
+
+- **Optimization train/val split**: Cases are now split 50/50 into train and val sets. GEPA budget is auto-computed from `--iterations` and dataset size, replacing the broken `--max-calls` parameter that counted per-example evaluations
 
 ### Fixed
 

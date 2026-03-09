@@ -473,8 +473,12 @@ def optimize(
         None, "--config", help="Path to haiku.rag YAML config file."
     ),
     db: Path | None = typer.Option(None, "--db", help="Override the database path."),
-    limit: int | None = typer.Option(None, "--limit", help="Limit number of QA cases."),
-    max_calls: int = typer.Option(50, "--max-calls", help="Maximum GEPA metric calls."),
+    limit: int | None = typer.Option(
+        None, "--limit", help="Limit QA cases (split 50/50 into train/val)."
+    ),
+    iterations: int = typer.Option(
+        50, "--iterations", help="Number of optimization iterations."
+    ),
     output: Path | None = typer.Option(
         None, "--output", help="Save optimized prompt to file."
     ),
@@ -498,7 +502,7 @@ def optimize(
         spec=spec,
         config=app_config,
         cases=cases,
-        max_calls=max_calls,
+        iterations=iterations,
         db_path=db,
         output=output,
     )

@@ -207,11 +207,14 @@ class ReflectionLM:
         return result.output
 
 
+REFLECTION_MINIBATCH_SIZE = 3
+
+
 def run_optimization(
     spec: DatasetSpec,
     config: AppConfig,
     cases: list[QACase],
-    max_calls: int,
+    iterations: int,
     db_path: Path | None = None,
     output: Path | None = None,
 ) -> dict[str, Any]:
@@ -237,19 +240,32 @@ def run_optimization(
     seed_prompt = spec.system_prompt or QA_SYSTEM_PROMPT
     seed_candidate = {"instructions": seed_prompt}
 
+    mid = len(cases) // 2
+    trainset = cases[:mid]
+    valset = cases[mid:]
+
+    # Budget: initial valset eval + worst-case iterations
+    # (each iteration: 2 minibatch evals + full valset if accepted)
+    max_metric_calls = len(valset) + iterations * (
+        2 * REFLECTION_MINIBATCH_SIZE + len(valset)
+    )
+
     console.print(f"Optimizing prompt for dataset: {spec.key}", style="bold magenta")
-    console.print(f"QA cases: {len(cases)}, Max metric calls: {max_calls}")
+    console.print(
+        f"Train: {len(trainset)}, Val: {len(valset)}, "
+        f"Iterations: {iterations}, GEPA budget: {max_metric_calls}"
+    )
     console.print(f"Seed prompt length: {len(seed_prompt)} chars")
 
     from gepa import optimize as gepa_optimize
 
     result = gepa_optimize(
         seed_candidate=seed_candidate,
-        trainset=cases,
-        valset=cases,
+        trainset=trainset,
+        valset=valset,
         adapter=adapter,
         reflection_lm=reflection_lm,
-        max_metric_calls=max_calls,
+        max_metric_calls=max_metric_calls,
         display_progress_bar=True,
     )
 
