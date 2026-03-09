@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic_evals import Case, Dataset as EvalDataset
-from pydantic_evals.evaluators import LLMJudge
+from pydantic_evals import Case
+from pydantic_evals.evaluators.llm_as_a_judge import judge_input_output_expected
 
 from gepa.core.adapter import EvaluationBatch
 
@@ -126,33 +126,14 @@ class QAPromptAdapter:
         self, question: str, answer: str, expected: str
     ) -> tuple[float, str | None]:
         """Score an answer using pydantic-evals LLMJudge with float scoring."""
-        judge = LLMJudge(
+        result = await judge_input_output_expected(
+            inputs=question,
+            output=answer,
+            expected_output=expected,
             rubric=OPTIMIZATION_SCORING_RUBRIC,
-            include_input=True,
-            include_expected_output=True,
             model=self.judge_model,
-            score={"evaluation_name": "accuracy", "include_reason": True},
-            assertion=False,
         )
-
-        dataset = EvalDataset(
-            cases=[Case(inputs=question, expected_output=expected)],
-            evaluators=[judge],
-        )
-
-        async def identity(q: str) -> str:
-            return answer
-
-        report = await dataset.evaluate(identity, max_concurrency=1, progress=False)
-        case_report = report.cases[0]
-
-        score_result = case_report.scores.get("accuracy")
-        if score_result is not None:
-            score = float(score_result.value)
-            reason = getattr(score_result, "reason", None)
-            return score, reason
-
-        return 0.0, None
+        return result.score, result.reason
 
     def make_reflective_dataset(
         self,
