@@ -14,6 +14,7 @@ dependencies = [
     "huggingface_hub>=0.20.0",
     "typer>=0.21.0,<0.22.0",
     "python-dotenv>=1.2.2",
+    "gepa>=0.1.0",
 ]
 
 [project.scripts]

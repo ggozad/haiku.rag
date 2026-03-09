@@ -390,6 +390,36 @@ async def evaluate_dataset(
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
 
 
+def _load_config(config_path: Path | None) -> AppConfig:
+    """Load AppConfig from a file path or standard search path."""
+    if config_path:
+        if not config_path.exists():
+            raise typer.BadParameter(f"Config file not found: {config_path}")
+        console.print(f"Loading config from: {config_path}", style="dim")
+        yaml_data = load_yaml_config(config_path)
+        return AppConfig.model_validate(yaml_data)
+
+    found = find_config_file(None)
+    if found:
+        console.print(f"Loading config from: {found}", style="dim")
+        yaml_data = load_yaml_config(found)
+        return AppConfig.model_validate(yaml_data)
+
+    console.print("No config file found, using defaults", style="dim")
+    return AppConfig()
+
+
+def _resolve_dataset(dataset: str) -> DatasetSpec:
+    """Resolve a dataset key to a DatasetSpec or raise BadParameter."""
+    spec = DATASETS.get(dataset.lower())
+    if spec is None:
+        valid_datasets = ", ".join(sorted(DATASETS))
+        raise typer.BadParameter(
+            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
+        )
+    return spec
+
+
 @app.command()
 def run(
     dataset: str = typer.Argument(..., help="Dataset key to evaluate."),
@@ -417,30 +447,8 @@ def run(
         help="Only evaluate queries requiring image understanding.",
     ),
 ) -> None:
-    spec = DATASETS.get(dataset.lower())
-    if spec is None:
-        valid_datasets = ", ".join(sorted(DATASETS))
-        raise typer.BadParameter(
-            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
-        )
-
-    # Load config from file or use defaults
-    if config:
-        if not config.exists():
-            raise typer.BadParameter(f"Config file not found: {config}")
-        console.print(f"Loading config from: {config}", style="dim")
-        yaml_data = load_yaml_config(config)
-        app_config = AppConfig.model_validate(yaml_data)
-    else:
-        # Try to find config file using standard search path
-        config_path = find_config_file(None)
-        if config_path:
-            console.print(f"Loading config from: {config_path}", style="dim")
-            yaml_data = load_yaml_config(config_path)
-            app_config = AppConfig.model_validate(yaml_data)
-        else:
-            console.print("No config file found, using defaults", style="dim")
-            app_config = AppConfig()
+    spec = _resolve_dataset(dataset)
+    app_config = _load_config(config)
 
     asyncio.run(
         evaluate_dataset(
@@ -454,6 +462,46 @@ def run(
             db_path=db,
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
+        )
+    )
+
+
+@app.command()
+def optimize(
+    dataset: str = typer.Argument(..., help="Dataset key to optimize prompt for."),
+    config: Path | None = typer.Option(
+        None, "--config", help="Path to haiku.rag YAML config file."
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
+    limit: int | None = typer.Option(None, "--limit", help="Limit number of QA cases."),
+    max_calls: int = typer.Option(50, "--max-calls", help="Maximum GEPA metric calls."),
+    output: Path | None = typer.Option(
+        None, "--output", help="Save optimized prompt to file."
+    ),
+) -> None:
+    """Optimize QA system prompt using GEPA evolutionary optimization."""
+    from evaluations.optimization import run_optimization
+
+    spec = _resolve_dataset(dataset)
+    app_config = _load_config(config)
+
+    corpus = spec.qa_loader()
+    if limit is not None:
+        corpus = corpus.select(range(min(limit, len(corpus))))
+
+    cases: list[Case[str, str, dict[str, str]]] = [
+        spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
+        for index, doc in enumerate(corpus, start=1)
+    ]
+
+    asyncio.run(
+        run_optimization(
+            spec=spec,
+            config=app_config,
+            cases=cases,
+            max_calls=max_calls,
+            db_path=db,
+            output=output,
         )
     )
 
