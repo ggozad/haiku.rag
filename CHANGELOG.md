@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **GEPA prompt optimization**: `evaluations optimize` command for automated QA system prompt improvement using evolutionary optimization with LLM-judged scoring
+- **Tuning docs**: Added step 7 (Optimize QA Prompts) to the tuning workflow in `docs/tuning.md`
+
 ### Fixed
 
 - **Read-only mode table creation**: `--read-only` no longer creates lance tables when pointed at an empty directory. `Store._init_tables()` now raises `ReadOnlyError` when tables are missing in read-only mode.

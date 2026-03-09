@@ -247,6 +247,46 @@ Custom evaluations let you measure the impact of configuration changes objective
 | FAQs | `chunk_size: 128`, `limit: 5`, `context_radius: 0` |
 | Code repos | `chunk_size: 256`, `limit: 10`, `context_radius: 1` |
 
+### 7. Optimize QA Prompts
+
+Once retrieval is tuned (steps 1-6), you can automatically optimize the QA system prompt. The `evaluations optimize` command uses GEPA (Generalized Evolutionary Prompt Algorithm) to evolve your prompt through iterative LLM-judged evaluation.
+
+**How it works:** GEPA starts with a seed prompt, evaluates it on minibatches of QA cases scored by an LLM judge (0.0–1.0), reflects on failures to identify weaknesses, proposes mutations, accepts or rejects them based on score improvement, and repeats until the budget is exhausted.
+
+```bash
+# Basic optimization against a dataset
+evaluations optimize wix
+
+# Limit QA cases and optimization budget
+evaluations optimize repliqa --limit 20 --max-calls 30
+
+# Save the optimized prompt to a file
+evaluations optimize wix --output optimized_prompt.txt
+
+# Use a specific config and database
+evaluations optimize wix --config haiku.rag.yaml --db /path/to/wix.lancedb
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--limit` | all cases | Number of QA cases to use for optimization |
+| `--max-calls` | 50 | Maximum GEPA metric calls (optimization budget) |
+| `--output` | — | Save optimized prompt to a file |
+| `--config` | auto | Path to haiku.rag YAML config file |
+| `--db` | auto | Override the database path |
+
+**Cost note:** Each metric call evaluates a minibatch of 3 QA cases, requiring 3 QA calls plus 3 judge calls per batch. With `--max-calls 50`, expect 300+ LLM calls total. Start with `--limit 10 --max-calls 10` to verify your setup before running a full optimization.
+
+**Applying the result:** Use `--output` to save the optimized prompt, then set it in your config:
+
+```yaml
+prompts:
+  qa: |
+    Your optimized prompt text here...
+```
+
+Or pass it programmatically via `get_qa_agent(client, config, system_prompt=optimized_prompt)`.
+
 ## Common Issues
 
 ### "Relevant content not being retrieved"
