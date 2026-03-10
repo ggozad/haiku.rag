@@ -216,7 +216,7 @@ def run_optimization(
 
     reflection_lm = ReflectionLM(config.qa.model, config)
 
-    seed_prompt = spec.system_prompt or QA_SYSTEM_PROMPT
+    seed_prompt = spec.resolve_system_prompt(config) or QA_SYSTEM_PROMPT
     seed_candidate = {"instructions": seed_prompt}
 
     mid = len(cases) // 2

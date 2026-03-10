@@ -303,7 +303,7 @@ async def run_qa_benchmark(
 
     db = spec.db_path(db_path)
     async with HaikuRAG(db, config=config) as rag:
-        qa = get_qa_agent(rag, system_prompt=spec.system_prompt)
+        qa = get_qa_agent(rag, system_prompt=spec.resolve_system_prompt(config))
 
         async def answer_question(question: str) -> str:
             answer, _ = await qa.answer(question)
