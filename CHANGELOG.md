@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.33.2] - 2026-03-11
+
 ### Changed
 
 - **QA search cap**: Replace dead `max_iterations`/`max_concurrency` config with `max_searches` (default: 3). The QA agent now enforces a per-run search limit, reducing average response time from ~30s to ~15s while maintaining accuracy. The limit resets per agent run so toolsets can be safely reused.
@@ -1201,7 +1203,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.2...HEAD
+[0.33.2]: https://github.com/ggozad/haiku.rag/compare/0.33.1...0.33.2
 [0.33.1]: https://github.com/ggozad/haiku.rag/compare/0.33.0...0.33.1
 [0.33.0]: https://github.com/ggozad/haiku.rag/compare/0.32.3...0.33.0
 [0.32.3]: https://github.com/ggozad/haiku.rag/compare/0.32.2...0.32.3
