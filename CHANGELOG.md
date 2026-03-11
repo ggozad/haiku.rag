@@ -4,6 +4,7 @@
 ### Changed
 
 - **QA search cap**: Replace dead `max_iterations`/`max_concurrency` config with `max_searches` (default: 3). The QA agent now enforces a per-run search limit, reducing average response time from ~30s to ~15s while maintaining accuracy. The limit resets per agent run so toolsets can be safely reused.
+- **Default search limit**: Increased from 5 to 10 results per search query for better coverage.
 
 ## [0.33.1] - 2026-03-06
 
