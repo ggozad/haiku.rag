@@ -86,8 +86,7 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3
-  max_iterations: 2
-  max_concurrency: 1
+  max_searches: 3
 
 research:
   model:

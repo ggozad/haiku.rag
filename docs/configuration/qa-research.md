@@ -33,13 +33,11 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3          # Default: 0.3
-  max_iterations: 2     # Maximum search iterations
-  max_concurrency: 1    # Concurrent search operations
+  max_searches: 3       # Maximum search tool calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **max_iterations**: Maximum search iterations (default: 2)
-- **max_concurrency**: Number of concurrent search operations (default: 1)
+- **max_searches**: Maximum number of search tool calls the QA agent can make per question (default: 3)
 
 ## Research Configuration
 

@@ -79,8 +79,7 @@ class QAConfig(BaseModel):
             temperature=0.3,
         )
     )
-    max_iterations: int = 2
-    max_concurrency: int = 1
+    max_searches: int = 3
 
 
 class ResearchConfig(BaseModel):

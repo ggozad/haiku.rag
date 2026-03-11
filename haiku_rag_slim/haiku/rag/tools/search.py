@@ -13,6 +13,7 @@ def create_search_toolset(
     base_filter: str | None = None,
     tool_name: str = "search",
     on_results: Callable[[list[SearchResult]], None] | None = None,
+    max_searches: int | None = None,
 ) -> FunctionToolset[RAGDeps]:
     """Create a toolset with search capabilities.
 
@@ -25,10 +26,16 @@ def create_search_toolset(
         tool_name: Name for the search tool. Defaults to "search".
         on_results: Optional callback invoked with search results after each search.
             Useful for accumulating results externally (e.g., for citation resolution).
+        max_searches: Maximum number of searches allowed. When exceeded, returns
+            a message directing the agent to answer with existing results.
 
     Returns:
         FunctionToolset with a search tool.
     """
+    # Per-run search counter. Resets when run_id changes so the toolset
+    # can safely be reused across multiple agent.run() calls.
+    search_count = 0
+    current_run_id: str | None = None
 
     async def search(
         ctx: RunContext[RAGDeps],
@@ -44,6 +51,17 @@ def create_search_toolset(
         Returns:
             Formatted search results with content and metadata.
         """
+        nonlocal search_count, current_run_id
+        if ctx.run_id != current_run_id:
+            current_run_id = ctx.run_id
+            search_count = 0
+        search_count += 1
+        if max_searches is not None and search_count > max_searches:
+            return (
+                "Search limit reached. "
+                "Answer the question using the results you already have."
+            )
+
         client = ctx.deps.client
 
         effective_filter = base_filter
@@ -71,5 +89,5 @@ def create_search_toolset(
         return "\n\n".join(formatted)
 
     toolset: FunctionToolset[RAGDeps] = FunctionToolset()
-    toolset.add_function(search, name=tool_name)
+    toolset.add_function(search, name=tool_name, retries=3)
     return toolset

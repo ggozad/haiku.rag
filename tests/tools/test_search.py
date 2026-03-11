@@ -12,9 +12,9 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent.parent / "cassettes" / "test_search_tools")
 
 
-def make_ctx(client):
+def make_ctx(client, run_id="test-run"):
     """Create a lightweight RunContext-like object for direct tool function calls."""
-    return SimpleNamespace(deps=SimpleNamespace(client=client))
+    return SimpleNamespace(deps=SimpleNamespace(client=client), run_id=run_id)
 
 
 @pytest.mark.vcr()
@@ -124,6 +124,69 @@ class TestSearchToolExecution:
         result = await search_tool.function(ctx, "Python")
 
         assert "Python" in result or "programming" in result
+
+
+@pytest.mark.vcr()
+class TestSearchMaxSearches:
+    """Tests for max_searches cap on search toolset."""
+
+    @pytest.mark.asyncio
+    async def test_searches_within_limit_return_results(
+        self, search_client, search_config
+    ):
+        """Searches within max_searches return normal results."""
+        toolset = create_search_toolset(search_config, max_searches=2)
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client)
+
+        result1 = await search_tool.function(ctx, "Python")
+        assert "Search limit reached" not in result1
+
+        result2 = await search_tool.function(ctx, "JavaScript")
+        assert "Search limit reached" not in result2
+
+    @pytest.mark.asyncio
+    async def test_searches_beyond_limit_return_cap_message(
+        self, search_client, search_config
+    ):
+        """Searches beyond max_searches return limit message."""
+        toolset = create_search_toolset(search_config, max_searches=1)
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client)
+
+        result1 = await search_tool.function(ctx, "Python")
+        assert "Search limit reached" not in result1
+
+        result2 = await search_tool.function(ctx, "JavaScript")
+        assert "Search limit reached" in result2
+
+    @pytest.mark.asyncio
+    async def test_counter_resets_across_runs(self, search_client, search_config):
+        """Search counter resets when run_id changes (new agent run)."""
+        toolset = create_search_toolset(search_config, max_searches=1)
+        search_tool = toolset.tools["search"]
+
+        ctx_run1 = make_ctx(search_client, run_id="run-1")
+        result = await search_tool.function(ctx_run1, "Python")
+        assert "Search limit reached" not in result
+
+        result2 = await search_tool.function(ctx_run1, "JavaScript")
+        assert "Search limit reached" in result2
+
+        ctx_run2 = make_ctx(search_client, run_id="run-2")
+        result3 = await search_tool.function(ctx_run2, "Python")
+        assert "Search limit reached" not in result3
+
+    @pytest.mark.asyncio
+    async def test_no_limit_by_default(self, search_client, search_config):
+        """Without max_searches, searches are unlimited."""
+        toolset = create_search_toolset(search_config)
+        search_tool = toolset.tools["search"]
+        ctx = make_ctx(search_client)
+
+        for _ in range(5):
+            result = await search_tool.function(ctx, "Python")
+            assert "Search limit reached" not in result
 
 
 @pytest.fixture
