@@ -86,8 +86,7 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3
-  max_iterations: 2
-  max_concurrency: 1
+  max_searches: 3
 
 research:
   model:
@@ -99,7 +98,7 @@ research:
   max_concurrency: 1
 
 search:
-  limit: 5                     # Default number of results to return
+  limit: 10                    # Default number of results to return
   context_radius: 0            # DocItems before/after to include for text content
   max_context_items: 10        # Maximum items in expanded context
   max_context_chars: 10000     # Maximum characters in expanded context

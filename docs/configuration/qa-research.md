@@ -6,13 +6,13 @@ Configure search behavior and context expansion:
 
 ```yaml
 search:
-  limit: 5                     # Default number of results to return
+  limit: 10                    # Default number of results to return
   context_radius: 0            # DocItems before/after to include for text content
   max_context_items: 10        # Maximum items in expanded context
   max_context_chars: 10000     # Maximum characters in expanded context
 ```
 
-- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 5
+- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 10
 - **context_radius**: For text content (paragraphs), includes N DocItems before and after. Set to 0 to disable expansion (default).
 - **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context. Default: 10.
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
@@ -33,13 +33,11 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3          # Default: 0.3
-  max_iterations: 2     # Maximum search iterations
-  max_concurrency: 1    # Concurrent search operations
+  max_searches: 3       # Maximum search tool calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **max_iterations**: Maximum search iterations (default: 2)
-- **max_concurrency**: Number of concurrent search operations (default: 1)
+- **max_searches**: Maximum number of search tool calls the QA agent can make per question (default: 3)
 
 ## Research Configuration
 

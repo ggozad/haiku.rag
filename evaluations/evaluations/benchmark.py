@@ -61,6 +61,7 @@ def build_experiment_metadata(
         "qa_temperature": config.qa.model.temperature,
         "qa_max_tokens": config.qa.model.max_tokens,
         "qa_enable_thinking": config.qa.model.enable_thinking,
+        "qa_max_searches": config.qa.max_searches,
     }
     if judge_config is not None:
         metadata.update(

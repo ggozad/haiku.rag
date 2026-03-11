@@ -47,21 +47,27 @@ class QuestionAnswerAgent:
             Tuple of (answer text, list of resolved citations)
         """
         accumulated_results: list[SearchResult] = []
+        max_searches = self._config.qa.max_searches
         search_toolset = create_search_toolset(
             self._config,
             base_filter=filter,
-            tool_name="search_documents",
+            tool_name="search",
             on_results=accumulated_results.extend,
+            max_searches=max_searches,
         )
 
         # Agent created per-call: toolset varies with filter, and Agent
         # construction is pure Python (no IO).
         model = get_model(self._model_config, self._config)
+        try:
+            system_prompt = self._system_prompt.format(max_searches=max_searches)
+        except KeyError:
+            system_prompt = self._system_prompt
         agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
             model=model,
             deps_type=_QARunDeps,
             output_type=structured_output_type(RawSearchAnswer, model),
-            instructions=self._system_prompt,
+            instructions=system_prompt,
             toolsets=[search_toolset],
             retries=3,
         )
