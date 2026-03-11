@@ -12,6 +12,10 @@
 - **QA search cap**: Replace dead `max_iterations`/`max_concurrency` config with `max_searches` (default: 3). The QA agent now enforces a per-run search limit, reducing average response time from ~30s to ~15s while maintaining accuracy. The limit resets per agent run so toolsets can be safely reused.
 - **Default search limit**: Increased from 5 to 10 results per search query for better coverage.
 
+### Fixed
+
+- **QA citations**: Strengthened prompt to clarify chunk ID format (complete IDs without brackets). `resolve_citations` now strips `[]` from IDs, handling models that copy brackets from search result formatting.
+
 ## [0.33.1] - 2026-03-06
 
 ### Changed
