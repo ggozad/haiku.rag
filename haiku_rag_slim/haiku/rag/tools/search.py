@@ -32,10 +32,9 @@ def create_search_toolset(
     Returns:
         FunctionToolset with a search tool.
     """
-    # Per-run search counter. Resets when run_id changes so the toolset
-    # can safely be reused across multiple agent.run() calls.
-    search_count = 0
-    current_run_id: str | None = None
+    # Per-run search counter keyed by run_id. Safe for concurrent runs
+    # and reuse across sequential agent.run() calls.
+    search_counts: dict[str, int] = {}
 
     async def search(
         ctx: RunContext[RAGDeps],
@@ -51,12 +50,9 @@ def create_search_toolset(
         Returns:
             Formatted search results with content and metadata.
         """
-        nonlocal search_count, current_run_id
-        if ctx.run_id != current_run_id:
-            current_run_id = ctx.run_id
-            search_count = 0
-        search_count += 1
-        if max_searches is not None and search_count > max_searches:
+        rid = ctx.run_id or ""
+        search_counts[rid] = search_counts.get(rid, 0) + 1
+        if max_searches is not None and search_counts[rid] > max_searches:
             return (
                 "Search limit reached. "
                 "Answer the question using the results you already have."
