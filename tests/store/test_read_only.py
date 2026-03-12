@@ -28,6 +28,21 @@ class TestReadOnlyError:
 
 
 class TestStoreReadOnly:
+    def test_store_read_only_raises_on_empty_directory(self, tmp_path):
+        """Opening an empty directory in read-only mode raises ReadOnlyError."""
+        empty_dir = tmp_path / "empty_db"
+        empty_dir.mkdir()
+
+        with pytest.raises(
+            ReadOnlyError, match="Cannot create tables in read-only mode"
+        ):
+            Store(
+                empty_dir,
+                read_only=True,
+                skip_validation=True,
+                skip_migration_check=True,
+            )
+
     def test_store_default_is_not_read_only(self, temp_db_path):
         """Store defaults to not read-only."""
         store = Store(temp_db_path, create=True)

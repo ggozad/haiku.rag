@@ -333,10 +333,17 @@ class Store:
 
     def _init_tables(self):
         """Initialize database tables (create if they don't exist)."""
-        # Get list of existing tables
         existing_tables = self.db.table_names()
+        required_tables = {"documents", "chunks", "settings"}
+        missing_tables = required_tables - set(existing_tables)
 
-        # Create or get documents table
+        if missing_tables and self._read_only:
+            raise ReadOnlyError(
+                "Cannot create tables in read-only mode. "
+                "Use 'haiku-rag init' to create a new database."
+            )
+
+        # Create or open documents table
         if "documents" in existing_tables:
             self.documents_table = self.db.open_table("documents")
         else:
@@ -344,7 +351,7 @@ class Store:
                 "documents", schema=get_documents_arrow_schema()
             )
 
-        # Create or get chunks table
+        # Create or open chunks table
         if "chunks" in existing_tables:
             self.chunks_table = self.db.open_table("chunks")
         else:
@@ -354,7 +361,7 @@ class Store:
                 "content_fts", replace=True, with_position=True, remove_stop_words=False
             )
 
-        # Create or get settings table
+        # Create or open settings table
         if "settings" in existing_tables:
             self.settings_table = self.db.open_table("settings")
         else:
