@@ -23,7 +23,10 @@ from haiku.rag.config import (  # noqa: E402
     set_config,
 )
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
-from haiku.rag.store.exceptions import MigrationRequiredError  # noqa: E402
+from haiku.rag.store.exceptions import (  # noqa: E402
+    MigrationRequiredError,
+    ReadOnlyError,
+)
 from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 _cli = typer.Typer(
@@ -34,7 +37,7 @@ _cli = typer.Typer(
 def cli():
     try:
         _cli()
-    except MigrationRequiredError as e:
+    except (MigrationRequiredError, ReadOnlyError) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
 

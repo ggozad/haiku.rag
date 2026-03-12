@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Read-only mode table creation**: `--read-only` no longer creates lance tables when pointed at an empty directory. `Store._init_tables()` now raises `ReadOnlyError` when tables are missing in read-only mode.
+
 ## [0.33.2] - 2026-03-11
 
 ### Changed
