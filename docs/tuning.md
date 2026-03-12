@@ -1,320 +1,101 @@
-# Tuning haiku.rag for Your Corpus
+# Tuning
 
-This guide explains how to tune haiku.rag settings based on your document corpus characteristics. The right settings depend on your document types, query patterns, and accuracy requirements.
+How to adjust haiku.rag's pipeline for better retrieval and answer quality. For individual setting definitions and defaults, see [Configuration](configuration/index.md).
 
-## Key Concepts
+## Pipeline Overview
 
-### Retrieval vs Generation
+Documents flow through: **chunking → embedding → hybrid search (vector + FTS) → reranking → context expansion → LLM generation**. Retrieval tuning (chunking through reranking) is highest-leverage — if the LLM never sees the right chunks, no prompt or model change will help.
 
-RAG has two phases:
+## Tuning Retrieval
 
-1. **Retrieval**: Finding relevant chunks from your corpus
-2. **Generation**: Using those chunks to answer questions
+### Chunking
 
-Poor retrieval means the LLM never sees the relevant content, regardless of how good the model is. Tuning retrieval is usually more impactful than tuning generation.
+`chunk_size` controls the granularity of retrieval. Smaller chunks match queries more precisely but carry less context each; larger chunks provide more surrounding information but dilute relevance signals. On the Wix benchmark, increasing from 256 to 512 tokens raised MAP from 0.43 to 0.45 on plain text — a modest gain that also increases token cost per result. See [Processing](configuration/processing.md#chunk-size) for configuration.
 
-### Recall vs Precision
+`chunker_type` selects between `hybrid` (default) and `hierarchical` chunking. Hierarchical chunking preserves the document's heading structure and works better for deeply nested or structured content. See [Chunking Strategies](configuration/processing.md#chunking-strategies).
 
-- **Recall**: What fraction of relevant documents did we find?
-- **Precision**: What fraction of retrieved documents are relevant?
+### Embedding Model
 
-For RAG, recall matters more than precision. Missing a relevant chunk means wrong answers. Including an extra irrelevant chunk just wastes context tokens.
+Larger embedding models produce better representations at the cost of slower indexing and more storage. The choice of embedding model has a larger impact on retrieval quality than most other settings. See [Providers](configuration/providers.md) for available options and [Benchmarks](benchmarks.md) for real comparisons across models.
 
-## Search Settings
+### Reranking
 
-### `search.limit`
+When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision — on the Wix benchmark, adding `mxbai-rerank-base-v2` raised MAP from 0.34 to 0.39 on HTML content. See [Search Settings](configuration/qa-research.md#search-settings) for how reranking integrates with search.
 
-Default number of chunks to retrieve.
+### Search Settings
 
-```yaml
-search:
-  limit: 5  # Default
-```
+`limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa-research.md#search-settings).
 
-**When to increase:**
+`context_radius` expands text chunks with neighboring document items. Structural content (tables, code blocks, lists) expands automatically to include the complete structure. This setting matters most with small `chunk_size` values, where individual chunks may lack sufficient context. `max_context_items` and `max_context_chars` cap expansion to prevent context bloat.
 
-- Complex questions requiring information from multiple sources
-- Broad topics spread across many documents
+## Tuning Generation
 
-**When to decrease:**
+Model and temperature selection affect answer quality directly — see [Providers](configuration/providers.md#model-settings) for options.
 
-- Simple factual questions
-- Highly focused corpus where top results are usually correct
-- Cost-sensitive deployments (fewer chunks = fewer tokens)
+`domain_preamble` prepends domain context to all agent prompts. Use it to clarify terminology, set tone, or describe what the knowledge base contains. For full prompt replacement, set `prompts.qa` directly. See [Prompt Customization](configuration/prompts.md).
 
-**Typical values:** 3-10
+For automated prompt optimization, see [Prompt Optimization (GEPA)](#prompt-optimization-gepa) below.
 
-### `search.context_radius`
+## What Requires a Rebuild
 
-Number of adjacent DocItems to include when expanding search results. Only applies to text content (paragraphs). Tables, code blocks, and lists use structural expansion automatically.
+| Change | Rebuild required? |
+|--------|:-:|
+| `chunk_size`, `chunker_type`, `chunking_merge_peers` | Yes — `haiku-rag rebuild` |
+| Embedding model | Yes — `haiku-rag rebuild` |
+| Search settings, reranking, prompts | No |
 
-```yaml
-search:
-  context_radius: 0  # Default: no expansion
-```
+## Measuring Changes
 
-**When to increase:**
-
-- Answers require surrounding context (definitions, explanations)
-- Chunks are small and queries need more context
-- Documents have strong local coherence (adjacent paragraphs relate)
-
-**When to keep at 0:**
-
-- Large chunks that already contain sufficient context
-- Documents where adjacent content is often unrelated
-- When chunk boundaries align well with semantic units
-
-**Typical values:** 0-3
-
-### `search.max_context_items` and `search.max_context_chars`
-
-Safety limits on context expansion to prevent runaway expansion.
-
-```yaml
-search:
-  max_context_items: 10     # Max DocItems per expanded result
-  max_context_chars: 10000  # Max characters per expanded result
-```
-
-Increase if expansion is being truncated and you need more context. Decrease if expanded results are too long for your LLM context window.
-
-## Processing Settings
-
-### `processing.chunk_size`
-
-Maximum tokens per chunk (using the configured tokenizer).
-
-```yaml
-processing:
-  chunk_size: 256  # Default
-```
-
-**Trade-offs:**
-
-| Smaller chunks (128-256) | Larger chunks (512-1024) |
-|-------------------------|-------------------------|
-| More precise retrieval | Better context per chunk |
-| May miss spanning content | Better recall |
-| More chunks to search | Faster search |
-| Better for specific queries | Better for broad queries |
-
-**Guidance by corpus type:**
-
-- **Technical documentation**: 256-512 (specific lookups)
-- **Long-form articles**: 512-1024 (need context)
-- **FAQs/short answers**: 128-256 (discrete answers)
-- **Code documentation**: 256-512 (function-level)
-
-### `processing.chunker_type`
-
-Chunking strategy.
-
-```yaml
-processing:
-  chunker_type: hybrid  # Default
-```
-
-- **`hybrid`**: Structure-aware with token limits. Best for most documents.
-- **`hierarchical`**: Preserves document hierarchy strictly. Use for highly structured documents where hierarchy matters.
-
-
-### `processing.chunking_merge_peers`
-
-Whether to merge adjacent small chunks that share the same section.
-
-```yaml
-processing:
-  chunking_merge_peers: true  # Default
-```
-
-Keep `true` unless you specifically want very granular chunks. Merging improves embedding quality by ensuring chunks have sufficient context.
-
-## Embedding Settings
-
-### Model Selection
-
-Embedding model choice significantly impacts retrieval quality.
-
-```yaml
-embeddings:
-  model:
-    provider: ollama
-    name: qwen3-embedding:4b
-    vector_dim: 2560
-```
-
-**Considerations:**
-
-- Larger models generally produce better embeddings but are slower
-- Match `vector_dim` to your model's actual output dimension
-- Local models (Ollama) vs API models (OpenAI, VoyageAI) trade-off cost vs quality
-
-### Contextualizing Embeddings
-
-Chunks are embedded with section headings prepended (via `contextualize()`). This improves retrieval by including structural context in the embedding.
-
-If your documents lack clear headings, embeddings will be based on chunk content alone.
-
-## Reranking
-
-Reranking retrieves more candidates than needed, then uses a cross-encoder to re-score them.
-
-```yaml
-reranking:
-  model:
-    provider: mxbai  # or cohere, zeroentropy, vllm
-    name: mixedbread-ai/mxbai-rerank-base-v2
-```
-
-**When to use reranking:**
-
-- Embedding model has limited accuracy
-- Queries are complex or ambiguous
-- You can afford the latency (adds ~100-500ms)
-
-**When to skip reranking:**
-
-- Simple, specific queries
-- High-quality embedding model
-- Latency-sensitive applications
-
-When reranking is enabled, haiku.rag automatically retrieves 10x the requested limit, then reranks to the final count. You don't need to adjust `search.limit` for reranking.
-
-## Tuning Workflow
-
-### 1. Use the Inspector
-
-The inspector is your best tool for understanding how your corpus is chunked and how search behaves:
+Use the inspector for ad-hoc exploration:
 
 ```bash
 haiku-rag inspect
 ```
 
-**What to look for:**
-
-- Browse documents and their chunks to see how content is split
-- Use the search modal (`/`) to test queries and see which chunks are retrieved
-- Press `c` on a chunk to view expanded context - see what additional content would be included with `context_radius > 0`
-- Check chunk sizes - are they too small (fragmented) or too large (unfocused)?
-
-### 2. Test Search Manually
-
-Before changing settings, run searches from the CLI to understand current behavior:
+For systematic measurement, use the `evaluations/` workspace which provides retrieval metrics (MRR, MAP) and LLM-judged QA accuracy via `pydantic-evals`:
 
 ```bash
-# Search and see results
-haiku-rag search "your test query" --limit 10
+# Run retrieval + QA benchmarks
+evaluations run <dataset>
 
-# Try the QA to see end-to-end behavior
-haiku-rag ask "your question"
+# Skip database rebuild when only changing search/reranking/prompt settings
+evaluations run <dataset> --skip-db
+
+# Limit test cases for faster iteration
+evaluations run <dataset> --limit 50
 ```
 
-### 3. Identify the Bottleneck
+See [Benchmarks](benchmarks.md) for dataset details, methodology, and baseline results.
 
-- **Relevant chunks not retrieved**: Try larger `search.limit`, smaller `chunk_size`, or a different embedding model
-- **Too many irrelevant chunks**: Try reranking or larger `chunk_size`
-- **Chunks found but answers wrong**: Try `context_radius` expansion or a better QA model
+## Prompt Optimization (GEPA)
 
-### 4. Test One Change at a Time
+The `evaluations optimize` command uses GEPA (Generalized Evolutionary Prompt Algorithm) to evolve the QA system prompt. It evaluates candidates on minibatches scored by an LLM judge, reflects on failures, proposes mutations, and accepts improvements.
 
 ```bash
-# After changing chunk_size, rebuild is required
-haiku-rag rebuild
+# Basic optimization
+evaluations optimize wix
 
-# After changing search settings, no rebuild needed - just test again
-haiku-rag search "your test query"
+# Constrained run
+evaluations optimize repliqa --limit 40 --num-candidates 30
+
+# Save result
+evaluations optimize wix --output optimized_prompt.txt
 ```
 
-### 5. Build Dataset-Specific Evaluations
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--limit` | all cases | QA cases to use (split 50/50 train/val) |
+| `--num-candidates` | `50` | Number of candidate prompts to evaluate |
+| `--output` | — | Save optimized prompt to file |
+| `--config` | auto | haiku.rag YAML config path |
+| `--db` | auto | Database path override |
 
-For systematic tuning, create evaluations specific to your corpus. See the `evaluations/` directory in the repository for examples of how to:
-
-- Define test cases with questions and expected answers
-- Run retrieval benchmarks (MRR, MAP)
-- Run QA accuracy benchmarks with LLM judges
-
-Custom evaluations let you measure the impact of configuration changes objectively rather than relying on intuition.
-
-### 6. Consider Your Corpus
-
-| Corpus Type | Suggested Starting Point |
-|-------------|-------------------------|
-| Technical docs | `chunk_size: 256`, `limit: 10`, `context_radius: 1` |
-| Legal/contracts | `chunk_size: 512`, `limit: 5`, `context_radius: 2` |
-| News articles | `chunk_size: 512`, `limit: 5`, `context_radius: 0` |
-| Scientific papers | `chunk_size: 256`, `limit: 5`, reranking enabled |
-| FAQs | `chunk_size: 128`, `limit: 5`, `context_radius: 0` |
-| Code repos | `chunk_size: 256`, `limit: 10`, `context_radius: 1` |
-
-## Common Issues
-
-### "Relevant content not being retrieved"
-
-1. Check chunk boundaries - is the content split awkwardly?
-2. Try smaller chunks for more granular matching
-3. Increase `search.limit`
-4. Consider a different embedding model
-
-### "Retrieved chunks lack context"
-
-1. Increase `context_radius` for text content
-2. Increase `chunk_size` for more context per chunk
-3. Structural content (tables, code) expands automatically
-
-### "Search is slow"
-
-1. Create a vector index: `haiku-rag create-index`
-2. Reduce `search.limit`
-3. Consider a smaller embedding model
-
-### "QA answers are wrong despite good retrieval"
-
-1. Check if chunks are being truncated by LLM context limits
-2. Try a more capable QA model
-3. Reduce number of chunks or expansion to fit context window
-
-## Example Configurations
-
-### High-Precision Technical Documentation
+Apply the result in your config:
 
 ```yaml
-processing:
-  chunk_size: 256
-  chunker_type: hybrid
-
-search:
-  limit: 10
-  context_radius: 1
-  max_context_items: 15
-
-reranking:
-  model:
-    provider: mxbai
-    name: mixedbread-ai/mxbai-rerank-base-v2
+prompts:
+  qa: |
+    Your optimized prompt text here...
 ```
 
-### Long-Form Content (Articles, Reports)
-
-```yaml
-processing:
-  chunk_size: 512
-  chunker_type: hybrid
-
-search:
-  limit: 5
-  context_radius: 2
-  max_context_items: 10
-```
-
-### FAQ/Knowledge Base
-
-```yaml
-processing:
-  chunk_size: 128
-  chunker_type: hybrid
-
-search:
-  limit: 5
-  context_radius: 0
-```
+Or programmatically: `get_qa_agent(client, config, system_prompt=optimized_prompt)`.

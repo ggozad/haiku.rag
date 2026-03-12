@@ -47,7 +47,7 @@ def build_repliqa_case(
     )
 
 
-REPLIQ_SPEC = DatasetSpec(
+REPLIQA_SPEC = DatasetSpec(
     key="repliqa",
     db_filename="repliqa.lancedb",
     document_loader=load_repliqa_corpus,

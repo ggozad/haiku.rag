@@ -14,6 +14,7 @@ dependencies = [
     "huggingface_hub>=0.20.0",
     "typer>=0.21.0,<0.22.0",
     "python-dotenv>=1.2.2",
+    "gepa>=0.1.0",
 ]
 
 [project.scripts]
@@ -25,6 +26,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["evaluations"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["haiku", "evaluations"]

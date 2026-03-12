@@ -28,6 +28,10 @@ load_dotenv(find_dotenv(usecwd=True))
 
 HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
+JUDGE_MODEL_CONFIG = ModelConfig(
+    provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
+)
+
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
@@ -278,10 +282,7 @@ async def run_qa_benchmark(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    judge_config = ModelConfig(
-        provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
-    )
-    judge_model = get_model(judge_config, config)
+    judge_model = get_model(JUDGE_MODEL_CONFIG, config)
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
         name=spec.key,
@@ -302,7 +303,7 @@ async def run_qa_benchmark(
 
     db = spec.db_path(db_path)
     async with HaikuRAG(db, config=config) as rag:
-        qa = get_qa_agent(rag, system_prompt=spec.system_prompt)
+        qa = get_qa_agent(rag, config, system_prompt=spec.resolve_system_prompt(config))
 
         async def answer_question(question: str) -> str:
             answer, _ = await qa.answer(question)
@@ -314,7 +315,7 @@ async def run_qa_benchmark(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
-            judge_config=judge_config,
+            judge_config=JUDGE_MODEL_CONFIG,
         )
 
         report = await evaluation_dataset.evaluate(
@@ -334,11 +335,10 @@ async def run_qa_benchmark(
     total_processed = len(report.cases)
     failures = report.failures
 
-    total_cases = total_processed
-    accuracy = passing_cases / total_cases if total_cases > 0 else 0
+    accuracy = passing_cases / total_processed if total_processed > 0 else 0
 
     console.print("\n=== QA Benchmark Results ===", style="bold cyan")
-    console.print(f"Total questions: {total_cases}")
+    console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
 
@@ -390,6 +390,43 @@ async def evaluate_dataset(
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
 
 
+def _load_config(config_path: Path | None) -> AppConfig:
+    """Load AppConfig from a file path or standard search path."""
+    if config_path:
+        if not config_path.exists():
+            raise typer.BadParameter(f"Config file not found: {config_path}")
+        console.print(f"Loading config from: {config_path}", style="dim")
+        yaml_data = load_yaml_config(config_path)
+        return AppConfig.model_validate(yaml_data)
+
+    found = find_config_file(None)
+    if found:
+        console.print(f"Loading config from: {found}", style="dim")
+        yaml_data = load_yaml_config(found)
+        return AppConfig.model_validate(yaml_data)
+
+    console.print("No config file found, using defaults", style="dim")
+    return AppConfig()
+
+
+def _resolve_dataset(dataset: str) -> DatasetSpec:
+    """Resolve a dataset key to a DatasetSpec or raise BadParameter."""
+    spec = DATASETS.get(dataset.lower())
+    if spec is None:
+        valid_datasets = ", ".join(sorted(DATASETS))
+        raise typer.BadParameter(
+            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
+        )
+    return spec
+
+
+def _resolve_datasets(dataset: str) -> list[DatasetSpec]:
+    """Resolve 'all' or a single dataset key to a list of DatasetSpecs."""
+    if dataset.lower() == "all":
+        return list(DATASETS.values())
+    return [_resolve_dataset(dataset)]
+
+
 @app.command()
 def run(
     dataset: str = typer.Argument(..., help="Dataset key to evaluate."),
@@ -398,7 +435,7 @@ def run(
     ),
     db: Path | None = typer.Option(None, "--db", help="Override the database path."),
     skip_db: bool = typer.Option(
-        False, "--skip-db", help="Skip updateing the evaluation db."
+        False, "--skip-db", help="Skip updating the evaluation db."
     ),
     skip_retrieval: bool = typer.Option(
         False, "--skip-retrieval", help="Skip retrieval benchmark."
@@ -417,30 +454,8 @@ def run(
         help="Only evaluate queries requiring image understanding.",
     ),
 ) -> None:
-    spec = DATASETS.get(dataset.lower())
-    if spec is None:
-        valid_datasets = ", ".join(sorted(DATASETS))
-        raise typer.BadParameter(
-            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
-        )
-
-    # Load config from file or use defaults
-    if config:
-        if not config.exists():
-            raise typer.BadParameter(f"Config file not found: {config}")
-        console.print(f"Loading config from: {config}", style="dim")
-        yaml_data = load_yaml_config(config)
-        app_config = AppConfig.model_validate(yaml_data)
-    else:
-        # Try to find config file using standard search path
-        config_path = find_config_file(None)
-        if config_path:
-            console.print(f"Loading config from: {config_path}", style="dim")
-            yaml_data = load_yaml_config(config_path)
-            app_config = AppConfig.model_validate(yaml_data)
-        else:
-            console.print("No config file found, using defaults", style="dim")
-            app_config = AppConfig()
+    spec = _resolve_dataset(dataset)
+    app_config = _load_config(config)
 
     asyncio.run(
         evaluate_dataset(
@@ -459,21 +474,54 @@ def run(
 
 
 @app.command()
+def optimize(
+    dataset: str = typer.Argument(..., help="Dataset key to optimize prompt for."),
+    config: Path | None = typer.Option(
+        None, "--config", help="Path to haiku.rag YAML config file."
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
+    limit: int | None = typer.Option(
+        None, "--limit", help="Limit QA cases (split 50/50 into train/val)."
+    ),
+    num_candidates: int = typer.Option(
+        50, "--num-candidates", help="Number of candidate prompts to evaluate."
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Save optimized prompt to file."
+    ),
+) -> None:
+    """Optimize QA system prompt using GEPA evolutionary optimization."""
+    from evaluations.optimization import run_optimization
+
+    spec = _resolve_dataset(dataset)
+    app_config = _load_config(config)
+
+    corpus = spec.qa_loader()
+    if limit is not None:
+        corpus = corpus.select(range(min(limit, len(corpus))))
+
+    cases: list[Case[str, str, dict[str, str]]] = [
+        spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
+        for index, doc in enumerate(corpus, start=1)
+    ]
+
+    run_optimization(
+        spec=spec,
+        config=app_config,
+        cases=cases,
+        num_candidates=num_candidates,
+        db_path=db,
+        output=output,
+    )
+
+
+@app.command()
 def download(
     dataset: str = typer.Argument(..., help="Dataset key or 'all' to download all."),
     force: bool = typer.Option(False, "--force", help="Overwrite existing database."),
 ) -> None:
     """Download pre-built evaluation database from HuggingFace."""
-    if dataset.lower() == "all":
-        specs = list(DATASETS.values())
-    else:
-        spec = DATASETS.get(dataset.lower())
-        if spec is None:
-            valid_datasets = ", ".join(sorted(DATASETS))
-            raise typer.BadParameter(
-                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
-            )
-        specs = [spec]
+    specs = _resolve_datasets(dataset)
 
     for spec in specs:
         db = spec.db_path()
@@ -524,16 +572,7 @@ def upload(
     dataset: str = typer.Argument(..., help="Dataset key or 'all' to upload all."),
 ) -> None:
     """Upload evaluation database to HuggingFace (maintainer only)."""
-    if dataset.lower() == "all":
-        specs = list(DATASETS.values())
-    else:
-        spec = DATASETS.get(dataset.lower())
-        if spec is None:
-            valid_datasets = ", ".join(sorted(DATASETS))
-            raise typer.BadParameter(
-                f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
-            )
-        specs = [spec]
+    specs = _resolve_datasets(dataset)
 
     api = HfApi()
 
