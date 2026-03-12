@@ -88,7 +88,7 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
 
     if not ids:
         # Check if there's a staging table from a failed migration to recover from
-        if "documents_v4_staging" in store.db.table_names():
+        if "documents_v4_staging" in store.db.list_tables().tables:
             staging_table = store.db.open_table("documents_v4_staging")
             staging_ids = [
                 row["id"]
@@ -100,7 +100,7 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
                 )
                 # Create new documents table and copy from staging
                 store.documents_table = None
-                if "documents" in store.db.table_names():
+                if "documents" in store.db.list_tables().tables:
                     store.db.drop_table("documents")
                 store.documents_table = store.db.create_table(
                     "documents", schema=get_documents_arrow_schema_v4()
@@ -142,7 +142,7 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
 
         # No documents and no staging to recover, just recreate table with new schema
         store.documents_table = None
-        if "documents" in store.db.table_names():
+        if "documents" in store.db.list_tables().tables:
             store.db.drop_table("documents")
         store.documents_table = store.db.create_table(
             "documents", schema=get_documents_arrow_schema_v4()
@@ -150,7 +150,7 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
         return
 
     # Create staging table with new schema
-    if "documents_v4_staging" in store.db.table_names():
+    if "documents_v4_staging" in store.db.list_tables().tables:
         store.db.drop_table("documents_v4_staging")
     staging_table = store.db.create_table(
         "documents_v4_staging", schema=get_documents_arrow_schema_v4()
@@ -185,7 +185,7 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
 
     # Replace old table with staging table
     store.documents_table = None
-    if "documents" in store.db.table_names():
+    if "documents" in store.db.list_tables().tables:
         store.db.drop_table("documents")
     store.documents_table = store.db.create_table(
         "documents", schema=get_documents_arrow_schema_v4()
@@ -225,7 +225,7 @@ def _apply_compress_docling_document(store: Store) -> None:  # pragma: no cover
             logger.info("Copied batch %d/%d", batch_num, total_batches)
 
     # Cleanup staging table
-    if "documents_v4_staging" in store.db.table_names():
+    if "documents_v4_staging" in store.db.list_tables().tables:
         store.db.drop_table("documents_v4_staging")
 
     # Vacuum all tables (destructive migration, no history preserved)

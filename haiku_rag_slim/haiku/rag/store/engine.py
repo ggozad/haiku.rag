@@ -153,7 +153,7 @@ class Store:
             The stored vector dimension, or None if not found.
         """
         try:
-            existing_tables = self.db.table_names()
+            existing_tables = self.db.list_tables().tables
             if "settings" not in existing_tables:
                 return None
 
@@ -333,7 +333,7 @@ class Store:
 
     def _init_tables(self):
         """Initialize database tables (create if they don't exist)."""
-        existing_tables = self.db.table_names()
+        existing_tables = self.db.list_tables().tables
         required_tables = {"documents", "chunks", "settings"}
         missing_tables = required_tables - set(existing_tables)
 
