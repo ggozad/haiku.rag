@@ -34,18 +34,6 @@ Use `list_documents()` or search results to get document IDs first.
 - `pictures`: list of figures/images with metadata
 - `pages`: page dimensions and metadata
 
-### await regex_findall(pattern, text) -> list[str]
-Find all non-overlapping matches of a regular expression pattern in text.
-
-### await regex_sub(pattern, repl, text) -> str
-Replace all occurrences of a regular expression pattern with a replacement string.
-
-### await regex_search(pattern, text) -> dict | None
-Search for the first match of a pattern. Returns a dict with keys: group, groups, start, end — or None if no match.
-
-### await regex_split(pattern, text) -> list[str]
-Split text by a regular expression pattern.
-
 ### await llm(prompt) -> str
 Call an LLM directly with the given prompt. Returns the response as a string.
 Use this for classification, summarization, extraction, or any task where you
@@ -63,11 +51,11 @@ Check if it exists with: `try: documents ... except NameError: ...`
 
 ## Available Python Features
 
-The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `sorted()`/`.sort(key=...)`, try/except, and the `json` module.
+The interpreter supports: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `map()`, `filter()`, `getattr()`, `sorted()`/`.sort(key=...)`, try/except, and the `json`, `re`, `math` modules.
 
-Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements.
+Not supported: most imports (only `json`, `re`, `math` are available), class definitions, generators/yield, match statements, decorators, `with` statements.
 
-For pattern matching or text extraction, use the `regex_*` functions, string methods (`str.split`, `str.find`, `str.startswith`, `in` operator), or the `llm()` function.
+For pattern matching or text extraction, use `import re`, string methods (`str.split`, `str.find`, `str.startswith`, `in` operator), or the `llm()` function.
 
 ## Strategy Guide
 
@@ -93,10 +81,11 @@ print(f"Total: {count}")
 
 ### Extracting data with regex
 ```python
+import re
 numbers = []
 results = await search("financial data", limit=20)
 for r in results:
-    amounts = await regex_findall(r'\\$([\\d,]+)', r['content'])
+    amounts = re.findall(r'\\$([\\d,]+)', r['content'])
     for a in amounts:
         numbers.append(int(a.replace(',', '')))
 if numbers:
