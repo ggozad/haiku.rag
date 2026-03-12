@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.33.3] - 2026-03-12
+
 ### Added
 
 - **GEPA prompt optimization**: `evaluations optimize` command for automated QA system prompt improvement using evolutionary optimization with LLM-judged scoring. Cases are split 50/50 into train/val sets; GEPA budget is auto-computed from `--num-candidates` and dataset size.
@@ -1217,7 +1219,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.3...HEAD
+[0.33.3]: https://github.com/ggozad/haiku.rag/compare/0.33.2...0.33.3
 [0.33.2]: https://github.com/ggozad/haiku.rag/compare/0.33.1...0.33.2
 [0.33.1]: https://github.com/ggozad/haiku.rag/compare/0.33.0...0.33.1
 [0.33.0]: https://github.com/ggozad/haiku.rag/compare/0.32.3...0.33.0
