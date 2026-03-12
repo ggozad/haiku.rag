@@ -6,30 +6,67 @@ This package is not published to PyPI and is only used for development and testi
 
 ## Overview
 
-Contains evaluation scripts for benchmarking RAG performance using datasets like:
+Contains evaluation scripts for benchmarking RAG retrieval and QA performance, plus GEPA-based prompt optimization. Available datasets:
+
 - RepliQA
 - WiX
+- HotpotQA
+- OpenRAG Bench
 
 ## Usage
 
 After installing the package, you can run evaluations using the `evaluations` command:
 
 ```bash
-# Run evaluations with default settings
-evaluations repliqa
+# Run retrieval + QA benchmarks
+evaluations run repliqa
+evaluations run wix
 
 # Use a custom config file
-evaluations repliqa --config /path/to/haiku.rag.yaml
+evaluations run repliqa --config /path/to/haiku.rag.yaml
 
 # Override the database path
-evaluations repliqa --db /path/to/custom.lancedb
+evaluations run repliqa --db /path/to/custom.lancedb
 
 # Skip database population and run only benchmarks
-evaluations repliqa --skip-db
+evaluations run repliqa --skip-db
+
+# Skip specific benchmarks
+evaluations run repliqa --skip-retrieval
+evaluations run repliqa --skip-qa
 
 # Limit the number of test cases
-evaluations repliqa --limit 100
+evaluations run repliqa --limit 100
 ```
+
+### Pre-built Databases
+
+Download pre-built evaluation databases from HuggingFace:
+
+```bash
+evaluations download repliqa
+evaluations download all
+evaluations download repliqa --force
+```
+
+Upload databases (maintainer only):
+
+```bash
+evaluations upload repliqa
+evaluations upload all
+```
+
+### Prompt Optimization
+
+Optimize QA system prompts using GEPA (Generalized Evolutionary Prompt Algorithm):
+
+```bash
+evaluations optimize wix
+evaluations optimize repliqa --limit 40 --iterations 30
+evaluations optimize wix --output optimized_prompt.txt
+```
+
+See [Tuning docs](https://ggozad.github.io/haiku.rag/tuning/#prompt-optimization-gepa) for details on applying results.
 
 ## Database Storage
 

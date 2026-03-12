@@ -13,7 +13,7 @@ from gepa.core.adapter import EvaluationBatch
 
 from evaluations.benchmark import JUDGE_MODEL_CONFIG
 from evaluations.config import DatasetSpec
-from haiku.rag.agents.qa import get_qa_agent
+from haiku.rag.agents.qa import QuestionAnswerAgent, get_qa_agent
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, ModelConfig
@@ -78,51 +78,60 @@ class QAPromptAdapter:
         capture_traces: bool = False,
     ) -> EvaluationBatch[EvalTrajectory, str | None]:
         instructions = candidate["instructions"]
-        return asyncio.run(self._evaluate_async(batch, instructions, capture_traces))
+        return asyncio.run(
+            self._evaluate_with_setup(batch, instructions, capture_traces)
+        )
+
+    async def _evaluate_with_setup(
+        self,
+        batch: list[QACase],
+        instructions: str,
+        capture_traces: bool,
+    ) -> EvaluationBatch[EvalTrajectory, str | None]:
+        async with HaikuRAG(self.db_path, config=self.config) as rag:
+            qa = get_qa_agent(rag, self.config, system_prompt=instructions)
+            return await self._evaluate_async(batch, qa, capture_traces)
 
     async def _evaluate_async(
         self,
         batch: list[QACase],
-        instructions: str,
+        qa: QuestionAnswerAgent,
         capture_traces: bool,
     ) -> EvaluationBatch[EvalTrajectory, str | None]:
         outputs: list[str | None] = []
         scores: list[float] = []
         trajectories: list[EvalTrajectory] | None = [] if capture_traces else None
 
-        async with HaikuRAG(self.db_path, config=self.config) as rag:
-            qa = get_qa_agent(rag, self.config, system_prompt=instructions)
+        for case in batch:
+            question = case.inputs
+            expected = case.expected_output or ""
 
-            for case in batch:
-                question = case.inputs
-                expected = case.expected_output or ""
+            try:
+                answer, _ = await qa.answer(question)
+            except Exception:
+                logger.warning(
+                    "QA agent failed for question: %s", question, exc_info=True
+                )
+                answer = None
 
-                try:
-                    answer, _ = await qa.answer(question)
-                except Exception:
-                    logger.warning(
-                        "QA agent failed for question: %s", question, exc_info=True
+            if answer is not None:
+                score, reason = await self._judge(question, answer, expected)
+            else:
+                score, reason = 0.0, "QA agent failed to produce an answer"
+
+            outputs.append(answer)
+            scores.append(score)
+
+            if capture_traces and trajectories is not None:
+                trajectories.append(
+                    EvalTrajectory(
+                        question=question,
+                        expected_answer=expected,
+                        actual_answer=answer,
+                        score=score,
+                        judge_reason=reason,
                     )
-                    answer = None
-
-                if answer is not None:
-                    score, reason = await self._judge(question, answer, expected)
-                else:
-                    score, reason = 0.0, "QA agent failed to produce an answer"
-
-                outputs.append(answer)
-                scores.append(score)
-
-                if capture_traces and trajectories is not None:
-                    trajectories.append(
-                        EvalTrajectory(
-                            question=question,
-                            expected_answer=expected,
-                            actual_answer=answer,
-                            score=score,
-                            judge_reason=reason,
-                        )
-                    )
+                )
 
         return EvaluationBatch(
             outputs=outputs,

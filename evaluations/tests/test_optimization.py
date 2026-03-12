@@ -3,6 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic_ai.models.test import TestModel
 from pydantic_evals import Case
 
 from gepa.core.adapter import EvaluationBatch
@@ -128,22 +129,13 @@ class TestEvaluateAsync:
         adapter: QAPromptAdapter,
         sample_cases: list[Case[str, str, dict[str, str]]],
     ) -> None:
-        mock_qa = AsyncMock()
-        mock_qa.answer = AsyncMock(return_value=("X is a thing.", []))
+        stub_qa = AsyncMock()
+        stub_qa.answer = AsyncMock(return_value=("X is a thing.", []))
+        adapter._judge = AsyncMock(return_value=(0.85, "Good answer"))  # type: ignore[method-assign]
 
-        with (
-            patch("evaluations.optimization.HaikuRAG") as mock_haiku_cls,
-            patch("evaluations.optimization.get_qa_agent", return_value=mock_qa),
-        ):
-            mock_haiku = AsyncMock()
-            mock_haiku_cls.return_value.__aenter__ = AsyncMock(return_value=mock_haiku)
-            mock_haiku_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            adapter._judge = AsyncMock(return_value=(0.85, "Good answer"))  # type: ignore[method-assign]
-
-            result = await adapter._evaluate_async(
-                sample_cases, "test prompt", capture_traces=False
-            )
+        result = await adapter._evaluate_async(
+            sample_cases, stub_qa, capture_traces=False
+        )
 
         assert len(result.outputs) == 2
         assert len(result.scores) == 2
@@ -157,22 +149,13 @@ class TestEvaluateAsync:
         adapter: QAPromptAdapter,
         sample_cases: list[Case[str, str, dict[str, str]]],
     ) -> None:
-        mock_qa = AsyncMock()
-        mock_qa.answer = AsyncMock(return_value=("An answer.", []))
+        stub_qa = AsyncMock()
+        stub_qa.answer = AsyncMock(return_value=("An answer.", []))
+        adapter._judge = AsyncMock(return_value=(0.9, "Almost perfect"))  # type: ignore[method-assign]
 
-        with (
-            patch("evaluations.optimization.HaikuRAG") as mock_haiku_cls,
-            patch("evaluations.optimization.get_qa_agent", return_value=mock_qa),
-        ):
-            mock_haiku = AsyncMock()
-            mock_haiku_cls.return_value.__aenter__ = AsyncMock(return_value=mock_haiku)
-            mock_haiku_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            adapter._judge = AsyncMock(return_value=(0.9, "Almost perfect"))  # type: ignore[method-assign]
-
-            result = await adapter._evaluate_async(
-                sample_cases, "test prompt", capture_traces=True
-            )
+        result = await adapter._evaluate_async(
+            sample_cases, stub_qa, capture_traces=True
+        )
 
         assert result.trajectories is not None
         assert len(result.trajectories) == 2
@@ -190,20 +173,12 @@ class TestEvaluateAsync:
         adapter: QAPromptAdapter,
         sample_cases: list[Case[str, str, dict[str, str]]],
     ) -> None:
-        mock_qa = AsyncMock()
-        mock_qa.answer = AsyncMock(side_effect=RuntimeError("LLM down"))
+        stub_qa = AsyncMock()
+        stub_qa.answer = AsyncMock(side_effect=RuntimeError("LLM down"))
 
-        with (
-            patch("evaluations.optimization.HaikuRAG") as mock_haiku_cls,
-            patch("evaluations.optimization.get_qa_agent", return_value=mock_qa),
-        ):
-            mock_haiku = AsyncMock()
-            mock_haiku_cls.return_value.__aenter__ = AsyncMock(return_value=mock_haiku)
-            mock_haiku_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            result = await adapter._evaluate_async(
-                sample_cases, "test prompt", capture_traces=True
-            )
+        result = await adapter._evaluate_async(
+            sample_cases, stub_qa, capture_traces=True
+        )
 
         assert all(o is None for o in result.outputs)
         assert all(s == 0.0 for s in result.scores)
@@ -217,50 +192,40 @@ class TestEvaluateAsync:
 
 class TestReflectionLM:
     def test_handles_string_prompt(self) -> None:
-        mock_result = MagicMock()
-        mock_result.output = "Reflected response"
+        test_model = TestModel(custom_output_text="Reflected response")
 
-        with (
-            patch("evaluations.optimization.get_model"),
-            patch("pydantic_ai.Agent") as mock_agent_cls,
-        ):
-            mock_agent = MagicMock()
-            mock_agent.run_sync.return_value = mock_result
-            mock_agent_cls.return_value = mock_agent
-
+        with patch("evaluations.optimization.get_model", return_value=test_model):
             lm = ReflectionLM(model_config=AppConfig().qa.model, config=AppConfig())
-            lm._agent = mock_agent
 
-            result = lm("test prompt")
+        result = lm("test prompt")
 
         assert result == "Reflected response"
-        mock_agent.run_sync.assert_called_once_with("test prompt")
 
-    def test_handles_chat_messages(self) -> None:
-        mock_result = MagicMock()
-        mock_result.output = "Chat response"
+    def test_formats_chat_messages_into_string(self) -> None:
+        test_model = TestModel(custom_output_text="Chat response")
+        prompts_received: list[str] = []
 
-        with (
-            patch("evaluations.optimization.get_model"),
-            patch("pydantic_ai.Agent") as mock_agent_cls,
-        ):
-            mock_agent = MagicMock()
-            mock_agent.run_sync.return_value = mock_result
-            mock_agent_cls.return_value = mock_agent
-
+        with patch("evaluations.optimization.get_model", return_value=test_model):
             lm = ReflectionLM(model_config=AppConfig().qa.model, config=AppConfig())
-            lm._agent = mock_agent
 
-            messages: list[dict[str, Any]] = [
-                {"role": "system", "content": "You are helpful."},
-                {"role": "user", "content": "Hello"},
-            ]
-            result = lm(messages)
+        original_run_sync = lm._agent.run_sync
+
+        def capturing_run_sync(prompt: str, **kwargs: Any) -> Any:
+            prompts_received.append(prompt)
+            return original_run_sync(prompt, **kwargs)
+
+        lm._agent.run_sync = capturing_run_sync  # type: ignore[method-assign]
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hello"},
+        ]
+        result = lm(messages)
 
         assert result == "Chat response"
-        call_arg = mock_agent.run_sync.call_args[0][0]
-        assert "system: You are helpful." in call_arg
-        assert "user: Hello" in call_arg
+        assert len(prompts_received) == 1
+        assert "system: You are helpful." in prompts_received[0]
+        assert "user: Hello" in prompts_received[0]
 
 
 class TestEvaluateSync:
@@ -277,7 +242,7 @@ class TestEvaluateSync:
 
         with patch.object(
             adapter,
-            "_evaluate_async",
+            "_evaluate_with_setup",
             new_callable=AsyncMock,
             return_value=expected_batch,
         ) as mock_eval:
@@ -306,6 +271,17 @@ def _make_cases(n: int) -> list[Case[str, str, dict[str, str]]]:
     ]
 
 
+@pytest.fixture
+def gepa_mock_result() -> MagicMock:
+    mock_result = MagicMock()
+    mock_result.best_idx = 0
+    mock_result.val_aggregate_scores = [0.95]
+    mock_result.best_candidate = {"instructions": "optimized prompt"}
+    mock_result.total_metric_calls = 10
+    mock_result.num_candidates = 3
+    return mock_result
+
+
 class TestRunOptimization:
     def _make_spec(self, db_path: Path) -> DatasetSpec:
         return DatasetSpec(
@@ -318,21 +294,14 @@ class TestRunOptimization:
             system_prompt="You are a test assistant.",
         )
 
-    def test_returns_results(self, tmp_path: Path) -> None:
+    def test_returns_results(self, tmp_path: Path, gepa_mock_result: MagicMock) -> None:
         spec = self._make_spec(tmp_path / "test.lancedb")
         cases = _make_cases(4)
-
-        mock_result = MagicMock()
-        mock_result.best_idx = 0
-        mock_result.val_aggregate_scores = [0.95]
-        mock_result.best_candidate = {"instructions": "optimized prompt"}
-        mock_result.total_metric_calls = 10
-        mock_result.num_candidates = 3
 
         with (
             patch("evaluations.optimization.get_model"),
             patch("evaluations.optimization.ReflectionLM"),
-            patch("gepa.optimize", return_value=mock_result),
+            patch("gepa.optimize", return_value=gepa_mock_result),
         ):
             result = run_optimization(
                 spec=spec,
@@ -347,22 +316,22 @@ class TestRunOptimization:
         assert result["total_calls"] == 10
         assert result["num_candidates"] == 3
 
-    def test_saves_output_file(self, tmp_path: Path) -> None:
+    def test_saves_output_file(
+        self, tmp_path: Path, gepa_mock_result: MagicMock
+    ) -> None:
         spec = self._make_spec(tmp_path / "test.lancedb")
         cases = _make_cases(4)
         output_path = tmp_path / "prompt.txt"
 
-        mock_result = MagicMock()
-        mock_result.best_idx = 0
-        mock_result.val_aggregate_scores = [0.85]
-        mock_result.best_candidate = {"instructions": "saved prompt"}
-        mock_result.total_metric_calls = 5
-        mock_result.num_candidates = 2
+        gepa_mock_result.val_aggregate_scores = [0.85]
+        gepa_mock_result.best_candidate = {"instructions": "saved prompt"}
+        gepa_mock_result.total_metric_calls = 5
+        gepa_mock_result.num_candidates = 2
 
         with (
             patch("evaluations.optimization.get_model"),
             patch("evaluations.optimization.ReflectionLM"),
-            patch("gepa.optimize", return_value=mock_result),
+            patch("gepa.optimize", return_value=gepa_mock_result),
         ):
             run_optimization(
                 spec=spec,
