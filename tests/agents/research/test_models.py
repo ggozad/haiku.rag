@@ -1,4 +1,5 @@
-from haiku.rag.agents.research.models import Citation, SearchAnswer
+from haiku.rag.agents.research.models import Citation, SearchAnswer, resolve_citations
+from haiku.rag.store.models import SearchResult
 
 
 class TestCitation:
@@ -120,3 +121,39 @@ class TestSearchAnswerPrimarySource:
             citations=[],
         )
         assert answer.primary_source is None
+
+
+class TestResolveCitations:
+    """Tests for resolve_citations function."""
+
+    def _make_result(self, chunk_id: str) -> SearchResult:
+        return SearchResult(
+            content="test content",
+            score=1.0,
+            chunk_id=chunk_id,
+            document_id="doc-1",
+            document_uri="test.md",
+            document_title="Test Doc",
+        )
+
+    def test_resolves_exact_ids(self):
+        results = [self._make_result("abc123")]
+        citations = resolve_citations(["abc123"], results)
+        assert len(citations) == 1
+        assert citations[0].chunk_id == "abc123"
+
+    def test_strips_brackets_from_ids(self):
+        results = [self._make_result("abc123")]
+        citations = resolve_citations(["[abc123]"], results)
+        assert len(citations) == 1
+        assert citations[0].chunk_id == "abc123"
+
+    def test_skips_unmatched_ids(self):
+        results = [self._make_result("abc123")]
+        citations = resolve_citations(["nonexistent"], results)
+        assert len(citations) == 0
+
+    def test_empty_cited_chunks(self):
+        results = [self._make_result("abc123")]
+        citations = resolve_citations([], results)
+        assert len(citations) == 0

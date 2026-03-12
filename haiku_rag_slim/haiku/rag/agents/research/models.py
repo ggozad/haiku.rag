@@ -93,7 +93,8 @@ def resolve_citations(
     by_id = {r.chunk_id: r for r in search_results if r.chunk_id}
 
     citations = []
-    for chunk_id in cited_chunk_ids:
+    for raw_id in cited_chunk_ids:
+        chunk_id = raw_id.strip("[]")
         r = by_id.get(chunk_id)
         if not r:
             continue
