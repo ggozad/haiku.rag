@@ -62,7 +62,7 @@ Optimize QA system prompts using GEPA (Generalized Evolutionary Prompt Algorithm
 
 ```bash
 evaluations optimize wix
-evaluations optimize repliqa --limit 40 --iterations 30
+evaluations optimize repliqa --limit 40 --num-candidates 30
 evaluations optimize wix --output optimized_prompt.txt
 ```
 

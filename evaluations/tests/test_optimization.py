@@ -307,7 +307,7 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                iterations=10,
+                num_candidates=10,
                 db_path=tmp_path / "test.lancedb",
             )
 
@@ -337,7 +337,7 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                iterations=5,
+                num_candidates=5,
                 db_path=tmp_path / "test.lancedb",
                 output=output_path,
             )
@@ -371,7 +371,7 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                iterations=1,
+                num_candidates=1,
                 db_path=tmp_path / "test.lancedb",
             )
 
@@ -404,12 +404,12 @@ class TestRunOptimization:
                 spec=spec,
                 config=AppConfig(),
                 cases=cases,
-                iterations=5,
+                num_candidates=5,
                 db_path=tmp_path / "test.lancedb",
             )
 
         call_kwargs = mock_gepa.call_args[1]
         assert len(call_kwargs["trainset"]) == 5
         assert len(call_kwargs["valset"]) == 5
-        # Budget = valset_size + iterations * (2*minibatch + valset_size)
+        # Budget = valset_size + num_candidates * (2*minibatch + valset_size)
         assert call_kwargs["max_metric_calls"] == 5 + 5 * (2 * 3 + 5)

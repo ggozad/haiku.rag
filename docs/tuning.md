@@ -76,7 +76,7 @@ The `evaluations optimize` command uses GEPA (Generalized Evolutionary Prompt Al
 evaluations optimize wix
 
 # Constrained run
-evaluations optimize repliqa --limit 40 --iterations 30
+evaluations optimize repliqa --limit 40 --num-candidates 30
 
 # Save result
 evaluations optimize wix --output optimized_prompt.txt
@@ -85,7 +85,7 @@ evaluations optimize wix --output optimized_prompt.txt
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--limit` | all cases | QA cases to use (split 50/50 train/val) |
-| `--iterations` | `50` | Optimization iterations |
+| `--num-candidates` | `50` | Number of candidate prompts to evaluate |
 | `--output` | — | Save optimized prompt to file |
 | `--config` | auto | haiku.rag YAML config path |
 | `--db` | auto | Database path override |

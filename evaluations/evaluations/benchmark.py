@@ -483,8 +483,8 @@ def optimize(
     limit: int | None = typer.Option(
         None, "--limit", help="Limit QA cases (split 50/50 into train/val)."
     ),
-    iterations: int = typer.Option(
-        50, "--iterations", help="Number of optimization iterations."
+    num_candidates: int = typer.Option(
+        50, "--num-candidates", help="Number of candidate prompts to evaluate."
     ),
     output: Path | None = typer.Option(
         None, "--output", help="Save optimized prompt to file."
@@ -509,7 +509,7 @@ def optimize(
         spec=spec,
         config=app_config,
         cases=cases,
-        iterations=iterations,
+        num_candidates=num_candidates,
         db_path=db,
         output=output,
     )

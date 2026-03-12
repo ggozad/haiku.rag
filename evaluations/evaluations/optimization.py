@@ -205,6 +205,7 @@ class ReflectionLM:
         return result.output
 
 
+# Cases per GEPA reflection minibatch (used for budget calculation)
 REFLECTION_MINIBATCH_SIZE = 3
 
 
@@ -212,7 +213,7 @@ def run_optimization(
     spec: DatasetSpec,
     config: AppConfig,
     cases: list[QACase],
-    iterations: int,
+    num_candidates: int,
     db_path: Path | None = None,
     output: Path | None = None,
 ) -> dict[str, Any]:
@@ -239,16 +240,16 @@ def run_optimization(
     trainset = cases[:mid]
     valset = cases[mid:]
 
-    # Budget: initial valset eval + worst-case iterations
-    # (each iteration: 2 minibatch evals + full valset if accepted)
-    max_metric_calls = len(valset) + iterations * (
+    # Budget: initial valset eval + per-candidate worst case
+    # (each candidate: 2 minibatch evals + full valset if accepted)
+    max_metric_calls = len(valset) + num_candidates * (
         2 * REFLECTION_MINIBATCH_SIZE + len(valset)
     )
 
     console.print(f"Optimizing prompt for dataset: {spec.key}", style="bold magenta")
     console.print(
         f"Train: {len(trainset)}, Val: {len(valset)}, "
-        f"Iterations: {iterations}, GEPA budget: {max_metric_calls}"
+        f"Candidates: {num_candidates}, Budget: {max_metric_calls} eval calls"
     )
     console.print(f"Seed prompt length: {len(seed_prompt)} chars")
 
