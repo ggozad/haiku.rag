@@ -1,9 +1,11 @@
 import asyncio
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pydantic_ai.models import Model
 from pydantic_evals import Case
 from pydantic_evals.evaluators.llm_as_a_judge import judge_input_output_expected
 
@@ -16,6 +18,8 @@ from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.utils import get_model
+
+logger = logging.getLogger(__name__)
 
 
 OPTIMIZATION_SCORING_RUBRIC = """You are evaluating the quality of an answer to a question,
@@ -65,7 +69,7 @@ class QAPromptAdapter:
 
     config: AppConfig
     db_path: Path
-    judge_model: Any
+    judge_model: Model
 
     def evaluate(
         self,
@@ -96,6 +100,9 @@ class QAPromptAdapter:
                 try:
                     answer, _ = await qa.answer(question)
                 except Exception:
+                    logger.warning(
+                        "QA agent failed for question: %s", question, exc_info=True
+                    )
                     answer = None
 
                 if answer is not None:

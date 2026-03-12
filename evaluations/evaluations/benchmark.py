@@ -303,7 +303,7 @@ async def run_qa_benchmark(
 
     db = spec.db_path(db_path)
     async with HaikuRAG(db, config=config) as rag:
-        qa = get_qa_agent(rag, system_prompt=spec.resolve_system_prompt(config))
+        qa = get_qa_agent(rag, config, system_prompt=spec.resolve_system_prompt(config))
 
         async def answer_question(question: str) -> str:
             answer, _ = await qa.answer(question)
@@ -424,13 +424,7 @@ def _resolve_datasets(dataset: str) -> list[DatasetSpec]:
     """Resolve 'all' or a single dataset key to a list of DatasetSpecs."""
     if dataset.lower() == "all":
         return list(DATASETS.values())
-    spec = DATASETS.get(dataset.lower())
-    if spec is None:
-        valid_datasets = ", ".join(sorted(DATASETS))
-        raise typer.BadParameter(
-            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}, all"
-        )
-    return [spec]
+    return [_resolve_dataset(dataset)]
 
 
 @app.command()
@@ -441,7 +435,7 @@ def run(
     ),
     db: Path | None = typer.Option(None, "--db", help="Override the database path."),
     skip_db: bool = typer.Option(
-        False, "--skip-db", help="Skip updateing the evaluation db."
+        False, "--skip-db", help="Skip updating the evaluation db."
     ),
     skip_retrieval: bool = typer.Option(
         False, "--skip-retrieval", help="Skip retrieval benchmark."
