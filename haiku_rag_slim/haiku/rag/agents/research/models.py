@@ -42,7 +42,7 @@ class RawSearchAnswer(BaseModel):
     answer: str = Field(..., description="The answer to the question")
     cited_chunks: list[str] = Field(
         default_factory=list,
-        description="IDs of chunks used to form the answer",
+        description="Complete chunk IDs from search results (e.g. '5ae52166-5329-42e9-b6a5-756fc0cb7200'). Copy the full UUID without brackets. Must not be empty when providing an answer.",
     )
     confidence: float = Field(
         default=1.0,
