@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.34.0] - 2026-03-13
+
 ### Added
 
 - **Activity events**: TUI and web frontend now display skill sub-agent tool calls via `ActivitySnapshotEvent`
@@ -1228,7 +1230,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.33.3...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.34.0...HEAD
+[0.34.0]: https://github.com/ggozad/haiku.rag/compare/0.33.3...0.34.0
 [0.33.3]: https://github.com/ggozad/haiku.rag/compare/0.33.2...0.33.3
 [0.33.2]: https://github.com/ggozad/haiku.rag/compare/0.33.1...0.33.2
 [0.33.1]: https://github.com/ggozad/haiku.rag/compare/0.33.0...0.33.1
