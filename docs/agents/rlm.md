@@ -64,15 +64,14 @@ The agent's code runs in a sandboxed Python interpreter ([pydantic-monty](https:
 | `get_chunk(chunk_id)` | Get a chunk with metadata (headings, page numbers, labels) for citations |
 | `get_docling_document(document_id)` | Get the full DoclingDocument structure as a dict (texts, tables, pictures, pages) |
 | `llm(prompt)` | Call an LLM for classification, summarization, or extraction |
-| `regex_findall(pattern, text)`, `regex_sub(pattern, repl, text)`, `regex_search(pattern, text)`, `regex_split(pattern, text)` | Regular expression matching via Python's `re` module |
 
 When documents are pre-loaded via the `documents` parameter, they are injected as a `documents` variable accessible in the sandbox code.
 
 ### Python Features
 
-The interpreter supports a subset of Python: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, try/except, and the `json` module.
+The interpreter supports a subset of Python: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `filter()`, `getattr()`, try/except, and the `json`, `re`, `math` modules.
 
-Not supported: imports (other than `json`), class definitions, generators/yield, match statements, decorators, `with` statements. For pattern matching, the agent can use the `regex_*` functions, string methods, or the `llm()` function.
+Not supported: most imports (only `json`, `re`, `math` are available), class definitions, generators/yield, match statements, decorators, `with` statements. For pattern matching, the agent can use `import re`, string methods, or the `llm()` function.
 
 ### Security
 
@@ -80,7 +79,7 @@ Code executes in an isolated interpreter with:
 
 - **No filesystem access**: Code cannot read or write files
 - **No network access**: Code cannot make HTTP requests or open sockets
-- **No imports**: Only the `json` module is available
+- **No imports**: Only `json`, `re`, and `math` modules are available
 - **Execution timeout**: Configurable limit (default 60s)
 - **Output truncation**: Large outputs are truncated to prevent memory issues
 

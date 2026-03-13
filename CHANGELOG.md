@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **RLM sandbox**: Bumped pydantic-monty to 0.0.8. Removed `regex_*` external functions — the sandbox now has native `re` and `math` modules via `import`. Also adds `filter()` and `getattr()` builtins.
+
 ## [0.33.3] - 2026-03-12
 
 ### Added
