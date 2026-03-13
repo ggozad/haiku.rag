@@ -287,10 +287,10 @@ class TestRunOptimization:
         return DatasetSpec(
             key="test",
             db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[return-value]
+            document_loader=lambda: None,
             document_mapper=lambda doc: None,
-            qa_loader=lambda: None,  # type: ignore[return-value]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[return-value]
+            qa_loader=lambda: None,
+            qa_case_builder=lambda idx, doc: None,
             system_prompt="You are a test assistant.",
         )
 
@@ -348,10 +348,10 @@ class TestRunOptimization:
         spec = DatasetSpec(
             key="test",
             db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[return-value]
+            document_loader=lambda: None,
             document_mapper=lambda doc: None,
-            qa_loader=lambda: None,  # type: ignore[return-value]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[return-value]
+            qa_loader=lambda: None,
+            qa_case_builder=lambda idx, doc: None,
         )
         cases = _make_cases(4)
 
