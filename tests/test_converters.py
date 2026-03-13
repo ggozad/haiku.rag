@@ -89,11 +89,23 @@ class TestTextFileHandler:
         assert ".js" in TextFileHandler.text_extensions
         assert ".txt" in TextFileHandler.text_extensions
 
+    def test_plantuml_extensions_supported(self):
+        """Test that PlantUML extensions are in text_extensions."""
+        assert ".puml" in TextFileHandler.text_extensions
+        assert ".plantuml" in TextFileHandler.text_extensions
+        assert ".pu" in TextFileHandler.text_extensions
+
     def test_code_markdown_identifiers(self):
         """Test code language identifiers mapping."""
         assert TextFileHandler.code_markdown_identifier[".py"] == "python"
         assert TextFileHandler.code_markdown_identifier[".js"] == "javascript"
         assert TextFileHandler.code_markdown_identifier[".ts"] == "typescript"
+
+    def test_plantuml_markdown_identifiers(self):
+        """Test PlantUML language identifiers mapping."""
+        assert TextFileHandler.code_markdown_identifier[".puml"] == "plantuml"
+        assert TextFileHandler.code_markdown_identifier[".plantuml"] == "plantuml"
+        assert TextFileHandler.code_markdown_identifier[".pu"] == "plantuml"
 
     def test_prepare_text_content_with_code(self):
         """Test that code files are wrapped in markdown code blocks."""
@@ -102,6 +114,14 @@ class TestTextFileHandler:
         assert result.startswith("```python\n")
         assert result.endswith("\n```")
         assert "def hello():" in result
+
+    def test_prepare_text_content_with_plantuml(self):
+        """Test that PlantUML files are wrapped in plantuml code blocks."""
+        puml = "@startuml\nAlice -> Bob: Hello\n@enduml"
+        result = TextFileHandler.prepare_text_content(puml, ".puml")
+        assert result.startswith("```plantuml\n")
+        assert result.endswith("\n```")
+        assert "@startuml" in result
 
     def test_prepare_text_content_without_code(self):
         """Test that plain text files are not wrapped."""

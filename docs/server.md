@@ -109,6 +109,7 @@ The file monitor processes documents using [Docling](https://github.com/DS4SD/do
 - Python (`.py`)
 - JavaScript (`.js`)
 - TypeScript (`.ts`)
+- PlantUML (`.puml`, `.plantuml`, `.pu`)
 - And other text-based code files
 
 **Plain text:**

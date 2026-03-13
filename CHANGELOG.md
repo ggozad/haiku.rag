@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **PlantUML support**: `.puml`, `.plantuml`, and `.pu` files are now indexed as `plantuml` code blocks
+
 ## [0.34.0] - 2026-03-13
 
 ### Added
