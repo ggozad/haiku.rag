@@ -44,9 +44,9 @@ def update_dependency_version(file_path: Path, new_version: str) -> None:
 def update_example_dependencies(file_path: Path, new_version: str) -> None:
     """Update haiku.rag and haiku.rag-slim dependency versions in example pyproject.toml files."""
     content = file_path.read_text()
-    # Update haiku.rag-slim[...] >= X.Y.Z
+    # Update haiku.rag-slim (with or without extras) >= X.Y.Z
     updated = re.sub(
-        r"(haiku\.rag-slim\[.*?\])>=[0-9.]+", rf"\1>={new_version}", content
+        r"(haiku\.rag-slim(?:\[.*?\])?)>=[0-9.]+", rf"\1>={new_version}", content
     )
     # Update haiku.rag >= X.Y.Z
     updated = re.sub(r"(haiku\.rag)>=[0-9.]+", rf"\1>={new_version}", updated)
