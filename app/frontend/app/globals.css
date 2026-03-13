@@ -36,9 +36,30 @@ a {
 	--ring: #3b82f6;
 }
 
-/* Chat message area — use full width instead of max-w-3xl */
-.chat-content .max-w-3xl {
-	max-width: 100%;
+/* Remove CopilotKit's max-width constraints so content fills the container */
+.chat-container [class*="cpk:max-w-"],
+.chat-container .max-w-3xl {
+	max-width: 100% !important;
+}
+
+/* Empty state input — horizontal padding so it doesn't touch the edges */
+.chat-container [class*="cpk:max-w-3xl"]:has(.copilotKitInput) {
+	padding: 0 1rem;
+}
+
+/* Input box — breathing room for send button and bottom spacing */
+.copilotKitInput {
+	padding-right: 0.5rem !important;
+	margin-bottom: 0.5rem !important;
+}
+
+/* User message bubble — more generous padding and spacing */
+.copilotKitUserMessage {
+	margin-top: 1.5rem !important;
+}
+
+.copilotKitUserMessage [class*="cpk:rounded"] {
+	padding: 12px 20px !important;
 }
 
 /* Render-prop layout: flex column so citations sit between messages and input */
@@ -57,7 +78,7 @@ a {
 
 .chat-input-area {
 	position: relative;
-	padding: 0 0.75rem 0.5rem;
+	padding: 0 1rem 1rem;
 }
 
 /* Override CopilotKit's absolute positioning on the input container
@@ -67,16 +88,6 @@ a {
 	bottom: auto;
 	left: auto;
 	right: auto;
-}
-
-/* User message bubble spacing and padding */
-[data-message-id].items-end {
-	padding-top: 1rem;
-}
-
-[data-message-id].items-end > .bg-muted {
-	color: #1e293b;
-	padding: 0.75rem 1.25rem;
 }
 
 /* Assistant message markdown styling */
@@ -184,14 +195,6 @@ a {
 .prose[data-message-id] th {
 	background: #f8fafc;
 	font-weight: 600;
-}
-
-.prose[data-message-id] strong {
-	font-weight: 600;
-}
-
-.prose[data-message-id] em {
-	font-style: italic;
 }
 
 /* ── Chat layout ── */

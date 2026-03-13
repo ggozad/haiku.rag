@@ -1,9 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Activity events**: TUI and web frontend now display skill sub-agent tool calls via `ActivitySnapshotEvent`
+
 ### Changed
 
 - **RLM sandbox**: Bumped pydantic-monty to 0.0.8. Removed `regex_*` external functions — the sandbox now has native `re` and `math` modules via `import`. Also adds `filter()` and `getattr()` builtins.
+- **Frontend deps**: Upgraded CopilotKit to 1.54.0 and @ag-ui/client to 0.0.47
 
 ## [0.33.3] - 2026-03-12
 

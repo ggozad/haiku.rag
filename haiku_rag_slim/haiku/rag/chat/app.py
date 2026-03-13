@@ -31,6 +31,7 @@ except ImportError:
 try:
     import textual_image.widget  # noqa: F401 - import early for renderer detection
     from ag_ui.core import (
+        ActivitySnapshotEvent,
         AssistantMessage,
         EventType,
         RunAgentInput,
@@ -271,6 +272,30 @@ class ChatApp(App):
                     elif event.type == EventType.TOOL_CALL_END:
                         assert isinstance(event, ToolCallEndEvent)
                         chat_history.mark_tool_complete(event.tool_call_id)
+                    elif event.type == EventType.ACTIVITY_SNAPSHOT:
+                        assert isinstance(event, ActivitySnapshotEvent)
+                        content = event.content
+                        if event.activity_type == "skill_tool_call":
+                            tool_call_id = content["tool_call_id"]
+                            skill_name = content.get("skill", "")
+                            tool_name = content["tool_name"]
+                            display_name = (
+                                f"{skill_name} → {tool_name}"
+                                if skill_name
+                                else tool_name
+                            )
+                            args_str = content.get("args", "{}")
+                            chat_history.hide_thinking()
+                            await chat_history.add_tool_call(tool_call_id, display_name)
+                            try:
+                                args = json.loads(args_str)
+                                chat_history.update_tool_args(tool_call_id, args)
+                            except json.JSONDecodeError:
+                                pass
+                            await chat_history.show_thinking("Working...")
+                        elif event.activity_type == "skill_tool_result":
+                            tool_call_id = content["tool_call_id"]
+                            chat_history.mark_tool_complete(tool_call_id)
                     elif event.type == EventType.STATE_DELTA:
                         assert isinstance(event, StateDeltaEvent)
                         patch = JsonPatch(event.delta)

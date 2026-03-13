@@ -34,14 +34,14 @@ wheels = [
 
 [[package]]
 name = "ag-ui-protocol"
-version = "0.1.11"
+version = "0.1.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/c1/33ab11dc829c6c28d0d346988b2f394aa632d3ad63d1d2eb5f16eccd769b/ag_ui_protocol-0.1.11.tar.gz", hash = "sha256:b336dfebb5751e9cc2c676a3008a4bce4819004e6f6f8cba73169823564472ae", size = 6249, upload-time = "2026-02-11T12:41:36.085Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/04/b5/fc0b65b561d00d88811c8a7d98ee735833f81554be244340950e7b65820c/ag_ui_protocol-0.1.13.tar.gz", hash = "sha256:811d7d7dcce4783dec252918f40b717ebfa559399bf6b071c4ba47c0c1e21bcb", size = 5671, upload-time = "2026-02-19T18:40:38.602Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/83/5c6f4cb24d27d9cbe0c31ba2f3b4d1ff42bc6f87ba9facfa9e9d44046c6b/ag_ui_protocol-0.1.11-py3-none-any.whl", hash = "sha256:b0cc25570462a8eba8e57a098e0a2d6892a1f571a7bea7da2d4b60efd5d66789", size = 8392, upload-time = "2026-02-11T12:41:35.303Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/9f/b833c1ab1999da35ebad54841ae85d2c2764c931da9a6f52d8541b6901b2/ag_ui_protocol-0.1.13-py3-none-any.whl", hash = "sha256:1393fa894c1e8416efe184168a50689e760d05b32f4646eebb8ff423dddf8e8f", size = 8053, upload-time = "2026-02-19T18:40:37.27Z" },
 ]
 
 [[package]]
@@ -1513,7 +1513,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.7" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.76.0" },
     { name = "docling-core", specifier = ">=2.67.1" },
-    { name = "haiku-skills", specifier = ">=0.7.0" },
+    { name = "haiku-skills", specifier = ">=0.8.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.29.2" },
@@ -1545,17 +1545,19 @@ provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jin
 
 [[package]]
 name = "haiku-skills"
-version = "0.7.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "ag-ui-protocol" },
+    { name = "jsonpatch" },
     { name = "pydantic" },
-    { name = "pydantic-ai-slim", extra = ["mcp"] },
+    { name = "pydantic-ai-slim", extra = ["mcp", "openai"] },
     { name = "pyyaml" },
     { name = "skills-ref" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8c/a6/4fbdfe95e6ff6a574088b9f3ed7543a6e01b4b6c1740440ce07c1cf4893a/haiku_skills-0.7.0.tar.gz", hash = "sha256:ec5c5176f8feab09cc6aa4cda9a64e2446074f3ed111cb7e2587f7b524711364", size = 133420, upload-time = "2026-03-04T09:25:52.729Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/b0/ea75df7841f0a3ac807f741b6498b22273549838a374c2f11c1c363bac1e/haiku_skills-0.8.0.tar.gz", hash = "sha256:e582b37fa05a8e5cf06c5764248b7d1fd26e258510d9ba8e8a462d66249fcd39", size = 136349, upload-time = "2026-03-13T11:07:00.899Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/38/5048252c0b68bc77dd0fcf6b5c4e29074d90b3f6888eb282a0fcae967227/haiku_skills-0.7.0-py3-none-any.whl", hash = "sha256:7b7791890cc230fd53c5a9a7d93129e7901fecc1d64153d0386a83603e5b7b25", size = 25022, upload-time = "2026-03-04T09:25:51.872Z" },
+    { url = "https://files.pythonhosted.org/packages/41/cf/8f5ddea650f06d0ced329b6d503b411fd275af41fc514b0402db36ef950f/haiku_skills-0.8.0-py3-none-any.whl", hash = "sha256:85efc8cbf29f78fb43a0538434f66413e3de6ac3a9b531bc1b7dcf440c99536b", size = 25684, upload-time = "2026-03-13T11:06:59.871Z" },
 ]
 
 [[package]]
