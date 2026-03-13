@@ -36,22 +36,14 @@ a {
 	--ring: #3b82f6;
 }
 
-/* Chat message area — use full width instead of CopilotKit's max-width constraints.
-   Scoped to scroll area; the input area inherits CopilotKit's natural sizing. */
-.chat-scroll-area .max-w-3xl,
-.chat-scroll-area [class*="cpk:max-w-3xl"],
-.chat-scroll-area [class*="cpk:max-w-"] {
+/* Remove CopilotKit's max-width constraints so content fills the container */
+.chat-container [class*="cpk:max-w-"],
+.chat-container .max-w-3xl {
 	max-width: 100% !important;
 }
 
-/* In the empty state (no chat-scroll-area), widen only the message view container */
-.copilotKitChat [class*="cpk:max-w-3xl"]:not(:has(.copilotKitInput)) {
-	max-width: 100% !important;
-}
-
-/* Empty state input — stretch to full width with horizontal margin */
-.copilotKitChat [class*="cpk:max-w-3xl"]:has(.copilotKitInput) {
-	max-width: 100% !important;
+/* Empty state input — horizontal padding so it doesn't touch the edges */
+.chat-container [class*="cpk:max-w-3xl"]:has(.copilotKitInput) {
 	padding: 0 1rem;
 }
 
@@ -96,21 +88,6 @@ a {
 	bottom: auto;
 	left: auto;
 	right: auto;
-}
-
-/* Make the input stretch to full width within its padded container */
-.chat-input-area [class*="cpk:max-w-"] {
-	max-width: 100% !important;
-}
-
-/* User message bubble spacing and padding */
-[data-message-id].items-end {
-	padding-top: 1rem;
-}
-
-[data-message-id].items-end > .bg-muted {
-	color: #1e293b;
-	padding: 0.75rem 1.25rem;
 }
 
 /* Assistant message markdown styling */
@@ -218,14 +195,6 @@ a {
 .prose[data-message-id] th {
 	background: #f8fafc;
 	font-weight: 600;
-}
-
-.prose[data-message-id] strong {
-	font-weight: 600;
-}
-
-.prose[data-message-id] em {
-	font-style: italic;
 }
 
 /* ── Chat layout ── */

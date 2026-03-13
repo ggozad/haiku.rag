@@ -317,75 +317,17 @@ function MessageViewWithCitations({
 		</div>
 	) : null;
 
+	// CopilotChatMessageView renders one element per user/assistant message.
+	// We interleave activity indicators (skill sub-agent tool calls) and
+	// optionally inject CitationBlocks after assistant responses that
+	// followed tool calls.
 	return (
 		<CopilotChatMessageView messages={messages} isRunning={isRunning}>
 			{({ messageElements }) => {
-				if (!citationsHistory.length) {
-					// Check if there are activity messages to render
-					const hasActivity = messages.some(
-						(msg: { role: string }) => msg.role === "activity",
-					);
-					if (!hasActivity) {
-						return (
-							<>
-								{messageElements}
-								{cursor}
-							</>
-						);
-					}
-
-					// Interleave activity indicators with CopilotKit elements
-					const result: React.ReactNode[] = [];
-					let eIdx = 0;
-					for (const msg of messages) {
-						if (
-							msg.role === "activity" &&
-							msg.activityType === "skill_tool_call"
-						) {
-							const toolCallId = msg.content?.tool_call_id;
-							result.push(
-								<ActivityIndicator
-									key={msg.id}
-									message={msg}
-									isComplete={
-										toolCallId ? completedToolCallIds.has(toolCallId) : false
-									}
-								/>,
-							);
-							continue;
-						}
-						if (msg.role === "activity") continue;
-						if (msg.role !== "user" && msg.role !== "assistant") continue;
-						if (eIdx < messageElements.length) {
-							result.push(messageElements[eIdx]);
-							eIdx++;
-						}
-					}
-					while (eIdx < messageElements.length) {
-						result.push(messageElements[eIdx]);
-						eIdx++;
-					}
-					return (
-						<>
-							{result}
-							{cursor}
-						</>
-					);
-				}
-
-				// CopilotChatMessageView renders one element per user/assistant
-				// message (tool messages produce nothing). We correlate elements with
-				// messages to inject CitationBlocks after the right assistant responses.
-				// Activity messages (skill sub-agent tool calls) are rendered by us
-				// directly, not by CopilotKit.
-				//
-				// Both search and ask tools append to citations via qa_history,
-				// so after each assistant text response that followed tool calls,
-				// we inject the next citations entry.
 				const result: React.ReactNode[] = [];
+				let elemIdx = 0;
 				let citIdx = 0;
 				let seenToolCalls = false;
-				let elemIdx = 0;
 
 				for (const msg of messages) {
 					if (msg.role === "user") {
@@ -405,24 +347,20 @@ function MessageViewWithCitations({
 					if (msg.role === "activity") {
 						if (msg.activityType === "skill_tool_call") {
 							const toolCallId = msg.content?.tool_call_id;
-							const isComplete = toolCallId
-								? completedToolCallIds.has(toolCallId)
-								: false;
 							result.push(
 								<ActivityIndicator
 									key={msg.id}
 									message={msg}
-									isComplete={isComplete}
+									isComplete={
+										toolCallId ? completedToolCallIds.has(toolCallId) : false
+									}
 								/>,
 							);
 						}
-						// Skip skill_tool_result — completion is shown
-						// on the corresponding skill_tool_call indicator
 						continue;
 					}
 
-					const isRendered = msg.role === "user" || msg.role === "assistant";
-					if (!isRendered) continue;
+					if (msg.role !== "user" && msg.role !== "assistant") continue;
 
 					if (elemIdx < messageElements.length) {
 						result.push(messageElements[elemIdx]);
