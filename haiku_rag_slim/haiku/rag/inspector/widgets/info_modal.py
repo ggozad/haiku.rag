@@ -79,7 +79,7 @@ class InfoModal(ModalScreen):
         # Connect to get table info
         try:
             db = lancedb.connect(self.db_path)
-            table_names = set(db.table_names())
+            table_names = set(db.list_tables().tables)
         except Exception as e:
             lines.append(f"[red]Failed to open database: {e}[/red]")
             self._content_widget.update("\n".join(lines))
