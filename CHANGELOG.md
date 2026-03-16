@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.34.1] - 2026-03-16
+
 ### Added
 
 - **PlantUML support**: `.puml`, `.plantuml`, and `.pu` files are now indexed as `plantuml` code blocks
@@ -1234,7 +1236,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.34.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.34.1...HEAD
+[0.34.1]: https://github.com/ggozad/haiku.rag/compare/0.34.0...0.34.1
 [0.34.0]: https://github.com/ggozad/haiku.rag/compare/0.33.3...0.34.0
 [0.33.3]: https://github.com/ggozad/haiku.rag/compare/0.33.2...0.33.3
 [0.33.2]: https://github.com/ggozad/haiku.rag/compare/0.33.1...0.33.2
