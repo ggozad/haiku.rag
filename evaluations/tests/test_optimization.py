@@ -15,7 +15,7 @@ from evaluations.optimization import (
     ReflectionLM,
     run_optimization,
 )
-from haiku.rag.config.models import AppConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 
 
 @pytest.fixture
@@ -413,3 +413,51 @@ class TestRunOptimization:
         assert len(call_kwargs["valset"]) == 5
         # Budget = valset_size + num_candidates * (2*minibatch + valset_size)
         assert call_kwargs["max_metric_calls"] == 5 + 5 * (2 * 3 + 5)
+
+    def test_uses_custom_reflect_model(
+        self, tmp_path: Path, gepa_mock_result: MagicMock
+    ) -> None:
+        spec = self._make_spec(tmp_path / "test.lancedb")
+        cases = _make_cases(4)
+        reflect_model = ModelConfig(
+            provider="anthropic", name="claude-sonnet-4-20250514"
+        )
+
+        with (
+            patch("evaluations.optimization.get_model"),
+            patch("evaluations.optimization.ReflectionLM") as mock_rlm,
+            patch("gepa.optimize", return_value=gepa_mock_result),
+        ):
+            run_optimization(
+                spec=spec,
+                config=AppConfig(),
+                cases=cases,
+                num_candidates=10,
+                db_path=tmp_path / "test.lancedb",
+                reflect_model=reflect_model,
+            )
+
+        mock_rlm.assert_called_once_with(reflect_model, AppConfig())
+
+    def test_uses_custom_judge_model(
+        self, tmp_path: Path, gepa_mock_result: MagicMock
+    ) -> None:
+        spec = self._make_spec(tmp_path / "test.lancedb")
+        cases = _make_cases(4)
+        judge_model = ModelConfig(provider="openai", name="gpt-4o")
+
+        with (
+            patch("evaluations.optimization.get_model") as mock_get_model,
+            patch("evaluations.optimization.ReflectionLM"),
+            patch("gepa.optimize", return_value=gepa_mock_result),
+        ):
+            run_optimization(
+                spec=spec,
+                config=AppConfig(),
+                cases=cases,
+                num_candidates=10,
+                db_path=tmp_path / "test.lancedb",
+                judge_model=judge_model,
+            )
+
+        mock_get_model.assert_called_once_with(judge_model, AppConfig())

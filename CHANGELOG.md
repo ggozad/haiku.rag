@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Configurable judge and reflect models**: `evaluations run` and `evaluations optimize` accept `--judge-model provider:name`; `optimize` also accepts `--reflect-model provider:name`. Both fall back to `config.qa.model` when not specified.
+- **`parse_model_option`**: Utility in `haiku.rag.utils` for parsing `provider:name` strings into `ModelConfig`
+
+### Changed
+
+- **LLMJudge**: Custom evaluator now accepts `ModelConfig` instead of a model name string
+
 ## [0.34.1] - 2026-03-16
 
 ### Added

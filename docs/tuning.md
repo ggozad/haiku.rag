@@ -89,6 +89,8 @@ evaluations optimize wix --output optimized_prompt.txt
 | `--output` | — | Save optimized prompt to file |
 | `--config` | auto | haiku.rag YAML config path |
 | `--db` | auto | Database path override |
+| `--judge-model` | `config.qa.model` | LLM judge as `provider:name` |
+| `--reflect-model` | `config.qa.model` | Reflection LLM as `provider:name` |
 
 Apply the result in your config:
 
