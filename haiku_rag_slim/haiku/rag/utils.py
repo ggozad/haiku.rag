@@ -15,6 +15,18 @@ if TYPE_CHECKING:
     from haiku.rag.config.models import AppConfig, ModelConfig
 
 
+def parse_model_option(value: str) -> "ModelConfig":
+    """Parse a 'provider:name' string into a ModelConfig."""
+    from haiku.rag.config.models import ModelConfig
+
+    parts = value.split(":", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(
+            f"Invalid model format '{value}'. Expected 'provider:name' (e.g. 'ollama:gpt-oss')."
+        )
+    return ModelConfig(provider=parts[0], name=parts[1])
+
+
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
     dot_product = sum(a * b for a, b in zip(vec1, vec2))

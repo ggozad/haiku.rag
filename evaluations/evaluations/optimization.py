@@ -11,7 +11,6 @@ from pydantic_evals.evaluators.llm_as_a_judge import judge_input_output_expected
 
 from gepa.core.adapter import EvaluationBatch
 
-from evaluations.benchmark import JUDGE_MODEL_CONFIG
 from evaluations.config import DatasetSpec
 from haiku.rag.agents.qa import QuestionAnswerAgent, get_qa_agent
 from haiku.rag.agents.qa.prompts import QA_SYSTEM_PROMPT
@@ -216,22 +215,26 @@ def run_optimization(
     num_candidates: int,
     db_path: Path | None = None,
     output: Path | None = None,
+    judge_model: ModelConfig | None = None,
+    reflect_model: ModelConfig | None = None,
 ) -> dict[str, Any]:
     """Run GEPA optimization and return results summary."""
     from rich.console import Console
 
     console = Console()
 
-    judge_model = get_model(JUDGE_MODEL_CONFIG, config)
+    judge_config = judge_model or config.qa.model
+    judge = get_model(judge_config, config)
 
     db = spec.db_path(db_path)
     adapter = QAPromptAdapter(
         config=config,
         db_path=db,
-        judge_model=judge_model,
+        judge_model=judge,
     )
 
-    reflection_lm = ReflectionLM(config.qa.model, config)
+    reflect_config = reflect_model or config.qa.model
+    reflection_lm = ReflectionLM(reflect_config, config)
 
     seed_prompt = spec.resolve_system_prompt(config) or QA_SYSTEM_PROMPT
     seed_candidate = {"instructions": seed_prompt}

@@ -60,6 +60,7 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
+- `--judge-model PROVIDER:NAME` - Override the LLM judge model (default: `config.qa.model`)
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
@@ -84,7 +85,7 @@ If no config file is specified, the script searches standard locations: `./haiku
 
 ### QA Accuracy
 
-For question-answering evaluation, `pydantic-evals` coordinates an LLM judge (Ollama `qwen3`) to determine whether answers are correct. Accuracy is the fraction of correctly answered questions.
+For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. By default the judge uses the same model as QA (`config.qa.model`); override with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
 
 ## RepliQA
 

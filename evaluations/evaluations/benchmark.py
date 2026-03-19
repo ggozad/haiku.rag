@@ -22,15 +22,11 @@ from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.agents.qa import get_qa_agent
-from haiku.rag.utils import get_model
+from haiku.rag.utils import get_model, parse_model_option
 
 load_dotenv(find_dotenv(usecwd=True))
 
 HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
-
-JUDGE_MODEL_CONFIG = ModelConfig(
-    provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
-)
 
 logfire.configure(send_to_logfire="if-token-present", service_name="evals")
 logfire.instrument_pydantic_ai()
@@ -272,6 +268,7 @@ async def run_qa_benchmark(
     limit: int | None = None,
     name: str | None = None,
     db_path: Path | None = None,
+    judge_model: ModelConfig | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if limit is not None:
@@ -282,7 +279,8 @@ async def run_qa_benchmark(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    judge_model = get_model(JUDGE_MODEL_CONFIG, config)
+    judge_config = judge_model or config.qa.model
+    judge = get_model(judge_config, config)
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
         name=spec.key,
@@ -292,7 +290,7 @@ async def run_qa_benchmark(
                 rubric=ANSWER_EQUIVALENCE_RUBRIC,
                 include_input=True,
                 include_expected_output=True,
-                model=judge_model,
+                model=judge,
                 assertion={
                     "evaluation_name": "answer_equivalent",
                     "include_reason": True,
@@ -315,7 +313,7 @@ async def run_qa_benchmark(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
-            judge_config=JUDGE_MODEL_CONFIG,
+            judge_config=judge_config,
         )
 
         report = await evaluation_dataset.evaluate(
@@ -364,6 +362,7 @@ async def evaluate_dataset(
     db_path: Path | None,
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
+    judge_model: ModelConfig | None = None,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -384,7 +383,14 @@ async def evaluate_dataset(
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        await run_qa_benchmark(spec, config, limit=limit, name=name, db_path=db_path)
+        await run_qa_benchmark(
+            spec,
+            config,
+            limit=limit,
+            name=name,
+            db_path=db_path,
+            judge_model=judge_model,
+        )
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -453,9 +459,15 @@ def run(
         "--multimodal-only",
         help="Only evaluate queries requiring image understanding.",
     ),
+    judge_model: str | None = typer.Option(
+        None,
+        "--judge-model",
+        help="Judge model as 'provider:name' (e.g. 'ollama:gpt-oss').",
+    ),
 ) -> None:
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
+    judge_model_config = parse_model_option(judge_model) if judge_model else None
 
     asyncio.run(
         evaluate_dataset(
@@ -469,6 +481,7 @@ def run(
             db_path=db,
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
+            judge_model=judge_model_config,
         )
     )
 
@@ -489,6 +502,16 @@ def optimize(
     output: Path | None = typer.Option(
         None, "--output", help="Save optimized prompt to file."
     ),
+    judge_model: str | None = typer.Option(
+        None,
+        "--judge-model",
+        help="Judge model as 'provider:name' (e.g. 'ollama:gpt-oss').",
+    ),
+    reflect_model: str | None = typer.Option(
+        None,
+        "--reflect-model",
+        help="Reflect model as 'provider:name' (e.g. 'anthropic:claude-sonnet-4-20250514').",
+    ),
 ) -> None:
     """Optimize QA system prompt using GEPA evolutionary optimization."""
     from evaluations.optimization import run_optimization
@@ -505,6 +528,9 @@ def optimize(
         for index, doc in enumerate(corpus, start=1)
     ]
 
+    judge_model_config = parse_model_option(judge_model) if judge_model else None
+    reflect_model_config = parse_model_option(reflect_model) if reflect_model else None
+
     run_optimization(
         spec=spec,
         config=app_config,
@@ -512,6 +538,8 @@ def optimize(
         num_candidates=num_candidates,
         db_path=db,
         output=output,
+        judge_model=judge_model_config,
+        reflect_model=reflect_model_config,
     )
 
 

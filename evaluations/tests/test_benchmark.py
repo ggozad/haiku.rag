@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import typer
@@ -8,7 +8,10 @@ from evaluations.benchmark import (
     _load_config,
     _resolve_dataset,
     build_experiment_metadata,
+    evaluate_dataset,
+    run_qa_benchmark,
 )
+from evaluations.config import DatasetSpec
 from haiku.rag.config.models import AppConfig, ModelConfig
 
 
@@ -110,3 +113,83 @@ class TestLoadConfig:
         with patch("evaluations.benchmark.find_config_file", return_value=None):
             config = _load_config(None)
         assert config == AppConfig()
+
+
+class TestRunQaBenchmarkJudgeModel:
+    def _make_spec(self) -> DatasetSpec:
+        return DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],
+            qa_case_builder=lambda idx, doc: None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_uses_custom_judge_model(self, tmp_path: Path) -> None:
+        custom_judge = ModelConfig(provider="openai", name="gpt-4o")
+
+        with (
+            patch("evaluations.benchmark.get_model") as mock_get_model,
+            patch("evaluations.benchmark.HaikuRAG"),
+            patch("evaluations.benchmark.get_qa_agent"),
+        ):
+            mock_get_model.return_value = "fake-model"
+            await run_qa_benchmark(
+                self._make_spec(),
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                judge_model=custom_judge,
+            )
+
+        mock_get_model.assert_called_once_with(custom_judge, AppConfig())
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_judge_model_config(self, tmp_path: Path) -> None:
+        with (
+            patch("evaluations.benchmark.get_model") as mock_get_model,
+            patch("evaluations.benchmark.HaikuRAG"),
+            patch("evaluations.benchmark.get_qa_agent"),
+        ):
+            mock_get_model.return_value = "fake-model"
+            await run_qa_benchmark(
+                self._make_spec(),
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+            )
+
+        mock_get_model.assert_called_once_with(AppConfig().qa.model, AppConfig())
+
+
+class TestEvaluateDatasetJudgeModel:
+    @pytest.mark.asyncio
+    async def test_threads_judge_model_to_qa_benchmark(self) -> None:
+        custom_judge = ModelConfig(
+            provider="anthropic", name="claude-sonnet-4-20250514"
+        )
+
+        with patch(
+            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+        ) as mock_qa:
+            await evaluate_dataset(
+                spec=DatasetSpec(
+                    key="test",
+                    db_filename="test.lancedb",
+                    document_loader=lambda: None,
+                    document_mapper=lambda doc: None,
+                    qa_loader=lambda: [],
+                    qa_case_builder=lambda idx, doc: None,
+                ),
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=True,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+                judge_model=custom_judge,
+            )
+
+        mock_qa.assert_called_once()
+        assert mock_qa.call_args[1]["judge_model"] is custom_judge

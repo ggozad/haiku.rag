@@ -640,3 +640,21 @@ async def test_is_up_to_date(monkeypatch):
     is_current, running, latest = await is_up_to_date()
     assert is_current is True
     assert running >= latest
+
+
+# --- parse_model_option tests ---
+
+
+def test_parse_model_option():
+    from haiku.rag.utils import parse_model_option
+
+    result = parse_model_option("anthropic:claude-sonnet-4-20250514")
+    assert result.provider == "anthropic"
+    assert result.name == "claude-sonnet-4-20250514"
+
+    # Colons in name are preserved
+    assert parse_model_option("openai:gpt-4o:latest").name == "gpt-4o:latest"
+
+    for bad in ["just-a-name", ":model", "provider:"]:
+        with pytest.raises(ValueError, match="Invalid model format"):
+            parse_model_option(bad)
