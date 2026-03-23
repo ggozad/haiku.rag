@@ -92,6 +92,9 @@ The file monitor processes documents using [Docling](https://github.com/DS4SD/do
 - Microsoft PowerPoint (`.pptx`)
 - HTML (`.html`, `.htm`)
 - Markdown (`.md`)
+- Quarto Markdown (`.qmd`)
+- R Markdown (`.rmd`)
+- LaTeX (`.tex`, `.latex`)
 - AsciiDoc (`.adoc`, `.asciidoc`)
 
 **Data formats:**
