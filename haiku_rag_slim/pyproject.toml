@@ -23,7 +23,7 @@ classifiers = [
 
 dependencies = [
     "cachetools>=7.0.2",
-    "docling-core>=2.67.1",
+    "docling-core>=2.70.2",
     "haiku.skills>=0.8.0",
     "httpx>=0.28.1",
     "jsonpatch>=1.33",
@@ -41,7 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling>=2.76.0", "opencv-python-headless>=4.13.0.92"]
+docling = ["docling>=2.81.0", "opencv-python-headless>=4.13.0.92"]
 # Embedding providers
 voyageai = ["pydantic-ai-slim[voyageai]"]
 # Rerankers

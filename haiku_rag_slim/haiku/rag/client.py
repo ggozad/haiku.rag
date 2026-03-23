@@ -1174,7 +1174,14 @@ class HaikuRAG:
         return merged
 
     # Label groups for type-aware expansion
-    _STRUCTURAL_LABELS = {"table", "code", "list_item", "form", "key_value_region"}
+    _STRUCTURAL_LABELS = {
+        "table",
+        "code",
+        "list_item",
+        "form",
+        "key_value_region",
+        "field_region",
+    }
 
     def _extract_item_text(self, item, docling_doc) -> str | None:
         """Extract text content from a DocItem.

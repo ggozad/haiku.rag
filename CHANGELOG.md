@@ -5,10 +5,12 @@
 
 - **Configurable judge and reflect models**: `evaluations run` and `evaluations optimize` accept `--judge-model provider:name`; `optimize` also accepts `--reflect-model provider:name`. Both fall back to `config.qa.model` when not specified.
 - **`parse_model_option`**: Utility in `haiku.rag.utils` for parsing `provider:name` strings into `ModelConfig`
+- **New format extensions**: `.tex`, `.latex`, `.qmd` (Quarto), `.rmd` (R Markdown) supported in both local and serve converters
 
 ### Changed
 
 - **LLMJudge**: Custom evaluator now accepts `ModelConfig` instead of a model name string
+- **Docling upgrade**: docling-core ≥2.70.2 (schema 1.10.0), docling ≥2.81.0. Adds field data model support for structured form/KV content, wide table chunking fixes, and rich table cell hang fix
 
 ## [0.34.1] - 2026-03-16
 
