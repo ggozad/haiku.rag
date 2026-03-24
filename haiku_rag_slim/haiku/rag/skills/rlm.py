@@ -88,21 +88,18 @@ def create_skill(
             document: Optional document ID or title to pre-load for analysis.
             filter: Optional SQL WHERE clause to filter documents.
         """
-        from haiku.rag.client import HaikuRAG
+        from haiku.rag.skills._tools import skill_analyze
 
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            documents = [document] if document else None
-            result = await rag.rlm(question, documents=documents, filter=filter)
-            output = result.answer
-            if result.program:
-                output += f"\n\nProgram:\n{result.program}"
+        output, answer, program = await skill_analyze(
+            db_path, config, question, document=document, filter=filter
+        )
 
         if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RLMState):
             ctx.deps.state.analyses.append(
                 AnalysisEntry(
                     question=question,
-                    answer=result.answer,
-                    program=result.program,
+                    answer=answer,
+                    program=program,
                 )
             )
 

@@ -64,6 +64,12 @@ def state_metadata() -> StateMetadata:
     )
 
 
+def _get_state(ctx: RunContext[SkillRunDeps]) -> RAGState | None:
+    if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
+        return ctx.deps.state
+    return None
+
+
 def create_skill(
     db_path: Path | None = None,
     config: Any = None,
@@ -89,40 +95,6 @@ def create_skill(
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    async def _find_relevant_prior_qa(
-        state: RAGState, query: str
-    ) -> list[QAHistoryEntry]:
-        from haiku.rag.embeddings import get_embedder
-        from haiku.rag.tools.qa import PRIOR_ANSWER_RELEVANCE_THRESHOLD
-        from haiku.rag.utils import cosine_similarity
-
-        if not state.qa_history:
-            return []
-
-        embedder = get_embedder(config)
-        query_embedding = await embedder.embed_query(query)
-
-        to_embed = []
-        to_embed_indices = []
-        for i, qa in enumerate(state.qa_history):
-            if qa.question_embedding is None:
-                to_embed.append(qa.question)
-                to_embed_indices.append(i)
-
-        if to_embed:
-            new_embeddings = await embedder.embed_documents(to_embed)
-            for i, idx in enumerate(to_embed_indices):
-                state.qa_history[idx].question_embedding = new_embeddings[i]
-
-        matches = []
-        for qa in state.qa_history:
-            if qa.question_embedding is not None:
-                similarity = cosine_similarity(query_embedding, qa.question_embedding)
-                if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
-                    matches.append(qa)
-
-        return matches
-
     async def search(
         ctx: RunContext[SkillRunDeps], query: str, limit: int | None = None
     ) -> str:
@@ -134,29 +106,19 @@ def create_skill(
             query: The search query.
             limit: Maximum number of results.
         """
-        from haiku.rag.client import HaikuRAG
+        from haiku.rag.skills._tools import skill_search
 
-        state = (
-            ctx.deps.state
-            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
-            else None
+        state = _get_state(ctx)
+        formatted, results = await skill_search(
+            db_path,
+            config,
+            query,
+            limit=limit,
+            document_filter=state.document_filter if state else None,
         )
-
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            results = await rag.search(
-                query,
-                limit=limit,
-                filter=state.document_filter if state else None,
-            )
-            results = await rag.expand_context(results)
-
         if state:
-            state.searches[query] = list(results)
-
-        return "\n\n---\n\n".join(
-            r.format_for_agent(rank=i + 1, total=len(results))
-            for i, r in enumerate(results)
-        )
+            state.searches[query] = results
+        return formatted
 
     async def list_documents(
         ctx: RunContext[SkillRunDeps],
@@ -169,33 +131,15 @@ def create_skill(
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
         """
-        from haiku.rag.client import HaikuRAG
+        from haiku.rag.skills._tools import (
+            skill_list_documents,
+            update_documents_state,
+        )
 
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            documents = await rag.list_documents(limit, offset)
-            result = [
-                {
-                    "id": doc.id,
-                    "title": doc.title,
-                    "uri": doc.uri,
-                    "metadata": doc.metadata,
-                    "created_at": str(doc.created_at),
-                    "updated_at": str(doc.updated_at),
-                }
-                for doc in documents
-            ]
-
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
-            for doc_dict in result:
-                doc_info = DocumentInfo(
-                    id=str(doc_dict["id"]),
-                    title=doc_dict["title"] or "Untitled",
-                    uri=doc_dict.get("uri") or "",
-                    created=doc_dict.get("created_at", ""),
-                )
-                if not any(d.id == doc_info.id for d in ctx.deps.state.documents):
-                    ctx.deps.state.documents.append(doc_info)
-
+        result = await skill_list_documents(db_path, config, limit, offset)
+        state = _get_state(ctx)
+        if state:
+            update_documents_state(state.documents, result)
         return result
 
     async def get_document(
@@ -206,32 +150,16 @@ def create_skill(
         Args:
             query: Document ID, title, or URI to look up.
         """
-        from haiku.rag.client import HaikuRAG
+        from haiku.rag.skills._tools import (
+            skill_get_document,
+            update_documents_state,
+        )
 
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            document = await rag.resolve_document(query)
-            if document is None:
-                return None
-            result = {
-                "id": document.id,
-                "content": document.content,
-                "title": document.title,
-                "uri": document.uri,
-                "metadata": document.metadata,
-                "created_at": str(document.created_at),
-                "updated_at": str(document.updated_at),
-            }
-
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
-            doc_info = DocumentInfo(
-                id=str(result["id"]),
-                title=result["title"] or "Untitled",
-                uri=result.get("uri") or "",
-                created=result.get("created_at", ""),
-            )
-            if not any(d.id == doc_info.id for d in ctx.deps.state.documents):
-                ctx.deps.state.documents.append(doc_info)
-
+        result = await skill_get_document(db_path, config, query)
+        if result is not None:
+            state = _get_state(ctx)
+            if state:
+                update_documents_state(state.documents, [result])
         return result
 
     async def ask(ctx: RunContext[SkillRunDeps], question: str) -> str:
@@ -240,45 +168,25 @@ def create_skill(
         Args:
             question: The question to ask.
         """
-        from haiku.rag.client import HaikuRAG
+        from haiku.rag.skills._tools import skill_ask
         from haiku.rag.utils import format_citations
 
-        state = (
-            ctx.deps.state
-            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
-            else None
+        state = _get_state(ctx)
+        answer, citations = await skill_ask(
+            db_path,
+            config,
+            question,
+            qa_history=state.qa_history if state else None,
+            document_filter=state.document_filter if state else None,
         )
 
-        ask_question = question
         if state:
-            matches = await _find_relevant_prior_qa(state, question)
-            if matches:
-                prior_parts = []
-                for qa in matches:
-                    part = f"Q: {qa.question}\nA: {qa.answer}"
-                    if qa.citations:
-                        part += "\n" + format_citations(qa.citations)
-                    prior_parts.append(part)
-                ask_question = (
-                    "Context from prior questions in this session:\n\n"
-                    + "\n\n---\n\n".join(prior_parts)
-                    + "\n\n---\n\nCurrent question: "
-                    + question
-                )
-
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            answer, citations = await rag.ask(
-                ask_question,
-                filter=state.document_filter if state else None,
-            )
-
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState):
-            next_index = len(ctx.deps.state.citations) + 1
+            next_index = len(state.citations) + 1
             for citation in citations:
                 citation.index = next_index
                 next_index += 1
-            ctx.deps.state.citations.extend(citations)
-            ctx.deps.state.qa_history.append(
+            state.citations.extend(citations)
+            state.qa_history.append(
                 QAHistoryEntry(question=question, answer=answer, citations=citations)
             )
 
@@ -297,54 +205,29 @@ def create_skill(
         Args:
             question: The research question to investigate.
         """
-        from haiku.rag.client import HaikuRAG
+        from haiku.rag.skills._tools import skill_research
 
-        state = (
-            ctx.deps.state
-            if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RAGState)
-            else None
+        state = _get_state(ctx)
+        formatted, title, executive_summary = await skill_research(
+            db_path,
+            config,
+            question,
+            document_filter=state.document_filter if state else None,
         )
-
-        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            report = await rag.research(
-                question, filter=state.document_filter if state else None
-            )
 
         if state:
             state.reports.append(
                 ResearchEntry(
                     question=question,
-                    title=report.title,
-                    executive_summary=report.executive_summary,
+                    title=title,
+                    executive_summary=executive_summary,
                 )
             )
             state.qa_history.append(
-                QAHistoryEntry(question=question, answer=report.executive_summary)
+                QAHistoryEntry(question=question, answer=executive_summary)
             )
 
-        parts = [
-            f"# {report.title}",
-            f"\n## Executive Summary\n{report.executive_summary}",
-        ]
-        if report.main_findings:
-            parts.append("\n## Main Findings")
-            for finding in report.main_findings:
-                parts.append(f"- {finding}")
-        if report.conclusions:
-            parts.append("\n## Conclusions")
-            for conclusion in report.conclusions:
-                parts.append(f"- {conclusion}")
-        if report.limitations:
-            parts.append("\n## Limitations")
-            for limitation in report.limitations:
-                parts.append(f"- {limitation}")
-        if report.recommendations:
-            parts.append("\n## Recommendations")
-            for rec in report.recommendations:
-                parts.append(f"- {rec}")
-        parts.append(f"\n## Sources\n{report.sources_summary}")
-
-        return "\n".join(parts)
+        return formatted
 
     return Skill(
         metadata=skill_metadata(),
