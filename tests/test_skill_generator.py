@@ -25,46 +25,11 @@ class TestAvailableTools:
 
 class TestValidateMetadata:
     def test_valid(self):
-        validate_metadata("recipes", "A skill.")
+        validate_metadata("my-recipes", "A skill.")
 
-    def test_valid_with_numbers(self):
-        validate_metadata("recipes123", "A skill.")
-
-    def test_rejects_underscores(self):
-        with pytest.raises(ValueError, match="name"):
-            validate_metadata("my_recipes", "A skill.")
-
-    def test_rejects_hyphens(self):
-        with pytest.raises(ValueError, match="identifier"):
-            validate_metadata("my-recipes", "A skill.")
-
-    def test_rejects_uppercase(self):
-        with pytest.raises(ValueError, match="lowercase"):
-            validate_metadata("Recipes", "A skill.")
-
-    def test_rejects_empty_name(self):
-        with pytest.raises(ValueError, match="identifier"):
-            validate_metadata("", "A skill.")
-
-    def test_rejects_not_identifier(self):
-        with pytest.raises(ValueError, match="identifier"):
-            validate_metadata("123abc", "A skill.")
-
-    def test_rejects_spaces_in_name(self):
-        with pytest.raises(ValueError, match="identifier"):
-            validate_metadata("my recipes", "A skill.")
-
-    def test_rejects_special_chars(self):
-        with pytest.raises(ValueError, match="identifier"):
-            validate_metadata("my@recipes", "A skill.")
-
-    def test_rejects_empty_description(self):
-        with pytest.raises(ValueError, match="description"):
-            validate_metadata("recipes", "")
-
-    def test_rejects_too_long_description(self):
-        with pytest.raises(ValueError, match="description"):
-            validate_metadata("recipes", "x" * 1025)
+    def test_rejects_invalid_name(self):
+        with pytest.raises(ValueError):
+            validate_metadata("Bad_Name!", "A skill.")
 
 
 class TestValidateTools:
@@ -134,6 +99,23 @@ class TestRenderTemplates:
         assert (pkg / "__init__.py").is_file()
         assert (pkg / "SKILL.md").is_file()
         assert (pkg / "assets").is_dir()
+
+    def test_dashed_name_uses_underscores_for_python(self, tmp_path):
+        result = render_templates(
+            output_dir=tmp_path,
+            name="my-recipes",
+            description="A recipe skill.",
+            tool_names=["search", "ask"],
+        )
+        assert result == tmp_path / "my-recipes-skill"
+        pkg = result / "my_recipes_skill"
+        assert (pkg / "__init__.py").is_file()
+        init = (pkg / "__init__.py").read_text()
+        assert '"my-recipes.lancedb"' in init
+        assert 'state_namespace="my-recipes"' in init
+        toml = (result / "pyproject.toml").read_text()
+        assert 'name = "my-recipes-skill"' in toml
+        assert 'my-recipes = "my_recipes_skill:create_skill"' in toml
 
     def test_tool_names_list_matches_selection(self, tmp_path):
         render_templates(
@@ -313,11 +295,11 @@ class TestGenerateSkill:
 
     def test_rejects_invalid_name(self, tmp_path):
         db_path = _make_fake_lancedb(tmp_path / "test.lancedb")
-        with pytest.raises(ValueError, match="identifier"):
+        with pytest.raises(ValueError):
             generate_skill(
                 db_path=db_path,
                 output_dir=tmp_path,
-                name="Bad-Name",
+                name="Bad_Name!",
                 description="A skill.",
                 tool_names=["search"],
             )

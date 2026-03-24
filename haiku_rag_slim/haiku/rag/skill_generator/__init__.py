@@ -36,9 +36,6 @@ def _get_env() -> Environment:
 
 
 def validate_metadata(name: str, description: str) -> None:
-    if not name.isidentifier():
-        raise ValueError(f"{name!r} is not a valid Python identifier")
-
     from haiku.skills import SkillMetadata
 
     SkillMetadata(name=name, description=description)
@@ -80,16 +77,18 @@ def render_templates(
     if preamble is None:
         preamble = DEFAULT_PREAMBLE
 
+    pkg_name = name.replace("-", "_")
     env = _get_env()
     context = {
         "name": name,
+        "pkg_name": pkg_name,
         "description": description,
         "tool_names": tool_names,
         "preamble": preamble,
     }
 
     result_dir = output_dir / f"{name}-skill"
-    pkg_dir = result_dir / f"{name}_skill"
+    pkg_dir = result_dir / f"{pkg_name}_skill"
     assets_dir = pkg_dir / "assets"
     assets_dir.mkdir(parents=True)
 
@@ -130,7 +129,8 @@ def generate_skill(
         preamble=preamble,
     )
 
-    assets_dir = result / f"{name}_skill" / "assets"
+    pkg_name = name.replace("-", "_")
+    assets_dir = result / f"{pkg_name}_skill" / "assets"
     shutil.copytree(db_path, assets_dir / f"{name}.lancedb")
 
     if config_path is not None:
