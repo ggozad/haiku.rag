@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.35.1] - 2026-03-24
+
 ### Added
 
 - **`create-skill` CLI command**: Generate standalone skill packages with embedded LanceDB databases. Generated packages register as `haiku.skills` entry points.
@@ -1254,7 +1256,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.35.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.35.1...HEAD
+[0.35.1]: https://github.com/ggozad/haiku.rag/compare/0.35.0...0.35.1
 [0.35.0]: https://github.com/ggozad/haiku.rag/compare/0.34.1...0.35.0
 [0.34.1]: https://github.com/ggozad/haiku.rag/compare/0.34.0...0.34.1
 [0.34.0]: https://github.com/ggozad/haiku.rag/compare/0.33.3...0.34.0
