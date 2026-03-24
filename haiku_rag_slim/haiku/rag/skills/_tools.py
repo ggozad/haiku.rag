@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from pydantic_ai import RunContext
 
 from haiku.rag.agents.research.models import Citation
+from haiku.rag.config.models import AppConfig
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.tools.qa import QAHistoryEntry
 from haiku.skills.state import SkillRunDeps
@@ -25,7 +26,7 @@ class AnalysisEntry(BaseModel):
 async def find_relevant_prior_qa(
     qa_history: list[QAHistoryEntry],
     query: str,
-    config: Any,
+    config: AppConfig,
 ) -> list[QAHistoryEntry]:
     from haiku.rag.embeddings import get_embedder
     from haiku.rag.tools.qa import PRIOR_ANSWER_RELEVANCE_THRESHOLD
@@ -61,7 +62,7 @@ async def find_relevant_prior_qa(
 
 async def skill_search(
     db_path: Path,
-    config: Any,
+    config: AppConfig,
     query: str,
     limit: int | None = None,
     document_filter: str | None = None,
@@ -85,7 +86,7 @@ async def skill_search(
 
 async def skill_list_documents(
     db_path: Path,
-    config: Any,
+    config: AppConfig,
     limit: int | None = None,
     offset: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -108,7 +109,7 @@ async def skill_list_documents(
 
 async def skill_get_document(
     db_path: Path,
-    config: Any,
+    config: AppConfig,
     query: str,
 ) -> dict[str, Any] | None:
     from haiku.rag.client import HaikuRAG
@@ -130,7 +131,7 @@ async def skill_get_document(
 
 async def skill_ask(
     db_path: Path,
-    config: Any,
+    config: AppConfig,
     question: str,
     qa_history: list[QAHistoryEntry] | None = None,
     document_filter: str | None = None,
@@ -166,7 +167,7 @@ async def skill_ask(
 
 async def skill_research(
     db_path: Path,
-    config: Any,
+    config: AppConfig,
     question: str,
     document_filter: str | None = None,
 ) -> tuple[str, str, str]:
@@ -203,7 +204,7 @@ async def skill_research(
 
 async def skill_analyze(
     db_path: Path,
-    config: Any,
+    config: AppConfig,
     question: str,
     document: str | None = None,
     filter: str | None = None,
@@ -235,7 +236,7 @@ def update_documents_state(
             documents_state.append(doc_info)
 
 
-def _get_state(ctx: RunContext[SkillRunDeps], state_type: type) -> Any:
+def _get_state(ctx: RunContext[SkillRunDeps], state_type: type[BaseModel]) -> Any:
     if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, state_type):
         return ctx.deps.state
     return None
@@ -243,8 +244,8 @@ def _get_state(ctx: RunContext[SkillRunDeps], state_type: type) -> Any:
 
 def create_skill_tools(
     db_path: Path,
-    config: Any,
-    state_type: type,
+    config: AppConfig,
+    state_type: type[BaseModel],
     tool_names: list[str],
 ) -> dict[str, Any]:
     """Create tool closures for a skill.

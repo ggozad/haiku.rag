@@ -43,7 +43,7 @@ class TestValidateMetadata:
             validate_metadata("Recipes", "A skill.")
 
     def test_rejects_empty_name(self):
-        with pytest.raises(ValueError, match="name"):
+        with pytest.raises(ValueError, match="identifier"):
             validate_metadata("", "A skill.")
 
     def test_rejects_not_identifier(self):
@@ -51,11 +51,11 @@ class TestValidateMetadata:
             validate_metadata("123abc", "A skill.")
 
     def test_rejects_spaces_in_name(self):
-        with pytest.raises(ValueError, match="name"):
+        with pytest.raises(ValueError, match="identifier"):
             validate_metadata("my recipes", "A skill.")
 
     def test_rejects_special_chars(self):
-        with pytest.raises(ValueError, match="name"):
+        with pytest.raises(ValueError, match="identifier"):
             validate_metadata("my@recipes", "A skill.")
 
     def test_rejects_empty_description(self):
@@ -313,7 +313,7 @@ class TestGenerateSkill:
 
     def test_rejects_invalid_name(self, tmp_path):
         db_path = _make_fake_lancedb(tmp_path / "test.lancedb")
-        with pytest.raises(ValueError, match="name"):
+        with pytest.raises(ValueError, match="identifier"):
             generate_skill(
                 db_path=db_path,
                 output_dir=tmp_path,

@@ -36,13 +36,12 @@ def _get_env() -> Environment:
 
 
 def validate_metadata(name: str, description: str) -> None:
+    if not name.isidentifier():
+        raise ValueError(f"{name!r} is not a valid Python identifier")
+
     from haiku.skills import SkillMetadata
 
     SkillMetadata(name=name, description=description)
-    if not name.isidentifier():
-        raise ValueError(f"{name!r} is not a valid Python identifier")
-    if not name.islower():
-        raise ValueError(f"{name!r} must be lowercase")
 
 
 def validate_tools(tools: list[str]) -> None:
