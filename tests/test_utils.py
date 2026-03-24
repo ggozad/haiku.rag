@@ -150,15 +150,15 @@ def test_structured_output_type_native():
     assert result.outputs is str
 
 
-def test_structured_output_type_tool_fallback():
-    from pydantic_ai.output import ToolOutput
+def test_structured_output_type_ollama_native():
+    from pydantic_ai.output import NativeOutput
 
     from haiku.rag.utils import structured_output_type
 
     model = get_model(ModelConfig(provider="ollama", name="qwen3"))
     result = structured_output_type(str, model)
-    assert isinstance(result, ToolOutput)
-    assert result.output is str
+    assert isinstance(result, NativeOutput)
+    assert result.outputs is str
 
 
 def test_structured_output_type_string_model():
