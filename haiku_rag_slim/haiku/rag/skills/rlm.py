@@ -4,17 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai import RunContext
 
+from haiku.rag.skills._tools import AnalysisEntry
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
-from haiku.skills.state import SkillRunDeps
-
-
-class AnalysisEntry(BaseModel):
-    question: str
-    answer: str
-    program: str | None = None
 
 
 class RLMState(BaseModel):
@@ -61,6 +54,7 @@ def create_skill(
         config: haiku.rag AppConfig instance. If None, uses get_config().
     """
     from haiku.rag.config import get_config
+    from haiku.rag.skills._tools import create_skill_tools
 
     if config is None:
         config = get_config()
@@ -72,45 +66,14 @@ def create_skill(
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    async def analyze(
-        ctx: RunContext[SkillRunDeps],
-        question: str,
-        document: str | None = None,
-        filter: str | None = None,
-    ) -> str:
-        """Answer complex analytical questions using code execution.
-
-        Use this for questions requiring computation, aggregation, or
-        data traversal across documents.
-
-        Args:
-            question: The question to answer.
-            document: Optional document ID or title to pre-load for analysis.
-            filter: Optional SQL WHERE clause to filter documents.
-        """
-        from haiku.rag.skills._tools import skill_analyze
-
-        output, answer, program = await skill_analyze(
-            db_path, config, question, document=document, filter=filter
-        )
-
-        if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, RLMState):
-            ctx.deps.state.analyses.append(
-                AnalysisEntry(
-                    question=question,
-                    answer=answer,
-                    program=program,
-                )
-            )
-
-        return output
+    tools = create_skill_tools(db_path, config, RLMState, ["analyze"])
 
     return Skill(
         metadata=skill_metadata(),
         source=SkillSource.ENTRYPOINT,
         path=_skill_path,
         instructions=instructions(),
-        tools=[analyze],
+        tools=list(tools.values()),
         state_type=STATE_TYPE,
         state_namespace=STATE_NAMESPACE,
     )

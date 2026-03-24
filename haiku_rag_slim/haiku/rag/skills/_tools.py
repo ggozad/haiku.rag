@@ -1,9 +1,25 @@
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+from pydantic_ai import RunContext
+
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.tools.qa import QAHistoryEntry
+from haiku.skills.state import SkillRunDeps
+
+
+class ResearchEntry(BaseModel):
+    question: str
+    title: str
+    executive_summary: str
+
+
+class AnalysisEntry(BaseModel):
+    question: str
+    answer: str
+    program: str | None = None
 
 
 async def find_relevant_prior_qa(
@@ -217,3 +233,203 @@ def update_documents_state(
         )
         if not any(d.id == doc_info.id for d in documents_state):
             documents_state.append(doc_info)
+
+
+def _get_state(ctx: RunContext[SkillRunDeps], state_type: type) -> Any:
+    if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, state_type):
+        return ctx.deps.state
+    return None
+
+
+def create_skill_tools(
+    db_path: Path,
+    config: Any,
+    state_type: type,
+    tool_names: list[str],
+) -> dict[str, Any]:
+    """Create tool closures for a skill.
+
+    Returns a dict mapping tool name to async callable.
+    Each tool extracts state from RunContext, calls the shared implementation,
+    and updates state.
+    """
+    tools: dict[str, Any] = {}
+
+    if "search" in tool_names:
+
+        async def search(
+            ctx: RunContext[SkillRunDeps], query: str, limit: int | None = None
+        ) -> str:
+            """Search the knowledge base using hybrid search (vector + full-text).
+
+            Returns ranked results with content and metadata.
+
+            Args:
+                query: The search query.
+                limit: Maximum number of results.
+            """
+            state = _get_state(ctx, state_type)
+            formatted, results = await skill_search(
+                db_path,
+                config,
+                query,
+                limit=limit,
+                document_filter=state.document_filter if state else None,
+            )
+            if state:
+                state.searches[query] = results
+            return formatted
+
+        tools["search"] = search
+
+    if "list_documents" in tool_names:
+
+        async def list_documents(
+            ctx: RunContext[SkillRunDeps],
+            limit: int | None = None,
+            offset: int | None = None,
+        ) -> list[dict[str, Any]]:
+            """List documents in the knowledge base with optional pagination.
+
+            Args:
+                limit: Maximum number of documents to return.
+                offset: Number of documents to skip.
+            """
+            result = await skill_list_documents(db_path, config, limit, offset)
+            state = _get_state(ctx, state_type)
+            if state:
+                update_documents_state(state.documents, result)
+            return result
+
+        tools["list_documents"] = list_documents
+
+    if "get_document" in tool_names:
+
+        async def get_document(
+            ctx: RunContext[SkillRunDeps], query: str
+        ) -> dict[str, Any] | None:
+            """Retrieve a document by ID, title, or URI.
+
+            Args:
+                query: Document ID, title, or URI to look up.
+            """
+            result = await skill_get_document(db_path, config, query)
+            if result is not None:
+                state = _get_state(ctx, state_type)
+                if state:
+                    update_documents_state(state.documents, [result])
+            return result
+
+        tools["get_document"] = get_document
+
+    if "ask" in tool_names:
+
+        async def ask(ctx: RunContext[SkillRunDeps], question: str) -> str:
+            """Ask a question and get an answer with citations from the knowledge base.
+
+            Args:
+                question: The question to ask.
+            """
+            from haiku.rag.utils import format_citations
+
+            state = _get_state(ctx, state_type)
+            answer, citations = await skill_ask(
+                db_path,
+                config,
+                question,
+                qa_history=state.qa_history if state else None,
+                document_filter=state.document_filter if state else None,
+            )
+
+            if state:
+                next_index = len(state.citations) + 1
+                for citation in citations:
+                    citation.index = next_index
+                    next_index += 1
+                state.citations.extend(citations)
+                state.qa_history.append(
+                    QAHistoryEntry(
+                        question=question, answer=answer, citations=citations
+                    )
+                )
+
+            if citations:
+                answer += "\n\n" + format_citations(citations)
+
+            return answer
+
+        tools["ask"] = ask
+
+    if "research" in tool_names:
+
+        async def research(ctx: RunContext[SkillRunDeps], question: str) -> str:
+            """Conduct deep multi-agent research on a question.
+
+            Iteratively searches, analyzes, and synthesizes information from the
+            knowledge base to produce a comprehensive research report.
+            Only use when the user explicitly requests deep research.
+
+            Args:
+                question: The research question to investigate.
+            """
+            state = _get_state(ctx, state_type)
+            formatted, title, executive_summary = await skill_research(
+                db_path,
+                config,
+                question,
+                document_filter=state.document_filter if state else None,
+            )
+
+            if state:
+                state.reports.append(
+                    ResearchEntry(
+                        question=question,
+                        title=title,
+                        executive_summary=executive_summary,
+                    )
+                )
+                state.qa_history.append(
+                    QAHistoryEntry(question=question, answer=executive_summary)
+                )
+
+            return formatted
+
+        tools["research"] = research
+
+    if "analyze" in tool_names:
+
+        async def analyze(
+            ctx: RunContext[SkillRunDeps],
+            question: str,
+            document: str | None = None,
+            filter: str | None = None,
+        ) -> str:
+            """Answer complex analytical questions using code execution.
+
+            Use this for questions requiring computation, aggregation, or
+            data traversal across documents.
+
+            Args:
+                question: The question to answer.
+                document: Optional document ID or title to pre-load for analysis.
+                filter: Optional SQL WHERE clause to filter documents.
+            """
+            output, answer, program = await skill_analyze(
+                db_path, config, question, document=document, filter=filter
+            )
+
+            state = _get_state(ctx, state_type)
+            if state:
+                state.analyses.append(
+                    AnalysisEntry(
+                        question=question,
+                        answer=answer,
+                        program=program,
+                    )
+                )
+
+            return output
+
+        tools["analyze"] = analyze
+
+    return tools

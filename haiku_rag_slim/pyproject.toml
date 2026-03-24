@@ -26,6 +26,7 @@ dependencies = [
     "docling-core>=2.70.2",
     "haiku.skills>=0.10.0",
     "httpx>=0.28.1",
+    "jinja2>=3.1.0",
     "jsonpatch>=1.33",
     "lancedb==0.29.2",
     "pathspec>=1.0.4",

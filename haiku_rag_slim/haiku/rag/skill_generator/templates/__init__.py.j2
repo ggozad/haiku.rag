@@ -1,0 +1,77 @@
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from haiku.skills.models import Skill
+from haiku.skills.parser import parse_skill_md
+{% if "ask" in tool_names or "research" in tool_names %}
+from haiku.rag.agents.research.models import Citation
+{% endif %}
+{% if "search" in tool_names or "list_documents" in tool_names or "get_document" in tool_names %}
+from haiku.rag.tools.document import DocumentInfo
+{% endif %}
+{% if "ask" in tool_names %}
+from haiku.rag.tools.qa import QAHistoryEntry
+{% endif %}
+{% if "search" in tool_names %}
+from haiku.rag.store.models.chunk import SearchResult
+{% endif %}
+{% if "research" in tool_names %}
+from haiku.rag.skills._tools import ResearchEntry
+{% endif %}
+{% if "analyze" in tool_names %}
+from haiku.rag.skills._tools import AnalysisEntry
+{% endif %}
+
+_TOOL_NAMES = {{ tool_names | tojson }}
+
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+_DB_PATH = _ASSETS_DIR / "{{ name }}.lancedb"
+_CONFIG_PATH = _ASSETS_DIR / "haiku.rag.yaml"
+
+
+class SkillState(BaseModel):
+{% if "ask" in tool_names or "research" in tool_names %}
+    citations: list[Citation] = Field(default_factory=list)
+{% endif %}
+{% if "ask" in tool_names %}
+    qa_history: list[QAHistoryEntry] = Field(default_factory=list)
+{% endif %}
+    document_filter: str | None = None
+{% if "search" in tool_names %}
+    searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
+{% endif %}
+{% if "search" in tool_names or "list_documents" in tool_names or "get_document" in tool_names %}
+    documents: list[DocumentInfo] = Field(default_factory=list)
+{% endif %}
+{% if "research" in tool_names %}
+    reports: list[ResearchEntry] = Field(default_factory=list)
+{% endif %}
+{% if "analyze" in tool_names %}
+    analyses: list[AnalysisEntry] = Field(default_factory=list)
+{% endif %}
+
+
+def _get_config():
+    if _CONFIG_PATH.exists():
+        from haiku.rag.config import AppConfig, load_yaml_config
+
+        return AppConfig.model_validate(load_yaml_config(_CONFIG_PATH))
+    from haiku.rag.config import get_config
+
+    return get_config()
+
+
+def create_skill() -> Skill:
+    from haiku.rag.skills._tools import create_skill_tools
+
+    metadata, instructions = parse_skill_md(Path(__file__).parent / "SKILL.md")
+    config = _get_config()
+    tools = create_skill_tools(_DB_PATH, config, SkillState, _TOOL_NAMES)
+    return Skill(
+        metadata=metadata,
+        instructions=instructions,
+        tools=list(tools.values()),
+        state_type=SkillState,
+        state_namespace="{{ name }}",
+    )
