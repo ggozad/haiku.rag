@@ -13,7 +13,7 @@ from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.search import create_search_toolset
-from haiku.rag.utils import get_model, structured_output_type
+from haiku.rag.utils import get_model
 
 
 @dataclass
@@ -66,7 +66,7 @@ class QuestionAnswerAgent:
         agent: Agent[_QARunDeps, RawSearchAnswer] = Agent(  # ty: ignore[invalid-assignment]
             model=model,
             deps_type=_QARunDeps,
-            output_type=structured_output_type(RawSearchAnswer, model),
+            output_type=RawSearchAnswer,
             instructions=system_prompt,
             toolsets=[search_toolset],
             retries=3,
