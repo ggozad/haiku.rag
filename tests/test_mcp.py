@@ -45,19 +45,17 @@ async def mcp_db(temp_db_path):
     return temp_db_path
 
 
-def _get_tool(mcp, name):
+async def _get_tool(mcp, name):
     """Get a tool function from an MCP server by name."""
-    for tool in mcp._tool_manager._tools.values():
-        if tool.fn.__name__ == name:
-            return tool.fn
-    raise ValueError(f"Tool {name!r} not found in MCP server")
+    tool = await mcp.get_tool(name)
+    return tool.fn
 
 
 class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_search_documents(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        search = _get_tool(mcp, "search_documents")
+        search = await _get_tool(mcp, "search_documents")
 
         results = await search(query="artificial intelligence")
         assert len(results) > 0
@@ -66,7 +64,7 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_search_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        search = _get_tool(mcp, "search_documents")
+        search = await _get_tool(mcp, "search_documents")
 
         results = await search(query="artificial intelligence", limit=1)
         assert len(results) == 1
@@ -74,10 +72,10 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_get_document(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        get_doc = _get_tool(mcp, "get_document")
+        get_doc = await _get_tool(mcp, "get_document")
 
         # First get the ID via list
-        list_docs = _get_tool(mcp, "list_documents")
+        list_docs = await _get_tool(mcp, "list_documents")
         docs = await list_docs()
         doc_id = docs[0].id
 
@@ -89,9 +87,9 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_get_document_excludes_docling_fields(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        get_doc = _get_tool(mcp, "get_document")
+        get_doc = await _get_tool(mcp, "get_document")
 
-        list_docs = _get_tool(mcp, "list_documents")
+        list_docs = await _get_tool(mcp, "list_documents")
         docs = await list_docs()
         doc_id = docs[0].id
 
@@ -103,7 +101,7 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_get_document_not_found(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        get_doc = _get_tool(mcp, "get_document")
+        get_doc = await _get_tool(mcp, "get_document")
 
         result = await get_doc(document_id="nonexistent-id")
         assert result is None
@@ -111,7 +109,7 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_list_documents(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        list_docs = _get_tool(mcp, "list_documents")
+        list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs()
         assert len(results) == 2
@@ -120,7 +118,7 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_list_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        list_docs = _get_tool(mcp, "list_documents")
+        list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs(limit=1)
         assert len(results) == 1
@@ -128,7 +126,7 @@ class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_list_documents_with_filter(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=True)
-        list_docs = _get_tool(mcp, "list_documents")
+        list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs(filter="title = 'AI Overview'")
         assert len(results) == 1
@@ -163,12 +161,12 @@ class TestMCPWriteTools:
         async with HaikuRAG(temp_db_path, create=True):
             pass
         mcp = create_mcp_server(temp_db_path, read_only=False)
-        add_text = _get_tool(mcp, "add_document_from_text")
+        add_text = await _get_tool(mcp, "add_document_from_text")
 
         doc_id = await add_text(content="Test content for MCP", title="MCP Test Doc")
         assert doc_id is not None
 
-        get_doc = _get_tool(mcp, "get_document")
+        get_doc = await _get_tool(mcp, "get_document")
         doc = await get_doc(document_id=doc_id)
         assert doc.title == "MCP Test Doc"
         assert doc.content == "Test content for MCP"
@@ -176,8 +174,8 @@ class TestMCPWriteTools:
     @pytest.mark.asyncio
     async def test_delete_document(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=False)
-        list_docs = _get_tool(mcp, "list_documents")
-        delete_doc = _get_tool(mcp, "delete_document")
+        list_docs = await _get_tool(mcp, "list_documents")
+        delete_doc = await _get_tool(mcp, "delete_document")
 
         docs = await list_docs()
         assert len(docs) == 2
@@ -191,7 +189,7 @@ class TestMCPWriteTools:
     @pytest.mark.asyncio
     async def test_delete_document_not_found(self, mcp_db):
         mcp = create_mcp_server(mcp_db, read_only=False)
-        delete_doc = _get_tool(mcp, "delete_document")
+        delete_doc = await _get_tool(mcp, "delete_document")
 
         result = await delete_doc(document_id="nonexistent-id")
         assert result is False

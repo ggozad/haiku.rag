@@ -19,7 +19,7 @@ from haiku.rag.agents.research.prompts import (
 from haiku.rag.agents.research.state import ResearchDeps, ResearchState
 from haiku.rag.config import Config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.utils import build_prompt, get_model, structured_output_type
+from haiku.rag.utils import build_prompt, get_model
 
 
 def format_context_for_prompt(context: ResearchContext) -> str:
@@ -68,7 +68,7 @@ async def _iterative_plan_logic(
     model = get_model(model_config, config)
     plan_agent: Agent[ResearchDependencies, IterativePlanResult] = Agent(  # type: ignore[assignment]
         model=model,
-        output_type=structured_output_type(IterativePlanResult, model),
+        output_type=IterativePlanResult,
         instructions=effective_prompt,
         retries=3,
         deps_type=ResearchDependencies,
@@ -118,7 +118,7 @@ async def _search_one_step_logic(
         model = get_model(model_config, config)
         agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(  # type: ignore[assignment]
             model=model,
-            output_type=structured_output_type(RawSearchAnswer, model),
+            output_type=RawSearchAnswer,
             instructions=search_prompt,
             retries=3,
             deps_type=ResearchDependencies,
@@ -220,7 +220,7 @@ def build_research_graph(
         model = get_model(model_config, config)
         agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
             model=model,
-            output_type=structured_output_type(ResearchReport, model),
+            output_type=ResearchReport,
             instructions=synthesis_prompt,
             retries=3,
             deps_type=ResearchDependencies,

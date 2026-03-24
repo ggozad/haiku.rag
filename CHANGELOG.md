@@ -11,6 +11,7 @@
 
 - **LLMJudge**: Custom evaluator now accepts `ModelConfig` instead of a model name string
 - **Docling upgrade**: docling-core ≥2.70.2 (schema 1.10.0), docling ≥2.81.0. Adds field data model support for structured form/KV content, wide table chunking fixes, and rich table cell hang fix
+- **pydantic-ai ≥1.70.0**: Bumped minimum version. Removed `structured_output_type` helper — all supported providers now handle native structured output, so agents pass result types directly
 
 ## [0.34.1] - 2026-03-16
 

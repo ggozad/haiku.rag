@@ -4,7 +4,7 @@ from haiku.rag.agents.rlm.dependencies import RLMDeps
 from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
 from haiku.rag.agents.rlm.prompts import RLM_SYSTEM_PROMPT
 from haiku.rag.config.models import AppConfig
-from haiku.rag.utils import get_model, structured_output_type
+from haiku.rag.utils import get_model
 
 
 def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
@@ -25,7 +25,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
     agent: Agent[RLMDeps, RLMResult] = Agent(  # type: ignore[invalid-assignment]
         model,
         deps_type=RLMDeps,
-        output_type=structured_output_type(RLMResult, model),
+        output_type=RLMResult,
         instructions=RLM_SYSTEM_PROMPT,
         retries=3,
     )

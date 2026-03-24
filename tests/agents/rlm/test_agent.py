@@ -15,24 +15,11 @@ def vcr_cassette_dir():
 
 
 class TestCreateRLMAgent:
-    def test_creates_agent_native_output_when_supported(self):
-        from pydantic_ai.output import NativeOutput
-
+    def test_creates_agent(self):
         agent = create_rlm_agent(Config)
         assert isinstance(agent, Agent)
         assert agent.deps_type is RLMDeps
-        assert isinstance(agent.output_type, NativeOutput)
-        assert agent.output_type.outputs is RLMResult
-
-    def test_creates_agent_tool_output_when_not_supported(self):
-        from pydantic_ai.output import ToolOutput
-
-        config = AppConfig()
-        config.rlm.model.name = "qwen3"
-        agent = create_rlm_agent(config)
-        assert isinstance(agent, Agent)
-        assert isinstance(agent.output_type, ToolOutput)
-        assert agent.output_type.output is RLMResult
+        assert agent.output_type is RLMResult
 
     def test_agent_has_execute_code_tool(self):
         agent = create_rlm_agent(Config)
