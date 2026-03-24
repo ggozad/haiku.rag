@@ -247,6 +247,64 @@ Flags:
 
 See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
 
+## Create Skill
+
+Generate a standalone skill package with an embedded database:
+
+```bash
+haiku-rag create-skill --name myskill --db /path/to/database.lancedb
+```
+
+The generated package is a pip-installable Python package that registers as a `haiku.skills` entry point.
+
+### Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--name` | Skill name (lowercase Python identifier, required) | — |
+| `--db` | Path to LanceDB database to embed (required) | — |
+| `--description` | Skill description | Standard RAG description |
+| `--tools` | Comma-separated tool names, or `all` | `all` |
+| `--preamble` | Custom preamble for skill instructions | Standard RAG preamble |
+| `--config-file` | Path to `haiku.rag.yaml` to embed | None |
+| `--output` / `-o` | Output directory | Current directory |
+
+### Available Tools
+
+`analyze`, `ask`, `get_document`, `list_documents`, `research`, `search`
+
+### Example
+
+```bash
+# Generate a skill with specific tools and custom preamble
+haiku-rag create-skill \
+  --name medic \
+  --db /path/to/medic.lancedb \
+  --tools search,ask \
+  --config-file /path/to/haiku.rag.yaml \
+  --description "Military medic knowledge base" \
+  --preamble "You are a military medic expert."
+
+# Install the generated package
+uv pip install -e ./medic-skill
+
+# Use with haiku-skills
+haiku-skills chat --use-entrypoints --skill medic
+```
+
+### Generated Package Structure
+
+```
+{name}-skill/
+├── pyproject.toml
+└── {name}_skill/
+    ├── __init__.py    # create_skill() entry point
+    ├── SKILL.md       # Skill metadata and instructions
+    └── assets/
+        ├── {name}.lancedb/   # Embedded database
+        └── haiku.rag.yaml    # Optional config
+```
+
 ## Server
 
 Start services (requires at least one flag):

@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **`create-skill` CLI command**: Generate standalone skill packages with embedded LanceDB databases. Supports tool selection, custom preamble/description, and optional config embedding. Generated packages register as `haiku.skills` entry points.
+- **`haiku.rag.skill_generator`**: Programmatic API for skill generation (`generate_skill()`, `render_templates()`)
+- **`haiku.rag.skills._tools`**: Reusable tool implementations and `create_skill_tools()` factory shared by built-in and generated skills
+- **Jinja2 dependency**: Added for skill template rendering
+
 ## [0.35.0] - 2026-03-24
 
 ### Added
