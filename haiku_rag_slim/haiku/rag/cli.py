@@ -716,5 +716,78 @@ def serve(
     )
 
 
+@_cli.command(
+    "create-skill",
+    help="Generate a standalone skill package with an embedded database",
+)
+def create_skill_cmd(  # pragma: no cover
+    name: str = typer.Option(
+        ...,
+        "--name",
+        help="Skill name (must be a lowercase Python identifier)",
+    ),
+    db: Path = typer.Option(
+        ...,
+        "--db",
+        help="Path to the LanceDB database to embed",
+    ),
+    description: str | None = typer.Option(
+        None,
+        "--description",
+        help="Skill description (default: standard RAG description)",
+    ),
+    tools: str = typer.Option(
+        "all",
+        "--tools",
+        help="Comma-separated tool names, or 'all'",
+    ),
+    preamble: str | None = typer.Option(
+        None,
+        "--preamble",
+        help="Custom preamble for the skill instructions",
+    ),
+    config_file: Path | None = typer.Option(
+        None,
+        "--config-file",
+        help="Path to haiku.rag.yaml to embed in the skill",
+    ),
+    output: Path = typer.Option(
+        Path("."),
+        "--output",
+        "-o",
+        help="Output directory for the generated package",
+    ),
+):
+    """Generate a standalone haiku.skills package with an embedded database."""
+    from haiku.rag.skill_generator import (
+        AVAILABLE_TOOLS,
+        DEFAULT_DESCRIPTION,
+        generate_skill,
+    )
+
+    if description is None:
+        description = DEFAULT_DESCRIPTION
+
+    if tools.strip().lower() == "all":
+        tool_names = sorted(AVAILABLE_TOOLS)
+    else:
+        tool_names = [t.strip() for t in tools.split(",") if t.strip()]
+
+    try:
+        result = generate_skill(
+            db_path=db,
+            output_dir=output,
+            name=name,
+            description=description,
+            tool_names=tool_names,
+            config_path=config_file,
+            preamble=preamble,
+        )
+        typer.echo(f"Skill generated: {result}")
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":  # pragma: no cover
     cli()
