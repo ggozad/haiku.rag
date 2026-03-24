@@ -39,6 +39,32 @@ agent = Agent(
 result = await agent.run("What documents do we have?")
 ```
 
+## Generating Custom Skills
+
+Use `create-skill` to generate a standalone skill package with an embedded database:
+
+```bash
+haiku-rag create-skill \
+  --name recipes \
+  --db /path/to/recipes.lancedb \
+  --tools search,ask \
+  --description "Recipe knowledge base" \
+  --preamble "You are a recipe expert."
+```
+
+This generates a pip-installable package (`recipes-skill/`) that bundles the database and registers as a `haiku.skills` entry point. After installing (`uv pip install -e ./recipes-skill`), the skill is automatically discovered:
+
+```bash
+haiku-skills list --use-entrypoints
+# recipes — Recipe knowledge base
+
+haiku-skills chat --use-entrypoints --skill recipes
+```
+
+Since each generated skill is self-contained with its own database and instructions, you can generate multiple skills for different domains and run them together. The agent sees each skill's description and routes questions to the appropriate knowledge base automatically.
+
+See [CLI: Create Skill](../cli.md#create-skill) for all options.
+
 ## Database Path Resolution
 
 Both skills resolve the database path in the same order:

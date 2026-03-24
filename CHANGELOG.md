@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **`create-skill` CLI command**: Generate standalone skill packages with embedded LanceDB databases. Generated packages register as `haiku.skills` entry points.
+
 ## [0.35.0] - 2026-03-24
 
 ### Added

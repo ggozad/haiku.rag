@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "{{ name }}-skill"
+version = "0.1.0"
+description = "{{ description }}"
+requires-python = ">=3.12"
+dependencies = [
+    "haiku.rag-slim >= {{ rag_version }}",
+    "haiku-skills >= 0.10.0",
+]
+
+[project.entry-points."haiku.skills"]
+{{ name }} = "{{ pkg_name }}_skill:create_skill"
