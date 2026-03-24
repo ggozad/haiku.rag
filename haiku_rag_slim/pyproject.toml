@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "cachetools>=7.0.2",
     "docling-core>=2.70.2",
-    "haiku.skills>=0.8.0",
+    "haiku.skills>=0.10.0",
     "httpx>=0.28.1",
     "jsonpatch>=1.33",
     "lancedb==0.29.2",
