@@ -141,7 +141,8 @@ class TestMCPWriteTools:
         async with HaikuRAG(temp_db_path, create=True):
             pass
         mcp = create_mcp_server(temp_db_path, read_only=False)
-        tool_names = list(mcp._tool_manager._tools.keys())
+        tools = await mcp.list_tools()
+        tool_names = [t.name for t in tools]
         assert "add_document_from_text" in tool_names
         assert "add_document_from_file" in tool_names
         assert "add_document_from_url" in tool_names
@@ -152,7 +153,8 @@ class TestMCPWriteTools:
         async with HaikuRAG(temp_db_path, create=True):
             pass
         mcp = create_mcp_server(temp_db_path, read_only=True)
-        tool_names = list(mcp._tool_manager._tools.keys())
+        tools = await mcp.list_tools()
+        tool_names = [t.name for t in tools]
         assert "add_document_from_text" not in tool_names
         assert "delete_document" not in tool_names
 
