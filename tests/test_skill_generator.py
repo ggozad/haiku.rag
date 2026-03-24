@@ -165,7 +165,7 @@ class TestRenderTemplates:
         assert 'name = "recipes-skill"' in content
         assert 'description = "A recipe skill."' in content
         assert 'recipes = "recipes_skill:create_skill"' in content
-        assert "haiku.rag-slim >= 0.35" in content
+        assert "haiku.rag-slim >= " in content
 
     def test_skill_md_conditionals(self, tmp_path):
         render_templates(

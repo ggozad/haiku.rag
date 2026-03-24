@@ -6,6 +6,7 @@ from pydantic_ai import RunContext
 
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.tools.qa import QAHistoryEntry
 from haiku.skills.state import SkillRunDeps
@@ -66,7 +67,7 @@ async def skill_search(
     query: str,
     limit: int | None = None,
     document_filter: str | None = None,
-) -> tuple[str, list]:
+) -> tuple[str, list[SearchResult]]:
     from haiku.rag.client import HaikuRAG
 
     async with HaikuRAG(db_path, config=config, read_only=True) as rag:

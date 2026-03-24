@@ -724,7 +724,7 @@ def create_skill_cmd(  # pragma: no cover
     name: str = typer.Option(
         ...,
         "--name",
-        help="Skill name (must be a lowercase Python identifier)",
+        help="Skill name (lowercase alphanumeric and hyphens)",
     ),
     db: Path = typer.Option(
         ...,

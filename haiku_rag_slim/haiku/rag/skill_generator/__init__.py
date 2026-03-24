@@ -1,7 +1,8 @@
 import pathlib
 import shutil
+from importlib.metadata import version
 
-from jinja2 import Environment, PackageLoader, select_autoescape
+from jinja2 import Environment, PackageLoader
 
 AVAILABLE_TOOLS: set[str] = {
     "list_documents",
@@ -28,7 +29,7 @@ DEFAULT_DESCRIPTION = (
 def _get_env() -> Environment:
     return Environment(
         loader=PackageLoader("haiku.rag.skill_generator", "templates"),
-        autoescape=select_autoescape(),
+        autoescape=False,
         keep_trailing_newline=True,
         lstrip_blocks=True,
         trim_blocks=True,
@@ -78,6 +79,7 @@ def render_templates(
         preamble = DEFAULT_PREAMBLE
 
     pkg_name = name.replace("-", "_")
+    rag_version = version("haiku.rag-slim")
     env = _get_env()
     context = {
         "name": name,
@@ -85,6 +87,7 @@ def render_templates(
         "description": description,
         "tool_names": tool_names,
         "preamble": preamble,
+        "rag_version": rag_version,
     }
 
     result_dir = output_dir / f"{name}-skill"

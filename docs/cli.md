@@ -261,7 +261,7 @@ The generated package is a pip-installable Python package that registers as a `h
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--name` | Skill name (lowercase Python identifier, required) | — |
+| `--name` | Skill name (lowercase alphanumeric and hyphens, required) | — |
 | `--db` | Path to LanceDB database to embed (required) | — |
 | `--description` | Skill description | Standard RAG description |
 | `--tools` | Comma-separated tool names, or `all` | `all` |
