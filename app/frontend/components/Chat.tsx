@@ -468,11 +468,20 @@ function ChatContentInner({
 		}
 	}, [JSON.stringify(agent.messages), ragState, sessionId]);
 
+	// Deduplicate messages by id, keeping the last occurrence.
+	// haiku.skills 0.10.0+ sends activity snapshots with the same id
+	// and replace=true — CopilotKit doesn't deduplicate these, so we
+	// must do it to avoid React duplicate key warnings.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: stable identity via agent ref
-	const messages = useMemo(
-		() => [...agent.messages],
-		[JSON.stringify(agent.messages)],
-	);
+	const messages = useMemo(() => {
+		const seen = new Map<string, number>();
+		const msgs = agent.messages;
+		for (let i = 0; i < msgs.length; i++) {
+			const id = msgs[i].id;
+			if (id) seen.set(id, i);
+		}
+		return msgs.filter((msg, i) => !msg.id || seen.get(msg.id) === i);
+	}, [JSON.stringify(agent.messages)]);
 
 	const onSubmitMessage = useCallback(
 		async (text: string) => {
