@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.35.0] - 2026-03-24
+
 ### Added
 
 - **Configurable judge and reflect models**: `evaluations run` and `evaluations optimize` accept `--judge-model provider:name`; `optimize` also accepts `--reflect-model provider:name`. Both fall back to `config.qa.model` when not specified.
@@ -1248,7 +1250,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.34.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.35.0...HEAD
+[0.35.0]: https://github.com/ggozad/haiku.rag/compare/0.34.1...0.35.0
 [0.34.1]: https://github.com/ggozad/haiku.rag/compare/0.34.0...0.34.1
 [0.34.0]: https://github.com/ggozad/haiku.rag/compare/0.33.3...0.34.0
 [0.33.3]: https://github.com/ggozad/haiku.rag/compare/0.33.2...0.33.3
