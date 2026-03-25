@@ -9,6 +9,8 @@
 ### Fixed
 
 - **Generated skill packages**: Include SKILL.md and assets in wheel distributions. Add README to generated packages.
+- **Docling-serve chunker**: Detect per-document failure status that was silently returning 0 chunks when the task-level status was "success" but individual documents failed
+- **Docling local chunker**: Re-enable `repeat_table_header` for self-contained table chunks, improving retrieval quality and matching docling-serve behavior
 
 ## [0.35.1] - 2026-03-24
 
