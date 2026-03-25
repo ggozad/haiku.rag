@@ -114,6 +114,14 @@ class DoclingServeChunker(DocumentChunker):
             name="document",
         )
 
+        # Task-level polling status can be "success" while individual documents
+        # report "failure" (e.g. schema version mismatch), returning 0 chunks silently.
+        documents = result.get("documents", [])
+        for doc_result in documents:
+            if doc_result.get("status") not in ("success", "partial_success", None):
+                errors = doc_result.get("errors", [])
+                raise ValueError(f"Chunking failed: {errors}")
+
         return result.get("chunks", [])
 
     async def chunk(self, document: "DoclingDocument") -> list[Chunk]:

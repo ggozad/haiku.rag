@@ -466,6 +466,62 @@ class TestDoclingServeChunker:
 
     @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_document_failure_status(self, mock_client_class, chunker):
+        """Test that document-level failure status raises ValueError."""
+        result_data = {
+            "chunks": [],
+            "documents": [
+                {
+                    "kind": "ExportResult",
+                    "status": "failure",
+                    "errors": ["Schema version mismatch"],
+                }
+            ],
+        }
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        converter = get_converter(Config)
+        doc = await converter.convert_text("# Test", name="test.md")
+
+        with pytest.raises(ValueError, match="Chunking failed"):
+            await chunker.chunk(doc)
+
+    @pytest.mark.asyncio
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_document_success_empty_chunks(
+        self, mock_client_class, chunker
+    ):
+        """Test that successful status with empty chunks returns empty list."""
+        result_data = {
+            "chunks": [],
+            "documents": [
+                {
+                    "kind": "ExportResult",
+                    "status": "success",
+                    "errors": [],
+                }
+            ],
+        }
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        converter = get_converter(Config)
+        doc = await converter.convert_text("# Test", name="test.md")
+
+        chunks = await chunker.chunk(doc)
+        assert chunks == []
+
+    @pytest.mark.asyncio
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_metadata_extraction(self, mock_client_class, chunker):
         """Test that metadata is correctly extracted from API response.
 
