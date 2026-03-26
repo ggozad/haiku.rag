@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "{{ name }}-skill"
 version = "0.1.0"
 description = "{{ description }}"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "haiku.rag-slim >= {{ rag_version }}",
@@ -14,3 +15,6 @@ dependencies = [
 
 [project.entry-points."haiku.skills"]
 {{ name }} = "{{ pkg_name }}_skill:create_skill"
+
+[tool.setuptools.package-data]
+{{ pkg_name }}_skill = ["SKILL.md", "assets/**/*"]

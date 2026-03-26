@@ -1,3 +1,7 @@
+import shutil
+import subprocess
+import zipfile
+
 import pytest
 
 from haiku.rag.skill_generator import (
@@ -95,6 +99,7 @@ class TestRenderTemplates:
         )
         assert result == tmp_path / "recipes-skill"
         assert result.is_dir()
+        assert (result / "README.md").is_file()
         pkg = result / "recipes_skill"
         assert (pkg / "__init__.py").is_file()
         assert (pkg / "SKILL.md").is_file()
@@ -164,8 +169,11 @@ class TestRenderTemplates:
         content = toml.read_text()
         assert 'name = "recipes-skill"' in content
         assert 'description = "A recipe skill."' in content
+        assert 'readme = "README.md"' in content
         assert 'recipes = "recipes_skill:create_skill"' in content
         assert "haiku.rag-slim >= " in content
+        assert "[tool.setuptools.package-data]" in content
+        assert 'recipes_skill = ["SKILL.md", "assets/**/*"]' in content
 
     def test_skill_md_conditionals(self, tmp_path):
         render_templates(
@@ -239,6 +247,18 @@ class TestRenderTemplates:
         init = tmp_path / "recipes-skill" / "recipes_skill" / "__init__.py"
         content = init.read_text()
         assert "from haiku.rag.skills._tools import create_skill_tools" in content
+
+    def test_readme(self, tmp_path):
+        render_templates(
+            output_dir=tmp_path,
+            name="recipes",
+            description="A recipe skill.",
+            tool_names=["search"],
+        )
+        readme = tmp_path / "recipes-skill" / "README.md"
+        content = readme.read_text()
+        assert "recipes" in content
+        assert "haiku-rag" in content
 
     def test_generated_python_is_valid(self, tmp_path):
         render_templates(
@@ -350,3 +370,42 @@ class TestGenerateSkill:
         skill_md = result / "recipes_skill" / "SKILL.md"
         content = skill_md.read_text()
         assert "You are a recipe expert." in content
+
+    def test_wheel_includes_package_data(self, tmp_path):
+        if not shutil.which("uv"):
+            pytest.skip("uv not available")
+        db_path = _make_fake_lancedb(tmp_path / "test.lancedb")
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text("storage:\n  data_dir: /tmp\n")
+        result = generate_skill(
+            db_path=db_path,
+            output_dir=tmp_path,
+            name="recipes",
+            description="A recipe skill.",
+            tool_names=["search"],
+            config_path=config_file,
+        )
+        dist_dir = result / "dist"
+        subprocess.check_call(
+            [
+                "uv",
+                "run",
+                "--with",
+                "build",
+                "--no-project",
+                "python",
+                "-m",
+                "build",
+                "--wheel",
+                "--outdir",
+                str(dist_dir),
+                str(result),
+            ]
+        )
+        wheels = list(dist_dir.glob("*.whl"))
+        assert len(wheels) == 1
+        with zipfile.ZipFile(wheels[0]) as zf:
+            names = zf.namelist()
+            assert any(n.endswith("SKILL.md") for n in names)
+            assert any("assets/" in n and n.endswith("data.lance") for n in names)
+            assert any(n.endswith("haiku.rag.yaml") for n in names)
