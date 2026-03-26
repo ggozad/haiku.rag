@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.36.0] - 2026-03-26
+
 ### Added
 
 - **Chunk visualization for generated skills**: `visualize_chunk(chunk_id)` function exposed in generated skill packages, enabling callers to render visual grounding from chunk IDs in skill state
@@ -1267,7 +1269,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.35.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.36.0...HEAD
+[0.36.0]: https://github.com/ggozad/haiku.rag/compare/0.35.1...0.36.0
 [0.35.1]: https://github.com/ggozad/haiku.rag/compare/0.35.0...0.35.1
 [0.35.0]: https://github.com/ggozad/haiku.rag/compare/0.34.1...0.35.0
 [0.34.1]: https://github.com/ggozad/haiku.rag/compare/0.34.0...0.34.1
