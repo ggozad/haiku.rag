@@ -99,6 +99,10 @@ def render_templates(
     template = env.get_template("pyproject.toml.j2")
     (result_dir / "pyproject.toml").write_text(template.render(context))
 
+    # Render README.md
+    template = env.get_template("README.md.j2")
+    (result_dir / "README.md").write_text(template.render(context))
+
     # Render __init__.py
     template = env.get_template("__init__.py.j2")
     (pkg_dir / "__init__.py").write_text(template.render(context))
