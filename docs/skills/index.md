@@ -63,6 +63,15 @@ haiku-skills chat --use-entrypoints --skill recipes
 
 Since each generated skill is self-contained with its own database and instructions, you can generate multiple skills for different domains and run them together. The agent sees each skill's description and routes questions to the appropriate knowledge base automatically.
 
+Generated skills also expose `visualize_chunk()` for rendering visual grounding. Use chunk IDs from citations or search results in state:
+
+```python
+from my_skill import visualize_chunk
+
+images = await visualize_chunk(chunk_id)
+# Returns list of PIL Images with highlighted bounding boxes
+```
+
 See [CLI: Create Skill](../cli.md#create-skill) for all options.
 
 ## Database Path Resolution

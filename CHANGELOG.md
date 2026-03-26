@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Chunk visualization for generated skills**: `visualize_chunk(chunk_id)` function exposed in generated skill packages, enabling callers to render visual grounding from chunk IDs in skill state
+
+### Fixed
+
+- **Generated skill packages**: Include SKILL.md and assets in wheel distributions. Add README to generated packages.
+
 ## [0.35.1] - 2026-03-24
 
 ### Added

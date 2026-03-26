@@ -75,3 +75,14 @@ def create_skill() -> Skill:
         state_type=SkillState,
         state_namespace="{{ name }}",
     )
+
+
+async def visualize_chunk(chunk_id: str) -> list:
+    from haiku.rag.client import HaikuRAG
+
+    config = _get_config()
+    async with HaikuRAG(_DB_PATH, config=config, read_only=True) as rag:
+        chunk = await rag.get_chunk_by_id(chunk_id)
+        if chunk is None:
+            return []
+        return await rag.visualize_chunk(chunk)
