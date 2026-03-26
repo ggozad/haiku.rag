@@ -260,6 +260,19 @@ class TestRenderTemplates:
         assert "recipes" in content
         assert "haiku-rag" in content
 
+    def test_visualize_chunk_function_present(self, tmp_path):
+        render_templates(
+            output_dir=tmp_path,
+            name="docs",
+            description="A docs skill.",
+            tool_names=["search"],
+        )
+        init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
+        content = init.read_text()
+        assert "async def visualize_chunk(chunk_id: str)" in content
+        assert "skill_visualize_chunk" not in content
+        assert "HaikuRAG" in content
+
     def test_generated_python_is_valid(self, tmp_path):
         render_templates(
             output_dir=tmp_path,
