@@ -142,9 +142,7 @@ class TestRenderTemplates:
         )
         init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
         content = init.read_text()
-        assert (
-            "create_skill_tools(_DB_PATH, config, SkillState, _TOOL_NAMES)" in content
-        )
+        assert "create_skill_tools(db_path, config, SkillState, _TOOL_NAMES)" in content
 
     def test_tool_names_in_init(self, tmp_path):
         render_templates(
@@ -272,6 +270,18 @@ class TestRenderTemplates:
         assert "async def visualize_chunk(chunk_id: str)" in content
         assert "skill_visualize_chunk" not in content
         assert "HaikuRAG" in content
+
+    def test_create_skill_accepts_optional_params(self, tmp_path):
+        render_templates(
+            output_dir=tmp_path,
+            name="docs",
+            description="A docs skill.",
+            tool_names=["search"],
+        )
+        init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
+        content = init.read_text()
+        assert "db_path: Path | None = None" in content
+        assert "config: AppConfig | None = None" in content
 
     def test_generated_python_is_valid(self, tmp_path):
         render_templates(

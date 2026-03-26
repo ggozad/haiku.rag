@@ -1,10 +1,10 @@
 import os
 from functools import cache
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel
 
+from haiku.rag.config.models import AppConfig
 from haiku.rag.skills._tools import AnalysisEntry
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
@@ -42,7 +42,7 @@ def state_metadata() -> StateMetadata:
 
 def create_skill(
     db_path: Path | None = None,
-    config: Any = None,
+    config: AppConfig | None = None,
 ) -> Skill:
     """Create an RLM analysis skill for computational document analysis.
 

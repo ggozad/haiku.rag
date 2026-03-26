@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from haiku.rag.config.models import AppConfig
 from haiku.skills.models import Skill
 from haiku.skills.parser import parse_skill_md
 {% if "ask" in tool_names or "research" in tool_names %}
@@ -62,12 +63,21 @@ def _get_config():
     return get_config()
 
 
-def create_skill() -> Skill:
+def create_skill(
+    db_path: Path | None = None,
+    config: AppConfig | None = None,
+) -> Skill:
     from haiku.rag.skills._tools import create_skill_tools
 
     metadata, instructions = parse_skill_md(Path(__file__).parent / "SKILL.md")
-    config = _get_config()
-    tools = create_skill_tools(_DB_PATH, config, SkillState, _TOOL_NAMES)
+
+    if config is None:
+        config = _get_config()
+
+    if db_path is None:
+        db_path = _DB_PATH
+
+    tools = create_skill_tools(db_path, config, SkillState, _TOOL_NAMES)
     return Skill(
         metadata=metadata,
         instructions=instructions,
