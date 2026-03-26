@@ -4,6 +4,7 @@
 ### Added
 
 - **Chunk visualization for generated skills**: `visualize_chunk(chunk_id)` function exposed in generated skill packages, enabling callers to render visual grounding from chunk IDs in skill state
+- **Configurable generated skills**: Generated skill `create_skill()` now accepts optional `db_path` and `config` parameters, enabling post-discovery reconfiguration via `skill.reconfigure()` (requires haiku.skills >= 0.11.0)
 
 ### Fixed
 

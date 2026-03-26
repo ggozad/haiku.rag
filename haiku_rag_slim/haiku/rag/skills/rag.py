@@ -1,11 +1,11 @@
 import os
 from functools import cache
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field
 
 from haiku.rag.agents.research.models import Citation
+from haiku.rag.config.models import AppConfig
 from haiku.rag.skills._tools import ResearchEntry
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
@@ -61,7 +61,7 @@ def state_metadata() -> StateMetadata:
 
 def create_skill(
     db_path: Path | None = None,
-    config: Any = None,
+    config: AppConfig | None = None,
 ) -> Skill:
     """Create a RAG skill for searching and analyzing documents.
 
