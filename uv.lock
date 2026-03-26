@@ -318,6 +318,7 @@ dependencies = [
     { name = "jmespath" },
     { name = "s3transfer" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/74/ec/636ab2aa7ad9e6bf6e297240ac2d44dba63cc6611e2d5038db318436d449/boto3-1.42.74.tar.gz", hash = "sha256:dbacd808cf2a3dadbf35f3dbd8de97b94dc9f78b1ebd439f38f552e0f9753577", size = 112739, upload-time = "2026-03-23T19:34:09.815Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ad/16/a264b4da2af99f4a12609b93fea941cce5ec41da14b33ed3fef77a910f0c/boto3-1.42.74-py3-none-any.whl", hash = "sha256:4bf89c044d618fe4435af854ab820f09dd43569c0df15d7beb0398f50b9aa970", size = 140557, upload-time = "2026-03-23T19:34:07.084Z" },
 ]
@@ -1570,7 +1571,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.20.7" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.81.0" },
     { name = "docling-core", specifier = ">=2.70.2" },
-    { name = "haiku-skills", specifier = ">=0.10.0" },
+    { name = "haiku-skills", specifier = ">=0.11.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jsonpatch", specifier = ">=1.33" },
@@ -1603,7 +1604,7 @@ provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jin
 
 [[package]]
 name = "haiku-skills"
-version = "0.10.0"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -1613,9 +1614,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "skills-ref" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/f2/97cd4c9561c402f81b118051553a808daa173f945b72ff37781ba86aaed7/haiku_skills-0.10.0.tar.gz", hash = "sha256:f7933b729088faeaa0afcae00d301b28bbdb24092f8731dfd68410b94f47b769", size = 166398, upload-time = "2026-03-24T11:17:54.608Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/a7/4f8483ee3c8789cf5a2882c82545c93787cff343b78bb5a3da25f43f2bbf/haiku_skills-0.11.0.tar.gz", hash = "sha256:bb9117a3c1636ddafa4a4dda7abaed79da83c409c4428136393de0365ab4fa52", size = 166785, upload-time = "2026-03-26T11:44:38.651Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/0b/f2de3b43e53ccc567cde4287674c123a7f92e30862c541bcf28393e30a93/haiku_skills-0.10.0-py3-none-any.whl", hash = "sha256:5ff13d0a69bf6eecf6d6b15fbbed1176406109c626ef2e386bca4766e58b7557", size = 29445, upload-time = "2026-03-24T11:17:53.692Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/4a/3578dbbf251ec94b894163d4859c1dcdc271d5972fec2376c1a73978d45f/haiku_skills-0.11.0-py3-none-any.whl", hash = "sha256:19c76532c6228c7abb60f06cb666a023d67b9809dd2ef8597aa0347c471a4695", size = 29664, upload-time = "2026-03-26T11:44:37.479Z" },
 ]
 
 [[package]]
