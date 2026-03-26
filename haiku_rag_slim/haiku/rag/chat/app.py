@@ -1,4 +1,3 @@
-# pyright: reportPossiblyUnboundVariable=false
 import asyncio
 import json
 import uuid
@@ -7,6 +6,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import textual_image.widget  # noqa: F401 - import early for renderer detection
+from ag_ui.core import (
+    ActivitySnapshotEvent,
+    AssistantMessage,
+    EventType,
+    RunAgentInput,
+    StateDeltaEvent,
+    TextMessageContentEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
+    UserMessage,
+)
+from jsonpatch import JsonPatch
+from pydantic_ai import Agent
+from pydantic_ai.ag_ui import AGUIAdapter
+from textual.app import App, SystemCommand
+from textual.binding import Binding
+from textual.widgets import Footer, Header, Input
+from textual.worker import Worker
+
+from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.skills.rag import AGENT_PREAMBLE, RAGState
@@ -17,9 +38,6 @@ from haiku.skills.agent import (
 from haiku.skills.models import Skill
 from haiku.skills.prompts import build_system_prompt
 
-if TYPE_CHECKING:
-    from textual.app import ComposeResult
-
 try:
     import logfire
 
@@ -28,35 +46,8 @@ try:
 except ImportError:
     pass
 
-try:
-    import textual_image.widget  # noqa: F401 - import early for renderer detection
-    from ag_ui.core import (
-        ActivitySnapshotEvent,
-        AssistantMessage,
-        EventType,
-        RunAgentInput,
-        StateDeltaEvent,
-        TextMessageContentEvent,
-        ToolCallArgsEvent,
-        ToolCallEndEvent,
-        ToolCallStartEvent,
-        UserMessage,
-    )
-    from jsonpatch import JsonPatch
-    from pydantic_ai import Agent
-    from pydantic_ai.ag_ui import AGUIAdapter
-    from textual.app import App, SystemCommand
-    from textual.binding import Binding
-    from textual.widgets import Footer, Header, Input
-    from textual.worker import Worker
-
-    from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
-
-    TEXTUAL_AVAILABLE = True
-except ImportError:
-    TEXTUAL_AVAILABLE = False
-    App = object  # type: ignore
-    SystemCommand = object  # type: ignore
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 RAG_STATE_NAMESPACE = "rag"
