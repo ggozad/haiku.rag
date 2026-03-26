@@ -1,29 +1,21 @@
-# pyright: reportPossiblyUnboundVariable=false
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from textual.app import App
+from textual.binding import Binding
+from textual.screen import Screen
+from textual.widgets import Footer, Header
+
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.inspector.widgets.chunk_list import ChunkList
+from haiku.rag.inspector.widgets.detail_view import DetailView
+from haiku.rag.inspector.widgets.document_list import DocumentList
+from haiku.rag.inspector.widgets.search_modal import SearchModal
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
-
-try:
-    from textual.app import App
-    from textual.binding import Binding
-    from textual.screen import Screen
-    from textual.widgets import Footer, Header
-
-    from haiku.rag.inspector.widgets.chunk_list import ChunkList
-    from haiku.rag.inspector.widgets.detail_view import DetailView
-    from haiku.rag.inspector.widgets.document_list import DocumentList
-    from haiku.rag.inspector.widgets.search_modal import SearchModal
-
-    TEXTUAL_AVAILABLE = True
-except ImportError:
-    TEXTUAL_AVAILABLE = False
-    App = object  # type: ignore
 
 
 class InspectorApp(App):
