@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Dependency updates**: lancedb 0.29.2 → 0.30.1, pydantic-ai-slim ≥1.73.0, docling ≥2.82.0
+
 ## [0.36.0] - 2026-03-26
 
 ### Added
