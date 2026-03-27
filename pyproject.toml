@@ -64,7 +64,6 @@ members = ["haiku_rag_slim", "evaluations"]
 "haiku.rag-slim" = { workspace = true }
 "haiku.rag-evals" = { workspace = true }
 
-
 [dependency-groups]
 dev = [
     "haiku.rag-evals",
