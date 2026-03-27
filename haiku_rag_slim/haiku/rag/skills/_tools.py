@@ -243,6 +243,51 @@ def _get_state(ctx: RunContext[SkillRunDeps], state_type: type[BaseModel]) -> An
     return None
 
 
+def create_skill_extras(
+    db_path: Path,
+    config: AppConfig,
+) -> dict[str, Any]:
+    """Create non-tool utility functions bound to a specific database.
+
+    Returns a dict of callables that can be attached to a Skill's extras.
+    """
+
+    async def visualize_chunk(chunk_id: str) -> list:
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+            chunk = await rag.get_chunk_by_id(chunk_id)
+            if chunk is None:
+                return []
+            return await rag.visualize_chunk(chunk)
+
+    async def list_documents(
+        limit: int | None = None,
+        offset: int | None = None,
+        filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+            documents = await rag.list_documents(limit, offset, filter=filter)
+            return [
+                {
+                    "id": doc.id,
+                    "title": doc.title,
+                    "uri": doc.uri,
+                    "metadata": doc.metadata,
+                    "created_at": str(doc.created_at),
+                    "updated_at": str(doc.updated_at),
+                }
+                for doc in documents
+            ]
+
+    return {
+        "visualize_chunk": visualize_chunk,
+        "list_documents": list_documents,
+    }
+
+
 def create_skill_tools(
     db_path: Path,
     config: AppConfig,

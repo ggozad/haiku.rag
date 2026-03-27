@@ -244,7 +244,10 @@ class TestRenderTemplates:
         )
         init = tmp_path / "recipes-skill" / "recipes_skill" / "__init__.py"
         content = init.read_text()
-        assert "from haiku.rag.skills._tools import create_skill_tools" in content
+        assert (
+            "from haiku.rag.skills._tools import create_skill_extras, create_skill_tools"
+            in content
+        )
 
     def test_readme(self, tmp_path):
         render_templates(
@@ -258,7 +261,7 @@ class TestRenderTemplates:
         assert "recipes" in content
         assert "haiku-rag" in content
 
-    def test_visualize_chunk_function_present(self, tmp_path):
+    def test_extras_in_create_skill(self, tmp_path):
         render_templates(
             output_dir=tmp_path,
             name="docs",
@@ -267,9 +270,8 @@ class TestRenderTemplates:
         )
         init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
         content = init.read_text()
-        assert "async def visualize_chunk(chunk_id: str)" in content
-        assert "skill_visualize_chunk" not in content
-        assert "HaikuRAG" in content
+        assert "create_skill_extras" in content
+        assert "extras=extras" in content
 
     def test_create_skill_accepts_optional_params(self, tmp_path):
         render_templates(

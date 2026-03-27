@@ -73,7 +73,7 @@ def create_skill(
         config: haiku.rag AppConfig instance. If None, uses get_config().
     """
     from haiku.rag.config import get_config
-    from haiku.rag.skills._tools import create_skill_tools
+    from haiku.rag.skills._tools import create_skill_extras, create_skill_tools
 
     if config is None:
         config = get_config()
@@ -86,6 +86,7 @@ def create_skill(
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
     tools = create_skill_tools(db_path, config, RAGState, _RAG_TOOLS)
+    extras = create_skill_extras(db_path, config)
 
     return Skill(
         metadata=skill_metadata(),
@@ -93,6 +94,7 @@ def create_skill(
         path=_skill_path,
         instructions=instructions(),
         tools=list(tools.values()),
+        extras=extras,
         state_type=STATE_TYPE,
         state_namespace=STATE_NAMESPACE,
     )

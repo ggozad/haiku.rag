@@ -67,7 +67,7 @@ def create_skill(
     db_path: Path | None = None,
     config: AppConfig | None = None,
 ) -> Skill:
-    from haiku.rag.skills._tools import create_skill_tools
+    from haiku.rag.skills._tools import create_skill_extras, create_skill_tools
 
     metadata, instructions = parse_skill_md(Path(__file__).parent / "SKILL.md")
 
@@ -78,21 +78,12 @@ def create_skill(
         db_path = _DB_PATH
 
     tools = create_skill_tools(db_path, config, SkillState, _TOOL_NAMES)
+    extras = create_skill_extras(db_path, config)
     return Skill(
         metadata=metadata,
         instructions=instructions,
         tools=list(tools.values()),
+        extras=extras,
         state_type=SkillState,
         state_namespace="{{ name }}",
     )
-
-
-async def visualize_chunk(chunk_id: str) -> list:
-    from haiku.rag.client import HaikuRAG
-
-    config = _get_config()
-    async with HaikuRAG(_DB_PATH, config=config, read_only=True) as rag:
-        chunk = await rag.get_chunk_by_id(chunk_id)
-        if chunk is None:
-            return []
-        return await rag.visualize_chunk(chunk)
