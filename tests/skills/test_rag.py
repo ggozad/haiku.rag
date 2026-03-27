@@ -81,6 +81,15 @@ class TestRAGSkillCreation:
         assert skill._state_type is RAGState
         assert skill._state_namespace == "rag"
 
+    def test_create_skill_has_extras(self, temp_db_path):
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(db_path=temp_db_path)
+        assert "visualize_chunk" in skill.extras
+        assert "list_documents" in skill.extras
+        assert callable(skill.extras["visualize_chunk"])
+        assert callable(skill.extras["list_documents"])
+
     def test_create_skill_from_env(self, monkeypatch, temp_db_path):
         monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
         from haiku.rag.skills.rag import create_skill
