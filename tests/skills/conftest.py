@@ -5,9 +5,9 @@ import pytest
 from pydantic_ai import RunContext
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.skills.state import SkillRunDeps
-from haiku.rag.config.models import AppConfig
 
 VECTOR_DIM = 2560
 
