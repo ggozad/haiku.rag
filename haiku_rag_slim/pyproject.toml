@@ -22,17 +22,17 @@ classifiers = [
 ]
 
 dependencies = [
-    "cachetools>=7.0.2",
-    "docling-core>=2.70.2",
-    "haiku.skills>=0.12.0",
+    "cachetools>=7.0.5",
+    "docling-core>=2.71.0",
+    "haiku.skills>=0.13.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.0",
     "jsonpatch>=1.33",
-    "lancedb==0.29.2",
+    "lancedb==0.30.2",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.70.0",
-    "pydantic-monty>=0.0.8",
+    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.77.0",
+    "pydantic-monty>=0.0.9",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
@@ -42,16 +42,16 @@ dependencies = [
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling>=2.81.0", "opencv-python-headless>=4.13.0.92"]
+docling = ["docling>=2.84.0", "opencv-python-headless>=4.13.0.92"]
 # Embedding providers
 voyageai = ["pydantic-ai-slim[voyageai]"]
 # Rerankers
 mxbai = ["mxbai-rerank>=0.1.6"]
-cohere = ["cohere>=5.20.7"]
+cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]
 jina = ["transformers>=4.40.0", "torch>=2.0.0"]
 # TUI (chat and inspect commands)
-tui = ["textual>=8.0.2", "textual-image>=0.8.5"]
+tui = ["textual>=8.2.1", "textual-image>=0.8.5"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]

@@ -122,7 +122,7 @@ class DocumentFilterModal(ModalScreen):
                 id=f"doc-{hash(display_name)}",
                 classes="doc-checkbox",
             )
-            checkbox._doc_id = display_name  # type: ignore[attr-defined]
+            checkbox._doc_id = display_name  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             await filter_list.mount(checkbox)
 
         self._update_footer()

@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Dependency updates**: lancedb 0.30.2, pydantic-ai-slim ≥1.77.0, docling ≥2.84.0, docling-core ≥2.71.0, haiku.skills ≥0.13.0, cachetools ≥7.0.5, pydantic-monty ≥0.0.9, cohere ≥5.21.1, textual ≥8.2.1, ty ≥0.0.28, ruff ≥0.15.9
+
+### Fixed
+
+- **Type checking**: Fix 37 new ty 0.0.28 diagnostics with proper None guards, assertions, and specific ignore codes
+
 ## [0.36.3] - 2026-04-01
 
 ### Fixed

@@ -15,7 +15,7 @@ def _make_spec(**kwargs: object) -> DatasetSpec:
         "qa_case_builder": lambda idx, doc: None,
     }
     defaults.update(kwargs)
-    return DatasetSpec(**defaults)  # type: ignore[arg-type]
+    return DatasetSpec(**defaults)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 class TestDatasetSpecDbPath:

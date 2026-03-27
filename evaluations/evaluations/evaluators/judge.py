@@ -46,7 +46,7 @@ class LLMJudge:
         model_obj = get_model(model_config, config)
 
         # Create Pydantic AI agent
-        self._agent: Agent[None, LLMJudgeResponseSchema] = Agent(  # type: ignore[assignment]
+        self._agent: Agent[None, LLMJudgeResponseSchema] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             model=model_obj,
             output_type=LLMJudgeResponseSchema,
             system_prompt=ANSWER_EQUIVALENCE_RUBRIC,

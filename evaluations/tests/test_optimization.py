@@ -131,7 +131,7 @@ class TestEvaluateAsync:
     ) -> None:
         stub_qa = AsyncMock()
         stub_qa.answer = AsyncMock(return_value=("X is a thing.", []))
-        adapter._judge = AsyncMock(return_value=(0.85, "Good answer"))  # type: ignore[method-assign]
+        adapter._judge = AsyncMock(return_value=(0.85, "Good answer"))  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         result = await adapter._evaluate_async(
             sample_cases, stub_qa, capture_traces=False
@@ -151,7 +151,7 @@ class TestEvaluateAsync:
     ) -> None:
         stub_qa = AsyncMock()
         stub_qa.answer = AsyncMock(return_value=("An answer.", []))
-        adapter._judge = AsyncMock(return_value=(0.9, "Almost perfect"))  # type: ignore[method-assign]
+        adapter._judge = AsyncMock(return_value=(0.9, "Almost perfect"))  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         result = await adapter._evaluate_async(
             sample_cases, stub_qa, capture_traces=True
@@ -214,7 +214,7 @@ class TestReflectionLM:
             prompts_received.append(prompt)
             return original_run_sync(prompt, **kwargs)
 
-        lm._agent.run_sync = capturing_run_sync  # type: ignore[method-assign]
+        lm._agent.run_sync = capturing_run_sync  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": "You are helpful."},
@@ -287,10 +287,10 @@ class TestRunOptimization:
         return DatasetSpec(
             key="test",
             db_filename="test.lancedb",
-            document_loader=lambda: None,
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             document_mapper=lambda doc: None,
-            qa_loader=lambda: None,
-            qa_case_builder=lambda idx, doc: None,
+            qa_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             system_prompt="You are a test assistant.",
         )
 
@@ -348,10 +348,10 @@ class TestRunOptimization:
         spec = DatasetSpec(
             key="test",
             db_filename="test.lancedb",
-            document_loader=lambda: None,
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             document_mapper=lambda doc: None,
-            qa_loader=lambda: None,
-            qa_case_builder=lambda idx, doc: None,
+            qa_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
         cases = _make_cases(4)
 
