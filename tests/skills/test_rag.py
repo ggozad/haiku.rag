@@ -42,10 +42,10 @@ class TestRAGModuleAPI:
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_constants_match_create_skill(self, temp_db_path):
+    def test_constants_match_create_skill(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=temp_db_path)
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
         assert skill.state_type is STATE_TYPE
         assert skill.state_namespace == STATE_NAMESPACE
         assert skill.metadata == skill_metadata()
@@ -53,18 +53,18 @@ class TestRAGModuleAPI:
 
 
 class TestRAGSkillCreation:
-    def test_create_skill_returns_valid_skill(self, temp_db_path):
+    def test_create_skill_returns_valid_skill(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=temp_db_path)
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
         assert skill.metadata.name == "rag"
         assert skill.metadata.description
         assert skill.instructions
 
-    def test_create_skill_has_expected_tools(self, temp_db_path):
+    def test_create_skill_has_expected_tools(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=temp_db_path)
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
         tool_names = {getattr(t, "__name__") for t in skill.tools if callable(t)}
         assert tool_names == {
             "search",
@@ -74,17 +74,19 @@ class TestRAGSkillCreation:
             "research",
         }
 
-    def test_create_skill_has_state(self, temp_db_path):
+    def test_create_skill_has_state(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import RAGState, create_skill
 
-        skill = create_skill(db_path=temp_db_path)
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
         assert skill._state_type is RAGState
         assert skill._state_namespace == "rag"
 
-    def test_create_skill_has_extras(self, temp_db_path):
+    def test_create_skill_has_extras(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=temp_db_path)
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.extras["config"] is test_app_config
+        assert skill.extras["db_path"] is temp_db_path
         assert "visualize_chunk" in skill.extras
         assert "list_documents" in skill.extras
         assert callable(skill.extras["visualize_chunk"])
@@ -99,33 +101,42 @@ class TestRAGSkillCreation:
 
 
 class TestSkillExtras:
-    async def test_list_documents_returns_all(self, rag_db):
+    async def test_list_documents_returns_all(self, test_app_config, rag_db):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=rag_db)
+        skill = create_skill(config=test_app_config, db_path=rag_db)
         list_docs = skill.extras["list_documents"]
         results = await list_docs()
         assert len(results) == 2
         assert all(k in results[0] for k in ("id", "title", "uri", "metadata"))
 
-    async def test_list_documents_with_filter(self, rag_db):
+    async def test_list_documents_with_filter(self, test_app_config, rag_db):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=rag_db)
+        skill = create_skill(config=test_app_config, db_path=rag_db)
         list_docs = skill.extras["list_documents"]
         results = await list_docs(filter="title = 'AI Overview'")
         assert len(results) == 1
         assert results[0]["title"] == "AI Overview"
 
-    async def test_visualize_chunk_unknown_returns_empty(self, rag_db):
+    async def test_visualize_chunk_unknown_returns_empty(
+        self,
+        test_app_config,
+        rag_db,
+    ):
         from haiku.rag.skills.rag import create_skill
 
-        skill = create_skill(db_path=rag_db)
+        skill = create_skill(config=test_app_config, db_path=rag_db)
         visualize = skill.extras["visualize_chunk"]
         result = await visualize("nonexistent-chunk-id")
         assert result == []
 
-    async def test_visualize_chunk_returns_images(self, rag_db, monkeypatch):
+    async def test_visualize_chunk_returns_images(
+        self,
+        test_app_config,
+        rag_db,
+        monkeypatch,
+    ):
         from haiku.rag.client import HaikuRAG
         from haiku.rag.skills.rag import create_skill
 
@@ -133,7 +144,7 @@ class TestSkillExtras:
             HaikuRAG, "visualize_chunk", AsyncMock(return_value=["img1"])
         )
 
-        skill = create_skill(db_path=rag_db)
+        skill = create_skill(config=test_app_config, db_path=rag_db)
         visualize = skill.extras["visualize_chunk"]
 
         # Get a real chunk_id from the db

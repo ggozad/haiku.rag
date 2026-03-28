@@ -5,6 +5,7 @@ import pytest
 from pydantic_ai import RunContext
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.skills.state import SkillRunDeps
 
@@ -43,6 +44,11 @@ def mock_embedder(monkeypatch):
 
     monkeypatch.setattr(EmbedderWrapper, "embed_query", fake_embed_query)
     monkeypatch.setattr(EmbedderWrapper, "embed_documents", fake_embed_documents)
+
+
+@pytest.fixture
+def test_app_config():
+    return AppConfig(environment="skills-test")
 
 
 @pytest.fixture

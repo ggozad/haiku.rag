@@ -249,7 +249,13 @@ def create_skill_extras(
 ) -> dict[str, Any]:
     """Create non-tool utility functions bound to a specific database.
 
-    Returns a dict of callables that can be attached to a Skill's extras.
+    Returns a dict of values that can be attached to a Skill's extras:
+
+    Keys:
+    - 'db_path': path to the LanceDB used to configure the skill
+    - 'config': config passed to (or derived for) the skill
+    - 'list_documents': returns info for documents in the database
+    - 'visualize_chunk': returns visualizations for chunks in the database
     """
 
     async def visualize_chunk(chunk_id: str) -> list:
@@ -283,6 +289,8 @@ def create_skill_extras(
             ]
 
     return {
+        "db_path": db_path,
+        "config": config,
         "visualize_chunk": visualize_chunk,
         "list_documents": list_documents,
     }
