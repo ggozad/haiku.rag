@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+## [0.36.2] - 2026-03-28
+
+### Fixed
+
+- **Skill extras**: Include `db_path` and `config` in skill extras for both RAG and RLM skills, enabling post-creation reconfiguration
+
 ## [0.36.1] - 2026-03-27
 
 ## [0.36.0] - 2026-03-26
@@ -1271,7 +1277,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.36.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.36.2...HEAD
+[0.36.2]: https://github.com/ggozad/haiku.rag/compare/0.36.1...0.36.2
 [0.36.1]: https://github.com/ggozad/haiku.rag/compare/0.36.0...0.36.1
 [0.36.0]: https://github.com/ggozad/haiku.rag/compare/0.35.1...0.36.0
 [0.35.1]: https://github.com/ggozad/haiku.rag/compare/0.35.0...0.35.1
