@@ -73,6 +73,7 @@ class TestRAGSkillCreation:
             "ask",
             "research",
         }
+
     def test_create_skill_has_state(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import RAGState, create_skill
 
@@ -119,7 +120,9 @@ class TestSkillExtras:
         assert results[0]["title"] == "AI Overview"
 
     async def test_visualize_chunk_unknown_returns_empty(
-        self, test_app_config, rag_db,
+        self,
+        test_app_config,
+        rag_db,
     ):
         from haiku.rag.skills.rag import create_skill
 
@@ -129,7 +132,10 @@ class TestSkillExtras:
         assert result == []
 
     async def test_visualize_chunk_returns_images(
-        self, test_app_config, rag_db, monkeypatch,
+        self,
+        test_app_config,
+        rag_db,
+        monkeypatch,
     ):
         from haiku.rag.client import HaikuRAG
         from haiku.rag.skills.rag import create_skill

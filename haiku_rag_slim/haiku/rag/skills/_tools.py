@@ -255,7 +255,7 @@ def create_skill_extras(
     - 'db_path': path to the LanceDB used to configure the skill
     - 'config': config passed to (or derived for) the skill
     - 'list_documents': returns info for documents in the database
-    - 'list_documents': returns visulaizations for chunks in the database
+    - 'visualize_chunk': returns visualizations for chunks in the database
     """
 
     async def visualize_chunk(chunk_id: str) -> list:
