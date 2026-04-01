@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 from haiku.rag.agents.rlm.models import RLMResult
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rlm import (
     STATE_NAMESPACE,
     STATE_TYPE,
@@ -89,6 +90,32 @@ class TestRLMSkillCreation:
 
         skill = create_skill()
         assert skill.metadata.name == "rag-rlm"
+
+
+class TestDomainPreambleInRLMSkillInstructions:
+    def test_create_skill_without_domain_preamble(self, test_app_config, temp_db_path):
+        from haiku.rag.skills.rlm import create_skill, instructions
+
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.instructions == instructions()
+
+    def test_create_skill_with_domain_preamble(self, temp_db_path):
+        from haiku.rag.config.models import PromptsConfig
+        from haiku.rag.skills.rlm import create_skill, instructions
+
+        config = AppConfig(
+            prompts=PromptsConfig(
+                domain_preamble="This knowledge base contains C-146 aircraft documents."
+            )
+        )
+        skill = create_skill(config=config, db_path=temp_db_path)
+        assert skill.instructions is not None
+        assert skill.instructions.startswith(
+            "This knowledge base contains C-146 aircraft documents."
+        )
+        base_instructions = instructions()
+        assert base_instructions is not None
+        assert base_instructions in skill.instructions
 
 
 class TestAnalyzeTool:

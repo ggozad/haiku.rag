@@ -16,7 +16,7 @@ from starlette.routing import Route
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
-from haiku.rag.skills.rag import AGENT_PREAMBLE, create_skill
+from haiku.rag.skills.rag import create_skill, get_agent_preamble
 from haiku.rag.utils import get_model
 from haiku.skills import (
     SkillDeps,
@@ -74,7 +74,9 @@ toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
     get_model(Config.qa.model, Config),
-    instructions=build_system_prompt(toolset.skill_catalog, preamble=AGENT_PREAMBLE),
+    instructions=build_system_prompt(
+        toolset.skill_catalog, preamble=get_agent_preamble(Config)
+    ),
     toolsets=[toolset],
     deps_type=SkillDeps,
 )

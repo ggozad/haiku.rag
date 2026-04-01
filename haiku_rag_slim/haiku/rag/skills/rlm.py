@@ -69,11 +69,15 @@ def create_skill(
     tools = create_skill_tools(db_path, config, RLMState, ["analyze"])
     extras = create_skill_extras(db_path, config)
 
+    skill_instructions = instructions()
+    if config.prompts.domain_preamble and skill_instructions:
+        skill_instructions = f"{config.prompts.domain_preamble}\n\n{skill_instructions}"
+
     return Skill(
         metadata=skill_metadata(),
         source=SkillSource.ENTRYPOINT,
         path=_skill_path,
-        instructions=instructions(),
+        instructions=skill_instructions,
         tools=list(tools.values()),
         extras=extras,
         state_type=STATE_TYPE,

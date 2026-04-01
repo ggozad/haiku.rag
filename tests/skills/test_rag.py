@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 from haiku.rag.agents.research.models import Citation, ResearchReport
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rag import (
     STATE_NAMESPACE,
     STATE_TYPE,
@@ -50,6 +51,55 @@ class TestRAGModuleAPI:
         assert skill.state_namespace == STATE_NAMESPACE
         assert skill.metadata == skill_metadata()
         assert skill.instructions == instructions()
+
+
+class TestGetAgentPreamble:
+    def test_without_domain_preamble(self):
+        from haiku.rag.skills.rag import AGENT_PREAMBLE, get_agent_preamble
+
+        config = AppConfig()
+        assert get_agent_preamble(config) == AGENT_PREAMBLE
+
+    def test_with_domain_preamble(self):
+        from haiku.rag.config.models import PromptsConfig
+        from haiku.rag.skills.rag import AGENT_PREAMBLE, get_agent_preamble
+
+        config = AppConfig(
+            prompts=PromptsConfig(
+                domain_preamble="This knowledge base contains C-146 aircraft documents."
+            )
+        )
+        result = get_agent_preamble(config)
+        assert result.startswith(
+            "This knowledge base contains C-146 aircraft documents."
+        )
+        assert AGENT_PREAMBLE in result
+
+
+class TestDomainPreambleInSkillInstructions:
+    def test_create_skill_without_domain_preamble(self, test_app_config, temp_db_path):
+        from haiku.rag.skills.rag import create_skill, instructions
+
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.instructions == instructions()
+
+    def test_create_skill_with_domain_preamble(self, temp_db_path):
+        from haiku.rag.config.models import PromptsConfig
+        from haiku.rag.skills.rag import create_skill, instructions
+
+        config = AppConfig(
+            prompts=PromptsConfig(
+                domain_preamble="This knowledge base contains C-146 aircraft documents."
+            )
+        )
+        skill = create_skill(config=config, db_path=temp_db_path)
+        assert skill.instructions is not None
+        assert skill.instructions.startswith(
+            "This knowledge base contains C-146 aircraft documents."
+        )
+        base_instructions = instructions()
+        assert base_instructions is not None
+        assert base_instructions in skill.instructions
 
 
 class TestRAGSkillCreation:
