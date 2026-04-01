@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.36.3] - 2026-04-01
+
 ### Fixed
 
 - **Citation formatting**: Replace raw UUIDs (`[doc_id:chunk_id]`) with human-readable identifiers (`[index] title`) in `format_citations()` output, preventing LLMs from hallucinating opaque ID markers in answers
@@ -1286,7 +1288,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.36.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.36.3...HEAD
+[0.36.3]: https://github.com/ggozad/haiku.rag/compare/0.36.2...0.36.3
 [0.36.2]: https://github.com/ggozad/haiku.rag/compare/0.36.1...0.36.2
 [0.36.1]: https://github.com/ggozad/haiku.rag/compare/0.36.0...0.36.1
 [0.36.0]: https://github.com/ggozad/haiku.rag/compare/0.35.1...0.36.0
