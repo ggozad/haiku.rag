@@ -30,7 +30,7 @@ from textual.worker import Worker
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
-from haiku.rag.skills.rag import AGENT_PREAMBLE, RAGState
+from haiku.rag.skills.rag import RAGState, get_agent_preamble
 from haiku.skills.agent import (
     SkillToolset,
     run_agui_stream,
@@ -157,7 +157,8 @@ class ChatApp(App):
         self._agent = Agent(
             self._model,
             instructions=build_system_prompt(
-                self._toolset.skill_catalog, preamble=AGENT_PREAMBLE
+                self._toolset.skill_catalog,
+                preamble=get_agent_preamble(self.config),
             ),
             toolsets=[self._toolset],
         )
