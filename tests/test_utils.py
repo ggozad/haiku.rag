@@ -475,8 +475,10 @@ def test_format_citations_with_citation():
         headings=["Intro"],
     )
     result = format_citations([citation])
-    assert "[doc1:chunk1]" in result
-    assert "Test Doc" in result
+    assert "[1] Test Doc" in result
+    assert "doc1" not in result
+    assert "chunk1" not in result
+    assert "test://doc" in result
     assert "p. 1" in result
     assert "Section: Intro" in result
     assert "Some content" in result
@@ -494,6 +496,7 @@ def test_format_citations_multiple_pages():
         page_numbers=[1, 2, 3],
     )
     result = format_citations([citation])
+    assert "[1] test://doc" in result
     assert "pp. 1-3" in result
 
 
@@ -508,7 +511,49 @@ def test_format_citations_no_title():
         content="Content",
     )
     result = format_citations([citation])
-    assert "test://doc" in result
+    assert "[1] test://doc" in result
+    assert "doc1" not in result
+
+
+def test_format_citations_with_index():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations
+
+    citation = Citation(
+        index=5,
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Content",
+    )
+    result = format_citations([citation])
+    assert "[5] Test Doc" in result
+
+
+def test_format_citations_sequential_indices():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations
+
+    citations = [
+        Citation(
+            document_id="doc1",
+            chunk_id="chunk1",
+            document_uri="test://doc1",
+            document_title="First",
+            content="Content 1",
+        ),
+        Citation(
+            document_id="doc2",
+            chunk_id="chunk2",
+            document_uri="test://doc2",
+            document_title="Second",
+            content="Content 2",
+        ),
+    ]
+    result = format_citations(citations)
+    assert "[1] First" in result
+    assert "[2] Second" in result
 
 
 # --- format_citations_rich tests ---
