@@ -32,7 +32,7 @@ When configured, a cross-encoder reranker re-scores 10x the requested candidates
 
 Model and temperature selection affect answer quality directly — see [Providers](configuration/providers.md#model-settings) for options.
 
-`domain_preamble` prepends domain context to all agent prompts. Use it to clarify terminology, set tone, or describe what the knowledge base contains. For full prompt replacement, set `prompts.qa` directly. See [Prompt Customization](configuration/prompts.md).
+`domain_preamble` prepends domain context to all agent prompts — including the main agent, skill subagents, and internal agents (QA, research). Use it to describe what the knowledge base contains and clarify domain-specific terminology. For full prompt replacement, set `prompts.qa` directly. See [Prompt Customization](configuration/prompts.md).
 
 For automated prompt optimization, see [Prompt Optimization (GEPA)](#prompt-optimization-gepa) below.
 

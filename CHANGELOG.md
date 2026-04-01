@@ -4,6 +4,11 @@
 ### Fixed
 
 - **Citation formatting**: Replace raw UUIDs (`[doc_id:chunk_id]`) with human-readable identifiers (`[index] title`) in `format_citations()` output, preventing LLMs from hallucinating opaque ID markers in answers
+- **domain_preamble propagation**: `domain_preamble` now flows to skill subagents and the main agent preamble, not just internal agents (QA, research). Fixes ambiguous queries failing when domain context was needed.
+
+### Changed
+
+- **domain_preamble docs**: Clarified that `domain_preamble` is for domain context (subject matter, terminology), not behavioral instructions (tone, response style).
 
 ## [0.36.2] - 2026-03-28
 

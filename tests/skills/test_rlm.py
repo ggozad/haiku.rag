@@ -105,13 +105,13 @@ class TestDomainPreambleInRLMSkillInstructions:
 
         config = AppConfig(
             prompts=PromptsConfig(
-                domain_preamble="This knowledge base contains C-146 aircraft documents."
+                domain_preamble="This knowledge base contains Helios solar panel documentation."
             )
         )
         skill = create_skill(config=config, db_path=temp_db_path)
         assert skill.instructions is not None
         assert skill.instructions.startswith(
-            "This knowledge base contains C-146 aircraft documents."
+            "This knowledge base contains Helios solar panel documentation."
         )
         base_instructions = instructions()
         assert base_instructions is not None

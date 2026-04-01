@@ -6,10 +6,11 @@ Customize the prompts used by haiku.rag's AI agents to better match your domain 
 
 ```yaml
 prompts:
-  # Prepended to all agent prompts
+  # Domain context prepended to all agent prompts
   domain_preamble: |
-    You are answering questions about our internal documentation.
-    Technical terms like "time travel" refer to database versioning features.
+    This knowledge base contains technical documentation for the Helios solar panel
+    system, including installation manuals, maintenance procedures, and safety guidelines.
+    Questions about "the system" or unqualified specs refer to the Helios panel.
 
   # Full replacement for QA agent prompt (optional)
   qa: null
@@ -23,20 +24,22 @@ prompts:
 
 ## Domain Preamble
 
-The `domain_preamble` field is prepended to **all** agent prompts (QA, research planning, search, evaluation, and synthesis). Use this to:
+The `domain_preamble` field provides **domain context** that is prepended to all agent prompts — the main agent, skill subagents, and internal agents (QA, research planning, search, evaluation, and synthesis). Use this to:
 
-- Add domain context that clarifies terminology
-- Set the tone or personality of responses
-- Specify what the knowledge base contains
+- Describe what the knowledge base contains
+- Clarify domain-specific terminology
+- Provide context that helps agents interpret ambiguous queries
+
+**Important:** `domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Behavioral guidance (tone, response style, formatting rules) belongs in the agent's system prompt or custom `prompts.qa`.
 
 **Example:**
 
 ```yaml
 prompts:
   domain_preamble: |
-    You are a technical support assistant for Acme Corp products.
-    The knowledge base contains product documentation, FAQs, and troubleshooting guides.
-    Always be helpful and professional.
+    This knowledge base contains product documentation, API references,
+    and troubleshooting guides for Acme Corp's cloud platform.
+    "Deployment" refers to Acme's managed deployment service, not general CI/CD.
 ```
 
 ## Custom QA Prompt
@@ -126,7 +129,7 @@ from haiku.rag.config.models import PromptsConfig
 
 config = AppConfig(
     prompts=PromptsConfig(
-        domain_preamble="You are answering questions about our product documentation.",
+        domain_preamble="This knowledge base contains Acme Corp product documentation and API references.",
         qa=None,  # Use default QA prompt
         synthesis=None,  # Use default synthesis prompt
         picture_description="Describe this image for search indexing.",
