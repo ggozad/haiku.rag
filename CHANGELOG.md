@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Citation formatting**: Replace raw UUIDs (`[doc_id:chunk_id]`) with human-readable identifiers (`[index] title`) in `format_citations()` output, preventing LLMs from hallucinating opaque ID markers in answers
+
 ## [0.36.2] - 2026-03-28
 
 ### Fixed

@@ -338,9 +338,10 @@ def format_citations(citations: "list[Citation]") -> str:
 
     lines = ["## Citations\n"]
 
-    for c in citations:
-        # Header line
-        header = f"[{c.document_id}:{c.chunk_id}]"
+    for i, c in enumerate(citations):
+        idx = c.index if c.index is not None else (i + 1)
+        title = c.document_title or c.document_uri
+        header = f"[{idx}] {title}"
 
         # Location info
         location_parts = []
@@ -353,8 +354,6 @@ def format_citations(citations: "list[Citation]") -> str:
             location_parts.append(f"Section: {c.headings[-1]}")
 
         source = c.document_uri
-        if c.document_title:
-            source = f"{c.document_title} ({c.document_uri})"
         if location_parts:
             source += f" - {', '.join(location_parts)}"
 
