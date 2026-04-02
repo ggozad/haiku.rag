@@ -1,3 +1,6 @@
+storage:
+  vacuum_retention_seconds: 0
+
 embeddings:
   model:
     provider: ollama

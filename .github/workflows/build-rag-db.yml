@@ -42,6 +42,8 @@ jobs:
           OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml add-src docs/ --db rag.lancedb
+      - name: Vacuum database
+        run: uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml vacuum --db rag.lancedb
       - name: Package RAG database
         run: tar czf haiku-rag-docs.lancedb.tar.gz rag.lancedb/
       - name: Upload to release
