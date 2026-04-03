@@ -987,7 +987,8 @@ class HaikuRAG:
             )
 
         # Content provided without chunks - convert, chunk, and embed using primitives
-        existing_doc.content = content  # type: ignore[assignment]
+        assert content is not None
+        existing_doc.content = content
         converted_docling = await self.convert(existing_doc.content)
         existing_doc.docling_document = compress_json(
             converted_docling.model_dump_json()
@@ -1783,20 +1784,22 @@ class HaikuRAG:
                 invalidate_docling_document_cache(doc.id)
 
         # Batch update documents using merge_insert (single LanceDB version)
-        doc_records = [
-            DocumentRecord(
-                id=doc.id,  # type: ignore[arg-type]
-                content=doc.content,
-                uri=doc.uri,
-                title=doc.title,
-                metadata=json.dumps(doc.metadata),
-                docling_document=doc.docling_document,
-                docling_version=doc.docling_version,
-                created_at=doc.created_at.isoformat() if doc.created_at else now,
-                updated_at=now,
+        doc_records = []
+        for doc in documents:
+            assert doc.id is not None
+            doc_records.append(
+                DocumentRecord(
+                    id=doc.id,
+                    content=doc.content,
+                    uri=doc.uri,
+                    title=doc.title,
+                    metadata=json.dumps(doc.metadata),
+                    docling_document=doc.docling_document,
+                    docling_version=doc.docling_version,
+                    created_at=doc.created_at.isoformat() if doc.created_at else now,
+                    updated_at=now,
+                )
             )
-            for doc in documents
-        ]
 
         self.store.documents_table.merge_insert("id").when_matched_update_all().execute(
             doc_records
@@ -1983,7 +1986,7 @@ class HaikuRAG:
             self._config.embeddings.model.provider == "sentence-transformers"
         ):  # pragma: no cover
             try:
-                from sentence_transformers import (  # type: ignore[import-not-found]
+                from sentence_transformers import (  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
                     SentenceTransformer,
                 )
 

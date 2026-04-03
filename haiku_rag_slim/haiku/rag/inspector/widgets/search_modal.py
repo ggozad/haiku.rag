@@ -145,8 +145,10 @@ class SearchModal(Screen):
         if event.list_view != list_view or event.item is None:
             return
         idx = event.list_view.index
+        if idx is None:
+            return
         detail_view = self.query_one("#search-detail", DetailView)
-        await detail_view.show_search_result(self.chunks[idx], self.search_results[idx])  # type: ignore[index]
+        await detail_view.show_search_result(self.chunks[idx], self.search_results[idx])
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle chunk selection (Enter key)."""
@@ -154,7 +156,9 @@ class SearchModal(Screen):
         if event.list_view != list_view:
             return
         idx = event.list_view.index
-        self.post_message(self.ChunkSelected(self.chunks[idx]))  # type: ignore[index]
+        if idx is None:
+            return
+        self.post_message(self.ChunkSelected(self.chunks[idx]))
         self.app.pop_screen()
 
     async def action_dismiss(self, result=None) -> None:
@@ -172,7 +176,7 @@ class SearchModal(Screen):
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
         # Use app's _switch_modal to close this modal before opening visual
-        await self.app._switch_modal(  # type: ignore[attr-defined]
+        await self.app._switch_modal(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             VisualGroundingModal(
                 chunk=chunk,
                 client=self.client,

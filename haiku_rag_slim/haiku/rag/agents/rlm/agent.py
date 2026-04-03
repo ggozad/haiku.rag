@@ -22,7 +22,7 @@ def create_rlm_agent(config: AppConfig) -> Agent[RLMDeps, RLMResult]:
     """
     model = get_model(config.rlm.model, config)
 
-    agent: Agent[RLMDeps, RLMResult] = Agent(  # type: ignore[invalid-assignment]
+    agent: Agent[RLMDeps, RLMResult] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         model,
         deps_type=RLMDeps,
         output_type=RLMResult,

@@ -201,7 +201,7 @@ class TestHotpotQA:
                 }
             },
         ]
-        docs = extract_unique_documents(dataset)  # type: ignore[arg-type]
+        docs = extract_unique_documents(dataset)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         assert len(docs) == 3
         titles = [d["title"] for d in docs]
         assert titles == ["Doc A", "Doc B", "Doc C"]

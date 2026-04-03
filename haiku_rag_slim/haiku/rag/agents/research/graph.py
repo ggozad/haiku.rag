@@ -66,7 +66,7 @@ async def _iterative_plan_logic(
         effective_prompt = build_prompt(ITERATIVE_PLAN_PROMPT, config)
 
     model = get_model(model_config, config)
-    plan_agent: Agent[ResearchDependencies, IterativePlanResult] = Agent(  # type: ignore[assignment]
+    plan_agent: Agent[ResearchDependencies, IterativePlanResult] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         model=model,
         output_type=IterativePlanResult,
         instructions=effective_prompt,
@@ -116,7 +116,7 @@ async def _search_one_step_logic(
 
     async with deps.semaphore:
         model = get_model(model_config, config)
-        agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(  # type: ignore[assignment]
+        agent: Agent[ResearchDependencies, RawSearchAnswer] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             model=model,
             output_type=RawSearchAnswer,
             instructions=search_prompt,
@@ -218,7 +218,7 @@ def build_research_graph(
         deps = ctx.deps
 
         model = get_model(model_config, config)
-        agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]
+        agent: Agent[ResearchDependencies, ResearchReport] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             model=model,
             output_type=ResearchReport,
             instructions=synthesis_prompt,

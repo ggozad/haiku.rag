@@ -120,10 +120,10 @@ class TestRunQaBenchmarkJudgeModel:
         return DatasetSpec(
             key="test",
             db_filename="test.lancedb",
-            document_loader=lambda: None,
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             document_mapper=lambda doc: None,
-            qa_loader=lambda: [],
-            qa_case_builder=lambda idx, doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
 
     @pytest.mark.asyncio
@@ -176,10 +176,10 @@ class TestEvaluateDatasetJudgeModel:
                 spec=DatasetSpec(
                     key="test",
                     db_filename="test.lancedb",
-                    document_loader=lambda: None,
+                    document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     document_mapper=lambda doc: None,
-                    qa_loader=lambda: [],
-                    qa_case_builder=lambda idx, doc: None,
+                    qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 ),
                 config=AppConfig(),
                 skip_db=True,
