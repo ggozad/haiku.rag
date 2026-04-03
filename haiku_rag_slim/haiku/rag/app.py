@@ -45,9 +45,15 @@ class HaikuRAGApp:  # pragma: no cover
         self.before = before
         self.console = Console()
 
+    @property
+    def _is_local(self) -> bool:
+        from haiku.rag.store.engine import ConnectionMode
+
+        return ConnectionMode.from_config(self.config) == ConnectionMode.LOCAL
+
     async def init(self):
         """Initialize a new database."""
-        if self.db_path.exists():
+        if self._is_local and self.db_path.exists():
             self.console.print(
                 f"[yellow]Database already exists at {self.db_path}[/yellow]"
             )
@@ -63,7 +69,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def info(self):
         """Display read-only information about the database without modifying it."""
 
-        import lancedb
+        from haiku.rag.store.engine import Store, connect_lancedb
 
         # Basic: show path
         self.console.print("[bold]haiku.rag database info[/bold]")
@@ -71,16 +77,14 @@ class HaikuRAGApp:  # pragma: no cover
             f"  [repr.attrib_name]path[/repr.attrib_name]: {self.db_path}"
         )
 
-        if not self.db_path.exists():
+        if self._is_local and not self.db_path.exists():
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
         # Connect without going through Store to avoid upgrades/validation writes
-        db = lancedb.connect(self.db_path)
+        db = connect_lancedb(self.config, self.db_path)
 
         versions = get_package_versions()
-
-        from haiku.rag.store.engine import Store
 
         store = Store(
             self.db_path,
@@ -201,7 +205,7 @@ class HaikuRAGApp:  # pragma: no cover
         """
         from haiku.rag.store.engine import Store
 
-        if not self.db_path.exists():
+        if self._is_local and not self.db_path.exists():
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
