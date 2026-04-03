@@ -74,6 +74,7 @@ def render_templates(
     description: str,
     tool_names: list[str],
     preamble: str | None = None,
+    remote: bool = False,
 ) -> pathlib.Path:
     if preamble is None:
         preamble = DEFAULT_PREAMBLE
@@ -88,6 +89,7 @@ def render_templates(
         "tool_names": tool_names,
         "preamble": preamble,
         "rag_version": rag_version,
+        "remote": remote,
     }
 
     result_dir = output_dir / f"{name}-skill"
@@ -115,7 +117,7 @@ def render_templates(
 
 
 def generate_skill(
-    db_path: pathlib.Path,
+    db_path: pathlib.Path | None,
     output_dir: pathlib.Path,
     name: str,
     description: str,
@@ -125,7 +127,16 @@ def generate_skill(
 ) -> pathlib.Path:
     validate_metadata(name, description)
     validate_tools(tool_names)
-    validate_db_path(db_path)
+
+    if db_path is None:
+        if config_path is None:
+            raise ValueError(
+                "config_path is required when db_path is not provided "
+                "(remote storage needs connection config)"
+            )
+    else:
+        validate_db_path(db_path)
+
     validate_output_dir(output_dir, name)
 
     result = render_templates(
@@ -134,11 +145,14 @@ def generate_skill(
         description=description,
         tool_names=tool_names,
         preamble=preamble,
+        remote=db_path is None,
     )
 
     pkg_name = name.replace("-", "_")
     assets_dir = result / f"{pkg_name}_skill" / "assets"
-    shutil.copytree(db_path, assets_dir / f"{name}.lancedb")
+
+    if db_path is not None:
+        shutil.copytree(db_path, assets_dir / f"{name}.lancedb")
 
     if config_path is not None:
         shutil.copy2(config_path, assets_dir / "haiku.rag.yaml")

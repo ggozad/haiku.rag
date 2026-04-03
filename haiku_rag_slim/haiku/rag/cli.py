@@ -718,7 +718,7 @@ def serve(
 
 @_cli.command(
     "create-skill",
-    help="Generate a standalone skill package with an embedded database",
+    help="Generate a standalone skill package with an embedded or remote database",
 )
 def create_skill_cmd(  # pragma: no cover
     name: str = typer.Option(
@@ -726,10 +726,10 @@ def create_skill_cmd(  # pragma: no cover
         "--name",
         help="Skill name (lowercase alphanumeric and hyphens)",
     ),
-    db: Path = typer.Option(
-        ...,
+    db: Path | None = typer.Option(
+        None,
         "--db",
-        help="Path to the LanceDB database to embed",
+        help="Path to the LanceDB database to embed (omit for remote storage)",
     ),
     description: str | None = typer.Option(
         None,
