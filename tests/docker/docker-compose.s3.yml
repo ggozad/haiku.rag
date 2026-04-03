@@ -1,0 +1,18 @@
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    ports:
+      - "8333:8333"
+    command: server -s3 -s3.config=/etc/seaweedfs/s3-config.json
+    volumes:
+      - ./s3-config.json:/etc/seaweedfs/s3-config.json:ro
+
+  createbucket:
+    image: chrislusf/seaweedfs
+    depends_on:
+      - seaweedfs
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3 &&
+      echo 's3.bucket.create -name test-bucket' | weed shell -master seaweedfs:9333
+      "
