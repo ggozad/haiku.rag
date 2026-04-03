@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **S3/Object storage support**: Connect to LanceDB on S3, GCS, Azure Blob, or HDFS via `lancedb.uri` and `storage_options` config. Supports S3-compatible stores (MinIO, Tigris) with custom endpoints.
+- **Remote skill generation**: `create-skill` now supports remote databases — omit `--db` and provide `--config-file` to generate skills that connect to object storage at runtime instead of bundling the database.
+
 ## [0.38.0] - 2026-04-07
 
 ### Added
