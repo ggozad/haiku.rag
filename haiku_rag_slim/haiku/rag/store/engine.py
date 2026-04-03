@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
+from enum import Enum
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,42 @@ from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 
 logger = logging.getLogger(__name__)
+
+OBJECT_STORAGE_PREFIXES = ("s3://", "gs://", "az://", "hdfs://")
+
+
+class ConnectionMode(Enum):
+    LOCAL = "local"
+    CLOUD = "cloud"
+    OBJECT_STORAGE = "object_storage"
+
+    @staticmethod
+    def from_config(config: AppConfig) -> "ConnectionMode":
+        uri = config.lancedb.uri
+        if not uri:
+            return ConnectionMode.LOCAL
+        if uri.startswith("db://"):
+            return ConnectionMode.CLOUD
+        return ConnectionMode.OBJECT_STORAGE
+
+
+def connect_lancedb(config: AppConfig, db_path: Path | None = None):
+    mode = ConnectionMode.from_config(config)
+    if mode == ConnectionMode.CLOUD:
+        return lancedb.connect(
+            uri=config.lancedb.uri,
+            api_key=config.lancedb.api_key,
+            region=config.lancedb.region,
+        )
+    elif mode == ConnectionMode.OBJECT_STORAGE:
+        kwargs: dict[str, Any] = {"uri": config.lancedb.uri}
+        if config.lancedb.storage_options:
+            kwargs["storage_options"] = config.lancedb.storage_options
+        return lancedb.connect(**kwargs)
+    else:
+        if db_path is None:
+            raise ValueError("No lancedb.uri configured and no db_path provided")
+        return lancedb.connect(db_path)
 
 
 class DocumentRecord(LanceModel):
@@ -95,7 +132,7 @@ class Store:
 
         # Check if database exists (for local filesystem only)
         is_new_db = False
-        if not self._has_cloud_config():
+        if self._connection_mode == ConnectionMode.LOCAL:
             if not db_path.exists():
                 if not create:
                     raise FileNotFoundError(
@@ -108,7 +145,13 @@ class Store:
                     Path.mkdir(db_path.parent, parents=True)
 
         # Connect to LanceDB
-        self.db = self._connect_to_lancedb(db_path)
+        self.db = connect_lancedb(self._config, db_path)
+
+        # For remote stores, detect new DB by checking if tables exist
+        if not is_new_db and self._connection_mode != ConnectionMode.LOCAL:
+            existing_tables = self.db.list_tables().tables
+            if not existing_tables:
+                is_new_db = True
 
         # For existing databases, read stored vector dimension to create ChunkRecord
         # that can read existing chunks. For new databases, use config's dimension.
@@ -196,9 +239,7 @@ class Store:
         """
         self._assert_writable()
 
-        if self._has_cloud_config() and str(self._config.lancedb.uri).startswith(
-            "db://"
-        ):
+        if self._connection_mode == ConnectionMode.CLOUD:
             return
 
         # Skip if already running (non-blocking)
@@ -222,26 +263,9 @@ class Store:
                 # Handle resource errors gracefully
                 logger.debug(f"Vacuum skipped due to resource constraints: {e}")
 
-    def _connect_to_lancedb(self, db_path: Path):
-        """Establish connection to LanceDB (local, cloud, or object storage)."""
-        # Check if we have cloud configuration
-        if self._has_cloud_config():
-            return lancedb.connect(
-                uri=self._config.lancedb.uri,
-                api_key=self._config.lancedb.api_key,
-                region=self._config.lancedb.region,
-            )
-        else:
-            # Local file system connection
-            return lancedb.connect(db_path)
-
-    def _has_cloud_config(self) -> bool:
-        """Check if cloud configuration is complete."""
-        return bool(
-            self._config.lancedb.uri
-            and self._config.lancedb.api_key
-            and self._config.lancedb.region
-        )
+    @property
+    def _connection_mode(self) -> ConnectionMode:
+        return ConnectionMode.from_config(self._config)
 
     def get_stats(self) -> dict:
         """Get comprehensive table statistics.
@@ -296,7 +320,7 @@ class Store:
         it will be replaced (using replace=True parameter).
         Note: Index creation requires sufficient training data.
         """
-        if self._has_cloud_config():
+        if self._connection_mode == ConnectionMode.CLOUD:
             return
 
         try:
