@@ -27,7 +27,11 @@ from haiku.rag.skills._tools import AnalysisEntry
 _TOOL_NAMES = {{ tool_names | tojson }}
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+{% if remote %}
+_DB_PATH = None
+{% else %}
 _DB_PATH = _ASSETS_DIR / "{{ name }}.lancedb"
+{% endif %}
 _CONFIG_PATH = _ASSETS_DIR / "haiku.rag.yaml"
 
 
