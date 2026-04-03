@@ -1,7 +1,7 @@
-# Start MinIO before running:
-#   docker compose -f tests/docker/docker-compose.minio.yml up -d
+# Start SeaweedFS before running:
+#   docker compose -f tests/docker/docker-compose.s3.yml up -d
 # Stop after:
-#   docker compose -f tests/docker/docker-compose.minio.yml down -v
+#   docker compose -f tests/docker/docker-compose.s3.yml down -v
 
 import socket
 from uuid import uuid4
@@ -13,20 +13,20 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.engine import Store
 
-MINIO_ENDPOINT = "http://localhost:9000"
-MINIO_BUCKET = "test-bucket"
-MINIO_STORAGE_OPTIONS = {
-    "aws_access_key_id": "minioadmin",
-    "aws_secret_access_key": "minioadmin",
-    "endpoint": MINIO_ENDPOINT,
+S3_ENDPOINT = "http://localhost:8333"
+S3_BUCKET = "test-bucket"
+S3_STORAGE_OPTIONS = {
+    "endpoint": S3_ENDPOINT,
     "region": "us-east-1",
     "allow_http": "true",
+    "aws_access_key_id": "testkey",
+    "aws_secret_access_key": "testsecret",
 }
 
 
-def _minio_available() -> bool:
+def _s3_available() -> bool:
     try:
-        s = socket.create_connection(("localhost", 9000), timeout=1)
+        s = socket.create_connection(("localhost", 8333), timeout=1)
         s.close()
         return True
     except OSError:
@@ -36,7 +36,7 @@ def _minio_available() -> bool:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not _minio_available(), reason="MinIO not running on localhost:9000"
+        not _s3_available(), reason="SeaweedFS not running on localhost:8333"
     ),
 ]
 
@@ -45,8 +45,8 @@ def _make_config() -> AppConfig:
     unique_prefix = uuid4().hex[:8]
     return AppConfig(
         lancedb=LanceDBConfig(
-            uri=f"s3://{MINIO_BUCKET}/test-{unique_prefix}",
-            storage_options=MINIO_STORAGE_OPTIONS,
+            uri=f"s3://{S3_BUCKET}/test-{unique_prefix}",
+            storage_options=S3_STORAGE_OPTIONS,
         )
     )
 
@@ -129,7 +129,6 @@ async def test_client_delete_document(tmp_path):
 @pytest.mark.asyncio
 async def test_app_info(tmp_path, capsys):
     config = _make_config()
-    # Initialize the database first
     async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
         await rag.create_document("Info test document.", uri="test://info")
 

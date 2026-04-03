@@ -43,13 +43,13 @@ lancedb:
     aws_secret_access_key: YOUR_SECRET_KEY
     region: us-east-1
 
-# S3-compatible (MinIO, Tigris, etc.)
+# S3-compatible (SeaweedFS, Tigris, etc.)
 lancedb:
   uri: s3://my-bucket/my-table
   storage_options:
-    endpoint: http://localhost:9000
-    aws_access_key_id: minioadmin
-    aws_secret_access_key: minioadmin
+    endpoint: http://localhost:8333
+    aws_access_key_id: YOUR_ACCESS_KEY
+    aws_secret_access_key: YOUR_SECRET_KEY
     region: us-east-1
     allow_http: "true"
 
