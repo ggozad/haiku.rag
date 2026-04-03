@@ -149,6 +149,12 @@ class Store:
         # Connect to LanceDB
         self.db = connect_lancedb(self._config, db_path)
 
+        # For remote stores, detect new DB by checking if tables exist
+        if not is_new_db and self._connection_mode != ConnectionMode.LOCAL:
+            existing_tables = self.db.list_tables().tables
+            if not existing_tables:
+                is_new_db = True
+
         # For existing databases, read stored vector dimension to create ChunkRecord
         # that can read existing chunks. For new databases, use config's dimension.
         stored_vector_dim = None
