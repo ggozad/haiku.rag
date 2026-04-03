@@ -1,8 +1,10 @@
 import json
+from unittest.mock import patch
 
 import pytest
 
 from haiku.rag.app import HaikuRAGApp
+from haiku.rag.config.models import AppConfig, LanceDBConfig
 
 
 @pytest.mark.asyncio
@@ -153,3 +155,93 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
     # Check basic info still present
     assert "documents: 1" in out
     assert "chunks: 512" in out
+
+
+@pytest.mark.asyncio
+async def test_app_info_uses_connect_lancedb_for_remote(tmp_path, capsys):
+    """info() should use connect_lancedb() instead of direct lancedb.connect() for remote URIs."""
+    nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            uri="s3://bucket/path",
+            storage_options={"endpoint": "http://localhost:9000"},
+        )
+    )
+    app = HaikuRAGApp(db_path=nonexistent, config=config)
+
+    with patch("haiku.rag.store.engine.connect_lancedb") as mock_connect:
+        # Make the mock return something that lets info() proceed minimally
+        mock_db = mock_connect.return_value
+        mock_table = mock_db.open_table.return_value
+        mock_table.search.return_value.where.return_value.limit.return_value.to_arrow.return_value.to_pylist.return_value = [
+            {
+                "settings": json.dumps(
+                    {
+                        "version": "1.0.0",
+                        "embeddings": {
+                            "model": {
+                                "provider": "test",
+                                "name": "test",
+                                "vector_dim": 3,
+                            }
+                        },
+                    }
+                )
+            }
+        ]
+
+        with patch("haiku.rag.store.engine.Store") as mock_store_cls:
+            mock_store = mock_store_cls.return_value
+            mock_store.get_stats.return_value = {
+                "documents": {"exists": True, "num_rows": 0, "total_bytes": 0},
+                "chunks": {
+                    "exists": True,
+                    "num_rows": 0,
+                    "total_bytes": 0,
+                    "has_vector_index": False,
+                    "num_indexed_rows": 0,
+                    "num_unindexed_rows": 0,
+                },
+            }
+            await app.info()
+
+        mock_connect.assert_called_once_with(config, nonexistent)
+
+
+@pytest.mark.asyncio
+async def test_app_init_skips_exists_check_for_remote(tmp_path):
+    """init() should not check db_path.exists() for remote URIs."""
+    nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            uri="s3://bucket/path",
+            storage_options={"endpoint": "http://localhost:9000"},
+        )
+    )
+    app = HaikuRAGApp(db_path=nonexistent, config=config)
+
+    with patch("haiku.rag.app.HaikuRAG") as mock_client_cls:
+        await app.init()
+        # Should have called HaikuRAG to create, not returned early
+        mock_client_cls.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_app_history_skips_exists_check_for_remote(tmp_path):
+    """history() should not check db_path.exists() for remote URIs."""
+    nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            uri="s3://bucket/path",
+            storage_options={"endpoint": "http://localhost:9000"},
+        )
+    )
+    app = HaikuRAGApp(db_path=nonexistent, config=config)
+
+    with patch("haiku.rag.store.engine.Store") as mock_store_cls:
+        mock_store = mock_store_cls.return_value
+        mock_store.documents_table.list_versions.return_value = []
+        mock_store.chunks_table.list_versions.return_value = []
+        mock_store.settings_table.list_versions.return_value = []
+        await app.history()
+        mock_store_cls.assert_called_once()

@@ -64,21 +64,25 @@ class InfoModal(ModalScreen):
 
     async def on_mount(self) -> None:
         """Load and display database info."""
-        import lancedb
+        from haiku.rag.store.engine import ConnectionMode, connect_lancedb
 
         lines: list[str] = []
 
         # Path
         lines.append(f"[bold $accent]path[/bold $accent]: {self.db_path}")
 
-        if not self.db_path.exists():
+        is_local = (
+            ConnectionMode.from_config(self.client.store._config)
+            == ConnectionMode.LOCAL
+        )
+        if is_local and not self.db_path.exists():
             lines.append("[red]Database path does not exist.[/red]")
             self._content_widget.update("\n".join(lines))
             return
 
         # Connect to get table info
         try:
-            db = lancedb.connect(self.db_path)
+            db = connect_lancedb(self.client.store._config, self.db_path)
             table_names = set(db.list_tables().tables)
         except Exception as e:
             lines.append(f"[red]Failed to open database: {e}[/red]")
