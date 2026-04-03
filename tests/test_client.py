@@ -1164,6 +1164,81 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path):
             assert isinstance(img, PILImage)
 
 
+async def test_client_visualize_chunk_multi_page(temp_db_path):
+    """Test visualize_chunk returns one highlighted image per page for multi-page chunks."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+    from PIL.Image import Image as PILImage
+
+    docling_doc = DoclingDocument(name="multi-page-test")
+    page_size = Size(width=612.0, height=792.0)
+    img1 = PilImageModule.new("RGB", (612, 792), color="white")
+    img2 = PilImageModule.new("RGB", (612, 792), color="white")
+    docling_doc.add_page(
+        page_no=1, size=page_size, image=ImageRef.from_pil(img1, dpi=72)
+    )
+    docling_doc.add_page(
+        page_no=2, size=page_size, image=ImageRef.from_pil(img2, dpi=72)
+    )
+
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content on page one.",
+        prov=ProvenanceItem(
+            page_no=1,
+            bbox=BoundingBox(l=50, t=700, r=550, b=650),
+            charspan=(0, 20),
+        ),
+    )
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content on page two.",
+        prov=ProvenanceItem(
+            page_no=2,
+            bbox=BoundingBox(l=50, t=700, r=550, b=650),
+            charspan=(0, 20),
+        ),
+    )
+
+    chunks = [
+        Chunk(
+            content="Content on page one.\nContent on page two.",
+            metadata={
+                "doc_item_refs": ["#/texts/0", "#/texts/1"],
+                "page_numbers": [1, 2],
+                "labels": ["paragraph", "paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://multi-page")
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 1
+
+        chunk = stored_chunks[0]
+        images = await client.visualize_chunk(chunk)
+        assert len(images) == 2
+
+        for img in images:
+            assert isinstance(img, PILImage)
+            assert img.size == (612, 792)
+
+        # Bounding boxes should have been drawn — images should differ from blank white
+        blank = PilImageModule.new("RGB", (612, 792), color="white")
+        for img in images:
+            assert img.tobytes() != blank.tobytes()
+
+
 # =============================================================================
 # convert() method tests
 # =============================================================================
