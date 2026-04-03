@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **S3/Object storage support**: Connect to LanceDB on S3, GCS, Azure Blob, or HDFS via `lancedb.uri` and `storage_options` config. Supports S3-compatible stores (MinIO, Tigris) with custom endpoints.
+- **Remote skill generation**: `create-skill` now supports remote databases — omit `--db` and provide `--config-file` to generate skills that connect to object storage at runtime instead of bundling the database.
+
 ### Changed
 
 - **Dependency updates**: lancedb 0.30.2, pydantic-ai-slim ≥1.77.0, docling ≥2.84.0, docling-core ≥2.71.0, haiku.skills ≥0.13.0, cachetools ≥7.0.5, pydantic-monty ≥0.0.9, cohere ≥5.21.1, textual ≥8.2.1, ty ≥0.0.28, ruff ≥0.15.9
