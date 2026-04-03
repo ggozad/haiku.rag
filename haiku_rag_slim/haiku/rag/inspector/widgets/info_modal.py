@@ -71,18 +71,16 @@ class InfoModal(ModalScreen):
         # Path
         lines.append(f"[bold $accent]path[/bold $accent]: {self.db_path}")
 
-        is_local = (
-            ConnectionMode.from_config(self.client.store._config)
-            == ConnectionMode.LOCAL
-        )
+        is_local = self.client.store._connection_mode == ConnectionMode.LOCAL
         if is_local and not self.db_path.exists():
             lines.append("[red]Database path does not exist.[/red]")
             self._content_widget.update("\n".join(lines))
             return
 
         # Connect to get table info
+        config = self.client.store._config
         try:
-            db = connect_lancedb(self.client.store._config, self.db_path)
+            db = connect_lancedb(config, self.db_path)
             table_names = set(db.list_tables().tables)
         except Exception as e:
             lines.append(f"[red]Failed to open database: {e}[/red]")

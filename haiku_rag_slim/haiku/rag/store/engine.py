@@ -19,8 +19,6 @@ from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 
 logger = logging.getLogger(__name__)
 
-OBJECT_STORAGE_PREFIXES = ("s3://", "gs://", "az://", "hdfs://")
-
 
 class ConnectionMode(Enum):
     LOCAL = "local"

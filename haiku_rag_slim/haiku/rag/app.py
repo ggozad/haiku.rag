@@ -45,11 +45,10 @@ class HaikuRAGApp:  # pragma: no cover
         self.before = before
         self.console = Console()
 
-    @property
-    def _is_local(self) -> bool:
         from haiku.rag.store.engine import ConnectionMode
 
-        return ConnectionMode.from_config(self.config) == ConnectionMode.LOCAL
+        self._is_local = ConnectionMode.from_config(self.config) == ConnectionMode.LOCAL
+        self._display_path = self.db_path if self._is_local else self.config.lancedb.uri
 
     async def init(self):
         """Initialize a new database."""
@@ -62,9 +61,8 @@ class HaikuRAGApp:  # pragma: no cover
         # Create the database
         client = HaikuRAG(db_path=self.db_path, config=self.config, create=True)
         client.close()
-        display_path = self.config.lancedb.uri if not self._is_local else self.db_path
         self.console.print(
-            f"[bold green]Database initialized at {display_path}[/bold green]"
+            f"[bold green]Database initialized at {self._display_path}[/bold green]"
         )
 
     async def info(self):
@@ -74,9 +72,8 @@ class HaikuRAGApp:  # pragma: no cover
 
         # Basic: show path/URI
         self.console.print("[bold]haiku.rag database info[/bold]")
-        display_path = self.config.lancedb.uri if not self._is_local else self.db_path
         self.console.print(
-            f"  [repr.attrib_name]path[/repr.attrib_name]: {display_path}"
+            f"  [repr.attrib_name]path[/repr.attrib_name]: {self._display_path}"
         )
 
         if self._is_local and not self.db_path.exists():
