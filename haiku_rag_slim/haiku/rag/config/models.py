@@ -48,7 +48,6 @@ class StorageConfig(BaseModel):
     auto_vacuum: bool = True
     vacuum_retention_seconds: int = 86400
     docling_cache_size: int = 100
-    compress_docling: bool = True
 
 
 class MonitorConfig(BaseModel):
@@ -176,6 +175,7 @@ class ProcessingConfig(BaseModel):
 class SearchConfig(BaseModel):
     limit: int = 10
     context_radius: int = 0
+    context_expansion_mode: Literal["auto", "chunks", "disabled"] = "auto"
     max_context_items: int = 10
     max_context_chars: int = 10000
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
