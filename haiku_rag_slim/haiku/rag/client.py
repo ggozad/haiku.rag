@@ -1075,8 +1075,8 @@ class HaikuRAG:
         # Step 1: Get reranker
         t0 = time.perf_counter()
         reranker = get_reranker(config=self._config)
-        logger.debug(
-            "search reranker_init took %.3fs",
+        logger.info(
+            "search.reranker_init took %.3fs",
             time.perf_counter() - t0,
         )
 
@@ -1086,8 +1086,8 @@ class HaikuRAG:
             chunk_results = await self.chunk_repository.search(
                 query, limit, search_type, filter
             )
-            logger.debug(
-                "search chunk_search type=%s limit=%d results=%d took %.3fs",
+            logger.info(
+                "search.chunk_search type=%s limit=%d results=%d took %.3fs",
                 search_type,
                 limit,
                 len(chunk_results),
@@ -1098,8 +1098,8 @@ class HaikuRAG:
             raw_results = await self.chunk_repository.search(
                 query, search_limit, search_type, filter
             )
-            logger.debug(
-                "search chunk_search type=%s limit=%d results=%d took %.3fs",
+            logger.info(
+                "search.chunk_search type=%s limit=%d results=%d took %.3fs",
                 search_type,
                 search_limit,
                 len(raw_results),
@@ -1112,8 +1112,8 @@ class HaikuRAG:
             chunk_results = await reranker.rerank(
                 query, chunks, top_n=limit
             )
-            logger.debug(
-                "search rerank candidates=%d top_n=%d took %.3fs",
+            logger.info(
+                "search.rerank candidates=%d top_n=%d took %.3fs",
                 len(chunks),
                 limit,
                 time.perf_counter() - t0,
@@ -1125,8 +1125,8 @@ class HaikuRAG:
             SearchResult.from_chunk(chunk, score)
             for chunk, score in chunk_results
         ]
-        logger.debug(
-            "search build_results count=%d took %.3fs",
+        logger.info(
+            "search.build_results count=%d took %.3fs",
             len(results),
             time.perf_counter() - t0,
         )

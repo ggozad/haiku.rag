@@ -234,10 +234,13 @@ class ChunkRepository:
         Returns:
             List of (chunk, score) tuples ordered by relevance.
         """
+        import time
+
         if not query.strip():
             return []
         filtered_doc_ids = None
         if filter:
+            t0 = time.perf_counter()
             # We perform filtering as a two-step process, first filtering documents, then
             # filtering chunks based on those document IDs.
             # This is because LanceDB does not support joins directly in search queries.
@@ -252,10 +255,19 @@ class ChunkRepository:
                 return []
             # Keep as pandas Series for efficient vectorized operations
             filtered_doc_ids = docs_df["id"]
+            logger.info(
+                "search.filter docs=%d took %.3fs",
+                len(filtered_doc_ids),
+                time.perf_counter() - t0,
+            )
 
         # Prepare search query based on search type
         if search_type == "vector":
+            t0 = time.perf_counter()
             query_embedding = await self.embedder.embed_query(query)
+            logger.info(
+                "search.embed took %.3fs", time.perf_counter() - t0
+            )
             vector_query = cast(
                 "LanceVectorQueryBuilder",
                 self.store.chunks_table.search(
@@ -270,7 +282,11 @@ class ChunkRepository:
             results = self.store.chunks_table.search(query, query_type="fts")
 
         else:  # hybrid (default)
+            t0 = time.perf_counter()
             query_embedding = await self.embedder.embed_query(query)
+            logger.info(
+                "search.embed took %.3fs", time.perf_counter() - t0
+            )
             # Create RRF reranker
             reranker = RRFReranker()
             # Perform native hybrid search with RRF reranking
@@ -286,10 +302,21 @@ class ChunkRepository:
 
         # Apply filtering if needed (common for all search types)
         if filtered_doc_ids is not None:
+            t0 = time.perf_counter()
             chunks_df = results.to_pandas()
+            logger.info(
+                "search.execute took %.3fs", time.perf_counter() - t0
+            )
+            t0 = time.perf_counter()
             filtered_chunks_df = chunks_df.loc[
                 chunks_df["document_id"].isin(filtered_doc_ids)
             ].head(limit)
+            logger.info(
+                "search.doc_filter rows=%d->%d took %.3fs",
+                len(chunks_df),
+                len(filtered_chunks_df),
+                time.perf_counter() - t0,
+            )
             return await self._process_search_results(filtered_chunks_df)
 
         # No filtering needed, apply limit and return
@@ -453,6 +480,8 @@ class ChunkRepository:
         Args:
             query_result: Either a pandas DataFrame or a LanceDB query result
         """
+        import time
+
         import pandas as pd
 
         def extract_scores(df: pd.DataFrame) -> list[float]:
@@ -470,17 +499,25 @@ class ChunkRepository:
                 raise ValueError("Unknown search result format, cannot extract scores")
 
         # Convert everything to DataFrame for uniform processing
+        t0 = time.perf_counter()
         if isinstance(query_result, pd.DataFrame):
             df = query_result
         else:
             # Convert LanceDB query result to DataFrame
+            # (this is where the actual DB query executes)
             df = query_result.to_pandas()
+        logger.info(
+            "search.execute rows=%d took %.3fs",
+            len(df),
+            time.perf_counter() - t0,
+        )
 
         # Extract scores
         scores = extract_scores(df)
 
         # Convert DataFrame rows to ChunkRecords using to_dict
         # (avoids slow .iterrows() overhead)
+        t0 = time.perf_counter()
         rows = df.to_dict(orient="records")
         pydantic_results = [
             self.store.ChunkRecord(
@@ -493,11 +530,17 @@ class ChunkRepository:
             )
             for row in rows
         ]
+        logger.info(
+            "search.to_records count=%d took %.3fs",
+            len(pydantic_results),
+            time.perf_counter() - t0,
+        )
 
         # Collect all unique document IDs for batch lookup
         document_ids = list(set(chunk.document_id for chunk in pydantic_results))
 
         # Batch fetch all documents at once
+        t0 = time.perf_counter()
         documents_map = {}
         if document_ids:
             # Use IN clause for efficient batch lookup
@@ -509,8 +552,14 @@ class ChunkRepository:
                 .to_pydantic(DocumentRecord)
             )
             documents_map = {doc.id: doc for doc in doc_results}
+        logger.info(
+            "search.doc_lookup docs=%d took %.3fs",
+            len(documents_map),
+            time.perf_counter() - t0,
+        )
 
         # Build final results with document info
+        t0 = time.perf_counter()
         chunks_with_scores = []
         for i, chunk_record in enumerate(pydantic_results):
             doc = documents_map.get(chunk_record.document_id)
@@ -526,5 +575,10 @@ class ChunkRepository:
             )
             score = scores[i] if i < len(scores) else 1.0
             chunks_with_scores.append((chunk, score))
+        logger.info(
+            "search.build_chunks count=%d took %.3fs",
+            len(chunks_with_scores),
+            time.perf_counter() - t0,
+        )
 
         return chunks_with_scores
