@@ -58,7 +58,6 @@ class QuestionAnswerAgent:
             tool_name="search",
             on_results=accumulated_results.extend,
             max_searches=max_searches,
-            expand_context=False,
         )
 
         # Agent created per-call: toolset varies with filter, and Agent
