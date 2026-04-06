@@ -103,6 +103,13 @@ class HaikuRAG:
         """Whether the client is in read-only mode."""
         return self.store.is_read_only
 
+    def _compress_docling(self, json_str: str) -> bytes:
+        """Compress a docling JSON string, respecting config."""
+        return compress_json(
+            json_str,
+            enabled=self._config.storage.compress_docling,
+        )
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
@@ -495,7 +502,7 @@ class HaikuRAG:
             uri=uri,
             title=title,
             metadata=metadata or {},
-            docling_document=compress_json(docling_document.model_dump_json()),
+            docling_document=self._compress_docling(docling_document.model_dump_json()),
             docling_version=docling_document.version,
         )
 
@@ -535,7 +542,7 @@ class HaikuRAG:
             uri=uri,
             title=title,
             metadata=metadata or {},
-            docling_document=compress_json(docling_document.model_dump_json()),
+            docling_document=self._compress_docling(docling_document.model_dump_json()),
             docling_version=docling_document.version,
         )
 
@@ -672,7 +679,7 @@ class HaikuRAG:
             # Update existing document and rechunk
             existing_doc.content = stored_content
             existing_doc.metadata = metadata
-            existing_doc.docling_document = compress_json(
+            existing_doc.docling_document = self._compress_docling(
                 docling_document.model_dump_json()
             )
             existing_doc.docling_version = docling_document.version
@@ -694,7 +701,7 @@ class HaikuRAG:
                 uri=uri,
                 title=title,
                 metadata=metadata,
-                docling_document=compress_json(docling_document.model_dump_json()),
+                docling_document=self._compress_docling(docling_document.model_dump_json()),
                 docling_version=docling_document.version,
             )
             return await self._store_document_with_chunks(document, embedded_chunks)
@@ -789,7 +796,7 @@ class HaikuRAG:
                 # Update existing document and rechunk
                 existing_doc.content = stored_content
                 existing_doc.metadata = metadata
-                existing_doc.docling_document = compress_json(
+                existing_doc.docling_document = self._compress_docling(
                     docling_document.model_dump_json()
                 )
                 existing_doc.docling_version = docling_document.version
@@ -811,7 +818,7 @@ class HaikuRAG:
                     uri=url,
                     title=title,
                     metadata=metadata,
-                    docling_document=compress_json(docling_document.model_dump_json()),
+                    docling_document=self._compress_docling(docling_document.model_dump_json()),
                     docling_version=docling_document.version,
                 )
                 return await self._store_document_with_chunks(document, embedded_chunks)
@@ -971,7 +978,7 @@ class HaikuRAG:
             # Store docling data if provided
             if docling_document is not None:
                 existing_doc.content = docling_document.export_to_markdown()
-                existing_doc.docling_document = compress_json(
+                existing_doc.docling_document = self._compress_docling(
                     docling_document.model_dump_json()
                 )
                 existing_doc.docling_version = docling_document.version
@@ -983,7 +990,7 @@ class HaikuRAG:
         # DoclingDocument provided without chunks - chunk and embed using primitives
         if docling_document is not None:
             existing_doc.content = docling_document.export_to_markdown()
-            existing_doc.docling_document = compress_json(
+            existing_doc.docling_document = self._compress_docling(
                 docling_document.model_dump_json()
             )
             existing_doc.docling_version = docling_document.version
@@ -998,7 +1005,7 @@ class HaikuRAG:
         assert content is not None
         existing_doc.content = content
         converted_docling = await self.convert(existing_doc.content)
-        existing_doc.docling_document = compress_json(
+        existing_doc.docling_document = self._compress_docling(
             converted_docling.model_dump_json()
         )
         existing_doc.docling_version = converted_docling.version
@@ -1966,7 +1973,7 @@ class HaikuRAG:
             embedded_chunks = await embed_chunks(chunks, self._config)
 
             # Update document fields
-            doc.docling_document = compress_json(docling_document.model_dump_json())
+            doc.docling_document = self._compress_docling(docling_document.model_dump_json())
             doc.docling_version = docling_document.version
 
             # Prepare chunks with document_id and order
@@ -2045,7 +2052,7 @@ class HaikuRAG:
             chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(chunks, self._config)
 
-            doc.docling_document = compress_json(docling_document.model_dump_json())
+            doc.docling_document = self._compress_docling(docling_document.model_dump_json())
             doc.docling_version = docling_document.version
 
             # Prepare chunks with document_id and order

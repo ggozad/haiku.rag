@@ -58,6 +58,7 @@ class QuestionAnswerAgent:
             tool_name="search",
             on_results=accumulated_results.extend,
             max_searches=max_searches,
+            expand_context=False,
         )
 
         # Agent created per-call: toolset varies with filter, and Agent
@@ -81,9 +82,7 @@ class QuestionAnswerAgent:
         t0 = time.perf_counter()
         result = await agent.run(question, deps=deps)
         agent_duration = time.perf_counter() - t0
-        logger.info(
-            "qa.agent_run took %.3fs", agent_duration
-        )
+        logger.info("qa.agent_run took %.3fs", agent_duration)
 
         t0 = time.perf_counter()
         output = result.output
@@ -93,7 +92,5 @@ class QuestionAnswerAgent:
             len(citations),
             time.perf_counter() - t0,
         )
-        logger.info(
-            "qa.answer completed total=%.3fs", agent_duration
-        )
+        logger.info("qa.answer completed total=%.3fs", agent_duration)
         return output.answer, citations

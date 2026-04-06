@@ -107,6 +107,11 @@ class Store:
                 if not db_path.parent.exists():
                     Path.mkdir(db_path.parent, parents=True)
 
+        # Configure docling document cache size from config
+        from haiku.rag.store.models.document import configure_docling_cache
+
+        configure_docling_cache(config.storage.docling_cache_size)
+
         # Connect to LanceDB
         self.db = self._connect_to_lancedb(db_path)
 

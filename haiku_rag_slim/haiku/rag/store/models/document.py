@@ -16,6 +16,22 @@ logger = logging.getLogger(__name__)
 _docling_document_cache: LRUCache[str, "DoclingDocument"] = LRUCache(maxsize=100)
 
 
+def configure_docling_cache(maxsize: int) -> None:
+    """Resize the DoclingDocument LRU cache.
+
+    Existing entries are preserved up to the new maxsize.
+    """
+    global _docling_document_cache
+    if _docling_document_cache.maxsize == maxsize:
+        return
+    old = _docling_document_cache
+    _docling_document_cache = LRUCache(maxsize=maxsize)
+    # Copy existing entries (LRU order preserved by iteration)
+    for key in old:
+        _docling_document_cache[key] = old[key]
+    logger.info("docling.cache_resized maxsize=%d", maxsize)
+
+
 def _get_cached_docling_document(
     document_id: str, compressed_data: bytes
 ) -> "DoclingDocument":
@@ -25,6 +41,13 @@ def _get_cached_docling_document(
         return _docling_document_cache[document_id]
 
     from docling_core.types.doc.document import DoclingDocument
+
+    logger.info(
+        "docling.cache_miss doc=%s cache_size=%d/%d",
+        document_id[:8],
+        len(_docling_document_cache),
+        _docling_document_cache.maxsize,
+    )
 
     t0 = time.perf_counter()
     json_str = decompress_json(compressed_data)

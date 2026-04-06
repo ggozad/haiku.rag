@@ -47,6 +47,8 @@ class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     auto_vacuum: bool = True
     vacuum_retention_seconds: int = 86400
+    docling_cache_size: int = 100
+    compress_docling: bool = True
 
 
 class MonitorConfig(BaseModel):
