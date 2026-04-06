@@ -182,8 +182,9 @@ Search uses hybrid (vector + full-text) search across all chunks.
 
 Press `c` while viewing a chunk to see the expanded context that would be provided to the QA agent:
 
-- Type-aware expansion: tables, code blocks, and lists expand to their complete structures
+- Type-aware expansion: tables, code blocks, and lists expand to their complete structures (when `search.context_expansion_mode` is `auto`)
 - Text content expands based on `search.context_radius` setting
+- Set `search.context_expansion_mode` to `chunks` for faster expansion on large corpora, or `disabled` to skip expansion
 - Includes metadata like source document, content type, and relevance score
 
 ### Visual Grounding

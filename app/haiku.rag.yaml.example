@@ -34,6 +34,7 @@ embeddings:
 search:
   limit: 5
   context_radius: 0
+  # context_expansion_mode: auto  # auto, chunks, or disabled
 
 # Provider settings
 providers:

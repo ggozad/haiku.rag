@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from haiku.rag.agents.rlm.models import RLMResult
 
 logger = logging.getLogger(__name__)
+perf_logger = logging.getLogger("haiku.rag.perf")
 
 
 class RebuildMode(Enum):
@@ -1075,7 +1076,7 @@ class HaikuRAG:
         # Step 1: Get reranker
         t0 = time.perf_counter()
         reranker = get_reranker(config=self._config)
-        logger.info(
+        perf_logger.debug(
             "search.reranker_init took %.3fs",
             time.perf_counter() - t0,
         )
@@ -1086,7 +1087,7 @@ class HaikuRAG:
             chunk_results = await self.chunk_repository.search(
                 query, limit, search_type, filter
             )
-            logger.info(
+            perf_logger.debug(
                 "search.chunk_search type=%s limit=%d results=%d took %.3fs",
                 search_type,
                 limit,
@@ -1098,7 +1099,7 @@ class HaikuRAG:
             raw_results = await self.chunk_repository.search(
                 query, search_limit, search_type, filter
             )
-            logger.info(
+            perf_logger.debug(
                 "search.chunk_search type=%s limit=%d results=%d took %.3fs",
                 search_type,
                 search_limit,
@@ -1110,7 +1111,7 @@ class HaikuRAG:
             t0 = time.perf_counter()
             chunks = [chunk for chunk, _ in raw_results]
             chunk_results = await reranker.rerank(query, chunks, top_n=limit)
-            logger.info(
+            perf_logger.debug(
                 "search.rerank candidates=%d top_n=%d took %.3fs",
                 len(chunks),
                 limit,
@@ -1122,14 +1123,14 @@ class HaikuRAG:
         results = [
             SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results
         ]
-        logger.info(
+        perf_logger.debug(
             "search.build_results count=%d took %.3fs",
             len(results),
             time.perf_counter() - t0,
         )
 
         duration_s = time.perf_counter() - search_start
-        logger.info(
+        perf_logger.debug(
             "search completed query=%r type=%s results=%d duration=%.3fs",
             query[:80],
             search_type,
@@ -1181,7 +1182,7 @@ class HaikuRAG:
         max_chars = self._config.search.max_context_chars
 
         if mode == "disabled":
-            logger.info("expand.disabled, skipping")
+            perf_logger.debug("expand.disabled, skipping")
             return search_results
 
         # Group by document_id for efficient processing
@@ -1192,7 +1193,7 @@ class HaikuRAG:
                 document_groups[doc_id] = []
             document_groups[doc_id].append(result)
 
-        logger.info(
+        perf_logger.debug(
             "expand.groups docs=%d results=%d mode=%s",
             len(document_groups),
             len(search_results),
@@ -1213,7 +1214,7 @@ class HaikuRAG:
                 # Only fetch docling data (skip content blob)
                 t0 = time.perf_counter()
                 doc = await self.document_repository.get_docling_data(doc_id)
-                logger.info(
+                perf_logger.debug(
                     "expand.fetch_docling_data doc=%s took %.3fs",
                     doc_id[:8],
                     time.perf_counter() - t0,
@@ -1221,7 +1222,7 @@ class HaikuRAG:
                 if doc is not None:
                     t0 = time.perf_counter()
                     docling_doc = doc.get_docling_document()
-                    logger.info(
+                    perf_logger.debug(
                         "expand.get_docling_document doc=%s took %.3fs",
                         doc_id[:8],
                         time.perf_counter() - t0,
@@ -1237,7 +1238,7 @@ class HaikuRAG:
                     max_items,
                     max_chars,
                 )
-                logger.info(
+                perf_logger.debug(
                     "expand._expand_with_docling doc=%s results=%d->%d took %.3fs",
                     doc_id[:8],
                     len(doc_results),
@@ -1252,7 +1253,7 @@ class HaikuRAG:
                     expanded = await self._expand_with_chunks(
                         doc_id, doc_results, radius
                     )
-                    logger.info(
+                    perf_logger.debug(
                         "expand._expand_with_chunks doc=%s results=%d->%d took %.3fs",
                         doc_id[:8],
                         len(doc_results),
@@ -1263,7 +1264,7 @@ class HaikuRAG:
                 else:
                     expanded_results.extend(doc_results)
 
-        logger.info(
+        perf_logger.debug(
             "expand.total results=%d took %.3fs",
             len(expanded_results),
             time.perf_counter() - expand_start,

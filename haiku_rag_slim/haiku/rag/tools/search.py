@@ -9,6 +9,7 @@ from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import RAGDeps
 
 logger = logging.getLogger(__name__)
+perf_logger = logging.getLogger("haiku.rag.perf")
 
 
 def create_search_toolset(
@@ -59,7 +60,7 @@ def create_search_toolset(
 
         if _last_tool_return:
             llm_think_time = tool_start - _last_tool_return[0]
-            logger.info(
+            perf_logger.debug(
                 "tool.llm_thinking took %.3fs", llm_think_time
             )
 
@@ -81,7 +82,7 @@ def create_search_toolset(
         results = await client.search(
             query, limit=effective_limit, filter=effective_filter
         )
-        logger.info(
+        perf_logger.debug(
             "tool.search query=%r took %.3fs",
             query[:80],
             time.perf_counter() - t0,
@@ -90,7 +91,7 @@ def create_search_toolset(
         if expand_context:
             t0 = time.perf_counter()
             results = await client.expand_context(results)
-            logger.info(
+            perf_logger.debug(
                 "tool.expand_context results=%d took %.3fs",
                 len(results),
                 time.perf_counter() - t0,
@@ -112,14 +113,14 @@ def create_search_toolset(
             for i, r in enumerate(results_list)
         ]
         output = "\n\n".join(formatted)
-        logger.info(
+        perf_logger.debug(
             "tool.format results=%d chars=%d took %.3fs",
             total,
             len(output),
             time.perf_counter() - t0,
         )
 
-        logger.info(
+        perf_logger.debug(
             "tool.search_total took %.3fs",
             time.perf_counter() - tool_start,
         )

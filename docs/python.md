@@ -376,10 +376,11 @@ for result in expanded_results:
 Context expansion uses your configuration settings:
 
 - **search.context_radius**: For text content (paragraphs), includes N DocItems before and after
+- **search.context_expansion_mode**: Controls the expansion strategy — `auto` (default, structure-aware with fallback), `chunks` (chunk-based only, faster for large corpora), or `disabled` (no expansion)
 - **search.max_context_items**: Limits how many document items can be included
 - **search.max_context_chars**: Hard limit on total characters
 
-**Type-aware expansion**: Structural content (tables, code blocks, lists) automatically expands to include the complete structure, regardless of how it was split during chunking.
+**Type-aware expansion**: Structural content (tables, code blocks, lists) automatically expands to include the complete structure, regardless of how it was split during chunking. This applies when `context_expansion_mode` is `auto`.
 
 **Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
 

@@ -8,16 +8,21 @@ Configure search behavior and context expansion:
 search:
   limit: 10                    # Default number of results to return
   context_radius: 0            # DocItems before/after to include for text content
+  context_expansion_mode: auto # auto, chunks, or disabled
   max_context_items: 10        # Maximum items in expanded context
   max_context_chars: 10000     # Maximum characters in expanded context
 ```
 
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 10
 - **context_radius**: For text content (paragraphs), includes N DocItems before and after. Set to 0 to disable expansion (default).
+- **context_expansion_mode**: Controls which expansion strategy is used. Default: `auto`.
+    - `auto`: Prefer DoclingDocument-based expansion when doc_item_refs exist (structure-aware), fall back to chunk-based expansion.
+    - `chunks`: Always use chunk-based expansion. Skips DoclingDocument decompression, which can be significantly faster for large corpora.
+    - `disabled`: No expansion at all — return search results as-is.
 - **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context. Default: 10.
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
 
-Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked.
+Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked. This applies when `context_expansion_mode` is `auto`.
 
 !!! note "Reranking behavior"
     When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.

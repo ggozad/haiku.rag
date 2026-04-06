@@ -768,3 +768,81 @@ async def test_expand_context_no_base64_images_docling_serve(temp_db_path):
                 assert "data:image" not in result.content.lower(), (
                     f"Found 'data:image' in expanded content: {result.content[:500]}"
                 )
+
+
+async def test_expand_context_disabled_mode(temp_db_path):
+    """Test that context_expansion_mode='disabled' returns results unchanged."""
+    config = AppConfig()
+    config.search.context_radius = 3
+    config.search.context_expansion_mode = "disabled"
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        # Build SearchResults directly — no DB or embeddings needed
+        search_results = [
+            SearchResult(
+                content="Test content",
+                score=0.9,
+                chunk_id="chunk-1",
+                document_id="doc-1",
+            ),
+            SearchResult(
+                content="Other content",
+                score=0.8,
+                chunk_id="chunk-2",
+                document_id="doc-1",
+            ),
+        ]
+        expanded = await client.expand_context(search_results)
+
+        # Should return the exact same list — no expansion performed
+        assert len(expanded) == 2
+        assert expanded[0].content == "Test content"
+        assert expanded[0].score == 0.9
+        assert expanded[1].content == "Other content"
+        assert expanded[1].score == 0.8
+
+
+@pytest.mark.vcr()
+async def test_expand_context_chunks_mode_skips_docling(temp_db_path):
+    """Test that context_expansion_mode='chunks' uses chunk expansion."""
+    config = AppConfig()
+    config.search.context_radius = 1
+    config.search.context_expansion_mode = "chunks"
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        # Create document with manual chunks that have pre-set embeddings
+        # to avoid calling the embedding API
+        dim = 2560
+        docling_doc = DoclingDocument(name="test_chunks_mode")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full content")
+        manual_chunks = [
+            Chunk(content="Part A", order=0, embedding=[0.1] * dim),
+            Chunk(content="Part B", order=1, embedding=[0.2] * dim),
+            Chunk(content="Part C", order=2, embedding=[0.3] * dim),
+        ]
+        doc = await client.import_document(
+            docling_document=docling_doc, chunks=manual_chunks
+        )
+        assert doc.id is not None
+
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        chunk_b = next(c for c in chunks if c.order == 1)
+
+        # Give it doc_item_refs so it would normally trigger docling path
+        search_results = [
+            SearchResult(
+                content=chunk_b.content,
+                score=0.9,
+                chunk_id=chunk_b.id,
+                document_id=doc.id,
+                doc_item_refs=["#/texts/0"],
+            ),
+        ]
+        expanded = await client.expand_context(search_results)
+
+        # Should use chunk-based expansion (radius=1 around order 1)
+        assert len(expanded) == 1
+        # Expanded content should include adjacent chunks
+        assert "Part A" in expanded[0].content
+        assert "Part B" in expanded[0].content
+        assert "Part C" in expanded[0].content

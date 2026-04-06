@@ -18,6 +18,7 @@ from haiku.rag.tools.search import create_search_toolset
 from haiku.rag.utils import get_model
 
 logger = logging.getLogger(__name__)
+perf_logger = logging.getLogger("haiku.rag.perf")
 
 
 @dataclass
@@ -81,15 +82,15 @@ class QuestionAnswerAgent:
         t0 = time.perf_counter()
         result = await agent.run(question, deps=deps)
         agent_duration = time.perf_counter() - t0
-        logger.info("qa.agent_run took %.3fs", agent_duration)
+        perf_logger.debug("qa.agent_run took %.3fs", agent_duration)
 
         t0 = time.perf_counter()
         output = result.output
         citations = resolve_citations(output.cited_chunks, accumulated_results)
-        logger.info(
+        perf_logger.debug(
             "qa.resolve_citations count=%d took %.3fs",
             len(citations),
             time.perf_counter() - t0,
         )
-        logger.info("qa.answer completed total=%.3fs", agent_duration)
+        perf_logger.debug("qa.answer completed total=%.3fs", agent_duration)
         return output.answer, citations

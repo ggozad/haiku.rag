@@ -28,6 +28,8 @@ When configured, a cross-encoder reranker re-scores 10x the requested candidates
 
 `context_radius` expands text chunks with neighboring document items. Structural content (tables, code blocks, lists) expands automatically to include the complete structure. This setting matters most with small `chunk_size` values, where individual chunks may lack sufficient context. `max_context_items` and `max_context_chars` cap expansion to prevent context bloat.
 
+`context_expansion_mode` controls which expansion strategy is used. The default `auto` uses DoclingDocument-based expansion (structure-aware) when available, falling back to chunk-based expansion. Set to `chunks` to skip DoclingDocument decompression for faster performance on large corpora, or `disabled` to skip expansion entirely.
+
 ## Tuning Generation
 
 Model and temperature selection affect answer quality directly — see [Providers](configuration/providers.md#model-settings) for options.

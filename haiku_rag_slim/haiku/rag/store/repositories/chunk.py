@@ -17,6 +17,7 @@ from haiku.rag.store.engine import DocumentRecord, Store
 from haiku.rag.store.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
+perf_logger = logging.getLogger("haiku.rag.perf")
 
 
 class ChunkRepository:
@@ -255,7 +256,7 @@ class ChunkRepository:
                 return []
             # Keep as pandas Series for efficient vectorized operations
             filtered_doc_ids = docs_df["id"]
-            logger.info(
+            perf_logger.debug(
                 "search.filter docs=%d took %.3fs",
                 len(filtered_doc_ids),
                 time.perf_counter() - t0,
@@ -265,7 +266,7 @@ class ChunkRepository:
         if search_type == "vector":
             t0 = time.perf_counter()
             query_embedding = await self.embedder.embed_query(query)
-            logger.info(
+            perf_logger.debug(
                 "search.embed took %.3fs", time.perf_counter() - t0
             )
             vector_query = cast(
@@ -284,7 +285,7 @@ class ChunkRepository:
         else:  # hybrid (default)
             t0 = time.perf_counter()
             query_embedding = await self.embedder.embed_query(query)
-            logger.info(
+            perf_logger.debug(
                 "search.embed took %.3fs", time.perf_counter() - t0
             )
             # Create RRF reranker
@@ -304,14 +305,14 @@ class ChunkRepository:
         if filtered_doc_ids is not None:
             t0 = time.perf_counter()
             chunks_df = results.to_pandas()
-            logger.info(
+            perf_logger.debug(
                 "search.execute took %.3fs", time.perf_counter() - t0
             )
             t0 = time.perf_counter()
             filtered_chunks_df = chunks_df.loc[
                 chunks_df["document_id"].isin(filtered_doc_ids)
             ].head(limit)
-            logger.info(
+            perf_logger.debug(
                 "search.doc_filter rows=%d->%d took %.3fs",
                 len(chunks_df),
                 len(filtered_chunks_df),
@@ -506,7 +507,7 @@ class ChunkRepository:
             # Convert LanceDB query result to DataFrame
             # (this is where the actual DB query executes)
             df = query_result.to_pandas()
-        logger.info(
+        perf_logger.debug(
             "search.execute rows=%d took %.3fs",
             len(df),
             time.perf_counter() - t0,
@@ -530,7 +531,7 @@ class ChunkRepository:
             )
             for row in rows
         ]
-        logger.info(
+        perf_logger.debug(
             "search.to_records count=%d took %.3fs",
             len(pydantic_results),
             time.perf_counter() - t0,
@@ -552,7 +553,7 @@ class ChunkRepository:
                 .to_pydantic(DocumentRecord)
             )
             documents_map = {doc.id: doc for doc in doc_results}
-        logger.info(
+        perf_logger.debug(
             "search.doc_lookup docs=%d took %.3fs",
             len(documents_map),
             time.perf_counter() - t0,
@@ -575,7 +576,7 @@ class ChunkRepository:
             )
             score = scores[i] if i < len(scores) else 1.0
             chunks_with_scores.append((chunk, score))
-        logger.info(
+        perf_logger.debug(
             "search.build_chunks count=%d took %.3fs",
             len(chunks_with_scores),
             time.perf_counter() - t0,

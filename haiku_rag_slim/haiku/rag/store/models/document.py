@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
 logger = logging.getLogger(__name__)
+perf_logger = logging.getLogger("haiku.rag.perf")
 
 _docling_document_cache: LRUCache[str, "DoclingDocument"] = LRUCache(maxsize=100)
 
@@ -29,7 +30,7 @@ def configure_docling_cache(maxsize: int) -> None:
     # Copy existing entries (LRU order preserved by iteration)
     for key in old:
         _docling_document_cache[key] = old[key]
-    logger.info("docling.cache_resized maxsize=%d", maxsize)
+    perf_logger.debug("docling.cache_resized maxsize=%d", maxsize)
 
 
 def _get_cached_docling_document(
@@ -37,12 +38,12 @@ def _get_cached_docling_document(
 ) -> "DoclingDocument":
     """Get or parse DoclingDocument with LRU caching by document ID."""
     if document_id in _docling_document_cache:
-        logger.info("docling.cache_hit doc=%s", document_id[:8])
+        perf_logger.debug("docling.cache_hit doc=%s", document_id[:8])
         return _docling_document_cache[document_id]
 
     from docling_core.types.doc.document import DoclingDocument
 
-    logger.info(
+    perf_logger.debug(
         "docling.cache_miss doc=%s cache_size=%d/%d",
         document_id[:8],
         len(_docling_document_cache),
@@ -52,7 +53,7 @@ def _get_cached_docling_document(
     t0 = time.perf_counter()
     json_str = decompress_json(compressed_data)
     decompress_time = time.perf_counter() - t0
-    logger.info(
+    perf_logger.debug(
         "docling.decompress doc=%s bytes=%d json_chars=%d took %.3fs",
         document_id[:8],
         len(compressed_data),
@@ -63,7 +64,7 @@ def _get_cached_docling_document(
     t0 = time.perf_counter()
     doc = DoclingDocument.model_validate_json(json_str)
     validate_time = time.perf_counter() - t0
-    logger.info(
+    perf_logger.debug(
         "docling.model_validate doc=%s took %.3fs",
         document_id[:8],
         validate_time,
