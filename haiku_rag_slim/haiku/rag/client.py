@@ -1174,6 +1174,10 @@ class HaikuRAG:
         Returns:
             List of SearchResult objects with expanded content and resolved provenance.
         """
+        import time
+
+        expand_start = time.perf_counter()
+
         radius = self._config.search.context_radius
         max_items = self._config.search.max_context_items
         max_chars = self._config.search.max_context_chars
@@ -1185,6 +1189,12 @@ class HaikuRAG:
             if doc_id not in document_groups:
                 document_groups[doc_id] = []
             document_groups[doc_id].append(result)
+
+        logger.info(
+            "expand.groups docs=%d results=%d",
+            len(document_groups),
+            len(search_results),
+        )
 
         expanded_results = []
 
@@ -1198,14 +1208,27 @@ class HaikuRAG:
 
             if has_refs:
                 # Only fetch docling data (skip content blob)
+                t0 = time.perf_counter()
                 doc = await self.document_repository.get_docling_data(
                     doc_id
                 )
+                logger.info(
+                    "expand.fetch_docling_data doc=%s took %.3fs",
+                    doc_id[:8],
+                    time.perf_counter() - t0,
+                )
                 if doc is not None:
+                    t0 = time.perf_counter()
                     docling_doc = doc.get_docling_document()
+                    logger.info(
+                        "expand.decompress_docling doc=%s took %.3fs",
+                        doc_id[:8],
+                        time.perf_counter() - t0,
+                    )
 
             if docling_doc is not None and has_refs:
                 # Use DoclingDocument-based expansion
+                t0 = time.perf_counter()
                 expanded = await self._expand_with_docling(
                     doc_results,
                     docling_doc,
@@ -1213,17 +1236,37 @@ class HaikuRAG:
                     max_items,
                     max_chars,
                 )
+                logger.info(
+                    "expand.docling doc=%s results=%d->%d took %.3fs",
+                    doc_id[:8],
+                    len(doc_results),
+                    len(expanded),
+                    time.perf_counter() - t0,
+                )
                 expanded_results.extend(expanded)
             else:
                 # Fall back to chunk-based expansion (always uses fixed radius)
                 if radius > 0:
+                    t0 = time.perf_counter()
                     expanded = await self._expand_with_chunks(
                         doc_id, doc_results, radius
+                    )
+                    logger.info(
+                        "expand.chunks doc=%s results=%d->%d took %.3fs",
+                        doc_id[:8],
+                        len(doc_results),
+                        len(expanded),
+                        time.perf_counter() - t0,
                     )
                     expanded_results.extend(expanded)
                 else:
                     expanded_results.extend(doc_results)
 
+        logger.info(
+            "expand.total results=%d took %.3fs",
+            len(expanded_results),
+            time.perf_counter() - expand_start,
+        )
         return expanded_results
 
     def _merge_ranges(
