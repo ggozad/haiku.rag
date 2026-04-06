@@ -1,3 +1,5 @@
+import logging
+import time
 from collections.abc import Callable
 
 from pydantic_ai import FunctionToolset, RunContext
@@ -5,6 +7,8 @@ from pydantic_ai import FunctionToolset, RunContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import RAGDeps
+
+logger = logging.getLogger(__name__)
 
 
 def create_search_toolset(
@@ -35,6 +39,7 @@ def create_search_toolset(
     # Per-run search counter keyed by run_id. Safe for concurrent runs
     # and reuse across sequential agent.run() calls.
     search_counts: dict[str, int] = {}
+    _last_tool_return: list[float] = []
 
     async def search(
         ctx: RunContext[RAGDeps],
@@ -50,9 +55,18 @@ def create_search_toolset(
         Returns:
             Formatted search results with content and metadata.
         """
+        tool_start = time.perf_counter()
+
+        if _last_tool_return:
+            llm_think_time = tool_start - _last_tool_return[0]
+            logger.info(
+                "tool.llm_thinking took %.3fs", llm_think_time
+            )
+
         rid = ctx.run_id or ""
         search_counts[rid] = search_counts.get(rid, 0) + 1
         if max_searches is not None and search_counts[rid] > max_searches:
+            _last_tool_return[:] = [time.perf_counter()]
             return (
                 "Search limit reached. "
                 "Answer the question using the results you already have."
@@ -62,12 +76,25 @@ def create_search_toolset(
 
         effective_filter = base_filter
         effective_limit = limit or config.search.limit
+
+        t0 = time.perf_counter()
         results = await client.search(
             query, limit=effective_limit, filter=effective_filter
         )
+        logger.info(
+            "tool.search query=%r took %.3fs",
+            query[:80],
+            time.perf_counter() - t0,
+        )
 
         if expand_context:
+            t0 = time.perf_counter()
             results = await client.expand_context(results)
+            logger.info(
+                "tool.expand_context results=%d took %.3fs",
+                len(results),
+                time.perf_counter() - t0,
+            )
 
         results_list = list(results)
 
@@ -75,14 +102,29 @@ def create_search_toolset(
             on_results(results_list)
 
         if not results_list:
+            _last_tool_return[:] = [time.perf_counter()]
             return "No results found."
 
+        t0 = time.perf_counter()
         total = len(results_list)
         formatted = [
             r.format_for_agent(rank=i + 1, total=total)
             for i, r in enumerate(results_list)
         ]
-        return "\n\n".join(formatted)
+        output = "\n\n".join(formatted)
+        logger.info(
+            "tool.format results=%d chars=%d took %.3fs",
+            total,
+            len(output),
+            time.perf_counter() - t0,
+        )
+
+        logger.info(
+            "tool.search_total took %.3fs",
+            time.perf_counter() - tool_start,
+        )
+        _last_tool_return[:] = [time.perf_counter()]
+        return output
 
     toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(search, name=tool_name, retries=3)
