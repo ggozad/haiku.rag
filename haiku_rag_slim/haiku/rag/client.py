@@ -1109,9 +1109,7 @@ class HaikuRAG:
             # Step 3: Reranking
             t0 = time.perf_counter()
             chunks = [chunk for chunk, _ in raw_results]
-            chunk_results = await reranker.rerank(
-                query, chunks, top_n=limit
-            )
+            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
             logger.info(
                 "search.rerank candidates=%d top_n=%d took %.3fs",
                 len(chunks),
@@ -1122,8 +1120,7 @@ class HaikuRAG:
         # Step 4: Build SearchResult objects
         t0 = time.perf_counter()
         results = [
-            SearchResult.from_chunk(chunk, score)
-            for chunk, score in chunk_results
+            SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results
         ]
         logger.info(
             "search.build_results count=%d took %.3fs",
@@ -1209,9 +1206,7 @@ class HaikuRAG:
             if has_refs:
                 # Only fetch docling data (skip content blob)
                 t0 = time.perf_counter()
-                doc = await self.document_repository.get_docling_data(
-                    doc_id
-                )
+                doc = await self.document_repository.get_docling_data(doc_id)
                 logger.info(
                     "expand.fetch_docling_data doc=%s took %.3fs",
                     doc_id[:8],
@@ -1221,7 +1216,7 @@ class HaikuRAG:
                     t0 = time.perf_counter()
                     docling_doc = doc.get_docling_document()
                     logger.info(
-                        "expand.decompress_docling doc=%s took %.3fs",
+                        "expand.get_docling_document doc=%s took %.3fs",
                         doc_id[:8],
                         time.perf_counter() - t0,
                     )
@@ -1237,7 +1232,7 @@ class HaikuRAG:
                     max_chars,
                 )
                 logger.info(
-                    "expand.docling doc=%s results=%d->%d took %.3fs",
+                    "expand._expand_with_docling doc=%s results=%d->%d took %.3fs",
                     doc_id[:8],
                     len(doc_results),
                     len(expanded),
@@ -1252,7 +1247,7 @@ class HaikuRAG:
                         doc_id, doc_results, radius
                     )
                     logger.info(
-                        "expand.chunks doc=%s results=%d->%d took %.3fs",
+                        "expand._expand_with_chunks doc=%s results=%d->%d took %.3fs",
                         doc_id[:8],
                         len(doc_results),
                         len(expanded),
@@ -1531,9 +1526,7 @@ class HaikuRAG:
         if not chunk_ids:
             return results
 
-        id_to_order = await self.chunk_repository.get_orders_by_ids(
-            chunk_ids
-        )
+        id_to_order = await self.chunk_repository.get_orders_by_ids(chunk_ids)
         if not id_to_order:
             return results
 
@@ -1543,10 +1536,8 @@ class HaikuRAG:
         range_max = max(orders) + radius
 
         # Fetch only chunks in the needed range
-        chunks_in_doc = (
-            await self.chunk_repository.get_by_document_id_order_range(
-                doc_id, range_min, range_max
-            )
+        chunks_in_doc = await self.chunk_repository.get_by_document_id_order_range(
+            doc_id, range_min, range_max
         )
         if not chunks_in_doc:
             return results
