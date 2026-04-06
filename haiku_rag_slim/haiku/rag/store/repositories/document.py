@@ -90,6 +90,30 @@ class DocumentRepository:
 
         return self._record_to_document(results[0])
 
+    _DOCLING_COLUMNS = ["id", "docling_document", "docling_version"]
+
+    async def get_docling_data(self, entity_id: str) -> Document | None:
+        """Get document with only docling data loaded (skips content blob)."""
+        safe_id = _escape_sql_string(entity_id)
+        results = list(
+            self.store.documents_table.search()
+            .select(self._DOCLING_COLUMNS)
+            .where(f"id = '{safe_id}'")
+            .limit(1)
+            .to_list()
+        )
+
+        if not results:
+            return None
+
+        row = results[0]
+        return Document(
+            id=row["id"],
+            content="",
+            docling_document=row.get("docling_document"),
+            docling_version=row.get("docling_version"),
+        )
+
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
         self.store._assert_writable()

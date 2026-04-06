@@ -407,6 +407,44 @@ class ChunkRepository:
             for rec in results
         ]
 
+    async def get_orders_by_ids(self, chunk_ids: list[str]) -> dict[str, int]:
+        """Get order values for specific chunk IDs."""
+        if not chunk_ids:
+            return {}
+        id_list = "', '".join(chunk_ids)
+        rows = list(
+            self.store.chunks_table.search()
+            .select(["id", "order"])
+            .where(f"id IN ('{id_list}')")
+            .to_list()
+        )
+        return {str(row["id"]): int(row["order"]) for row in rows}
+
+    async def get_by_document_id_order_range(
+        self, document_id: str, min_order: int, max_order: int
+    ) -> list[Chunk]:
+        """Get chunks for a document within an order range."""
+        where = (
+            f"document_id = '{document_id}'"
+            f" AND `order` >= {min_order}"
+            f" AND `order` <= {max_order}"
+        )
+        results = list(
+            self.store.chunks_table.search()
+            .where(where)
+            .to_pydantic(self.store.ChunkRecord)
+        )
+        return [
+            Chunk(
+                id=rec.id,
+                document_id=rec.document_id,
+                content=rec.content,
+                metadata=json.loads(rec.metadata),
+                order=rec.order,
+            )
+            for rec in results
+        ]
+
     async def _process_search_results(
         self, query_result: "pd.DataFrame | LanceQueryBuilder"
     ) -> list[tuple[Chunk, float]]:

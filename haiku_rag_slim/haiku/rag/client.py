@@ -894,13 +894,21 @@ class HaikuRAG:
             return doc
 
         safe_input = _escape_sql_string(id_or_title)
-        docs = await self.list_documents(filter=f"title = '{safe_input}'")
-        if docs and docs[0].id:
-            return await self.get_document_by_id(docs[0].id)
+        docs = await self.list_documents(
+            filter=f"title = '{safe_input}'",
+            include_content=True,
+            limit=1,
+        )
+        if docs:
+            return docs[0]
 
-        docs = await self.list_documents(filter=f"uri = '{safe_input}'")
-        if docs and docs[0].id:
-            return await self.get_document_by_id(docs[0].id)
+        docs = await self.list_documents(
+            filter=f"uri = '{safe_input}'",
+            include_content=True,
+            limit=1,
+        )
+        if docs:
+            return docs[0]
 
         return None
 
@@ -1055,24 +1063,95 @@ class HaikuRAG:
         Returns:
             List of SearchResult objects ordered by relevance.
         """
+        import time
+
+        import logfire
+
+        search_start = time.perf_counter()
+
         if limit is None:
             limit = self._config.search.limit
 
+        # Step 1: Get reranker
+        t0 = time.perf_counter()
         reranker = get_reranker(config=self._config)
+        logger.debug(
+            "search reranker_init took %.3fs",
+            time.perf_counter() - t0,
+        )
 
+        # Step 2: Chunk search
+        t0 = time.perf_counter()
         if reranker is None:
             chunk_results = await self.chunk_repository.search(
                 query, limit, search_type, filter
+            )
+            logger.debug(
+                "search chunk_search type=%s limit=%d results=%d took %.3fs",
+                search_type,
+                limit,
+                len(chunk_results),
+                time.perf_counter() - t0,
             )
         else:
             search_limit = limit * 10
             raw_results = await self.chunk_repository.search(
                 query, search_limit, search_type, filter
             )
-            chunks = [chunk for chunk, _ in raw_results]
-            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
+            logger.debug(
+                "search chunk_search type=%s limit=%d results=%d took %.3fs",
+                search_type,
+                search_limit,
+                len(raw_results),
+                time.perf_counter() - t0,
+            )
 
-        return [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
+            # Step 3: Reranking
+            t0 = time.perf_counter()
+            chunks = [chunk for chunk, _ in raw_results]
+            chunk_results = await reranker.rerank(
+                query, chunks, top_n=limit
+            )
+            logger.debug(
+                "search rerank candidates=%d top_n=%d took %.3fs",
+                len(chunks),
+                limit,
+                time.perf_counter() - t0,
+            )
+
+        # Step 4: Build SearchResult objects
+        t0 = time.perf_counter()
+        results = [
+            SearchResult.from_chunk(chunk, score)
+            for chunk, score in chunk_results
+        ]
+        logger.debug(
+            "search build_results count=%d took %.3fs",
+            len(results),
+            time.perf_counter() - t0,
+        )
+
+        duration_s = time.perf_counter() - search_start
+        logger.info(
+            "search completed query=%r type=%s results=%d duration=%.3fs",
+            query[:80],
+            search_type,
+            len(results),
+            duration_s,
+        )
+        logfire.metric_histogram(
+            "search.duration",
+            unit="s",
+        ).record(
+            duration_s,
+            attributes={
+                "search_type": search_type,
+                "result_count": len(results),
+                "reranked": reranker is not None,
+            },
+        )
+
+        return results
 
     async def expand_context(
         self,
@@ -1114,19 +1193,18 @@ class HaikuRAG:
                 expanded_results.extend(doc_results)
                 continue
 
-            # Fetch the document to get DoclingDocument
-            doc = await self.get_document_by_id(doc_id)
-            if doc is None:
-                expanded_results.extend(doc_results)
-                continue
-
-            docling_doc = doc.get_docling_document()
-
-            # Check if we can use DoclingDocument-based expansion
-            has_docling = docling_doc is not None
             has_refs = any(r.doc_item_refs for r in doc_results)
+            docling_doc = None
 
-            if has_docling and has_refs:
+            if has_refs:
+                # Only fetch docling data (skip content blob)
+                doc = await self.document_repository.get_docling_data(
+                    doc_id
+                )
+                if doc is not None:
+                    docling_doc = doc.get_docling_document()
+
+            if docling_doc is not None and has_refs:
                 # Use DoclingDocument-based expansion
                 expanded = await self._expand_with_docling(
                     doc_results,
@@ -1320,12 +1398,14 @@ class HaikuRAG:
         Structural content (tables, code, lists) expands to complete structures.
         Text content uses radius-based expansion.
         """
-        all_items = list(docling_doc.iterate_items())
-        ref_to_index = {
-            getattr(item, "self_ref", None): i
-            for i, (item, _) in enumerate(all_items)
-            if getattr(item, "self_ref", None)
-        }
+        # Single-pass: build items list and ref index together
+        all_items = []
+        ref_to_index = {}
+        for i, item_tuple in enumerate(docling_doc.iterate_items()):
+            all_items.append(item_tuple)
+            ref = getattr(item_tuple[0], "self_ref", None)
+            if ref:
+                ref_to_index[ref] = i
 
         # Compute expanded ranges
         ranges: list[tuple[int, int, SearchResult]] = []
@@ -1403,25 +1483,46 @@ class HaikuRAG:
         radius: int,
     ) -> list[SearchResult]:
         """Expand results using chunk-based adjacency."""
-        all_chunks = await self.chunk_repository.get_by_document_id(doc_id)
-        if not all_chunks:
+        # Get orders for result chunks (lightweight query)
+        chunk_ids = [r.chunk_id for r in results if r.chunk_id]
+        if not chunk_ids:
             return results
 
-        content_to_chunk = {c.content: c for c in all_chunks}
-        chunk_by_order = {c.order: c for c in all_chunks}
-        min_order, max_order = min(chunk_by_order.keys()), max(chunk_by_order.keys())
+        id_to_order = await self.chunk_repository.get_orders_by_ids(
+            chunk_ids
+        )
+        if not id_to_order:
+            return results
+
+        # Compute the order range we actually need
+        orders = list(id_to_order.values())
+        range_min = min(orders) - radius
+        range_max = max(orders) + radius
+
+        # Fetch only chunks in the needed range
+        chunks_in_doc = (
+            await self.chunk_repository.get_by_document_id_order_range(
+                doc_id, range_min, range_max
+            )
+        )
+        if not chunks_in_doc:
+            return results
+
+        chunk_by_order = {c.order: c for c in chunks_in_doc}
+        actual_min = min(chunk_by_order.keys())
+        actual_max = max(chunk_by_order.keys())
 
         # Build ranges
         ranges: list[tuple[int, int, SearchResult]] = []
         passthrough: list[SearchResult] = []
 
         for result in results:
-            chunk = content_to_chunk.get(result.content)
-            if chunk is None:
+            order = id_to_order.get(result.chunk_id)
+            if order is None:
                 passthrough.append(result)
                 continue
-            start = max(min_order, chunk.order - radius)
-            end = min(max_order, chunk.order + radius)
+            start = max(actual_min, order - radius)
+            end = min(actual_max, order + radius)
             ranges.append((start, end, result))
 
         # Merge and build results
