@@ -366,18 +366,46 @@ class ChunkRepository:
         """Get adjacent chunks before and after the given chunk within the same document."""
         assert chunk.document_id, "Document id is required for adjacent chunk finding"
 
-        chunk_order = chunk.order
+        min_order = chunk.order - num_adjacent
+        max_order = chunk.order + num_adjacent
 
-        # Fetch chunks for the same document and filter by order proximity
-        all_chunks = await self.get_by_document_id(chunk.document_id)
+        # Query only the adjacent chunks directly from the database
+        where = (
+            f"document_id = '{chunk.document_id}'"
+            f" AND `order` >= {min_order}"
+            f" AND `order` <= {max_order}"
+            f" AND id != '{chunk.id}'"
+        )
+        results = list(
+            self.store.chunks_table.search()
+            .where(where)
+            .to_pydantic(self.store.ChunkRecord)
+        )
 
-        adjacent_chunks: list[Chunk] = []
-        for c in all_chunks:
-            c_order = c.order
-            if c.id != chunk.id and abs(c_order - chunk_order) <= num_adjacent:
-                adjacent_chunks.append(c)
+        # Get document info
+        doc_results = list(
+            self.store.documents_table.search()
+            .where(f"id = '{chunk.document_id}'")
+            .limit(1)
+            .to_pydantic(DocumentRecord)
+        )
+        doc_uri = doc_results[0].uri if doc_results else None
+        doc_title = doc_results[0].title if doc_results else None
+        doc_meta = doc_results[0].metadata if doc_results else "{}"
 
-        return adjacent_chunks
+        return [
+            Chunk(
+                id=rec.id,
+                document_id=rec.document_id,
+                content=rec.content,
+                metadata=json.loads(rec.metadata),
+                order=rec.order,
+                document_uri=doc_uri,
+                document_title=doc_title,
+                document_meta=json.loads(doc_meta),
+            )
+            for rec in results
+        ]
 
     async def _process_search_results(
         self, query_result: "pd.DataFrame | LanceQueryBuilder"
@@ -413,7 +441,9 @@ class ChunkRepository:
         # Extract scores
         scores = extract_scores(df)
 
-        # Convert DataFrame rows to ChunkRecords
+        # Convert DataFrame rows to ChunkRecords using to_dict
+        # (avoids slow .iterrows() overhead)
+        rows = df.to_dict(orient="records")
         pydantic_results = [
             self.store.ChunkRecord(
                 id=str(row["id"]),
@@ -423,7 +453,7 @@ class ChunkRepository:
                 metadata=str(row["metadata"]),
                 order=int(row["order"]) if "order" in row else 0,
             )
-            for _, row in df.iterrows()
+            for row in rows
         ]
 
         # Collect all unique document IDs for batch lookup
