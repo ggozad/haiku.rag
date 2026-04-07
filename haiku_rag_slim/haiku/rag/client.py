@@ -17,7 +17,6 @@ import httpx
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
-from haiku.rag.store.compression import compress_json
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
@@ -495,9 +494,8 @@ class HaikuRAG:
             uri=uri,
             title=title,
             metadata=metadata or {},
-            docling_document=compress_json(docling_document.model_dump_json()),
-            docling_version=docling_document.version,
         )
+        document.set_docling(docling_document)
 
         # Store document and chunks
         return await self._store_document_with_chunks(document, embedded_chunks)
@@ -535,9 +533,8 @@ class HaikuRAG:
             uri=uri,
             title=title,
             metadata=metadata or {},
-            docling_document=compress_json(docling_document.model_dump_json()),
-            docling_version=docling_document.version,
         )
+        document.set_docling(docling_document)
 
         return await self._store_document_with_chunks(document, chunks)
 
@@ -672,10 +669,7 @@ class HaikuRAG:
             # Update existing document and rechunk
             existing_doc.content = stored_content
             existing_doc.metadata = metadata
-            existing_doc.docling_document = compress_json(
-                docling_document.model_dump_json()
-            )
-            existing_doc.docling_version = docling_document.version
+            existing_doc.set_docling(docling_document)
             if title is not None:
                 existing_doc.title = title
             elif existing_doc.title is None:
@@ -694,9 +688,8 @@ class HaikuRAG:
                 uri=uri,
                 title=title,
                 metadata=metadata,
-                docling_document=compress_json(docling_document.model_dump_json()),
-                docling_version=docling_document.version,
             )
+            document.set_docling(docling_document)
             return await self._store_document_with_chunks(document, embedded_chunks)
 
     async def _create_or_update_document_from_url(
@@ -789,10 +782,7 @@ class HaikuRAG:
                 # Update existing document and rechunk
                 existing_doc.content = stored_content
                 existing_doc.metadata = metadata
-                existing_doc.docling_document = compress_json(
-                    docling_document.model_dump_json()
-                )
-                existing_doc.docling_version = docling_document.version
+                existing_doc.set_docling(docling_document)
                 if title is not None:
                     existing_doc.title = title
                 elif existing_doc.title is None:
@@ -811,9 +801,8 @@ class HaikuRAG:
                     uri=url,
                     title=title,
                     metadata=metadata,
-                    docling_document=compress_json(docling_document.model_dump_json()),
-                    docling_version=docling_document.version,
                 )
+                document.set_docling(docling_document)
                 return await self._store_document_with_chunks(document, embedded_chunks)
 
     def _get_extension_from_content_type_or_url(
@@ -963,10 +952,7 @@ class HaikuRAG:
             # Store docling data if provided
             if docling_document is not None:
                 existing_doc.content = docling_document.export_to_markdown()
-                existing_doc.docling_document = compress_json(
-                    docling_document.model_dump_json()
-                )
-                existing_doc.docling_version = docling_document.version
+                existing_doc.set_docling(docling_document)
             elif content is not None:
                 existing_doc.content = content
 
@@ -975,10 +961,7 @@ class HaikuRAG:
         # DoclingDocument provided without chunks - chunk and embed using primitives
         if docling_document is not None:
             existing_doc.content = docling_document.export_to_markdown()
-            existing_doc.docling_document = compress_json(
-                docling_document.model_dump_json()
-            )
-            existing_doc.docling_version = docling_document.version
+            existing_doc.set_docling(docling_document)
 
             new_chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(new_chunks, self._config)
@@ -990,10 +973,7 @@ class HaikuRAG:
         assert content is not None
         existing_doc.content = content
         converted_docling = await self.convert(existing_doc.content)
-        existing_doc.docling_document = compress_json(
-            converted_docling.model_dump_json()
-        )
-        existing_doc.docling_version = converted_docling.version
+        existing_doc.set_docling(converted_docling)
 
         new_chunks = await self.chunk(converted_docling)
         embedded_chunks = await embed_chunks(new_chunks, self._config)
@@ -1578,16 +1558,15 @@ class HaikuRAG:
 
         from PIL import ImageDraw
 
-        # Get the document
+        # Get the document structure (from cache if available)
         if not chunk.document_id:
             return []
 
-        doc = await self.document_repository.get_by_id(chunk.document_id)
+        doc = await self.document_repository.get_docling_data(chunk.document_id)
         if not doc:
             return []
 
-        # Get DoclingDocument with page images for rendering
-        docling_doc = doc.get_docling_document(include_pages=True)
+        docling_doc = doc.get_docling_document()
         if not docling_doc:
             return []
 
@@ -1604,13 +1583,19 @@ class HaikuRAG:
                 boxes_by_page[bbox.page_no] = []
             boxes_by_page[bbox.page_no].append(bbox)
 
+        # Load only the needed page images
+        pages_doc = await self.document_repository.get_pages_data(chunk.document_id)
+        if not pages_doc:
+            return []
+        page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))
+
         # Render each page with its bounding boxes
         images = []
         for page_no in sorted(boxes_by_page.keys()):
-            if page_no not in docling_doc.pages:
+            if page_no not in page_images:
                 continue
 
-            page = docling_doc.pages[page_no]
+            page = page_images[page_no]
             if page.image is None or page.image.pil_image is None:
                 continue
 
@@ -1800,6 +1785,7 @@ class HaikuRAG:
                     title=doc.title,
                     metadata=json.dumps(doc.metadata),
                     docling_document=doc.docling_document,
+                    docling_pages=doc.docling_pages,
                     docling_version=doc.docling_version,
                     created_at=doc.created_at.isoformat() if doc.created_at else now,
                     updated_at=now,
@@ -1836,8 +1822,7 @@ class HaikuRAG:
             embedded_chunks = await embed_chunks(chunks, self._config)
 
             # Update document fields
-            doc.docling_document = compress_json(docling_document.model_dump_json())
-            doc.docling_version = docling_document.version
+            doc.set_docling(docling_document)
 
             # Prepare chunks with document_id and order
             for order, chunk in enumerate(embedded_chunks):
@@ -1915,8 +1900,7 @@ class HaikuRAG:
             chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(chunks, self._config)
 
-            doc.docling_document = compress_json(docling_document.model_dump_json())
-            doc.docling_version = docling_document.version
+            doc.set_docling(docling_document)
 
             # Prepare chunks with document_id and order
             for order, chunk in enumerate(embedded_chunks):

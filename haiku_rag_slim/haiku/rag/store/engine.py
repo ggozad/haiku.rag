@@ -26,6 +26,7 @@ class DocumentRecord(LanceModel):
     title: str | None = None
     metadata: str = Field(default="{}")
     docling_document: bytes | None = None
+    docling_pages: bytes | None = None
     docling_version: str | None = None
     created_at: str = Field(default_factory=lambda: "")
     updated_at: str = Field(default_factory=lambda: "")
@@ -43,10 +44,11 @@ def get_documents_arrow_schema() -> pa.Schema:
     which has 64-bit offsets and no practical size limit.
     """
     base_schema = DocumentRecord.to_arrow_schema()
+    large_binary_columns = {"docling_document", "docling_pages"}
     fields = []
     for field in base_schema:
-        if field.name == "docling_document":
-            fields.append(pa.field("docling_document", pa.large_binary()))
+        if field.name in large_binary_columns:
+            fields.append(pa.field(field.name, pa.large_binary()))
         else:
             fields.append(field)
     return pa.schema(fields)
