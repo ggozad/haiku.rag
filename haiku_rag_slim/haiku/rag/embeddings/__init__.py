@@ -53,6 +53,9 @@ def contextualize(chunks: list["Chunk"]) -> list[str]:
     return texts
 
 
+EMBEDDING_BATCH_SIZE = 512
+
+
 async def embed_chunks(
     chunks: list["Chunk"], config: AppConfig = Config
 ) -> list["Chunk"]:
@@ -60,6 +63,9 @@ async def embed_chunks(
 
     Contextualizes chunks (prepends headings) before embedding for better
     semantic search. Returns new Chunk objects with embeddings set.
+
+    Embeddings are generated in batches to avoid request size limits
+    and timeouts with large document sets.
 
     Args:
         chunks: List of chunks to embed.
@@ -75,7 +81,13 @@ async def embed_chunks(
 
     embedder = get_embedder(config)
     texts = contextualize(chunks)
-    embeddings = await embedder.embed_documents(texts)
+
+    # Batch embedding calls to avoid request size limits
+    all_embeddings: list[list[float]] = []
+    for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+        batch_embeddings = await embedder.embed_documents(batch)
+        all_embeddings.extend(batch_embeddings)
 
     return [
         Chunk(
@@ -89,7 +101,7 @@ async def embed_chunks(
             document_meta=chunk.document_meta,
             embedding=embedding,
         )
-        for chunk, embedding in zip(chunks, embeddings)
+        for chunk, embedding in zip(chunks, all_embeddings)
     ]
 
 

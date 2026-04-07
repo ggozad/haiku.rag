@@ -12,6 +12,7 @@
 - **Search performance**: Avoid loading full document blobs (docling_document, content) during search — use column projection to fetch only needed metadata (id, uri, title, metadata)
 - **Context expansion performance**: Load only docling columns during expand_context (skip content blob), and only when doc_item_refs exist
 - **Chunk expansion performance**: Fetch only chunks in the needed order range during context expansion instead of all chunks for a document
+- **Embedding batching**: Batch embedding calls in groups of 512 to avoid request size limits and timeouts with large documents
 
 ## [0.36.3] - 2026-04-01
 
