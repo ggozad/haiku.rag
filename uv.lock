@@ -1519,6 +1519,7 @@ dependencies = [
     { name = "rich" },
     { name = "typer" },
     { name = "watchfiles" },
+    { name = "zstandard", marker = "python_full_version < '3.14'" },
 ]
 
 [package.optional-dependencies]
@@ -1599,6 +1600,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.21.0,<0.22.0" },
     { name = "watchfiles", specifier = ">=1.1.1" },
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a11" },
+    { name = "zstandard", marker = "python_full_version < '3.14'", specifier = ">=0.23.0" },
 ]
 provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jina", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 

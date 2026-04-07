@@ -16,6 +16,7 @@
 - **Chunk expansion performance**: Fetch only chunks in the needed order range during context expansion instead of all chunks for a document
 - **Embedding batching**: Batch embedding calls in groups of 512 to avoid request size limits and timeouts with large documents
 - **DoclingDocument validation**: Strip page images before validation on the read path — pages are only needed for visualize_chunk and account for ~99% of the JSON size
+- **Compression**: Switch from gzip to zstd for docling document storage (Python 3.14 stdlib, zstandard package for older versions)
 
 ## [0.36.3] - 2026-04-01
 
