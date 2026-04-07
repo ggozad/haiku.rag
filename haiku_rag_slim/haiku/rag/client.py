@@ -1586,8 +1586,8 @@ class HaikuRAG:
         if not doc:
             return []
 
-        # Get DoclingDocument
-        docling_doc = doc.get_docling_document()
+        # Get DoclingDocument with page images for rendering
+        docling_doc = doc.get_docling_document(include_pages=True)
         if not docling_doc:
             return []
 

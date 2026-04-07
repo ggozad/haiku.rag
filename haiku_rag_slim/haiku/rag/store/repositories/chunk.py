@@ -397,35 +397,6 @@ class ChunkRepository:
             for rec in results
         ]
 
-    async def get_adjacent_chunks(self, chunk: Chunk, num_adjacent: int) -> list[Chunk]:
-        """Get adjacent chunks before and after the given chunk within the same document."""
-        assert chunk.document_id, "Document id is required for adjacent chunk finding"
-
-        min_order = chunk.order - num_adjacent
-        max_order = chunk.order + num_adjacent
-
-        where = (
-            f"document_id = '{chunk.document_id}'"
-            f" AND `order` >= {min_order}"
-            f" AND `order` <= {max_order}"
-            f" AND id != '{chunk.id}'"
-        )
-        results = list(
-            self.store.chunks_table.search()
-            .where(where)
-            .to_pydantic(self.store.ChunkRecord)
-        )
-        return [
-            Chunk(
-                id=rec.id,
-                document_id=rec.document_id,
-                content=rec.content,
-                metadata=json.loads(rec.metadata),
-                order=rec.order,
-            )
-            for rec in results
-        ]
-
     async def _process_search_results(
         self, query_result: "pd.DataFrame | LanceQueryBuilder"
     ) -> list[tuple[Chunk, float]]:
