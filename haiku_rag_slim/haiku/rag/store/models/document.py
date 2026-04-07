@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -13,19 +14,39 @@ if TYPE_CHECKING:
 _docling_document_cache: LRUCache[str, "DoclingDocument"] = LRUCache(maxsize=100)
 
 
-def _get_cached_docling_document(
-    document_id: str, compressed_data: bytes
-) -> "DoclingDocument":
-    """Get or parse DoclingDocument with LRU caching by document ID."""
-    if document_id in _docling_document_cache:
-        return _docling_document_cache[document_id]
-
+def _validate_without_pages(compressed_data: bytes) -> "DoclingDocument":
+    """Decompress and validate DoclingDocument, stripping page images."""
     from docling_core.types.doc.document import DoclingDocument
 
     json_str = decompress_json(compressed_data)
-    doc = DoclingDocument.model_validate_json(json_str)
+    data = json.loads(json_str)
+    data.pop("pages", None)
+    return DoclingDocument.model_validate(data)
+
+
+def _get_cached_docling_document(
+    document_id: str, compressed_data: bytes
+) -> "DoclingDocument":
+    """Get or parse DoclingDocument with LRU caching by document ID.
+
+    Strips page images before validation for performance — cached documents
+    do not contain page data. Use _parse_full_docling_document for
+    operations that need page images (e.g. visualize_chunk).
+    """
+    if document_id in _docling_document_cache:
+        return _docling_document_cache[document_id]
+
+    doc = _validate_without_pages(compressed_data)
     _docling_document_cache[document_id] = doc
     return doc
+
+
+def _parse_full_docling_document(compressed_data: bytes) -> "DoclingDocument":
+    """Parse DoclingDocument with full page data (no caching, no stripping)."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    json_str = decompress_json(compressed_data)
+    return DoclingDocument.model_validate_json(json_str)
 
 
 def invalidate_docling_document_cache(document_id: str) -> None:
@@ -48,10 +69,18 @@ class Document(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    def get_docling_document(self) -> "DoclingDocument | None":
+    def get_docling_document(
+        self, *, include_pages: bool = False
+    ) -> "DoclingDocument | None":
         """Parse and return the stored DoclingDocument.
 
+        By default, strips page images before parsing for performance.
         Uses LRU cache (keyed by document ID) to avoid repeated parsing.
+
+        Args:
+            include_pages: If True, parse with full page data (slower,
+                bypasses cache). Only needed for operations that access
+                page images (e.g. visualize_chunk).
 
         Returns:
             The parsed DoclingDocument, or None if not stored or no ID.
@@ -59,11 +88,11 @@ class Document(BaseModel):
         if self.docling_document is None:
             return None
 
+        if include_pages:
+            return _parse_full_docling_document(self.docling_document)
+
         # No caching for documents without ID
         if self.id is None:
-            from docling_core.types.doc.document import DoclingDocument
-
-            json_str = decompress_json(self.docling_document)
-            return DoclingDocument.model_validate_json(json_str)
+            return _validate_without_pages(self.docling_document)
 
         return _get_cached_docling_document(self.id, self.docling_document)

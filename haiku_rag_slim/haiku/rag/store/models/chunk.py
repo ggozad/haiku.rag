@@ -117,6 +117,7 @@ class SearchResult(BaseModel):
     document_id: str | None = None
     document_uri: str | None = None
     document_title: str | None = None
+    order: int = 0
     doc_item_refs: list[str] = []
     page_numbers: list[int] = []
     headings: list[str] | None = None
@@ -137,6 +138,7 @@ class SearchResult(BaseModel):
             document_id=chunk.document_id,
             document_uri=chunk.document_uri,
             document_title=chunk.document_title,
+            order=chunk.order,
             doc_item_refs=meta.doc_item_refs,
             page_numbers=meta.page_numbers,
             headings=meta.headings,

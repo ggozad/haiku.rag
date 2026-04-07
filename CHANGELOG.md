@@ -4,10 +4,16 @@
 ### Changed
 
 - **Dependency updates**: lancedb 0.30.2, pydantic-ai-slim ≥1.77.0, docling ≥2.84.0, docling-core ≥2.71.0, haiku.skills ≥0.13.0, cachetools ≥7.0.5, pydantic-monty ≥0.0.9, cohere ≥5.21.1, textual ≥8.2.1, ty ≥0.0.28, ruff ≥0.15.9
+- **Search result model**: `SearchResult` now includes `order` field propagated from chunk order
 
 ### Fixed
 
 - **Type checking**: Fix 37 new ty 0.0.28 diagnostics with proper None guards, assertions, and specific ignore codes
+- **Search performance**: Avoid loading full document blobs (docling_document, content) during search — use column projection to fetch only needed metadata (id, uri, title, metadata)
+- **Context expansion performance**: Load only docling columns during expand_context (skip content blob), and only when doc_item_refs exist
+- **Chunk expansion performance**: Fetch only chunks in the needed order range during context expansion instead of all chunks for a document
+- **Embedding batching**: Batch embedding calls in groups of 512 to avoid request size limits and timeouts with large documents
+- **DoclingDocument validation**: Strip page images before validation on the read path — pages are only needed for visualize_chunk and account for ~99% of the JSON size
 
 ## [0.36.3] - 2026-04-01
 

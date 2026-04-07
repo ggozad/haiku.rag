@@ -160,6 +160,37 @@ async def test_embed_chunks_empty_list():
     assert result == []
 
 
+async def test_embed_chunks_batches_large_inputs(monkeypatch):
+    """Test that embed_chunks batches calls when chunk count exceeds batch size."""
+    from haiku.rag.embeddings import EMBEDDING_BATCH_SIZE, EmbedderWrapper
+
+    call_sizes: list[int] = []
+
+    async def tracking_embed(self, texts):
+        call_sizes.append(len(texts))
+        return [[0.1] * 10 for _ in texts]
+
+    monkeypatch.setattr(EmbedderWrapper, "embed_documents", tracking_embed)
+
+    # Create more chunks than one batch
+    num_chunks = EMBEDDING_BATCH_SIZE + 100
+    chunks = [
+        Chunk(id=f"chunk-{i}", content=f"Content {i}", order=i)
+        for i in range(num_chunks)
+    ]
+
+    result = await embed_chunks(chunks)
+
+    assert len(result) == num_chunks
+    assert len(call_sizes) == 2
+    assert call_sizes[0] == EMBEDDING_BATCH_SIZE
+    assert call_sizes[1] == 100
+    # Verify order is preserved
+    assert result[0].id == "chunk-0"
+    assert result[-1].id == f"chunk-{num_chunks - 1}"
+    assert all(r.embedding == [0.1] * 10 for r in result)
+
+
 @pytest.mark.vcr()
 async def test_embed_chunks_preserves_all_fields(allow_model_requests):
     """Test that embed_chunks preserves all chunk fields."""
