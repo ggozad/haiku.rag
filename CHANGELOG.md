@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.37.0] - 2026-04-07
+
 ### Changed
 
 - **Dependency updates**: lancedb 0.30.2, pydantic-ai-slim ≥1.77.0, docling ≥2.84.0, docling-core ≥2.71.0, haiku.skills ≥0.13.0, cachetools ≥7.0.5, pydantic-monty ≥0.0.9, cohere ≥5.21.1, textual ≥8.2.1, ty ≥0.0.28, ruff ≥0.15.9
@@ -1302,7 +1304,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.36.3...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.37.0...HEAD
+[0.37.0]: https://github.com/ggozad/haiku.rag/compare/0.36.3...0.37.0
 [0.36.3]: https://github.com/ggozad/haiku.rag/compare/0.36.2...0.36.3
 [0.36.2]: https://github.com/ggozad/haiku.rag/compare/0.36.1...0.36.2
 [0.36.1]: https://github.com/ggozad/haiku.rag/compare/0.36.0...0.36.1
