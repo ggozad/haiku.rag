@@ -230,6 +230,56 @@ def test_document_get_docling_document_no_id_no_cache():
 
 
 @pytest.mark.asyncio
+async def test_get_docling_data_loads_only_docling_columns(
+    qa_corpus: Dataset, temp_db_path
+):
+    """get_docling_data returns docling blob without loading content."""
+    import json
+
+    from haiku.rag.store.compression import compress_json
+
+    store = Store(temp_db_path, create=True)
+    doc_repo = DocumentRepository(store)
+
+    doc_json = {
+        "name": "test_doc",
+        "texts": [],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+    compressed = compress_json(json.dumps(doc_json))
+
+    doc = Document(
+        content=qa_corpus[0]["document_extracted"],
+        uri="https://example.com/doc.txt",
+        docling_document=compressed,
+        docling_version="2.1.0",
+    )
+    created = await doc_repo.create(doc)
+    assert created.id is not None
+
+    result = await doc_repo.get_docling_data(created.id)
+    assert result is not None
+    assert result.id == created.id
+    assert result.content == ""
+    assert result.docling_document == compressed
+    assert result.docling_version == "2.1.0"
+
+    # Verify docling document can be parsed
+    docling_doc = result.get_docling_document()
+    assert docling_doc is not None
+    assert docling_doc.name == "test_doc"
+
+    # Non-existent ID returns None
+    assert await doc_repo.get_docling_data("nonexistent-id") is None
+
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_document_get_by_uri_with_special_characters(
     qa_corpus: Dataset, temp_db_path
 ):

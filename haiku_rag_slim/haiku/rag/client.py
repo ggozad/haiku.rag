@@ -1114,19 +1114,16 @@ class HaikuRAG:
                 expanded_results.extend(doc_results)
                 continue
 
-            # Fetch the document to get DoclingDocument
-            doc = await self.get_document_by_id(doc_id)
-            if doc is None:
-                expanded_results.extend(doc_results)
-                continue
-
-            docling_doc = doc.get_docling_document()
-
-            # Check if we can use DoclingDocument-based expansion
-            has_docling = docling_doc is not None
             has_refs = any(r.doc_item_refs for r in doc_results)
+            docling_doc = None
 
-            if has_docling and has_refs:
+            if has_refs:
+                # Only load docling data when refs exist (skips content blob)
+                doc = await self.document_repository.get_docling_data(doc_id)
+                if doc is not None:
+                    docling_doc = doc.get_docling_document()
+
+            if docling_doc is not None and has_refs:
                 # Use DoclingDocument-based expansion
                 expanded = await self._expand_with_docling(
                     doc_results,
