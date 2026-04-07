@@ -78,7 +78,11 @@ from haiku.rag.store.upgrades.v0_23_1 import (
 from haiku.rag.store.upgrades.v0_25_0 import (
     upgrade_compress_docling_document as upgrade_0_25_0_compress,
 )
+from haiku.rag.store.upgrades.v0_38_0 import (
+    upgrade_split_pages_zstd as upgrade_0_38_0_split_pages,
+)
 
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
 upgrades.append(upgrade_0_25_0_compress)
+upgrades.append(upgrade_0_38_0_split_pages)
