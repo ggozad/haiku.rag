@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from lancedb.rerankers import RRFReranker
 
-from haiku.rag.store.engine import DocumentRecord, Store
+from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
@@ -321,17 +321,18 @@ class ChunkRepository:
 
         results = list(query.to_pydantic(self.store.ChunkRecord))
 
-        # Get document info
-        doc_results = list(
+        # Get document info (only metadata columns, skip content/docling blobs)
+        doc_rows = list(
             self.store.documents_table.search()
+            .select(["id", "uri", "title", "metadata"])
             .where(f"id = '{document_id}'")
             .limit(1)
-            .to_pydantic(DocumentRecord)
+            .to_list()
         )
 
-        doc_uri = doc_results[0].uri if doc_results else None
-        doc_title = doc_results[0].title if doc_results else None
-        doc_meta = doc_results[0].metadata if doc_results else "{}"
+        doc_uri = doc_rows[0]["uri"] if doc_rows else None
+        doc_title = doc_rows[0]["title"] if doc_rows else None
+        doc_meta = doc_rows[0].get("metadata", "{}") if doc_rows else "{}"
 
         chunks: list[Chunk] = []
         for rec in results:
@@ -429,18 +430,18 @@ class ChunkRepository:
         # Collect all unique document IDs for batch lookup
         document_ids = list(set(chunk.document_id for chunk in pydantic_results))
 
-        # Batch fetch all documents at once
-        documents_map = {}
+        # Batch fetch document metadata (skip content/docling blobs)
+        documents_map: dict[str, dict] = {}
         if document_ids:
-            # Use IN clause for efficient batch lookup
             id_list = "', '".join(document_ids)
             where_clause = f"id IN ('{id_list}')"
-            doc_results = list(
+            doc_rows = list(
                 self.store.documents_table.search()
+                .select(["id", "uri", "title", "metadata"])
                 .where(where_clause)
-                .to_pydantic(DocumentRecord)
+                .to_list()
             )
-            documents_map = {doc.id: doc for doc in doc_results}
+            documents_map = {str(row["id"]): row for row in doc_rows}
 
         # Build final results with document info
         chunks_with_scores = []
@@ -452,9 +453,9 @@ class ChunkRepository:
                 content=chunk_record.content,
                 metadata=json.loads(chunk_record.metadata),
                 order=chunk_record.order,
-                document_uri=doc.uri if doc else None,
-                document_title=doc.title if doc else None,
-                document_meta=json.loads(doc.metadata if doc else "{}"),
+                document_uri=doc["uri"] if doc else None,
+                document_title=doc["title"] if doc else None,
+                document_meta=json.loads(doc.get("metadata", "{}") if doc else "{}"),
             )
             score = scores[i] if i < len(scores) else 1.0
             chunks_with_scores.append((chunk, score))
