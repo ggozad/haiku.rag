@@ -1400,32 +1400,40 @@ class HaikuRAG:
         radius: int,
     ) -> list[SearchResult]:
         """Expand results using chunk-based adjacency."""
-        all_chunks = await self.chunk_repository.get_by_document_id(doc_id)
-        if not all_chunks:
-            return results
-
-        content_to_chunk = {c.content: c for c in all_chunks}
-        chunk_by_order = {c.order: c for c in all_chunks}
-        min_order, max_order = min(chunk_by_order.keys()), max(chunk_by_order.keys())
-
-        # Build ranges
+        # Build ranges from result orders
         ranges: list[tuple[int, int, SearchResult]] = []
         passthrough: list[SearchResult] = []
 
         for result in results:
-            chunk = content_to_chunk.get(result.content)
-            if chunk is None:
+            if result.chunk_id is None:
                 passthrough.append(result)
                 continue
-            start = max(min_order, chunk.order - radius)
-            end = min(max_order, chunk.order + radius)
+            start = result.order - radius
+            end = result.order + radius
             ranges.append((start, end, result))
+
+        if not ranges:
+            return results
+
+        # Compute the full order range needed and fetch only those chunks
+        all_starts = [s for s, _, _ in ranges]
+        all_ends = [e for _, e, _ in ranges]
+        range_min = min(all_starts)
+        range_max = max(all_ends)
+
+        chunks_in_range = await self.chunk_repository.get_chunks_in_range(
+            doc_id, range_min, range_max
+        )
+        if not chunks_in_range:
+            return results
+
+        chunk_by_order = {c.order: c for c in chunks_in_range}
 
         # Merge and build results
         final_results: list[SearchResult] = []
         for min_idx, max_idx, original_results in self._merge_ranges(ranges):
             # Collect chunks in order
-            chunks_in_range = [
+            merged_chunks = [
                 chunk_by_order[o]
                 for o in range(min_idx, max_idx + 1)
                 if o in chunk_by_order
@@ -1433,7 +1441,7 @@ class HaikuRAG:
             first = original_results[0]
             final_results.append(
                 SearchResult(
-                    content="".join(c.content for c in chunks_in_range),
+                    content="".join(c.content for c in merged_chunks),
                     score=max(r.score for r in original_results),
                     chunk_id=first.chunk_id,
                     document_id=first.document_id,

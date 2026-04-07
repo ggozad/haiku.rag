@@ -363,22 +363,68 @@ class ChunkRepository:
         )
         return len(df)
 
+    async def get_chunks_in_range(
+        self, document_id: str, min_order: int, max_order: int
+    ) -> list[Chunk]:
+        """Get chunks for a document within an order range.
+
+        Args:
+            document_id: The document ID to get chunks for.
+            min_order: Minimum order value (inclusive).
+            max_order: Maximum order value (inclusive).
+
+        Returns:
+            List of chunks within the order range.
+        """
+        where = (
+            f"document_id = '{document_id}'"
+            f" AND `order` >= {min_order}"
+            f" AND `order` <= {max_order}"
+        )
+        results = list(
+            self.store.chunks_table.search()
+            .where(where)
+            .to_pydantic(self.store.ChunkRecord)
+        )
+        return [
+            Chunk(
+                id=rec.id,
+                document_id=rec.document_id,
+                content=rec.content,
+                metadata=json.loads(rec.metadata),
+                order=rec.order,
+            )
+            for rec in results
+        ]
+
     async def get_adjacent_chunks(self, chunk: Chunk, num_adjacent: int) -> list[Chunk]:
         """Get adjacent chunks before and after the given chunk within the same document."""
         assert chunk.document_id, "Document id is required for adjacent chunk finding"
 
-        chunk_order = chunk.order
+        min_order = chunk.order - num_adjacent
+        max_order = chunk.order + num_adjacent
 
-        # Fetch chunks for the same document and filter by order proximity
-        all_chunks = await self.get_by_document_id(chunk.document_id)
-
-        adjacent_chunks: list[Chunk] = []
-        for c in all_chunks:
-            c_order = c.order
-            if c.id != chunk.id and abs(c_order - chunk_order) <= num_adjacent:
-                adjacent_chunks.append(c)
-
-        return adjacent_chunks
+        where = (
+            f"document_id = '{chunk.document_id}'"
+            f" AND `order` >= {min_order}"
+            f" AND `order` <= {max_order}"
+            f" AND id != '{chunk.id}'"
+        )
+        results = list(
+            self.store.chunks_table.search()
+            .where(where)
+            .to_pydantic(self.store.ChunkRecord)
+        )
+        return [
+            Chunk(
+                id=rec.id,
+                document_id=rec.document_id,
+                content=rec.content,
+                metadata=json.loads(rec.metadata),
+                order=rec.order,
+            )
+            for rec in results
+        ]
 
     async def _process_search_results(
         self, query_result: "pd.DataFrame | LanceQueryBuilder"
