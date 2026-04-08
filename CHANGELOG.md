@@ -1,6 +1,20 @@
 # Changelog
 ## [Unreleased]
 
+## [0.38.0] - 2026-04-07
+
+### Added
+
+- **Separate page storage**: Page images stored in dedicated `docling_pages` column — search/expand never loads page data
+- **zstd compression**: Switch from gzip to zstd for docling document storage (Python 3.14 stdlib, zstandard package for older versions)
+- **`Document.set_docling()`**: Helper method that handles split compression and version assignment, replacing 11 manual call sites
+- **`Document.get_page_images()`**: Load page images without the document structure, for visualize_chunk
+- **`DocumentRepository.get_pages_data()`**: Load only page data column for a document
+
+### Changed
+
+- **Database migration required**: Run `haiku-rag migrate` to split existing docling blobs into structure + pages and re-compress with zstd
+
 ## [0.37.0] - 2026-04-07
 
 ### Changed
@@ -16,7 +30,6 @@
 - **Chunk expansion performance**: Fetch only chunks in the needed order range during context expansion instead of all chunks for a document
 - **Embedding batching**: Batch embedding calls in groups of 512 to avoid request size limits and timeouts with large documents
 - **DoclingDocument validation**: Strip page images before validation on the read path — pages are only needed for visualize_chunk and account for ~99% of the JSON size
-- **Compression**: Switch from gzip to zstd for docling document storage (Python 3.14 stdlib, zstandard package for older versions)
 
 ## [0.36.3] - 2026-04-01
 
@@ -1305,7 +1318,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.37.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.38.0...HEAD
+[0.38.0]: https://github.com/ggozad/haiku.rag/compare/0.37.0...0.38.0
 [0.37.0]: https://github.com/ggozad/haiku.rag/compare/0.36.3...0.37.0
 [0.36.3]: https://github.com/ggozad/haiku.rag/compare/0.36.2...0.36.3
 [0.36.2]: https://github.com/ggozad/haiku.rag/compare/0.36.1...0.36.2
