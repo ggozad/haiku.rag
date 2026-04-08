@@ -8,7 +8,7 @@ try:
         decompress as _zstd_decompress,  # type: ignore[import-not-found]
     )
 except ImportError:
-    from zstandard import ZstdCompressor, ZstdDecompressor
+    from zstandard import ZstdCompressor, ZstdDecompressor, get_frame_parameters
 
     _zstd_compressor = ZstdCompressor()
     _zstd_decompressor = ZstdDecompressor()
@@ -17,7 +17,8 @@ except ImportError:
         return _zstd_compressor.compress(data)
 
     def _zstd_decompress(data: bytes) -> bytes:
-        return _zstd_decompressor.decompress(data, max_output_size=len(data) * 20)
+        content_size = get_frame_parameters(data).content_size
+        return _zstd_decompressor.decompress(data, max_output_size=content_size)
 
 
 def compress_json(json_str: str) -> bytes:
