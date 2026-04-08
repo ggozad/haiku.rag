@@ -36,6 +36,7 @@ class DocumentRepository:
             title=record.title,
             metadata=json.loads(record.metadata),
             docling_document=record.docling_document,
+            docling_pages=record.docling_pages,
             docling_version=record.docling_version,
             created_at=datetime.fromisoformat(record.created_at)
             if record.created_at
@@ -62,6 +63,7 @@ class DocumentRepository:
             title=entity.title,
             metadata=json.dumps(entity.metadata),
             docling_document=entity.docling_document,
+            docling_pages=entity.docling_pages,
             docling_version=entity.docling_version,
             created_at=now,
             updated_at=now,
@@ -114,6 +116,27 @@ class DocumentRepository:
             docling_version=row.get("docling_version"),
         )
 
+    async def get_pages_data(self, entity_id: str) -> Document | None:
+        """Get a document with only page image data loaded."""
+        safe_id = _escape_sql_string(entity_id)
+        results = list(
+            self.store.documents_table.search()
+            .select(["id", "docling_pages"])
+            .where(f"id = '{safe_id}'")
+            .limit(1)
+            .to_list()
+        )
+
+        if not results:
+            return None
+
+        row = results[0]
+        return Document(
+            id=row["id"],
+            content="",
+            docling_pages=row.get("docling_pages"),
+        )
+
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
         self.store._assert_writable()
@@ -138,6 +161,7 @@ class DocumentRepository:
                 "title": entity.title,
                 "metadata": json.dumps(entity.metadata),
                 "docling_document": entity.docling_document,
+                "docling_pages": entity.docling_pages,
                 "docling_version": entity.docling_version,
                 "updated_at": now,
             },

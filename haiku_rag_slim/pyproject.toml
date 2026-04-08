@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Minimal dependencies"
-version = "0.37.0"
+version = "0.38.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -38,6 +38,7 @@ dependencies = [
     "rich>=14.3.3",
     "typer>=0.21.0,<0.22.0",
     "watchfiles>=1.1.1",
+    "zstandard>=0.23.0; python_version<'3.14'",
 ]
 
 [project.optional-dependencies]

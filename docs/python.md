@@ -64,7 +64,7 @@ The `format` parameter controls how text content is parsed:
 - `"plain"` - Plain text, no parsing (creates a simple text document)
 
 !!! note
-    The document's `content` field stores the markdown export of the parsed document for consistent display. The original input is preserved in the `docling_document_json` field.
+    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page images). Page images are stored separately in `docling_pages`.
 
 From file:
 ```python

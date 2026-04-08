@@ -1,3 +1,4 @@
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -864,8 +865,11 @@ async def test_client_import_document_stores_docling_data(temp_db_path):
         assert doc.id is not None
         assert "Content from docling document" in doc.content
         assert doc.docling_document is not None
-        assert decompress_json(doc.docling_document) == docling_doc.model_dump_json()
         assert doc.docling_version == docling_doc.version
+        # Structure is stored without pages
+        structure = json.loads(decompress_json(doc.docling_document))
+        assert "pages" not in structure
+        assert structure["name"] == "test"
 
 
 @pytest.mark.vcr()
@@ -983,11 +987,11 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
         # Content should be extracted from docling document
         assert "Completely different text" in updated_doc.content
         assert updated_doc.docling_document is not None
-        assert (
-            decompress_json(updated_doc.docling_document)
-            == docling_doc.model_dump_json()
-        )
         assert updated_doc.docling_version == docling_doc.version
+        # Structure is stored without pages
+        structure = json.loads(decompress_json(updated_doc.docling_document))
+        assert "pages" not in structure
+        assert structure["name"] == "updated"
 
         # Chunks should be regenerated
         new_chunks = await client.chunk_repository.get_by_document_id(doc.id)
@@ -1026,10 +1030,8 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         # Content should be extracted from docling (since content wasn't provided)
         assert "Text from docling" in updated_doc.content
         assert updated_doc.docling_document is not None
-        assert (
-            decompress_json(updated_doc.docling_document)
-            == docling_doc.model_dump_json()
-        )
+        structure = json.loads(decompress_json(updated_doc.docling_document))
+        assert "pages" not in structure
 
         # Custom chunks should be used (not rechunked from docling)
         chunks = await client.chunk_repository.get_by_document_id(doc.id)

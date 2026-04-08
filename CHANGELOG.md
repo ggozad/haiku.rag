@@ -1,6 +1,24 @@
 # Changelog
 ## [Unreleased]
 
+## [0.38.0] - 2026-04-07
+
+### Added
+
+- **Separate page storage**: Page images stored in dedicated `docling_pages` column — search/expand never loads page data
+- **zstd compression**: Switch from gzip to zstd for docling document storage (Python 3.14 stdlib, zstandard package for older versions)
+- **`Document.set_docling()`**: Helper method that handles split compression and version assignment, replacing 11 manual call sites
+- **`Document.get_page_images()`**: Load page images without the document structure, for visualize_chunk
+- **`DocumentRepository.get_pages_data()`**: Load only page data column for a document
+
+### Changed
+
+- **Database migration required**: Run `haiku-rag migrate` to split existing docling blobs into structure + pages and re-compress with zstd
+
+### Fixed
+
+- **Generated skill `domain_preamble`**: Apply `config.prompts.domain_preamble` to instructions in generated skill packages
+
 ## [0.37.0] - 2026-04-07
 
 ### Changed
@@ -1304,7 +1322,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.37.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.38.0...HEAD
+[0.38.0]: https://github.com/ggozad/haiku.rag/compare/0.37.0...0.38.0
 [0.37.0]: https://github.com/ggozad/haiku.rag/compare/0.36.3...0.37.0
 [0.36.3]: https://github.com/ggozad/haiku.rag/compare/0.36.2...0.36.3
 [0.36.2]: https://github.com/ggozad/haiku.rag/compare/0.36.1...0.36.2
