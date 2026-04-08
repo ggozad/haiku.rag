@@ -79,6 +79,10 @@ def create_skill(
 
     tools = create_skill_tools(db_path, config, SkillState, _TOOL_NAMES)
     extras = create_skill_extras(db_path, config)
+
+    if config.prompts.domain_preamble and instructions:
+        instructions = f"{config.prompts.domain_preamble}\n\n{instructions}"
+
     return Skill(
         metadata=metadata,
         instructions=instructions,
