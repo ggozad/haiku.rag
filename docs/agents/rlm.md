@@ -62,7 +62,7 @@ The agent's code runs in a sandboxed Python interpreter ([pydantic-monty](https:
 | `list_documents(limit, offset)` | List documents in the knowledge base |
 | `get_document(id_or_title)` | Get full text content of a document |
 | `get_chunk(chunk_id)` | Get a chunk with metadata (headings, page numbers, labels) for citations |
-| `get_docling_document(document_id)` | Get the full DoclingDocument structure as a dict (texts, tables, pictures, pages) |
+| `get_docling_document(document_id)` | Get the DoclingDocument structure as a dict (texts, tables, pictures) |
 | `llm(prompt)` | Call an LLM for classification, summarization, or extraction |
 
 When documents are pre-loaded via the `documents` parameter, they are injected as a `documents` variable accessible in the sandbox code.

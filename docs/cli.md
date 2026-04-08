@@ -375,10 +375,11 @@ Error: Database requires migration from 0.19.0 to 0.26.5. 3 migration(s) pending
 Run `haiku-rag migrate` to apply the pending migrations. The command shows which migrations were applied:
 
 ```
-Applied 3 migration(s):
+Applied 4 migration(s):
   - 0.20.0: Add 'docling_document_json' and 'docling_version' columns
   - 0.23.1: Add content_fts column for contextualized FTS search
   - 0.25.0: Compress docling_document with gzip
+  - 0.38.0: Split docling_document pages into separate column and re-compress with zstd
 Migration completed successfully.
 ```
 
