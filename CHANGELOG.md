@@ -15,6 +15,10 @@
 
 - **Database migration required**: Run `haiku-rag migrate` to split existing docling blobs into structure + pages and re-compress with zstd
 
+### Fixed
+
+- **Generated skill `domain_preamble`**: Apply `config.prompts.domain_preamble` to instructions in generated skill packages
+
 ## [0.37.0] - 2026-04-07
 
 ### Changed
