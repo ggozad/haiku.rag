@@ -15,13 +15,11 @@ _docling_document_cache: LRUCache[str, "DoclingDocument"] = LRUCache(maxsize=100
 
 
 def _validate_without_pages(compressed_data: bytes) -> "DoclingDocument":
-    """Decompress and validate DoclingDocument, stripping page images."""
+    """Decompress and validate DoclingDocument."""
     from docling_core.types.doc.document import DoclingDocument
 
     json_str = decompress_json(compressed_data)
-    data = json.loads(json_str)
-    data.pop("pages", None)
-    return DoclingDocument.model_validate(data)
+    return DoclingDocument.model_validate_json(json_str)
 
 
 def _get_cached_docling_document(

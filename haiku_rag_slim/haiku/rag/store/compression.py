@@ -1,6 +1,6 @@
 import json
 
-try:
+try:  # pragma: no cover
     from compression.zstd import (  # ty: ignore[unresolved-import]
         compress as _zstd_compress,  # type: ignore[import-not-found]
     )

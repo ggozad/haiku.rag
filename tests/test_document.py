@@ -368,6 +368,63 @@ async def test_get_docling_data_loads_only_docling_columns(
 
 
 @pytest.mark.asyncio
+async def test_get_pages_data_loads_only_pages_column(qa_corpus: Dataset, temp_db_path):
+    """get_pages_data returns only page image data for a document."""
+    import json
+
+    from haiku.rag.store.compression import compress_json
+
+    pages_blob = compress_json(
+        json.dumps({"1": {"size": {"width": 612, "height": 792}, "page_no": 1}})
+    )
+
+    store = Store(temp_db_path, create=True)
+    doc_repo = DocumentRepository(store)
+
+    doc = Document(
+        content=qa_corpus[0]["document_extracted"],
+        uri="https://example.com/doc.txt",
+        docling_pages=pages_blob,
+    )
+    created = await doc_repo.create(doc)
+    assert created.id is not None
+
+    result = await doc_repo.get_pages_data(created.id)
+    assert result is not None
+    assert result.id == created.id
+    assert result.content == ""
+    assert result.docling_pages == pages_blob
+
+    # Non-existent ID returns None
+    assert await doc_repo.get_pages_data("nonexistent-id") is None
+
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_get_pages_data_none_for_markdown_document(
+    qa_corpus: Dataset, temp_db_path
+):
+    """Markdown documents have no page images — get_pages_data returns None pages."""
+    store = Store(temp_db_path, create=True)
+    doc_repo = DocumentRepository(store)
+
+    doc = Document(
+        content=qa_corpus[0]["document_extracted"],
+        uri="https://example.com/doc.md",
+    )
+    created = await doc_repo.create(doc)
+    assert created.id is not None
+
+    result = await doc_repo.get_pages_data(created.id)
+    assert result is not None
+    assert result.id == created.id
+    assert result.docling_pages is None
+
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_document_get_by_uri_with_special_characters(
     qa_corpus: Dataset, temp_db_path
 ):

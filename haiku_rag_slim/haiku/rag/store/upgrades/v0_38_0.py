@@ -106,7 +106,7 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
             .to_arrow()
             .to_pylist()
         ]
-    except Exception:
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, OSError):
         ids = []
 
     if not ids:
@@ -132,7 +132,7 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
                     range(0, len(staging_ids), BATCH_SIZE), 1
                 ):
                     batch_ids = staging_ids[i : i + BATCH_SIZE]
-                    id_list = ", ".join(f"'{id}'" for id in batch_ids)
+                    id_list = ", ".join(f"'{doc_id}'" for doc_id in batch_ids)
                     batch = (
                         staging_table.search()
                         .where(f"id IN ({id_list})")
@@ -174,7 +174,7 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
 
     for batch_num, i in enumerate(range(0, len(ids), BATCH_SIZE), 1):
         batch_ids = ids[i : i + BATCH_SIZE]
-        id_list = ", ".join(f"'{id}'" for id in batch_ids)
+        id_list = ", ".join(f"'{doc_id}'" for doc_id in batch_ids)
 
         batch = (
             store.documents_table.search()
@@ -212,7 +212,7 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
 
     for batch_num, i in enumerate(range(0, len(staging_ids), BATCH_SIZE), 1):
         batch_ids = staging_ids[i : i + BATCH_SIZE]
-        id_list = ", ".join(f"'{id}'" for id in batch_ids)
+        id_list = ", ".join(f"'{doc_id}'" for doc_id in batch_ids)
 
         batch = (
             staging_table.search().where(f"id IN ({id_list})").to_arrow().to_pylist()
