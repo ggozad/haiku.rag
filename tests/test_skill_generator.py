@@ -273,6 +273,21 @@ class TestRenderTemplates:
         assert "create_skill_extras" in content
         assert "extras=extras" in content
 
+    def test_domain_preamble_applied_to_instructions(self, tmp_path):
+        render_templates(
+            output_dir=tmp_path,
+            name="docs",
+            description="A docs skill.",
+            tool_names=["search"],
+        )
+        init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
+        content = init.read_text()
+        assert "config.prompts.domain_preamble" in content
+        assert (
+            'instructions = f"{config.prompts.domain_preamble}\\n\\n{instructions}"'
+            in content
+        )
+
     def test_create_skill_accepts_optional_params(self, tmp_path):
         render_templates(
             output_dir=tmp_path,
