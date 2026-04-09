@@ -73,11 +73,11 @@ nav:
       - Tuning: tuning.md
       - Agents:
           - agents/index.md
-          - RLM Agent: agents/rlm.md
+          - Analysis Agent: agents/analysis.md
       - Skills:
           - skills/index.md
           - RAG: skills/rag.md
-          - RLM: skills/rlm.md
+          - Analysis: skills/analysis.md
       - Toolsets: tools.md
       - Applications: apps.md
       - Server: server.md

@@ -26,7 +26,7 @@ flowchart TB
         QA[QA Agent]
         Skill[RAG Skill]
         Research[Research Graph]
-        RLM[RLM Agent]
+        Analysis[Analysis Agent]
     end
 
     subgraph Apps["Applications"]
@@ -123,7 +123,7 @@ flowchart TB
         Eval -->|Done| Synthesize[Synthesize]
     end
 
-    subgraph RLM["RLM Agent"]
+    subgraph AnalysisAgent["Analysis Agent"]
         Q4[Question] --> Code[Write Code]
         Code --> Execute[Execute]
         Execute --> Examine[Examine Results]
@@ -151,7 +151,7 @@ flowchart TB
 - Prior answers let the planner skip redundant searches
 - Synthesizes structured report
 
-**RLM Agent** - Complex analytical tasks via code execution:
+**Analysis Agent** - Complex analytical tasks via code execution:
 
 - Writes Python code to explore the knowledge base
 - Executes in sandboxed environment

@@ -10,15 +10,15 @@ from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 
 
-class RLMState(BaseModel):
+class AnalysisState(BaseModel):
     document_filter: str | None = None
     analyses: list[AnalysisEntry] = []
 
 
-STATE_TYPE = RLMState
-STATE_NAMESPACE = "rlm"
+STATE_TYPE = AnalysisState
+STATE_NAMESPACE = "analysis"
 
-_skill_path = Path(__file__).parent / "rag-rlm"
+_skill_path = Path(__file__).parent / "rag-analysis"
 
 
 @cache
@@ -45,7 +45,7 @@ def create_skill(
     db_path: Path | None = None,
     config: AppConfig | None = None,
 ) -> Skill:
-    """Create an RLM analysis skill for computational document analysis.
+    """Create an analysis skill for computational document analysis.
 
     Args:
         db_path: Path to the LanceDB database. Resolved from:
@@ -67,7 +67,7 @@ def create_skill(
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    tools = create_skill_tools(db_path, config, RLMState, ["analyze"])
+    tools = create_skill_tools(db_path, config, AnalysisState, ["analyze"])
     extras = create_skill_extras(db_path, config)
 
     skill_instructions = instructions()

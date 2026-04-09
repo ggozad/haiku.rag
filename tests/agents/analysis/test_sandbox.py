@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.agents.rlm.dependencies import RLMContext
-from haiku.rag.agents.rlm.sandbox import Sandbox, SandboxResult
+from haiku.rag.agents.analysis.dependencies import AnalysisContext
+from haiku.rag.agents.analysis.sandbox import Sandbox, SandboxResult
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import Document
@@ -98,7 +98,7 @@ class TestSandboxHaikuRAG:
                 title="Test Document",
             )
 
-            context = RLMContext()
+            context = AnalysisContext()
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
                 "docs = await list_documents()\n"
@@ -121,7 +121,7 @@ class TestSandboxHaikuRAG:
                 title="Animals",
             )
 
-            context = RLMContext()
+            context = AnalysisContext()
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
                 "results = await search('fox', limit=5)\n"
@@ -144,7 +144,7 @@ class TestSandboxHaikuRAG:
                 title="Fox Document",
             )
 
-            context = RLMContext()
+            context = AnalysisContext()
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
                 f"content = await get_document('{doc.id}')\n"
@@ -174,7 +174,7 @@ class TestSandboxHaikuRAG:
                 title="Fox Document",
             )
 
-            context = RLMContext()
+            context = AnalysisContext()
             sb = Sandbox(client=client, config=config, context=context)
             # First search to get a chunk_id
             result = await sb.execute(
@@ -257,8 +257,8 @@ class TestSandboxOutputTruncation:
     async def test_truncate_stdout_on_runtime_error(self, empty_client):
         """Test stdout is truncated when a runtime error occurs after large output."""
         config = AppConfig()
-        config.rlm.max_output_chars = 20
-        context = RLMContext()
+        config.analysis.max_output_chars = 20
+        context = AnalysisContext()
         sb = Sandbox(client=empty_client, config=config, context=context)
         result = await sb.execute("print('a' * 100)\nx = 1/0")
         assert not result.success
@@ -270,8 +270,8 @@ class TestSandboxOutputTruncation:
     async def test_truncate_successful_output(self, empty_client):
         """Test output is truncated on successful execution with large output."""
         config = AppConfig()
-        config.rlm.max_output_chars = 20
-        context = RLMContext()
+        config.analysis.max_output_chars = 20
+        context = AnalysisContext()
         sb = Sandbox(client=empty_client, config=config, context=context)
         result = await sb.execute("print('b' * 100)")
         assert result.success
@@ -299,7 +299,7 @@ class TestSandboxContextFilter:
                 title="Private Doc",
             )
 
-            context = RLMContext(filter="uri LIKE 'public://%'")
+            context = AnalysisContext(filter="uri LIKE 'public://%'")
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
                 "docs = await list_documents()\n"
@@ -331,7 +331,7 @@ class TestSandboxPreloadedDocuments:
             Document(id="1", content="Content A", title="Doc A", uri="a://1"),
             Document(id="2", content="Content B", title="Doc B", uri="b://2"),
         ]
-        context = RLMContext(documents=docs)
+        context = AnalysisContext(documents=docs)
         sb = Sandbox(client=empty_client, config=config, context=context)
         result = await sb.execute(
             "print(len(documents))\n"
@@ -368,7 +368,7 @@ class TestSandboxDoclingDocument:
                 title="Docling Doc",
             )
 
-            context = RLMContext()
+            context = AnalysisContext()
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
                 f"doc = await get_docling_document('{doc.id}')\n"
@@ -389,7 +389,7 @@ class TestSandboxLLM:
     async def test_llm_function(self, allow_model_requests, empty_client):
         """Test llm() calls the model and returns a string."""
         config = AppConfig()
-        context = RLMContext()
+        context = AnalysisContext()
         sb = Sandbox(client=empty_client, config=config, context=context)
         result = await sb.execute(
             "answer = await llm('What is 2 + 2? Reply with just the number.')\n"

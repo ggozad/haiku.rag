@@ -1,11 +1,11 @@
-# RLM Skill
+# Analysis Skill
 
-The RLM (Recursive Language Model) skill provides computational analysis via code execution. It writes and runs Python code in a sandboxed interpreter to answer questions that require computation, aggregation, or data traversal.
+The analysis skill provides computational analysis via code execution. It writes and runs Python code in a sandboxed interpreter to answer questions that require computation, aggregation, or data traversal.
 
 ## `create_skill(db_path?, config?)`
 
 ```python
-from haiku.rag.skills.rlm import create_skill
+from haiku.rag.skills.analysis import create_skill
 
 skill = create_skill(db_path=db_path, config=config)
 ```
@@ -29,10 +29,10 @@ skill = create_skill(db_path=db_path, config=config)
 
 ## State
 
-The skill manages an `RLMState` under the `"rlm"` namespace:
+The skill manages an `AnalysisState` under the `"analysis"` namespace:
 
 ```python
-class RLMState(BaseModel):
+class AnalysisState(BaseModel):
     document_filter: str | None = None
     analyses: list[AnalysisEntry] = []
 
@@ -51,14 +51,14 @@ Combine both skills to give the agent full RAG + analysis capabilities:
 
 ```python
 from haiku.rag.skills.rag import create_skill as create_rag_skill
-from haiku.rag.skills.rlm import create_skill as create_rlm_skill
+from haiku.rag.skills.analysis import create_skill as create_analysis_skill
 from haiku.skills.agent import SkillToolset
 from haiku.skills.prompts import build_system_prompt
 from pydantic_ai import Agent
 
 rag = create_rag_skill(db_path=db_path)
-rlm = create_rlm_skill(db_path=db_path)
-toolset = SkillToolset(skills=[rag, rlm])
+analysis = create_analysis_skill(db_path=db_path)
+toolset = SkillToolset(skills=[rag, analysis])
 
 agent = Agent(
     "openai:gpt-4o",
@@ -67,4 +67,4 @@ agent = Agent(
 )
 ```
 
-See the [RLM Agent](../agents/rlm.md) documentation for details on how the underlying agent works.
+See the [Analysis Agent](../agents/analysis.md) documentation for details on how the underlying agent works.

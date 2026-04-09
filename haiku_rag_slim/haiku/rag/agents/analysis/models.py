@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class CodeExecution(BaseModel):
-    """Result of executing a code block in the RLM sandbox."""
+    """Result of executing a code block in the analysis sandbox."""
 
     code: str = Field(description="The Python code that was executed")
     stdout: str = Field(description="Standard output captured during execution")
@@ -10,8 +10,8 @@ class CodeExecution(BaseModel):
     success: bool = Field(description="Whether execution completed without error")
 
 
-class RLMResult(BaseModel):
-    """Result from RLM agent execution."""
+class AnalysisResult(BaseModel):
+    """Result from analysis agent execution."""
 
     answer: str = Field(description="The answer to the user's question")
     program: str = Field(description="The final consolidated program")

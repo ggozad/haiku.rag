@@ -1,7 +1,7 @@
 import pytest
 
-from haiku.rag.agents.rlm.dependencies import RLMContext
-from haiku.rag.agents.rlm.sandbox import Sandbox
+from haiku.rag.agents.analysis.dependencies import AnalysisContext
+from haiku.rag.agents.analysis.sandbox import Sandbox
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 
@@ -17,5 +17,5 @@ async def empty_client(temp_db_path):
 async def sandbox(empty_client):
     """Create a Monty sandbox for testing."""
     config = AppConfig()
-    context = RLMContext()
+    context = AnalysisContext()
     return Sandbox(client=empty_client, config=config, context=context)

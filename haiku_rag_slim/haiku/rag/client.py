@@ -30,11 +30,11 @@ from haiku.rag.utils import escape_sql_string
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.agents.analysis.models import AnalysisResult
     from haiku.rag.agents.research.models import (
         Citation,
         ResearchReport,
     )
-    from haiku.rag.agents.rlm.models import RLMResult
 
 logger = logging.getLogger(__name__)
 
@@ -1192,17 +1192,17 @@ class HaikuRAG:
 
         return await graph.run(state=state, deps=deps)
 
-    async def rlm(
+    async def analyze(
         self,
         question: str,
         documents: list[str] | None = None,
         filter: str | None = None,
-    ) -> "RLMResult":
-        """Answer a question using the RLM agent with code execution.
+    ) -> "AnalysisResult":
+        """Answer a question using the analysis agent with code execution.
 
-        The RLM (Recursive Language Model) agent can write and execute Python
-        code in a sandboxed environment to solve problems that require
-        computation, aggregation, or complex traversal across documents.
+        The analysis agent can write and execute Python code in a sandboxed
+        environment to solve problems that require computation, aggregation,
+        or complex traversal across documents.
 
         Args:
             question: The question to answer.
@@ -1210,16 +1210,16 @@ class HaikuRAG:
             filter: SQL WHERE clause to filter documents during searches.
 
         Returns:
-            RLMResult with the answer and the final consolidated program.
+            AnalysisResult with the answer and the final consolidated program.
         """
-        from haiku.rag.agents.rlm import (
-            RLMContext,
-            RLMDeps,
+        from haiku.rag.agents.analysis import (
+            AnalysisContext,
+            AnalysisDeps,
             Sandbox,
-            create_rlm_agent,
+            create_analysis_agent,
         )
 
-        context = RLMContext(filter=filter)
+        context = AnalysisContext(filter=filter)
 
         if documents:
             loaded_docs = []
@@ -1234,12 +1234,12 @@ class HaikuRAG:
             config=self._config,
             context=context,
         )
-        deps = RLMDeps(
+        deps = AnalysisDeps(
             sandbox=sandbox,
             context=context,
         )
 
-        agent = create_rlm_agent(self._config)
+        agent = create_analysis_agent(self._config)
         result = await agent.run(question, deps=deps)
 
         return result.output

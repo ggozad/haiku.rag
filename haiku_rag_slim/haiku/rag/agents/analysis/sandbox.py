@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
 
-from haiku.rag.agents.rlm.dependencies import RLMContext
+from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.compression import decompress_json
 
@@ -34,13 +34,13 @@ class Sandbox:
 
     _client: "HaikuRAG"
     _config: AppConfig
-    _context: RLMContext
+    _context: AnalysisContext
 
     def __init__(
         self,
         client: "HaikuRAG",
         config: AppConfig,
-        context: RLMContext,
+        context: AnalysisContext,
     ):
         self._client = client
         self._config = config
@@ -122,7 +122,7 @@ class Sandbox:
 
             from haiku.rag.utils import get_model
 
-            model = get_model(config.rlm.model, config)
+            model = get_model(config.analysis.model, config)
             agent: Agent[None, str] = Agent(model, output_type=str)
             result = await agent.run(prompt)
             return result.output
@@ -172,9 +172,9 @@ class Sandbox:
         def print_callback(_stream: Literal["stdout"], text: str) -> None:
             stdout_lines.append(text)
 
-        max_chars = self._config.rlm.max_output_chars
+        max_chars = self._config.analysis.max_output_chars
         limits: pydantic_monty.ResourceLimits = {
-            "max_duration_secs": self._config.rlm.code_timeout,
+            "max_duration_secs": self._config.analysis.code_timeout,
         }
 
         try:

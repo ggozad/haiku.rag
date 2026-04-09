@@ -58,12 +58,12 @@ research:
 
 The research workflow uses an iterative feedback loop: the planner proposes one question at a time, sees the answer, then decides whether to continue or synthesize. This continues until the planner marks research as complete or `max_iterations` is reached.
 
-## RLM Configuration
+## Analysis Configuration
 
-Configure the RLM (Recursive Language Model) agent:
+Configure the analysis agent:
 
 ```yaml
-rlm:
+analysis:
   model:
     provider: anthropic
     name: claude-sonnet-4-20250514
@@ -76,4 +76,4 @@ rlm:
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 
-See [RLM Agent](../agents/rlm.md) for usage details.
+See [Analysis Agent](../agents/analysis.md) for usage details.

@@ -420,32 +420,32 @@ The QA provider and model are configured in `haiku.rag.yaml` or can be passed di
 
 See also: [Agents](agents/index.md) for details on the QA agent and the multi‑agent research workflow.
 
-## RLM (Recursive Language Model)
+## Analysis
 
 Answer complex analytical questions via code execution:
 
 ```python
 # Aggregation across documents
-result = await client.rlm("Which quarter had the highest revenue?")
+result = await client.analyze("Which quarter had the highest revenue?")
 print(result.answer)    # The answer
 print(result.program)   # The final consolidated program
 
 # Computation within a document set
-result = await client.rlm(
+result = await client.analyze(
     "What is the average deal size mentioned in these contracts?",
     filter="uri LIKE '%contracts%'"
 )
 
 # Multi-document comparison
-result = await client.rlm(
+result = await client.analyze(
     "What changed between these two versions of the policy?",
     documents=["Policy v1.0", "Policy v2.0"]
 )
 ```
 
-The RLM agent writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
+The analysis agent writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
 
-See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
+See [Analysis Agent](agents/analysis.md) for details on capabilities and configuration.
 
 ## Building Custom Agents
 

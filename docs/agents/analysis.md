@@ -1,6 +1,6 @@
-# RLM Agent (Recursive Language Model)
+# Analysis Agent
 
-The RLM agent enables complex analytical tasks by writing and executing Python code in a sandboxed environment. It solves problems that traditional RAG struggles with:
+The analysis agent enables complex analytical tasks by writing and executing Python code in a sandboxed environment. It solves problems that traditional RAG struggles with:
 
 - **Aggregation**: "How many documents mention security vulnerabilities?"
 - **Computation**: "What's the average revenue across all quarterly reports?"
@@ -19,13 +19,13 @@ The RLM agent enables complex analytical tasks by writing and executing Python c
 
 ```bash
 # Basic usage
-haiku-rag rlm "How many documents are in the database?"
+haiku-rag analyze "How many documents are in the database?"
 
 # With document filter (restricts what the agent can access)
-haiku-rag rlm "Summarize the key points" --filter "uri LIKE '%report%'"
+haiku-rag analyze "Summarize the key points" --filter "uri LIKE '%report%'"
 
 # Pre-load specific documents
-haiku-rag rlm "Compare these two reports" --document "Q1 Report" --document "Q2 Report"
+haiku-rag analyze "Compare these two reports" --document "Q1 Report" --document "Q2 Report"
 ```
 
 ## Python Usage
@@ -35,18 +35,18 @@ from haiku.rag.client import HaikuRAG
 
 async with HaikuRAG(path_to_db) as client:
     # Basic question
-    result = await client.rlm("How many documents mention 'security'?")
+    result = await client.analyze("How many documents mention 'security'?")
     print(result.answer)    # The answer
     print(result.program)   # The final consolidated program
 
     # With filter (agent can only see filtered documents)
-    result = await client.rlm(
+    result = await client.analyze(
         "What is the total revenue?",
         filter="title LIKE '%Financial%'"
     )
 
     # Pre-load specific documents
-    result = await client.rlm(
+    result = await client.analyze(
         "Compare the conclusions",
         documents=["Report A", "Report B"]
     )
@@ -89,7 +89,7 @@ The `filter` parameter restricts what documents the agent can access. Unlike too
 
 ```python
 # Agent can only see documents with "confidential" in the URI
-result = await client.rlm(
+result = await client.analyze(
     "Summarize all findings",
     filter="uri LIKE '%confidential%'"
 )
@@ -99,10 +99,10 @@ This is useful for scoping to specific document sets, enforcing access control, 
 
 ## Configuration
 
-RLM settings can be configured in `haiku.rag.yaml`:
+Analysis settings can be configured in `haiku.rag.yaml`:
 
 ```yaml
-rlm:
+analysis:
   model:
     provider: anthropic
     name: claude-sonnet-4-20250514

@@ -216,7 +216,7 @@ async def skill_analyze(
 
     async with HaikuRAG(db_path, config=config, read_only=True) as rag:
         documents = [document] if document else None
-        result = await rag.rlm(question, documents=documents, filter=filter)
+        result = await rag.analyze(question, documents=documents, filter=filter)
         output = result.answer
         if result.program:
             output += f"\n\nProgram:\n{result.program}"

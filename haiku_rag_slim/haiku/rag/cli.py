@@ -368,8 +368,8 @@ def ask(  # pragma: no cover
     )
 
 
-@_cli.command("rlm", help="Answer questions using code execution (RLM agent)")
-def rlm(  # pragma: no cover
+@_cli.command("analyze", help="Answer questions using code execution (analysis agent)")
+def analyze(  # pragma: no cover
     question: str = typer.Argument(
         help="The question to answer",
     ),
@@ -393,7 +393,7 @@ def rlm(  # pragma: no cover
 ):
     app = create_app(db)
     asyncio.run(
-        app.rlm(
+        app.analyze(
             question=question,
             document=document,
             filter=filter,

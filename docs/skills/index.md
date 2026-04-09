@@ -7,7 +7,7 @@ haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggoz
 | Skill | Description |
 |-------|-------------|
 | [`rag`](rag.md) | Search, retrieve, and answer questions from the knowledge base |
-| [`rag-rlm`](rlm.md) | Computational analysis via code execution |
+| [`rag-analysis`](analysis.md) | Computational analysis via code execution |
 
 ## Discovery
 
@@ -16,7 +16,7 @@ Skills are registered as Python entrypoints under `haiku.skills`. They are disco
 ```bash
 haiku-skills list --use-entrypoints
 # rag — Search, retrieve and analyze documents using RAG.
-# rag-rlm — Analyze documents using code execution in a sandboxed interpreter.
+# rag-analysis — Analyze documents using code execution in a sandboxed interpreter.
 ```
 
 ## Usage
@@ -88,7 +88,7 @@ Each skill manages its own state under a dedicated namespace. State is automatic
 
 ```python
 rag_state = toolset.get_namespace("rag")
-rlm_state = toolset.get_namespace("rlm")
+analysis_state = toolset.get_namespace("analysis")
 ```
 
 See the individual skill pages for state model details.

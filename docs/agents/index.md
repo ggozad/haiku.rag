@@ -4,7 +4,7 @@ Three agentic flows are provided by haiku.rag:
 
 - **Simple QA Agent** — a focused question answering agent
 - **Research Graph** — a multi-step research workflow with question decomposition
-- **RLM Agent** — complex analytical tasks via sandboxed Python code execution (see [RLM Agent](rlm.md))
+- **Analysis Agent** — complex analytical tasks via sandboxed Python code execution (see [Analysis Agent](analysis.md))
 
 For multi-turn conversational RAG, haiku.rag provides [skills](../skills/index.md) built on [haiku.skills](https://github.com/ggozad/haiku.skills). The skills bundle search, Q&A, analysis, and research tools with session state management.
 

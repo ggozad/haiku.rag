@@ -1,5 +1,5 @@
 ---
-name: rag-rlm
+name: rag-analysis
 description: >
   Computational analysis of the knowledge base via code execution in a sandboxed Python interpreter.
   Use for questions requiring counting, aggregation, statistics, data traversal,
@@ -8,6 +8,6 @@ description: >
   "calculate average word count", "extract all email addresses".
 ---
 
-# RLM Analysis
+# Analysis
 
 Use the `analyze` tool for complex analytical questions. It writes and executes Python code against the knowledge base in a sandboxed Python interpreter.

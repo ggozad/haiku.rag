@@ -11,7 +11,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Question answering** — QA agents with citations (page numbers, section headings)
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
-- **RLM agent** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
+- **Analysis agent** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
@@ -62,8 +62,8 @@ haiku-rag ask "What datasets were used for evaluation?" --cite
 # Research mode — iterative planning and search
 haiku-rag research "What are the limitations of the approach?"
 
-# RLM mode — complex analytical tasks via code execution
-haiku-rag rlm "How many documents mention transformers?"
+# Analyze — complex analytical tasks via code execution
+haiku-rag analyze "How many documents mention transformers?"
 
 # Interactive chat — multi-turn conversations with memory
 haiku-rag chat
@@ -138,7 +138,7 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA and research agents
-- [RLM Agent](https://ggozad.github.io/haiku.rag/rlm/) - Complex analytical tasks via code execution
+- [Analysis Agent](https://ggozad.github.io/haiku.rag/agents/analysis/) - Complex analytical tasks via code execution
 - [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
 - [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring and MCP
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
