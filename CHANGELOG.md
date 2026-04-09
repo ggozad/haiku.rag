@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.39.0] - 2026-04-09
+
 ### Added
 
 - **S3/Object storage support**: Connect to LanceDB on S3, GCS, Azure Blob, or HDFS via `lancedb.uri` and `storage_options` config. Supports S3-compatible stores with custom endpoints.
@@ -1332,7 +1334,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.38.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.39.0...HEAD
+[0.39.0]: https://github.com/ggozad/haiku.rag/compare/0.38.0...0.39.0
 [0.38.0]: https://github.com/ggozad/haiku.rag/compare/0.37.0...0.38.0
 [0.37.0]: https://github.com/ggozad/haiku.rag/compare/0.36.3...0.37.0
 [0.36.3]: https://github.com/ggozad/haiku.rag/compare/0.36.2...0.36.3
