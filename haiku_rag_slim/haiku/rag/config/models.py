@@ -60,6 +60,7 @@ class LanceDBConfig(BaseModel):
     uri: str = ""
     api_key: str = ""
     region: str = ""
+    storage_options: dict[str, str] = Field(default_factory=dict)
 
 
 class EmbeddingsConfig(BaseModel):

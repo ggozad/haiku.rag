@@ -1,8 +1,10 @@
 import shutil
 import subprocess
 import zipfile
+from pathlib import Path
 
 import pytest
+import yaml
 
 from haiku.rag.skill_generator import (
     AVAILABLE_TOOLS,
@@ -449,3 +451,49 @@ class TestGenerateSkill:
             assert any(n.endswith("SKILL.md") for n in names)
             assert any("assets/" in n and n.endswith("data.lance") for n in names)
             assert any(n.endswith("haiku.rag.yaml") for n in names)
+
+
+def _make_remote_config(tmp_path: Path) -> Path:
+    config_file = tmp_path / "haiku.rag.yaml"
+    config_file.write_text(
+        yaml.dump(
+            {
+                "lancedb": {
+                    "uri": "s3://my-bucket/haiku-rag",
+                    "storage_options": {
+                        "endpoint": "http://minio:9000",
+                        "region": "us-east-1",
+                    },
+                }
+            }
+        )
+    )
+    return config_file
+
+
+class TestGenerateSkillRemote:
+    def test_remote_skips_copytree(self, tmp_path):
+        config_file = _make_remote_config(tmp_path)
+        result = generate_skill(
+            db_path=None,
+            output_dir=tmp_path,
+            name="recipes",
+            description="A recipe skill.",
+            tool_names=["search", "ask"],
+            config_path=config_file,
+        )
+        assets = result / "recipes_skill" / "assets"
+        # No bundled database
+        assert not (assets / "recipes.lancedb").exists()
+        # Config must be copied
+        assert (assets / "haiku.rag.yaml").is_file()
+
+    def test_remote_requires_config_path(self, tmp_path):
+        with pytest.raises(ValueError, match="config_path.*required"):
+            generate_skill(
+                db_path=None,
+                output_dir=tmp_path,
+                name="recipes",
+                description="A recipe skill.",
+                tool_names=["search"],
+            )

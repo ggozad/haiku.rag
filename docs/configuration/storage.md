@@ -32,26 +32,47 @@ lancedb:
 # Amazon S3
 lancedb:
   uri: s3://my-bucket/my-table
-# Use AWS credentials or IAM roles
+  storage_options:
+    region: us-east-1
+
+# Amazon S3 with explicit credentials
+lancedb:
+  uri: s3://my-bucket/my-table
+  storage_options:
+    aws_access_key_id: YOUR_ACCESS_KEY
+    aws_secret_access_key: YOUR_SECRET_KEY
+    region: us-east-1
+
+# S3-compatible (SeaweedFS, Tigris, etc.)
+lancedb:
+  uri: s3://my-bucket/my-table
+  storage_options:
+    endpoint: http://localhost:8333
+    aws_access_key_id: YOUR_ACCESS_KEY
+    aws_secret_access_key: YOUR_SECRET_KEY
+    region: us-east-1
+    allow_http: "true"
 
 # Azure Blob Storage
 lancedb:
   uri: az://my-container/my-table
-# Use Azure credentials
 
 # Google Cloud Storage
 lancedb:
   uri: gs://my-bucket/my-table
-# Use GCP credentials
 
 # HDFS
 lancedb:
   uri: hdfs://namenode:port/path/to/table
 ```
 
-Authentication is handled through standard cloud provider credentials (AWS CLI, Azure CLI, gcloud, etc.) or by setting `api_key` for LanceDB Cloud.
+- **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. Table optimization and indexing are managed server-side.
+- **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
+- **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
 
-**Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization is still performed locally.
+The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend — see the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
+
+**Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
 ## Database Creation
 

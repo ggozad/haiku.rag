@@ -3,46 +3,211 @@ from unittest.mock import patch
 import pytest
 
 from haiku.rag.config import Config
-from haiku.rag.store.engine import Store
+from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.store.engine import ConnectionMode, Store, connect_lancedb
 
 
-@pytest.mark.asyncio
-async def test_lancedb_cloud_skips_optimization(temp_db_path):
-    """Test that vacuum is skipped when using LanceDB Cloud (db:// URI)."""
-    # Create a store
-    store = Store(temp_db_path, create=True)
+class TestConnectionMode:
+    def test_local_when_uri_empty(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri=""))
+        assert ConnectionMode.from_config(config) == ConnectionMode.LOCAL
 
-    # Mock all cloud config to simulate LanceDB Cloud usage
-    with (
-        patch.object(Config.lancedb, "uri", "db://test-database"),
-        patch.object(Config.lancedb, "api_key", "test-api-key"),
-        patch.object(Config.lancedb, "region", "us-east-1"),
-    ):
-        # Mock the optimize method to track if it's called
-        with patch.object(store.chunks_table, "optimize") as mock_optimize:
-            # Call vacuum - this should skip optimization for LanceDB Cloud
-            await store.vacuum()
+    def test_cloud_when_db_uri(self):
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                uri="db://my-database", api_key="key", region="us-east-1"
+            )
+        )
+        assert ConnectionMode.from_config(config) == ConnectionMode.CLOUD
 
-            # The optimize method should NOT have been called for LanceDB Cloud
-            mock_optimize.assert_not_called()
+    def test_object_storage_s3(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
+        assert ConnectionMode.from_config(config) == ConnectionMode.OBJECT_STORAGE
 
-    store.close()
+    def test_object_storage_gs(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri="gs://bucket/path"))
+        assert ConnectionMode.from_config(config) == ConnectionMode.OBJECT_STORAGE
+
+    def test_object_storage_az(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri="az://container/path"))
+        assert ConnectionMode.from_config(config) == ConnectionMode.OBJECT_STORAGE
+
+    def test_object_storage_hdfs(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri="hdfs://namenode/path"))
+        assert ConnectionMode.from_config(config) == ConnectionMode.OBJECT_STORAGE
+
+    def test_unknown_uri_treated_as_object_storage(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri="custom://something"))
+        assert ConnectionMode.from_config(config) == ConnectionMode.OBJECT_STORAGE
 
 
-@pytest.mark.asyncio
-async def test_local_storage_calls_optimization(temp_db_path):
-    """Test that vacuum calls optimization for local storage."""
-    # Create a store
-    store = Store(temp_db_path, create=True)
+class TestConnectLancedb:
+    def test_local_passes_db_path(self, temp_db_path):
+        config = AppConfig(lancedb=LanceDBConfig(uri=""))
+        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
+            connect_lancedb(config, db_path=temp_db_path)
+            mock_connect.assert_called_once_with(temp_db_path)
 
-    # Ensure uri is empty (local storage)
-    with patch.object(Config.lancedb, "uri", ""):
-        # Mock the optimize method to track if it's called
-        with patch.object(store.chunks_table, "optimize") as mock_optimize:
-            # Call vacuum - this should optimize all tables for local storage
-            await store.vacuum()
+    def test_cloud_passes_uri_api_key_region(self):
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                uri="db://my-database", api_key="test-key", region="us-west-2"
+            )
+        )
+        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
+            connect_lancedb(config)
+            mock_connect.assert_called_once_with(
+                uri="db://my-database", api_key="test-key", region="us-west-2"
+            )
 
-            # The optimize method SHOULD have been called for local storage
-            mock_optimize.assert_called()
+    def test_object_storage_passes_uri_and_storage_options(self):
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                uri="s3://bucket/path",
+                storage_options={
+                    "endpoint": "http://minio:9000",
+                    "region": "us-east-1",
+                },
+            )
+        )
+        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
+            connect_lancedb(config)
+            mock_connect.assert_called_once_with(
+                uri="s3://bucket/path",
+                storage_options={
+                    "endpoint": "http://minio:9000",
+                    "region": "us-east-1",
+                },
+            )
 
-    store.close()
+    def test_object_storage_without_storage_options(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
+        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
+            connect_lancedb(config)
+            mock_connect.assert_called_once_with(uri="s3://bucket/path")
+
+    def test_local_without_db_path_raises(self):
+        config = AppConfig(lancedb=LanceDBConfig(uri=""))
+        with pytest.raises(
+            ValueError, match="No lancedb.uri configured and no db_path provided"
+        ):
+            connect_lancedb(config)
+
+
+class TestStoreConnectionMode:
+    def test_store_connection_mode_local(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        assert store._connection_mode == ConnectionMode.LOCAL
+        store.close()
+
+    def test_store_connection_mode_cloud(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with (
+            patch.object(Config.lancedb, "uri", "db://test-database"),
+            patch.object(Config.lancedb, "api_key", "test-api-key"),
+            patch.object(Config.lancedb, "region", "us-east-1"),
+        ):
+            assert store._connection_mode == ConnectionMode.CLOUD
+        store.close()
+
+    def test_store_connection_mode_object_storage(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+            assert store._connection_mode == ConnectionMode.OBJECT_STORAGE
+        store.close()
+
+
+class TestVacuumByConnectionMode:
+    @pytest.mark.asyncio
+    async def test_cloud_skips_vacuum(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with (
+            patch.object(Config.lancedb, "uri", "db://test-database"),
+            patch.object(Config.lancedb, "api_key", "test-api-key"),
+            patch.object(Config.lancedb, "region", "us-east-1"),
+        ):
+            with patch.object(store.chunks_table, "optimize") as mock_optimize:
+                await store.vacuum()
+                mock_optimize.assert_not_called()
+        store.close()
+
+    @pytest.mark.asyncio
+    async def test_object_storage_runs_vacuum(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+            with patch.object(store.chunks_table, "optimize") as mock_optimize:
+                await store.vacuum()
+                mock_optimize.assert_called()
+        store.close()
+
+    @pytest.mark.asyncio
+    async def test_local_runs_vacuum(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with patch.object(Config.lancedb, "uri", ""):
+            with patch.object(store.chunks_table, "optimize") as mock_optimize:
+                await store.vacuum()
+                mock_optimize.assert_called()
+        store.close()
+
+
+class TestVectorIndexByConnectionMode:
+    def test_cloud_skips_index_creation(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with (
+            patch.object(Config.lancedb, "uri", "db://test-database"),
+            patch.object(Config.lancedb, "api_key", "test-api-key"),
+            patch.object(Config.lancedb, "region", "us-east-1"),
+        ):
+            with patch.object(store.chunks_table, "count_rows") as mock_count:
+                store._ensure_vector_index()
+                mock_count.assert_not_called()
+        store.close()
+
+    def test_object_storage_runs_index_creation(self, temp_db_path):
+        store = Store(temp_db_path, create=True)
+        with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+            with patch.object(
+                store.chunks_table, "count_rows", return_value=0
+            ) as mock_count:
+                store._ensure_vector_index()
+                mock_count.assert_called()
+        store.close()
+
+
+class TestStoreSkipsPathValidationForRemote:
+    def test_skips_path_check_for_cloud(self, tmp_path):
+        nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                uri="db://test-database", api_key="key", region="us-east-1"
+            )
+        )
+        with patch("haiku.rag.store.engine.lancedb.connect"):
+            with patch.object(Store, "_init_tables"):
+                store = Store(
+                    nonexistent,
+                    config=config,
+                    create=True,
+                    skip_validation=True,
+                    skip_migration_check=True,
+                )
+                store.close()
+
+    def test_skips_path_check_for_object_storage(self, tmp_path):
+        nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                uri="s3://bucket/path",
+                storage_options={"endpoint": "http://localhost:9000"},
+            )
+        )
+        with patch("haiku.rag.store.engine.lancedb.connect"):
+            with patch.object(Store, "_init_tables"):
+                store = Store(
+                    nonexistent,
+                    config=config,
+                    create=True,
+                    skip_validation=True,
+                    skip_migration_check=True,
+                )
+                store.close()
