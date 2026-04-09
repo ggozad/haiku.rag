@@ -33,6 +33,7 @@ The skill manages an `RLMState` under the `"rlm"` namespace:
 
 ```python
 class RLMState(BaseModel):
+    document_filter: str | None = None
     analyses: list[AnalysisEntry] = []
 
 class AnalysisEntry(BaseModel):
@@ -41,7 +42,8 @@ class AnalysisEntry(BaseModel):
     program: str | None = None
 ```
 
-Each `analyze` call appends an `AnalysisEntry` with the question, answer, and executed program.
+- **document_filter** — SQL WHERE clause applied to `analyze` calls (combined with any explicit `filter` parameter). Set this to scope analysis to specific documents.
+- **analyses** — Each `analyze` call appends an `AnalysisEntry` with the question, answer, and executed program.
 
 ## Usage with RAG Skill
 

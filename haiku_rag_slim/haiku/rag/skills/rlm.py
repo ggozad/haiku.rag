@@ -11,6 +11,7 @@ from haiku.skills.parser import parse_skill_md
 
 
 class RLMState(BaseModel):
+    document_filter: str | None = None
     analyses: list[AnalysisEntry] = []
 
 

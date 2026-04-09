@@ -6,6 +6,11 @@
 - **S3/Object storage support**: Connect to LanceDB on S3, GCS, Azure Blob, or HDFS via `lancedb.uri` and `storage_options` config. Supports S3-compatible stores with custom endpoints.
 - **Remote skill generation**: `create-skill` now supports remote databases — omit `--db` and provide `--config-file` to generate skills that connect to object storage at runtime instead of bundling the database.
 
+### Fixed
+
+- **Skill `list_documents` ignores `document_filter`**: `list_documents` tool now respects `state.document_filter`, consistent with `search`, `ask`, and `research`
+- **Skill `analyze` ignores `document_filter`**: `analyze` tool now uses `state.document_filter` (combined with any explicit `filter` parameter). Added `document_filter` field to `RLMState`
+
 ## [0.38.0] - 2026-04-07
 
 ### Added

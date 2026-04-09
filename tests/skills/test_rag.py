@@ -276,6 +276,17 @@ class TestListDocumentsTool:
         assert isinstance(state.documents[0], DocumentInfo)
         assert state.documents[0].id is not None
 
+    async def test_list_documents_applies_document_filter_from_state(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        list_docs = _get_tool(skill, "list_documents")
+        state = RAGState(document_filter="title = 'AI Overview'")
+        ctx = _make_ctx(state)
+        results = await list_docs(ctx)
+        assert len(results) == 1
+        assert results[0]["title"] == "AI Overview"
+
     async def test_list_documents_no_duplicates_in_state(self, rag_db):
         from haiku.rag.skills.rag import RAGState, create_skill
 

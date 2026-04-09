@@ -41,7 +41,7 @@ class RAGState(BaseModel):
 
 - **citations** — Accumulated citations from `ask` calls, with sequential indexing across calls.
 - **qa_history** — Questions and answers from `ask` calls. Prior Q&A is used as context for follow-up questions when embeddings are similar.
-- **document_filter** — SQL WHERE clause applied to `search`, `ask`, and `research` calls. Set this to scope queries to specific documents.
+- **document_filter** — SQL WHERE clause applied to `search`, `list_documents`, `ask`, and `research` calls. Set this to scope queries to specific documents.
 - **searches** — Search results keyed by query string.
 - **documents** — Documents seen via `list_documents` or `get_document` (deduplicated by ID).
 - **reports** — Research reports from `research` calls.
