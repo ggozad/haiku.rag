@@ -9,6 +9,7 @@
 ### Fixed
 
 - **Skill `list_documents` ignores `document_filter`**: `list_documents` tool now respects `state.document_filter`, consistent with `search`, `ask`, and `research`
+- **Skill `analyze` ignores `document_filter`**: `analyze` tool now uses `state.document_filter` (combined with any explicit `filter` parameter). Added `document_filter` field to `RLMState`
 
 ## [0.38.0] - 2026-04-07
 

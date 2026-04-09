@@ -8,6 +8,7 @@ from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
+from haiku.rag.tools.filters import combine_filters
 from haiku.rag.tools.qa import QAHistoryEntry
 from haiku.skills.state import SkillRunDeps
 
@@ -476,11 +477,12 @@ def create_skill_tools(
                 document: Optional document ID or title to pre-load for analysis.
                 filter: Optional SQL WHERE clause to filter documents.
             """
-            output, answer, program = await skill_analyze(
-                db_path, config, question, document=document, filter=filter
-            )
-
             state = _get_state(ctx, state_type)
+            state_filter = state.document_filter if state else None
+            effective_filter = combine_filters(state_filter, filter)
+            output, answer, program = await skill_analyze(
+                db_path, config, question, document=document, filter=effective_filter
+            )
             if state:
                 state.analyses.append(
                     AnalysisEntry(
