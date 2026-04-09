@@ -90,11 +90,12 @@ async def skill_list_documents(
     config: AppConfig,
     limit: int | None = None,
     offset: int | None = None,
+    filter: str | None = None,
 ) -> list[dict[str, Any]]:
     from haiku.rag.client import HaikuRAG
 
     async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        documents = await rag.list_documents(limit, offset)
+        documents = await rag.list_documents(limit, offset, filter=filter)
         return [
             {
                 "id": doc.id,
@@ -350,8 +351,14 @@ def create_skill_tools(
                 limit: Maximum number of documents to return.
                 offset: Number of documents to skip.
             """
-            result = await skill_list_documents(db_path, config, limit, offset)
             state = _get_state(ctx, state_type)
+            result = await skill_list_documents(
+                db_path,
+                config,
+                limit,
+                offset,
+                filter=state.document_filter if state else None,
+            )
             if state:
                 update_documents_state(state.documents, result)
             return result
