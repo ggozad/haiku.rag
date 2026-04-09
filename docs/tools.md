@@ -59,22 +59,6 @@ docs = create_document_toolset(config)
 - `get_document(query)` — Retrieve a document by title or URI.
 - `summarize_document(query)` — Generate an LLM summary of a document's content.
 
-### Analysis Toolset
-
-`create_analysis_toolset()` provides computational analysis via the RLM agent.
-
-```python
-from haiku.rag.tools import create_analysis_toolset
-
-analysis = create_analysis_toolset(config)
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `config` | required | `AppConfig` |
-| `base_filter` | `None` | SQL WHERE clause applied to searches |
-| `tool_name` | `"analyze"` | Name of the tool exposed to the agent |
-
 ## Filter Helpers
 
 `haiku.rag.tools.filters` provides utilities for building SQL filters:

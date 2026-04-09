@@ -27,6 +27,7 @@
 - **`context_radius` config**: Replaced by automatic section-bounded expansion. Context expansion no longer requires configuration.
 - **DoclingDocument LRU cache**: No longer needed — the document_items table replaces in-memory caching for context expansion
 - **`cachetools` dependency**: No longer used
+- **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module.
 
 ## [0.39.0] - 2026-04-09
 
