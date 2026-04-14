@@ -349,7 +349,7 @@ function MessageViewWithCitations({
 							const toolCallId = msg.content?.tool_call_id;
 							result.push(
 								<ActivityIndicator
-									key={msg.id}
+									key={`activity-${msg.id}`}
 									message={msg}
 									isComplete={
 										toolCallId ? completedToolCallIds.has(toolCallId) : false
