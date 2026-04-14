@@ -20,11 +20,13 @@ from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import (
     DocumentRepository,
     _escape_sql_string,
 )
+from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
@@ -96,6 +98,7 @@ class HaikuRAG:
         )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
+        self.document_item_repository = DocumentItemRepository(self.store)
 
     @property
     def is_read_only(self) -> bool:
@@ -354,6 +357,7 @@ class HaikuRAG:
         self,
         document: Document,
         chunks: list[Chunk],
+        docling_document: "DoclingDocument",
     ) -> Document:
         """Store a document with chunks, embedding any that lack embeddings.
 
@@ -362,6 +366,7 @@ class HaikuRAG:
         Args:
             document: The document to store (will be created).
             chunks: Chunks to store (will be embedded if lacking embeddings).
+            docling_document: The DoclingDocument to extract items from.
 
         Returns:
             The created Document instance with ID set.
@@ -389,6 +394,10 @@ class HaikuRAG:
             # Batch create all chunks in a single operation
             await self.chunk_repository.create(chunks)
 
+            # Extract and store document items for context expansion
+            items = extract_items(created_doc.id, docling_document)
+            await self.document_item_repository.create_items(created_doc.id, items)
+
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
                 asyncio.create_task(self.store.vacuum())
@@ -403,6 +412,7 @@ class HaikuRAG:
         self,
         document: Document,
         chunks: list[Chunk],
+        docling_document: "DoclingDocument | None" = None,
     ) -> Document:
         """Update a document and replace its chunks, embedding any that lack embeddings.
 
@@ -411,6 +421,8 @@ class HaikuRAG:
         Args:
             document: The document to update (must have ID set).
             chunks: Chunks to replace existing (will be embedded if lacking embeddings).
+            docling_document: The DoclingDocument to extract items from.
+                When None, existing items are preserved.
 
         Returns:
             The updated Document instance.
@@ -440,6 +452,14 @@ class HaikuRAG:
 
             # Batch create all chunks in a single operation
             await self.chunk_repository.create(chunks)
+
+            # Replace document items when a new DoclingDocument is provided
+            if docling_document is not None:
+                await self.document_item_repository.delete_by_document_id(
+                    updated_doc.id
+                )
+                items = extract_items(updated_doc.id, docling_document)
+                await self.document_item_repository.create_items(updated_doc.id, items)
 
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
@@ -498,7 +518,9 @@ class HaikuRAG:
         document.set_docling(docling_document)
 
         # Store document and chunks
-        return await self._store_document_with_chunks(document, embedded_chunks)
+        return await self._store_document_with_chunks(
+            document, embedded_chunks, docling_document
+        )
 
     async def import_document(
         self,
@@ -536,7 +558,9 @@ class HaikuRAG:
         )
         document.set_docling(docling_document)
 
-        return await self._store_document_with_chunks(document, chunks)
+        return await self._store_document_with_chunks(
+            document, chunks, docling_document
+        )
 
     async def create_document_from_source(
         self, source: str | Path, title: str | None = None, metadata: dict | None = None
@@ -677,7 +701,7 @@ class HaikuRAG:
                     docling_document, stored_content
                 )
             return await self._update_document_with_chunks(
-                existing_doc, embedded_chunks
+                existing_doc, embedded_chunks, docling_document
             )
         else:
             # Create new document
@@ -690,7 +714,9 @@ class HaikuRAG:
                 metadata=metadata,
             )
             document.set_docling(docling_document)
-            return await self._store_document_with_chunks(document, embedded_chunks)
+            return await self._store_document_with_chunks(
+                document, embedded_chunks, docling_document
+            )
 
     async def _create_or_update_document_from_url(
         self, url: str, title: str | None = None, metadata: dict | None = None
@@ -790,7 +816,7 @@ class HaikuRAG:
                         docling_document, stored_content
                     )
                 return await self._update_document_with_chunks(
-                    existing_doc, embedded_chunks
+                    existing_doc, embedded_chunks, docling_document
                 )
             else:
                 # Create new document
@@ -803,7 +829,9 @@ class HaikuRAG:
                     metadata=metadata,
                 )
                 document.set_docling(docling_document)
-                return await self._store_document_with_chunks(document, embedded_chunks)
+                return await self._store_document_with_chunks(
+                    document, embedded_chunks, docling_document
+                )
 
     def _get_extension_from_content_type_or_url(
         self, url: str, content_type: str
@@ -956,7 +984,9 @@ class HaikuRAG:
             elif content is not None:
                 existing_doc.content = content
 
-            return await self._update_document_with_chunks(existing_doc, chunks)
+            return await self._update_document_with_chunks(
+                existing_doc, chunks, docling_document
+            )
 
         # DoclingDocument provided without chunks - chunk and embed using primitives
         if docling_document is not None:
@@ -966,7 +996,7 @@ class HaikuRAG:
             new_chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(new_chunks, self._config)
             return await self._update_document_with_chunks(
-                existing_doc, embedded_chunks
+                existing_doc, embedded_chunks, docling_document
             )
 
         # Content provided without chunks - convert, chunk, and embed using primitives
@@ -977,7 +1007,9 @@ class HaikuRAG:
 
         new_chunks = await self.chunk(converted_docling)
         embedded_chunks = await embed_chunks(new_chunks, self._config)
-        return await self._update_document_with_chunks(existing_doc, embedded_chunks)
+        return await self._update_document_with_chunks(
+            existing_doc, embedded_chunks, converted_docling
+        )
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID."""
@@ -1758,6 +1790,7 @@ class HaikuRAG:
         """Batch write documents and chunks during rebuild.
 
         This performs two writes: one for all document updates, one for all chunks.
+        Also repopulates document items from the stored docling document.
         Used by RECHUNK and FULL modes after the chunks table has been cleared.
         """
         from haiku.rag.store.engine import DocumentRecord
@@ -1799,6 +1832,15 @@ class HaikuRAG:
         # Batch create all chunks (single LanceDB version)
         if chunks:
             await self.chunk_repository.create(chunks)
+
+        # Repopulate document items from stored docling data
+        for doc in documents:
+            assert doc.id is not None
+            docling_doc = doc.get_docling_document()
+            if docling_doc is not None:
+                await self.document_item_repository.delete_by_document_id(doc.id)
+                items = extract_items(doc.id, docling_doc)
+                await self.document_item_repository.create_items(doc.id, items)
 
     async def _rebuild_rechunk(
         self, documents: list[Document]

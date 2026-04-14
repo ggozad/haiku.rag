@@ -5,6 +5,7 @@ import pytest
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.store.engine import DocumentItemRecord
 
 
 @pytest.mark.asyncio
@@ -33,6 +34,7 @@ async def test_app_info_outputs(temp_db_path, capsys):
     settings_tbl = db.create_table("settings", schema=SettingsRecord)
     docs_tbl = db.create_table("documents", schema=DocumentRecord)
     chunks_tbl = db.create_table("chunks", schema=ChunkRecord)
+    db.create_table("document_items", schema=DocumentItemRecord)
 
     # Insert one of each - using the new config format
     settings_tbl.add(
@@ -113,6 +115,7 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
     settings_tbl = db.create_table("settings", schema=SettingsRecord)
     docs_tbl = db.create_table("documents", schema=DocumentRecord)
     chunks_tbl = db.create_table("chunks", schema=ChunkRecord)
+    db.create_table("document_items", schema=DocumentItemRecord)
 
     # Insert settings
     settings_tbl.add(

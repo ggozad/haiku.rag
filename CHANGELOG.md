@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Document items table**: Pre-extracted document items stored as individual rows with scalar indexes, enabling context expansion via indexed range queries (~2.5ms) instead of full DoclingDocument deserialization (~8.7s for large documents)
+
+### Changed
+
+- **Database migration required**: Run `haiku-rag migrate` to populate `document_items` table for existing documents
+- **Pin docling-core**: Upper bound added (`<2.72`) to prevent uncontrolled schema changes
+
 ## [0.39.0] - 2026-04-09
 
 ### Added

@@ -107,6 +107,15 @@ def create_chunk_model(vector_dim: int):
     return ChunkRecord
 
 
+class DocumentItemRecord(LanceModel):
+    document_id: str
+    position: int
+    self_ref: str
+    label: str = Field(default="")
+    text: str = Field(default="")
+    page_numbers: str = Field(default="[]")
+
+
 class SettingsRecord(LanceModel):
     id: str = Field(default="settings")
     settings: str = Field(default="{}")
@@ -256,6 +265,7 @@ class Store:
                 for table in [
                     self.documents_table,
                     self.chunks_table,
+                    self.document_items_table,
                     self.settings_table,
                 ]:
                     table.optimize(cleanup_older_than=retention)
@@ -358,7 +368,7 @@ class Store:
     def _init_tables(self):
         """Initialize database tables (create if they don't exist)."""
         existing_tables = self.db.list_tables().tables
-        required_tables = {"documents", "chunks", "settings"}
+        required_tables = {"documents", "chunks", "document_items", "settings"}
         missing_tables = required_tables - set(existing_tables)
 
         if missing_tables and self._read_only:
@@ -383,6 +393,23 @@ class Store:
             # Create FTS index on content_fts (contextualized content) for better search
             self.chunks_table.create_fts_index(
                 "content_fts", replace=True, with_position=True, remove_stop_words=False
+            )
+
+        # Create or open document_items table
+        if "document_items" in existing_tables:
+            self.document_items_table = self.db.open_table("document_items")
+        else:
+            self.document_items_table = self.db.create_table(
+                "document_items", schema=DocumentItemRecord
+            )
+            self.document_items_table.create_scalar_index(
+                "document_id", index_type="BTREE", replace=True
+            )
+            self.document_items_table.create_scalar_index(
+                "position", index_type="BTREE", replace=True
+            )
+            self.document_items_table.create_scalar_index(
+                "self_ref", index_type="BTREE", replace=True
             )
 
         # Create or open settings table
@@ -528,6 +555,7 @@ class Store:
         return {
             "documents": int(self.documents_table.version),
             "chunks": int(self.chunks_table.version),
+            "document_items": int(self.document_items_table.version),
             "settings": int(self.settings_table.version),
         }
 
@@ -540,6 +568,7 @@ class Store:
         self._assert_writable()
         self.documents_table.restore(int(versions["documents"]))
         self.chunks_table.restore(int(versions["chunks"]))
+        self.document_items_table.restore(int(versions["document_items"]))
         self.settings_table.restore(int(versions["settings"]))
         return True
 
@@ -569,6 +598,7 @@ class Store:
         tables = [
             ("documents", self.documents_table),
             ("chunks", self.chunks_table),
+            ("document_items", self.document_items_table),
             ("settings", self.settings_table),
         ]
 
@@ -620,6 +650,7 @@ class Store:
         table_map = {
             "documents": self.documents_table,
             "chunks": self.chunks_table,
+            "document_items": self.document_items_table,
             "settings": self.settings_table,
         }
         table = table_map.get(table_name)

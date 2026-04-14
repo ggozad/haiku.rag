@@ -17,6 +17,7 @@ class DocumentRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self._chunk_repository = None
+        self._document_item_repository = None
 
     @property
     def chunk_repository(self):
@@ -26,6 +27,17 @@ class DocumentRepository:
 
             self._chunk_repository = ChunkRepository(self.store)
         return self._chunk_repository
+
+    @property
+    def document_item_repository(self):
+        """Lazy-load DocumentItemRepository when needed."""
+        if self._document_item_repository is None:
+            from haiku.rag.store.repositories.document_item import (
+                DocumentItemRepository,
+            )
+
+            self._document_item_repository = DocumentItemRepository(self.store)
+        return self._document_item_repository
 
     def _record_to_document(self, record: DocumentRecord) -> Document:
         """Convert a DocumentRecord to a Document model."""
@@ -179,11 +191,11 @@ class DocumentRepository:
         if doc is None:
             return False
 
-        # Invalidate cache before delete
         invalidate_docling_document_cache(entity_id)
 
-        # Delete associated chunks first
+        # Delete associated chunks and items first
         await self.chunk_repository.delete_by_document_id(entity_id)
+        await self.document_item_repository.delete_by_document_id(entity_id)
 
         # Delete the document
         safe_id = _escape_sql_string(entity_id)
@@ -272,8 +284,23 @@ class DocumentRepository:
     async def delete_all(self) -> None:
         """Delete all documents from the database."""
         self.store._assert_writable()
-        # Delete all chunks first
+        from haiku.rag.store.engine import DocumentItemRecord
+
+        # Delete all chunks and items first
         await self.chunk_repository.delete_all()
+        self.store.db.drop_table("document_items")
+        self.store.document_items_table = self.store.db.create_table(
+            "document_items", schema=DocumentItemRecord
+        )
+        self.store.document_items_table.create_scalar_index(
+            "document_id", index_type="BTREE", replace=True
+        )
+        self.store.document_items_table.create_scalar_index(
+            "position", index_type="BTREE", replace=True
+        )
+        self.store.document_items_table.create_scalar_index(
+            "self_ref", index_type="BTREE", replace=True
+        )
 
         # Get count before deletion
         count = len(
