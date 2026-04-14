@@ -155,7 +155,29 @@ class TestAnalyzeTool:
         assert state.analyses[0].answer == "42"
         assert state.analyses[0].program == "print(42)"
 
-    async def test_analyze_with_document_filter_in_state(self, rag_db, monkeypatch):
+    async def test_analyze_applies_document_filter_from_state(
+        self, rag_db, monkeypatch
+    ):
+        from haiku.rag.skills.analysis import AnalysisState, create_skill
+
+        captured_kwargs = {}
+
+        async def mock_analyze(self, question, **kwargs):
+            captured_kwargs.update(kwargs)
+            return AnalysisResult(answer="42", program="print(42)")
+
+        monkeypatch.setattr(HaikuRAG, "analyze", mock_analyze)
+
+        skill = create_skill(db_path=rag_db)
+        analyze = _get_tool(skill, "analyze")
+        state = AnalysisState(document_filter="title = 'AI Overview'")
+        ctx = _make_ctx(state)
+        await analyze(ctx, question="How many documents?")
+        assert captured_kwargs.get("filter") == "title = 'AI Overview'"
+
+    async def test_analyze_combines_state_filter_with_explicit_filter(
+        self, rag_db, monkeypatch
+    ):
         from haiku.rag.skills.analysis import AnalysisState, create_skill
 
         captured_kwargs = {}

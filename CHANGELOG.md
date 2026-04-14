@@ -1,6 +1,22 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: Rename RLM agent to analysis agent throughout:
+  - `agents/rlm/` → `agents/analysis/`, all classes renamed (`RLMResult` → `AnalysisResult`, etc.)
+  - `client.rlm()` → `client.analyze()`
+  - CLI: `haiku-rag rlm` → `haiku-rag analyze`
+  - MCP: `rlm_question` → `analyze`
+  - Config: `rlm:` → `analysis:` in YAML, `RLMConfig` → `AnalysisConfig`
+  - Skill: `rag-rlm` → `rag-analysis`, `skills/rlm.py` → `skills/analysis.py`
+  - State namespace: `"rlm"` → `"analysis"`
+
+### Removed
+
+- **`get_chunk()`**: Removed from analysis sandbox
+- **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module.
+
 ## [0.40.1] - 2026-04-17
 
 ### Fixed
@@ -21,21 +37,12 @@
 - **`max_searches` default**: Raised from 3 to 5 — faster expansion makes additional searches inexpensive
 - **Improved QA prompt**: Stronger instruction to refuse answering from tangentially related content
 - **Improved judge prompt**: Asymmetric evaluation — generated answers that are more comprehensive than expected are not penalized
-- **BREAKING**: Rename RLM agent to analysis agent throughout:
-  - `agents/rlm/` → `agents/analysis/`, all classes renamed (`RLMResult` → `AnalysisResult`, etc.)
-  - `client.rlm()` → `client.analyze()`
-  - CLI: `haiku-rag rlm` → `haiku-rag analyze`
-  - MCP: `rlm_question` → `analyze`
-  - Config: `rlm:` → `analysis:` in YAML, `RLMConfig` → `AnalysisConfig`
-  - Skill: `rag-rlm` → `rag-analysis`, `skills/rlm.py` → `skills/analysis.py`
-  - State namespace: `"rlm"` → `"analysis"`
 
 ### Removed
 
 - **`context_radius` config**: Replaced by automatic section-bounded expansion. Context expansion no longer requires configuration.
 - **DoclingDocument LRU cache**: No longer needed — the document_items table replaces in-memory caching for context expansion
 - **`cachetools` dependency**: No longer used
-- **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module.
 
 ## [0.39.0] - 2026-04-09
 

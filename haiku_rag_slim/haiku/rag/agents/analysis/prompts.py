@@ -13,6 +13,10 @@ Inside execute_code, these functions are ALREADY available in the namespace. Do 
 Search the knowledge base using hybrid search (vector + full-text).
 Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
 
+### await get_context(chunk_id) -> str | None
+Get expanded content around a chunk, including surrounding paragraphs, complete tables, and adjacent sections from the same document.
+Use this after search() when a result looks relevant but you need more context to understand it fully.
+
 ### await list_documents(limit=10, offset=0) -> list[dict]
 List available documents in the knowledge base.
 Returns list of dicts with keys: id, title, uri, created_at
@@ -21,18 +25,12 @@ Returns list of dicts with keys: id, title, uri, created_at
 Get the full text content of a document by ID, title, or URI.
 Returns the document content as a string, or None if not found.
 
-### await get_chunk(chunk_id) -> dict | None
-Get a specific chunk by its ID (from search results).
-Returns dict with keys: chunk_id, content, document_id, document_title, headings, page_numbers, labels
-Use this to retrieve full chunk details and metadata for citation.
-
 ### await get_docling_document(document_id) -> dict | None
 Get the full document structure as a dict (DoclingDocument format).
 Use `list_documents()` or search results to get document IDs first.
-- `texts`: list of text items, each with `text`, `label` (e.g. "title", "text", "section_header", "list_item"), and `prov` (provenance with page/bounding box)
+- `texts`: list of text items, each with `text`, `label` (e.g. "title", "text", "section_header", "list_item")
 - `tables`: list of tables, each with `data` containing `grid` (list of rows, each row a list of cells with `text`), `num_rows`, `num_cols`
 - `pictures`: list of figures/images with metadata
-- `pages`: page dimensions and metadata
 
 ### await llm(prompt) -> str
 Call an LLM directly with the given prompt. Returns the response as a string.
@@ -59,24 +57,26 @@ For pattern matching or text extraction, use `import re`, string methods (`str.s
 
 ## Strategy Guide
 
-1. **Explore First**: Start by listing documents or searching to understand what's available. Document `title` is often None — use `uri` or `id` to identify documents instead.
-2. **If get_document returns None**: Use `await list_documents()` to see available documents (check `uri` and `id`), or `await search()` to find relevant content.
-3. **Iterative Refinement**: Run code, examine results, adjust your approach based on what you find.
-4. **Use llm() for Classification/Extraction**: When you need to classify, summarize, or extract structured data from content you already have, use `await llm()`.
-5. **Cite Your Sources**: Use get_chunk() to retrieve chunk metadata for citations. Track which documents/chunks informed your answer.
+1. **Search First**: Start with `search()` to find relevant content. Examine the results to understand what's available.
+2. **Expand When Needed**: If a search result looks relevant but incomplete, use `get_context(chunk_id)` to get surrounding content from the same document.
+3. **Use get_document for Full Text**: When you need a document's complete text (e.g., for regex across the whole document), use `get_document(id_or_title)`.
+4. **Use get_docling_document for Structure**: When you need structured data like table grids, document hierarchy, or section labels, use `get_docling_document(document_id)`.
+5. **Iterate**: Run code, examine results, refine your approach. Don't try to solve everything in one execution.
+6. **Use llm() for Reasoning**: When you have content and need classification, summarization, or extraction, use `llm()` rather than writing complex parsing logic.
+7. **Document Titles Are Often None**: Use `uri` or `id` to identify documents. Use `list_documents()` to discover what's available.
 
 ## Example Patterns
 
-### Counting documents matching a condition
+### Search and expand context
 ```python
-docs = await list_documents(limit=100)
-count = 0
-for doc in docs:
-    content = await get_document(doc['id'])
-    if content and 'keyword' in content.lower():
-        count += 1
-        print(f"Found in: {doc['title']}")
-print(f"Total: {count}")
+results = await search("revenue figures", limit=5)
+for r in results:
+    print(f"{r['document_title']}: {r['content'][:100]}")
+
+# Get more context around the most relevant result
+expanded = await get_context(results[0]['chunk_id'])
+if expanded:
+    print(f"Expanded: {expanded[:500]}")
 ```
 
 ### Extracting data with regex
@@ -106,6 +106,15 @@ for d in docs:
                 for row in grid:
                     cells = [cell.get('text', '') for cell in row]
                     print(f"  Table {i}: {cells}")
+```
+
+### Regex search across a full document
+```python
+import re
+content = await get_document("Policy Document")
+if content:
+    emails = re.findall(r'[\\w.+-]+@[\\w-]+\\.[\\w.]+', content)
+    print(f"Found {len(emails)} email addresses: {emails}")
 ```
 
 ## Output Format

@@ -162,40 +162,43 @@ class TestSandboxHaikuRAG:
         assert result.success
         assert "True" in result.stdout
 
+
+class TestSandboxGetContext:
+    """Test get_context() external function."""
+
+    @pytest.mark.asyncio
+    async def test_get_context_missing_chunk(self, sandbox):
+        """get_context returns None for a non-existent chunk."""
+        result = await sandbox.execute(
+            "ctx = await get_context('nonexistent-id')\nprint(ctx is None)"
+        )
+        assert result.success
+        assert "True" in result.stdout
+
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_get_chunk(self, temp_db_path):
-        """Test get_chunk function returns chunk with metadata."""
+    async def test_get_context_returns_expanded_content(self, temp_db_path):
+        """get_context returns content for a valid chunk."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             await client.create_document(
-                content="Content about foxes and dogs.",
-                uri="test://doc",
-                title="Fox Document",
+                content="The quick brown fox jumps over the lazy dog.",
+                uri="test://animals",
+                title="Animals",
             )
 
             context = AnalysisContext()
             sb = Sandbox(client=client, config=config, context=context)
-            # First search to get a chunk_id
             result = await sb.execute(
-                "results = await search('foxes', limit=1)\n"
+                "results = await search('fox', limit=1)\n"
                 "chunk_id = results[0]['chunk_id']\n"
-                "chunk = await get_chunk(chunk_id)\n"
-                "print(chunk['document_title'])\n"
-                "print('content' in chunk)"
+                "ctx = await get_context(chunk_id)\n"
+                "print(type(ctx).__name__)\n"
+                "print('fox' in ctx.lower())"
             )
             assert result.success
-            assert "Fox Document" in result.stdout
+            assert "str" in result.stdout
             assert "True" in result.stdout
-
-    @pytest.mark.asyncio
-    async def test_get_chunk_not_found(self, sandbox):
-        """Test get_chunk returns None for missing chunk."""
-        result = await sandbox.execute(
-            "chunk = await get_chunk('nonexistent-id')\nprint(chunk is None)"
-        )
-        assert result.success
-        assert "True" in result.stdout
 
 
 class TestSandboxExternalFunctionEdgeCases:

@@ -139,17 +139,10 @@ class TestClientAnalysisIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_analyze_search_and_get_chunk(
+    async def test_analyze_search_and_identify_source(
         self, allow_model_requests, temp_db_path
     ):
-        """Test analysis agent can search and use get_chunk for citations.
-
-        Agent program:
-            results = search("content", limit=5)
-            for r in results:
-                chunk = get_chunk(r['chunk_id'])
-                print(chunk['document_title'], chunk['chunk_id'])
-        """
+        """Test analysis agent can search and identify source documents."""
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
