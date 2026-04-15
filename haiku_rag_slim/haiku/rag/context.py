@@ -168,11 +168,15 @@ async def expand_with_items(
     if not ref_positions:
         return results
 
-    # Fetch all items for the document to ensure we always detect section
-    # structure correctly, regardless of where the match falls.
-    item_count = await document_item_repository.get_item_count(document_id)
+    # Fetch a window of items around matched positions. The margin must be
+    # wide enough to find section boundaries (the nearest section_header/title
+    # above and below the match).
+    all_positions = sorted(ref_positions.values())
+    window_margin = max_items * 10
+    window_start = max(0, min(all_positions) - window_margin)
+    window_end = max(all_positions) + window_margin
     window_items = await document_item_repository.get_items_in_range(
-        document_id, 0, item_count
+        document_id, window_start, window_end
     )
 
     if not window_items:
