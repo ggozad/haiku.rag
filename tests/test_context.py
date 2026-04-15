@@ -1,7 +1,10 @@
+import pytest
+
 from haiku.rag.context import (
     _expand_outward,
     _find_expansion_range,
     _merge_ranges,
+    expand_with_items,
 )
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
@@ -236,3 +239,84 @@ class TestFindExpansionRange:
         # Match is in preamble section (items 0-1), which is small
         # Should expand outward into the first section
         assert hi >= 2
+
+
+@pytest.mark.asyncio
+class TestExpandWithItems:
+    async def test_unresolvable_refs_returns_original(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.store.models.document import Document
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            doc = await rag._store_document_with_chunks(
+                Document(content="test"),
+                [],
+                __import__(
+                    "docling_core.types.doc.document", fromlist=["DoclingDocument"]
+                ).DoclingDocument(name="t"),
+            )
+            result = SearchResult(
+                content="original",
+                score=0.9,
+                document_id=doc.id,
+                doc_item_refs=["#/texts/999999"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, doc.id, [result], 10, 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].content == "original"
+
+    async def test_noise_only_range_preserves_original(self, temp_db_path):
+        """When noise filtering removes all content, original chunk is preserved."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            # Structured document where the matched item's section has only noise
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Table of Contents",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="document_index",
+                    text="x" * 2000,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="section_header",
+                    text="Introduction",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=3,
+                    self_ref="#/texts/3",
+                    label="text",
+                    text="Intro content. " * 100,
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="original chunk content",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 10, 5000
+            )
+            assert len(expanded) == 1
+            # The TOC section's only non-header item is document_index (noise).
+            # The section_header "Table of Contents" has text but _expand_outward
+            # with skip_noise crosses into the Introduction section which has
+            # real content — so we get expanded content, not the fallback.
+            assert len(expanded[0].content) > 0
