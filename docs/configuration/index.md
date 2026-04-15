@@ -99,9 +99,8 @@ research:
 
 search:
   limit: 10                    # Default number of results to return
-  context_radius: 0            # DocItems before/after to include for text content
   max_context_items: 10        # Maximum items in expanded context
-  max_context_chars: 10000     # Maximum characters in expanded context
+  max_context_chars: 5000      # Maximum characters in expanded context
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30
 

@@ -152,12 +152,8 @@ class DocumentRepository:
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
         self.store._assert_writable()
-        from haiku.rag.store.models.document import invalidate_docling_document_cache
 
         assert entity.id, "Document ID is required for update"
-
-        # Invalidate cache before update
-        invalidate_docling_document_cache(entity.id)
 
         # Update timestamp
         now = datetime.now().isoformat()
@@ -184,14 +180,11 @@ class DocumentRepository:
     async def delete(self, entity_id: str) -> bool:
         """Delete a document by its ID."""
         self.store._assert_writable()
-        from haiku.rag.store.models.document import invalidate_docling_document_cache
 
         # Check if document exists
         doc = await self.get_by_id(entity_id)
         if doc is None:
             return False
-
-        invalidate_docling_document_cache(entity_id)
 
         # Delete associated chunks and items first
         await self.chunk_repository.delete_by_document_id(entity_id)

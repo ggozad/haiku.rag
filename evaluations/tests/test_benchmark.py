@@ -31,7 +31,6 @@ class TestBuildExperimentMetadata:
         assert result["embedder_dim"] == config.embeddings.model.vector_dim
         assert result["chunk_size"] == config.processing.chunk_size
         assert result["search_limit"] == config.search.limit
-        assert result["context_radius"] == config.search.context_radius
         assert result["qa_provider"] == config.qa.model.provider
         assert result["qa_model"] == config.qa.model.name
         assert "judge_provider" not in result

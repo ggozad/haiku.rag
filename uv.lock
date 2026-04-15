@@ -1503,7 +1503,6 @@ name = "haiku-rag-slim"
 version = "0.40.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
-    { name = "cachetools" },
     { name = "docling-core" },
     { name = "haiku-skills" },
     { name = "httpx" },
@@ -1568,7 +1567,6 @@ zeroentropy = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cachetools", specifier = ">=7.0.5" },
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.21.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.84.0" },
     { name = "docling-core", specifier = ">=2.71.0,<2.72" },

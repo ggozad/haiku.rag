@@ -7,17 +7,15 @@ Configure search behavior and context expansion:
 ```yaml
 search:
   limit: 10                    # Default number of results to return
-  context_radius: 0            # DocItems before/after to include for text content
   max_context_items: 10        # Maximum items in expanded context
-  max_context_chars: 10000     # Maximum characters in expanded context
+  max_context_chars: 5000      # Maximum characters in expanded context
 ```
 
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 10
-- **context_radius**: For text content (paragraphs), includes N DocItems before and after. Set to 0 to disable expansion (default).
 - **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context. Default: 10.
-- **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
+- **max_context_chars**: Hard limit on total characters in expanded content. Default: 5000.
 
-Structural content (tables, code blocks, lists) uses type-aware expansion that automatically includes the complete structure regardless of how it was chunked.
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
 
 !!! note "Reranking behavior"
     When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.

@@ -4,11 +4,18 @@
 ### Added
 
 - **Document items table**: Pre-extracted document items stored as individual rows with scalar indexes, enabling context expansion via indexed range queries (~2.5ms) instead of full DoclingDocument deserialization (~8.7s for large documents)
+- **Section-bounded context expansion**: Expansion is now automatic and structure-aware — stays within section boundaries for structured documents, grows outward for unstructured ones. Noise labels (footnotes, page headers/footers) are filtered. Results without `doc_item_refs` pass through unexpanded.
 
 ### Changed
 
 - **Database migration required**: Run `haiku-rag migrate` to populate `document_items` table for existing documents
 - **Pin docling-core**: Upper bound added (`<2.72`) to prevent uncontrolled schema changes
+
+### Removed
+
+- **`context_radius` config**: Replaced by automatic section-bounded expansion. Context expansion no longer requires configuration.
+- **DoclingDocument LRU cache**: No longer needed — the document_items table replaces in-memory caching for context expansion
+- **`cachetools` dependency**: No longer used
 
 ## [0.39.0] - 2026-04-09
 
