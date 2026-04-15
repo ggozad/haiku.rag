@@ -320,3 +320,65 @@ class TestExpandWithItems:
             # with skip_noise crosses into the Introduction section which has
             # real content — so we get expanded content, not the fallback.
             assert len(expanded[0].content) > 0
+
+    async def test_fragmented_items_preserve_chunk(self, temp_db_path):
+        """When items are fragmented (e.g., list_item children), the original
+        chunk content is preserved if expansion produces less text."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            # Simulate docling's list_item structure: container with empty text,
+            # children with tiny fragments
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Steps",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="list_item",
+                    text="",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="text",
+                    text="Click",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=3,
+                    self_ref="#/texts/3",
+                    label="text",
+                    text="+",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=4,
+                    self_ref="#/texts/4",
+                    label="text",
+                    text="Add a New Service",
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            # The chunk had properly assembled content from the chunker
+            result = SearchResult(
+                content="1. Click + Add a New Service in the dashboard.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1", "#/texts/2", "#/texts/3", "#/texts/4"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 10, 5000
+            )
+            assert len(expanded) == 1
+            # Expansion produces "Steps\n\nClick\n\n+\n\nAdd a New Service" = 38 chars
+            # which is less than the chunk's 46 chars — fallback preserves the chunk
+            assert expanded[0].content == result.content

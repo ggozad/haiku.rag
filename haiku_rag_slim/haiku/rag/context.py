@@ -230,9 +230,11 @@ async def expand_with_items(
 
         first = original_results[0]
 
-        # If noise filtering removed all content, preserve the original
+        # Expansion should never return less content than the original chunk.
+        # This can happen when item texts are fragmented (e.g., docling splits
+        # formatted HTML list items into many small text nodes).
         expanded_content = "\n\n".join(content_parts)
-        if not expanded_content:
+        if len(expanded_content) < len(first.content):
             expanded_content = first.content
 
         final_results.append(

@@ -56,6 +56,8 @@ def extract_items(
 
     Runs iterate_items() and extracts the fields needed for context expansion:
     self_ref, label, pre-rendered text, and page numbers from provenance.
+    Items are stored as docling produces them — container items (e.g., list_item)
+    may have empty text with content in their children.
     """
     items: list[DocumentItem] = []
 
