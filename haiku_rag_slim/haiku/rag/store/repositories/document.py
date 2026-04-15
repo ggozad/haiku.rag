@@ -4,11 +4,7 @@ from uuid import uuid4
 
 from haiku.rag.store.engine import DocumentRecord, Store, get_documents_arrow_schema
 from haiku.rag.store.models.document import Document
-
-
-def _escape_sql_string(value: str) -> str:
-    """Escape single quotes in SQL string literals."""
-    return value.replace("'", "''")
+from haiku.rag.utils import escape_sql_string
 
 
 class DocumentRepository:
@@ -91,7 +87,7 @@ class DocumentRepository:
 
     async def get_by_id(self, entity_id: str) -> Document | None:
         """Get a document by its ID."""
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
             .where(f"id = '{safe_id}'")
@@ -108,7 +104,7 @@ class DocumentRepository:
 
     async def get_docling_data(self, entity_id: str) -> Document | None:
         """Get a document with only docling data loaded (skips content blob)."""
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
             .select(self._DOCLING_COLUMNS)
@@ -130,7 +126,7 @@ class DocumentRepository:
 
     async def get_pages_data(self, entity_id: str) -> Document | None:
         """Get a document with only page image data loaded."""
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
             .select(["id", "docling_pages"])
@@ -160,7 +156,7 @@ class DocumentRepository:
         entity.updated_at = datetime.fromisoformat(now)
 
         # Update the record
-        safe_id = _escape_sql_string(entity.id)
+        safe_id = escape_sql_string(entity.id)
         self.store.documents_table.update(
             where=f"id = '{safe_id}'",
             values={
@@ -191,7 +187,7 @@ class DocumentRepository:
         await self.document_item_repository.delete_by_document_id(entity_id)
 
         # Delete the document
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         self.store.documents_table.delete(f"id = '{safe_id}'")
         return True
 
@@ -261,7 +257,7 @@ class DocumentRepository:
 
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
-        escaped_uri = _escape_sql_string(uri)
+        escaped_uri = escape_sql_string(uri)
         results = list(
             self.store.documents_table.search()
             .where(f"uri = '{escaped_uri}'")

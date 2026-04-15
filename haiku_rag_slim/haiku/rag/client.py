@@ -22,12 +22,10 @@ from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.chunk import ChunkRepository
-from haiku.rag.store.repositories.document import (
-    DocumentRepository,
-    _escape_sql_string,
-)
+from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
+from haiku.rag.utils import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -910,7 +908,7 @@ class HaikuRAG:
         if doc:
             return doc
 
-        safe_input = _escape_sql_string(id_or_title)
+        safe_input = escape_sql_string(id_or_title)
         docs = await self.list_documents(filter=f"title = '{safe_input}'")
         if docs and docs[0].id:
             return await self.get_document_by_id(docs[0].id)

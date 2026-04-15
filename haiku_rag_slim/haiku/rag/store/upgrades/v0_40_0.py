@@ -3,6 +3,7 @@ import logging
 
 from haiku.rag.store.engine import DocumentItemRecord, Store
 from haiku.rag.store.upgrades import Upgrade
+from haiku.rag.utils import escape_sql_string
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _apply_populate_document_items(store: Store) -> None:  # pragma: no cover
 
     for idx, doc_id in enumerate(ids, 1):
         # Load only docling data
-        safe_id = doc_id.replace("'", "''")
+        safe_id = escape_sql_string(doc_id)
         rows = (
             store.documents_table.search()
             .select(["id", "docling_document"])

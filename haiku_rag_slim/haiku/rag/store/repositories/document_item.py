@@ -2,11 +2,7 @@ import json
 
 from haiku.rag.store.engine import DocumentItemRecord, Store
 from haiku.rag.store.models.document_item import DocumentItem
-
-
-def _escape_sql_string(value: str) -> str:
-    """Escape single quotes in SQL string literals."""
-    return value.replace("'", "''")
+from haiku.rag.utils import escape_sql_string
 
 
 class DocumentItemRepository:
@@ -48,7 +44,7 @@ class DocumentItemRepository:
         self, document_id: str, start: int, end: int
     ) -> list[DocumentItem]:
         """Get items for a document within a position range (inclusive)."""
-        safe_id = _escape_sql_string(document_id)
+        safe_id = escape_sql_string(document_id)
         rows = (
             self.store.document_items_table.search()
             .where(
@@ -66,8 +62,8 @@ class DocumentItemRepository:
         if not refs:
             return {}
 
-        safe_id = _escape_sql_string(document_id)
-        refs_sql = ", ".join(f"'{_escape_sql_string(r)}'" for r in refs)
+        safe_id = escape_sql_string(document_id)
+        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
         rows = (
             self.store.document_items_table.search()
             .select(["self_ref", "position"])
@@ -78,7 +74,7 @@ class DocumentItemRepository:
 
     async def get_item_count(self, document_id: str) -> int:
         """Count items for a document."""
-        safe_id = _escape_sql_string(document_id)
+        safe_id = escape_sql_string(document_id)
         return self.store.document_items_table.count_rows(
             filter=f"document_id = '{safe_id}'"
         )
@@ -86,5 +82,5 @@ class DocumentItemRepository:
     async def delete_by_document_id(self, document_id: str) -> None:
         """Delete all items for a document."""
         self.store._assert_writable()
-        safe_id = _escape_sql_string(document_id)
+        safe_id = escape_sql_string(document_id)
         self.store.document_items_table.delete(f"document_id = '{safe_id}'")

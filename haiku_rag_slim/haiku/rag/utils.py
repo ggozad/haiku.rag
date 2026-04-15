@@ -452,6 +452,11 @@ def build_prompt(base_prompt: str, config: "AppConfig") -> str:
     return base_prompt
 
 
+def escape_sql_string(value: str) -> str:
+    """Escape single quotes in SQL string literals."""
+    return value.replace("'", "''")
+
+
 def get_package_versions() -> dict[str, str]:
     """Get versions of haiku.rag and its dependencies.
 

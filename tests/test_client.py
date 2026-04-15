@@ -1502,12 +1502,12 @@ async def test_client_convert_with_html_format(temp_db_path):
 @pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
-    """SQL injection is blocked when using _escape_sql_string.
+    """SQL injection is blocked when using escape_sql_string.
 
-    This test verifies that _escape_sql_string properly prevents SQL injection
+    This test verifies that escape_sql_string properly prevents SQL injection
     by escaping single quotes in user input.
     """
-    from haiku.rag.store.repositories.document import _escape_sql_string
+    from haiku.rag.utils import escape_sql_string
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create documents
@@ -1529,7 +1529,7 @@ async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
         # With proper escaping, single quotes become double quotes
         # so the filter becomes: title = 'x'' OR title LIKE ''%'
         # which searches for a literal title containing the injection string
-        safe_payload = _escape_sql_string(injection_payload)
+        safe_payload = escape_sql_string(injection_payload)
         docs = await client.list_documents(filter=f"title = '{safe_payload}'")
 
         # Should find 0 documents (injection is escaped, searching for literal string)
