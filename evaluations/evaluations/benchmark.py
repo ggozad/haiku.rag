@@ -615,6 +615,7 @@ def upload(
             path_in_repo=spec.db_filename,
             repo_id=HF_REPO_ID,
             repo_type="dataset",
+            delete_patterns="*",
         )
 
         console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
