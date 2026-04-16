@@ -11,7 +11,7 @@ The analysis agent enables complex analytical tasks by writing and executing Pyt
 
 1. The agent receives a question
 2. It writes Python code to explore the knowledge base
-3. Code executes in a sandboxed Python interpreter with access to knowledge base functions
+3. Code executes in a sandboxed Python interpreter with access to search, LLM, and a virtual filesystem of documents
 4. The agent iterates: run code, examine results, refine approach
 5. Final answer is synthesized from the gathered data
 
@@ -54,37 +54,54 @@ async with HaikuRAG(path_to_db) as client:
 
 ## Sandbox Capabilities
 
-The agent's code runs in a sandboxed Python interpreter ([pydantic-monty](https://github.com/pydantic/monty)) with access to these knowledge base functions:
+The agent's code runs in a sandboxed Python interpreter ([pydantic-monty](https://github.com/pydantic/monty)) with:
+
+### Functions
 
 | Function | Description |
 |----------|-------------|
-| `search(query, limit)` | Hybrid search (vector + full-text) with automatic context expansion |
-| `list_documents(limit, offset)` | List documents in the knowledge base |
-| `get_document(id_or_title)` | Get full text content of a document |
-| `get_docling_document(document_id)` | Get the DoclingDocument structure as a dict (texts, tables, pictures) |
+| `search(query, limit)` | Hybrid search (vector + full-text) with automatic context expansion. Returns `doc_item_refs` for cross-referencing with `items.jsonl` |
+| `list_documents()` | List all documents in the knowledge base |
 | `llm(prompt)` | Call an LLM for classification, summarization, or extraction |
 
-When documents are pre-loaded via the `documents` parameter, they are injected as a `documents` variable accessible in the sandbox code.
+### Document Filesystem
+
+All documents are mounted as a virtual filesystem at `/documents/`. The agent uses standard Python `pathlib.Path` to browse and read files:
+
+```
+/documents/{document_id}/
+    metadata.json    # {id, title, uri, created_at}
+    content.txt      # Full document text
+    items.jsonl      # Structured items: position, self_ref, label, text, page_numbers
+```
+
+- **`metadata.json`** — Loaded eagerly (small). Use `Path('/documents').iterdir()` to discover documents.
+- **`content.txt`** — Lazy-loaded on first read. Full document text for regex or keyword search.
+- **`items.jsonl`** — Lazy-loaded on first read. One JSON object per line with structured document elements. Tables are pre-rendered as markdown. Labels include `section_header`, `text`, `table`, `list_item`, `caption`, `formula`, `picture`, `code`, `footnote`, etc.
+
+Search results include `doc_item_refs` (e.g. `["#/texts/5", "#/tables/0"]`) that match `self_ref` values in `items.jsonl`, enabling navigation from search hits to document structure.
+
+When documents are pre-loaded via the `documents` parameter, they are also injected as a `documents` variable accessible in the sandbox code.
 
 ### Python Features
 
-The interpreter supports a subset of Python: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `filter()`, `getattr()`, try/except, and the `json`, `re`, `math` modules.
+The interpreter supports a subset of Python: variables, arithmetic, strings, f-strings, lists, dicts, tuples, sets, loops, conditionals, comprehensions, functions, async/await, `filter()`, `getattr()`, try/except, file I/O via `pathlib.Path`, and the `json`, `re`, `math` modules.
 
-Not supported: most imports (only `json`, `re`, `math` are available), class definitions, generators/yield, match statements, decorators, `with` statements. For pattern matching, the agent can use `import re`, string methods, or the `llm()` function.
+Not supported: most imports (only `json`, `re`, `math`, `pathlib` are available), class definitions, generators/yield, match statements, decorators, `with` statements. For pattern matching, the agent can use `import re`, string methods, or the `llm()` function.
 
 ### Security
 
 Code executes in an isolated interpreter with:
 
-- **No filesystem access**: Code cannot read or write files
+- **Virtual filesystem only**: The `/documents/` filesystem is sandboxed — no access to the real filesystem
 - **No network access**: Code cannot make HTTP requests or open sockets
-- **No imports**: Only `json`, `re`, and `math` modules are available
+- **No imports**: Only `json`, `re`, `math`, and `pathlib` modules are available
 - **Execution timeout**: Configurable limit (default 60s)
 - **Output truncation**: Large outputs are truncated to prevent memory issues
 
 ## Context Filter
 
-The `filter` parameter restricts what documents the agent can access. Unlike tool parameters, the filter is applied automatically and cannot be bypassed by the LLM:
+The `filter` parameter restricts what documents the agent can access. Unlike tool parameters, the filter is applied automatically and cannot be bypassed by the LLM — both the VFS and search results are scoped to the filter:
 
 ```python
 # Agent can only see documents with "confidential" in the URI

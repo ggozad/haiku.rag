@@ -74,12 +74,12 @@ class TestSandboxErrors:
         assert result.stderr != ""
 
 
-class TestSandboxHaikuRAG:
-    """Test haiku.rag functions in sandbox."""
+class TestSandboxListDocuments:
+    """Test list_documents function in sandbox."""
 
     @pytest.mark.asyncio
     async def test_list_documents_empty(self, sandbox):
-        """Test list_documents returns empty list for empty database."""
+        """list_documents returns empty list for empty database."""
         result = await sandbox.execute(
             "docs = await list_documents()\nprint(type(docs).__name__, len(docs))"
         )
@@ -89,7 +89,7 @@ class TestSandboxHaikuRAG:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_list_documents_with_data(self, temp_db_path):
-        """Test list_documents returns documents when populated."""
+        """list_documents returns documents when populated."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             await client.create_document(
@@ -108,6 +108,10 @@ class TestSandboxHaikuRAG:
             assert result.success
             assert "1" in result.stdout
             assert "Test Document" in result.stdout
+
+
+class TestSandboxSearch:
+    """Test search function in sandbox."""
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -157,46 +161,6 @@ class TestSandboxHaikuRAG:
             assert result.success
             assert "True\nTrue" in result.stdout
             assert "list\nlist" in result.stdout
-
-    @pytest.mark.asyncio
-    @pytest.mark.vcr()
-    async def test_get_document(self, temp_db_path):
-        """Test get_document function."""
-        config = AppConfig()
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            doc = await client.create_document(
-                content="Content about foxes and dogs.",
-                uri="test://doc",
-                title="Fox Document",
-            )
-
-            context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
-            result = await sb.execute(
-                f"content = await get_document('{doc.id}')\n"
-                "print('foxes' in content.lower() if content else 'None')"
-            )
-            assert result.success
-            assert "True" in result.stdout
-
-    @pytest.mark.asyncio
-    async def test_get_document_not_found(self, sandbox):
-        """Test get_document returns None for missing document."""
-        result = await sandbox.execute(
-            "content = await get_document('nonexistent-id')\nprint(content is None)"
-        )
-        assert result.success
-        assert "True" in result.stdout
-
-
-class TestSandboxSearchExpandsContext:
-    """Test that search() returns expanded results."""
-
-    @pytest.mark.asyncio
-    async def test_get_context_not_available(self, sandbox):
-        """get_context is no longer a sandbox function."""
-        result = await sandbox.execute("await get_context('x')")
-        assert not result.success
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -303,13 +267,124 @@ class TestSandboxOutputTruncation:
         assert len(result.stdout) < 100
 
 
-class TestSandboxContextFilter:
-    """Test context filter is applied."""
+class TestSandboxVFS:
+    """Test virtual filesystem for document access."""
+
+    @pytest.mark.asyncio
+    async def test_empty_database_has_no_documents(self, sandbox):
+        """Empty database has no document directories."""
+        result = await sandbox.execute(
+            "from pathlib import Path\nprint(Path('/documents').exists())"
+        )
+        assert result.success
+        # /documents dir may or may not exist when empty, both are valid
+        # The key is it doesn't error
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_filter_applied_to_list_documents(self, temp_db_path):
-        """Test that context filter is passed to list_documents."""
+    async def test_iterdir_discovers_documents(self, temp_db_path):
+        """Path('/documents').iterdir() lists document directories."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document(
+                content="Test content",
+                uri="test://doc1",
+                title="Test Document",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "dirs = list(Path('/documents').iterdir())\n"
+                "print(len(dirs))\n"
+                "print(dirs[0].is_dir())"
+            )
+            assert result.success
+            assert "1" in result.stdout
+            assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_metadata_json(self, temp_db_path):
+        """metadata.json contains document title and uri."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Test content",
+                uri="test://doc1",
+                title="Test Document",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "import json\n"
+                f"meta = json.loads(Path('/documents/{doc.id}/metadata.json').read_text())\n"
+                "print(meta['title'])\n"
+                "print(meta['uri'])"
+            )
+            assert result.success
+            assert "Test Document" in result.stdout
+            assert "test://doc1" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_content_txt(self, temp_db_path):
+        """content.txt returns full document text (lazy loaded)."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Content about foxes and dogs.",
+                uri="test://doc",
+                title="Fox Document",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"content = Path('/documents/{doc.id}/content.txt').read_text()\n"
+                "print('foxes' in content.lower())"
+            )
+            assert result.success
+            assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_items_jsonl(self, temp_db_path):
+        """items.jsonl returns document items as JSONL (lazy loaded)."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="The quick brown fox jumps over the lazy dog.",
+                uri="test://animals",
+                title="Animals",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "import json\n"
+                f"text = Path('/documents/{doc.id}/items.jsonl').read_text()\n"
+                "lines = text.strip().split('\\n')\n"
+                "print(len(lines) > 0)\n"
+                "item = json.loads(lines[0])\n"
+                "print('position' in item)\n"
+                "print('self_ref' in item)\n"
+                "print('label' in item)\n"
+                "print('text' in item)\n"
+                "print('page_numbers' in item)"
+            )
+            assert result.success
+            assert result.stdout.count("True") == 6
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_context_filter_limits_vfs(self, temp_db_path):
+        """Context filter restricts which documents appear in VFS."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             await client.create_document(
@@ -326,10 +401,12 @@ class TestSandboxContextFilter:
             context = AnalysisContext(filter="uri LIKE 'public://%'")
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
-                "docs = await list_documents()\n"
-                "print(len(docs))\n"
-                "if docs:\n"
-                "    print(docs[0]['title'])"
+                "from pathlib import Path\n"
+                "import json\n"
+                "dirs = list(Path('/documents').iterdir())\n"
+                "print(len(dirs))\n"
+                "meta = json.loads((dirs[0] / 'metadata.json').read_text())\n"
+                "print(meta['title'])"
             )
             assert result.success
             assert "1" in result.stdout
@@ -366,43 +443,6 @@ class TestSandboxPreloadedDocuments:
         assert "2" in result.stdout
         assert "Doc A" in result.stdout
         assert "Doc B" in result.stdout
-
-
-class TestSandboxDoclingDocument:
-    """Test get_docling_document() external function."""
-
-    @pytest.mark.asyncio
-    async def test_returns_none_for_missing_document(self, sandbox):
-        """get_docling_document returns None for a non-existent document."""
-        result = await sandbox.execute(
-            "doc = await get_docling_document('nonexistent-id')\nprint(doc is None)"
-        )
-        assert result.success
-        assert "True" in result.stdout
-
-    @pytest.mark.asyncio
-    @pytest.mark.vcr()
-    async def test_returns_dict_for_document_with_docling_data(self, temp_db_path):
-        """get_docling_document returns a dict for a document with docling data."""
-        config = AppConfig()
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            doc = await client.create_document(
-                content="Docling processed content",
-                uri="test://docling",
-                title="Docling Doc",
-            )
-
-            context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
-            result = await sb.execute(
-                f"doc = await get_docling_document('{doc.id}')\n"
-                "print(type(doc).__name__)\n"
-                "print(doc['name'])\n"
-                "print('texts' in doc)"
-            )
-            assert result.success
-            assert "dict" in result.stdout
-            assert "True" in result.stdout
 
 
 class TestSandboxLLM:

@@ -34,8 +34,8 @@ def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, AnalysisResu
     async def execute_code(ctx: RunContext[AnalysisDeps], code: str) -> CodeExecution:
         """Execute Python code in a sandboxed interpreter.
 
-        The code has access to haiku.rag functions (search,
-        list_documents, get_document, get_docling_document, llm).
+        The code has access to search() and llm() functions, and a
+        virtual filesystem at /documents/ with document content and structure.
 
         Use print() to output results.
 

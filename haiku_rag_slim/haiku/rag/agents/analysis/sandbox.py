@@ -1,14 +1,19 @@
+import asyncio
+import concurrent.futures
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
+from pydantic_monty import CallbackFile, MemoryFile, OSAccess
 
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.compression import decompress_json
 
 if TYPE_CHECKING:
+    from pathlib import PurePosixPath
+
     from haiku.rag.client import HaikuRAG
 
 
@@ -21,12 +26,19 @@ class SandboxResult:
     success: bool
 
 
+def _run_async(coro: Any) -> Any:
+    """Run an async coroutine from a sync context (CallbackFile read)."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 class Sandbox:
     """Execute code in a sandboxed Python interpreter.
 
     Uses pydantic-monty, a minimal secure Python interpreter written in Rust.
-    External functions (search, list_documents, etc.) are called by Monty code
-    using ``await`` and resolved asynchronously on the host.
+    External functions (search, llm) are called by Monty code using ``await``
+    and resolved asynchronously on the host.
+    Documents are exposed via a virtual filesystem at ``/documents/{id}/``.
 
         sandbox = Sandbox(client, config, context)
         result = await sandbox.execute("print('hello')")
@@ -71,12 +83,8 @@ class Sandbox:
                 for r in expanded
             ]
 
-        async def list_documents(
-            limit: int = 10, offset: int = 0
-        ) -> list[dict[str, Any]]:
-            docs = await client.list_documents(
-                limit=limit, offset=offset, filter=context.filter
-            )
+        async def list_documents() -> list[dict[str, Any]]:
+            docs = await client.list_documents(filter=context.filter)
             return [
                 {
                     "id": d.id,
@@ -86,19 +94,6 @@ class Sandbox:
                 }
                 for d in docs
             ]
-
-        async def get_document(id_or_title: str) -> str | None:
-            doc = await client.resolve_document(id_or_title)
-            return doc.content if doc else None
-
-        async def get_docling_document(
-            document_id: str,
-        ) -> dict[str, Any] | None:
-            doc = await client.get_document_by_id(document_id)
-            if not doc or not doc.docling_document:
-                return None
-            json_str = decompress_json(doc.docling_document)
-            return json.loads(json_str)
 
         async def llm(prompt: str) -> str:
             from pydantic_ai import Agent
@@ -113,14 +108,111 @@ class Sandbox:
         return {
             "search": search,
             "list_documents": list_documents,
-            "get_document": get_document,
-            "get_docling_document": get_docling_document,
             "llm": llm,
         }
+
+    async def _build_vfs(self) -> OSAccess:
+        """Build the virtual filesystem with document data.
+
+        Mounts per-document directories with:
+        - metadata.json: MemoryFile (eager, small)
+        - content.txt: CallbackFile (lazy, can be large)
+        - items.jsonl: CallbackFile (lazy, can be large)
+        """
+        client = self._client
+        files: list[MemoryFile | CallbackFile] = []
+
+        docs = await client.list_documents(filter=self._context.filter)
+
+        for doc in docs:
+            if not doc.id:
+                continue
+            doc_id: str = doc.id
+            doc_dir = f"/documents/{doc_id}"
+
+            metadata = json.dumps(
+                {
+                    "id": doc_id,
+                    "title": doc.title,
+                    "uri": doc.uri,
+                    "created_at": str(doc.created_at),
+                },
+                ensure_ascii=False,
+            )
+            files.append(MemoryFile(f"{doc_dir}/metadata.json", metadata))
+
+            def _make_content_reader(
+                did: str,
+            ) -> Callable[["PurePosixPath"], str]:
+                def read_content(_path: "PurePosixPath") -> str:
+                    async def _fetch() -> str:
+                        from haiku.rag.utils import escape_sql_string
+
+                        safe_id = escape_sql_string(did)
+                        rows = list(
+                            client.store.documents_table.search()
+                            .select(["content"])
+                            .where(f"id = '{safe_id}'")
+                            .limit(1)
+                            .to_list()
+                        )
+                        return rows[0]["content"] if rows else ""
+
+                    return _run_async(_fetch())
+
+                return read_content
+
+            def _make_items_reader(
+                did: str,
+            ) -> Callable[["PurePosixPath"], str]:
+                def read_items(_path: "PurePosixPath") -> str:
+                    async def _fetch() -> str:
+                        items = (
+                            await client.document_item_repository.get_items_in_range(
+                                did, 0, 999999
+                            )
+                        )
+                        lines = []
+                        for item in items:
+                            lines.append(
+                                json.dumps(
+                                    {
+                                        "position": item.position,
+                                        "self_ref": item.self_ref,
+                                        "label": item.label,
+                                        "text": item.text,
+                                        "page_numbers": item.page_numbers,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            )
+                        return "\n".join(lines)
+
+                    return _run_async(_fetch())
+
+                return read_items
+
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/content.txt",
+                    read=_make_content_reader(doc_id),
+                    write=lambda _p, _c: None,
+                )
+            )
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/items.jsonl",
+                    read=_make_items_reader(doc_id),
+                    write=lambda _p, _c: None,
+                )
+            )
+
+        return OSAccess(files)
 
     async def execute(self, code: str) -> SandboxResult:
         """Execute Python code in the Monty interpreter."""
         external_fns = self._build_external_functions()
+        vfs = await self._build_vfs()
 
         input_names: list[str] = []
         inputs: dict[str, Any] | None = None
@@ -166,6 +258,7 @@ class Sandbox:
                 external_functions=external_fns,
                 limits=limits,
                 print_callback=print_callback,
+                os=vfs,
             )
         except pydantic_monty.MontyRuntimeError as e:
             stdout = "".join(stdout_lines)

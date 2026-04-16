@@ -1,10 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Document virtual filesystem in analysis sandbox**: Documents are mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). The agent uses standard Python `pathlib.Path` to browse and read document content and structure.
+- **`doc_item_refs` and `labels` in search results**: Search results now include document item references and labels for cross-referencing with `items.jsonl`.
+
 ### Changed
 
 - **Analysis sandbox `search()` now returns expanded results**: Search results automatically include surrounding context (adjacent paragraphs, complete tables, section content) via the document_items table
-
 - **BREAKING**: Rename RLM agent to analysis agent throughout:
   - `agents/rlm/` → `agents/analysis/`, all classes renamed (`RLMResult` → `AnalysisResult`, etc.)
   - `client.rlm()` → `client.analyze()`
@@ -16,6 +20,7 @@
 
 ### Removed
 
+- **`get_document()`, `get_docling_document()`**: Removed from analysis sandbox — replaced by the document virtual filesystem
 - **`get_chunk()`**: Removed from analysis sandbox — search results now include expanded context automatically
 - **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module.
 
