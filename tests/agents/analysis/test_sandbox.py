@@ -134,6 +134,32 @@ class TestSandboxHaikuRAG:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
+    async def test_search_returns_doc_item_refs_and_labels(self, temp_db_path):
+        """Search results include doc_item_refs and labels."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.create_document(
+                content="The quick brown fox jumps over the lazy dog.",
+                uri="test://animals",
+                title="Animals",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(client=client, config=config, context=context)
+            result = await sb.execute(
+                "results = await search('fox', limit=1)\n"
+                "r = results[0]\n"
+                "print('doc_item_refs' in r)\n"
+                "print('labels' in r)\n"
+                "print(type(r['doc_item_refs']).__name__)\n"
+                "print(type(r['labels']).__name__)"
+            )
+            assert result.success
+            assert "True\nTrue" in result.stdout
+            assert "list\nlist" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
     async def test_get_document(self, temp_db_path):
         """Test get_document function."""
         config = AppConfig()

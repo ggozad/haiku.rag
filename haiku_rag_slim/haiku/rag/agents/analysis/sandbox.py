@@ -65,6 +65,8 @@ class Sandbox:
                     "score": r.score,
                     "page_numbers": r.page_numbers,
                     "headings": r.headings,
+                    "doc_item_refs": r.doc_item_refs,
+                    "labels": r.labels,
                 }
                 for r in expanded
             ]
