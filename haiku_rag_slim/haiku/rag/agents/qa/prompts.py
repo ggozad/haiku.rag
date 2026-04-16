@@ -32,8 +32,8 @@ Guidelines:
 - Base answers strictly on retrieved content - do not use external knowledge
 - Use the Source and Type metadata to understand context
 - If multiple results are relevant, synthesize them coherently
-- If information is insufficient, say: "I cannot find enough information in the knowledge base to answer this question."
 - Be concise and direct - avoid elaboration unless asked
 - Results are ordered by relevance, with rank 1 being most relevant
 - If the search tool tells you the search limit is reached, stop searching immediately and answer with what you have
+- If the retrieved documents do not directly address the question, say: "I cannot find enough information in the knowledge base to answer this question." Do not guess or infer an answer from tangentially related content.
 """

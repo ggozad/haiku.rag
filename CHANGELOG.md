@@ -10,6 +10,9 @@
 
 - **Database migration required**: Run `haiku-rag migrate` to populate `document_items` table for existing documents
 - **Pin docling-core**: Upper bound added (`<2.72`) to prevent uncontrolled schema changes
+- **`max_searches` default**: Raised from 3 to 5 — faster expansion makes additional searches inexpensive
+- **Improved QA prompt**: Stronger instruction to refuse answering from tangentially related content
+- **Improved judge prompt**: Asymmetric evaluation — generated answers that are more comprehensive than expected are not penalized
 
 ### Removed
 
