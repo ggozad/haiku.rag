@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.39.0] - 2026-04-16
+
 ### Added
 
 - **Document items table**: Pre-extracted document items stored as individual rows with scalar indexes, enabling context expansion via indexed range queries (~2.5ms) instead of full DoclingDocument deserialization (~8.7s for large documents)
