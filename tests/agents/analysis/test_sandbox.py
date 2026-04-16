@@ -163,22 +163,19 @@ class TestSandboxHaikuRAG:
         assert "True" in result.stdout
 
 
-class TestSandboxGetContext:
-    """Test get_context() external function."""
+class TestSandboxSearchExpandsContext:
+    """Test that search() returns expanded results."""
 
     @pytest.mark.asyncio
-    async def test_get_context_missing_chunk(self, sandbox):
-        """get_context returns None for a non-existent chunk."""
-        result = await sandbox.execute(
-            "ctx = await get_context('nonexistent-id')\nprint(ctx is None)"
-        )
-        assert result.success
-        assert "True" in result.stdout
+    async def test_get_context_not_available(self, sandbox):
+        """get_context is no longer a sandbox function."""
+        result = await sandbox.execute("await get_context('x')")
+        assert not result.success
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_get_context_returns_expanded_content(self, temp_db_path):
-        """get_context returns content for a valid chunk."""
+    async def test_search_returns_expanded_content(self, temp_db_path):
+        """search() returns context-expanded results."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             await client.create_document(
@@ -191,10 +188,8 @@ class TestSandboxGetContext:
             sb = Sandbox(client=client, config=config, context=context)
             result = await sb.execute(
                 "results = await search('fox', limit=1)\n"
-                "chunk_id = results[0]['chunk_id']\n"
-                "ctx = await get_context(chunk_id)\n"
-                "print(type(ctx).__name__)\n"
-                "print('fox' in ctx.lower())"
+                "print(type(results[0]['content']).__name__)\n"
+                "print('fox' in results[0]['content'].lower())"
             )
             assert result.success
             assert "str" in result.stdout

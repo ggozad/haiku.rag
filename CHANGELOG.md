@@ -3,6 +3,8 @@
 
 ### Changed
 
+- **Analysis sandbox `search()` now returns expanded results**: Search results automatically include surrounding context (adjacent paragraphs, complete tables, section content) via the document_items table
+
 - **BREAKING**: Rename RLM agent to analysis agent throughout:
   - `agents/rlm/` → `agents/analysis/`, all classes renamed (`RLMResult` → `AnalysisResult`, etc.)
   - `client.rlm()` → `client.analyze()`
@@ -14,7 +16,7 @@
 
 ### Removed
 
-- **`get_chunk()`**: Removed from analysis sandbox
+- **`get_chunk()`**: Removed from analysis sandbox — search results now include expanded context automatically
 - **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module.
 
 ## [0.40.1] - 2026-04-17

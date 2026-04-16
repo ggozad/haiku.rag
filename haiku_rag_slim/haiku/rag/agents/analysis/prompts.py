@@ -11,11 +11,8 @@ Inside execute_code, these functions are ALREADY available in the namespace. Do 
 
 ### await search(query, limit=10) -> list[dict]
 Search the knowledge base using hybrid search (vector + full-text).
+Results are automatically expanded with surrounding context (adjacent paragraphs, complete tables, section content).
 Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings
-
-### await get_context(chunk_id) -> str | None
-Get expanded content around a chunk, including surrounding paragraphs, complete tables, and adjacent sections from the same document.
-Use this after search() when a result looks relevant but you need more context to understand it fully.
 
 ### await list_documents(limit=10, offset=0) -> list[dict]
 List available documents in the knowledge base.
@@ -57,26 +54,21 @@ For pattern matching or text extraction, use `import re`, string methods (`str.s
 
 ## Strategy Guide
 
-1. **Search First**: Start with `search()` to find relevant content. Examine the results to understand what's available.
-2. **Expand When Needed**: If a search result looks relevant but incomplete, use `get_context(chunk_id)` to get surrounding content from the same document.
-3. **Use get_document for Full Text**: When you need a document's complete text (e.g., for regex across the whole document), use `get_document(id_or_title)`.
-4. **Use get_docling_document for Structure**: When you need structured data like table grids, document hierarchy, or section labels, use `get_docling_document(document_id)`.
-5. **Iterate**: Run code, examine results, refine your approach. Don't try to solve everything in one execution.
-6. **Use llm() for Reasoning**: When you have content and need classification, summarization, or extraction, use `llm()` rather than writing complex parsing logic.
-7. **Document Titles Are Often None**: Use `uri` or `id` to identify documents. Use `list_documents()` to discover what's available.
+1. **Search First**: Start with `search()` to find relevant content. Results already include expanded context (surrounding paragraphs, complete tables, section content).
+2. **Use get_document for Full Text**: When you need a document's complete text (e.g., for regex across the whole document), use `get_document(id_or_title)`.
+3. **Use get_docling_document for Structure**: When you need structured data like table grids, document hierarchy, or section labels, use `get_docling_document(document_id)`.
+4. **Iterate**: Run code, examine results, refine your approach. Don't try to solve everything in one execution.
+5. **Use llm() for Reasoning**: When you have content and need classification, summarization, or extraction, use `llm()` rather than writing complex parsing logic.
+6. **Document Titles Are Often None**: Use `uri` or `id` to identify documents. Use `list_documents()` to discover what's available.
 
 ## Example Patterns
 
-### Search and expand context
+### Search (results include expanded context)
 ```python
 results = await search("revenue figures", limit=5)
 for r in results:
-    print(f"{r['document_title']}: {r['content'][:100]}")
-
-# Get more context around the most relevant result
-expanded = await get_context(results[0]['chunk_id'])
-if expanded:
-    print(f"Expanded: {expanded[:500]}")
+    print(f"{r['document_title']} (score={r['score']:.2f}):")
+    print(r['content'][:200])
 ```
 
 ### Extracting data with regex

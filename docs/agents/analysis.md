@@ -58,8 +58,7 @@ The agent's code runs in a sandboxed Python interpreter ([pydantic-monty](https:
 
 | Function | Description |
 |----------|-------------|
-| `search(query, limit)` | Hybrid search (vector + full-text) returning matching chunks with scores |
-| `get_context(chunk_id)` | Expand a chunk with surrounding content (adjacent paragraphs, complete tables) |
+| `search(query, limit)` | Hybrid search (vector + full-text) with automatic context expansion |
 | `list_documents(limit, offset)` | List documents in the knowledge base |
 | `get_document(id_or_title)` | Get full text content of a document |
 | `get_docling_document(document_id)` | Get the DoclingDocument structure as a dict (texts, tables, pictures) |

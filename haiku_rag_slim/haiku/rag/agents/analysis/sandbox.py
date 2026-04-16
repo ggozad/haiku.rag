@@ -7,7 +7,6 @@ import pydantic_monty
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.compression import decompress_json
-from haiku.rag.store.models.chunk import SearchResult
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -55,6 +54,7 @@ class Sandbox:
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
             results = await client.search(query, limit=limit, filter=context.filter)
+            expanded = await client.expand_context(results)
             return [
                 {
                     "chunk_id": r.chunk_id,
@@ -66,7 +66,7 @@ class Sandbox:
                     "page_numbers": r.page_numbers,
                     "headings": r.headings,
                 }
-                for r in results
+                for r in expanded
             ]
 
         async def list_documents(
@@ -88,16 +88,6 @@ class Sandbox:
         async def get_document(id_or_title: str) -> str | None:
             doc = await client.resolve_document(id_or_title)
             return doc.content if doc else None
-
-        async def get_context(chunk_id: str) -> str | None:
-            chunk = await client.get_chunk_by_id(chunk_id)
-            if not chunk:
-                return None
-            search_result = SearchResult.from_chunk(chunk, score=1.0)
-            expanded = await client.expand_context([search_result])
-            if expanded:
-                return expanded[0].content
-            return chunk.content
 
         async def get_docling_document(
             document_id: str,
@@ -122,7 +112,6 @@ class Sandbox:
             "search": search,
             "list_documents": list_documents,
             "get_document": get_document,
-            "get_context": get_context,
             "get_docling_document": get_docling_document,
             "llm": llm,
         }
