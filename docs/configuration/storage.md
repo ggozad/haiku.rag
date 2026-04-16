@@ -112,7 +112,7 @@ search:
   vector_refine_factor: 30     # Re-ranking factor for accuracy
 ```
 
-For search behavior settings (`limit`, `context_radius`, `max_context_items`, `max_context_chars`), see [QA and Research](qa-research.md#search-settings).
+For search behavior settings (`limit`, `max_context_items`, `max_context_chars`), see [QA and Research](qa-research.md#search-settings).
 
 - **vector_index_metric**: Distance metric for vector similarity:
   - `cosine`: Cosine similarity (default, best for most embeddings)

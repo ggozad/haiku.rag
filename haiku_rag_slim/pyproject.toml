@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Minimal dependencies"
-version = "0.39.0"
+version = "0.40.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -22,8 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "cachetools>=7.0.5",
-    "docling-core>=2.71.0",
+    "docling-core>=2.71.0,<2.72",
     "haiku.skills>=0.14.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.0",

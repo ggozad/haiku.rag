@@ -5,7 +5,6 @@ from docling_core.types.doc.labels import DocItemLabel
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
-from haiku.rag.store.models.chunk import Chunk
 
 
 async def create_document_with_docling(
@@ -224,11 +223,10 @@ async def test_code_expansion_includes_adjacent_blocks(
 
 
 @pytest.mark.vcr()
-async def test_text_expansion_uses_radius(temp_db_path):
-    """Text content expansion should use radius, not structural boundaries."""
+async def test_text_expansion_includes_surrounding(temp_db_path):
+    """Text content expansion should include surrounding paragraphs."""
     config = AppConfig()
     config.processing.chunk_size = 32
-    config.search.context_radius = 1  # Small radius
 
     # Create a document with longer paragraphs that will split
     doc = DoclingDocument(name="text_test")
@@ -260,8 +258,7 @@ async def test_text_expansion_uses_radius(temp_db_path):
         original = results[0]
         expanded = await client.expand_context(results)
 
-        # With radius=1, expansion should include adjacent paragraphs
-        # Content length should be >= original (may add adjacent content)
+        # Expansion should include adjacent paragraphs
         assert len(expanded[0].content) >= len(original.content)
 
 
@@ -335,210 +332,61 @@ async def test_max_items_limit_caps_expansion(temp_db_path):
         assert item_count <= 2, f"Expected at most 2 items, got {item_count}"
 
 
-@pytest.mark.vcr()
-async def test_expand_context_radius_zero(temp_db_path):
-    """Test expand_context with radius 0 returns original results."""
-    # Default config has context_radius=0
+async def test_expand_context_single_item_document(temp_db_path):
+    """Test expand_context with a single-item document."""
+    from haiku.rag.store.models.document import Document
+
+    docling_doc = DoclingDocument(name="simple")
+    docling_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Simple test content")
+
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content="Simple test content")
+        document = Document(content="Simple test content")
+        document.set_docling(docling_doc)
+        doc = await client._store_document_with_chunks(document, [], docling_doc)
         assert doc.id is not None
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
 
-        search_results = [SearchResult.from_chunk(chunks[0], 0.9)]
+        # Create a search result with a doc_item_ref pointing to the item
+        items = await client.document_item_repository.get_items_in_range(doc.id, 0, 10)
+        assert len(items) > 0
+
+        search_results = [
+            SearchResult(
+                content="Simple test content",
+                score=0.9,
+                document_id=doc.id,
+                doc_item_refs=[items[0].self_ref],
+            )
+        ]
         expanded_results = await client.expand_context(search_results)
 
-        # Should return exactly the same results
         assert len(expanded_results) == 1
-        assert expanded_results[0].content == search_results[0].content
-        assert expanded_results[0].score == search_results[0].score
+        assert expanded_results[0].score == 0.9
+        assert "Simple test content" in expanded_results[0].content
 
 
-@pytest.mark.vcr()
-async def test_expand_context_multiple_documents(temp_db_path):
-    """Test expand_context with results from multiple documents."""
-    config = AppConfig()
-    config.search.context_radius = 1
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        # Create first document with manual chunks
-        docling_doc1 = DoclingDocument(name="doc1")
-        docling_doc1.add_text(label=DocItemLabel.TEXT, text="Doc1 content")
-        doc1_chunks = [
-            Chunk(content="Doc1 Part A", order=0),
-            Chunk(content="Doc1 Part B", order=1),
-            Chunk(content="Doc1 Part C", order=2),
-        ]
-        doc1 = await client.import_document(
-            docling_document=docling_doc1, chunks=doc1_chunks, uri="doc1.txt"
-        )
-
-        # Create second document with manual chunks
-        docling_doc2 = DoclingDocument(name="doc2")
-        docling_doc2.add_text(label=DocItemLabel.TEXT, text="Doc2 content")
-        doc2_chunks = [
-            Chunk(content="Doc2 Section X", order=0),
-            Chunk(content="Doc2 Section Y", order=1),
-        ]
-        doc2 = await client.import_document(
-            docling_document=docling_doc2, chunks=doc2_chunks, uri="doc2.txt"
-        )
-
-        assert doc1.id is not None
-        assert doc2.id is not None
-        chunks1 = await client.chunk_repository.get_by_document_id(doc1.id)
-        chunks2 = await client.chunk_repository.get_by_document_id(doc2.id)
-
-        # Get middle chunk from doc1 (order=1) and first chunk from doc2 (order=0)
-        chunk1 = next(c for c in chunks1 if c.order == 1)
-        chunk2 = next(c for c in chunks2 if c.order == 0)
-
+async def test_expand_context_no_refs_passes_through(temp_db_path):
+    """Results without doc_item_refs pass through unexpanded."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # A search result with no doc_item_refs should pass through as-is
         search_results = [
-            SearchResult.from_chunk(chunk1, 0.8),
-            SearchResult.from_chunk(chunk2, 0.7),
+            SearchResult(
+                content="Some chunk content",
+                score=0.8,
+                document_id="some-doc",
+                doc_item_refs=[],
+            )
         ]
-        expanded_results = await client.expand_context(search_results)
+        expanded = await client.expand_context(search_results)
 
-        assert len(expanded_results) == 2
-
-        # Check first expanded result (should include chunks 0,1,2 from doc1)
-        expanded1 = expanded_results[0]
-        assert expanded1.score == 0.8
-        assert "Doc1 Part A" in expanded1.content
-        assert "Doc1 Part B" in expanded1.content
-        assert "Doc1 Part C" in expanded1.content
-
-        # Check second expanded result (should include chunks 0,1 from doc2)
-        expanded2 = expanded_results[1]
-        assert expanded2.score == 0.7
-        assert "Doc2 Section X" in expanded2.content
-        assert "Doc2 Section Y" in expanded2.content
-
-
-@pytest.mark.vcr()
-async def test_expand_context_merges_overlapping_chunks(temp_db_path):
-    """Test that overlapping expanded chunks are merged into one."""
-    config = AppConfig()
-    config.search.context_radius = 1
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        # Create document with 5 chunks
-        docling_doc = DoclingDocument(name="test")
-        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full document content")
-        manual_chunks = [
-            Chunk(content="Chunk 0", order=0),
-            Chunk(content="Chunk 1", order=1),
-            Chunk(content="Chunk 2", order=2),
-            Chunk(content="Chunk 3", order=3),
-            Chunk(content="Chunk 4", order=4),
-        ]
-
-        doc = await client.import_document(
-            docling_document=docling_doc, chunks=manual_chunks
-        )
-
-        assert doc.id is not None
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-
-        # Get adjacent chunks (orders 1 and 2) - these will overlap when expanded
-        chunk1 = next(c for c in chunks if c.order == 1)
-        chunk2 = next(c for c in chunks if c.order == 2)
-
-        # With radius=1:
-        # chunk1 expanded would be [0,1,2]
-        # chunk2 expanded would be [1,2,3]
-        # These should merge into one chunk containing [0,1,2,3]
-        search_results = [
-            SearchResult.from_chunk(chunk1, 0.8),
-            SearchResult.from_chunk(chunk2, 0.7),
-        ]
-        expanded_results = await client.expand_context(search_results)
-
-        # Should have only 1 merged result instead of 2 overlapping ones
-        assert len(expanded_results) == 1
-
-        merged = expanded_results[0]
-
-        # Should contain all chunks from 0 to 3
-        assert "Chunk 0" in merged.content
-        assert "Chunk 1" in merged.content
-        assert "Chunk 2" in merged.content
-        assert "Chunk 3" in merged.content
-        assert "Chunk 4" not in merged.content  # Should not include chunk 4
-
-        # Should use the higher score (0.8)
-        assert merged.score == 0.8
-
-
-@pytest.mark.vcr()
-async def test_expand_context_keeps_separate_non_overlapping(temp_db_path):
-    """Test that non-overlapping expanded chunks remain separate."""
-    config = AppConfig()
-    config.search.context_radius = 1
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        # Create document with chunks far apart
-        docling_doc = DoclingDocument(name="test")
-        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full document content")
-        manual_chunks = [
-            Chunk(content="Chunk 0", order=0),
-            Chunk(content="Chunk 1", order=1),
-            Chunk(content="Chunk 2", order=2),
-            Chunk(content="Chunk 5", order=5),  # Gap here
-            Chunk(content="Chunk 6", order=6),
-            Chunk(content="Chunk 7", order=7),
-        ]
-
-        doc = await client.import_document(
-            docling_document=docling_doc, chunks=manual_chunks
-        )
-
-        assert doc.id is not None
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-
-        # Get chunks by index - they will have sequential orders 0,1,2,3,4,5
-        # So get chunk with order=0 and chunk with order=5 (far enough apart)
-        chunk0 = next(c for c in chunks if c.order == 0)  # Content: "Chunk 0"
-        chunk5 = next(
-            c for c in chunks if c.order == 5
-        )  # Content: "Chunk 7" but now at order 5
-
-        # chunk0 expanded: [0,1] with radius=1 (orders 0,1)
-        # chunk5 expanded: [4,5] with radius=1 (orders 4,5)
-        search_results = [
-            SearchResult.from_chunk(chunk0, 0.8),
-            SearchResult.from_chunk(chunk5, 0.7),
-        ]
-        expanded_results = await client.expand_context(search_results)
-
-        # Should have 2 separate results
-        assert len(expanded_results) == 2
-
-        # Sort by score to ensure predictable order
-        expanded_results.sort(key=lambda x: x.score, reverse=True)
-
-        chunk0_expanded = expanded_results[0]
-        chunk5_expanded = expanded_results[1]
-
-        # First chunk (order=0) expanded should contain orders [0,1]
-        # Content should be "Chunk 0" + "Chunk 1"
-        assert "Chunk 0" in chunk0_expanded.content
-        assert "Chunk 1" in chunk0_expanded.content
-        assert "Chunk 5" not in chunk0_expanded.content
-        assert chunk0_expanded.score == 0.8
-
-        # Second chunk (order=5) expanded should contain orders [4,5]
-        # Content should be "Chunk 6" (order 4) + "Chunk 7" (order 5)
-        assert "Chunk 6" in chunk5_expanded.content
-        assert "Chunk 7" in chunk5_expanded.content
-        assert "Chunk 0" not in chunk5_expanded.content
-        assert chunk5_expanded.score == 0.7
+        assert len(expanded) == 1
+        assert expanded[0].content == "Some chunk content"
+        assert expanded[0].score == 0.8
 
 
 @pytest.mark.vcr()
 async def test_expand_context_with_docling_merges_overlapping(temp_db_path):
     """Test that expand_context with DoclingDocument merges overlapping results."""
     config = AppConfig()
-    config.search.context_radius = 3
 
     markdown_content = """# Chapter 1
 
@@ -593,7 +441,6 @@ This is paragraph four about topic C.
 async def test_expand_context_docling_merges_metadata(temp_db_path):
     """Test that expand_context properly merges metadata from multiple results."""
     config = AppConfig()
-    config.search.context_radius = 10
 
     markdown_content = """# Introduction
 
@@ -676,7 +523,6 @@ async def test_expand_context_no_base64_images(temp_db_path):
     base64 image data from leaking into the expanded content.
     """
     config = AppConfig()
-    config.search.context_radius = 5  # Expand enough to include pictures
 
     docling_doc = create_picture_document()
 
@@ -713,7 +559,6 @@ async def test_expand_context_no_base64_images_docling_local(temp_db_path):
     config.processing.converter = "docling-local"
     config.processing.chunker = "docling-local"
     config.processing.conversion_options.do_ocr = False
-    config.search.context_radius = 5
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
@@ -747,7 +592,6 @@ async def test_expand_context_no_base64_images_docling_serve(temp_db_path):
     config = AppConfig()
     config.processing.converter = "docling-serve"
     config.processing.chunker = "docling-serve"
-    config.search.context_radius = 5
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"

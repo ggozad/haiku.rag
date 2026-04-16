@@ -4,11 +4,7 @@ from uuid import uuid4
 
 from haiku.rag.store.engine import DocumentRecord, Store, get_documents_arrow_schema
 from haiku.rag.store.models.document import Document
-
-
-def _escape_sql_string(value: str) -> str:
-    """Escape single quotes in SQL string literals."""
-    return value.replace("'", "''")
+from haiku.rag.utils import escape_sql_string
 
 
 class DocumentRepository:
@@ -17,6 +13,7 @@ class DocumentRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self._chunk_repository = None
+        self._document_item_repository = None
 
     @property
     def chunk_repository(self):
@@ -26,6 +23,17 @@ class DocumentRepository:
 
             self._chunk_repository = ChunkRepository(self.store)
         return self._chunk_repository
+
+    @property
+    def document_item_repository(self):
+        """Lazy-load DocumentItemRepository when needed."""
+        if self._document_item_repository is None:
+            from haiku.rag.store.repositories.document_item import (
+                DocumentItemRepository,
+            )
+
+            self._document_item_repository = DocumentItemRepository(self.store)
+        return self._document_item_repository
 
     def _record_to_document(self, record: DocumentRecord) -> Document:
         """Convert a DocumentRecord to a Document model."""
@@ -79,7 +87,7 @@ class DocumentRepository:
 
     async def get_by_id(self, entity_id: str) -> Document | None:
         """Get a document by its ID."""
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
             .where(f"id = '{safe_id}'")
@@ -96,7 +104,7 @@ class DocumentRepository:
 
     async def get_docling_data(self, entity_id: str) -> Document | None:
         """Get a document with only docling data loaded (skips content blob)."""
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
             .select(self._DOCLING_COLUMNS)
@@ -118,7 +126,7 @@ class DocumentRepository:
 
     async def get_pages_data(self, entity_id: str) -> Document | None:
         """Get a document with only page image data loaded."""
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         results = list(
             self.store.documents_table.search()
             .select(["id", "docling_pages"])
@@ -140,19 +148,15 @@ class DocumentRepository:
     async def update(self, entity: Document) -> Document:
         """Update an existing document."""
         self.store._assert_writable()
-        from haiku.rag.store.models.document import invalidate_docling_document_cache
 
         assert entity.id, "Document ID is required for update"
-
-        # Invalidate cache before update
-        invalidate_docling_document_cache(entity.id)
 
         # Update timestamp
         now = datetime.now().isoformat()
         entity.updated_at = datetime.fromisoformat(now)
 
         # Update the record
-        safe_id = _escape_sql_string(entity.id)
+        safe_id = escape_sql_string(entity.id)
         self.store.documents_table.update(
             where=f"id = '{safe_id}'",
             values={
@@ -172,21 +176,18 @@ class DocumentRepository:
     async def delete(self, entity_id: str) -> bool:
         """Delete a document by its ID."""
         self.store._assert_writable()
-        from haiku.rag.store.models.document import invalidate_docling_document_cache
 
         # Check if document exists
         doc = await self.get_by_id(entity_id)
         if doc is None:
             return False
 
-        # Invalidate cache before delete
-        invalidate_docling_document_cache(entity_id)
-
-        # Delete associated chunks first
+        # Delete associated chunks and items first
         await self.chunk_repository.delete_by_document_id(entity_id)
+        await self.document_item_repository.delete_by_document_id(entity_id)
 
         # Delete the document
-        safe_id = _escape_sql_string(entity_id)
+        safe_id = escape_sql_string(entity_id)
         self.store.documents_table.delete(f"id = '{safe_id}'")
         return True
 
@@ -256,7 +257,7 @@ class DocumentRepository:
 
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
-        escaped_uri = _escape_sql_string(uri)
+        escaped_uri = escape_sql_string(uri)
         results = list(
             self.store.documents_table.search()
             .where(f"uri = '{escaped_uri}'")
@@ -272,8 +273,23 @@ class DocumentRepository:
     async def delete_all(self) -> None:
         """Delete all documents from the database."""
         self.store._assert_writable()
-        # Delete all chunks first
+        from haiku.rag.store.engine import DocumentItemRecord
+
+        # Delete all chunks and items first
         await self.chunk_repository.delete_all()
+        self.store.db.drop_table("document_items")
+        self.store.document_items_table = self.store.db.create_table(
+            "document_items", schema=DocumentItemRecord
+        )
+        self.store.document_items_table.create_scalar_index(
+            "document_id", index_type="BTREE", replace=True
+        )
+        self.store.document_items_table.create_scalar_index(
+            "position", index_type="BTREE", replace=True
+        )
+        self.store.document_items_table.create_scalar_index(
+            "self_ref", index_type="BTREE", replace=True
+        )
 
         # Get count before deletion
         count = len(

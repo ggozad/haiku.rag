@@ -4,27 +4,28 @@ from pydantic_ai import Agent
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.utils import get_model
 
-ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether two answers to the same question are semantically equivalent.
+ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether a generated answer is equivalent to an expected answer for a given question.
 
 EVALUATION CRITERIA:
 Rate as EQUIVALENT if:
-✓ Both answers contain the same core factual information
-✓ Both directly address the question asked
+✓ The generated answer contains the core factual information from the expected answer
+✓ The generated answer directly addresses the question asked
 ✓ The key claims and conclusions are consistent
-✓ Any additional detail in one answer doesn't contradict the other
+✓ The generated answer may include additional correct details not in the expected answer — this is fine
 
 Rate as NOT EQUIVALENT if:
-✗ Factual contradictions exist between the answers
-✗ One answer fails to address the core question
-✗ Key information is missing that changes the meaning
-✗ The answers lead to different conclusions or implications
+✗ The generated answer contradicts facts in the expected answer
+✗ The generated answer fails to address the core question
+✗ Key information from the expected answer is missing in a way that changes the meaning
+✗ The answers lead to different conclusions or actions
 
 GUIDELINES:
-- Ignore minor differences in phrasing, style, or formatting
-- Focus on semantic meaning rather than exact wording
-- Consider both answers correct if they convey the same essential information
+- The evaluation is asymmetric: judge the generated answer against the expected answer, not the other way around
+- A generated answer that is MORE detailed or comprehensive than the expected answer is EQUIVALENT, as long as it doesn't contradict it
+- If the expected answer is incomplete or narrow, do not penalize the generated answer for being broader
+- Ignore differences in phrasing, style, or formatting
+- Focus on whether a user would get the correct guidance from the generated answer
 - Be tolerant of different levels of detail if the core answer is preserved
-- Evaluate based on what a person asking this question would need to know
 """
 
 

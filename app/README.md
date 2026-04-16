@@ -61,7 +61,6 @@ embeddings:
 
 search:
   limit: 10
-  context_radius: 1
 ```
 
 See `haiku.rag.yaml.example` for all options.

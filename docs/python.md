@@ -359,29 +359,27 @@ results = await client.search(
 
 ### Expanding Search Context
 
-Expand search results with adjacent chunks for more complete context:
+Expand search results with surrounding content from the document:
 
 ```python
 # Get initial search results
 search_results = await client.search("machine learning", limit=3)
 
-# Expand search results with adjacent content from the source document
+# Expand with section-bounded context
 expanded_results = await client.expand_context(search_results)
 
-# The expanded results contain chunks with combined content
 for result in expanded_results:
     print(f"Expanded content: {result.content}")
 ```
 
-Context expansion uses your configuration settings:
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
 
-- **search.context_radius**: For text content (paragraphs), includes N DocItems before and after
-- **search.max_context_items**: Limits how many document items can be included
-- **search.max_context_chars**: Hard limit on total characters
+Configuration:
 
-**Type-aware expansion**: Structural content (tables, code blocks, lists) automatically expands to include the complete structure, regardless of how it was split during chunking.
+- **search.max_context_items**: Maximum items in expanded context. Default: 10.
+- **search.max_context_chars**: Maximum characters in expanded context. Default: 10000.
 
-**Smart Merging**: When expanded chunks overlap or are adjacent within the same document, they are automatically merged into single chunks with continuous content. This eliminates duplication and provides coherent text blocks. The merged chunk uses the highest relevance score from the original chunks.
+**Smart Merging**: When expanded results overlap within the same document, they are automatically merged into a single result with continuous content and the highest relevance score.
 
 ## Question Answering
 

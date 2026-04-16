@@ -81,8 +81,12 @@ from haiku.rag.store.upgrades.v0_25_0 import (
 from haiku.rag.store.upgrades.v0_38_0 import (
     upgrade_split_pages_zstd as upgrade_0_38_0_split_pages,
 )
+from haiku.rag.store.upgrades.v0_40_0 import (
+    upgrade_populate_document_items as upgrade_0_40_0_document_items,
+)
 
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
 upgrades.append(upgrade_0_25_0_compress)
 upgrades.append(upgrade_0_38_0_split_pages)
+upgrades.append(upgrade_0_40_0_document_items)

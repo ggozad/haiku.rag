@@ -80,7 +80,7 @@ class QAConfig(BaseModel):
             temperature=0.3,
         )
     )
-    max_searches: int = 3
+    max_searches: int = 5
 
 
 class ResearchConfig(BaseModel):
@@ -174,7 +174,6 @@ class ProcessingConfig(BaseModel):
 
 class SearchConfig(BaseModel):
     limit: int = 10
-    context_radius: int = 0
     max_context_items: int = 10
     max_context_chars: int = 10000
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"

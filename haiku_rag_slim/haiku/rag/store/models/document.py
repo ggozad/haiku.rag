@@ -2,45 +2,12 @@ import json
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from cachetools import LRUCache
 from pydantic import BaseModel, Field
 
 from haiku.rag.store.compression import compress_docling_split, decompress_json
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument, PageItem
-
-
-_docling_document_cache: LRUCache[str, "DoclingDocument"] = LRUCache(maxsize=100)
-
-
-def _validate_without_pages(compressed_data: bytes) -> "DoclingDocument":
-    """Decompress and validate DoclingDocument."""
-    from docling_core.types.doc.document import DoclingDocument
-
-    json_str = decompress_json(compressed_data)
-    return DoclingDocument.model_validate_json(json_str)
-
-
-def _get_cached_docling_document(
-    document_id: str, compressed_data: bytes
-) -> "DoclingDocument":
-    """Get or parse DoclingDocument with LRU caching by document ID.
-
-    Strips page images before validation for performance — cached documents
-    do not contain page data.
-    """
-    if document_id in _docling_document_cache:
-        return _docling_document_cache[document_id]
-
-    doc = _validate_without_pages(compressed_data)
-    _docling_document_cache[document_id] = doc
-    return doc
-
-
-def invalidate_docling_document_cache(document_id: str) -> None:
-    """Remove a document from the DoclingDocument cache."""
-    _docling_document_cache.pop(document_id, None)
 
 
 class Document(BaseModel):
@@ -73,19 +40,16 @@ class Document(BaseModel):
     def get_docling_document(self) -> "DoclingDocument | None":
         """Parse and return the stored DoclingDocument (without page images).
 
-        Uses LRU cache (keyed by document ID) to avoid repeated parsing.
-
         Returns:
             The parsed DoclingDocument, or None if not stored.
         """
         if self.docling_document is None:
             return None
 
-        # No caching for documents without ID
-        if self.id is None:
-            return _validate_without_pages(self.docling_document)
+        from docling_core.types.doc.document import DoclingDocument
 
-        return _get_cached_docling_document(self.id, self.docling_document)
+        json_str = decompress_json(self.docling_document)
+        return DoclingDocument.model_validate_json(json_str)
 
     def get_page_images(self, page_numbers: list[int]) -> "dict[int, PageItem]":
         """Decompress and return page images for the requested page numbers.
