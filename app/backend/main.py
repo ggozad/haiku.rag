@@ -91,7 +91,9 @@ async def stream_chat(request: Request) -> Response:
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
 
     async def event_stream():
-        async with run_agui_stream(toolset, adapter, deps=SkillDeps()) as stream:
+        async with run_agui_stream(
+            adapter, toolset=toolset, deps=SkillDeps()
+        ) as stream:
             async for chunk in adapter.encode_stream(stream):
                 yield chunk
 

@@ -221,7 +221,7 @@ class ChatApp(App):
         tool_args_deltas: dict[str, str] = {}
 
         try:
-            async with run_agui_stream(self._toolset, adapter) as stream:
+            async with run_agui_stream(adapter, toolset=self._toolset) as stream:
                 async for event in stream:
                     if event.type == EventType.TEXT_MESSAGE_START:
                         chat_history.hide_thinking()
