@@ -86,14 +86,14 @@ class ChatApp(App):
     def __init__(
         self,
         db_path: Path,
-        skill: Skill,
+        skills: list[Skill],
         read_only: bool = False,
         before: datetime | None = None,
         model: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
-        self._skill = skill
+        self._skills = skills
         self.read_only = read_only
         self.before = before
         self._model = model
@@ -153,7 +153,7 @@ class ChatApp(App):
         )
         await self.client.__aenter__()
 
-        self._toolset = SkillToolset(skills=[self._skill])
+        self._toolset = SkillToolset(skills=self._skills)
         self._agent = Agent(
             self._model,
             instructions=build_system_prompt(

@@ -165,10 +165,17 @@ Launch an interactive chat session for multi-turn conversations:
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
+
+# Enable analysis skill (code execution)
+haiku-rag chat -s rag -s analysis
 ```
 
 !!! note
     Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
+
+Flags:
+
+- `--skill` / `-s`: Skills to enable — `rag` (default), `analysis`. Can be repeated for multiple skills.
 
 The chat interface provides:
 

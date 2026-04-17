@@ -5,6 +5,7 @@
 
 - **Document virtual filesystem in analysis sandbox**: Documents are mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). The agent uses standard Python `pathlib.Path` to browse and read document content and structure.
 - **`doc_item_refs` and `labels` in search results**: Search results now include document item references and labels for cross-referencing with `items.jsonl`.
+- **`--skill` flag for chat TUI**: `haiku-rag chat -s rag -s analysis` to enable specific skills. Defaults to `rag`. Use `-s analysis` for code execution, or both for the full toolset.
 
 ### Changed
 

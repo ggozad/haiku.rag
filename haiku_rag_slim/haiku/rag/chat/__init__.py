@@ -7,6 +7,7 @@ def run_chat(
     read_only: bool = False,
     before: datetime | None = None,
     model: str | None = None,
+    skills: list[str] | None = None,
 ) -> None:
     """Run the chat TUI.
 
@@ -15,6 +16,7 @@ def run_chat(
         read_only: Whether to open the database in read-only mode.
         before: Query database as it existed before this datetime.
         model: Model to use for the chat.
+        skills: Skills to enable ("rag", "analysis"). Defaults to ["rag"].
     """
     try:
         from haiku.rag.chat.app import ChatApp
@@ -24,18 +26,29 @@ def run_chat(
         ) from e
 
     from haiku.rag.config import get_config
-    from haiku.rag.skills.rag import create_skill
     from haiku.rag.utils import get_model
+    from haiku.skills.models import Skill
 
     config = get_config()
     if db_path is None:
         db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    skill = create_skill(db_path=db_path, config=config)
+    enabled = skills or ["rag"]
+    skill_list: list[Skill] = []
+
+    if "rag" in enabled:
+        from haiku.rag.skills.rag import create_skill as create_rag_skill
+
+        skill_list.append(create_rag_skill(db_path=db_path, config=config))
+
+    if "analysis" in enabled:
+        from haiku.rag.skills.analysis import create_skill as create_analysis_skill
+
+        skill_list.append(create_analysis_skill(db_path=db_path, config=config))
 
     app = ChatApp(
         db_path,
-        skill=skill,
+        skills=skill_list,
         read_only=read_only,
         before=before,
         model=model or get_model(config.qa.model, config),

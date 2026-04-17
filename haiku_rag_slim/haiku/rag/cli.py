@@ -645,17 +645,25 @@ def chat(  # pragma: no cover
         "--model",
         help="Model to use for the chat (e.g. openai:gpt-4o)",
     ),
+    skill: list[str] | None = typer.Option(
+        None,
+        "--skill",
+        "-s",
+        help="Skills to enable: rag, analysis (can repeat, default: rag)",
+    ),
 ):
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+    skills = skill if skill else ["rag"]
 
     run_chat(
         db_path,
         read_only=_read_only,
         before=_before,
         model=model,
+        skills=skills,
     )
 
 

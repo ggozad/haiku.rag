@@ -14,6 +14,12 @@ Conversational RAG from the terminal with streaming responses and session memory
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
+
+# Enable analysis skill (code execution)
+haiku-rag chat -s rag -s analysis
+
+# Analysis only
+haiku-rag chat -s analysis
 ```
 
 ### Interface
