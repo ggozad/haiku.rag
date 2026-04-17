@@ -52,9 +52,11 @@ def _make_config() -> AppConfig:
 
 
 def test_store_connect_and_create(tmp_path):
+    from haiku.rag.store.engine import get_database_stats
+
     config = _make_config()
     store = Store(tmp_path / "unused", config=config, create=True)
-    stats = store.get_stats()
+    stats = get_database_stats(store.db)
     assert stats["documents"]["exists"]
     assert stats["chunks"]["exists"]
     store.close()
@@ -69,7 +71,7 @@ async def test_store_vacuum(tmp_path):
 
 
 def test_store_add_document(tmp_path):
-    from haiku.rag.store.engine import DocumentRecord
+    from haiku.rag.store.engine import DocumentRecord, get_database_stats
 
     config = _make_config()
     store = Store(tmp_path / "unused", config=config, create=True)
@@ -77,7 +79,7 @@ def test_store_add_document(tmp_path):
     doc = DocumentRecord(content="The quick brown fox jumps over the lazy dog.")
     store.documents_table.add([doc])
 
-    stats = store.get_stats()
+    stats = get_database_stats(store.db)
     assert stats["documents"]["num_rows"] == 1
     store.close()
 

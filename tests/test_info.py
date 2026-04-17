@@ -161,7 +161,7 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
 
 
 @pytest.mark.asyncio
-async def test_app_info_uses_connect_lancedb_for_remote(tmp_path, capsys):
+async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
     """info() should use connect_lancedb() instead of direct lancedb.connect() for remote URIs."""
     nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
     config = AppConfig(
@@ -173,42 +173,142 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path, capsys):
     app = HaikuRAGApp(db_path=nonexistent, config=config)
 
     with patch("haiku.rag.store.engine.connect_lancedb") as mock_connect:
-        # Make the mock return something that lets info() proceed minimally
-        mock_db = mock_connect.return_value
-        mock_table = mock_db.open_table.return_value
-        mock_table.search.return_value.where.return_value.limit.return_value.to_arrow.return_value.to_pylist.return_value = [
-            {
-                "settings": json.dumps(
+        # Empty DB triggers the early-return path - enough to prove connect_lancedb was used
+        mock_connect.return_value.list_tables.return_value.tables = []
+        await app.info()
+
+    mock_connect.assert_called_once_with(config, nonexistent)
+
+
+@pytest.mark.asyncio
+async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
+    """info() should still output database info and report pending migrations
+    when a required table is absent (as for a DB created before 0.40.0)."""
+    import lancedb
+    from lancedb.pydantic import LanceModel, Vector
+    from pydantic import Field
+
+    db = lancedb.connect(temp_db_path)
+
+    class SettingsRecord(LanceModel):
+        id: str = Field(default="settings")
+        settings: str = Field(default="{}")
+
+    class DocumentRecord(LanceModel):
+        id: str
+        content: str
+
+    class ChunkRecord(LanceModel):
+        id: str
+        document_id: str
+        content: str
+        vector: Vector(3)  # type: ignore
+
+    settings_tbl = db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = db.create_table("documents", schema=DocumentRecord)
+    chunks_tbl = db.create_table("chunks", schema=ChunkRecord)
+    # Intentionally omit document_items (added in 0.40.0)
+
+    settings_tbl.add(
+        [
+            SettingsRecord(
+                id="settings",
+                settings=json.dumps(
                     {
-                        "version": "1.0.0",
+                        "version": "0.39.0",
                         "embeddings": {
                             "model": {
-                                "provider": "test",
-                                "name": "test",
+                                "provider": "openai",
+                                "name": "text-embedding-3-small",
                                 "vector_dim": 3,
                             }
                         },
                     }
-                )
-            }
+                ),
+            )
         ]
+    )
+    docs_tbl.add([DocumentRecord(id="doc-1", content="hello")])
+    chunks_tbl.add(
+        [ChunkRecord(id="c1", document_id="doc-1", content="c", vector=[0.1, 0.2, 0.3])]
+    )
 
-        with patch("haiku.rag.store.engine.Store") as mock_store_cls:
-            mock_store = mock_store_cls.return_value
-            mock_store.get_stats.return_value = {
-                "documents": {"exists": True, "num_rows": 0, "total_bytes": 0},
-                "chunks": {
-                    "exists": True,
-                    "num_rows": 0,
-                    "total_bytes": 0,
-                    "has_vector_index": False,
-                    "num_indexed_rows": 0,
-                    "num_unindexed_rows": 0,
-                },
-            }
-            await app.info()
+    app = HaikuRAGApp(db_path=temp_db_path)
+    await app.info()
 
-        mock_connect.assert_called_once_with(config, nonexistent)
+    out = capsys.readouterr().out
+
+    # Core stats should still be reported
+    assert "haiku.rag version (db): 0.39.0" in out
+    assert "documents: 1" in out
+    assert "chunks: 1" in out
+
+    # Missing table should be flagged, not cause a crash
+    assert "document_items: absent" in out
+
+    # Migration status should be surfaced
+    assert "migration(s) pending" in out
+    assert "haiku-rag migrate" in out
+
+
+@pytest.mark.asyncio
+async def test_app_info_reports_up_to_date(temp_db_path, capsys):
+    """info() should report the database is up to date when no migrations
+    are pending."""
+    from importlib import metadata
+
+    import lancedb
+    from lancedb.pydantic import LanceModel, Vector
+    from pydantic import Field
+
+    db = lancedb.connect(temp_db_path)
+
+    class SettingsRecord(LanceModel):
+        id: str = Field(default="settings")
+        settings: str = Field(default="{}")
+
+    class DocumentRecord(LanceModel):
+        id: str
+        content: str
+
+    class ChunkRecord(LanceModel):
+        id: str
+        document_id: str
+        content: str
+        vector: Vector(3)  # type: ignore
+
+    settings_tbl = db.create_table("settings", schema=SettingsRecord)
+    db.create_table("documents", schema=DocumentRecord)
+    db.create_table("chunks", schema=ChunkRecord)
+    db.create_table("document_items", schema=DocumentItemRecord)
+
+    current_version = metadata.version("haiku.rag-slim")
+    settings_tbl.add(
+        [
+            SettingsRecord(
+                id="settings",
+                settings=json.dumps(
+                    {
+                        "version": current_version,
+                        "embeddings": {
+                            "model": {
+                                "provider": "openai",
+                                "name": "text-embedding-3-small",
+                                "vector_dim": 3,
+                            }
+                        },
+                    }
+                ),
+            )
+        ]
+    )
+
+    app = HaikuRAGApp(db_path=temp_db_path)
+    await app.info()
+
+    out = capsys.readouterr().out
+    assert "Database is up to date." in out
+    assert "migration(s) pending" not in out
 
 
 @pytest.mark.asyncio

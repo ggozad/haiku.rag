@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **`haiku-rag info` on pre-migration databases**: `info` no longer fails with a misleading `Cannot create tables in read-only mode` error when a required table added by a later version (e.g. `document_items` in 0.40.0) is absent. It now reports stats for the tables that do exist, marks the missing ones as `absent`, and shows a dedicated section listing any pending migrations with the `haiku-rag migrate` hint ([#346](https://github.com/ggozad/haiku.rag/issues/346))
+
 ## [0.39.0] - 2026-04-16
 
 ### Added
