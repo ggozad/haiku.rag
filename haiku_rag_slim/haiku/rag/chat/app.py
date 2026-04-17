@@ -243,8 +243,7 @@ class ChatApp(App):
                                 content=accumulated_text,
                             )
                         )
-                        # Show citations from RAG state
-                        await self._show_citations(chat_history)
+                        await self._show_citations_and_programs(chat_history)
                     elif event.type == EventType.TOOL_CALL_START:
                         assert isinstance(event, ToolCallStartEvent)
                         chat_history.hide_thinking()
@@ -320,17 +319,31 @@ class ChatApp(App):
             chat_input.disabled = False
             chat_input.focus()
 
-    async def _show_citations(self, chat_history: "ChatHistory") -> None:
-        """Show citations from skill states after an agent response."""
+    async def _show_citations_and_programs(self, chat_history: "ChatHistory") -> None:
+        """Show citations and programs from skill states after an agent response."""
         if not self._toolset:
             return
         citations = []
         for namespace in (RAG_STATE_NAMESPACE, ANALYSIS_STATE_NAMESPACE):
             state = self._toolset.get_namespace(namespace)
-            if state:
-                citations.extend(getattr(state, "citations", []))
+            if not state:
+                continue
+            citation_turns = getattr(state, "citations", [])
+            citation_index = getattr(state, "citation_index", {})
+            if citation_turns:
+                latest_ids = citation_turns[-1]
+                for cid in latest_ids:
+                    if cid in citation_index:
+                        citations.append(citation_index[cid])
         if citations:
             await chat_history.add_citations(citations)
+
+        analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
+        if analysis_state:
+            executions = getattr(analysis_state, "executions", [])
+            successful = [e for e in executions if e.success]
+            if successful:
+                await chat_history.add_program(successful[-1].code)
 
     async def action_clear_chat(self) -> None:
         """Clear the chat history and reset session."""

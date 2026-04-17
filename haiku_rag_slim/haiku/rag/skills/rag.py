@@ -6,10 +6,8 @@ from pydantic import BaseModel, Field
 
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
-from haiku.rag.skills._tools import ResearchEntry
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
-from haiku.rag.tools.qa import QAHistoryEntry
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 
@@ -21,7 +19,7 @@ CRITICAL RULES:
 3. When a skill returns citations, always include them in your response
 """
 
-_RAG_TOOLS = ["search", "list_documents", "get_document", "ask", "research"]
+_RAG_TOOLS = ["search", "list_documents", "get_document", "cite"]
 
 
 def get_agent_preamble(config: AppConfig) -> str:
@@ -32,12 +30,11 @@ def get_agent_preamble(config: AppConfig) -> str:
 
 
 class RAGState(BaseModel):
-    citations: list[Citation] = Field(default_factory=list)
-    qa_history: list[QAHistoryEntry] = Field(default_factory=list)
+    citation_index: dict[str, Citation] = Field(default_factory=dict)
+    citations: list[list[str]] = Field(default_factory=list)
     document_filter: str | None = None
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
     documents: list[DocumentInfo] = Field(default_factory=list)
-    reports: list[ResearchEntry] = Field(default_factory=list)
 
 
 STATE_TYPE = RAGState

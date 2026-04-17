@@ -1,7 +1,3 @@
-from unittest.mock import AsyncMock
-
-from haiku.rag.agents.analysis.models import AnalysisResult
-from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.analysis import (
     STATE_NAMESPACE,
@@ -64,7 +60,7 @@ class TestAnalysisSkillCreation:
 
         skill = create_skill(config=test_app_config, db_path=temp_db_path)
         tool_names = {getattr(t, "__name__") for t in skill.tools if callable(t)}
-        assert tool_names == {"analyze"}
+        assert tool_names == {"search", "list_documents", "execute_code", "cite"}
 
     def test_create_skill_has_state(self, test_app_config, temp_db_path):
         from haiku.rag.skills.analysis import AnalysisState, create_skill
@@ -81,8 +77,6 @@ class TestAnalysisSkillCreation:
         assert skill.extras["db_path"] is temp_db_path
         assert "visualize_chunk" in skill.extras
         assert "list_documents" in skill.extras
-        assert callable(skill.extras["visualize_chunk"])
-        assert callable(skill.extras["list_documents"])
 
     def test_create_skill_from_env(self, monkeypatch, temp_db_path):
         monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
@@ -118,80 +112,50 @@ class TestDomainPreambleInAnalysisSkillInstructions:
         assert base_instructions in skill.instructions
 
 
-class TestAnalyzeTool:
-    async def test_analyze_returns_result(self, rag_db, monkeypatch):
+class TestExecuteCodeTool:
+    async def test_execute_code_returns_output(self, rag_db):
         from haiku.rag.skills.analysis import create_skill
 
-        monkeypatch.setattr(
-            HaikuRAG,
-            "analyze",
-            AsyncMock(return_value=AnalysisResult(answer="42", program="print(42)")),
-        )
-
         skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
-        ctx = _make_ctx()
-        result = await analyze(ctx, question="How many documents?")
-        assert isinstance(result, str)
-        assert "42" in result
-        assert "print(42)" in result
-
-    async def test_analyze_updates_state(self, rag_db, monkeypatch):
-        from haiku.rag.skills.analysis import AnalysisState, create_skill
-
-        monkeypatch.setattr(
-            HaikuRAG,
-            "analyze",
-            AsyncMock(return_value=AnalysisResult(answer="42", program="print(42)")),
-        )
-
-        skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
+        execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState()
         ctx = _make_ctx(state)
-        await analyze(ctx, question="How many documents?")
-        assert len(state.analyses) == 1
-        assert state.analyses[0].question == "How many documents?"
-        assert state.analyses[0].answer == "42"
-        assert state.analyses[0].program == "print(42)"
+        result = await execute_code(ctx, code="print('hello')")
+        assert "hello" in result
 
-    async def test_analyze_applies_document_filter_from_state(
-        self, rag_db, monkeypatch
-    ):
-        from haiku.rag.skills.analysis import AnalysisState, create_skill
-
-        captured_kwargs = {}
-
-        async def mock_analyze(self, question, **kwargs):
-            captured_kwargs.update(kwargs)
-            return AnalysisResult(answer="42", program="print(42)")
-
-        monkeypatch.setattr(HaikuRAG, "analyze", mock_analyze)
-
-        skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
-        state = AnalysisState(document_filter="title = 'AI Overview'")
-        ctx = _make_ctx(state)
-        await analyze(ctx, question="How many documents?")
-        assert captured_kwargs.get("filter") == "title = 'AI Overview'"
-
-    async def test_analyze_with_document(self, rag_db, monkeypatch):
+    async def test_execute_code_updates_state(self, rag_db):
         from haiku.rag.skills.analysis import create_skill
 
-        captured_kwargs = {}
+        skill = create_skill(db_path=rag_db)
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState()
+        ctx = _make_ctx(state)
+        await execute_code(ctx, code="print('hello')")
+        assert len(state.executions) == 1
+        assert state.executions[0].code == "print('hello')"
+        assert state.executions[0].success is True
+        assert "hello" in state.executions[0].stdout
 
-        async def mock_analyze(self, question, **kwargs):
-            captured_kwargs.update(kwargs)
-            return AnalysisResult(answer="Result", program="code()")
-
-        monkeypatch.setattr(HaikuRAG, "analyze", mock_analyze)
+    async def test_execute_code_reports_errors(self, rag_db):
+        from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
-        ctx = _make_ctx()
-        await analyze(
-            ctx,
-            question="Count pages",
-            document="AI Overview",
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState()
+        ctx = _make_ctx(state)
+        result = await execute_code(ctx, code="x = 1/0")
+        assert "Error" in result
+        assert "ZeroDivisionError" in result
+        assert state.executions[0].success is False
+
+    async def test_execute_code_applies_document_filter(self, rag_db):
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState(document_filter="title = 'AI Overview'")
+        ctx = _make_ctx(state)
+        result = await execute_code(
+            ctx, code="docs = await list_documents()\nprint(len(docs))"
         )
-        assert captured_kwargs.get("documents") == ["AI Overview"]
+        assert "1" in result

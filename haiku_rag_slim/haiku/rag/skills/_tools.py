@@ -8,57 +8,14 @@ from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
-from haiku.rag.tools.qa import QAHistoryEntry
 from haiku.skills.state import SkillRunDeps
 
 
-class ResearchEntry(BaseModel):
-    question: str
-    title: str
-    executive_summary: str
-
-
-class AnalysisEntry(BaseModel):
-    question: str
-    answer: str
-    program: str | None = None
-
-
-async def find_relevant_prior_qa(
-    qa_history: list[QAHistoryEntry],
-    query: str,
-    config: AppConfig,
-) -> list[QAHistoryEntry]:
-    from haiku.rag.embeddings import get_embedder
-    from haiku.rag.tools.qa import PRIOR_ANSWER_RELEVANCE_THRESHOLD
-    from haiku.rag.utils import cosine_similarity
-
-    if not qa_history:
-        return []
-
-    embedder = get_embedder(config)
-    query_embedding = await embedder.embed_query(query)
-
-    to_embed = []
-    to_embed_indices = []
-    for i, qa in enumerate(qa_history):
-        if qa.question_embedding is None:
-            to_embed.append(qa.question)
-            to_embed_indices.append(i)
-
-    if to_embed:
-        new_embeddings = await embedder.embed_documents(to_embed)
-        for i, idx in enumerate(to_embed_indices):
-            qa_history[idx].question_embedding = new_embeddings[i]
-
-    matches = []
-    for qa in qa_history:
-        if qa.question_embedding is not None:
-            similarity = cosine_similarity(query_embedding, qa.question_embedding)
-            if similarity >= PRIOR_ANSWER_RELEVANCE_THRESHOLD:
-                matches.append(qa)
-
-    return matches
+class CodeExecutionEntry(BaseModel):
+    code: str
+    stdout: str
+    stderr: str = ""
+    success: bool = True
 
 
 async def skill_search(
@@ -88,14 +45,12 @@ async def skill_search(
 async def skill_list_documents(
     db_path: Path,
     config: AppConfig,
-    limit: int | None = None,
-    offset: int | None = None,
     filter: str | None = None,
 ) -> list[dict[str, Any]]:
     from haiku.rag.client import HaikuRAG
 
     async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        documents = await rag.list_documents(limit, offset, filter=filter)
+        documents = await rag.list_documents(filter=filter)
         return [
             {
                 "id": doc.id,
@@ -131,100 +86,6 @@ async def skill_get_document(
         }
 
 
-async def skill_ask(
-    db_path: Path,
-    config: AppConfig,
-    question: str,
-    qa_history: list[QAHistoryEntry] | None = None,
-    document_filter: str | None = None,
-) -> tuple[str, list[Citation]]:
-    from haiku.rag.client import HaikuRAG
-    from haiku.rag.utils import format_citations
-
-    ask_question = question
-    if qa_history:
-        matches = await find_relevant_prior_qa(qa_history, question, config)
-        if matches:
-            prior_parts = []
-            for qa in matches:
-                part = f"Q: {qa.question}\nA: {qa.answer}"
-                if qa.citations:
-                    part += "\n" + format_citations(qa.citations)
-                prior_parts.append(part)
-            ask_question = (
-                "Context from prior questions in this session:\n\n"
-                + "\n\n---\n\n".join(prior_parts)
-                + "\n\n---\n\nCurrent question: "
-                + question
-            )
-
-    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        answer, citations = await rag.ask(
-            ask_question,
-            filter=document_filter,
-        )
-
-    return answer, citations
-
-
-async def skill_research(
-    db_path: Path,
-    config: AppConfig,
-    question: str,
-    document_filter: str | None = None,
-) -> tuple[str, str, str]:
-    from haiku.rag.client import HaikuRAG
-
-    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        report = await rag.research(question, filter=document_filter)
-
-    parts = [
-        f"# {report.title}",
-        f"\n## Executive Summary\n{report.executive_summary}",
-    ]
-    if report.main_findings:
-        parts.append("\n## Main Findings")
-        for finding in report.main_findings:
-            parts.append(f"- {finding}")
-    if report.conclusions:
-        parts.append("\n## Conclusions")
-        for conclusion in report.conclusions:
-            parts.append(f"- {conclusion}")
-    if report.limitations:
-        parts.append("\n## Limitations")
-        for limitation in report.limitations:
-            parts.append(f"- {limitation}")
-    if report.recommendations:
-        parts.append("\n## Recommendations")
-        for rec in report.recommendations:
-            parts.append(f"- {rec}")
-    parts.append(f"\n## Sources\n{report.sources_summary}")
-
-    formatted = "\n".join(parts)
-    return formatted, report.title, report.executive_summary
-
-
-async def skill_analyze(
-    db_path: Path,
-    config: AppConfig,
-    question: str,
-    document: str | None = None,
-    document_filter: str | None = None,
-) -> tuple[str, str, str | None, "list[Citation]"]:
-    from haiku.rag.client import HaikuRAG
-
-    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        documents = [document] if document else None
-        result = await rag.analyze(
-            question, documents=documents, filter=document_filter
-        )
-        output = result.answer
-        if result.program:
-            output += f"\n\nProgram:\n{result.program}"
-
-    return output, result.answer, result.program, result.citations
-
-
 def update_documents_state(
     documents_state: list[DocumentInfo],
     doc_dicts: list[dict[str, Any]],
@@ -246,13 +107,18 @@ def _get_state(ctx: RunContext[SkillRunDeps], state_type: type[BaseModel]) -> An
     return None
 
 
-def _append_citations(state: Any, citations: "list[Citation]") -> None:
-    """Index and append citations to a skill state's citations list."""
-    next_index = len(state.citations) + 1
+def _register_citations(state: Any, citations: "list[Citation]") -> None:
+    """Add citations to the index and record the turn's chunk IDs."""
+    chunk_ids = []
+    next_index = len(state.citation_index) + 1
     for citation in citations:
-        citation.index = next_index
-        next_index += 1
-    state.citations.extend(citations)
+        cid = citation.chunk_id
+        if cid not in state.citation_index:
+            citation.index = next_index
+            next_index += 1
+            state.citation_index[cid] = citation
+        chunk_ids.append(cid)
+    state.citations.append(chunk_ids)
 
 
 def create_skill_extras(
@@ -323,6 +189,8 @@ def create_skill_tools(
     tools: dict[str, Any] = {}
 
     if "search" in tool_names:
+        max_searches = config.qa.max_searches
+        search_counts: dict[str, int] = {}
 
         async def search(
             ctx: RunContext[SkillRunDeps], query: str, limit: int | None = None
@@ -335,6 +203,14 @@ def create_skill_tools(
                 query: The search query.
                 limit: Maximum number of results.
             """
+            rid = ctx.run_id or ""
+            search_counts[rid] = search_counts.get(rid, 0) + 1
+            if search_counts[rid] > max_searches:
+                return (
+                    "Search limit reached. Answer the question using "
+                    "the results you already have."
+                )
+
             state = _get_state(ctx, state_type)
             formatted, results = await skill_search(
                 db_path,
@@ -353,21 +229,12 @@ def create_skill_tools(
 
         async def list_documents(
             ctx: RunContext[SkillRunDeps],
-            limit: int | None = None,
-            offset: int | None = None,
         ) -> list[dict[str, Any]]:
-            """List documents in the knowledge base with optional pagination.
-
-            Args:
-                limit: Maximum number of documents to return.
-                offset: Number of documents to skip.
-            """
+            """List all documents in the knowledge base."""
             state = _get_state(ctx, state_type)
             result = await skill_list_documents(
                 db_path,
                 config,
-                limit,
-                offset,
                 filter=state.document_filter if state else None,
             )
             if state:
@@ -395,119 +262,84 @@ def create_skill_tools(
 
         tools["get_document"] = get_document
 
-    if "ask" in tool_names:
+    if "execute_code" in tool_names:
 
-        async def ask(ctx: RunContext[SkillRunDeps], question: str) -> str:
-            """Ask a question and get an answer with citations from the knowledge base.
+        async def execute_code(ctx: RunContext[SkillRunDeps], code: str) -> str:
+            """Execute Python code in a sandboxed interpreter.
+
+            The code has access to search(), list_documents(), llm() functions
+            and a virtual filesystem at /documents/ with document content and
+            structure (metadata.json, content.txt, items.jsonl per document).
+
+            Use print() to output results. Each call runs in a fresh
+            interpreter — variables do not persist between calls.
 
             Args:
-                question: The question to ask.
+                code: Python code to execute.
             """
-            from haiku.rag.utils import format_citations
+            from haiku.rag.agents.analysis.dependencies import AnalysisContext
+            from haiku.rag.agents.analysis.sandbox import Sandbox
+            from haiku.rag.client import HaikuRAG
 
             state = _get_state(ctx, state_type)
-            answer, citations = await skill_ask(
-                db_path,
-                config,
-                question,
-                qa_history=state.qa_history if state else None,
-                document_filter=state.document_filter if state else None,
-            )
+            doc_filter = state.document_filter if state else None
+            context = AnalysisContext(filter=doc_filter)
+
+            async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+                sandbox = Sandbox(client=rag, config=config, context=context)
+                result = await sandbox.execute(code)
+
+                if state and sandbox._search_results:
+                    existing = state.searches.get("_sandbox", [])
+                    seen = {r.chunk_id for r in existing}
+                    for sr in sandbox._search_results:
+                        if sr.chunk_id not in seen:
+                            existing.append(sr)
+                            seen.add(sr.chunk_id)
+                    state.searches["_sandbox"] = existing
 
             if state:
-                _append_citations(state, citations)
-                state.qa_history.append(
-                    QAHistoryEntry(
-                        question=question, answer=answer, citations=citations
+                state.executions.append(
+                    CodeExecutionEntry(
+                        code=code,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                        success=result.success,
                     )
                 )
 
+            if result.success:
+                return result.stdout if result.stdout else "No output."
+            return f"Error: {result.stderr}\n\nOutput: {result.stdout}"
+
+        tools["execute_code"] = execute_code
+
+    if "cite" in tool_names:
+
+        async def cite(ctx: RunContext[SkillRunDeps], chunk_ids: list[str]) -> str:
+            """Register chunk IDs as citations for your answer.
+
+            Call this after searching, with the chunk_id values from search
+            results that support your answer.
+
+            Args:
+                chunk_ids: List of chunk_id values from search results.
+            """
+            from haiku.rag.agents.research.models import resolve_citations
+
+            state = _get_state(ctx, state_type)
+            if not state:
+                return "No state available."
+
+            all_results = []
+            for results_list in state.searches.values():
+                all_results.extend(results_list)
+
+            citations = resolve_citations(chunk_ids, all_results)
             if citations:
-                answer += "\n\n" + format_citations(citations)
+                _register_citations(state, citations)
+            return f"Registered {len(citations)} citation(s)."
 
-            return answer
-
-        tools["ask"] = ask
-
-    if "research" in tool_names:
-
-        async def research(ctx: RunContext[SkillRunDeps], question: str) -> str:
-            """Conduct deep multi-agent research on a question.
-
-            Iteratively searches, analyzes, and synthesizes information from the
-            knowledge base to produce a comprehensive research report.
-            Only use when the user explicitly requests deep research.
-
-            Args:
-                question: The research question to investigate.
-            """
-            state = _get_state(ctx, state_type)
-            formatted, title, executive_summary = await skill_research(
-                db_path,
-                config,
-                question,
-                document_filter=state.document_filter if state else None,
-            )
-
-            if state:
-                state.reports.append(
-                    ResearchEntry(
-                        question=question,
-                        title=title,
-                        executive_summary=executive_summary,
-                    )
-                )
-                state.qa_history.append(
-                    QAHistoryEntry(question=question, answer=executive_summary)
-                )
-
-            return formatted
-
-        tools["research"] = research
-
-    if "analyze" in tool_names:
-
-        async def analyze(
-            ctx: RunContext[SkillRunDeps],
-            question: str,
-            document: str | None = None,
-        ) -> str:
-            """Answer complex analytical questions using code execution.
-
-            Use this for questions requiring computation, aggregation, or
-            data traversal across documents.
-
-            Args:
-                question: The question to answer.
-                document: Optional document ID or title to pre-load for analysis.
-            """
-            from haiku.rag.utils import format_citations
-
-            state = _get_state(ctx, state_type)
-            state_filter = state.document_filter if state else None
-            output, answer, program, citations = await skill_analyze(
-                db_path,
-                config,
-                question,
-                document=document,
-                document_filter=state_filter,
-            )
-            if state:
-                state.analyses.append(
-                    AnalysisEntry(
-                        question=question,
-                        answer=answer,
-                        program=program,
-                    )
-                )
-                if citations:
-                    _append_citations(state, citations)
-
-            if citations:
-                output += "\n\n" + format_citations(citations)
-
-            return output
-
-        tools["analyze"] = analyze
+        tools["cite"] = cite
 
     return tools

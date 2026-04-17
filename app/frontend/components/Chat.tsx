@@ -21,8 +21,8 @@ import { FilterIcon } from "../lib/icons";
 import type { RAGState } from "../lib/sessionStorage";
 import {
 	createSession,
-	deriveCitationsHistory,
 	getActiveSessionId,
+	getLatestCitations,
 	getSession,
 	normalizeRAGState,
 	updateSessionMessages,
@@ -292,7 +292,7 @@ function MessageViewWithCitations({
 	isRunning?: boolean;
 }) {
 	const ragState = useContext(ChatStateContext);
-	const citationsHistory = ragState ? deriveCitationsHistory(ragState) : [];
+	const latestCitations = ragState ? getLatestCitations(ragState) : [];
 
 	// Collect completed tool_call_ids from skill_tool_result activity messages
 	const completedToolCallIds = useMemo(() => {
@@ -326,7 +326,6 @@ function MessageViewWithCitations({
 			{({ messageElements }) => {
 				const result: React.ReactNode[] = [];
 				let elemIdx = 0;
-				let citIdx = 0;
 				let seenToolCalls = false;
 
 				for (const msg of messages) {
@@ -368,19 +367,15 @@ function MessageViewWithCitations({
 					}
 
 					// After an assistant text response that followed tool calls,
-					// inject the next citations entry (one per turn)
+					// show citations from the latest turn
 					if (msg.role === "assistant" && msg.content && seenToolCalls) {
-						if (citIdx < citationsHistory.length) {
-							const citations = citationsHistory[citIdx];
-							if (citations?.length) {
-								result.push(
-									<CitationBlock
-										key={`citations-${citIdx}`}
-										citations={citations}
-									/>,
-								);
-							}
-							citIdx++;
+						if (latestCitations.length > 0) {
+							result.push(
+								<CitationBlock
+									key={`citations-${i}`}
+									citations={latestCitations}
+								/>,
+							);
 						}
 						seenToolCalls = false;
 					}
