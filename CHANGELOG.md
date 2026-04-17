@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.40.1] - 2026-04-17
+
 ### Fixed
 
 - **`haiku-rag info` on pre-migration databases**: `info` no longer fails with a misleading `Cannot create tables in read-only mode` error when a required table added by a later version (e.g. `document_items` in 0.40.0) is absent. It now reports stats for the tables that do exist, marks the missing ones as `absent`, and shows a dedicated section listing any pending migrations with the `haiku-rag migrate` hint ([#346](https://github.com/ggozad/haiku.rag/issues/346))
@@ -1359,7 +1361,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.39.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.40.1...HEAD
+[0.40.1]: https://github.com/ggozad/haiku.rag/compare/0.39.0...0.40.1
 [0.39.0]: https://github.com/ggozad/haiku.rag/compare/0.38.0...0.39.0
 [0.38.0]: https://github.com/ggozad/haiku.rag/compare/0.37.0...0.38.0
 [0.37.0]: https://github.com/ggozad/haiku.rag/compare/0.36.3...0.37.0
