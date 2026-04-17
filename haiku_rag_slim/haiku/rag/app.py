@@ -68,7 +68,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def info(self):
         """Display read-only information about the database without modifying it."""
 
-        from haiku.rag.store.engine import connect_lancedb
+        from haiku.rag.store.engine import connect_lancedb, get_database_stats
         from haiku.rag.store.upgrades import get_pending_upgrades
 
         if self.before is not None:
@@ -89,9 +89,9 @@ class HaikuRAGApp:  # pragma: no cover
         # Connect directly. Don't go through Store so a database that is
         # missing tables (e.g. pre-migration) still reports what it can.
         db = connect_lancedb(self.config, self.db_path)
-        existing_tables = set(db.list_tables().tables)
+        stats = get_database_stats(db)
 
-        if not existing_tables:
+        if not any(entry["exists"] for entry in stats.values()):
             self.console.print(
                 "[red]Database is empty. Use 'haiku-rag init' to initialize.[/red]"
             )
@@ -103,7 +103,7 @@ class HaikuRAGApp:  # pragma: no cover
         embed_provider = "unknown"
         embed_model = "unknown"
         vector_dim = None
-        if "settings" in existing_tables:
+        if stats["settings"]["exists"]:
             settings_tbl = db.open_table("settings")
             rows = (
                 settings_tbl.search()
@@ -131,16 +131,14 @@ class HaikuRAGApp:  # pragma: no cover
             f"{embed_provider}/{embed_model} (dim: {dim_part})"
         )
 
-        # Per-table row counts and sizes. Missing required tables are shown
-        # as "absent" rather than raising.
+        # Per-table row counts and sizes. Missing required tables are
+        # reported as "absent" rather than raising.
         for name in ("documents", "chunks", "document_items"):
-            if name in existing_tables:
-                stats = db.open_table(name).stats()
-                num_rows = stats.get("num_rows", 0)
-                total_bytes = stats.get("total_bytes", 0)
+            entry = stats[name]
+            if entry["exists"]:
                 self.console.print(
-                    f"  [repr.attrib_name]{name}[/repr.attrib_name]: {num_rows} "
-                    f"({format_bytes(total_bytes)})"
+                    f"  [repr.attrib_name]{name}[/repr.attrib_name]: {entry['num_rows']} "
+                    f"({format_bytes(entry['total_bytes'])})"
                 )
             else:
                 self.console.print(
@@ -148,20 +146,11 @@ class HaikuRAGApp:  # pragma: no cover
                 )
 
         # Vector index information
-        if "chunks" in existing_tables:
-            chunks_tbl = db.open_table("chunks")
-            num_chunks = chunks_tbl.stats().get("num_rows", 0)
-            indices = chunks_tbl.list_indices()
-            has_vector_index = any("vector" in str(idx).lower() for idx in indices)
-
-            if has_vector_index:
-                index_stats = chunks_tbl.index_stats("vector_idx")
-                num_indexed_rows = (
-                    index_stats.num_indexed_rows if index_stats is not None else 0
-                )
-                num_unindexed_rows = (
-                    index_stats.num_unindexed_rows if index_stats is not None else 0
-                )
+        if stats["chunks"]["exists"]:
+            num_chunks = stats["chunks"]["num_rows"]
+            if stats["chunks"].get("has_vector_index"):
+                num_indexed_rows = stats["chunks"].get("num_indexed_rows", 0)
+                num_unindexed_rows = stats["chunks"].get("num_unindexed_rows", 0)
                 self.console.print(
                     "  [repr.attrib_name]vector index[/repr.attrib_name]: ✓ exists"
                 )
@@ -189,15 +178,15 @@ class HaikuRAGApp:  # pragma: no cover
                         f"(need {256 - num_chunks} more chunks)"
                     )
 
-        if "documents" in existing_tables:
-            doc_versions = len(list(db.open_table("documents").list_versions()))
+        if stats["documents"]["exists"]:
             self.console.print(
-                f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: {doc_versions}"
+                f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: "
+                f"{stats['documents']['num_versions']}"
             )
-        if "chunks" in existing_tables:
-            chunk_versions = len(list(db.open_table("chunks").list_versions()))
+        if stats["chunks"]["exists"]:
             self.console.print(
-                f"  [repr.attrib_name]versions (chunks)[/repr.attrib_name]: {chunk_versions}"
+                f"  [repr.attrib_name]versions (chunks)[/repr.attrib_name]: "
+                f"{stats['chunks']['num_versions']}"
             )
 
         # Migration status
@@ -207,8 +196,8 @@ class HaikuRAGApp:  # pragma: no cover
         self.console.rule()
         if pending:
             self.console.print(
-                f"[bold yellow]Pending migrations: {len(pending)}[/bold yellow] "
-                "(run [cyan]haiku-rag migrate[/cyan] to upgrade)"
+                f"[bold yellow]{len(pending)} migration(s) pending.[/bold yellow] "
+                "Run [cyan]haiku-rag migrate[/cyan] to upgrade."
             )
             for step in pending:
                 desc = step.description or ""

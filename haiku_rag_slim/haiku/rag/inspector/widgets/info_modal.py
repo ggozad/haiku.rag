@@ -64,7 +64,11 @@ class InfoModal(ModalScreen):
 
     async def on_mount(self) -> None:
         """Load and display database info."""
-        from haiku.rag.store.engine import ConnectionMode, connect_lancedb
+        from haiku.rag.store.engine import (
+            ConnectionMode,
+            connect_lancedb,
+            get_database_stats,
+        )
 
         lines: list[str] = []
 
@@ -81,7 +85,7 @@ class InfoModal(ModalScreen):
         config = self.client.store._config
         try:
             db = connect_lancedb(config, self.db_path)
-            table_names = set(db.list_tables().tables)
+            stats = get_database_stats(db)
         except Exception as e:
             lines.append(f"[red]Failed to open database: {e}[/red]")
             self._content_widget.update("\n".join(lines))
@@ -90,16 +94,13 @@ class InfoModal(ModalScreen):
         # Get versions
         versions = get_package_versions()
 
-        # Get stats from store
-        table_stats = self.client.store.get_stats()
-
         # Read settings
         stored_version = "unknown"
         embed_provider: str | None = None
         embed_model: str | None = None
         vector_dim: int | None = None
 
-        if "settings" in table_names:
+        if stats["settings"]["exists"]:
             settings_tbl = db.open_table("settings")
             arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
             rows = arrow.to_pylist() if arrow is not None else []
@@ -113,27 +114,18 @@ class InfoModal(ModalScreen):
                 embed_model = embed_model_obj.get("name")
                 vector_dim = embed_model_obj.get("vector_dim")
 
-        num_docs = table_stats["documents"].get("num_rows", 0)
-        doc_bytes = table_stats["documents"].get("total_bytes", 0)
+        num_docs = stats["documents"].get("num_rows", 0)
+        doc_bytes = stats["documents"].get("total_bytes", 0)
 
-        num_chunks = table_stats["chunks"].get("num_rows", 0)
-        chunk_bytes = table_stats["chunks"].get("total_bytes", 0)
+        num_chunks = stats["chunks"].get("num_rows", 0)
+        chunk_bytes = stats["chunks"].get("total_bytes", 0)
 
-        has_vector_index = table_stats["chunks"].get("has_vector_index", False)
-        num_indexed_rows = table_stats["chunks"].get("num_indexed_rows", 0)
-        num_unindexed_rows = table_stats["chunks"].get("num_unindexed_rows", 0)
+        has_vector_index = stats["chunks"].get("has_vector_index", False)
+        num_indexed_rows = stats["chunks"].get("num_indexed_rows", 0)
+        num_unindexed_rows = stats["chunks"].get("num_unindexed_rows", 0)
 
-        # Table versions
-        doc_versions = (
-            len(list(db.open_table("documents").list_versions()))
-            if "documents" in table_names
-            else 0
-        )
-        chunk_versions = (
-            len(list(db.open_table("chunks").list_versions()))
-            if "chunks" in table_names
-            else 0
-        )
+        doc_versions = stats["documents"].get("num_versions", 0)
+        chunk_versions = stats["chunks"].get("num_versions", 0)
 
         # Build output
         lines.append(

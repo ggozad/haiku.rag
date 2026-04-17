@@ -121,6 +121,50 @@ class SettingsRecord(LanceModel):
     settings: str = Field(default="{}")
 
 
+REQUIRED_TABLES: tuple[str, ...] = ("documents", "chunks", "document_items", "settings")
+
+
+def get_database_stats(db: lancedb.DBConnection) -> dict:
+    """Collect stats for every haiku.rag table on the connection.
+
+    Missing tables return ``{"exists": False}``. Present tables include
+    ``num_rows``, ``total_bytes``, and ``num_versions``. The ``chunks``
+    entry additionally reports vector index status and, when an index
+    exists, ``num_indexed_rows`` and ``num_unindexed_rows``.
+    """
+    existing = set(db.list_tables().tables)
+    stats: dict = {}
+    tables: dict = {}
+
+    for name in REQUIRED_TABLES:
+        if name not in existing:
+            stats[name] = {"exists": False}
+            continue
+        tbl = db.open_table(name)
+        tables[name] = tbl
+        # lancedb's .stats() stub claims TableStatistics but returns a plain dict at runtime.
+        tbl_stats: dict = tbl.stats()  # ty: ignore[invalid-assignment]
+        stats[name] = {
+            "exists": True,
+            "num_rows": tbl_stats.get("num_rows", 0),
+            "total_bytes": tbl_stats.get("total_bytes", 0),
+            "num_versions": len(list(tbl.list_versions())),
+        }
+
+    if stats["chunks"]["exists"]:
+        chunks_tbl = tables["chunks"]
+        indices = chunks_tbl.list_indices()
+        has_vector_index = any("vector" in str(idx).lower() for idx in indices)
+        stats["chunks"]["has_vector_index"] = has_vector_index
+        if has_vector_index:
+            index_stats = chunks_tbl.index_stats("vector_idx")
+            if index_stats is not None:
+                stats["chunks"]["num_indexed_rows"] = index_stats.num_indexed_rows
+                stats["chunks"]["num_unindexed_rows"] = index_stats.num_unindexed_rows
+
+    return stats
+
+
 class Store:
     def __init__(
         self,
@@ -277,51 +321,6 @@ class Store:
     def _connection_mode(self) -> ConnectionMode:
         return ConnectionMode.from_config(self._config)
 
-    def get_stats(self) -> dict:
-        """Get comprehensive table statistics.
-
-        Returns:
-            Dictionary with statistics for documents and chunks tables including:
-            - Row counts
-            - Storage sizes
-            - Vector index status and statistics
-        """
-        stats_dict: dict = {
-            "documents": {"exists": False},
-            "chunks": {"exists": False},
-        }
-
-        # Documents table stats
-        doc_stats: dict = self.documents_table.stats()
-        stats_dict["documents"] = {
-            "exists": True,
-            "num_rows": doc_stats.get("num_rows", 0),
-            "total_bytes": doc_stats.get("total_bytes", 0),
-        }
-
-        # Chunks table stats
-        chunk_stats: dict = self.chunks_table.stats()
-        stats_dict["chunks"] = {
-            "exists": True,
-            "num_rows": chunk_stats.get("num_rows", 0),
-            "total_bytes": chunk_stats.get("total_bytes", 0),
-        }
-
-        # Vector index stats
-        indices = self.chunks_table.list_indices()
-        has_vector_index = any("vector" in str(idx).lower() for idx in indices)
-        stats_dict["chunks"]["has_vector_index"] = has_vector_index
-
-        if has_vector_index:
-            index_stats = self.chunks_table.index_stats("vector_idx")
-            if index_stats is not None:
-                stats_dict["chunks"]["num_indexed_rows"] = index_stats.num_indexed_rows
-                stats_dict["chunks"]["num_unindexed_rows"] = (
-                    index_stats.num_unindexed_rows
-                )
-
-        return stats_dict
-
     def _ensure_vector_index(self) -> None:
         """Create or rebuild vector index on chunks table.
 
@@ -368,8 +367,7 @@ class Store:
     def _init_tables(self):
         """Initialize database tables (create if they don't exist)."""
         existing_tables = self.db.list_tables().tables
-        required_tables = {"documents", "chunks", "document_items", "settings"}
-        missing_tables = required_tables - set(existing_tables)
+        missing_tables = set(REQUIRED_TABLES) - set(existing_tables)
 
         if missing_tables and self._read_only:
             raise ReadOnlyError(

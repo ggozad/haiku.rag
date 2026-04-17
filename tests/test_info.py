@@ -247,7 +247,7 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
     assert "document_items: absent" in out
 
     # Migration status should be surfaced
-    assert "Pending migrations:" in out
+    assert "migration(s) pending" in out
     assert "haiku-rag migrate" in out
 
 
@@ -308,7 +308,7 @@ async def test_app_info_reports_up_to_date(temp_db_path, capsys):
 
     out = capsys.readouterr().out
     assert "Database is up to date." in out
-    assert "Pending migrations" not in out
+    assert "migration(s) pending" not in out
 
 
 @pytest.mark.asyncio

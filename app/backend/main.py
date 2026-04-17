@@ -149,18 +149,20 @@ async def db_info(_: Request) -> JSONResponse:
             }
         )
 
+    from haiku.rag.store.engine import get_database_stats
+
     client = get_client()
-    stats = client.store.get_stats()
+    stats = get_database_stats(client.store.db)
 
     return JSONResponse(
         {
             "exists": True,
             "path": str(db_path),
-            "documents": stats.get("documents", {}).get("num_rows", 0),
-            "chunks": stats.get("chunks", {}).get("num_rows", 0),
-            "documents_bytes": stats.get("documents", {}).get("total_bytes", 0),
-            "chunks_bytes": stats.get("chunks", {}).get("total_bytes", 0),
-            "has_vector_index": stats.get("chunks", {}).get("has_vector_index", False),
+            "documents": stats["documents"].get("num_rows", 0),
+            "chunks": stats["chunks"].get("num_rows", 0),
+            "documents_bytes": stats["documents"].get("total_bytes", 0),
+            "chunks_bytes": stats["chunks"].get("total_bytes", 0),
+            "has_vector_index": stats["chunks"].get("has_vector_index", False),
         }
     )
 
