@@ -175,34 +175,7 @@ class TestAnalyzeTool:
         await analyze(ctx, question="How many documents?")
         assert captured_kwargs.get("filter") == "title = 'AI Overview'"
 
-    async def test_analyze_combines_state_filter_with_explicit_filter(
-        self, rag_db, monkeypatch
-    ):
-        from haiku.rag.skills.analysis import AnalysisState, create_skill
-
-        captured_kwargs = {}
-
-        async def mock_analyze(self, question, **kwargs):
-            captured_kwargs.update(kwargs)
-            return AnalysisResult(answer="Result", program="code()")
-
-        monkeypatch.setattr(HaikuRAG, "analyze", mock_analyze)
-
-        skill = create_skill(db_path=rag_db)
-        analyze = _get_tool(skill, "analyze")
-        state = AnalysisState(document_filter="title = 'AI Overview'")
-        ctx = _make_ctx(state)
-        await analyze(
-            ctx,
-            question="Count pages",
-            filter="uri LIKE '%test%'",
-        )
-        result_filter = captured_kwargs["filter"]
-        assert isinstance(result_filter, str)
-        assert "title = 'AI Overview'" in result_filter
-        assert "uri LIKE '%test%'" in result_filter
-
-    async def test_analyze_with_document_and_filter(self, rag_db, monkeypatch):
+    async def test_analyze_with_document(self, rag_db, monkeypatch):
         from haiku.rag.skills.analysis import create_skill
 
         captured_kwargs = {}
@@ -220,7 +193,5 @@ class TestAnalyzeTool:
             ctx,
             question="Count pages",
             document="AI Overview",
-            filter="title = 'AI Overview'",
         )
         assert captured_kwargs.get("documents") == ["AI Overview"]
-        assert captured_kwargs.get("filter") == "title = 'AI Overview'"

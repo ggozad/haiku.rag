@@ -63,6 +63,4 @@ docs = create_document_toolset(config)
 
 `haiku.rag.tools.filters` provides utilities for building SQL filters:
 
-- **`build_document_filter(document_name)`** — Builds a LIKE filter matching against both `uri` and `title`, case-insensitive. Also matches without spaces (e.g., "TB MED 593" matches "tbmed593").
-- **`build_multi_document_filter(document_names)`** — Combines multiple document name filters with OR logic.
-- **`combine_filters(filter1, filter2)`** — Combines two filters with AND logic. Returns `None` if both are `None`.
+- **`build_multi_document_filter(document_names)`** — Combines multiple document name filters with OR logic. Matches against both `uri` and `title`, case-insensitive.

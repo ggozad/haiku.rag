@@ -8,7 +8,6 @@ from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.document import DocumentInfo
-from haiku.rag.tools.filters import combine_filters
 from haiku.rag.tools.qa import QAHistoryEntry
 from haiku.skills.state import SkillRunDeps
 
@@ -210,13 +209,15 @@ async def skill_analyze(
     config: AppConfig,
     question: str,
     document: str | None = None,
-    filter: str | None = None,
+    document_filter: str | None = None,
 ) -> tuple[str, str, str | None]:
     from haiku.rag.client import HaikuRAG
 
     async with HaikuRAG(db_path, config=config, read_only=True) as rag:
         documents = [document] if document else None
-        result = await rag.analyze(question, documents=documents, filter=filter)
+        result = await rag.analyze(
+            question, documents=documents, filter=document_filter
+        )
         output = result.answer
         if result.program:
             output += f"\n\nProgram:\n{result.program}"
@@ -465,7 +466,6 @@ def create_skill_tools(
             ctx: RunContext[SkillRunDeps],
             question: str,
             document: str | None = None,
-            filter: str | None = None,
         ) -> str:
             """Answer complex analytical questions using code execution.
 
@@ -475,13 +475,15 @@ def create_skill_tools(
             Args:
                 question: The question to answer.
                 document: Optional document ID or title to pre-load for analysis.
-                filter: Optional SQL WHERE clause to filter documents.
             """
             state = _get_state(ctx, state_type)
             state_filter = state.document_filter if state else None
-            effective_filter = combine_filters(state_filter, filter)
             output, answer, program = await skill_analyze(
-                db_path, config, question, document=document, filter=effective_filter
+                db_path,
+                config,
+                question,
+                document=document,
+                document_filter=state_filter,
             )
             if state:
                 state.analyses.append(
