@@ -26,12 +26,18 @@ def run_chat(
         ) from e
 
     from haiku.rag.config import get_config
-    from haiku.rag.utils import get_model
+    from haiku.rag.utils import get_model, parse_model_option
     from haiku.skills.models import Skill
 
     config = get_config()
     if db_path is None:
         db_path = config.storage.data_dir / "haiku.rag.lancedb"
+
+    if model:
+        model_config = parse_model_option(model)
+        config.qa.model = model_config
+        config.research.model = model_config
+        config.analysis.model = model_config
 
     enabled = skills or ["rag"]
     skill_list: list[Skill] = []
