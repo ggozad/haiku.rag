@@ -10,6 +10,7 @@ from pydantic_monty import CallbackFile, MemoryFile, OSAccess
 
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.models.chunk import SearchResult
 
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
@@ -47,6 +48,7 @@ class Sandbox:
     _client: "HaikuRAG"
     _config: AppConfig
     _context: AnalysisContext
+    _search_results: "list[SearchResult]"
 
     def __init__(
         self,
@@ -57,6 +59,7 @@ class Sandbox:
         self._client = client
         self._config = config
         self._context = context
+        self._search_results = []
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -67,6 +70,7 @@ class Sandbox:
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
             results = await client.search(query, limit=limit, filter=context.filter)
             expanded = await client.expand_context(results)
+            self._search_results.extend(expanded)
             return [
                 {
                     "chunk_id": r.chunk_id,

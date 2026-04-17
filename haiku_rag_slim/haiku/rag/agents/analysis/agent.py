@@ -1,13 +1,13 @@
 from pydantic_ai import Agent, RunContext
 
 from haiku.rag.agents.analysis.dependencies import AnalysisDeps
-from haiku.rag.agents.analysis.models import AnalysisResult, CodeExecution
+from haiku.rag.agents.analysis.models import CodeExecution, RawAnalysisResult
 from haiku.rag.agents.analysis.prompts import ANALYSIS_SYSTEM_PROMPT
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_model
 
 
-def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, AnalysisResult]:
+def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, RawAnalysisResult]:
     """Create an analysis agent with code execution capability.
 
     The analysis agent can write and execute Python code in a sandboxed
@@ -22,10 +22,10 @@ def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, AnalysisResu
     """
     model = get_model(config.analysis.model, config)
 
-    agent: Agent[AnalysisDeps, AnalysisResult] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+    agent: Agent[AnalysisDeps, RawAnalysisResult] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         model,
         deps_type=AnalysisDeps,
-        output_type=AnalysisResult,
+        output_type=RawAnalysisResult,
         instructions=ANALYSIS_SYSTEM_PROMPT,
         retries=3,
     )

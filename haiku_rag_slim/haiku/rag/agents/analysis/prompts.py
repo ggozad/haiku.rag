@@ -116,12 +116,13 @@ Not supported: most imports (only `json`, `re`, `math`, `pathlib` are available)
 
 Your final response MUST be valid JSON matching this exact schema:
 ```json
-{"answer": "Your complete answer here as a string", "program": "Your final consolidated program here as a string"}
+{"answer": "Your answer here", "program": "Your final program here", "cited_chunks": ["chunk-id-1", "chunk-id-2"]}
 ```
 
 - `answer`: A clear answer to the user's question with key findings and references to specific documents/chunks.
 - `program`: A single, self-contained Python program that produces the answer. Consolidate your exploratory code executions into one clean script.
+- `cited_chunks`: List of chunk_id values from search results that informed your answer. Copy the full UUID strings from the `chunk_id` field of search results you used.
 
-Do NOT return arbitrary JSON structures. Always use the exact format: {"answer": "...", "program": "..."}
+Do NOT return arbitrary JSON structures. Always use the exact format above.
 
 You MUST call execute_code at least once before providing your answer. Never give up without trying to execute code first."""

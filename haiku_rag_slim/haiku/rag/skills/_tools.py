@@ -210,7 +210,7 @@ async def skill_analyze(
     question: str,
     document: str | None = None,
     document_filter: str | None = None,
-) -> tuple[str, str, str | None]:
+) -> tuple[str, str, str | None, "list[Citation]"]:
     from haiku.rag.client import HaikuRAG
 
     async with HaikuRAG(db_path, config=config, read_only=True) as rag:
@@ -222,7 +222,7 @@ async def skill_analyze(
         if result.program:
             output += f"\n\nProgram:\n{result.program}"
 
-    return output, result.answer, result.program
+    return output, result.answer, result.program, result.citations
 
 
 def update_documents_state(
@@ -244,6 +244,15 @@ def _get_state(ctx: RunContext[SkillRunDeps], state_type: type[BaseModel]) -> An
     if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, state_type):
         return ctx.deps.state
     return None
+
+
+def _append_citations(state: Any, citations: "list[Citation]") -> None:
+    """Index and append citations to a skill state's citations list."""
+    next_index = len(state.citations) + 1
+    for citation in citations:
+        citation.index = next_index
+        next_index += 1
+    state.citations.extend(citations)
 
 
 def create_skill_extras(
@@ -406,11 +415,7 @@ def create_skill_tools(
             )
 
             if state:
-                next_index = len(state.citations) + 1
-                for citation in citations:
-                    citation.index = next_index
-                    next_index += 1
-                state.citations.extend(citations)
+                _append_citations(state, citations)
                 state.qa_history.append(
                     QAHistoryEntry(
                         question=question, answer=answer, citations=citations
@@ -476,9 +481,11 @@ def create_skill_tools(
                 question: The question to answer.
                 document: Optional document ID or title to pre-load for analysis.
             """
+            from haiku.rag.utils import format_citations
+
             state = _get_state(ctx, state_type)
             state_filter = state.document_filter if state else None
-            output, answer, program = await skill_analyze(
+            output, answer, program, citations = await skill_analyze(
                 db_path,
                 config,
                 question,
@@ -493,6 +500,11 @@ def create_skill_tools(
                         program=program,
                     )
                 )
+                if citations:
+                    _append_citations(state, citations)
+
+            if citations:
+                output += "\n\n" + format_citations(citations)
 
             return output
 

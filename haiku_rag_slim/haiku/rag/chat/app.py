@@ -30,6 +30,7 @@ from textual.worker import Worker
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.skills.analysis import AnalysisState
 from haiku.rag.skills.rag import RAGState, get_agent_preamble
 from haiku.skills.agent import (
     SkillToolset,
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 
 
 RAG_STATE_NAMESPACE = "rag"
+ANALYSIS_STATE_NAMESPACE = "analysis"
 
 
 class ChatApp(App):
@@ -319,15 +321,15 @@ class ChatApp(App):
             chat_input.focus()
 
     async def _show_citations(self, chat_history: "ChatHistory") -> None:
-        """Show citations from the RAG state after an agent response."""
+        """Show citations from skill states after an agent response."""
         if not self._toolset:
             return
-        rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
-        if rag_state is None:
-            return
-        citations = getattr(rag_state, "citations", [])
+        citations = []
+        for namespace in (RAG_STATE_NAMESPACE, ANALYSIS_STATE_NAMESPACE):
+            state = self._toolset.get_namespace(namespace)
+            if state:
+                citations.extend(getattr(state, "citations", []))
         if citations:
-            # Show only new citations (since last response)
             await chat_history.add_citations(citations)
 
     async def action_clear_chat(self) -> None:
@@ -420,9 +422,11 @@ class ChatApp(App):
         self._document_filter = event.selected
 
         if self._toolset:
+            doc_filter = build_multi_document_filter(self._document_filter)
             rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
             if isinstance(rag_state, RAGState):
-                rag_state.document_filter = build_multi_document_filter(
-                    self._document_filter
-                )
-                self._state = self._toolset.build_state_snapshot()
+                rag_state.document_filter = doc_filter
+            analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
+            if isinstance(analysis_state, AnalysisState):
+                analysis_state.document_filter = doc_filter
+            self._state = self._toolset.build_state_snapshot()

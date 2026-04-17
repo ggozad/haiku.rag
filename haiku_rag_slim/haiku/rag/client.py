@@ -1239,10 +1239,19 @@ class HaikuRAG:
             context=context,
         )
 
+        from haiku.rag.agents.analysis.models import AnalysisResult
+        from haiku.rag.agents.research.models import resolve_citations
+
         agent = create_analysis_agent(self._config)
         result = await agent.run(question, deps=deps)
 
-        return result.output
+        output = result.output
+        citations = resolve_citations(output.cited_chunks, sandbox._search_results)
+        return AnalysisResult(
+            answer=output.answer,
+            program=output.program,
+            citations=citations,
+        )
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.

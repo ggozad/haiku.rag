@@ -2,8 +2,9 @@ import os
 from functools import cache
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills._tools import AnalysisEntry
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
@@ -13,6 +14,7 @@ from haiku.skills.parser import parse_skill_md
 class AnalysisState(BaseModel):
     document_filter: str | None = None
     analyses: list[AnalysisEntry] = []
+    citations: list[Citation] = Field(default_factory=list)
 
 
 STATE_TYPE = AnalysisState

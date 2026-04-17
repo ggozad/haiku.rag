@@ -5,7 +5,7 @@ from pydantic_ai import Agent
 
 from haiku.rag.agents.analysis.agent import create_analysis_agent
 from haiku.rag.agents.analysis.dependencies import AnalysisDeps
-from haiku.rag.agents.analysis.models import AnalysisResult, CodeExecution
+from haiku.rag.agents.analysis.models import CodeExecution, RawAnalysisResult
 from haiku.rag.config import AppConfig, Config
 
 
@@ -19,7 +19,7 @@ class TestCreateAnalysisAgent:
         agent = create_analysis_agent(Config)
         assert isinstance(agent, Agent)
         assert agent.deps_type is AnalysisDeps
-        assert agent.output_type is AnalysisResult
+        assert agent.output_type is RawAnalysisResult
 
     def test_agent_has_execute_code_tool(self):
         agent = create_analysis_agent(Config)

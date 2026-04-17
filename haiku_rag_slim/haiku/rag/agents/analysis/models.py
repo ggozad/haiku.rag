@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from haiku.rag.agents.research.models import Citation
+
 
 class CodeExecution(BaseModel):
     """Result of executing a code block in the analysis sandbox."""
@@ -10,8 +12,20 @@ class CodeExecution(BaseModel):
     success: bool = Field(description="Whether execution completed without error")
 
 
-class AnalysisResult(BaseModel):
-    """Result from analysis agent execution."""
+class RawAnalysisResult(BaseModel):
+    """Raw result from the analysis agent (LLM output)."""
 
     answer: str = Field(description="The answer to the user's question")
     program: str = Field(description="The final consolidated program")
+    cited_chunks: list[str] = Field(
+        default_factory=list,
+        description="Chunk IDs from search results that informed the answer. Copy full UUIDs from search result chunk_id fields.",
+    )
+
+
+class AnalysisResult(BaseModel):
+    """Result from analysis execution with resolved citations."""
+
+    answer: str
+    program: str
+    citations: list[Citation] = Field(default_factory=list)
