@@ -8,7 +8,6 @@ from haiku.rag.skills.rag import (
     state_metadata,
 )
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.tools.document import DocumentInfo
 from haiku.skills.models import SkillMetadata, StateMetadata
 
 from .conftest import _get_tool, _make_ctx
@@ -212,17 +211,6 @@ class TestListDocumentsTool:
         results = await list_docs(ctx)
         assert isinstance(results, list)
         assert len(results) == 2
-
-    async def test_list_documents_updates_state(self, rag_db):
-        from haiku.rag.skills.rag import RAGState, create_skill
-
-        skill = create_skill(db_path=rag_db)
-        list_docs = _get_tool(skill, "list_documents")
-        state = RAGState()
-        ctx = _make_ctx(state)
-        await list_docs(ctx)
-        assert len(state.documents) == 2
-        assert isinstance(state.documents[0], DocumentInfo)
 
     async def test_list_documents_applies_document_filter_from_state(self, rag_db):
         from haiku.rag.skills.rag import RAGState, create_skill

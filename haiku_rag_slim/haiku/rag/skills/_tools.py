@@ -7,7 +7,6 @@ from pydantic_ai import RunContext
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.tools.document import DocumentInfo
 from haiku.skills.state import SkillRunDeps
 
 
@@ -84,21 +83,6 @@ async def skill_get_document(
             "created_at": str(document.created_at),
             "updated_at": str(document.updated_at),
         }
-
-
-def update_documents_state(
-    documents_state: list[DocumentInfo],
-    doc_dicts: list[dict[str, Any]],
-) -> None:
-    for doc_dict in doc_dicts:
-        doc_info = DocumentInfo(
-            id=str(doc_dict["id"]),
-            title=doc_dict["title"] or "Untitled",
-            uri=doc_dict.get("uri") or "",
-            created=doc_dict.get("created_at", ""),
-        )
-        if not any(d.id == doc_info.id for d in documents_state):
-            documents_state.append(doc_info)
 
 
 def _get_state(ctx: RunContext[SkillRunDeps], state_type: type[BaseModel]) -> Any:
@@ -237,8 +221,6 @@ def create_skill_tools(
                 config,
                 filter=state.document_filter if state else None,
             )
-            if state:
-                update_documents_state(state.documents, result)
             return result
 
         tools["list_documents"] = list_documents
@@ -253,12 +235,7 @@ def create_skill_tools(
             Args:
                 query: Document ID, title, or URI to look up.
             """
-            result = await skill_get_document(db_path, config, query)
-            if result is not None:
-                state = _get_state(ctx, state_type)
-                if state:
-                    update_documents_state(state.documents, [result])
-            return result
+            return await skill_get_document(db_path, config, query)
 
         tools["get_document"] = get_document
 

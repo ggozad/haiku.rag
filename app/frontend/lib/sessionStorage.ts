@@ -9,20 +9,12 @@ export interface Citation {
 	content: string;
 }
 
-export interface DocumentInfo {
-	id: string;
-	title: string;
-	uri: string;
-	created: string;
-}
-
 // Matches RAGState from the backend skill
 export interface RAGState {
 	citation_index: Record<string, Citation>;
 	citations: string[][];
 	document_filter: string | null;
 	searches: Record<string, unknown[]>;
-	documents: DocumentInfo[];
 }
 
 export interface StoredMessage {
@@ -50,7 +42,6 @@ export function normalizeRAGState(state?: Partial<RAGState>): RAGState {
 		citations: state?.citations ?? [],
 		document_filter: state?.document_filter ?? null,
 		searches: state?.searches ?? {},
-		documents: state?.documents ?? [],
 	};
 }
 

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.tools.document import DocumentInfo
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 
@@ -34,7 +33,6 @@ class RAGState(BaseModel):
     citations: list[list[str]] = Field(default_factory=list)
     document_filter: str | None = None
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
-    documents: list[DocumentInfo] = Field(default_factory=list)
 
 
 STATE_TYPE = RAGState

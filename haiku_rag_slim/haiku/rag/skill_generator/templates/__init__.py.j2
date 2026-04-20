@@ -8,9 +8,6 @@ from haiku.skills.parser import parse_skill_md
 {% if "cite" in tool_names %}
 from haiku.rag.agents.research.models import Citation
 {% endif %}
-{% if "search" in tool_names or "list_documents" in tool_names or "get_document" in tool_names %}
-from haiku.rag.tools.document import DocumentInfo
-{% endif %}
 {% if "search" in tool_names %}
 from haiku.rag.store.models.chunk import SearchResult
 {% endif %}
@@ -37,9 +34,6 @@ class SkillState(BaseModel):
     document_filter: str | None = None
 {% if "search" in tool_names %}
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
-{% endif %}
-{% if "search" in tool_names or "list_documents" in tool_names or "get_document" in tool_names %}
-    documents: list[DocumentInfo] = Field(default_factory=list)
 {% endif %}
 {% if "execute_code" in tool_names %}
     executions: list[CodeExecutionEntry] = Field(default_factory=list)
