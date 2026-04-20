@@ -240,6 +240,7 @@ def create_skill_tools(
         tools["get_document"] = get_document
 
     if "execute_code" in tool_names:
+        _sandbox: list[Any] = []  # mutable container for closure; holds [Sandbox] or []
 
         async def execute_code(ctx: RunContext[SkillRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
@@ -248,32 +249,34 @@ def create_skill_tools(
             and a virtual filesystem at /documents/ with document content and
             structure (metadata.json, content.txt, items.jsonl per document).
 
-            Use print() to output results. Each call runs in a fresh
-            interpreter — variables do not persist between calls.
+            Use print() to output results. Variables persist between calls.
 
             Args:
                 code: Python code to execute.
             """
             from haiku.rag.agents.analysis.dependencies import AnalysisContext
             from haiku.rag.agents.analysis.sandbox import Sandbox
-            from haiku.rag.client import HaikuRAG
+
+            if not _sandbox:
+                state = _get_state(ctx, state_type)
+                doc_filter = state.document_filter if state else None
+                context = AnalysisContext(filter=doc_filter)
+                _sandbox.append(
+                    Sandbox(db_path=db_path, config=config, context=context)
+                )
+
+            sandbox = _sandbox[0]
+            result = await sandbox.execute(code)
 
             state = _get_state(ctx, state_type)
-            doc_filter = state.document_filter if state else None
-            context = AnalysisContext(filter=doc_filter)
-
-            async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                sandbox = Sandbox(client=rag, config=config, context=context)
-                result = await sandbox.execute(code)
-
-                if state and sandbox._search_results:
-                    existing = state.searches.get("_sandbox", [])
-                    seen = {r.chunk_id for r in existing}
-                    for sr in sandbox._search_results:
-                        if sr.chunk_id not in seen:
-                            existing.append(sr)
-                            seen.add(sr.chunk_id)
-                    state.searches["_sandbox"] = existing
+            if state and sandbox._search_results:
+                existing = state.searches.get("_sandbox", [])
+                seen = {r.chunk_id for r in existing}
+                for sr in sandbox._search_results:
+                    if sr.chunk_id not in seen:
+                        existing.append(sr)
+                        seen.add(sr.chunk_id)
+                state.searches["_sandbox"] = existing
 
             if state:
                 state.executions.append(

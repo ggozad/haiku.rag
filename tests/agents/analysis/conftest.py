@@ -14,8 +14,9 @@ async def empty_client(temp_db_path):
 
 
 @pytest.fixture
-async def sandbox(empty_client):
+async def sandbox(temp_db_path):
     """Create a Monty sandbox for testing."""
-    config = AppConfig()
-    context = AnalysisContext()
-    return Sandbox(client=empty_client, config=config, context=context)
+    async with HaikuRAG(temp_db_path, create=True):
+        config = AppConfig()
+        context = AnalysisContext()
+        return Sandbox(db_path=temp_db_path, config=config, context=context)

@@ -3,10 +3,11 @@ import concurrent.futures
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
-from pydantic_monty import CallbackFile, MemoryFile, OSAccess
+from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
 
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
@@ -14,8 +15,6 @@ from haiku.rag.store.models.chunk import SearchResult
 
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
-
-    from haiku.rag.client import HaikuRAG
 
 
 @dataclass
@@ -41,35 +40,46 @@ class Sandbox:
     and resolved asynchronously on the host.
     Documents are exposed via a virtual filesystem at ``/documents/{id}/``.
 
-        sandbox = Sandbox(client, config, context)
-        result = await sandbox.execute("print('hello')")
+    The interpreter uses a REPL session — variables persist across
+    ``execute()`` calls within the same Sandbox instance.
+
+        sandbox = Sandbox(db_path, config, context)
+        result = await sandbox.execute("x = await search('query')")
+        result = await sandbox.execute("print(x[0]['content'])")  # x persists
     """
 
-    _client: "HaikuRAG"
+    _db_path: Path
     _config: AppConfig
     _context: AnalysisContext
     _search_results: "list[SearchResult]"
+    _repl: MontyRepl | None
+    _vfs: OSAccess | None
 
     def __init__(
         self,
-        client: "HaikuRAG",
+        db_path: Path,
         config: AppConfig,
         context: AnalysisContext,
     ):
-        self._client = client
+        self._db_path = db_path
         self._config = config
         self._context = context
         self._search_results = []
+        self._repl = None
+        self._vfs = None
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
-        client = self._client
+        db_path = self._db_path
         config = self._config
         context = self._context
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
-            results = await client.search(query, limit=limit, filter=context.filter)
-            expanded = await client.expand_context(results)
+            from haiku.rag.client import HaikuRAG
+
+            async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+                results = await rag.search(query, limit=limit, filter=context.filter)
+                expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
             return [
                 {
@@ -88,7 +98,10 @@ class Sandbox:
             ]
 
         async def list_documents() -> list[dict[str, Any]]:
-            docs = await client.list_documents(filter=context.filter)
+            from haiku.rag.client import HaikuRAG
+
+            async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+                docs = await rag.list_documents(filter=context.filter)
             return [
                 {
                     "id": d.id,
@@ -123,10 +136,14 @@ class Sandbox:
         - content.txt: CallbackFile (lazy, can be large)
         - items.jsonl: CallbackFile (lazy, can be large)
         """
-        client = self._client
+        from haiku.rag.client import HaikuRAG
+
+        db_path = self._db_path
+        config = self._config
         files: list[MemoryFile | CallbackFile] = []
 
-        docs = await client.list_documents(filter=self._context.filter)
+        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+            docs = await rag.list_documents(filter=self._context.filter)
 
         for doc in docs:
             if not doc.id:
@@ -150,17 +167,21 @@ class Sandbox:
             ) -> Callable[["PurePosixPath"], str]:
                 def read_content(_path: "PurePosixPath") -> str:
                     async def _fetch() -> str:
+                        from haiku.rag.client import HaikuRAG
                         from haiku.rag.utils import escape_sql_string
 
-                        safe_id = escape_sql_string(did)
-                        rows = list(
-                            client.store.documents_table.search()
-                            .select(["content"])
-                            .where(f"id = '{safe_id}'")
-                            .limit(1)
-                            .to_list()
-                        )
-                        return rows[0]["content"] if rows else ""
+                        async with HaikuRAG(
+                            db_path, config=config, read_only=True
+                        ) as rag:
+                            safe_id = escape_sql_string(did)
+                            rows = list(
+                                rag.store.documents_table.search()
+                                .select(["content"])
+                                .where(f"id = '{safe_id}'")
+                                .limit(1)
+                                .to_list()
+                            )
+                            return rows[0]["content"] if rows else ""
 
                     return _run_async(_fetch())
 
@@ -171,11 +192,16 @@ class Sandbox:
             ) -> Callable[["PurePosixPath"], str]:
                 def read_items(_path: "PurePosixPath") -> str:
                     async def _fetch() -> str:
-                        items = (
-                            await client.document_item_repository.get_items_in_range(
-                                did, 0, 999999
+                        from haiku.rag.client import HaikuRAG
+
+                        async with HaikuRAG(
+                            db_path, config=config, read_only=True
+                        ) as rag:
+                            items = (
+                                await rag.document_item_repository.get_items_in_range(
+                                    did, 0, 999999
+                                )
                             )
-                        )
                         lines = []
                         for item in items:
                             lines.append(
@@ -213,37 +239,44 @@ class Sandbox:
 
         return OSAccess(files)
 
-    async def execute(self, code: str) -> SandboxResult:
-        """Execute Python code in the Monty interpreter."""
-        external_fns = self._build_external_functions()
-        vfs = await self._build_vfs()
-
-        input_names: list[str] = []
-        inputs: dict[str, Any] | None = None
-        if self._context.documents:
-            input_names.append("documents")
-            inputs = {
-                "documents": [
-                    {
-                        "id": d.id,
-                        "title": d.title,
-                        "uri": d.uri,
-                        "content": d.content,
-                    }
-                    for d in self._context.documents
-                ]
-            }
-
-        try:
-            monty = pydantic_monty.Monty(
-                code,
-                inputs=input_names,
+    async def _ensure_initialized(self) -> None:
+        """Initialize the REPL session and VFS on first use."""
+        if self._repl is None:
+            self._vfs = await self._build_vfs()
+            self._repl = MontyRepl(
+                limits={
+                    "max_duration_secs": self._config.analysis.code_timeout,
+                },
             )
-        except (
-            pydantic_monty.MontySyntaxError,
-            pydantic_monty.MontyRuntimeError,
-        ) as e:
-            return SandboxResult(stdout="", stderr=str(e), success=False)
+            if self._context.documents:
+                await pydantic_monty.run_repl_async(
+                    self._repl,
+                    "pass",
+                    inputs={
+                        "documents": [
+                            {
+                                "id": d.id,
+                                "title": d.title,
+                                "uri": d.uri,
+                                "content": d.content,
+                            }
+                            for d in self._context.documents
+                        ]
+                    },
+                    external_functions=self._build_external_functions(),
+                    os=self._vfs,
+                )
+
+    async def execute(self, code: str) -> SandboxResult:
+        """Execute Python code in the Monty REPL.
+
+        Variables persist across calls within the same Sandbox instance.
+        """
+        await self._ensure_initialized()
+        assert self._repl is not None
+        assert self._vfs is not None
+
+        external_fns = self._build_external_functions()
 
         stdout_lines: list[str] = []
 
@@ -251,20 +284,19 @@ class Sandbox:
             stdout_lines.append(text)
 
         max_chars = self._config.analysis.max_output_chars
-        limits: pydantic_monty.ResourceLimits = {
-            "max_duration_secs": self._config.analysis.code_timeout,
-        }
 
         try:
-            output = await pydantic_monty.run_monty_async(
-                monty,
-                inputs=inputs,
+            output = await pydantic_monty.run_repl_async(
+                self._repl,
+                code,
                 external_functions=external_fns,
-                limits=limits,
                 print_callback=print_callback,
-                os=vfs,
+                os=self._vfs,
             )
-        except pydantic_monty.MontyRuntimeError as e:
+        except (
+            pydantic_monty.MontySyntaxError,
+            pydantic_monty.MontyRuntimeError,
+        ) as e:
             stdout = "".join(stdout_lines)
             if len(stdout) > max_chars:
                 stdout = stdout[:max_chars] + "\n... (output truncated)"

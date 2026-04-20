@@ -15,7 +15,7 @@ You solve complex analytical questions by writing and executing Python code agai
 ## Tools
 
 ### execute_code
-Execute Python code in a sandboxed interpreter. Each call runs in a fresh interpreter — variables do not persist between calls. Use `print()` to output results.
+Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
 
 Inside the code, these functions are available (use `await`):
 - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels
@@ -71,7 +71,7 @@ Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) tha
 
 ## Important
 
-- Each `execute_code` call runs in a fresh interpreter (no persistent variables between calls)
+- Variables persist between `execute_code` calls — you can search in one call and process results in the next
 - Use `print()` to output results — the output is your only feedback
 - Always execute code to answer questions — don't just describe what code would do
 - Use `await` for all async functions inside execute_code (search, list_documents, llm)

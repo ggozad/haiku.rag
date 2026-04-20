@@ -1230,7 +1230,7 @@ class HaikuRAG:
             context.documents = loaded_docs if loaded_docs else None
 
         sandbox = Sandbox(
-            client=self,
+            db_path=self.store.db_path,
             config=self._config,
             context=context,
         )

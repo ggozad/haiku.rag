@@ -99,7 +99,7 @@ class TestSandboxListDocuments:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "docs = await list_documents()\n"
                 "print(len(docs))\n"
@@ -126,7 +126,7 @@ class TestSandboxSearch:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "results = await search('fox', limit=5)\n"
                 "print(len(results))\n"
@@ -149,7 +149,7 @@ class TestSandboxSearch:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "results = await search('fox', limit=1)\n"
                 "r = results[0]\n"
@@ -175,7 +175,7 @@ class TestSandboxSearch:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "results = await search('fox', limit=1)\n"
                 "print(type(results[0]['content']).__name__)\n"
@@ -242,29 +242,31 @@ class TestSandboxOutputTruncation:
     """Test output truncation behavior."""
 
     @pytest.mark.asyncio
-    async def test_truncate_stdout_on_runtime_error(self, empty_client):
+    async def test_truncate_stdout_on_runtime_error(self, temp_db_path):
         """Test stdout is truncated when a runtime error occurs after large output."""
-        config = AppConfig()
-        config.analysis.max_output_chars = 20
-        context = AnalysisContext()
-        sb = Sandbox(client=empty_client, config=config, context=context)
-        result = await sb.execute("print('a' * 100)\nx = 1/0")
-        assert not result.success
-        assert "ZeroDivisionError" in result.stderr
-        assert result.stdout.endswith("... (output truncated)")
-        assert len(result.stdout) < 100
+        async with HaikuRAG(temp_db_path, create=True):
+            config = AppConfig()
+            config.analysis.max_output_chars = 20
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute("print('a' * 100)\nx = 1/0")
+            assert not result.success
+            assert "ZeroDivisionError" in result.stderr
+            assert result.stdout.endswith("... (output truncated)")
+            assert len(result.stdout) < 100
 
     @pytest.mark.asyncio
-    async def test_truncate_successful_output(self, empty_client):
+    async def test_truncate_successful_output(self, temp_db_path):
         """Test output is truncated on successful execution with large output."""
-        config = AppConfig()
-        config.analysis.max_output_chars = 20
-        context = AnalysisContext()
-        sb = Sandbox(client=empty_client, config=config, context=context)
-        result = await sb.execute("print('b' * 100)")
-        assert result.success
-        assert result.stdout.endswith("... (output truncated)")
-        assert len(result.stdout) < 100
+        async with HaikuRAG(temp_db_path, create=True):
+            config = AppConfig()
+            config.analysis.max_output_chars = 20
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute("print('b' * 100)")
+            assert result.success
+            assert result.stdout.endswith("... (output truncated)")
+            assert len(result.stdout) < 100
 
 
 class TestSandboxVFS:
@@ -293,7 +295,7 @@ class TestSandboxVFS:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "from pathlib import Path\n"
                 "dirs = list(Path('/documents').iterdir())\n"
@@ -317,7 +319,7 @@ class TestSandboxVFS:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "from pathlib import Path\n"
                 "import json\n"
@@ -342,7 +344,7 @@ class TestSandboxVFS:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "from pathlib import Path\n"
                 f"content = Path('/documents/{doc.id}/content.txt').read_text()\n"
@@ -364,7 +366,7 @@ class TestSandboxVFS:
             )
 
             context = AnalysisContext()
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "from pathlib import Path\n"
                 "import json\n"
@@ -399,7 +401,7 @@ class TestSandboxVFS:
             )
 
             context = AnalysisContext(filter="uri LIKE 'public://%'")
-            sb = Sandbox(client=client, config=config, context=context)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute(
                 "from pathlib import Path\n"
                 "import json\n"
@@ -425,24 +427,25 @@ class TestSandboxPreloadedDocuments:
         assert "NameError" in result.stderr
 
     @pytest.mark.asyncio
-    async def test_documents_variable_available_with_preload(self, empty_client):
+    async def test_documents_variable_available_with_preload(self, temp_db_path):
         """documents variable is available when context.documents is set."""
-        config = AppConfig()
-        docs = [
-            Document(id="1", content="Content A", title="Doc A", uri="a://1"),
-            Document(id="2", content="Content B", title="Doc B", uri="b://2"),
-        ]
-        context = AnalysisContext(documents=docs)
-        sb = Sandbox(client=empty_client, config=config, context=context)
-        result = await sb.execute(
-            "print(len(documents))\n"
-            "print(documents[0]['title'])\n"
-            "print(documents[1]['title'])"
-        )
-        assert result.success
-        assert "2" in result.stdout
-        assert "Doc A" in result.stdout
-        assert "Doc B" in result.stdout
+        async with HaikuRAG(temp_db_path, create=True):
+            config = AppConfig()
+            docs = [
+                Document(id="1", content="Content A", title="Doc A", uri="a://1"),
+                Document(id="2", content="Content B", title="Doc B", uri="b://2"),
+            ]
+            context = AnalysisContext(documents=docs)
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                "print(len(documents))\n"
+                "print(documents[0]['title'])\n"
+                "print(documents[1]['title'])"
+            )
+            assert result.success
+            assert "2" in result.stdout
+            assert "Doc A" in result.stdout
+            assert "Doc B" in result.stdout
 
 
 class TestSandboxLLM:
@@ -450,14 +453,15 @@ class TestSandboxLLM:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_llm_function(self, allow_model_requests, empty_client):
+    async def test_llm_function(self, allow_model_requests, temp_db_path):
         """Test llm() calls the model and returns a string."""
-        config = AppConfig()
-        context = AnalysisContext()
-        sb = Sandbox(client=empty_client, config=config, context=context)
-        result = await sb.execute(
-            "answer = await llm('What is 2 + 2? Reply with just the number.')\n"
-            "print(answer)"
-        )
-        assert result.success
-        assert "4" in result.stdout
+        async with HaikuRAG(temp_db_path, create=True):
+            config = AppConfig()
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                "answer = await llm('What is 2 + 2? Reply with just the number.')\n"
+                "print(answer)"
+            )
+            assert result.success
+            assert "4" in result.stdout
