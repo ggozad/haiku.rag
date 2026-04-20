@@ -52,6 +52,32 @@ class DocumentItemRepository:
         items.sort(key=lambda x: x.position)
         return items
 
+    async def get_all_items_grouped(
+        self, document_ids: list[str] | None = None
+    ) -> dict[str, list[DocumentItem]]:
+        """Get all items grouped by document_id in a single query.
+
+        Args:
+            document_ids: If provided, only fetch items for these documents.
+                If None, fetches all items.
+
+        Returns:
+            Dict mapping document_id to sorted list of DocumentItem.
+        """
+        query = self.store.document_items_table.search()
+        if document_ids is not None:
+            safe_ids = ", ".join(f"'{escape_sql_string(did)}'" for did in document_ids)
+            query = query.where(f"document_id IN ({safe_ids})")
+        rows = query.to_list()
+
+        grouped: dict[str, list[DocumentItem]] = {}
+        for row in rows:
+            item = self._record_to_item(row)
+            grouped.setdefault(item.document_id, []).append(item)
+        for items in grouped.values():
+            items.sort(key=lambda x: x.position)
+        return grouped
+
     async def get_items_in_range(
         self, document_id: str, start: int, end: int
     ) -> list[DocumentItem]:

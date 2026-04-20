@@ -55,6 +55,7 @@ class Sandbox:
     _config: AppConfig
     _context: AnalysisContext
     _search_results: "list[SearchResult]"
+    _items_cache: dict[str, str] | None
 
     def __init__(
         self,
@@ -66,6 +67,7 @@ class Sandbox:
         self._config = config
         self._context = context
         self._search_results = []
+        self._items_cache = None
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -147,6 +149,51 @@ class Sandbox:
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
             docs = await rag.list_documents(filter=self._context.filter)
 
+        doc_ids = [doc.id for doc in docs if doc.id]
+
+        def _load_items_cache() -> dict[str, str]:
+            """Bulk-fetch all document items in one query, serialize to JSONL."""
+
+            async def _fetch() -> dict[str, str]:
+                from haiku.rag.client import HaikuRAG
+
+                async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+                    grouped = await rag.document_item_repository.get_all_items_grouped(
+                        doc_ids
+                    )
+                result: dict[str, str] = {}
+                for did, items in grouped.items():
+                    lines = []
+                    for item in items:
+                        lines.append(
+                            json.dumps(
+                                {
+                                    "position": item.position,
+                                    "self_ref": item.self_ref,
+                                    "label": item.label,
+                                    "text": item.text,
+                                    "page_numbers": item.page_numbers,
+                                },
+                                ensure_ascii=False,
+                            )
+                        )
+                    result[did] = "\n".join(lines)
+                return result
+
+            return _run_async(_fetch())
+
+        sandbox = self
+
+        def _make_items_reader(
+            did: str,
+        ) -> Callable[["PurePosixPath"], str]:
+            def read_items(_path: "PurePosixPath") -> str:
+                if sandbox._items_cache is None:
+                    sandbox._items_cache = _load_items_cache()
+                return sandbox._items_cache.get(did, "")
+
+            return read_items
+
         for doc in docs:
             if not doc.id:
                 continue
@@ -180,39 +227,6 @@ class Sandbox:
                     return _run_async(_fetch())
 
                 return read_content
-
-            def _make_items_reader(
-                did: str,
-            ) -> Callable[["PurePosixPath"], str]:
-                def read_items(_path: "PurePosixPath") -> str:
-                    async def _fetch() -> str:
-                        from haiku.rag.client import HaikuRAG
-
-                        async with HaikuRAG(
-                            db_path, config=config, read_only=True
-                        ) as rag:
-                            items = await rag.document_item_repository.get_all_items(
-                                did
-                            )
-                        lines = []
-                        for item in items:
-                            lines.append(
-                                json.dumps(
-                                    {
-                                        "position": item.position,
-                                        "self_ref": item.self_ref,
-                                        "label": item.label,
-                                        "text": item.text,
-                                        "page_numbers": item.page_numbers,
-                                    },
-                                    ensure_ascii=False,
-                                )
-                            )
-                        return "\n".join(lines)
-
-                    return _run_async(_fetch())
-
-                return read_items
 
             files.append(
                 CallbackFile(
