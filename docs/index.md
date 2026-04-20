@@ -59,7 +59,6 @@ haiku-rag chat  # Interactive conversation mode
 
 - [Getting started](tutorial.md) - Tutorial
 - [Installation](installation.md) - Install haiku.rag with different providers
-- [Architecture](architecture.md) - System overview and data flow
 - [Configuration](configuration/index.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
 - [Python](python.md) - Python API reference

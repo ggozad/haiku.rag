@@ -3,27 +3,38 @@
 
 ### Added
 
-- **Document virtual filesystem in analysis sandbox**: Documents are mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). The agent uses standard Python `pathlib.Path` to browse and read document content and structure.
-- **`doc_item_refs` and `labels` in search results**: Search results now include document item references and labels for cross-referencing with `items.jsonl`.
-- **`--skill` flag for chat TUI**: `haiku-rag chat -s rag -s analysis` to enable specific skills. Defaults to `rag`. Use `-s analysis` for code execution, or both for the full toolset.
+- **Document virtual filesystem in analysis sandbox**: Documents mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). Standard Python `pathlib.Path` for browsing and reading document content and structure.
+- **`execute_code` skill tool**: Direct code execution in the sandbox, surfaced as individual AG-UI events in the chat TUI
+- **`cite` skill tool**: Explicit citation registration with per-turn tracking via `citation_index` and `citations` fields in state
+- **`--skill` flag for chat TUI**: `haiku-rag chat -s rag -s analysis` to enable specific skills
+- **`--model` overrides all agents**: Chat, QA, research, and analysis agents all use the specified model
+- **Collapsible program display in chat TUI**: Analysis code execution results shown as expandable code blocks
 
 ### Changed
 
-- **Analysis sandbox `search()` now returns expanded results**: Search results automatically include surrounding context (adjacent paragraphs, complete tables, section content) via the document_items table
-- **BREAKING**: Rename RLM agent to analysis agent throughout:
+- **BREAKING: Flatten skill architecture**: Skill sub-agents now call `search`, `execute_code`, `cite`, `list_documents`, `get_document` directly — every tool call surfaces as an AG-UI event. Removes the 3rd agent layer where `ask`/`analyze`/`research` spawned inner agents whose tool calls were invisible.
+- **BREAKING: Rename RLM agent to analysis agent** throughout:
   - `agents/rlm/` → `agents/analysis/`, all classes renamed (`RLMResult` → `AnalysisResult`, etc.)
   - `client.rlm()` → `client.analyze()`
   - CLI: `haiku-rag rlm` → `haiku-rag analyze`
   - MCP: `rlm_question` → `analyze`
   - Config: `rlm:` → `analysis:` in YAML, `RLMConfig` → `AnalysisConfig`
-  - Skill: `rag-rlm` → `rag-analysis`, `skills/rlm.py` → `skills/analysis.py`
-  - State namespace: `"rlm"` → `"analysis"`
+  - Skill entrypoint: `rag-rlm` → `rag-analysis`
+- **Analysis sandbox `search()` returns expanded results** with `doc_item_refs` and `labels` for cross-referencing with `items.jsonl`
+- **`list_documents` skill tool** takes no parameters — returns all documents
+- **Per-turn citation tracking**: `citation_index: dict[str, Citation]` (deduplicated) + `citations: list[list[str]]` (per-turn chunk IDs) replaces flat citation list
+- **Search rate limiting**: Skill search tool enforces `config.qa.max_searches`
 
 ### Removed
 
-- **`get_document()`, `get_docling_document()`**: Removed from analysis sandbox — replaced by the document virtual filesystem
-- **`get_chunk()`**: Removed from analysis sandbox — search results now include expanded context automatically
-- **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module.
+- **`ask` skill tool**: Replaced by direct `search` + `cite` — the skill sub-agent searches and answers directly
+- **`analyze` skill tool**: Replaced by direct `execute_code` + `search` + `cite`
+- **`research` skill tool**: Removed from skill layer (still available via CLI `haiku-rag research` and MCP)
+- **`get_document()`, `get_docling_document()`**: Removed from analysis sandbox — replaced by VFS
+- **`get_chunk()`**: Removed from analysis sandbox — search results include expanded context
+- **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module
+- **`qa_history`, `reports` from skill state**: Conversational context handled by the outer chat agent
+- **`combine_filters`, `build_document_filter`**: Removed from public API
 
 ## [0.40.1] - 2026-04-17
 

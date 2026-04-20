@@ -278,7 +278,7 @@ The generated package is a pip-installable Python package that registers as a `h
 
 ### Available Tools
 
-`analyze`, `ask`, `get_document`, `list_documents`, `research`, `search`
+`cite`, `execute_code`, `get_document`, `list_documents`, `search`
 
 ### Example
 
@@ -287,7 +287,7 @@ The generated package is a pip-installable Python package that registers as a `h
 haiku-rag create-skill \
   --name medic \
   --db /path/to/medic.lancedb \
-  --tools search,ask \
+  --tools search,cite \
   --config-file /path/to/haiku.rag.yaml \
   --description "Military medic knowledge base" \
   --preamble "You are a military medic expert."

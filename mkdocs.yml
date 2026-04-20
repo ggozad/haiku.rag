@@ -59,7 +59,6 @@ nav:
       - index.md
       - Getting started: tutorial.md
       - Installation: installation.md
-      - Architecture: architecture.md
       - Configuration:
           - configuration/index.md
           - Providers: configuration/providers.md

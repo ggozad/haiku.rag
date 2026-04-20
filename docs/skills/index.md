@@ -47,7 +47,7 @@ Use `create-skill` to generate a standalone skill package with an embedded datab
 haiku-rag create-skill \
   --name recipes \
   --db /path/to/recipes.lancedb \
-  --tools search,ask \
+  --tools search,cite \
   --description "Recipe knowledge base" \
   --preamble "You are a recipe expert."
 ```

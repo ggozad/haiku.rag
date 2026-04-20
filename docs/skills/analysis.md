@@ -19,13 +19,10 @@ skill = create_skill(db_path=db_path, config=config)
 
 | Tool | Purpose |
 |------|---------|
-| `analyze(question, document?, filter?)` | Answer analytical questions using code execution |
-
-**Parameters:**
-
-- `question` — The analytical question to answer.
-- `document` — Optional document ID or title to pre-load for analysis.
-- `filter` — Optional SQL WHERE clause to filter documents.
+| `search(query, limit?)` | Hybrid search (vector + full-text) with context expansion |
+| `list_documents()` | List all documents in the knowledge base |
+| `execute_code(code)` | Execute Python code in a sandboxed interpreter with VFS access |
+| `cite(chunk_ids)` | Register chunk IDs as citations for the current answer |
 
 ## State
 
@@ -34,16 +31,16 @@ The skill manages an `AnalysisState` under the `"analysis"` namespace:
 ```python
 class AnalysisState(BaseModel):
     document_filter: str | None = None
-    analyses: list[AnalysisEntry] = []
-
-class AnalysisEntry(BaseModel):
-    question: str
-    answer: str
-    program: str | None = None
+    executions: list[CodeExecutionEntry] = []
+    citation_index: dict[str, Citation] = {}
+    citations: list[list[str]] = []
+    searches: dict[str, list[SearchResult]] = {}
 ```
 
-- **document_filter** — SQL WHERE clause applied to `analyze` calls (combined with any explicit `filter` parameter). Set this to scope analysis to specific documents.
-- **analyses** — Each `analyze` call appends an `AnalysisEntry` with the question, answer, and executed program.
+- **document_filter** — SQL WHERE clause applied to `search` and `list_documents` calls.
+- **executions** — Each `execute_code` call appends a `CodeExecutionEntry` with code, stdout, stderr, and success status.
+- **citation_index** / **citations** — Same per-turn citation tracking as the RAG skill.
+- **searches** — Search results from both the `search` tool and sandbox-internal searches.
 
 ## Usage with RAG Skill
 
@@ -67,4 +64,4 @@ agent = Agent(
 )
 ```
 
-See the [Analysis Agent](../agents/analysis.md) documentation for details on how the underlying agent works.
+See the [Analysis Agent](../agents/analysis.md) documentation for details on how the underlying sandbox works.

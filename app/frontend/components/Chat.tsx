@@ -148,11 +148,11 @@ function ToolCallIndicator({
 		switch (toolName) {
 			case "search":
 				return <SearchIcon />;
-			case "ask":
-				return <MessageIcon />;
 			case "get_document":
 				return <FileIcon />;
 			case "execute_skill":
+			case "execute_code":
+			case "cite":
 				return <MessageIcon />;
 			default:
 				return <SearchIcon />;
@@ -163,16 +163,16 @@ function ToolCallIndicator({
 		switch (toolName) {
 			case "search":
 				return "Search";
-			case "ask":
-				return "Ask";
 			case "get_document":
 				return "Document";
 			case "execute_skill":
 				return "Skill";
-			case "analyze":
-				return "Analyze";
-			case "research":
-				return "Research";
+			case "execute_code":
+				return "Code";
+			case "cite":
+				return "Cite";
+			case "list_documents":
+				return "Documents";
 			default:
 				return toolName;
 		}
@@ -194,16 +194,16 @@ function ToolCallIndicator({
 				const query = args.query as string;
 				return <span className="tool-query">{query}</span>;
 			}
-			case "ask": {
-				const question = args.question as string;
-				return <span className="tool-query">{question}</span>;
-			}
 			case "get_document":
 				return <span className="tool-query">{args.query as string}</span>;
-			case "analyze":
-				return <span className="tool-query">{args.question as string}</span>;
-			case "research":
-				return <span className="tool-query">{args.question as string}</span>;
+			case "execute_code": {
+				const code = args.code as string | undefined;
+				return (
+					<span className="tool-query">
+						{code ? code.slice(0, 80) : "Running code..."}
+					</span>
+				);
+			}
 			default:
 				return <span>Processing...</span>;
 		}
