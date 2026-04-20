@@ -159,3 +159,36 @@ class TestExecuteCodeTool:
             ctx, code="docs = await list_documents()\nprint(len(docs))"
         )
         assert "1" in result
+
+    async def test_execute_code_accumulates_search_results(self, rag_db):
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState()
+        ctx = _make_ctx(state)
+        await execute_code(
+            ctx, code="results = await search('intelligence')\nprint(len(results))"
+        )
+        assert "_sandbox" in state.searches
+        assert len(state.searches["_sandbox"]) > 0
+
+    async def test_execute_code_vfs_write_denied(self, rag_db):
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState()
+        ctx = _make_ctx(state)
+        result = await execute_code(
+            ctx,
+            code=(
+                "from pathlib import Path\n"
+                "import json\n"
+                "dirs = list(Path('/documents').iterdir())\n"
+                "p = dirs[0] / 'content.txt'\n"
+                "p.write_text('hacked')"
+            ),
+        )
+        assert "Error" in result
+        assert "read-only" in result

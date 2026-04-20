@@ -200,6 +200,23 @@ class TestSearchTool:
         result = await search(ctx, query="artificial intelligence")
         assert isinstance(result, str)
 
+    async def test_search_rate_limited(self, rag_db):
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        config = AppConfig()
+        config.qa.max_searches = 2
+        skill = create_skill(db_path=rag_db, config=config)
+        search = _get_tool(skill, "search")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        ctx.run_id = "test-run"
+
+        await search(ctx, query="first")
+        await search(ctx, query="second")
+        result = await search(ctx, query="third")
+        assert "Search limit reached" in result
+        assert len(state.searches) == 2
+
 
 class TestListDocumentsTool:
     async def test_list_documents_returns_results(self, rag_db):
