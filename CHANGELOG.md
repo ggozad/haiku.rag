@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.41.0] - 2026-04-20
+
 ### Added
 
 - **Document virtual filesystem in analysis sandbox**: Documents mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). Standard Python `pathlib.Path` for browsing and reading document content and structure.
@@ -1400,7 +1402,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.40.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.41.0...HEAD
+[0.41.0]: https://github.com/ggozad/haiku.rag/compare/0.40.1...0.41.0
 [0.40.1]: https://github.com/ggozad/haiku.rag/compare/0.39.0...0.40.1
 [0.39.0]: https://github.com/ggozad/haiku.rag/compare/0.38.0...0.39.0
 [0.38.0]: https://github.com/ggozad/haiku.rag/compare/0.37.0...0.38.0
