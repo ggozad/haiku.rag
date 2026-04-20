@@ -1240,13 +1240,29 @@ class HaikuRAG:
         )
 
         from haiku.rag.agents.analysis.models import AnalysisResult
-        from haiku.rag.agents.research.models import resolve_citations
+        from haiku.rag.agents.research.models import Citation
 
         agent = create_analysis_agent(self._config)
         result = await agent.run(question, deps=deps)
 
         output = result.output
-        citations = resolve_citations(output.cited_chunks, sandbox._search_results)
+        seen: set[str] = set()
+        citations: list[Citation] = []
+        for sr in sandbox._search_results:
+            if sr.chunk_id and sr.chunk_id not in seen:
+                seen.add(sr.chunk_id)
+                citations.append(
+                    Citation(
+                        index=len(seen),
+                        document_id=sr.document_id or "",
+                        chunk_id=sr.chunk_id,
+                        document_uri=sr.document_uri or "",
+                        document_title=sr.document_title,
+                        page_numbers=sr.page_numbers,
+                        headings=sr.headings,
+                        content=sr.content,
+                    )
+                )
         return AnalysisResult(
             answer=output.answer,
             program=output.program,

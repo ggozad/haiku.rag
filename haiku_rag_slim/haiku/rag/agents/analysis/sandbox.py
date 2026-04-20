@@ -141,6 +141,9 @@ class Sandbox:
         config = self._config
         files: list[MemoryFile | CallbackFile] = []
 
+        def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
+            raise PermissionError(f"Document files are read-only: {_path}")
+
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
             docs = await rag.list_documents(filter=self._context.filter)
 
@@ -210,9 +213,6 @@ class Sandbox:
                     return _run_async(_fetch())
 
                 return read_items
-
-            def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
-                raise PermissionError(f"Document files are read-only: {_path}")
 
             files.append(
                 CallbackFile(

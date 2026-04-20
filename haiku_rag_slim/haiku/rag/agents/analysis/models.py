@@ -17,10 +17,6 @@ class RawAnalysisResult(BaseModel):
 
     answer: str = Field(description="The answer to the user's question")
     program: str = Field(description="The final consolidated program")
-    cited_chunks: list[str] = Field(
-        default_factory=list,
-        description="Chunk IDs from search results that informed the answer. Copy full UUIDs from search result chunk_id fields.",
-    )
 
 
 class AnalysisResult(BaseModel):
