@@ -80,7 +80,6 @@ def small_chunk_config() -> AppConfig:
     """Config with small chunk size to force splitting."""
     config = AppConfig()
     config.processing.chunk_size = 32
-    config.search.max_context_items = 25
     config.search.max_context_chars = 10000
     return config
 
@@ -303,33 +302,6 @@ async def test_format_for_agent_output(temp_db_path, small_chunk_config):
         assert 'Source: "Format Test"' in formatted
         assert "Type: table" in formatted
         assert "Content:" in formatted
-
-
-@pytest.mark.vcr()
-async def test_max_items_limit_caps_expansion(temp_db_path):
-    """Expansion should respect max_context_items limit."""
-    config = AppConfig()
-    config.processing.chunk_size = 32
-    config.search.max_context_items = 2  # Very restrictive
-
-    docling_doc = create_list_document()
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        doc = await create_document_with_docling(client, docling_doc, "Limit Test")
-        assert doc.id is not None
-
-        results = await client.search("grapes", limit=1)
-        assert len(results) > 0
-
-        expanded = await client.expand_context(results)
-
-        # With max_items=2, expansion should be limited
-        content = expanded[0].content.lower()
-        item_count = sum(
-            1 for item in ["apples", "bananas", "oranges", "grapes"] if item in content
-        )
-        # Should have at most 2 items (the limit)
-        assert item_count <= 2, f"Expected at most 2 items, got {item_count}"
 
 
 async def test_expand_context_single_item_document(temp_db_path):

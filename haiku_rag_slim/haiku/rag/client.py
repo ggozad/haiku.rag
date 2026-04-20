@@ -1105,7 +1105,6 @@ class HaikuRAG:
         """
         from haiku.rag.context import expand_with_items
 
-        max_items = self._config.search.max_context_items
         max_chars = self._config.search.max_context_chars
 
         # Group by document_id for efficient processing
@@ -1132,7 +1131,6 @@ class HaikuRAG:
                 self.document_item_repository,
                 doc_id,
                 doc_results,
-                max_items,
                 max_chars,
             )
             expanded_results.extend(expanded)
@@ -1272,9 +1270,9 @@ class HaikuRAG:
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.
 
-        Gets the DoclingDocument from the chunk's document, resolves bounding boxes
-        from chunk metadata, and renders all pages that contain bounding boxes with
-        yellow/orange highlight overlays.
+        Expands the chunk's context to find the full section, then resolves
+        bounding boxes from all items in the expanded range. This ensures
+        visualization covers all pages the expanded content spans.
 
         Args:
             chunk: The chunk to visualize.
@@ -1286,6 +1284,8 @@ class HaikuRAG:
         from copy import deepcopy
 
         from PIL import ImageDraw
+
+        from haiku.rag.store.models.chunk import ChunkMetadata
 
         # Get the document structure (from cache if available)
         if not chunk.document_id:
@@ -1299,9 +1299,23 @@ class HaikuRAG:
         if not docling_doc:
             return []
 
-        # Resolve bounding boxes from chunk metadata
+        # Expand context to get all doc_item_refs in the section
         chunk_meta = chunk.get_chunk_metadata()
-        bounding_boxes = chunk_meta.resolve_bounding_boxes(docling_doc)
+        if chunk_meta.doc_item_refs:
+            search_result = SearchResult(
+                content=chunk.content,
+                score=1.0,
+                chunk_id=chunk.id,
+                document_id=chunk.document_id,
+                doc_item_refs=chunk_meta.doc_item_refs,
+                page_numbers=chunk_meta.page_numbers,
+            )
+            expanded = await self.expand_context([search_result])
+            refs = expanded[0].doc_item_refs if expanded else chunk_meta.doc_item_refs
+            meta = ChunkMetadata(doc_item_refs=refs)
+        else:
+            meta = chunk_meta
+        bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
         if not bounding_boxes:
             return []
 

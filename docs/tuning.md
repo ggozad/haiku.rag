@@ -26,7 +26,7 @@ When configured, a cross-encoder reranker re-scores 10x the requested candidates
 
 `limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa-research.md#search-settings).
 
-Context expansion is automatic and section-aware — search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (footnotes, page headers). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_items` and `max_context_chars` cap expansion to prevent context bloat.
+Context expansion is automatic and section-aware — search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (footnotes, page headers). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
 
 ## Tuning Generation
 

@@ -49,11 +49,12 @@ class TestMergeRanges:
         assert len(merged) == 1
         assert merged[0] == (0, 15, [r1, r2])
 
-    def test_adjacent(self):
+    def test_adjacent_stay_separate(self):
         r1, r2 = _result(), _result()
         merged = _merge_ranges([(0, 5, r1), (6, 10, r2)])
-        assert len(merged) == 1
-        assert merged[0] == (0, 10, [r1, r2])
+        assert len(merged) == 2
+        assert merged[0] == (0, 5, [r1])
+        assert merged[1] == (6, 10, [r2])
 
     def test_sorts_by_position(self):
         r1, r2 = _result(), _result()
@@ -65,7 +66,7 @@ class TestMergeRanges:
 class TestExpandOutward:
     def test_basic_expansion(self):
         items = [_item(i, text=f"{'x' * 100}") for i in range(10)]
-        lo, hi = _expand_outward(items, 5, max_items=10, max_chars=500)
+        lo, hi = _expand_outward(items, 5, max_chars=500)
         assert lo <= 5
         assert hi >= 5
         total = sum(
@@ -76,16 +77,9 @@ class TestExpandOutward:
         # Should be around 500 chars (may overshoot by one item)
         assert total >= 400
 
-    def test_respects_max_items(self):
-        items = [_item(i, text="x") for i in range(100)]
-        lo, hi = _expand_outward(items, 50, max_items=5, max_chars=999999)
-        count = hi - lo + 1
-        # May overshoot by 1-2 items due to alternating expansion
-        assert count <= 7
-
     def test_respects_max_chars(self):
         items = [_item(i, text=f"{'x' * 200}") for i in range(20)]
-        lo, hi = _expand_outward(items, 10, max_items=999, max_chars=500)
+        lo, hi = _expand_outward(items, 10, max_chars=500)
         total = sum(
             len(items[i].text)
             for i in range(lo, hi + 1)
@@ -96,12 +90,12 @@ class TestExpandOutward:
 
     def test_center_at_start(self):
         items = [_item(i) for i in range(10)]
-        lo, hi = _expand_outward(items, 0, max_items=5, max_chars=999999)
+        lo, hi = _expand_outward(items, 0, max_chars=999999)
         assert lo == 0
 
     def test_center_at_end(self):
         items = [_item(i) for i in range(10)]
-        lo, hi = _expand_outward(items, 9, max_items=5, max_chars=999999)
+        lo, hi = _expand_outward(items, 9, max_chars=999999)
         assert hi == 9
 
     def test_skip_noise_excludes_from_char_count(self):
@@ -113,7 +107,7 @@ class TestExpandOutward:
             _item(4, label="footnote", text="f" * 5000),
             _item(5, text="d" * 100),
         ]
-        lo, hi = _expand_outward(items, 2, max_items=10, max_chars=500, skip_noise=True)
+        lo, hi = _expand_outward(items, 2, max_chars=500, skip_noise=True)
         # Footnotes (5000 chars each) should NOT count toward budget
         # So we should expand past them
         assert lo <= 0
@@ -125,10 +119,16 @@ class TestExpandOutward:
             _item(1, label="document_index", text="x" * 10000),
             _item(2, text="b" * 200),
         ]
-        lo, hi = _expand_outward(items, 1, max_items=10, max_chars=500, skip_noise=True)
+        lo, hi = _expand_outward(items, 1, max_chars=500, skip_noise=True)
         # Center is noise, should start at 0 chars and expand outward
         assert lo == 0
         assert hi == 2
+
+    def test_respects_bounds(self):
+        items = [_item(i, text="x" * 100) for i in range(20)]
+        lo, hi = _expand_outward(items, 10, max_chars=999999, lo_bound=8, hi_bound=12)
+        assert lo == 8
+        assert hi == 12
 
 
 class TestFindExpansionRange:
@@ -146,35 +146,46 @@ class TestFindExpansionRange:
 
     def test_structured_returns_section(self):
         items = self._structured_items()
-        lo, hi = _find_expansion_range(
-            items, {1}, has_sections=True, max_items=20, max_chars=5000
-        )
+        lo, hi = _find_expansion_range(items, {1}, has_sections=True, max_chars=5000)
         # Should return the Introduction section (items 0-3)
         assert lo == 0
         assert hi == 3
 
     def test_structured_different_section(self):
         items = self._structured_items()
-        lo, hi = _find_expansion_range(
-            items, {5}, has_sections=True, max_items=20, max_chars=5000
-        )
+        lo, hi = _find_expansion_range(items, {5}, has_sections=True, max_chars=5000)
         # Should return the Methods section (items 4-6)
         assert lo == 4
         assert hi == 6
 
-    def test_structured_large_section_falls_back_to_outward(self):
+    def test_structured_large_section_bounded_by_section(self):
         items = [
             _item(0, label="section_header", text="Big Section"),
         ] + [_item(i, text="x" * 1000) for i in range(1, 20)]
         # Section has 19 * 1000 = 19000 chars, way over 5000 budget
-        lo, hi = _find_expansion_range(
-            items, {10}, has_sections=True, max_items=50, max_chars=5000
-        )
-        # Should NOT return the full section
+        lo, hi = _find_expansion_range(items, {10}, has_sections=True, max_chars=5000)
+        # Should NOT return the full section, but should stay within it
         total = sum(
             len(items[i].text) for i in range(lo, hi + 1) if items[i].position >= lo
         )
         assert total < 10000
+
+    def test_structured_section_with_many_items_returned_whole(self):
+        """A section that fits in char budget is returned even with many items."""
+        items = (
+            [
+                _item(0, label="section_header", text="Section"),
+            ]
+            + [_item(i, text="x" * 200) for i in range(1, 20)]
+            + [
+                _item(20, label="section_header", text="Next"),
+            ]
+        )
+        # Section has 19 * 200 = 3800 chars + header, under 5000 and over min_useful
+        lo, hi = _find_expansion_range(items, {10}, has_sections=True, max_chars=5000)
+        # Should return entire section despite 20 items
+        assert lo == 0
+        assert hi == 19
 
     def test_structured_small_section_expands_outward(self):
         items = [
@@ -186,26 +197,20 @@ class TestFindExpansionRange:
             _item(5, text="Intro content. " * 50),
         ]
         # Title section (items 0-1) is tiny (~25 chars) < 20% of 5000
-        lo, hi = _find_expansion_range(
-            items, {0}, has_sections=True, max_items=20, max_chars=5000
-        )
+        lo, hi = _find_expansion_range(items, {0}, has_sections=True, max_chars=5000)
         # Should expand past the title section into the abstract
         assert hi >= 3
 
     def test_unstructured_expands_outward(self):
         items = [_item(i, text=f"Paragraph {i}. " * 10) for i in range(10)]
-        lo, hi = _find_expansion_range(
-            items, {5}, has_sections=False, max_items=20, max_chars=5000
-        )
+        lo, hi = _find_expansion_range(items, {5}, has_sections=False, max_chars=5000)
         assert lo < 5
         assert hi > 5
 
     def test_multiple_matched_positions_uses_center(self):
         items = [_item(i, text="x" * 100) for i in range(20)]
-        # Match at positions 3 and 7, center should be index for position 5 (median)
-        lo, hi = _find_expansion_range(
-            items, {3, 7}, has_sections=False, max_items=5, max_chars=999999
-        )
+        # Use a char budget that forces partial expansion so center matters
+        lo, hi = _find_expansion_range(items, {3, 7}, has_sections=False, max_chars=500)
         center = (lo + hi) // 2
         # Center should be around position 5
         assert 3 <= center <= 7
@@ -219,9 +224,7 @@ class TestFindExpansionRange:
         ]
         # Section non-noise chars: ~260 chars (items 0,1,3). Under 5000 budget.
         # The footnote's 10000 chars should NOT count.
-        lo, hi = _find_expansion_range(
-            items, {1}, has_sections=True, max_items=20, max_chars=5000
-        )
+        lo, hi = _find_expansion_range(items, {1}, has_sections=True, max_chars=5000)
         # Should return full section (it fits in budget excluding noise)
         assert lo == 0
         assert hi == 3
@@ -233,9 +236,7 @@ class TestFindExpansionRange:
             _item(2, label="section_header", text="First Section"),
             _item(3, text="Section content."),
         ]
-        lo, hi = _find_expansion_range(
-            items, {0}, has_sections=True, max_items=20, max_chars=5000
-        )
+        lo, hi = _find_expansion_range(items, {0}, has_sections=True, max_chars=5000)
         # Match is in preamble section (items 0-1), which is small
         # Should expand outward into the first section
         assert hi >= 2
@@ -262,7 +263,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/999999"],
             )
             expanded = await expand_with_items(
-                rag.document_item_repository, doc.id, [result], 10, 5000
+                rag.document_item_repository, doc.id, [result], 5000
             )
             assert len(expanded) == 1
             assert expanded[0].content == "original"
@@ -312,7 +313,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/1"],
             )
             expanded = await expand_with_items(
-                rag.document_item_repository, "doc-1", [result], 10, 5000
+                rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
             # The TOC section's only non-header item is document_index (noise).
@@ -376,7 +377,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/1", "#/texts/2", "#/texts/3", "#/texts/4"],
             )
             expanded = await expand_with_items(
-                rag.document_item_repository, "doc-1", [result], 10, 5000
+                rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
             # Expansion produces "Steps\n\nClick\n\n+\n\nAdd a New Service" = 38 chars

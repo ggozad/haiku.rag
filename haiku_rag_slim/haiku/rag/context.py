@@ -6,12 +6,16 @@ the document_items table. The algorithm adapts to document structure:
 For STRUCTURED documents (containing section_header or title labels):
   1. Resolve matched doc_item_refs to positions in the items table
   2. Find section boundaries around each match (section_header/title labels)
-  3. If the section fits within the budget, include it entirely
-  4. If the section exceeds the budget, OR the section is too small (under
-     20% of max_context_chars), expand item-by-item from the match center
-     outward, skipping noise labels. This lets small sections (e.g., a
-     title+authors area) grow into the next section's content.
-  5. Merge overlapping ranges from multiple results in the same document
+  3. If the section fits within the char budget, include it entirely
+  4. If the section exceeds the char budget, expand item-by-item from the
+     match center outward, bounded by section edges
+  5. If the section is too small (under 20% of max_context_chars), expand
+     item-by-item crossing into adjacent sections until the budget is filled.
+     This lets small sections (e.g., title+authors) grow into neighboring
+     content.
+  6. Merge overlapping ranges from multiple results in the same document.
+     Adjacent but non-overlapping ranges stay separate to preserve section
+     independence.
 
 For UNSTRUCTURED documents (no section headers):
   Expand outward item-by-item from the match center until the character
@@ -20,7 +24,6 @@ For UNSTRUCTURED documents (no section headers):
 
 In both cases:
   - max_context_chars caps total characters per expanded result
-  - max_context_items caps total items per expanded result
   - Noise labels (footnote, page_header, page_footer, document_index) are
     excluded from content AND budget counting in structured documents
   - Results without doc_item_refs pass through unexpanded
@@ -42,7 +45,7 @@ _MIN_SECTION_BUDGET_RATIO = 0.2
 def _merge_ranges(
     ranges: list[tuple[int, int, SearchResult]],
 ) -> list[tuple[int, int, list[SearchResult]]]:
-    """Merge overlapping or adjacent ranges."""
+    """Merge overlapping ranges. Adjacent but non-overlapping ranges stay separate."""
     if not ranges:
         return []
 
@@ -55,7 +58,7 @@ def _merge_ranges(
     )
 
     for min_idx, max_idx, result in sorted_ranges[1:]:
-        if cur_max >= min_idx - 1:  # Overlapping or adjacent
+        if cur_max >= min_idx:  # Truly overlapping
             cur_max = max(cur_max, max_idx)
             cur_results.append(result)
         else:
@@ -69,27 +72,32 @@ def _merge_ranges(
 def _expand_outward(
     items: list[DocumentItem],
     center_idx: int,
-    max_items: int,
     max_chars: int,
     skip_noise: bool = False,
+    lo_bound: int = 0,
+    hi_bound: int | None = None,
 ) -> tuple[int, int]:
-    """Expand item-by-item outward from center until budget is filled.
+    """Expand item-by-item outward from center until char budget is filled.
 
     When skip_noise is True, noise labels are excluded from char counting
     (used in structured documents so footnotes don't consume budget).
+
+    lo_bound and hi_bound constrain expansion (e.g., to section edges).
     """
+    if hi_bound is None:
+        hi_bound = len(items) - 1
     lo = hi = center_idx
     center_is_noise = skip_noise and items[center_idx].label in _NOISE_LABELS
     char_count = 0 if center_is_noise else len(items[center_idx].text)
 
-    while char_count < max_chars and hi - lo + 1 < max_items:
+    while char_count < max_chars:
         grew = False
-        if lo > 0:
+        if lo > lo_bound:
             lo -= 1
             if not (skip_noise and items[lo].label in _NOISE_LABELS):
                 char_count += len(items[lo].text)
             grew = True
-        if hi < len(items) - 1 and char_count < max_chars:
+        if hi < hi_bound and char_count < max_chars:
             hi += 1
             if not (skip_noise and items[hi].label in _NOISE_LABELS):
                 char_count += len(items[hi].text)
@@ -104,7 +112,6 @@ def _find_expansion_range(
     items: list[DocumentItem],
     matched_positions: set[int],
     has_sections: bool,
-    max_items: int,
     max_chars: int,
 ) -> tuple[int, int]:
     """Find the expansion range for matched positions within a window of items."""
@@ -113,7 +120,7 @@ def _find_expansion_range(
     center_idx = matched_indices[len(matched_indices) // 2]
 
     if not has_sections:
-        return _expand_outward(items, center_idx, max_items, max_chars)
+        return _expand_outward(items, center_idx, max_chars)
 
     # Build section spans: [(start_idx, end_idx), ...]
     headers = [
@@ -140,23 +147,34 @@ def _find_expansion_range(
         if items[i].label not in _NOISE_LABELS
     )
 
-    # Section fits nicely in the budget — return it as-is
     min_useful = int(max_chars * _MIN_SECTION_BUDGET_RATIO)
-    if min_useful <= sec_chars <= max_chars and sec_end - sec_start + 1 <= max_items:
+
+    if sec_chars <= max_chars and sec_chars >= min_useful:
+        # Section fits in char budget — return it regardless of item count
         return (items[sec_start].position, items[sec_end].position)
 
-    # Section is too large or too small — expand item-by-item from center.
-    # For too-large sections this stays within budget.
-    # For too-small sections (e.g., title+authors) this naturally grows
-    # into adjacent sections until the budget is filled.
-    return _expand_outward(items, center_idx, max_items, max_chars, skip_noise=True)
+    if sec_chars > max_chars:
+        # Section too large — expand outward bounded by section edges
+        return _expand_outward(
+            items,
+            center_idx,
+            max_chars,
+            skip_noise=True,
+            lo_bound=sec_start,
+            hi_bound=sec_end,
+        )
+
+    # Section too small (e.g., title+authors) — expand across boundaries
+    return _expand_outward(items, center_idx, max_chars, skip_noise=True)
+
+
+_WINDOW_MARGIN = 100
 
 
 async def expand_with_items(
     document_item_repository: DocumentItemRepository,
     document_id: str,
     results: list[SearchResult],
-    max_items: int,
     max_chars: int,
 ) -> list[SearchResult]:
     """Expand results using the document_items table."""
@@ -172,7 +190,7 @@ async def expand_with_items(
     # wide enough to find section boundaries (the nearest section_header/title
     # above and below the match).
     all_positions = sorted(ref_positions.values())
-    window_margin = max_items * 10
+    window_margin = _WINDOW_MARGIN
     window_start = max(0, min(all_positions) - window_margin)
     window_end = max(all_positions) + window_margin
     window_items = await document_item_repository.get_items_in_range(
@@ -194,9 +212,7 @@ async def expand_with_items(
             passthrough.append(result)
             continue
 
-        lo, hi = _find_expansion_range(
-            window_items, matched, has_sections, max_items, max_chars
-        )
+        lo, hi = _find_expansion_range(window_items, matched, has_sections, max_chars)
         ranges.append((lo, hi, result))
 
     merged = _merge_ranges(ranges)

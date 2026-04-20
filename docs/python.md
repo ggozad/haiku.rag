@@ -376,7 +376,6 @@ Context expansion is automatic and section-aware. For structured documents (with
 
 Configuration:
 
-- **search.max_context_items**: Maximum items in expanded context. Default: 10.
 - **search.max_context_chars**: Maximum characters in expanded context. Default: 10000.
 
 **Smart Merging**: When expanded results overlap within the same document, they are automatically merged into a single result with continuous content and the highest relevance score.
