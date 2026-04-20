@@ -45,8 +45,30 @@ All documents are mounted as a virtual filesystem at `/documents/`:
     items.jsonl      # Structured items (one JSON object per line)
 ```
 
+### Reading files
+Always use `Path.read_text()` — do NOT use `open()` or `with` statements (they are not supported).
+
+```python
+from pathlib import Path
+import json
+
+# Discover documents
+for doc_dir in Path('/documents').iterdir():
+    meta = json.loads((doc_dir / 'metadata.json').read_text())
+    print(meta['title'])
+
+# Read full text
+content = Path(f'/documents/{doc_id}/content.txt').read_text()
+
+# Read and parse items
+for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split(chr(10)):
+    item = json.loads(line)
+    if item['label'] == 'table':
+        print(item['text'][:200])
+```
+
 ### metadata.json
-Document metadata. Use `Path('/documents').iterdir()` to discover documents.
+Document metadata: `id`, `title`, `uri`, `created_at`.
 
 ### content.txt
 Full text content. Use for regex or keyword search across a whole document.
@@ -75,4 +97,5 @@ Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) tha
 - Use `print()` to output results — the output is your only feedback
 - Always execute code to answer questions — don't just describe what code would do
 - Use `await` for all async functions inside execute_code (search, list_documents, llm)
-- Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `cite` tool separately to register citations.
+- Use `Path.read_text()` to read files — do NOT use `open()`, `with` statements, or `collections` module
+- Do NOT include chunk IDs or UUIDs in your answer text — use the `cite` tool separately
