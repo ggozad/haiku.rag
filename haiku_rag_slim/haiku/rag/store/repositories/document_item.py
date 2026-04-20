@@ -40,6 +40,18 @@ class DocumentItemRepository:
         ]
         self.store.document_items_table.add(records)
 
+    async def get_all_items(self, document_id: str) -> list[DocumentItem]:
+        """Get all items for a document, sorted by position."""
+        safe_id = escape_sql_string(document_id)
+        rows = (
+            self.store.document_items_table.search()
+            .where(f"document_id = '{safe_id}'")
+            .to_list()
+        )
+        items = [self._record_to_item(row) for row in rows]
+        items.sort(key=lambda x: x.position)
+        return items
+
     async def get_items_in_range(
         self, document_id: str, start: int, end: int
     ) -> list[DocumentItem]:

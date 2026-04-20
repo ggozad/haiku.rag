@@ -26,10 +26,12 @@ class SandboxResult:
     success: bool
 
 
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+
 def _run_async(coro: Any) -> Any:
     """Run an async coroutine from a sync context (CallbackFile read)."""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+    return _executor.submit(asyncio.run, coro).result()
 
 
 class Sandbox:
@@ -168,20 +170,12 @@ class Sandbox:
                 def read_content(_path: "PurePosixPath") -> str:
                     async def _fetch() -> str:
                         from haiku.rag.client import HaikuRAG
-                        from haiku.rag.utils import escape_sql_string
 
                         async with HaikuRAG(
                             db_path, config=config, read_only=True
                         ) as rag:
-                            safe_id = escape_sql_string(did)
-                            rows = list(
-                                rag.store.documents_table.search()
-                                .select(["content"])
-                                .where(f"id = '{safe_id}'")
-                                .limit(1)
-                                .to_list()
-                            )
-                            return rows[0]["content"] if rows else ""
+                            content = await rag.document_repository.get_content(did)
+                            return content or ""
 
                     return _run_async(_fetch())
 
@@ -197,10 +191,8 @@ class Sandbox:
                         async with HaikuRAG(
                             db_path, config=config, read_only=True
                         ) as rag:
-                            items = (
-                                await rag.document_item_repository.get_items_in_range(
-                                    did, 0, 999999
-                                )
+                            items = await rag.document_item_repository.get_all_items(
+                                did
                             )
                         lines = []
                         for item in items:
@@ -222,24 +214,27 @@ class Sandbox:
 
                 return read_items
 
+            def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
+                raise PermissionError(f"Document files are read-only: {_path}")
+
             files.append(
                 CallbackFile(
                     f"{doc_dir}/content.txt",
                     read=_make_content_reader(doc_id),
-                    write=lambda _p, _c: None,
+                    write=_deny_write,
                 )
             )
             files.append(
                 CallbackFile(
                     f"{doc_dir}/items.jsonl",
                     read=_make_items_reader(doc_id),
-                    write=lambda _p, _c: None,
+                    write=_deny_write,
                 )
             )
 
         return OSAccess(files)
 
-    async def _ensure_initialized(self) -> None:
+    async def _ensure_initialized(self) -> tuple[MontyRepl, OSAccess]:
         """Initialize the REPL session and VFS on first use."""
         if self._repl is None:
             self._vfs = await self._build_vfs()
@@ -266,16 +261,19 @@ class Sandbox:
                     external_functions=self._build_external_functions(),
                     os=self._vfs,
                 )
+        # Both are guaranteed non-None after initialization
+        repl = self._repl
+        vfs = self._vfs
+        if repl is None or vfs is None:
+            raise RuntimeError("Sandbox initialization failed")
+        return repl, vfs
 
     async def execute(self, code: str) -> SandboxResult:
         """Execute Python code in the Monty REPL.
 
         Variables persist across calls within the same Sandbox instance.
         """
-        await self._ensure_initialized()
-        assert self._repl is not None
-        assert self._vfs is not None
-
+        repl, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
         stdout_lines: list[str] = []
@@ -287,11 +285,11 @@ class Sandbox:
 
         try:
             output = await pydantic_monty.run_repl_async(
-                self._repl,
+                repl,
                 code,
                 external_functions=external_fns,
                 print_callback=print_callback,
-                os=self._vfs,
+                os=vfs,
             )
         except (
             pydantic_monty.MontySyntaxError,
