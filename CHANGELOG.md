@@ -4,7 +4,7 @@
 ### Added
 
 - **Document virtual filesystem in analysis sandbox**: Documents mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). Standard Python `pathlib.Path` for browsing and reading document content and structure.
-- **`execute_code` skill tool**: Direct code execution in the sandbox, surfaced as individual AG-UI events in the chat TUI
+- **`execute_code` skill tool**: Direct code execution in the sandbox, surfaced as individual AG-UI events in the chat TUI. Items VFS uses a lazy bulk cache (~1s for 1000 documents vs 60s+ per-document queries).
 - **`cite` skill tool**: Explicit citation registration with per-turn tracking via `citation_index` and `citations` fields in state
 - **`--skill` flag for chat TUI**: `haiku-rag chat -s rag -s analysis` to enable specific skills
 - **`--model` overrides all agents**: Chat, QA, research, and analysis agents all use the specified model
@@ -24,6 +24,8 @@
 - **`list_documents` skill tool** takes no parameters — returns all documents
 - **Per-turn citation tracking**: `citation_index: dict[str, Citation]` (deduplicated) + `citations: list[list[str]]` (per-turn chunk IDs) replaces flat citation list
 - **Search rate limiting**: Skill search tool enforces `config.qa.max_searches`
+- **Context expansion respects section boundaries**: Sections within the char budget are returned whole regardless of item count. Too-large sections expand bounded by section edges. Adjacent sections no longer merge — only overlapping ranges do.
+- **Visualization shows full expanded section**: `visualize_chunk` expands context before resolving bounding boxes, so all pages the section spans get highlighted.
 
 ### Removed
 
@@ -35,6 +37,8 @@
 - **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module
 - **`qa_history`, `reports` from skill state**: Conversational context handled by the outer chat agent
 - **`combine_filters`, `build_document_filter`**: Removed from public API
+- **`max_context_items`**: Removed from `SearchConfig` — `max_context_chars` is the sole expansion constraint
+- **`QAHistoryEntry`, `tools/qa.py`**: Removed unused QA history model and relevance threshold
 
 ## [0.40.1] - 2026-04-17
 

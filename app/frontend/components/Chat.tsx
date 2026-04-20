@@ -204,6 +204,10 @@ function ToolCallIndicator({
 					</span>
 				);
 			}
+			case "cite":
+				return <span className="tool-query">Registering citations</span>;
+			case "list_documents":
+				return <span className="tool-query">Listing documents</span>;
 			default:
 				return <span>Processing...</span>;
 		}
