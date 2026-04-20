@@ -240,7 +240,6 @@ def create_skill_tools(
         tools["get_document"] = get_document
 
     if "execute_code" in tool_names:
-        _sandbox_state: dict[str, Any] = {}  # {run_id, sandbox} — reset per invocation
 
         async def execute_code(ctx: RunContext[SkillRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
@@ -249,8 +248,8 @@ def create_skill_tools(
             and a virtual filesystem at /documents/ with document content and
             structure (metadata.json, content.txt, items.jsonl per document).
 
-            Use print() to output results. Variables persist between calls
-            within the same skill invocation.
+            Use print() to output results. Each call runs in a fresh
+            interpreter — variables do not persist between calls.
 
             Args:
                 code: Python code to execute.
@@ -258,17 +257,10 @@ def create_skill_tools(
             from haiku.rag.agents.analysis.dependencies import AnalysisContext
             from haiku.rag.agents.analysis.sandbox import Sandbox
 
-            rid = ctx.run_id or ""
-            if _sandbox_state.get("run_id") != rid:
-                state = _get_state(ctx, state_type)
-                doc_filter = state.document_filter if state else None
-                context = AnalysisContext(filter=doc_filter)
-                _sandbox_state["run_id"] = rid
-                _sandbox_state["sandbox"] = Sandbox(
-                    db_path=db_path, config=config, context=context
-                )
-
-            sandbox = _sandbox_state["sandbox"]
+            state = _get_state(ctx, state_type)
+            doc_filter = state.document_filter if state else None
+            context = AnalysisContext(filter=doc_filter)
+            sandbox = Sandbox(db_path=db_path, config=config, context=context)
             result = await sandbox.execute(code)
 
             state = _get_state(ctx, state_type)

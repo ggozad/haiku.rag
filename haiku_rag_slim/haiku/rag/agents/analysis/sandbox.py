@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import concurrent.futures
 import json
 from collections.abc import Callable
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
-from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
+from pydantic_monty import CallbackFile, MemoryFile, OSAccess
 
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
@@ -27,6 +28,7 @@ class SandboxResult:
 
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+atexit.register(_executor.shutdown, wait=False)
 
 
 def _run_async(coro: Any) -> Any:
@@ -42,20 +44,17 @@ class Sandbox:
     and resolved asynchronously on the host.
     Documents are exposed via a virtual filesystem at ``/documents/{id}/``.
 
-    The interpreter uses a REPL session — variables persist across
-    ``execute()`` calls within the same Sandbox instance.
+    Each ``execute()`` call runs in a fresh interpreter — variables do not
+    persist between calls.
 
         sandbox = Sandbox(db_path, config, context)
-        result = await sandbox.execute("x = await search('query')")
-        result = await sandbox.execute("print(x[0]['content'])")  # x persists
+        result = await sandbox.execute("print('hello')")
     """
 
     _db_path: Path
     _config: AppConfig
     _context: AnalysisContext
     _search_results: "list[SearchResult]"
-    _repl: MontyRepl | None
-    _vfs: OSAccess | None
 
     def __init__(
         self,
@@ -67,8 +66,6 @@ class Sandbox:
         self._config = config
         self._context = context
         self._search_results = []
-        self._repl = None
-        self._vfs = None
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -234,47 +231,37 @@ class Sandbox:
 
         return OSAccess(files)
 
-    async def _ensure_initialized(self) -> tuple[MontyRepl, OSAccess]:
-        """Initialize the REPL session and VFS on first use."""
-        if self._repl is None:
-            self._vfs = await self._build_vfs()
-            self._repl = MontyRepl(
-                limits={
-                    "max_duration_secs": self._config.analysis.code_timeout,
-                },
-            )
-            if self._context.documents:
-                await pydantic_monty.run_repl_async(
-                    self._repl,
-                    "pass",
-                    inputs={
-                        "documents": [
-                            {
-                                "id": d.id,
-                                "title": d.title,
-                                "uri": d.uri,
-                                "content": d.content,
-                            }
-                            for d in self._context.documents
-                        ]
-                    },
-                    external_functions=self._build_external_functions(),
-                    os=self._vfs,
-                )
-        # Both are guaranteed non-None after initialization
-        repl = self._repl
-        vfs = self._vfs
-        if repl is None or vfs is None:
-            raise RuntimeError("Sandbox initialization failed")
-        return repl, vfs
-
     async def execute(self, code: str) -> SandboxResult:
-        """Execute Python code in the Monty REPL.
-
-        Variables persist across calls within the same Sandbox instance.
-        """
-        repl, vfs = await self._ensure_initialized()
+        """Execute Python code in the Monty interpreter."""
         external_fns = self._build_external_functions()
+        vfs = await self._build_vfs()
+
+        input_names: list[str] = []
+        inputs: dict[str, Any] | None = None
+        if self._context.documents:
+            input_names.append("documents")
+            inputs = {
+                "documents": [
+                    {
+                        "id": d.id,
+                        "title": d.title,
+                        "uri": d.uri,
+                        "content": d.content,
+                    }
+                    for d in self._context.documents
+                ]
+            }
+
+        try:
+            monty = pydantic_monty.Monty(
+                code,
+                inputs=input_names,
+            )
+        except (
+            pydantic_monty.MontySyntaxError,
+            pydantic_monty.MontyRuntimeError,
+        ) as e:
+            return SandboxResult(stdout="", stderr=str(e), success=False)
 
         stdout_lines: list[str] = []
 
@@ -282,19 +269,20 @@ class Sandbox:
             stdout_lines.append(text)
 
         max_chars = self._config.analysis.max_output_chars
+        limits: pydantic_monty.ResourceLimits = {
+            "max_duration_secs": self._config.analysis.code_timeout,
+        }
 
         try:
-            output = await pydantic_monty.run_repl_async(
-                repl,
-                code,
+            output = await pydantic_monty.run_monty_async(
+                monty,
+                inputs=inputs,
                 external_functions=external_fns,
+                limits=limits,
                 print_callback=print_callback,
                 os=vfs,
             )
-        except (
-            pydantic_monty.MontySyntaxError,
-            pydantic_monty.MontyRuntimeError,
-        ) as e:
+        except pydantic_monty.MontyRuntimeError as e:
             stdout = "".join(stdout_lines)
             if len(stdout) > max_chars:
                 stdout = stdout[:max_chars] + "\n... (output truncated)"
