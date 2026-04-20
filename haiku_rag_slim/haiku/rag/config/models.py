@@ -96,7 +96,7 @@ class ResearchConfig(BaseModel):
     max_concurrency: int = 1
 
 
-class RLMConfig(BaseModel):
+class AnalysisConfig(BaseModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
@@ -174,7 +174,6 @@ class ProcessingConfig(BaseModel):
 
 class SearchConfig(BaseModel):
     limit: int = 10
-    max_context_items: int = 10
     max_context_chars: int = 10000
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
     vector_refine_factor: int = 30
@@ -219,7 +218,7 @@ class AppConfig(BaseModel):
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
-    rlm: RLMConfig = Field(default_factory=RLMConfig)
+    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)

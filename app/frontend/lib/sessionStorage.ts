@@ -9,33 +9,12 @@ export interface Citation {
 	content: string;
 }
 
-export interface QAHistoryEntry {
-	question: string;
-	answer: string;
-	citations: Citation[];
-}
-
-export interface DocumentInfo {
-	id: string;
-	title: string;
-	uri: string;
-	created: string;
-}
-
-export interface ResearchEntry {
-	question: string;
-	title: string;
-	executive_summary: string;
-}
-
 // Matches RAGState from the backend skill
 export interface RAGState {
-	citations: Citation[];
-	qa_history: QAHistoryEntry[];
+	citation_index: Record<string, Citation>;
+	citations: string[][];
 	document_filter: string | null;
 	searches: Record<string, unknown[]>;
-	documents: DocumentInfo[];
-	reports: ResearchEntry[];
 }
 
 export interface StoredMessage {
@@ -59,20 +38,20 @@ const ACTIVE_SESSION_KEY = "haiku.rag.activeSession";
 
 export function normalizeRAGState(state?: Partial<RAGState>): RAGState {
 	return {
+		citation_index: state?.citation_index ?? {},
 		citations: state?.citations ?? [],
-		qa_history: state?.qa_history ?? [],
 		document_filter: state?.document_filter ?? null,
 		searches: state?.searches ?? {},
-		documents: state?.documents ?? [],
-		reports: state?.reports ?? [],
 	};
 }
 
-// Derive per-turn citation arrays from qa_history
-export function deriveCitationsHistory(state: RAGState): Citation[][] {
-	return state.qa_history
-		.filter((entry) => entry.citations?.length > 0)
-		.map((entry) => entry.citations);
+export function getLatestCitations(state: RAGState): Citation[] {
+	const turns = state.citations;
+	if (turns.length === 0) return [];
+	const latestIds = turns[turns.length - 1];
+	return latestIds
+		.map((id) => state.citation_index[id])
+		.filter((c): c is Citation => c !== undefined);
 }
 
 export function getAllSessions(): StoredSession[] {

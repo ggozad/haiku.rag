@@ -21,8 +21,8 @@ import { FilterIcon } from "../lib/icons";
 import type { RAGState } from "../lib/sessionStorage";
 import {
 	createSession,
-	deriveCitationsHistory,
 	getActiveSessionId,
+	getLatestCitations,
 	getSession,
 	normalizeRAGState,
 	updateSessionMessages,
@@ -148,11 +148,11 @@ function ToolCallIndicator({
 		switch (toolName) {
 			case "search":
 				return <SearchIcon />;
-			case "ask":
-				return <MessageIcon />;
 			case "get_document":
 				return <FileIcon />;
 			case "execute_skill":
+			case "execute_code":
+			case "cite":
 				return <MessageIcon />;
 			default:
 				return <SearchIcon />;
@@ -163,16 +163,16 @@ function ToolCallIndicator({
 		switch (toolName) {
 			case "search":
 				return "Search";
-			case "ask":
-				return "Ask";
 			case "get_document":
 				return "Document";
 			case "execute_skill":
 				return "Skill";
-			case "analyze":
-				return "Analyze";
-			case "research":
-				return "Research";
+			case "execute_code":
+				return "Code";
+			case "cite":
+				return "Cite";
+			case "list_documents":
+				return "Documents";
 			default:
 				return toolName;
 		}
@@ -194,16 +194,20 @@ function ToolCallIndicator({
 				const query = args.query as string;
 				return <span className="tool-query">{query}</span>;
 			}
-			case "ask": {
-				const question = args.question as string;
-				return <span className="tool-query">{question}</span>;
-			}
 			case "get_document":
 				return <span className="tool-query">{args.query as string}</span>;
-			case "analyze":
-				return <span className="tool-query">{args.question as string}</span>;
-			case "research":
-				return <span className="tool-query">{args.question as string}</span>;
+			case "execute_code": {
+				const code = args.code as string | undefined;
+				return (
+					<span className="tool-query">
+						{code ? code.slice(0, 80) : "Running code..."}
+					</span>
+				);
+			}
+			case "cite":
+				return <span className="tool-query">Registering citations</span>;
+			case "list_documents":
+				return <span className="tool-query">Listing documents</span>;
 			default:
 				return <span>Processing...</span>;
 		}
@@ -292,7 +296,7 @@ function MessageViewWithCitations({
 	isRunning?: boolean;
 }) {
 	const ragState = useContext(ChatStateContext);
-	const citationsHistory = ragState ? deriveCitationsHistory(ragState) : [];
+	const latestCitations = ragState ? getLatestCitations(ragState) : [];
 
 	// Collect completed tool_call_ids from skill_tool_result activity messages
 	const completedToolCallIds = useMemo(() => {
@@ -326,7 +330,6 @@ function MessageViewWithCitations({
 			{({ messageElements }) => {
 				const result: React.ReactNode[] = [];
 				let elemIdx = 0;
-				let citIdx = 0;
 				let seenToolCalls = false;
 
 				for (const msg of messages) {
@@ -368,19 +371,15 @@ function MessageViewWithCitations({
 					}
 
 					// After an assistant text response that followed tool calls,
-					// inject the next citations entry (one per turn)
+					// show citations from the latest turn
 					if (msg.role === "assistant" && msg.content && seenToolCalls) {
-						if (citIdx < citationsHistory.length) {
-							const citations = citationsHistory[citIdx];
-							if (citations?.length) {
-								result.push(
-									<CitationBlock
-										key={`citations-${citIdx}`}
-										citations={citations}
-									/>,
-								);
-							}
-							citIdx++;
+						if (latestCitations.length > 0) {
+							result.push(
+								<CitationBlock
+									key={`citations-${i}`}
+									citations={latestCitations}
+								/>,
+							);
 						}
 						seenToolCalls = false;
 					}

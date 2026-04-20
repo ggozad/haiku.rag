@@ -30,6 +30,7 @@ from textual.worker import Worker
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.skills.analysis import AnalysisState
 from haiku.rag.skills.rag import RAGState, get_agent_preamble
 from haiku.skills.agent import (
     SkillToolset,
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 
 
 RAG_STATE_NAMESPACE = "rag"
+ANALYSIS_STATE_NAMESPACE = "analysis"
 
 
 class ChatApp(App):
@@ -86,14 +88,14 @@ class ChatApp(App):
     def __init__(
         self,
         db_path: Path,
-        skill: Skill,
+        skills: list[Skill],
         read_only: bool = False,
         before: datetime | None = None,
         model: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
-        self._skill = skill
+        self._skills = skills
         self.read_only = read_only
         self.before = before
         self._model = model
@@ -153,7 +155,7 @@ class ChatApp(App):
         )
         await self.client.__aenter__()
 
-        self._toolset = SkillToolset(skills=[self._skill])
+        self._toolset = SkillToolset(skills=self._skills)
         self._agent = Agent(
             self._model,
             instructions=build_system_prompt(
@@ -241,8 +243,7 @@ class ChatApp(App):
                                 content=accumulated_text,
                             )
                         )
-                        # Show citations from RAG state
-                        await self._show_citations(chat_history)
+                        await self._show_citations_and_programs(chat_history)
                     elif event.type == EventType.TOOL_CALL_START:
                         assert isinstance(event, ToolCallStartEvent)
                         chat_history.hide_thinking()
@@ -318,17 +319,31 @@ class ChatApp(App):
             chat_input.disabled = False
             chat_input.focus()
 
-    async def _show_citations(self, chat_history: "ChatHistory") -> None:
-        """Show citations from the RAG state after an agent response."""
+    async def _show_citations_and_programs(self, chat_history: "ChatHistory") -> None:
+        """Show citations and programs from skill states after an agent response."""
         if not self._toolset:
             return
-        rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
-        if rag_state is None:
-            return
-        citations = getattr(rag_state, "citations", [])
+        citations = []
+        for namespace in (RAG_STATE_NAMESPACE, ANALYSIS_STATE_NAMESPACE):
+            state = self._toolset.get_namespace(namespace)
+            if not state:
+                continue
+            citation_turns = getattr(state, "citations", [])
+            citation_index = getattr(state, "citation_index", {})
+            if citation_turns:
+                latest_ids = citation_turns[-1]
+                for cid in latest_ids:
+                    if cid in citation_index:
+                        citations.append(citation_index[cid])
         if citations:
-            # Show only new citations (since last response)
             await chat_history.add_citations(citations)
+
+        analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
+        if analysis_state:
+            executions = getattr(analysis_state, "executions", [])
+            successful = [e for e in executions if e.success]
+            if successful:
+                await chat_history.add_program(successful[-1].code)
 
     async def action_clear_chat(self) -> None:
         """Clear the chat history and reset session."""
@@ -420,9 +435,11 @@ class ChatApp(App):
         self._document_filter = event.selected
 
         if self._toolset:
+            doc_filter = build_multi_document_filter(self._document_filter)
             rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
             if isinstance(rag_state, RAGState):
-                rag_state.document_filter = build_multi_document_filter(
-                    self._document_filter
-                )
-                self._state = self._toolset.build_state_snapshot()
+                rag_state.document_filter = doc_filter
+            analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
+            if isinstance(analysis_state, AnalysisState):
+                analysis_state.document_filter = doc_filter
+            self._state = self._toolset.build_state_snapshot()

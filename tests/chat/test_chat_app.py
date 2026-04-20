@@ -57,7 +57,7 @@ def _make_app(db_path: Path, mock_client: AsyncMock | None = None):
 
     return ChatApp(
         db_path=db_path,
-        skill=skill,
+        skills=[skill],
         read_only=True,
     ), mock_client
 
@@ -80,7 +80,7 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
 
     return ChatApp(
         db_path=db_path,
-        skill=skill,
+        skills=[skill],
         read_only=True,
     ), mock_client
 

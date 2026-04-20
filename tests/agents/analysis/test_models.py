@@ -1,4 +1,4 @@
-from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
+from haiku.rag.agents.analysis.models import AnalysisResult, CodeExecution
 
 
 class TestCodeExecution:
@@ -25,8 +25,8 @@ class TestCodeExecution:
         assert "ZeroDivisionError" in execution.stderr
 
 
-class TestRLMResult:
+class TestAnalysisResult:
     def test_create_result(self):
-        result = RLMResult(answer="The answer is 42", program="print(42)")
+        result = AnalysisResult(answer="The answer is 42", program="print(42)")
         assert result.answer == "The answer is 42"
         assert result.program == "print(42)"

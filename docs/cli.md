@@ -165,10 +165,17 @@ Launch an interactive chat session for multi-turn conversations:
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
+
+# Enable analysis skill (code execution)
+haiku-rag chat -s rag -s analysis
 ```
 
 !!! note
     Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
+
+Flags:
+
+- `--skill` / `-s`: Skills to enable — `rag` (default), `analysis`. Can be repeated for multiple skills.
 
 The chat interface provides:
 
@@ -220,24 +227,24 @@ Flags:
 
 Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
 
-## RLM (Recursive Language Model)
+## Analyze
 
 Answer complex analytical questions via code execution:
 
 ```bash
-haiku-rag rlm "How many documents mention security?"
+haiku-rag analyze "How many documents mention security?"
 ```
 
 Filter to specific documents:
 
 ```bash
-haiku-rag rlm "What is the total revenue?" --filter "title LIKE '%Financial%'"
+haiku-rag analyze "What is the total revenue?" --filter "title LIKE '%Financial%'"
 ```
 
 Pre-load specific documents for comparison:
 
 ```bash
-haiku-rag rlm "Compare the conclusions" --document "Report A" --document "Report B"
+haiku-rag analyze "Compare the conclusions" --document "Report A" --document "Report B"
 ```
 
 Flags:
@@ -245,7 +252,7 @@ Flags:
 - `--filter` / `-f`: SQL WHERE clause to restrict document access
 - `--document` / `-d`: Pre-load a document by title or ID (can repeat)
 
-See [RLM Agent](agents/rlm.md) for details on capabilities and configuration.
+See [Analysis Agent](agents/analysis.md) for details on capabilities and configuration.
 
 ## Create Skill
 
@@ -271,7 +278,7 @@ The generated package is a pip-installable Python package that registers as a `h
 
 ### Available Tools
 
-`analyze`, `ask`, `get_document`, `list_documents`, `research`, `search`
+`cite`, `execute_code`, `get_document`, `list_documents`, `search`
 
 ### Example
 
@@ -280,7 +287,7 @@ The generated package is a pip-installable Python package that registers as a `h
 haiku-rag create-skill \
   --name medic \
   --db /path/to/medic.lancedb \
-  --tools search,ask \
+  --tools search,cite \
   --config-file /path/to/haiku.rag.yaml \
   --description "Military medic knowledge base" \
   --preamble "You are a military medic expert."

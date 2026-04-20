@@ -133,6 +133,25 @@ class CitationWidget(Collapsible):
             event.stop()
 
 
+class ProgramWidget(Collapsible):
+    """Inline expandable program code block."""
+
+    def __init__(self, program: str, **kwargs) -> None:
+        content = f"```python\n{program}\n```"
+        super().__init__(
+            Markdown(content),
+            title="Program",
+            collapsed=True,
+            **kwargs,
+        )
+
+    def on_key(self, event: "Key") -> None:
+        """Handle Enter to toggle expand/collapse."""
+        if event.key == "enter":
+            self.collapsed = not self.collapsed
+            event.stop()
+
+
 class ThinkingWidget(Static):
     """Thinking indicator shown while agent is processing."""
 
@@ -290,6 +309,22 @@ class ChatHistory(VerticalScroll):
         text-style: italic;
     }
 
+    /* Program */
+    ProgramWidget {
+        margin: 0 0 0 2;
+        background: $surface;
+    }
+
+    ProgramWidget > CollapsibleTitle {
+        padding: 0 1;
+        color: $text-muted;
+    }
+
+    ProgramWidget Contents {
+        padding: 1 2;
+        background: $panel;
+    }
+
     /* Thinking indicator */
     ThinkingWidget {
         margin: 1 0 0 4;
@@ -363,6 +398,13 @@ class ChatHistory(VerticalScroll):
         for citation in citations:
             widget = CitationWidget(citation)
             await self.mount(widget)
+        self.scroll_end(animate=False)
+
+    async def add_program(self, program: str) -> None:
+        """Add a collapsible program block after a response."""
+        if not program:
+            return
+        await self.mount(ProgramWidget(program))
         self.scroll_end(animate=False)
 
     async def show_thinking(self, text: str = "Thinking...") -> None:

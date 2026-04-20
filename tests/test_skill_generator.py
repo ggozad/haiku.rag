@@ -23,9 +23,8 @@ class TestAvailableTools:
             "list_documents",
             "get_document",
             "search",
-            "ask",
-            "research",
-            "analyze",
+            "execute_code",
+            "cite",
         }
 
 
@@ -43,7 +42,7 @@ class TestValidateTools:
         validate_tools(["search"])
 
     def test_valid_multiple_tools(self):
-        validate_tools(["list_documents", "get_document", "search", "ask"])
+        validate_tools(["list_documents", "get_document", "search", "cite"])
 
     def test_valid_all_tools(self):
         validate_tools(list(AVAILABLE_TOOLS))
@@ -97,7 +96,7 @@ class TestRenderTemplates:
             output_dir=tmp_path,
             name="recipes",
             description="A recipe skill.",
-            tool_names=["list_documents", "get_document", "search", "ask"],
+            tool_names=["list_documents", "get_document", "search", "cite"],
         )
         assert result == tmp_path / "recipes-skill"
         assert result.is_dir()
@@ -112,7 +111,7 @@ class TestRenderTemplates:
             output_dir=tmp_path,
             name="my-recipes",
             description="A recipe skill.",
-            tool_names=["search", "ask"],
+            tool_names=["search", "cite"],
         )
         assert result == tmp_path / "my-recipes-skill"
         pkg = result / "my_recipes_skill"
@@ -129,11 +128,11 @@ class TestRenderTemplates:
             output_dir=tmp_path,
             name="docs",
             description="A docs skill.",
-            tool_names=["search", "ask"],
+            tool_names=["search", "cite"],
         )
         init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
         content = init.read_text()
-        assert '["search", "ask"]' in content
+        assert '["search", "cite"]' in content
 
     def test_create_skill_tools_called(self, tmp_path):
         render_templates(
@@ -151,12 +150,12 @@ class TestRenderTemplates:
             output_dir=tmp_path,
             name="recipes",
             description="A recipe skill.",
-            tool_names=["search", "ask"],
+            tool_names=["search", "cite"],
         )
         init = tmp_path / "recipes-skill" / "recipes_skill" / "__init__.py"
         content = init.read_text()
         assert '"search"' in content
-        assert '"ask"' in content
+        assert '"cite"' in content
 
     def test_pyproject_toml(self, tmp_path):
         render_templates(
@@ -184,24 +183,23 @@ class TestRenderTemplates:
         )
         skill_md = tmp_path / "docs-skill" / "docs_skill" / "SKILL.md"
         content = skill_md.read_text()
-        assert "**search**" in content
-        assert "**ask**" not in content
-        assert "**list_documents**" not in content
-        assert "**research**" not in content
-        assert "**analyze**" not in content
+        assert "### search" in content
+        assert "### cite" not in content
+        assert "### list_documents" not in content
+        assert "### execute_code" not in content
 
     def test_skill_md_includes_all_selected(self, tmp_path):
         render_templates(
             output_dir=tmp_path,
             name="docs",
             description="A docs skill.",
-            tool_names=["search", "ask", "analyze"],
+            tool_names=["search", "execute_code", "cite"],
         )
         skill_md = tmp_path / "docs-skill" / "docs_skill" / "SKILL.md"
         content = skill_md.read_text()
-        assert "**search**" in content
-        assert "**ask**" in content
-        assert "**analyze**" in content
+        assert "search" in content
+        assert "execute_code" in content
+        assert "cite" in content
 
     def test_custom_preamble(self, tmp_path):
         render_templates(
@@ -226,23 +224,23 @@ class TestRenderTemplates:
         content = init.read_text()
         assert 'state_namespace="recipes"' in content
 
-    def test_analyze_state_fields(self, tmp_path):
+    def test_execute_code_state_fields(self, tmp_path):
         render_templates(
             output_dir=tmp_path,
             name="docs",
             description="A docs skill.",
-            tool_names=["search", "analyze"],
+            tool_names=["search", "execute_code"],
         )
         init = tmp_path / "docs-skill" / "docs_skill" / "__init__.py"
         content = init.read_text()
-        assert "analyses" in content
+        assert "executions" in content
 
     def test_imports_from_shared_tools(self, tmp_path):
         render_templates(
             output_dir=tmp_path,
             name="recipes",
             description="A recipe skill.",
-            tool_names=["search", "ask", "analyze"],
+            tool_names=["search", "execute_code", "cite"],
         )
         init = tmp_path / "recipes-skill" / "recipes_skill" / "__init__.py"
         content = init.read_text()
@@ -329,7 +327,7 @@ class TestGenerateSkill:
             output_dir=tmp_path,
             name="recipes",
             description="A recipe skill.",
-            tool_names=["search", "ask"],
+            tool_names=["search", "cite"],
         )
         assert result == tmp_path / "recipes-skill"
         assets = result / "recipes_skill" / "assets"
@@ -479,7 +477,7 @@ class TestGenerateSkillRemote:
             output_dir=tmp_path,
             name="recipes",
             description="A recipe skill.",
-            tool_names=["search", "ask"],
+            tool_names=["search", "cite"],
             config_path=config_file,
         )
         assets = result / "recipes_skill" / "assets"

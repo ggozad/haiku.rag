@@ -7,12 +7,10 @@ Configure search behavior and context expansion:
 ```yaml
 search:
   limit: 10                    # Default number of results to return
-  max_context_items: 10        # Maximum items in expanded context
   max_context_chars: 10000     # Maximum characters in expanded context
 ```
 
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 10
-- **max_context_items**: Limits how many document items (paragraphs, list items, etc.) can be included in expanded context. Default: 10.
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
 
 Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
@@ -58,12 +56,12 @@ research:
 
 The research workflow uses an iterative feedback loop: the planner proposes one question at a time, sees the answer, then decides whether to continue or synthesize. This continues until the planner marks research as complete or `max_iterations` is reached.
 
-## RLM Configuration
+## Analysis Configuration
 
-Configure the RLM (Recursive Language Model) agent:
+Configure the analysis agent:
 
 ```yaml
-rlm:
+analysis:
   model:
     provider: anthropic
     name: claude-sonnet-4-20250514
@@ -76,4 +74,4 @@ rlm:
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 
-See [RLM Agent](../agents/rlm.md) for usage details.
+See [Analysis Agent](../agents/analysis.md) for usage details.

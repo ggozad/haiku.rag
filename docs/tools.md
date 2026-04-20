@@ -59,26 +59,8 @@ docs = create_document_toolset(config)
 - `get_document(query)` — Retrieve a document by title or URI.
 - `summarize_document(query)` — Generate an LLM summary of a document's content.
 
-### Analysis Toolset
-
-`create_analysis_toolset()` provides computational analysis via the RLM agent.
-
-```python
-from haiku.rag.tools import create_analysis_toolset
-
-analysis = create_analysis_toolset(config)
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `config` | required | `AppConfig` |
-| `base_filter` | `None` | SQL WHERE clause applied to searches |
-| `tool_name` | `"analyze"` | Name of the tool exposed to the agent |
-
 ## Filter Helpers
 
 `haiku.rag.tools.filters` provides utilities for building SQL filters:
 
-- **`build_document_filter(document_name)`** — Builds a LIKE filter matching against both `uri` and `title`, case-insensitive. Also matches without spaces (e.g., "TB MED 593" matches "tbmed593").
-- **`build_multi_document_filter(document_names)`** — Combines multiple document name filters with OR logic.
-- **`combine_filters(filter1, filter2)`** — Combines two filters with AND logic. Returns `None` if both are `None`.
+- **`build_multi_document_filter(document_names)`** — Combines multiple document name filters with OR logic. Matches against both `uri` and `title`, case-insensitive.

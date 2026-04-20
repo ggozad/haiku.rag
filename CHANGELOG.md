@@ -1,6 +1,45 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Document virtual filesystem in analysis sandbox**: Documents mounted at `/documents/{id}/` with `metadata.json` (eager), `content.txt` (lazy), and `items.jsonl` (lazy). Standard Python `pathlib.Path` for browsing and reading document content and structure.
+- **`execute_code` skill tool**: Direct code execution in the sandbox, surfaced as individual AG-UI events in the chat TUI. Items VFS uses a lazy bulk cache (~1s for 1000 documents vs 60s+ per-document queries).
+- **`cite` skill tool**: Explicit citation registration with per-turn tracking via `citation_index` and `citations` fields in state
+- **`--skill` flag for chat TUI**: `haiku-rag chat -s rag -s analysis` to enable specific skills
+- **`--model` overrides all agents**: Chat, QA, research, and analysis agents all use the specified model
+- **Collapsible program display in chat TUI**: Analysis code execution results shown as expandable code blocks
+
+### Changed
+
+- **BREAKING: Flatten skill architecture**: Skill sub-agents now call `search`, `execute_code`, `cite`, `list_documents`, `get_document` directly — every tool call surfaces as an AG-UI event. Removes the 3rd agent layer where `ask`/`analyze`/`research` spawned inner agents whose tool calls were invisible.
+- **BREAKING: Rename RLM agent to analysis agent** throughout:
+  - `agents/rlm/` → `agents/analysis/`, all classes renamed (`RLMResult` → `AnalysisResult`, etc.)
+  - `client.rlm()` → `client.analyze()`
+  - CLI: `haiku-rag rlm` → `haiku-rag analyze`
+  - MCP: `rlm_question` → `analyze`
+  - Config: `rlm:` → `analysis:` in YAML, `RLMConfig` → `AnalysisConfig`
+  - Skill entrypoint: `rag-rlm` → `rag-analysis`
+- **Analysis sandbox `search()` returns expanded results** with `doc_item_refs` and `labels` for cross-referencing with `items.jsonl`
+- **`list_documents` skill tool** takes no parameters — returns all documents
+- **Per-turn citation tracking**: `citation_index: dict[str, Citation]` (deduplicated) + `citations: list[list[str]]` (per-turn chunk IDs) replaces flat citation list
+- **Search rate limiting**: Skill search tool enforces `config.qa.max_searches`
+- **Context expansion respects section boundaries**: Sections within the char budget are returned whole regardless of item count. Too-large sections expand bounded by section edges. Adjacent sections no longer merge — only overlapping ranges do.
+- **Visualization shows full expanded section**: `visualize_chunk` expands context before resolving bounding boxes, so all pages the section spans get highlighted.
+
+### Removed
+
+- **`ask` skill tool**: Replaced by direct `search` + `cite` — the skill sub-agent searches and answers directly
+- **`analyze` skill tool**: Replaced by direct `execute_code` + `search` + `cite`
+- **`research` skill tool**: Removed from skill layer (still available via CLI `haiku-rag research` and MCP)
+- **`get_document()`, `get_docling_document()`**: Removed from analysis sandbox — replaced by VFS
+- **`get_chunk()`**: Removed from analysis sandbox — search results include expanded context
+- **`create_analysis_toolset()`**: Removed unused `tools/analysis.py` module
+- **`qa_history`, `reports` from skill state**: Conversational context handled by the outer chat agent
+- **`combine_filters`, `build_document_filter`**: Removed from public API
+- **`max_context_items`**: Removed from `SearchConfig` — `max_context_chars` is the sole expansion constraint
+- **`QAHistoryEntry`, `tools/qa.py`**: Removed unused QA history model and relevance threshold
+
 ## [0.40.1] - 2026-04-17
 
 ### Fixed

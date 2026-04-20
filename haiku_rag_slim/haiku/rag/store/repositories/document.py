@@ -100,6 +100,20 @@ class DocumentRepository:
 
         return self._record_to_document(results[0])
 
+    async def get_content(self, entity_id: str) -> str | None:
+        """Get only the text content of a document (skips docling blobs)."""
+        safe_id = escape_sql_string(entity_id)
+        results = list(
+            self.store.documents_table.search()
+            .select(["content"])
+            .where(f"id = '{safe_id}'")
+            .limit(1)
+            .to_list()
+        )
+        if not results:
+            return None
+        return results[0]["content"]
+
     _DOCLING_COLUMNS = ["id", "docling_document", "docling_version"]
 
     async def get_docling_data(self, entity_id: str) -> Document | None:

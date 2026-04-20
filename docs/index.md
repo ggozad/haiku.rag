@@ -8,7 +8,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Question answering** — QA agents with citations (page numbers, section headings)
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
 - **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
-- **RLM agent** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
+- **Analysis agent** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM. QA/Research: any model supported by Pydantic AI
@@ -59,13 +59,12 @@ haiku-rag chat  # Interactive conversation mode
 
 - [Getting started](tutorial.md) - Tutorial
 - [Installation](installation.md) - Install haiku.rag with different providers
-- [Architecture](architecture.md) - System overview and data flow
 - [Configuration](configuration/index.md) - Environment variables and settings
 - [CLI](cli.md) - Command line interface usage
 - [Python](python.md) - Python API reference
 - [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
 - [Agents](agents/index.md) - QA, chat, and research agents
-- [RLM Agent](agents/rlm.md) - Complex analytical tasks via code execution
+- [Analysis Agent](agents/analysis.md) - Complex analytical tasks via code execution
 - [Applications](apps.md) - Chat TUI, web app, and inspector
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration

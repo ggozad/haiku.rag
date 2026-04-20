@@ -49,7 +49,6 @@ def build_experiment_metadata(
         "embedder_dim": config.embeddings.model.vector_dim,
         "chunk_size": config.processing.chunk_size,
         "search_limit": config.search.limit,
-        "max_context_items": config.search.max_context_items,
         "max_context_chars": config.search.max_context_chars,
         "rerank_provider": config.reranking.model.provider
         if config.reranking.model

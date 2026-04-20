@@ -30,11 +30,11 @@ from haiku.rag.utils import escape_sql_string
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.agents.analysis.models import AnalysisResult
     from haiku.rag.agents.research.models import (
         Citation,
         ResearchReport,
     )
-    from haiku.rag.agents.rlm.models import RLMResult
 
 logger = logging.getLogger(__name__)
 
@@ -1105,7 +1105,6 @@ class HaikuRAG:
         """
         from haiku.rag.context import expand_with_items
 
-        max_items = self._config.search.max_context_items
         max_chars = self._config.search.max_context_chars
 
         # Group by document_id for efficient processing
@@ -1132,7 +1131,6 @@ class HaikuRAG:
                 self.document_item_repository,
                 doc_id,
                 doc_results,
-                max_items,
                 max_chars,
             )
             expanded_results.extend(expanded)
@@ -1192,17 +1190,17 @@ class HaikuRAG:
 
         return await graph.run(state=state, deps=deps)
 
-    async def rlm(
+    async def analyze(
         self,
         question: str,
         documents: list[str] | None = None,
         filter: str | None = None,
-    ) -> "RLMResult":
-        """Answer a question using the RLM agent with code execution.
+    ) -> "AnalysisResult":
+        """Answer a question using the analysis agent with code execution.
 
-        The RLM (Recursive Language Model) agent can write and execute Python
-        code in a sandboxed environment to solve problems that require
-        computation, aggregation, or complex traversal across documents.
+        The analysis agent can write and execute Python code in a sandboxed
+        environment to solve problems that require computation, aggregation,
+        or complex traversal across documents.
 
         Args:
             question: The question to answer.
@@ -1210,16 +1208,16 @@ class HaikuRAG:
             filter: SQL WHERE clause to filter documents during searches.
 
         Returns:
-            RLMResult with the answer and the final consolidated program.
+            AnalysisResult with the answer and the final consolidated program.
         """
-        from haiku.rag.agents.rlm import (
-            RLMContext,
-            RLMDeps,
+        from haiku.rag.agents.analysis import (
+            AnalysisContext,
+            AnalysisDeps,
             Sandbox,
-            create_rlm_agent,
+            create_analysis_agent,
         )
 
-        context = RLMContext(filter=filter)
+        context = AnalysisContext(filter=filter)
 
         if documents:
             loaded_docs = []
@@ -1230,26 +1228,51 @@ class HaikuRAG:
             context.documents = loaded_docs if loaded_docs else None
 
         sandbox = Sandbox(
-            client=self,
+            db_path=self.store.db_path,
             config=self._config,
             context=context,
         )
-        deps = RLMDeps(
+        deps = AnalysisDeps(
             sandbox=sandbox,
             context=context,
         )
 
-        agent = create_rlm_agent(self._config)
+        from haiku.rag.agents.analysis.models import AnalysisResult
+        from haiku.rag.agents.research.models import Citation
+
+        agent = create_analysis_agent(self._config)
         result = await agent.run(question, deps=deps)
 
-        return result.output
+        output = result.output
+        seen: set[str] = set()
+        citations: list[Citation] = []
+        for sr in sandbox._search_results:
+            if sr.chunk_id and sr.chunk_id not in seen:
+                seen.add(sr.chunk_id)
+                citations.append(
+                    Citation(
+                        index=len(seen),
+                        document_id=sr.document_id or "",
+                        chunk_id=sr.chunk_id,
+                        document_uri=sr.document_uri or "",
+                        document_title=sr.document_title,
+                        page_numbers=sr.page_numbers,
+                        headings=sr.headings,
+                        content=sr.content,
+                    )
+                )
+        return AnalysisResult(
+            answer=output.answer,
+            program=output.program,
+            citations=citations,
+        )
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         """Render page images with bounding box highlights for a chunk.
 
-        Gets the DoclingDocument from the chunk's document, resolves bounding boxes
-        from chunk metadata, and renders all pages that contain bounding boxes with
-        yellow/orange highlight overlays.
+        Expands the chunk's context to find the full section, then resolves
+        bounding boxes from all items in the expanded range. This ensures
+        visualization covers all pages the expanded content spans.
 
         Args:
             chunk: The chunk to visualize.
@@ -1261,6 +1284,8 @@ class HaikuRAG:
         from copy import deepcopy
 
         from PIL import ImageDraw
+
+        from haiku.rag.store.models.chunk import ChunkMetadata
 
         # Get the document structure (from cache if available)
         if not chunk.document_id:
@@ -1274,9 +1299,23 @@ class HaikuRAG:
         if not docling_doc:
             return []
 
-        # Resolve bounding boxes from chunk metadata
+        # Expand context to get all doc_item_refs in the section
         chunk_meta = chunk.get_chunk_metadata()
-        bounding_boxes = chunk_meta.resolve_bounding_boxes(docling_doc)
+        if chunk_meta.doc_item_refs:
+            search_result = SearchResult(
+                content=chunk.content,
+                score=1.0,
+                chunk_id=chunk.id,
+                document_id=chunk.document_id,
+                doc_item_refs=chunk_meta.doc_item_refs,
+                page_numbers=chunk_meta.page_numbers,
+            )
+            expanded = await self.expand_context([search_result])
+            refs = expanded[0].doc_item_refs if expanded else chunk_meta.doc_item_refs
+            meta = ChunkMetadata(doc_item_refs=refs)
+        else:
+            meta = chunk_meta
+        bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
         if not bounding_boxes:
             return []
 

@@ -8,9 +8,8 @@ AVAILABLE_TOOLS: set[str] = {
     "list_documents",
     "get_document",
     "search",
-    "ask",
-    "research",
-    "analyze",
+    "execute_code",
+    "cite",
 }
 
 DEFAULT_PREAMBLE = (

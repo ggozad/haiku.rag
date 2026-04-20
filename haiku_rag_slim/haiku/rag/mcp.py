@@ -183,12 +183,12 @@ def create_mcp_server(
             return None
 
     @mcp.tool()
-    async def rlm_question(
+    async def analyze(
         question: str,
         document: str | None = None,
         filter: str | None = None,
     ) -> str:
-        """Answer complex questions using code execution (RLM agent).
+        """Answer complex questions using code execution (analysis agent).
 
         Use this for questions requiring computation, aggregation, or
         complex traversal across documents. The agent can write Python
@@ -205,9 +205,9 @@ def create_mcp_server(
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 documents = [document] if document else None
-                result = await rag.rlm(question, documents=documents, filter=filter)
+                result = await rag.analyze(question, documents=documents, filter=filter)
                 return result.answer
         except Exception as e:
-            return f"Error running RLM agent: {e!s}"
+            return f"Error running analysis agent: {e!s}"
 
     return mcp

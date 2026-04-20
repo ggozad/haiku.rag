@@ -3,26 +3,26 @@ from pathlib import Path
 import pytest
 from pydantic_ai import Agent
 
-from haiku.rag.agents.rlm.agent import create_rlm_agent
-from haiku.rag.agents.rlm.dependencies import RLMDeps
-from haiku.rag.agents.rlm.models import CodeExecution, RLMResult
+from haiku.rag.agents.analysis.agent import create_analysis_agent
+from haiku.rag.agents.analysis.dependencies import AnalysisDeps
+from haiku.rag.agents.analysis.models import CodeExecution, RawAnalysisResult
 from haiku.rag.config import AppConfig, Config
 
 
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_rlm")
+    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_analysis")
 
 
-class TestCreateRLMAgent:
+class TestCreateAnalysisAgent:
     def test_creates_agent(self):
-        agent = create_rlm_agent(Config)
+        agent = create_analysis_agent(Config)
         assert isinstance(agent, Agent)
-        assert agent.deps_type is RLMDeps
-        assert agent.output_type is RLMResult
+        assert agent.deps_type is AnalysisDeps
+        assert agent.output_type is RawAnalysisResult
 
     def test_agent_has_execute_code_tool(self):
-        agent = create_rlm_agent(Config)
+        agent = create_analysis_agent(Config)
         tool_names = list(agent._function_toolset.tools.keys())
         assert "execute_code" in tool_names
 
@@ -42,13 +42,13 @@ class TestCodeExecutionModel:
         assert execution.success is True
 
 
-class TestClientRLMIntegration:
-    """Integration tests for client.rlm() method."""
+class TestClientAnalysisIntegration:
+    """Integration tests for client.analyze() method."""
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_count_documents(self, allow_model_requests, temp_db_path):
-        """Test RLM agent can count documents.
+    async def test_analyze_count_documents(self, allow_model_requests, temp_db_path):
+        """Test analysis agent can count documents.
 
         Agent program:
             docs = list_documents(limit=1000)
@@ -63,14 +63,14 @@ class TestClientRLMIntegration:
             await client.create_document("Second document about dogs.", title="Doc 2")
             await client.create_document("Third document about birds.", title="Doc 3")
 
-            result = await client.rlm("How many documents are in the database?")
+            result = await client.analyze("How many documents are in the database?")
 
             assert "3" in result.answer
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_aggregation(self, allow_model_requests, temp_db_path):
-        """Test RLM agent can perform aggregation across documents.
+    async def test_analyze_aggregation(self, allow_model_requests, temp_db_path):
+        """Test analysis agent can perform aggregation across documents.
 
         Agent program:
             import re
@@ -103,7 +103,7 @@ class TestClientRLMIntegration:
                 "Sales report Q3: Revenue was $200,000.", title="Q3 Report"
             )
 
-            result = await client.rlm(
+            result = await client.analyze(
                 "What is the total revenue across all quarterly reports?"
             )
 
@@ -111,8 +111,8 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_with_filter(self, allow_model_requests, temp_db_path):
-        """Test RLM agent respects filter parameter.
+    async def test_analyze_with_filter(self, allow_model_requests, temp_db_path):
+        """Test analysis agent respects filter parameter.
 
         Agent program:
             docs = list_documents(limit=1000)
@@ -130,7 +130,7 @@ class TestClientRLMIntegration:
             await client.create_document("Dog document.", title="Dogs")
             await client.create_document("Bird document.", title="Birds")
 
-            result = await client.rlm(
+            result = await client.analyze(
                 "How many documents are available?",
                 filter="title = 'Cats'",
             )
@@ -139,15 +139,10 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_search_and_get_chunk(self, allow_model_requests, temp_db_path):
-        """Test RLM agent can search and use get_chunk for citations.
-
-        Agent program:
-            results = search("content", limit=5)
-            for r in results:
-                chunk = get_chunk(r['chunk_id'])
-                print(chunk['document_title'], chunk['chunk_id'])
-        """
+    async def test_analyze_search_and_identify_source(
+        self, allow_model_requests, temp_db_path
+    ):
+        """Test analysis agent can search and identify source documents."""
         from haiku.rag.client import HaikuRAG
 
         config = AppConfig()
@@ -158,7 +153,7 @@ class TestClientRLMIntegration:
                 title="Animal Facts",
             )
 
-            result = await client.rlm(
+            result = await client.analyze(
                 "Search for content about animals and tell me "
                 "which document it came from."
             )
@@ -167,10 +162,10 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_semantic_analysis_with_llm(
+    async def test_analyze_semantic_analysis_with_llm(
         self, allow_model_requests, temp_db_path
     ):
-        """Test RLM agent can use llm() for semantic analysis combined with computation.
+        """Test analysis agent can use llm() for semantic analysis combined with computation.
 
         Agent program:
             docs = list_documents(limit=100)
@@ -209,7 +204,7 @@ class TestClientRLMIntegration:
                 title="Q3 Update",
             )
 
-            result = await client.rlm(
+            result = await client.analyze(
                 "Analyze the sentiment of each quarterly update. "
                 "How many quarters were positive, negative, and mixed?"
             )
@@ -220,8 +215,8 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_search_and_extract(self, allow_model_requests, temp_db_path):
-        """Test RLM agent can use search() to find content and extract information.
+    async def test_analyze_search_and_extract(self, allow_model_requests, temp_db_path):
+        """Test analysis agent can use search() to find content and extract information.
 
         Agent program:
             results = search("document element types", limit=20)
@@ -242,7 +237,7 @@ class TestClientRLMIntegration:
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
             await client.create_document_from_source(pdf_path)
 
-            result = await client.rlm(
+            result = await client.analyze(
                 "Search for content about document element types or labels. "
                 "What are all the different document element types mentioned? "
                 "List them all."
@@ -277,10 +272,10 @@ class TestClientRLMIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_rlm_with_preloaded_documents(
+    async def test_analyze_with_preloaded_documents(
         self, allow_model_requests, temp_db_path
     ):
-        """Test RLM agent can use pre-loaded documents variable.
+        """Test analysis agent can use pre-loaded documents variable.
 
         Agent program:
             if 'documents' in dir():
@@ -303,7 +298,7 @@ class TestClientRLMIntegration:
                 title="Mission Statement",
             )
 
-            result = await client.rlm(
+            result = await client.analyze(
                 "Using the pre-loaded documents variable, "
                 "tell me when was the company founded and what is their mission?",
                 documents=["Company History", "Mission Statement"],

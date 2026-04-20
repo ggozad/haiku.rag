@@ -14,6 +14,12 @@ Conversational RAG from the terminal with streaming responses and session memory
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
+
+# Enable analysis skill (code execution)
+haiku-rag chat -s rag -s analysis
+
+# Analysis only
+haiku-rag chat -s analysis
 ```
 
 ### Interface
@@ -46,7 +52,6 @@ Press `Ctrl+P` to open the command palette:
 ### Session Management
 
 - Conversation history is maintained in memory for the session
-- Previous Q/A pairs are automatically used as context for follow-up questions via the `ask` tool
 - Citations are tracked per response and can be inspected
 - Document filter restricts all searches to selected documents
 - Clearing chat resets session state
@@ -61,7 +66,7 @@ Browser-based conversational RAG with a CopilotKit frontend.
 - Expandable citations with source documents, pages, and headings
 - Visual grounding to view chunk source locations in documents
 - Document filter to restrict searches to selected documents
-- Session state view for inspecting accumulated Q&A history, citations, and documents
+- Session state view for inspecting citations and search results
 
 ### Quick Start
 
