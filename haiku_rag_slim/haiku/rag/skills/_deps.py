@@ -34,3 +34,24 @@ def make_rag_lifespan(db_path: Path, config: AppConfig):
             yield
 
     return lifespan
+
+
+def make_analysis_lifespan(db_path: Path, config: AppConfig):
+    @asynccontextmanager
+    async def lifespan(deps: AnalysisRunDeps) -> AsyncIterator[None]:
+        from haiku.rag.agents.analysis.dependencies import AnalysisContext
+        from haiku.rag.agents.analysis.sandbox import Sandbox
+        from haiku.rag.client import HaikuRAG
+
+        doc_filter = getattr(deps.state, "document_filter", None)
+        async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+            deps.rag = rag
+            deps.search_count = 0
+            deps.sandbox = Sandbox(
+                db_path=db_path,
+                config=config,
+                context=AnalysisContext(filter=doc_filter),
+            )
+            yield
+
+    return lifespan

@@ -60,7 +60,7 @@ def create_skill(
         config: haiku.rag AppConfig instance. If None, uses get_config().
     """
     from haiku.rag.config import get_config
-    from haiku.rag.skills._deps import AnalysisRunDeps, make_rag_lifespan
+    from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
     from haiku.rag.skills._tools import create_skill_extras, create_skill_tools
 
     if config is None:
@@ -95,5 +95,5 @@ def create_skill(
         state_type=STATE_TYPE,
         state_namespace=STATE_NAMESPACE,
         deps_type=AnalysisRunDeps,
-        lifespan=make_rag_lifespan(db_path, config),
+        lifespan=make_analysis_lifespan(db_path, config),
     )

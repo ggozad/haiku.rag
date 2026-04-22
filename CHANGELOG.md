@@ -5,6 +5,7 @@
 
 - **Skills share a single `HaikuRAG` client per invocation** via the new `haiku.skills>=0.15.0` `lifespan` hook. The skill's sub-agent opens one read-only client on entry, all tool calls reuse it, and it closes on exit — replacing the old pattern of open/close around every `search` / `list_documents` / `get_document` call.
 - **`max_searches` tracked on `RAGRunDeps.search_count`** instead of a module-level `ctx.run_id`-keyed dict. Eliminates a memory leak in long-running processes where old run ids were never evicted.
+- **Analysis sandbox persists variables across `execute_code` calls within one invocation.** Re-enables the incremental-exploration workflow (search in one call, process results in the next). Each new skill invocation constructs a fresh `Sandbox` via the analysis lifespan, so there is no cross-invocation leak.
 
 ## [0.41.0] - 2026-04-20
 

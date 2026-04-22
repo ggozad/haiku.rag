@@ -227,27 +227,26 @@ def create_skill_tools(
         tools["get_document"] = get_document
 
     if "execute_code" in tool_names:
+        from haiku.rag.skills._deps import AnalysisRunDeps
 
-        async def execute_code(ctx: RunContext[RAGRunDeps], code: str) -> str:
+        async def execute_code(ctx: RunContext[AnalysisRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
 
             The code has access to search(), list_documents(), llm() functions
             and a virtual filesystem at /documents/ with document content and
             structure (metadata.json, content.txt, items.jsonl per document).
 
-            Use print() to output results. Each call runs in a fresh
-            interpreter — variables do not persist between calls.
+            Use print() to output results. Variables persist between calls
+            within the same skill invocation.
 
             Args:
                 code: Python code to execute.
             """
-            from haiku.rag.agents.analysis.dependencies import AnalysisContext
-            from haiku.rag.agents.analysis.sandbox import Sandbox
-
-            state = _get_state(ctx, state_type)
-            doc_filter = state.document_filter if state else None
-            context = AnalysisContext(filter=doc_filter)
-            sandbox = Sandbox(db_path=db_path, config=config, context=context)
+            if ctx.deps is None or ctx.deps.sandbox is None:
+                raise RuntimeError(
+                    "AnalysisRunDeps.sandbox is not set — skill lifespan must run before execute_code."
+                )
+            sandbox = ctx.deps.sandbox
             result = await sandbox.execute(code)
 
             state = _get_state(ctx, state_type)
