@@ -359,6 +359,19 @@ class TestLifespan:
         assert skill.deps_type is RAGRunDeps
         assert skill.lifespan is not None
 
+    async def test_run_skill_end_to_end_opens_and_closes_client(
+        self, allow_model_requests, rag_db
+    ):
+        """Full sub-agent path: lifespan opens the client, tools see it, lifespan closes it."""
+        from pydantic_ai.models.test import TestModel
+
+        from haiku.rag.skills.rag import create_skill
+        from haiku.skills.agent import _run_skill
+
+        skill = create_skill(db_path=rag_db)
+        result, *_ = await _run_skill(TestModel(), skill, "List the documents.")
+        assert result
+
     async def test_lifespan_clears_citations_and_searches_but_keeps_index(self, rag_db):
         from haiku.rag.agents.research.models import Citation
         from haiku.rag.skills._deps import RAGRunDeps, make_rag_lifespan
