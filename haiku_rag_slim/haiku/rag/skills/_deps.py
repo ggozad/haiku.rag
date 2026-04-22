@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from haiku.rag.config.models import AppConfig
 from haiku.skills.state import SkillRunDeps
@@ -23,6 +23,26 @@ class AnalysisRunDeps(RAGRunDeps):
     sandbox: "Sandbox | None" = None
 
 
+def _reset_invocation_state(state: Any) -> None:
+    """Clear state fields scoped to a single invocation.
+
+    Keeps ``citation_index`` (accumulates resolved citations across the session
+    for lookup) and ``document_filter`` (session-level). Clears ``citations``,
+    ``searches``, and (for analysis) ``executions``.
+    """
+    if state is None:
+        return
+    citations = getattr(state, "citations", None)
+    if citations is not None:
+        citations.clear()
+    searches = getattr(state, "searches", None)
+    if searches is not None:
+        searches.clear()
+    executions = getattr(state, "executions", None)
+    if executions is not None:
+        executions.clear()
+
+
 def make_rag_lifespan(db_path: Path, config: AppConfig):
     @asynccontextmanager
     async def lifespan(deps: RAGRunDeps) -> AsyncIterator[None]:
@@ -31,6 +51,7 @@ def make_rag_lifespan(db_path: Path, config: AppConfig):
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
             deps.rag = rag
             deps.search_count = 0
+            _reset_invocation_state(deps.state)
             yield
 
     return lifespan
@@ -52,6 +73,7 @@ def make_analysis_lifespan(db_path: Path, config: AppConfig):
                 config=config,
                 context=AnalysisContext(filter=doc_filter),
             )
+            _reset_invocation_state(deps.state)
             yield
 
     return lifespan

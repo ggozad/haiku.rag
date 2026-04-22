@@ -358,3 +358,35 @@ class TestLifespan:
         skill = create_skill(config=test_app_config, db_path=temp_db_path)
         assert skill.deps_type is RAGRunDeps
         assert skill.lifespan is not None
+
+    async def test_lifespan_clears_citations_and_searches_but_keeps_index(self, rag_db):
+        from haiku.rag.agents.research.models import Citation
+        from haiku.rag.skills._deps import RAGRunDeps, make_rag_lifespan
+        from haiku.rag.skills.rag import RAGState
+
+        config = AppConfig()
+        lifespan = make_rag_lifespan(rag_db, config)
+
+        state = RAGState(
+            document_filter="title = 'AI Overview'",
+            citation_index={
+                "c1": Citation(
+                    index=1,
+                    chunk_id="c1",
+                    document_id="d1",
+                    document_title="t",
+                    document_uri="u",
+                    content="x",
+                    page_numbers=[],
+                    headings=[],
+                )
+            },
+            citations=[["c1"]],
+            searches={"prior": []},
+        )
+        deps = RAGRunDeps(state=state)
+        async with lifespan(deps):
+            assert state.citations == []
+            assert state.searches == {}
+            assert "c1" in state.citation_index  # preserved for cross-turn lookup
+            assert state.document_filter == "title = 'AI Overview'"

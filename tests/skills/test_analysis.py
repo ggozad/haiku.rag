@@ -265,3 +265,38 @@ class TestAnalysisLifespan:
         skill = create_skill(config=test_app_config, db_path=temp_db_path)
         assert skill.deps_type is AnalysisRunDeps
         assert skill.lifespan is not None
+
+    async def test_lifespan_clears_executions_citations_searches(self, rag_db):
+        from haiku.rag.agents.research.models import Citation
+        from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
+        from haiku.rag.skills._tools import CodeExecutionEntry
+        from haiku.rag.skills.analysis import AnalysisState
+
+        config = AppConfig()
+        lifespan = make_analysis_lifespan(rag_db, config)
+
+        state = AnalysisState(
+            document_filter="title = 'AI Overview'",
+            executions=[CodeExecutionEntry(code="prior", stdout="", success=True)],
+            citation_index={
+                "c1": Citation(
+                    index=1,
+                    chunk_id="c1",
+                    document_id="d1",
+                    document_title="t",
+                    document_uri="u",
+                    content="x",
+                    page_numbers=[],
+                    headings=[],
+                )
+            },
+            citations=[["c1"]],
+            searches={"prior": []},
+        )
+        deps = AnalysisRunDeps(state=state)
+        async with lifespan(deps):
+            assert state.executions == []
+            assert state.citations == []
+            assert state.searches == {}
+            assert "c1" in state.citation_index
+            assert state.document_filter == "title = 'AI Overview'"

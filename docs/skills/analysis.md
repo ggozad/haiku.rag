@@ -37,10 +37,11 @@ class AnalysisState(BaseModel):
     searches: dict[str, list[SearchResult]] = {}
 ```
 
-- **document_filter** — SQL WHERE clause applied to `search` and `list_documents` calls.
-- **executions** — Each `execute_code` call appends a `CodeExecutionEntry` with code, stdout, stderr, and success status.
-- **citation_index** / **citations** — Same per-turn citation tracking as the RAG skill.
-- **searches** — Search results from both the `search` tool and sandbox-internal searches.
+- **document_filter** — SQL WHERE clause applied to `search` and `list_documents` calls. Persists across invocations as session-level configuration.
+- **executions** — Each `execute_code` call appends a `CodeExecutionEntry` with code, stdout, stderr, and success status. Cleared at the start of each invocation; mirrors the sandbox lifecycle (variables persist across calls within one invocation, a fresh sandbox is built per invocation).
+- **citation_index** — Citations indexed by chunk ID. Accumulates across invocations (same semantics as the RAG skill).
+- **citations** — Cleared at the start of each invocation; holds only the in-progress turn.
+- **searches** — Search results from both the `search` tool and sandbox-internal searches. Cleared at the start of each invocation.
 
 ## Usage with RAG Skill
 

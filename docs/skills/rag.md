@@ -36,7 +36,7 @@ class RAGState(BaseModel):
     searches: dict[str, list[SearchResult]] = {}
 ```
 
-- **citation_index** — All citations indexed by chunk ID (deduplicated across turns).
-- **citations** — Per-turn lists of chunk IDs registered via the `cite` tool.
-- **document_filter** — SQL WHERE clause applied to `search` and `list_documents` calls. Set this to scope queries to specific documents.
-- **searches** — Search results keyed by query string.
+- **citation_index** — All citations indexed by chunk ID. Accumulates across invocations so historical turns' chunk IDs remain resolvable in the UI scrollback.
+- **citations** — Chunk IDs registered via the `cite` tool. Cleared at the start of each invocation; holds only the in-progress turn.
+- **document_filter** — SQL WHERE clause applied to `search` and `list_documents` calls. Persists across invocations as session-level configuration.
+- **searches** — Search results keyed by query string. Cleared at the start of each invocation.
