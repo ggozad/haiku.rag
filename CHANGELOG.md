@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.42.0] - 2026-04-22
+
 ### Fixed
 
 - **`create_document`, `update_document`, and rebuild (`RECHUNK` / full fallback) no longer misread URL-prefixed text as a URL to fetch.** These paths passed known-text content through `HaikuRAG.convert()`, which dispatches on `urlparse(source).scheme`; text whose first line was `https://...` (common for clipped web pages and notes) got handed to `httpx.get` and crashed with `httpx.InvalidURL` on embedded whitespace. Fixed by calling `converter.convert_text(...)` directly at those sites; `convert()` itself is unchanged for `create_document_from_source`.
@@ -1413,7 +1415,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.41.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.42.0...HEAD
+[0.42.0]: https://github.com/ggozad/haiku.rag/compare/0.41.0...0.42.0
 [0.41.0]: https://github.com/ggozad/haiku.rag/compare/0.40.1...0.41.0
 [0.40.1]: https://github.com/ggozad/haiku.rag/compare/0.39.0...0.40.1
 [0.39.0]: https://github.com/ggozad/haiku.rag/compare/0.38.0...0.39.0
