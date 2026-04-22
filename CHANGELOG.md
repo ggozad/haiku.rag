@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **`create_document`, `update_document`, and rebuild (`RECHUNK` / full fallback) no longer misread URL-prefixed text as a URL to fetch.** These paths passed known-text content through `HaikuRAG.convert()`, which dispatches on `urlparse(source).scheme`; text whose first line was `https://...` (common for clipped web pages and notes) got handed to `httpx.get` and crashed with `httpx.InvalidURL` on embedded whitespace. Fixed by calling `converter.convert_text(...)` directly at those sites; `convert()` itself is unchanged for `create_document_from_source`.
+
 ### Changed
 
 - **Skills share a single `HaikuRAG` client per invocation** via the new `haiku.skills>=0.15.0` `lifespan` hook. The skill's sub-agent opens one read-only client on entry, all tool calls reuse it, and it closes on exit — replacing the old pattern of open/close around every `search` / `list_documents` / `get_document` call.

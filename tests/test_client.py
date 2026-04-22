@@ -1544,3 +1544,78 @@ async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
             filter=f"title = '{injection_payload}'"
         )
         assert len(docs_unescaped) == 2  # SQL injection succeeds without escaping
+
+
+# =============================================================================
+# URL-prefixed content regression tests
+# =============================================================================
+
+
+def _patch_embed_chunks(monkeypatch):
+    async def fake_embed_chunks(chunks, config):
+        for chunk in chunks:
+            chunk.embedding = [0.0] * 2560
+        return chunks
+
+    monkeypatch.setattr("haiku.rag.embeddings.embed_chunks", fake_embed_chunks)
+
+
+async def test_create_document_with_url_prefixed_content(temp_db_path, monkeypatch):
+    """Text whose first line is a URL must be stored as text, not fetched."""
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        content = "https://example.com/foo\n\n# Heading\n\nBody text here."
+        doc = await client.create_document(content=content, uri="test://url-prefixed")
+
+        assert doc.id is not None
+        assert "example.com" in doc.content
+        assert "Heading" in doc.content
+
+
+async def test_update_document_with_url_prefixed_content(temp_db_path, monkeypatch):
+    """update_document(content=...) with URL-prefixed text must not fetch it."""
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="initial body", uri="test://update-url"
+        )
+        assert doc.id is not None
+
+        url_prefixed = "https://example.com/bar\n\n# New heading\n\nReplacement body."
+        updated = await client.update_document(doc.id, content=url_prefixed)
+
+        assert "example.com" in updated.content
+        assert "New heading" in updated.content
+
+
+async def test_rebuild_rechunk_with_url_prefixed_stored_content(
+    temp_db_path, monkeypatch
+):
+    """RECHUNK rebuild must handle stored markdown whose first line is a URL."""
+    from haiku.rag.client import RebuildMode
+
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="plain seed content", uri="file:///nonexistent/path.txt"
+        )
+        assert doc.id is not None
+
+        # Overwrite stored content to simulate markdown that starts with a URL,
+        # bypassing the (also-affected) create_document path so this test
+        # specifically exercises the rebuild path.
+        doc.content = "https://example.com/baz\n\n# Stored\n\nStored body text."
+        await client.document_repository.update(doc)
+
+        processed_ids = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
+        ]
+        assert doc.id in processed_ids
+
+        doc_after = await client.document_repository.get_by_id(doc.id)
+        assert doc_after is not None
+        assert "example.com" in doc_after.content
+        assert "Stored" in doc_after.content
