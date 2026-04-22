@@ -495,7 +495,8 @@ class HaikuRAG:
         from haiku.rag.embeddings import embed_chunks
 
         # Convert → Chunk → Embed using primitives
-        docling_document = await self.convert(content, format=format)
+        converter = get_converter(self._config)
+        docling_document = await converter.convert_text(content, format=format)
         chunks = await self.chunk(docling_document)
         embedded_chunks = await embed_chunks(chunks, self._config)
 
@@ -1000,7 +1001,10 @@ class HaikuRAG:
         # Content provided without chunks - convert, chunk, and embed using primitives
         assert content is not None
         existing_doc.content = content
-        converted_docling = await self.convert(existing_doc.content)
+        converter = get_converter(self._config)
+        converted_docling = await converter.convert_text(
+            existing_doc.content, format="md"
+        )
         existing_doc.set_docling(converted_docling)
 
         new_chunks = await self.chunk(converted_docling)
@@ -1558,11 +1562,13 @@ class HaikuRAG:
         pending_docs: list[Document] = []
         pending_doc_ids: list[str] = []
 
+        converter = get_converter(self._config)
+
         for doc in documents:
             assert doc.id is not None
 
-            # Convert content to DoclingDocument
-            docling_document = await self.convert(doc.content)
+            # Convert stored markdown to DoclingDocument
+            docling_document = await converter.convert_text(doc.content, format="md")
 
             # Chunk and embed
             chunks = await self.chunk(docling_document)
@@ -1605,6 +1611,7 @@ class HaikuRAG:
         pending_chunks: list[Chunk] = []
         pending_docs: list[Document] = []
         pending_doc_ids: list[str] = []
+        converter = get_converter(self._config)
 
         for doc in documents:
             assert doc.id is not None
@@ -1643,7 +1650,7 @@ class HaikuRAG:
                     "Source missing for %s, re-embedding from content", doc.uri
                 )
 
-            docling_document = await self.convert(doc.content)
+            docling_document = await converter.convert_text(doc.content, format="md")
             chunks = await self.chunk(docling_document)
             embedded_chunks = await embed_chunks(chunks, self._config)
 

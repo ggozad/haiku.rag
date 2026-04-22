@@ -113,73 +113,75 @@ class TestDomainPreambleInAnalysisSkillInstructions:
 
 
 class TestExecuteCodeTool:
-    async def test_execute_code_returns_output(self, rag_db):
+    async def test_execute_code_returns_output(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
         execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
         result = await execute_code(ctx, code="print('hello')")
         assert "hello" in result
 
-    async def test_execute_code_updates_state(self, rag_db):
+    async def test_execute_code_updates_state(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
         execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
         await execute_code(ctx, code="print('hello')")
         assert len(state.executions) == 1
         assert state.executions[0].code == "print('hello')"
         assert state.executions[0].success is True
         assert "hello" in state.executions[0].stdout
 
-    async def test_execute_code_reports_errors(self, rag_db):
+    async def test_execute_code_reports_errors(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
         execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
         result = await execute_code(ctx, code="x = 1/0")
         assert "Error" in result
         assert "ZeroDivisionError" in result
         assert state.executions[0].success is False
 
-    async def test_execute_code_applies_document_filter(self, rag_db):
+    async def test_execute_code_applies_document_filter(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
         execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState(document_filter="title = 'AI Overview'")
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, sandbox=sandbox_factory(filter=state.document_filter))
         result = await execute_code(
             ctx, code="docs = await list_documents()\nprint(len(docs))"
         )
         assert "1" in result
 
-    async def test_execute_code_accumulates_search_results(self, rag_db):
+    async def test_execute_code_accumulates_search_results(
+        self, rag_db, sandbox_factory
+    ):
         from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
         execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
         await execute_code(
             ctx, code="results = await search('intelligence')\nprint(len(results))"
         )
         assert "_sandbox" in state.searches
         assert len(state.searches["_sandbox"]) > 0
 
-    async def test_execute_code_vfs_write_denied(self, rag_db):
+    async def test_execute_code_vfs_write_denied(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
 
         skill = create_skill(db_path=rag_db)
         execute_code = _get_tool(skill, "execute_code")
         state = AnalysisState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
         result = await execute_code(
             ctx,
             code=(
@@ -192,3 +194,109 @@ class TestExecuteCodeTool:
         )
         assert "Error" in result
         assert "read-only" in result
+
+    async def test_execute_code_variables_persist_within_invocation(
+        self, rag_db, sandbox_factory
+    ):
+        """Same sandbox across two calls → vars persist (one skill invocation)."""
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState()
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
+
+        await execute_code(ctx, code="x = 42")
+        result = await execute_code(ctx, code="print(x * 2)")
+        assert "84" in result
+
+    async def test_execute_code_isolated_across_invocations(
+        self, rag_db, sandbox_factory
+    ):
+        """Different Sandbox instances → no cross-invocation leak."""
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(db_path=rag_db)
+        execute_code = _get_tool(skill, "execute_code")
+
+        ctx1 = _make_ctx(AnalysisState(), sandbox=sandbox_factory())
+        await execute_code(ctx1, code="secret = 'do not leak'")
+
+        ctx2 = _make_ctx(AnalysisState(), sandbox=sandbox_factory())
+        result = await execute_code(ctx2, code="print(secret)")
+        assert not result.startswith("do not leak")
+        assert "Error" in result or "NameError" in result
+
+
+class TestAnalysisLifespan:
+    async def test_opens_client_and_sandbox_per_invocation(self, rag_db):
+        from haiku.rag.agents.analysis.sandbox import Sandbox
+        from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
+
+        config = AppConfig()
+        lifespan = make_analysis_lifespan(rag_db, config)
+        deps = AnalysisRunDeps()
+        async with lifespan(deps):
+            assert deps.rag is not None
+            assert deps.rag.is_read_only
+            assert deps.search_count == 0
+            assert isinstance(deps.sandbox, Sandbox)
+            docs = await deps.rag.list_documents()
+            assert len(docs) == 2
+
+    async def test_lifespan_reads_document_filter_from_state(self, rag_db):
+        from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
+        from haiku.rag.skills.analysis import AnalysisState
+
+        config = AppConfig()
+        lifespan = make_analysis_lifespan(rag_db, config)
+        state = AnalysisState(document_filter="title = 'AI Overview'")
+        deps = AnalysisRunDeps(state=state)
+        async with lifespan(deps):
+            assert deps.sandbox is not None
+            assert deps.sandbox._context.filter == "title = 'AI Overview'"
+
+    async def test_skill_has_lifespan_and_deps_type(
+        self, test_app_config, temp_db_path
+    ):
+        from haiku.rag.skills._deps import AnalysisRunDeps
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.deps_type is AnalysisRunDeps
+        assert skill.lifespan is not None
+
+    async def test_lifespan_clears_executions_citations_searches(self, rag_db):
+        from haiku.rag.agents.research.models import Citation
+        from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
+        from haiku.rag.skills._tools import CodeExecutionEntry
+        from haiku.rag.skills.analysis import AnalysisState
+
+        config = AppConfig()
+        lifespan = make_analysis_lifespan(rag_db, config)
+
+        state = AnalysisState(
+            document_filter="title = 'AI Overview'",
+            executions=[CodeExecutionEntry(code="prior", stdout="", success=True)],
+            citation_index={
+                "c1": Citation(
+                    index=1,
+                    chunk_id="c1",
+                    document_id="d1",
+                    document_title="t",
+                    document_uri="u",
+                    content="x",
+                    page_numbers=[],
+                    headings=[],
+                )
+            },
+            citations=[["c1"]],
+            searches={"prior": []},
+        )
+        deps = AnalysisRunDeps(state=state)
+        async with lifespan(deps):
+            assert state.executions == []
+            assert state.citations == []
+            assert state.searches == {}
+            assert "c1" in state.citation_index
+            assert state.document_filter == "title = 'AI Overview'"
