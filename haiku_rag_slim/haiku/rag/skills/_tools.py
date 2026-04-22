@@ -83,8 +83,7 @@ def _require_rag(ctx: RunContext[RAGRunDeps]) -> HaikuRAG:
 
 
 def _register_citations(state: Any, citations: "list[Citation]") -> None:
-    """Add citations to the index and record the turn's chunk IDs."""
-    chunk_ids = []
+    """Add citations to the index and record cited chunk IDs for this invocation."""
     next_index = len(state.citation_index) + 1
     for citation in citations:
         cid = citation.chunk_id
@@ -92,8 +91,8 @@ def _register_citations(state: Any, citations: "list[Citation]") -> None:
             citation.index = next_index
             next_index += 1
             state.citation_index[cid] = citation
-        chunk_ids.append(cid)
-    state.citations.append(chunk_ids)
+        if cid not in state.citations:
+            state.citations.append(cid)
 
 
 def create_skill_extras(

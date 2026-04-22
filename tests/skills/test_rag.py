@@ -284,8 +284,8 @@ class TestCiteTool:
 
         result = await cite(ctx, chunk_ids=chunk_ids)
         assert "Registered" in result
-        assert len(state.citations) == 1
-        assert len(state.citations[0]) == 2
+        assert len(state.citations) == 2
+        assert all(cid in state.citations for cid in chunk_ids)
         assert all(cid in state.citation_index for cid in chunk_ids)
 
     async def test_cite_deduplicates_in_index(self, rag_db, rag_client):
@@ -308,7 +308,7 @@ class TestCiteTool:
         await cite(ctx, chunk_ids=chunk_ids)
         await cite(ctx, chunk_ids=chunk_ids)
         assert len(state.citation_index) == 1
-        assert len(state.citations) == 2
+        assert len(state.citations) == 1
 
     async def test_cite_without_state(self, rag_db):
         from haiku.rag.skills.rag import create_skill
@@ -394,7 +394,7 @@ class TestLifespan:
                     headings=[],
                 )
             },
-            citations=[["c1"]],
+            citations=["c1"],
             searches={"prior": []},
         )
         deps = RAGRunDeps(state=state)

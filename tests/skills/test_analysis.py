@@ -303,7 +303,7 @@ class TestAnalysisLifespan:
                     headings=[],
                 )
             },
-            citations=[["c1"]],
+            citations=["c1"],
             searches={"prior": []},
         )
         deps = AnalysisRunDeps(state=state)

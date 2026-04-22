@@ -31,12 +31,12 @@ The skill manages a `RAGState` under the `"rag"` namespace:
 ```python
 class RAGState(BaseModel):
     citation_index: dict[str, Citation] = {}
-    citations: list[list[str]] = []
+    citations: list[str] = []
     document_filter: str | None = None
     searches: dict[str, list[SearchResult]] = {}
 ```
 
 - **citation_index** — All citations indexed by chunk ID. Accumulates across invocations so historical turns' chunk IDs remain resolvable in the UI scrollback.
-- **citations** — Chunk IDs registered via the `cite` tool. Cleared at the start of each invocation; holds only the in-progress turn.
+- **citations** — Chunk IDs registered via the `cite` tool during the current invocation. Deduplicated; cleared at the start of each invocation.
 - **document_filter** — SQL WHERE clause applied to `search` and `list_documents` calls. Persists across invocations as session-level configuration.
 - **searches** — Search results keyed by query string. Cleared at the start of each invocation.
