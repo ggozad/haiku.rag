@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.42.1] - 2026-04-22
+
 ### Changed
 
 - **BREAKING: Skill state `citations` is now `list[str]` instead of `list[list[str]]`.** With per-invocation state scoping (0.42), the outer list no longer tracked turn boundaries — it only grouped chunk ids per `cite` call within a single invocation, which has no downstream meaning. The field is now a flat, deduplicated list of chunk ids cited during the current invocation. Clients resolve each id through `citation_index` as before. Applies to both `RAGState` and `AnalysisState`.
@@ -1419,7 +1421,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.42.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.42.1...HEAD
+[0.42.1]: https://github.com/ggozad/haiku.rag/compare/0.42.0...0.42.1
 [0.42.0]: https://github.com/ggozad/haiku.rag/compare/0.41.0...0.42.0
 [0.41.0]: https://github.com/ggozad/haiku.rag/compare/0.40.1...0.41.0
 [0.40.1]: https://github.com/ggozad/haiku.rag/compare/0.39.0...0.40.1
