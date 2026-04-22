@@ -12,7 +12,7 @@ export interface Citation {
 // Matches RAGState from the backend skill
 export interface RAGState {
 	citation_index: Record<string, Citation>;
-	citations: string[][];
+	citations: string[];
 	document_filter: string | null;
 	searches: Record<string, unknown[]>;
 }
@@ -46,10 +46,7 @@ export function normalizeRAGState(state?: Partial<RAGState>): RAGState {
 }
 
 export function getLatestCitations(state: RAGState): Citation[] {
-	const turns = state.citations;
-	if (turns.length === 0) return [];
-	const latestIds = turns[turns.length - 1];
-	return latestIds
+	return state.citations
 		.map((id) => state.citation_index[id])
 		.filter((c): c is Citation => c !== undefined);
 }

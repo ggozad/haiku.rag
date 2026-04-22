@@ -30,7 +30,7 @@ def get_agent_preamble(config: AppConfig) -> str:
 
 class RAGState(BaseModel):
     citation_index: dict[str, Citation] = Field(default_factory=dict)
-    citations: list[list[str]] = Field(default_factory=list)
+    citations: list[str] = Field(default_factory=list)
     document_filter: str | None = None
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
 

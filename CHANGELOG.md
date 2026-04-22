@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: Skill state `citations` is now `list[str]` instead of `list[list[str]]`.** With per-invocation state scoping (0.42), the outer list no longer tracked turn boundaries — it only grouped chunk ids per `cite` call within a single invocation, which has no downstream meaning. The field is now a flat, deduplicated list of chunk ids cited during the current invocation. Clients resolve each id through `citation_index` as before. Applies to both `RAGState` and `AnalysisState`.
+
 ## [0.42.0] - 2026-04-22
 
 ### Fixed
