@@ -266,6 +266,19 @@ class TestAnalysisLifespan:
         assert skill.deps_type is AnalysisRunDeps
         assert skill.lifespan is not None
 
+    async def test_run_skill_end_to_end_opens_client_and_sandbox(
+        self, allow_model_requests, rag_db
+    ):
+        """Full sub-agent path: lifespan builds client + sandbox, tools see them."""
+        from pydantic_ai.models.test import TestModel
+
+        from haiku.rag.skills.analysis import create_skill
+        from haiku.skills.agent import _run_skill
+
+        skill = create_skill(db_path=rag_db)
+        result, *_ = await _run_skill(TestModel(), skill, "Print the document count.")
+        assert result
+
     async def test_lifespan_clears_executions_citations_searches(self, rag_db):
         from haiku.rag.agents.research.models import Citation
         from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan

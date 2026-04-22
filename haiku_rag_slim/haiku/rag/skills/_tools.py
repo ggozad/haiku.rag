@@ -7,7 +7,7 @@ from pydantic_ai import RunContext
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-from haiku.rag.skills._deps import RAGRunDeps
+from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 from haiku.rag.store.models.chunk import SearchResult
 
 
@@ -76,10 +76,9 @@ def _get_state(ctx: RunContext[RAGRunDeps], state_type: type[BaseModel]) -> Any:
 
 
 def _require_rag(ctx: RunContext[RAGRunDeps]) -> HaikuRAG:
-    if ctx.deps is None or ctx.deps.rag is None:
-        raise RuntimeError(
-            "RAGRunDeps.rag is not set — skill lifespan must run before tools."
-        )
+    assert ctx.deps is not None and ctx.deps.rag is not None, (
+        "RAGRunDeps.rag is not set — skill lifespan must run before tools."
+    )
     return ctx.deps.rag
 
 
@@ -227,7 +226,6 @@ def create_skill_tools(
         tools["get_document"] = get_document
 
     if "execute_code" in tool_names:
-        from haiku.rag.skills._deps import AnalysisRunDeps
 
         async def execute_code(ctx: RunContext[AnalysisRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
@@ -242,10 +240,9 @@ def create_skill_tools(
             Args:
                 code: Python code to execute.
             """
-            if ctx.deps is None or ctx.deps.sandbox is None:
-                raise RuntimeError(
-                    "AnalysisRunDeps.sandbox is not set — skill lifespan must run before execute_code."
-                )
+            assert ctx.deps is not None and ctx.deps.sandbox is not None, (
+                "AnalysisRunDeps.sandbox is not set — skill lifespan must run before execute_code."
+            )
             sandbox = ctx.deps.sandbox
             result = await sandbox.execute(code)
 

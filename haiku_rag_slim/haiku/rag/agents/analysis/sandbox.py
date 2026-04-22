@@ -277,11 +277,8 @@ class Sandbox:
                     external_functions=self._build_external_functions(),
                     os=self._vfs,
                 )
-        repl = self._repl
-        vfs = self._vfs
-        if repl is None or vfs is None:
-            raise RuntimeError("Sandbox initialization failed")
-        return repl, vfs
+        assert self._repl is not None and self._vfs is not None
+        return self._repl, self._vfs
 
     async def execute(self, code: str) -> SandboxResult:
         """Execute Python code in the Monty REPL.
