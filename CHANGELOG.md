@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Skills share a single `HaikuRAG` client per invocation** via the new `haiku.skills>=0.15.0` `lifespan` hook. The skill's sub-agent opens one read-only client on entry, all tool calls reuse it, and it closes on exit — replacing the old pattern of open/close around every `search` / `list_documents` / `get_document` call.
+- **`max_searches` tracked on `RAGRunDeps.search_count`** instead of a module-level `ctx.run_id`-keyed dict. Eliminates a memory leak in long-running processes where old run ids were never evicted.
+
 ## [0.41.0] - 2026-04-20
 
 ### Added

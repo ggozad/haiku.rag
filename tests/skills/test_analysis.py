@@ -192,3 +192,28 @@ class TestExecuteCodeTool:
         )
         assert "Error" in result
         assert "read-only" in result
+
+
+class TestAnalysisLifespan:
+    async def test_opens_one_client_per_invocation(self, rag_db):
+        from haiku.rag.skills._deps import AnalysisRunDeps, make_rag_lifespan
+
+        config = AppConfig()
+        lifespan = make_rag_lifespan(rag_db, config)
+        deps = AnalysisRunDeps()
+        async with lifespan(deps):
+            assert deps.rag is not None
+            assert deps.rag.is_read_only
+            assert deps.search_count == 0
+            docs = await deps.rag.list_documents()
+            assert len(docs) == 2
+
+    async def test_skill_has_lifespan_and_deps_type(
+        self, test_app_config, temp_db_path
+    ):
+        from haiku.rag.skills._deps import AnalysisRunDeps
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.deps_type is AnalysisRunDeps
+        assert skill.lifespan is not None

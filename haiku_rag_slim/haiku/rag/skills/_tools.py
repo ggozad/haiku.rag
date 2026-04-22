@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from pydantic_ai import RunContext
 
 from haiku.rag.agents.research.models import Citation
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
+from haiku.rag.skills._deps import RAGRunDeps
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.skills.state import SkillRunDeps
 
 
 class CodeExecutionEntry(BaseModel):
@@ -18,22 +19,13 @@ class CodeExecutionEntry(BaseModel):
 
 
 async def skill_search(
-    db_path: Path,
-    config: AppConfig,
+    rag: HaikuRAG,
     query: str,
     limit: int | None = None,
     document_filter: str | None = None,
 ) -> tuple[str, list[SearchResult]]:
-    from haiku.rag.client import HaikuRAG
-
-    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        results = await rag.search(
-            query,
-            limit=limit,
-            filter=document_filter,
-        )
-        results = await rag.expand_context(results)
-
+    results = await rag.search(query, limit=limit, filter=document_filter)
+    results = await rag.expand_context(results)
     formatted = "\n\n---\n\n".join(
         r.format_for_agent(rank=i + 1, total=len(results))
         for i, r in enumerate(results)
@@ -42,53 +34,53 @@ async def skill_search(
 
 
 async def skill_list_documents(
-    db_path: Path,
-    config: AppConfig,
+    rag: HaikuRAG,
     filter: str | None = None,
 ) -> list[dict[str, Any]]:
-    from haiku.rag.client import HaikuRAG
-
-    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        documents = await rag.list_documents(filter=filter)
-        return [
-            {
-                "id": doc.id,
-                "title": doc.title,
-                "uri": doc.uri,
-                "metadata": doc.metadata,
-                "created_at": str(doc.created_at),
-                "updated_at": str(doc.updated_at),
-            }
-            for doc in documents
-        ]
+    documents = await rag.list_documents(filter=filter)
+    return [
+        {
+            "id": doc.id,
+            "title": doc.title,
+            "uri": doc.uri,
+            "metadata": doc.metadata,
+            "created_at": str(doc.created_at),
+            "updated_at": str(doc.updated_at),
+        }
+        for doc in documents
+    ]
 
 
 async def skill_get_document(
-    db_path: Path,
-    config: AppConfig,
+    rag: HaikuRAG,
     query: str,
 ) -> dict[str, Any] | None:
-    from haiku.rag.client import HaikuRAG
-
-    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-        document = await rag.resolve_document(query)
-        if document is None:
-            return None
-        return {
-            "id": document.id,
-            "content": document.content,
-            "title": document.title,
-            "uri": document.uri,
-            "metadata": document.metadata,
-            "created_at": str(document.created_at),
-            "updated_at": str(document.updated_at),
-        }
+    document = await rag.resolve_document(query)
+    if document is None:
+        return None
+    return {
+        "id": document.id,
+        "content": document.content,
+        "title": document.title,
+        "uri": document.uri,
+        "metadata": document.metadata,
+        "created_at": str(document.created_at),
+        "updated_at": str(document.updated_at),
+    }
 
 
-def _get_state(ctx: RunContext[SkillRunDeps], state_type: type[BaseModel]) -> Any:
+def _get_state(ctx: RunContext[RAGRunDeps], state_type: type[BaseModel]) -> Any:
     if ctx.deps and ctx.deps.state and isinstance(ctx.deps.state, state_type):
         return ctx.deps.state
     return None
+
+
+def _require_rag(ctx: RunContext[RAGRunDeps]) -> HaikuRAG:
+    if ctx.deps is None or ctx.deps.rag is None:
+        raise RuntimeError(
+            "RAGRunDeps.rag is not set — skill lifespan must run before tools."
+        )
+    return ctx.deps.rag
 
 
 def _register_citations(state: Any, citations: "list[Citation]") -> None:
@@ -174,10 +166,9 @@ def create_skill_tools(
 
     if "search" in tool_names:
         max_searches = config.qa.max_searches
-        search_counts: dict[str, int] = {}
 
         async def search(
-            ctx: RunContext[SkillRunDeps], query: str, limit: int | None = None
+            ctx: RunContext[RAGRunDeps], query: str, limit: int | None = None
         ) -> str:
             """Search the knowledge base using hybrid search (vector + full-text).
 
@@ -187,9 +178,8 @@ def create_skill_tools(
                 query: The search query.
                 limit: Maximum number of results.
             """
-            rid = ctx.run_id or ""
-            search_counts[rid] = search_counts.get(rid, 0) + 1
-            if search_counts[rid] > max_searches:
+            ctx.deps.search_count += 1
+            if ctx.deps.search_count > max_searches:
                 return (
                     "Search limit reached. Answer the question using "
                     "the results you already have."
@@ -197,8 +187,7 @@ def create_skill_tools(
 
             state = _get_state(ctx, state_type)
             formatted, results = await skill_search(
-                db_path,
-                config,
+                _require_rag(ctx),
                 query,
                 limit=limit,
                 document_filter=state.document_filter if state else None,
@@ -212,36 +201,34 @@ def create_skill_tools(
     if "list_documents" in tool_names:
 
         async def list_documents(
-            ctx: RunContext[SkillRunDeps],
+            ctx: RunContext[RAGRunDeps],
         ) -> list[dict[str, Any]]:
             """List all documents in the knowledge base."""
             state = _get_state(ctx, state_type)
-            result = await skill_list_documents(
-                db_path,
-                config,
+            return await skill_list_documents(
+                _require_rag(ctx),
                 filter=state.document_filter if state else None,
             )
-            return result
 
         tools["list_documents"] = list_documents
 
     if "get_document" in tool_names:
 
         async def get_document(
-            ctx: RunContext[SkillRunDeps], query: str
+            ctx: RunContext[RAGRunDeps], query: str
         ) -> dict[str, Any] | None:
             """Retrieve a document by ID, title, or URI.
 
             Args:
                 query: Document ID, title, or URI to look up.
             """
-            return await skill_get_document(db_path, config, query)
+            return await skill_get_document(_require_rag(ctx), query)
 
         tools["get_document"] = get_document
 
     if "execute_code" in tool_names:
 
-        async def execute_code(ctx: RunContext[SkillRunDeps], code: str) -> str:
+        async def execute_code(ctx: RunContext[RAGRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
 
             The code has access to search(), list_documents(), llm() functions
@@ -291,7 +278,7 @@ def create_skill_tools(
 
     if "cite" in tool_names:
 
-        async def cite(ctx: RunContext[SkillRunDeps], chunk_ids: list[str]) -> str:
+        async def cite(ctx: RunContext[RAGRunDeps], chunk_ids: list[str]) -> str:
             """Register chunk IDs as citations for your answer.
 
             Call this after searching, with the chunk_id values from search

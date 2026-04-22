@@ -7,15 +7,20 @@ from pydantic_ai import RunContext
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import EmbedderWrapper
-from haiku.skills.state import SkillRunDeps
+from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 
 VECTOR_DIM = 2560
 
 
-def _make_ctx(state=None):
-    """Create a mock RunContext with SkillRunDeps."""
+def _make_ctx(state=None, rag=None):
+    """Create a mock RunContext with RAGRunDeps (or AnalysisRunDeps when state is AnalysisState)."""
+    from haiku.rag.skills.analysis import AnalysisState
+
     ctx = MagicMock(spec=RunContext)
-    ctx.deps = SkillRunDeps(state=state)
+    if isinstance(state, AnalysisState):
+        ctx.deps = AnalysisRunDeps(state=state, rag=rag)
+    else:
+        ctx.deps = RAGRunDeps(state=state, rag=rag)
     return ctx
 
 
@@ -68,3 +73,10 @@ async def rag_db(temp_db_path):
             uri="test://ml-basics",
         )
     return temp_db_path
+
+
+@pytest.fixture
+async def rag_client(rag_db):
+    """Yield an open read-only HaikuRAG client on the sample db."""
+    async with HaikuRAG(rag_db, read_only=True) as rag:
+        yield rag

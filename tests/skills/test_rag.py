@@ -157,50 +157,50 @@ class TestSkillExtras:
 
 
 class TestSearchTool:
-    async def test_search_returns_formatted_string(self, rag_db):
+    async def test_search_returns_formatted_string(self, rag_db, rag_client):
         from haiku.rag.skills.rag import create_skill
 
         skill = create_skill(db_path=rag_db)
         search = _get_tool(skill, "search")
-        ctx = _make_ctx()
+        ctx = _make_ctx(rag=rag_client)
         result = await search(ctx, query="artificial intelligence")
         assert isinstance(result, str)
         assert len(result) > 0
 
-    async def test_search_updates_state(self, rag_db):
+    async def test_search_updates_state(self, rag_db, rag_client):
         from haiku.rag.skills.rag import RAGState, create_skill
 
         skill = create_skill(db_path=rag_db)
         search = _get_tool(skill, "search")
         state = RAGState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, rag=rag_client)
         await search(ctx, query="artificial intelligence")
         assert "artificial intelligence" in state.searches
         results = state.searches["artificial intelligence"]
         assert len(results) > 0
         assert isinstance(results[0], SearchResult)
 
-    async def test_search_applies_document_filter_from_state(self, rag_db):
+    async def test_search_applies_document_filter_from_state(self, rag_db, rag_client):
         from haiku.rag.skills.rag import RAGState, create_skill
 
         skill = create_skill(db_path=rag_db)
         search = _get_tool(skill, "search")
         state = RAGState(document_filter="title = 'AI Overview'")
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, rag=rag_client)
         result = await search(ctx, query="artificial intelligence")
         assert "AI Overview" in result
         assert "ML Basics" not in result
 
-    async def test_search_without_state(self, rag_db):
+    async def test_search_without_state(self, rag_db, rag_client):
         from haiku.rag.skills.rag import create_skill
 
         skill = create_skill(db_path=rag_db)
         search = _get_tool(skill, "search")
-        ctx = _make_ctx(state=None)
+        ctx = _make_ctx(state=None, rag=rag_client)
         result = await search(ctx, query="artificial intelligence")
         assert isinstance(result, str)
 
-    async def test_search_rate_limited(self, rag_db):
+    async def test_search_rate_limited(self, rag_db, rag_client):
         from haiku.rag.skills.rag import RAGState, create_skill
 
         config = AppConfig()
@@ -208,69 +208,71 @@ class TestSearchTool:
         skill = create_skill(db_path=rag_db, config=config)
         search = _get_tool(skill, "search")
         state = RAGState()
-        ctx = _make_ctx(state)
-        ctx.run_id = "test-run"
+        ctx = _make_ctx(state, rag=rag_client)
 
         await search(ctx, query="first")
         await search(ctx, query="second")
         result = await search(ctx, query="third")
         assert "Search limit reached" in result
+        assert ctx.deps.search_count == 3
         assert len(state.searches) == 2
 
 
 class TestListDocumentsTool:
-    async def test_list_documents_returns_results(self, rag_db):
+    async def test_list_documents_returns_results(self, rag_db, rag_client):
         from haiku.rag.skills.rag import create_skill
 
         skill = create_skill(db_path=rag_db)
         list_docs = _get_tool(skill, "list_documents")
-        ctx = _make_ctx()
+        ctx = _make_ctx(rag=rag_client)
         results = await list_docs(ctx)
         assert isinstance(results, list)
         assert len(results) == 2
 
-    async def test_list_documents_applies_document_filter_from_state(self, rag_db):
+    async def test_list_documents_applies_document_filter_from_state(
+        self, rag_db, rag_client
+    ):
         from haiku.rag.skills.rag import RAGState, create_skill
 
         skill = create_skill(db_path=rag_db)
         list_docs = _get_tool(skill, "list_documents")
         state = RAGState(document_filter="title = 'AI Overview'")
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, rag=rag_client)
         results = await list_docs(ctx)
         assert len(results) == 1
         assert results[0]["title"] == "AI Overview"
 
 
 class TestGetDocumentTool:
-    async def test_get_document_by_title(self, rag_db):
+    async def test_get_document_by_title(self, rag_db, rag_client):
         from haiku.rag.skills.rag import create_skill
 
         skill = create_skill(db_path=rag_db)
         get_doc = _get_tool(skill, "get_document")
-        ctx = _make_ctx()
+        ctx = _make_ctx(rag=rag_client)
         result = await get_doc(ctx, query="AI Overview")
         assert result is not None
         assert result["title"] == "AI Overview"
 
-    async def test_get_document_not_found(self, rag_db):
+    async def test_get_document_not_found(self, rag_db, rag_client):
         from haiku.rag.skills.rag import create_skill
 
         skill = create_skill(db_path=rag_db)
         get_doc = _get_tool(skill, "get_document")
-        ctx = _make_ctx()
+        ctx = _make_ctx(rag=rag_client)
         result = await get_doc(ctx, query="nonexistent document xyz")
         assert result is None
 
 
 class TestCiteTool:
-    async def test_cite_registers_citations(self, rag_db):
+    async def test_cite_registers_citations(self, rag_db, rag_client):
         from haiku.rag.skills.rag import RAGState, create_skill
 
         skill = create_skill(db_path=rag_db)
         search = _get_tool(skill, "search")
         cite = _get_tool(skill, "cite")
         state = RAGState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, rag=rag_client)
 
         await search(ctx, query="artificial intelligence")
         chunk_ids = [
@@ -286,14 +288,14 @@ class TestCiteTool:
         assert len(state.citations[0]) == 2
         assert all(cid in state.citation_index for cid in chunk_ids)
 
-    async def test_cite_deduplicates_in_index(self, rag_db):
+    async def test_cite_deduplicates_in_index(self, rag_db, rag_client):
         from haiku.rag.skills.rag import RAGState, create_skill
 
         skill = create_skill(db_path=rag_db)
         search = _get_tool(skill, "search")
         cite = _get_tool(skill, "cite")
         state = RAGState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, rag=rag_client)
 
         await search(ctx, query="artificial intelligence")
         chunk_ids = [
@@ -316,3 +318,43 @@ class TestCiteTool:
         ctx = _make_ctx(state=None)
         result = await cite(ctx, chunk_ids=["nonexistent"])
         assert "No state" in result
+
+
+class TestLifespan:
+    async def test_opens_one_client_per_invocation(self, rag_db):
+        """Lifespan opens one HaikuRAG client, available on ctx.deps.rag throughout."""
+        from haiku.rag.skills._deps import RAGRunDeps, make_rag_lifespan
+
+        config = AppConfig()
+        lifespan = make_rag_lifespan(rag_db, config)
+        deps = RAGRunDeps()
+        async with lifespan(deps):
+            assert deps.rag is not None
+            assert deps.rag.is_read_only
+            assert deps.search_count == 0
+            docs = await deps.rag.list_documents()
+            assert len(docs) == 2
+        # after exit the client has been closed; field still references it
+        assert deps.rag is not None
+
+    async def test_search_count_resets_per_invocation(self, rag_db):
+        from haiku.rag.skills._deps import RAGRunDeps, make_rag_lifespan
+
+        config = AppConfig()
+        lifespan = make_rag_lifespan(rag_db, config)
+
+        deps = RAGRunDeps(search_count=42)
+        async with lifespan(deps):
+            assert deps.search_count == 0
+
+        deps2 = RAGRunDeps(search_count=5)
+        async with lifespan(deps2):
+            assert deps2.search_count == 0
+
+    def test_skill_has_lifespan_and_deps_type(self, test_app_config, temp_db_path):
+        from haiku.rag.skills._deps import RAGRunDeps
+        from haiku.rag.skills.rag import create_skill
+
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.deps_type is RAGRunDeps
+        assert skill.lifespan is not None
