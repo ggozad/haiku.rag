@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -188,6 +190,40 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
             f"Aggressive vacuum should keep minimal versions, got {final_versions}"
         )
         assert final_versions >= 1, "Should have at least one version remaining"
+
+
+@pytest.mark.vcr()
+async def test_aexit_awaits_background_vacuum(temp_db_path, monkeypatch):
+    """__aexit__ must await any in-flight background vacuum, not just release the lock.
+
+    Background vacuum runs as an asyncio task; the event loop may not have scheduled
+    it yet when __aexit__ runs. Simply acquiring the vacuum lock (which is free until
+    the task actually starts) would let close() proceed before vacuum runs.
+    """
+    from haiku.rag.config import Config
+
+    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+
+    vacuum_started = asyncio.Event()
+    vacuum_completed = asyncio.Event()
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        original_vacuum = client.store.vacuum
+
+        async def instrumented_vacuum(*args, **kwargs):
+            vacuum_started.set()
+            # Delay so __aexit__ would see an unstarted/incomplete task if it
+            # relied on the lock rather than awaiting the task directly.
+            await asyncio.sleep(0.05)
+            await original_vacuum(*args, **kwargs)
+            vacuum_completed.set()
+
+        client.store.vacuum = instrumented_vacuum
+
+        await client.create_document(content="triggers background vacuum")
+
+    assert vacuum_started.is_set(), "Background vacuum task never ran"
+    assert vacuum_completed.is_set(), "__aexit__ exited before vacuum finished"
 
 
 @pytest.mark.vcr()
