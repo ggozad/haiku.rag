@@ -264,7 +264,9 @@ class ChunkRepository:
             )
 
         elif search_type == "fts":
-            results = self.store.chunks_table.query().nearest_to_text(query)
+            results = self.store.chunks_table.query().nearest_to_text(
+                query, columns="content_fts"
+            )
 
         else:  # hybrid (default)
             query_embedding = await self.embedder.embed_query(query)
@@ -275,7 +277,7 @@ class ChunkRepository:
                 self.store.chunks_table.query()
                 .nearest_to(query_embedding)
                 .column("vector")
-                .nearest_to_text(query)
+                .nearest_to_text(query, columns="content_fts")
                 .refine_factor(self.store._config.search.vector_refine_factor)
                 .rerank(reranker)
             )

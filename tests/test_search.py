@@ -241,6 +241,41 @@ async def test_search_result_format_includes_metadata(temp_db_path):
         assert "machine learning" in formatted.lower()
 
 
+@pytest.mark.vcr()
+async def test_fts_search_targets_content_fts_column(temp_db_path):
+    """FTS search must target the content_fts column (where the FTS index
+    lives and where contextualized heading prefixes end up) — not the raw
+    content column. Regression guard against upstream default-column changes
+    in LanceDB's nearest_to_text().
+    """
+    from haiku.rag.store.models.chunk import Chunk
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="seed", uri="test://doc")
+        assert doc.id is not None
+
+        # Heading-only term — contextualization will prepend headings to the
+        # body when populating content_fts, so this word ends up ONLY in
+        # content_fts, not in the content column.
+        heading_only_term = "zxqvjfoowizardry"
+        chunk = Chunk(
+            content="unrelated body text",
+            document_id=doc.id,
+            metadata={"headings": [heading_only_term]},
+            embedding=[0.0] * client.store.embedder._vector_dim,
+        )
+        await client.chunk_repository.create(chunk)
+
+        # FTS on the heading-only word must match via content_fts.
+        results = await client.chunk_repository.search(
+            heading_only_term, limit=5, search_type="fts"
+        )
+        assert any(c.content == "unrelated body text" for c, _ in results), (
+            "FTS did not match a heading-only term — nearest_to_text is not "
+            "targeting the content_fts column"
+        )
+
+
 def test_search_result_primary_label_prioritizes_structural_types():
     """Test _get_primary_label prioritizes structural labels correctly."""
     # Table should be prioritized
