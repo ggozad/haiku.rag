@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 import lancedb
@@ -18,7 +18,23 @@ from haiku.rag.config import AppConfig, Config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 
+if TYPE_CHECKING:
+    from lancedb.query import AsyncQueryBase
+
 logger = logging.getLogger(__name__)
+
+
+async def query_to_pydantic[T: LanceModel](
+    query: "AsyncQueryBase", model: type[T]
+) -> list[T]:
+    """Typed wrapper around AsyncQueryBase.to_pydantic.
+
+    The upstream stub annotates `.to_pydantic()` as returning `list[LanceModel]`
+    regardless of the concrete model passed in. This helper narrows the return
+    type to the concrete model so attribute access on the results type-checks
+    at call sites without needing per-line cast / ignore comments.
+    """
+    return cast("list[T]", await query.to_pydantic(model))
 
 
 class ConnectionMode(Enum):
@@ -92,19 +108,26 @@ def get_documents_arrow_schema() -> pa.Schema:
     return pa.schema(fields)
 
 
-def create_chunk_model(vector_dim: int):
-    """Create a ChunkRecord model with the specified vector dimension.
-
-    This creates a model with proper vector typing for LanceDB.
+class ChunkRecordBase(LanceModel):
+    """Static base for ChunkRecord — declares the fields so attribute access
+    and constructor calls type-check. The concrete `vector` field is overridden
+    by create_chunk_model() with a Vector(dim) whose fixed-size-list dimension
+    is only known at runtime.
     """
 
-    class ChunkRecord(LanceModel):
-        id: str = Field(default_factory=lambda: str(uuid4()))
-        document_id: str
-        content: str
-        content_fts: str = Field(default="")
-        metadata: str = Field(default="{}")
-        order: int = Field(default=0)
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    document_id: str
+    content: str
+    content_fts: str = Field(default="")
+    metadata: str = Field(default="{}")
+    order: int = Field(default=0)
+    vector: list[float] = Field(default_factory=list)
+
+
+def create_chunk_model(vector_dim: int) -> type[ChunkRecordBase]:
+    """Create a ChunkRecord model with the specified vector dimension."""
+
+    class ChunkRecord(ChunkRecordBase):
         vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
 
     return ChunkRecord
@@ -230,7 +253,7 @@ class Store:
 
         # Create ChunkRecord with stored dimension (for reading) or config dimension (for new DB)
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
-        self.ChunkRecord = create_chunk_model(chunk_vector_dim)
+        self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
         # Initialize tables (creates them if they don't exist)
         await self._init_tables()
@@ -506,8 +529,8 @@ class Store:
 
     async def get_haiku_version(self) -> str:
         """Returns the user version stored in settings."""
-        settings_records: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.settings_table.query().limit(1).to_pydantic(SettingsRecord)
+        settings_records = await query_to_pydantic(
+            self.settings_table.query().limit(1), SettingsRecord
         )
         if settings_records:
             settings = (
@@ -525,8 +548,8 @@ class Store:
             ReadOnlyError: If the store is in read-only mode.
         """
         self._assert_writable()
-        settings_records: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.settings_table.query().limit(1).to_pydantic(SettingsRecord)
+        settings_records = await query_to_pydantic(
+            self.settings_table.query().limit(1), SettingsRecord
         )
         if settings_records:
             # Only write if version actually changes to avoid creating new table versions

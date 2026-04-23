@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 from lancedb.index import FTS
 from lancedb.rerankers import RRFReranker
 
-from haiku.rag.store.engine import Store
+from haiku.rag.store.engine import Store, query_to_pydantic
 from haiku.rag.store.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ class ChunkRepository:
             chunk_id = str(uuid4())
 
             assert chunk.document_id is not None
+            assert chunk.embedding is not None
             chunk_record = self.store.ChunkRecord(
                 id=chunk_id,
                 document_id=chunk.document_id,
@@ -110,24 +111,22 @@ class ChunkRepository:
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
         """Get a chunk by its ID."""
-        results = await (
-            self.store.chunks_table.query()
-            .where(f"id = '{entity_id}'")
-            .limit(1)
-            .to_pydantic(self.store.ChunkRecord)
+        results = await query_to_pydantic(
+            self.store.chunks_table.query().where(f"id = '{entity_id}'").limit(1),
+            self.store.ChunkRecord,
         )
 
         if not results:
             return None
 
         chunk_record = results[0]
-        md = json.loads(chunk_record.metadata)  # ty: ignore[unresolved-attribute]
+        md = json.loads(chunk_record.metadata)
         return Chunk(
-            id=chunk_record.id,  # ty: ignore[unresolved-attribute]
-            document_id=chunk_record.document_id,  # ty: ignore[unresolved-attribute]
-            content=chunk_record.content,  # ty: ignore[unresolved-attribute]
+            id=chunk_record.id,
+            document_id=chunk_record.document_id,
+            content=chunk_record.content,
             metadata=md,
-            order=chunk_record.order,  # ty: ignore[unresolved-attribute]
+            order=chunk_record.order,
         )
 
     async def update(self, entity: Chunk) -> Chunk:
@@ -175,18 +174,18 @@ class ChunkRepository:
         if limit is not None:
             query = query.limit(limit)
 
-        results = await query.to_pydantic(self.store.ChunkRecord)
+        results = await query_to_pydantic(query, self.store.ChunkRecord)
 
         chunks: list[Chunk] = []
         for rec in results:
-            md = json.loads(rec.metadata)  # ty: ignore[unresolved-attribute]
+            md = json.loads(rec.metadata)
             chunks.append(
                 Chunk(
-                    id=rec.id,  # ty: ignore[unresolved-attribute]
-                    document_id=rec.document_id,  # ty: ignore[unresolved-attribute]
-                    content=rec.content,  # ty: ignore[unresolved-attribute]
+                    id=rec.id,
+                    document_id=rec.document_id,
+                    content=rec.content,
                     metadata=md,
-                    order=rec.order,  # ty: ignore[unresolved-attribute]
+                    order=rec.order,
                 )
             )
         return chunks
@@ -316,7 +315,7 @@ class ChunkRepository:
         if limit is not None:
             query = query.limit(limit)
 
-        results = await query.to_pydantic(self.store.ChunkRecord)
+        results = await query_to_pydantic(query, self.store.ChunkRecord)
 
         # Get document info (only metadata columns, skip content/docling blobs)
         doc_rows = await (
@@ -333,14 +332,14 @@ class ChunkRepository:
 
         chunks: list[Chunk] = []
         for rec in results:
-            md = json.loads(rec.metadata)  # ty: ignore[unresolved-attribute]
+            md = json.loads(rec.metadata)
             chunks.append(
                 Chunk(
-                    id=rec.id,  # ty: ignore[unresolved-attribute]
-                    document_id=rec.document_id,  # ty: ignore[unresolved-attribute]
-                    content=rec.content,  # ty: ignore[unresolved-attribute]
+                    id=rec.id,
+                    document_id=rec.document_id,
+                    content=rec.content,
                     metadata=md,
-                    order=rec.order,  # ty: ignore[unresolved-attribute]
+                    order=rec.order,
                     document_uri=doc_uri,
                     document_title=doc_title,
                     document_meta=json.loads(doc_meta),
@@ -378,18 +377,16 @@ class ChunkRepository:
             f" AND `order` >= {min_order}"
             f" AND `order` <= {max_order}"
         )
-        results = await (
-            self.store.chunks_table.query()
-            .where(where)
-            .to_pydantic(self.store.ChunkRecord)
+        results = await query_to_pydantic(
+            self.store.chunks_table.query().where(where), self.store.ChunkRecord
         )
         return [
             Chunk(
-                id=rec.id,  # ty: ignore[unresolved-attribute]
-                document_id=rec.document_id,  # ty: ignore[unresolved-attribute]
-                content=rec.content,  # ty: ignore[unresolved-attribute]
-                metadata=json.loads(rec.metadata),  # ty: ignore[unresolved-attribute]
-                order=rec.order,  # ty: ignore[unresolved-attribute]
+                id=rec.id,
+                document_id=rec.document_id,
+                content=rec.content,
+                metadata=json.loads(rec.metadata),
+                order=rec.order,
             )
             for rec in results
         ]

@@ -4,7 +4,12 @@ from uuid import uuid4
 
 from lancedb.index import BTree
 
-from haiku.rag.store.engine import DocumentRecord, Store, get_documents_arrow_schema
+from haiku.rag.store.engine import (
+    DocumentRecord,
+    Store,
+    get_documents_arrow_schema,
+    query_to_pydantic,
+)
 from haiku.rag.store.models.document import Document
 from haiku.rag.utils import escape_sql_string
 
@@ -90,11 +95,9 @@ class DocumentRepository:
     async def get_by_id(self, entity_id: str) -> Document | None:
         """Get a document by its ID."""
         safe_id = escape_sql_string(entity_id)
-        results: list[DocumentRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.store.documents_table.query()
-            .where(f"id = '{safe_id}'")
-            .limit(1)
-            .to_pydantic(DocumentRecord)
+        results = await query_to_pydantic(
+            self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
+            DocumentRecord,
         )
 
         if not results:
@@ -240,7 +243,7 @@ class DocumentRepository:
             query = query.limit(limit)
 
         if include_content:
-            results: list[DocumentRecord] = await query.to_pydantic(DocumentRecord)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            results = await query_to_pydantic(query, DocumentRecord)
             return [self._record_to_document(doc) for doc in results]
 
         return [
@@ -274,11 +277,9 @@ class DocumentRepository:
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
         escaped_uri = escape_sql_string(uri)
-        results: list[DocumentRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.store.documents_table.query()
-            .where(f"uri = '{escaped_uri}'")
-            .limit(1)
-            .to_pydantic(DocumentRecord)
+        results = await query_to_pydantic(
+            self.store.documents_table.query().where(f"uri = '{escaped_uri}'").limit(1),
+            DocumentRecord,
         )
 
         if not results:
@@ -309,9 +310,9 @@ class DocumentRepository:
 
         # Get count before deletion
         count = len(
-            await self.store.documents_table.query()  # type: ignore[assignment]
-            .limit(1)
-            .to_pydantic(DocumentRecord)
+            await query_to_pydantic(
+                self.store.documents_table.query().limit(1), DocumentRecord
+            )
         )
         if count > 0:
             # Drop and recreate table to clear all data

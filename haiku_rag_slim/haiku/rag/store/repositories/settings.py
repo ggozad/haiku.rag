@@ -1,6 +1,6 @@
 import json
 
-from haiku.rag.store.engine import SettingsRecord, Store
+from haiku.rag.store.engine import SettingsRecord, Store, query_to_pydantic
 
 
 class ConfigMismatchError(Exception):
@@ -23,11 +23,9 @@ class SettingsRepository:
 
     async def get_by_id(self, entity_id: str) -> dict | None:
         """Get settings by ID."""
-        results: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.store.settings_table.query()
-            .where(f"id = '{entity_id}'")
-            .limit(1)
-            .to_pydantic(SettingsRecord)
+        results = await query_to_pydantic(
+            self.store.settings_table.query().where(f"id = '{entity_id}'").limit(1),
+            SettingsRecord,
         )
 
         if not results:
@@ -51,20 +49,18 @@ class SettingsRepository:
         self, limit: int | None = None, offset: int | None = None
     ) -> list[dict]:
         """List all settings."""
-        results: list[
-            SettingsRecord
-        ] = await self.store.settings_table.query().to_pydantic(SettingsRecord)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        results = await query_to_pydantic(
+            self.store.settings_table.query(), SettingsRecord
+        )
         return [
             json.loads(record.settings) if record.settings else {} for record in results
         ]
 
     async def get_current_settings(self) -> dict:
         """Get the current settings."""
-        results: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.store.settings_table.query()
-            .where("id = 'settings'")
-            .limit(1)
-            .to_pydantic(SettingsRecord)
+        results = await query_to_pydantic(
+            self.store.settings_table.query().where("id = 'settings'").limit(1),
+            SettingsRecord,
         )
 
         if not results:
@@ -78,11 +74,9 @@ class SettingsRepository:
         current_config = self.store._config.model_dump(mode="json")
 
         # Check if settings exist
-        existing: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            self.store.settings_table.query()
-            .where("id = 'settings'")
-            .limit(1)
-            .to_pydantic(SettingsRecord)
+        existing = await query_to_pydantic(
+            self.store.settings_table.query().where("id = 'settings'").limit(1),
+            SettingsRecord,
         )
 
         if existing:
