@@ -1,0 +1,60 @@
+name: Build RAG database
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install dependencies
+        run: uv sync --package haiku.rag-slim --extra docling --no-dev
+      - name: Restore previous RAG database
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh release list --limit 10 --json tagName --jq '.[].tagName' | while read -r tag; do
+            if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -q "haiku-rag-docs.lancedb.tar.gz"; then
+              echo "$tag"
+              break
+            fi
+          done)
+          if [ -n "$LATEST" ]; then
+            gh release download "$LATEST" --pattern "haiku-rag-docs.lancedb.tar.gz"
+            tar xzf haiku-rag-docs.lancedb.tar.gz
+            rm haiku-rag-docs.lancedb.tar.gz
+            echo "Restored database from $LATEST"
+          else
+            echo "No previous database found, starting fresh"
+            uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml init --db rag.lancedb
+          fi
+      - name: Build RAG database
+        env:
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+        run: uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml add-src docs/ --db rag.lancedb
+      - name: Vacuum database
+        run: uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml vacuum --db rag.lancedb
+      - name: Package RAG database
+        run: tar czf haiku-rag-docs.lancedb.tar.gz rag.lancedb/
+      - name: Upload to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.event.release.tag_name }} haiku-rag-docs.lancedb.tar.gz --clobber
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: haiku-rag-docs.lancedb.tar.gz
+          path: haiku-rag-docs.lancedb.tar.gz
+          retention-days: 1
