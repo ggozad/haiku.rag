@@ -171,7 +171,8 @@ custom_config = AppConfig(
 )
 
 # Pass configuration to the client
-client = HaikuRAG(config=custom_config)
+async with HaikuRAG(config=custom_config) as client:
+    ...
 ```
 
 If you don't pass a config, the client uses the global configuration loaded from your YAML file or defaults.

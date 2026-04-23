@@ -3,10 +3,9 @@
 
 ### Changed
 
-- **Native async LanceDB**: All LanceDB operations now use the native async API (`connect_async`, `AsyncConnection`, `AsyncTable`, `AsyncQuery`) instead of blocking sync calls wrapped in `async def`. Database I/O no longer blocks the event loop.
-- **Store initialization is async**: `Store` and `HaikuRAG` must be used as async context managers (`async with Store(...) as store:` / `async with HaikuRAG(...) as client:`). Direct construction without `async with` is no longer supported.
-- **Index creation API**: Uses `FTS()`, `BTree()`, `IvfPq()` config objects instead of string-based `index_type` parameter.
-- **Upgrade functions are async**: Database migration callbacks are now `async def`.
+- **Native async LanceDB**: all table I/O now uses LanceDB's async API (`connect_async`, `AsyncConnection`, `AsyncTable`). Previously, repository methods were declared `async def` but called blocking sync LanceDB under the hood, stalling the event loop on every read/write. No change to the documented `async with HaikuRAG(...) as client:` usage pattern.
+- **BREAKING (internal): `HaikuRAG` must be used via `async with`.** Store initialization now happens in `__aenter__`; constructing `HaikuRAG(...)` and calling methods directly without entering the context manager no longer works. The only previously-supported direct-construction path was `HaikuRAG(db_path=None).download_models()`, which still works because it only reads config.
+- **Concurrency: background vacuum tracked as a task** on the client. `__aexit__` and `rebuild_database` now await it explicitly, preventing `CreateIndex transaction was preempted` commit conflicts when destructive operations follow a `create_document` that scheduled a background vacuum.
 
 ### Fixed
 

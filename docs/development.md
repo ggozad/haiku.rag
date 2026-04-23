@@ -102,7 +102,7 @@ Integration tests are skipped in CI but run locally when you have the required s
 ```bash
 uv run ruff check
 uv run ruff format
-uv run pyright
+uv run ty check
 ```
 
 ## Mock API Keys
