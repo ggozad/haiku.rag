@@ -47,13 +47,12 @@ def qa_corpus() -> "Dataset":
 
 
 @pytest.fixture
-def temp_db_path():
+def temp_db_path(tmp_path):
     """Create a temporary database path for testing.
 
     Note: Tests that need a database should use HaikuRAG with create=True.
     """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        yield Path(temp_dir) / "test.lancedb"
+    return tmp_path / "test.lancedb"
 
 
 @pytest.fixture

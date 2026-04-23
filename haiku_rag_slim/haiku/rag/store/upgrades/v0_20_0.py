@@ -7,12 +7,12 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 
 
-def _apply_add_docling_document_columns(store: Store) -> None:  # pragma: no cover
+async def _apply_add_docling_document_columns(store: Store) -> None:  # pragma: no cover
     """Add 'docling_document_json' and 'docling_version' columns to documents table."""
 
     # Read existing rows using Arrow for schema-agnostic access
     try:
-        docs_arrow = store.documents_table.search().to_arrow()
+        docs_arrow = await store.documents_table.query().to_arrow()
         rows = docs_arrow.to_pylist()
     except Exception:
         rows = []
@@ -30,11 +30,13 @@ def _apply_add_docling_document_columns(store: Store) -> None:  # pragma: no cov
 
     # Drop and recreate documents table with the new schema
     try:
-        store.db.drop_table("documents")
+        await store.db.drop_table("documents")
     except Exception:
         pass
 
-    store.documents_table = store.db.create_table("documents", schema=DocumentRecordV3)
+    store.documents_table = await store.db.create_table(
+        "documents", schema=DocumentRecordV3
+    )
 
     # Reinsert previous rows with new columns as None
     if rows:
@@ -58,7 +60,7 @@ def _apply_add_docling_document_columns(store: Store) -> None:  # pragma: no cov
                 )
             )
 
-        store.documents_table.add(backfilled)
+        await store.documents_table.add(backfilled)
 
 
 upgrade_add_docling_document = Upgrade(

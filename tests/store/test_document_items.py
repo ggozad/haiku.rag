@@ -277,8 +277,9 @@ class TestDocumentItemPopulation:
             assert await rag.document_item_repository.get_item_count(created.id) == 0
 
 
+@pytest.mark.asyncio
 class TestDocumentItemMigration:
-    def test_migration_populates_items_for_existing_documents(self, temp_db_path):
+    async def test_migration_populates_items_for_existing_documents(self, temp_db_path):
         """Test that the v0.40.0 migration populates items for pre-existing documents."""
         from haiku.rag.store.compression import compress_docling_split
         from haiku.rag.store.engine import DocumentRecord
@@ -288,64 +289,59 @@ class TestDocumentItemMigration:
         structure, pages = compress_docling_split(json_str)
 
         # Create a database at a pre-migration version with a document
-        store = Store(temp_db_path, create=True, skip_migration_check=True)
-        store.set_haiku_version("0.39.0")
-        doc_record = DocumentRecord(
-            id="test-doc-1",
-            content="test content",
-            uri="test://doc",
-            docling_document=structure,
-            docling_pages=pages,
-            docling_version=docling_doc.version,
-        )
-        store.documents_table.add([doc_record])
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await store.set_haiku_version("0.39.0")
+            doc_record = DocumentRecord(
+                id="test-doc-1",
+                content="test content",
+                uri="test://doc",
+                docling_document=structure,
+                docling_pages=pages,
+                docling_version=docling_doc.version,
+            )
+            await store.documents_table.add([doc_record])
 
-        # Verify no items exist yet
-        assert store.document_items_table.count_rows() == 0
-        store.close()
+            # Verify no items exist yet
+            assert await store.document_items_table.count_rows() == 0
 
         # Re-open with skip_migration_check and run migration
-        store = Store(temp_db_path, skip_migration_check=True)
-        applied = store.migrate()
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            applied = await store.migrate()
 
-        # Should have applied the v0.40.0 migration
-        assert any("document_items" in desc for desc in applied)
+            # Should have applied the v0.40.0 migration
+            assert any("document_items" in desc for desc in applied)
 
-        # Items should now exist
-        item_count = store.document_items_table.count_rows(
-            filter="document_id = 'test-doc-1'"
-        )
-        assert item_count == 6
+            # Items should now exist
+            item_count = await store.document_items_table.count_rows(
+                filter="document_id = 'test-doc-1'"
+            )
+            assert item_count == 6
 
-        # Verify item content
-        items = (
-            store.document_items_table.search()
-            .where("document_id = 'test-doc-1'")
-            .to_list()
-        )
-        labels = {row["label"] for row in items}
-        assert "section_header" in labels
-        assert "paragraph" in labels
-        assert "table" in labels
+            # Verify item content
+            items = await (
+                store.document_items_table.query()
+                .where("document_id = 'test-doc-1'")
+                .to_list()
+            )
+            labels = {row["label"] for row in items}
+            assert "section_header" in labels
+            assert "paragraph" in labels
+            assert "table" in labels
 
-        store.close()
-
-    def test_migration_skips_documents_without_docling(self, temp_db_path):
+    async def test_migration_skips_documents_without_docling(self, temp_db_path):
         """Test that migration handles documents without docling data."""
         from haiku.rag.store.engine import DocumentRecord
 
-        store = Store(temp_db_path, create=True, skip_migration_check=True)
-        store.set_haiku_version("0.39.0")
-        doc_record = DocumentRecord(
-            id="no-docling",
-            content="plain text document",
-        )
-        store.documents_table.add([doc_record])
-        store.close()
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await store.set_haiku_version("0.39.0")
+            doc_record = DocumentRecord(
+                id="no-docling",
+                content="plain text document",
+            )
+            await store.documents_table.add([doc_record])
 
-        store = Store(temp_db_path, skip_migration_check=True)
-        store.migrate()
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            await store.migrate()
 
-        # No items should have been created
-        assert store.document_items_table.count_rows() == 0
-        store.close()
+            # No items should have been created
+            assert await store.document_items_table.count_rows() == 0

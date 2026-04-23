@@ -59,8 +59,8 @@ class HaikuRAGApp:  # pragma: no cover
             return
 
         # Create the database
-        client = HaikuRAG(db_path=self.db_path, config=self.config, create=True)
-        client.close()
+        async with HaikuRAG(db_path=self.db_path, config=self.config, create=True):
+            pass
         self.console.print(
             f"[bold green]Database initialized at {self._display_path}[/bold green]"
         )
@@ -88,8 +88,8 @@ class HaikuRAGApp:  # pragma: no cover
 
         # Connect directly. Don't go through Store so a database that is
         # missing tables (e.g. pre-migration) still reports what it can.
-        db = connect_lancedb(self.config, self.db_path)
-        stats = get_database_stats(db)
+        db = await connect_lancedb(self.config, self.db_path)
+        stats = await get_database_stats(db)
 
         if not any(entry["exists"] for entry in stats.values()):
             self.console.print(
@@ -104,14 +104,10 @@ class HaikuRAGApp:  # pragma: no cover
         embed_model = "unknown"
         vector_dim = None
         if stats["settings"]["exists"]:
-            settings_tbl = db.open_table("settings")
+            settings_tbl = await db.open_table("settings")
             rows = (
-                settings_tbl.search()
-                .where("id = 'settings'")
-                .limit(1)
-                .to_arrow()
-                .to_pylist()
-            )
+                await settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
+            ).to_pylist()
             if rows:
                 raw = rows[0].get("settings") or "{}"
                 data = json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -237,50 +233,46 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        store = Store(
+        async with Store(
             self.db_path,
             config=self.config,
             skip_validation=True,
             read_only=True,
             skip_migration_check=True,
             before=self.before,
-        )
+        ) as store:
+            tables = ["documents", "chunks", "settings"]
+            if table:
+                if table not in tables:
+                    self.console.print(
+                        f"[red]Unknown table: {table}. Must be one of: {', '.join(tables)}[/red]"
+                    )
+                    return
+                tables = [table]
 
-        tables = ["documents", "chunks", "settings"]
-        if table:
-            if table not in tables:
-                self.console.print(
-                    f"[red]Unknown table: {table}. Must be one of: {', '.join(tables)}[/red]"
-                )
-                store.close()
-                return
-            tables = [table]
+            self.console.print("[bold]Version History[/bold]")
 
-        self.console.print("[bold]Version History[/bold]")
+            for table_name in tables:
+                versions = await store.list_table_versions(table_name)
 
-        for table_name in tables:
-            versions = store.list_table_versions(table_name)
+                # Sort by version descending (newest first)
+                versions = sorted(versions, key=lambda v: v["version"], reverse=True)
 
-            # Sort by version descending (newest first)
-            versions = sorted(versions, key=lambda v: v["version"], reverse=True)
+                if limit:
+                    versions = versions[:limit]
 
-            if limit:
-                versions = versions[:limit]
+                self.console.print(f"\n[bold cyan]{table_name}[/bold cyan]")
 
-            self.console.print(f"\n[bold cyan]{table_name}[/bold cyan]")
+                if not versions:
+                    self.console.print("  [dim]No versions found[/dim]")
+                    continue
 
-            if not versions:
-                self.console.print("  [dim]No versions found[/dim]")
-                continue
-
-            for v in versions:
-                version_num = v["version"]
-                timestamp = v["timestamp"]
-                self.console.print(
-                    f"  [repr.attrib_name]v{version_num}[/repr.attrib_name]: {timestamp}"
-                )
-
-        store.close()
+                for v in versions:
+                    version_num = v["version"]
+                    timestamp = v["timestamp"]
+                    self.console.print(
+                        f"  [repr.attrib_name]v{version_num}[/repr.attrib_name]: {timestamp}"
+                    )
 
     async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(
@@ -601,7 +593,7 @@ class HaikuRAGApp:  # pragma: no cover
             await client.vacuum()
         self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
 
-    def migrate(self) -> list[str]:
+    async def migrate(self) -> list[str]:
         """Run pending database migrations.
 
         Returns:
@@ -609,17 +601,13 @@ class HaikuRAGApp:  # pragma: no cover
         """
         from haiku.rag.store.engine import Store
 
-        store = Store(
+        async with Store(
             self.db_path,
             config=self.config,
             skip_validation=True,
             skip_migration_check=True,
-        )
-        try:
-            applied = store.migrate()
-            return applied
-        finally:
-            store.close()
+        ) as store:
+            return await store.migrate()
 
     async def create_index(self):
         """Create vector index on the chunks table."""
@@ -630,7 +618,7 @@ class HaikuRAGApp:  # pragma: no cover
             read_only=self.read_only,
             before=self.before,
         ) as client:
-            row_count = client.store.chunks_table.count_rows()
+            row_count = await client.store.chunks_table.count_rows()
             self.console.print(f"Chunks in database: {row_count}")
 
             if row_count < 256:
@@ -640,7 +628,7 @@ class HaikuRAGApp:  # pragma: no cover
                 return
 
             # Check if index already exists
-            indices = client.store.chunks_table.list_indices()
+            indices = await client.store.chunks_table.list_indices()
             has_vector_index = any("vector" in str(idx).lower() for idx in indices)
 
             if has_vector_index:
@@ -650,7 +638,7 @@ class HaikuRAGApp:  # pragma: no cover
             else:
                 self.console.print("[bold]Creating vector index...[/bold]")
 
-            client.store._ensure_vector_index()
+            await client.store._ensure_vector_index()
             self.console.print(
                 "[bold green]Vector index created successfully.[/bold green]"
             )

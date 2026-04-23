@@ -1,7 +1,7 @@
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from packaging.version import Version, parse
 
@@ -16,7 +16,7 @@ class Upgrade:
     """Represents a database upgrade step."""
 
     version: str
-    apply: Callable[["Store"], None]
+    apply: Callable[["Store"], Coroutine[Any, Any, None]]
     description: str = ""
 
 
@@ -36,7 +36,7 @@ def get_pending_upgrades(from_version: str) -> list[Upgrade]:
     return [s for s in sorted_steps if v_from < parse(s.version)]
 
 
-def run_pending_upgrades(store: "Store", from_version: str) -> list[str]:
+async def run_pending_upgrades(store: "Store", from_version: str) -> list[str]:
     """Run upgrades where from_version < step.version.
 
     Returns:
@@ -58,7 +58,7 @@ def run_pending_upgrades(store: "Store", from_version: str) -> list[str]:
             idx,
             len(applicable),
         )
-        step.apply(store)
+        await step.apply(store)
         logger.info("Completed upgrade %s", step.version)
         applied.append(
             f"{step.version}: {step.description}" if step.description else step.version

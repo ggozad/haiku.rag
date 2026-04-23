@@ -9,42 +9,40 @@ from haiku.rag.store.models.chunk import Chunk, ChunkMetadata, SearchResult
 @pytest.mark.vcr()
 async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
     """Test ChunkRepository operations."""
-    # Create client
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Get the first document from the corpus
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
 
-    # Get the first document from the corpus
-    first_doc = qa_corpus[0]
-    document_text = first_doc["document_extracted"]
+        # Create a document first with chunks
+        created_document = await client.create_document(
+            content=document_text, metadata={"source": "test"}
+        )
+        assert created_document.id is not None
 
-    # Create a document first with chunks
-    created_document = await client.create_document(
-        content=document_text, metadata={"source": "test"}
-    )
-    assert created_document.id is not None
+        # Test getting chunks by document ID
+        chunks = await client.chunk_repository.get_by_document_id(created_document.id)
+        assert len(chunks) > 0
+        assert all(chunk.document_id == created_document.id for chunk in chunks)
 
-    # Test getting chunks by document ID
-    chunks = await client.chunk_repository.get_by_document_id(created_document.id)
-    assert len(chunks) > 0
-    assert all(chunk.document_id == created_document.id for chunk in chunks)
+        # Test chunk search
+        results = await client.chunk_repository.search(
+            "election", limit=2, search_type="vector"
+        )
+        assert len(results) <= 2
+        assert all(hasattr(chunk, "content") for chunk, _ in results)
 
-    # Test chunk search
-    results = await client.chunk_repository.search(
-        "election", limit=2, search_type="vector"
-    )
-    assert len(results) <= 2
-    assert all(hasattr(chunk, "content") for chunk, _ in results)
+        # Test deleting chunks by document ID
+        deleted = await client.chunk_repository.delete_by_document_id(
+            created_document.id
+        )
+        assert deleted is True
 
-    # Test deleting chunks by document ID
-    deleted = await client.chunk_repository.delete_by_document_id(created_document.id)
-    assert deleted is True
-
-    # Verify chunks are gone
-    chunks_after_delete = await client.chunk_repository.get_by_document_id(
-        created_document.id
-    )
-    assert len(chunks_after_delete) == 0
-
-    client.close()
+        # Verify chunks are gone
+        chunks_after_delete = await client.chunk_repository.get_by_document_id(
+            created_document.id
+        )
+        assert len(chunks_after_delete) == 0
 
 
 @pytest.mark.vcr()
@@ -409,13 +407,12 @@ async def test_chunk_content_fts_populated(temp_db_path):
         await client.chunk_repository.create(chunk)
 
         # Read the raw record from the database
-        records = list(
-            client.store.chunks_table.search()
+        records = (
+            await client.store.chunks_table.query()
             .where(f"id = '{chunk.id}'")
             .limit(1)
             .to_arrow()
-            .to_pylist()
-        )
+        ).to_pylist()
 
         assert len(records) == 1
         record = records[0]
@@ -453,13 +450,12 @@ async def test_chunk_content_fts_without_headings(temp_db_path):
         await client.chunk_repository.create(chunk)
 
         # Read the raw record from the database
-        records = list(
-            client.store.chunks_table.search()
+        records = (
+            await client.store.chunks_table.query()
             .where(f"id = '{chunk.id}'")
             .limit(1)
             .to_arrow()
-            .to_pylist()
-        )
+        ).to_pylist()
 
         assert len(records) == 1
         record = records[0]

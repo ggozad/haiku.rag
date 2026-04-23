@@ -8,7 +8,7 @@ from haiku.rag.utils import escape_sql_string
 logger = logging.getLogger(__name__)
 
 
-def _apply_populate_document_items(store: Store) -> None:  # pragma: no cover
+async def _apply_populate_document_items(store: Store) -> None:  # pragma: no cover
     """Populate document_items table from existing docling documents."""
     from docling_core.types.doc.document import DoclingDocument
 
@@ -16,10 +16,8 @@ def _apply_populate_document_items(store: Store) -> None:  # pragma: no cover
     from haiku.rag.store.models.document_item import extract_items
 
     # Get all document IDs that have docling data
-    ids = [
-        row["id"]
-        for row in store.documents_table.search().select(["id"]).to_arrow().to_pylist()
-    ]
+    ids = (await store.documents_table.query().select(["id"]).to_arrow()).to_pylist()
+    ids = [row["id"] for row in ids]
 
     if not ids:
         logger.info("No documents to migrate")
@@ -33,8 +31,8 @@ def _apply_populate_document_items(store: Store) -> None:  # pragma: no cover
     for idx, doc_id in enumerate(ids, 1):
         # Load only docling data
         safe_id = escape_sql_string(doc_id)
-        rows = (
-            store.documents_table.search()
+        rows = await (
+            store.documents_table.query()
             .select(["id", "docling_document"])
             .where(f"id = '{safe_id}'")
             .limit(1)
@@ -68,7 +66,7 @@ def _apply_populate_document_items(store: Store) -> None:  # pragma: no cover
                     )
                     for item in items
                 ]
-                store.document_items_table.add(records)
+                await store.document_items_table.add(records)
 
             migrated += 1
             if idx % 10 == 0 or idx == total:

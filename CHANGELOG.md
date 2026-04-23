@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Native async LanceDB**: All LanceDB operations now use the native async API (`connect_async`, `AsyncConnection`, `AsyncTable`, `AsyncQuery`) instead of blocking sync calls wrapped in `async def`. Database I/O no longer blocks the event loop.
+- **Store initialization is async**: `Store` and `HaikuRAG` must be used as async context managers (`async with Store(...) as store:` / `async with HaikuRAG(...) as client:`). Direct construction without `async with` is no longer supported.
+- **Index creation API**: Uses `FTS()`, `BTree()`, `IvfPq()` config objects instead of string-based `index_type` parameter.
+- **Upgrade functions are async**: Database migration callbacks are now `async def`.
+
 ### Fixed
 
 - **Chat TUI now renders citations again.** After the 0.42.1 flattening of skill state `citations` to `list[str]`, the TUI still indexed `citations[-1]` and iterated the resulting chunk-id string character-by-character, so no citations resolved through `citation_index` and the citation panel stayed empty. Fixed by iterating `state.citations` directly.

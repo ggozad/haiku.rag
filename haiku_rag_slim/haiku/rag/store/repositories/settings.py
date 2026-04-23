@@ -18,13 +18,13 @@ class SettingsRepository:
     async def create(self, entity: dict) -> dict:
         """Create settings in the database."""
         settings_record = SettingsRecord(id="settings", settings=json.dumps(entity))
-        self.store.settings_table.add([settings_record])
+        await self.store.settings_table.add([settings_record])
         return entity
 
     async def get_by_id(self, entity_id: str) -> dict | None:
         """Get settings by ID."""
-        results = list(
-            self.store.settings_table.search()
+        results: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            self.store.settings_table.query()
             .where(f"id = '{entity_id}'")
             .limit(1)
             .to_pydantic(SettingsRecord)
@@ -37,29 +37,31 @@ class SettingsRepository:
 
     async def update(self, entity: dict) -> dict:
         """Update existing settings."""
-        self.store.settings_table.update(
-            where="id = 'settings'", values={"settings": json.dumps(entity)}
+        await self.store.settings_table.update(
+            {"settings": json.dumps(entity)}, where="id = 'settings'"
         )
         return entity
 
     async def delete(self, entity_id: str) -> bool:
         """Delete settings by ID."""
-        self.store.settings_table.delete(f"id = '{entity_id}'")
+        await self.store.settings_table.delete(f"id = '{entity_id}'")
         return True
 
     async def list_all(
         self, limit: int | None = None, offset: int | None = None
     ) -> list[dict]:
         """List all settings."""
-        results = list(self.store.settings_table.search().to_pydantic(SettingsRecord))
+        results: list[
+            SettingsRecord
+        ] = await self.store.settings_table.query().to_pydantic(SettingsRecord)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         return [
             json.loads(record.settings) if record.settings else {} for record in results
         ]
 
-    def get_current_settings(self) -> dict:
+    async def get_current_settings(self) -> dict:
         """Get the current settings."""
-        results = list(
-            self.store.settings_table.search()
+        results: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            self.store.settings_table.query()
             .where("id = 'settings'")
             .limit(1)
             .to_pydantic(SettingsRecord)
@@ -70,14 +72,14 @@ class SettingsRepository:
 
         return json.loads(results[0].settings) if results[0].settings else {}
 
-    def save_current_settings(self) -> None:
+    async def save_current_settings(self) -> None:
         """Save the current configuration to the database."""
         self.store._assert_writable()
         current_config = self.store._config.model_dump(mode="json")
 
         # Check if settings exist
-        existing = list(
-            self.store.settings_table.search()
+        existing: list[SettingsRecord] = await (  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            self.store.settings_table.query()
             .where("id = 'settings'")
             .limit(1)
             .to_pydantic(SettingsRecord)
@@ -91,24 +93,24 @@ class SettingsRepository:
 
             # Update existing settings
             if existing_settings != current_config:
-                self.store.settings_table.update(
+                await self.store.settings_table.update(
+                    {"settings": json.dumps(current_config)},
                     where="id = 'settings'",
-                    values={"settings": json.dumps(current_config)},
                 )
         else:
             # Create new settings
             settings_record = SettingsRecord(
                 id="settings", settings=json.dumps(current_config)
             )
-            self.store.settings_table.add([settings_record])
+            await self.store.settings_table.add([settings_record])
 
-    def validate_config_compatibility(self) -> None:
+    async def validate_config_compatibility(self) -> None:
         """Validate that the current configuration is compatible with stored settings."""
-        stored_settings = self.get_current_settings()
+        stored_settings = await self.get_current_settings()
 
         # If no stored settings, this is a new database - save current config and return
         if not stored_settings:
-            self.save_current_settings()
+            await self.save_current_settings()
             return
 
         current_config = self.store._config.model_dump(mode="json")

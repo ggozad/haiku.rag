@@ -9,187 +9,179 @@ from haiku.rag.store.models import SearchResult
 @pytest.mark.vcr()
 async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
-    # Create client
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Load unique documents (limited to 10)
+        seen_documents = set()
+        documents = []
 
-    # Load unique documents (limited to 10)
-    seen_documents = set()
-    documents = []
+        for doc_data in qa_corpus:
+            if len(seen_documents) >= 10:
+                break
+            document_text = doc_data["document_extracted"]
+            document_id = doc_data.get("document_id", "")
 
-    for doc_data in qa_corpus:
-        if len(seen_documents) >= 10:
-            break
-        document_text = doc_data["document_extracted"]
-        document_id = doc_data.get("document_id", "")
+            if document_id in seen_documents:
+                continue
+            seen_documents.add(document_id)
 
-        if document_id in seen_documents:
-            continue
-        seen_documents.add(document_id)
+            # Create the document with chunks and embeddings
+            created_document = await client.create_document(content=document_text)
+            documents.append((created_document, doc_data))
 
-        # Create the document with chunks and embeddings
-        created_document = await client.create_document(content=document_text)
-        documents.append((created_document, doc_data))
+        # Test with first few unique documents
 
-    # Test with first few unique documents
+        for target_document, doc_data in documents:
+            question = doc_data["question"]
 
-    for target_document, doc_data in documents:
-        question = doc_data["question"]
+            # Test vector search (limit=10 to accommodate different embedding models)
+            vector_results = await client.chunk_repository.search(
+                question, limit=10, search_type="vector"
+            )
+            target_document_ids = {chunk.document_id for chunk, _ in vector_results}
+            assert target_document.id in target_document_ids
 
-        # Test vector search (limit=10 to accommodate different embedding models)
-        vector_results = await client.chunk_repository.search(
-            question, limit=10, search_type="vector"
-        )
-        target_document_ids = {chunk.document_id for chunk, _ in vector_results}
-        assert target_document.id in target_document_ids
+            # Test FTS search
+            fts_results = await client.chunk_repository.search(
+                question, limit=10, search_type="fts"
+            )
+            target_document_ids = {chunk.document_id for chunk, _ in fts_results}
+            assert target_document.id in target_document_ids
 
-        # Test FTS search
-        fts_results = await client.chunk_repository.search(
-            question, limit=10, search_type="fts"
-        )
-        target_document_ids = {chunk.document_id for chunk, _ in fts_results}
-        assert target_document.id in target_document_ids
-
-        # Test hybrid search
-        hybrid_results = await client.chunk_repository.search(
-            question, limit=10, search_type="hybrid"
-        )
-        target_document_ids = {chunk.document_id for chunk, _ in hybrid_results}
-        assert target_document.id in target_document_ids
-
-    client.close()
+            # Test hybrid search
+            hybrid_results = await client.chunk_repository.search(
+                question, limit=10, search_type="hybrid"
+            )
+            target_document_ids = {chunk.document_id for chunk, _ in hybrid_results}
+            assert target_document.id in target_document_ids
 
 
 @pytest.mark.vcr()
 async def test_search_chunk_includes_document_provenance(temp_db_path):
     """Test that raw chunk search results include document URI, metadata, and ID."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Create a document with URI and metadata but no title
+        created_document = await client.create_document(
+            content="This is a test document with some content for searching.",
+            uri="https://example.com/test.html",
+            metadata={"title": "Test Document", "author": "Test Author"},
+        )
 
-    # Create a document with URI and metadata but no title
-    created_document = await client.create_document(
-        content="This is a test document with some content for searching.",
-        uri="https://example.com/test.html",
-        metadata={"title": "Test Document", "author": "Test Author"},
-    )
+        # Search for chunks
+        results = await client.chunk_repository.search(
+            "test document", limit=1, search_type="hybrid"
+        )
 
-    # Search for chunks
-    results = await client.chunk_repository.search(
-        "test document", limit=1, search_type="hybrid"
-    )
+        assert len(results) > 0
+        chunk, score = results[0]
 
-    assert len(results) > 0
-    chunk, score = results[0]
+        # Test that score is valid
+        assert isinstance(score, int | float), (
+            f"Score should be numeric, got {type(score)}"
+        )
+        assert score >= 0, f"Score should be non-negative, got {score}"
 
-    # Test that score is valid
-    assert isinstance(score, int | float), f"Score should be numeric, got {type(score)}"
-    assert score >= 0, f"Score should be non-negative, got {score}"
-
-    # Verify the chunk includes document information
-    assert chunk.document_uri == "https://example.com/test.html"
-    assert chunk.document_meta == {"title": "Test Document", "author": "Test Author"}
-    assert chunk.document_id == created_document.id
-    assert chunk.document_title is None
-
-    client.close()
+        # Verify the chunk includes document information
+        assert chunk.document_uri == "https://example.com/test.html"
+        assert chunk.document_meta == {
+            "title": "Test Document",
+            "author": "Test Author",
+        }
+        assert chunk.document_id == created_document.id
+        assert chunk.document_title is None
 
 
 @pytest.mark.vcr()
 async def test_search_score_types(temp_db_path):
     """Test that different search types return appropriate score ranges."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Create multiple documents with different content
+        documents_content = [
+            "Machine learning algorithms are powerful tools for data analysis and pattern recognition.",
+            "Deep learning neural networks can process complex datasets and identify hidden patterns.",
+            "Natural language processing enables computers to understand and generate human text.",
+            "Computer vision systems can interpret and analyze visual information from images.",
+        ]
 
-    # Create multiple documents with different content
-    documents_content = [
-        "Machine learning algorithms are powerful tools for data analysis and pattern recognition.",
-        "Deep learning neural networks can process complex datasets and identify hidden patterns.",
-        "Natural language processing enables computers to understand and generate human text.",
-        "Computer vision systems can interpret and analyze visual information from images.",
-    ]
+        for content in documents_content:
+            await client.create_document(content=content)
 
-    for content in documents_content:
-        await client.create_document(content=content)
+        query = "machine learning"
 
-    query = "machine learning"
+        # Test vector search scores (should be converted from distances)
+        vector_results = await client.chunk_repository.search(
+            query, limit=3, search_type="vector"
+        )
+        assert len(vector_results) > 0
+        vector_scores = [score for _, score in vector_results]
 
-    # Test vector search scores (should be converted from distances)
-    vector_results = await client.chunk_repository.search(
-        query, limit=3, search_type="vector"
-    )
-    assert len(vector_results) > 0
-    vector_scores = [score for _, score in vector_results]
+        # Test FTS search scores (should be native LanceDB FTS scores)
+        fts_results = await client.chunk_repository.search(
+            query, limit=3, search_type="fts"
+        )
+        assert len(fts_results) > 0
+        fts_scores = [score for _, score in fts_results]
 
-    # Test FTS search scores (should be native LanceDB FTS scores)
-    fts_results = await client.chunk_repository.search(
-        query, limit=3, search_type="fts"
-    )
-    assert len(fts_results) > 0
-    fts_scores = [score for _, score in fts_results]
+        # Test hybrid search scores (should be native LanceDB relevance scores)
+        hybrid_results = await client.chunk_repository.search(
+            query, limit=3, search_type="hybrid"
+        )
+        assert len(hybrid_results) > 0
+        hybrid_scores = [score for _, score in hybrid_results]
 
-    # Test hybrid search scores (should be native LanceDB relevance scores)
-    hybrid_results = await client.chunk_repository.search(
-        query, limit=3, search_type="hybrid"
-    )
-    assert len(hybrid_results) > 0
-    hybrid_scores = [score for _, score in hybrid_results]
+        # All scores should be numeric and non-negative
+        for scores, search_type in [
+            (vector_scores, "vector"),
+            (fts_scores, "fts"),
+            (hybrid_scores, "hybrid"),
+        ]:
+            for score in scores:
+                assert isinstance(score, int | float), (
+                    f"{search_type} score should be numeric"
+                )
+                assert score >= 0, f"{search_type} score should be non-negative"
 
-    # All scores should be numeric and non-negative
-    for scores, search_type in [
-        (vector_scores, "vector"),
-        (fts_scores, "fts"),
-        (hybrid_scores, "hybrid"),
-    ]:
-        for score in scores:
-            assert isinstance(score, int | float), (
-                f"{search_type} score should be numeric"
-            )
-            assert score >= 0, f"{search_type} score should be non-negative"
+        # Vector scores should typically be small (0-1 range due to distance conversion)
+        assert all(0 <= score <= 1 for score in vector_scores), (
+            "Vector scores should be in 0-1 range"
+        )
 
-    # Vector scores should typically be small (0-1 range due to distance conversion)
-    assert all(0 <= score <= 1 for score in vector_scores), (
-        "Vector scores should be in 0-1 range"
-    )
-
-    # Scores should be sorted in descending order (most relevant first)
-    for scores, search_type in [
-        (vector_scores, "vector"),
-        (fts_scores, "fts"),
-        (hybrid_scores, "hybrid"),
-    ]:
-        for i in range(len(scores) - 1):
-            assert scores[i] >= scores[i + 1], (
-                f"{search_type} results should be sorted by score descending"
-            )
-
-    client.close()
+        # Scores should be sorted in descending order (most relevant first)
+        for scores, search_type in [
+            (vector_scores, "vector"),
+            (fts_scores, "fts"),
+            (hybrid_scores, "hybrid"),
+        ]:
+            for i in range(len(scores) - 1):
+                assert scores[i] >= scores[i + 1], (
+                    f"{search_type} results should be sorted by score descending"
+                )
 
 
 @pytest.mark.vcr()
 async def test_search_returns_search_result(temp_db_path):
     """Test that client.search() returns SearchResult with provenance info."""
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        await client.create_document(
+            content="Machine learning models can classify images with high accuracy.",
+            uri="https://example.com/ml.html",
+            title="ML Guide",
+        )
 
-    await client.create_document(
-        content="Machine learning models can classify images with high accuracy.",
-        uri="https://example.com/ml.html",
-        title="ML Guide",
-    )
+        results = await client.search("machine learning", limit=3)
 
-    results = await client.search("machine learning", limit=3)
-
-    assert len(results) > 0
-    result = results[0]
-    assert isinstance(result, SearchResult)
-    assert result.content
-    assert result.score > 0
-    assert result.document_uri == "https://example.com/ml.html"
-    assert result.document_title == "ML Guide"
-    assert result.chunk_id is not None
-    assert result.document_id is not None
-    # page_numbers and headings come from chunk metadata
-    assert isinstance(result.page_numbers, list)
-    assert isinstance(result.labels, list)
-    assert len(result.labels) > 0
-
-    client.close()
+        assert len(results) > 0
+        result = results[0]
+        assert isinstance(result, SearchResult)
+        assert result.content
+        assert result.score > 0
+        assert result.document_uri == "https://example.com/ml.html"
+        assert result.document_title == "ML Guide"
+        assert result.chunk_id is not None
+        assert result.document_id is not None
+        # page_numbers and headings come from chunk metadata
+        assert isinstance(result.page_numbers, list)
+        assert isinstance(result.labels, list)
+        assert len(result.labels) > 0
 
 
 @pytest.mark.vcr()
@@ -197,30 +189,27 @@ async def test_search_graceful_degradation(temp_db_path):
     """Test search works when docling data is unavailable."""
     from haiku.rag.store.models import Chunk
 
-    client = HaikuRAG(db_path=temp_db_path, config=Config, create=True)
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        # Import document with custom chunks (no docling document)
+        custom_chunks = [
+            Chunk(content="Custom chunk without docling metadata", metadata={}),
+        ]
+        docling_doc = await client.convert("Document with custom chunks")
+        await client.import_document(
+            docling_document=docling_doc,
+            chunks=custom_chunks,
+            uri="https://example.com/custom.html",
+        )
 
-    # Import document with custom chunks (no docling document)
-    custom_chunks = [
-        Chunk(content="Custom chunk without docling metadata", metadata={}),
-    ]
-    docling_doc = await client.convert("Document with custom chunks")
-    await client.import_document(
-        docling_document=docling_doc,
-        chunks=custom_chunks,
-        uri="https://example.com/custom.html",
-    )
+        results = await client.search("custom chunk", limit=3)
 
-    results = await client.search("custom chunk", limit=3)
-
-    assert len(results) > 0
-    result = results[0]
-    assert isinstance(result, SearchResult)
-    assert result.content
-    # Metadata defaults should still work
-    assert result.page_numbers == []
-    assert result.labels == []
-
-    client.close()
+        assert len(results) > 0
+        result = results[0]
+        assert isinstance(result, SearchResult)
+        assert result.content
+        # Metadata defaults should still work
+        assert result.page_numbers == []
+        assert result.labels == []
 
 
 @pytest.mark.vcr()

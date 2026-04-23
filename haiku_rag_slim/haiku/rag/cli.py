@@ -529,7 +529,7 @@ def migrate(  # pragma: no cover
 ):
     app = create_app(db)
     try:
-        applied = app.migrate()
+        applied = asyncio.run(app.migrate())
         if applied:
             typer.echo(f"Applied {len(applied)} migration(s):")
             for desc in applied:

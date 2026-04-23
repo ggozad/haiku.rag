@@ -60,7 +60,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
         assert len(original_chunks) > 0
 
 
-def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
+async def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("run_pending_upgrades should not be called for new DB")
 
@@ -69,11 +69,13 @@ def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
         fail_if_called,
     )
 
-    Store(temp_db_path, create=True)
+    async with Store(temp_db_path, create=True):
+        pass
 
 
-def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
-    Store(temp_db_path, create=True)
+async def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
+    async with Store(temp_db_path, create=True):
+        pass
 
     from haiku.rag.store import upgrades
 
@@ -90,9 +92,16 @@ def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
     )
 
     # Opening an existing database should check for pending migrations
-    Store(temp_db_path)
+    async with Store(temp_db_path):
+        pass
 
     assert called["value"]
+
+
+async def _wait_for_background_vacuum(client):
+    """Wait for any background vacuum task to complete."""
+    if client._vacuum_task is not None and not client._vacuum_task.done():
+        await client._vacuum_task
 
 
 @pytest.mark.vcr()
@@ -100,15 +109,17 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create first document
         await client.create_document(content="First document")
+        await _wait_for_background_vacuum(client)
 
         # Create second document
         await client.create_document(content="Second document")
+        await _wait_for_background_vacuum(client)
 
         store = client.store
 
         # Get initial version counts (should have multiple versions from creates)
-        initial_doc_versions = len(list(store.documents_table.list_versions()))
-        initial_chunk_versions = len(list(store.chunks_table.list_versions()))
+        initial_doc_versions = len(await store.documents_table.list_versions())
+        initial_chunk_versions = len(await store.chunks_table.list_versions())
 
         assert initial_doc_versions > 1, "Should have multiple document table versions"
         assert initial_chunk_versions > 1, "Should have multiple chunk table versions"
@@ -117,8 +128,8 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
         # Note: vacuum may create new versions even when not cleaning up old ones
         await store.vacuum()
 
-        after_default_doc_versions = len(list(store.documents_table.list_versions()))
-        after_default_chunk_versions = len(list(store.chunks_table.list_versions()))
+        after_default_doc_versions = len(await store.documents_table.list_versions())
+        after_default_chunk_versions = len(await store.chunks_table.list_versions())
 
         # After vacuum with retention, version count should stay the same or increase
         # (optimize may create new versions) but not decrease
@@ -132,8 +143,8 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
         # Vacuum with 0 threshold - should significantly reduce versions
         await store.vacuum(retention_seconds=0)
 
-        after_zero_doc_versions = len(list(store.documents_table.list_versions()))
-        after_zero_chunk_versions = len(list(store.chunks_table.list_versions()))
+        after_zero_doc_versions = len(await store.documents_table.list_versions())
+        after_zero_chunk_versions = len(await store.chunks_table.list_versions())
 
         # After aggressive vacuum, should have minimal versions (1-2)
         # Note: optimize operation may create a version after cleanup
@@ -168,16 +179,15 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
             await client.create_document(content=f"Test document {i}")
 
     # After context exit, automatic vacuum should have kept versions minimal
-    store = Store(temp_db_path, create=True)
-    final_versions = len(list(store.documents_table.list_versions()))
+    async with Store(temp_db_path, create=True) as store:
+        final_versions = len(await store.documents_table.list_versions())
 
-    # With retention_seconds=0, vacuum aggressively cleans up between operations
-    # Should have very few versions remaining (1-2)
-    assert final_versions <= 2, (
-        f"Aggressive vacuum should keep minimal versions, got {final_versions}"
-    )
-    assert final_versions >= 1, "Should have at least one version remaining"
-    store.close()
+        # With retention_seconds=0, vacuum aggressively cleans up between operations
+        # Should have very few versions remaining (1-2)
+        assert final_versions <= 2, (
+            f"Aggressive vacuum should keep minimal versions, got {final_versions}"
+        )
+        assert final_versions >= 1, "Should have at least one version remaining"
 
 
 @pytest.mark.vcr()
@@ -194,8 +204,8 @@ async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
             await client.create_document(content=f"Test document {i}")
 
         # Count versions - should accumulate without vacuum
-        doc_versions = len(list(client.store.documents_table.list_versions()))
-        chunk_versions = len(list(client.store.chunks_table.list_versions()))
+        doc_versions = len(await client.store.documents_table.list_versions())
+        chunk_versions = len(await client.store.chunks_table.list_versions())
 
         # Without auto-vacuum, versions should accumulate (more than 3 from creates)
         assert doc_versions >= 3, (
@@ -221,11 +231,10 @@ async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
             await client.create_document(content=f"Test document {i}")
 
     # After context exit, vacuum should have cleaned up
-    store = Store(temp_db_path, create=True)
-    final_versions = len(list(store.documents_table.list_versions()))
+    async with Store(temp_db_path, create=True) as store:
+        final_versions = len(await store.documents_table.list_versions())
 
-    # With auto_vacuum=True and retention=0, should have minimal versions
-    assert final_versions <= 2, (
-        f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
-    )
-    store.close()
+        # With auto_vacuum=True and retention=0, should have minimal versions
+        assert final_versions <= 2, (
+            f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
+        )

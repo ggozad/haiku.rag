@@ -1,5 +1,6 @@
 import json
 
+from lancedb.index import FTS
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
@@ -7,11 +8,11 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 
 
-def _apply_add_content_fts(store: Store) -> None:  # pragma: no cover
+async def _apply_add_content_fts(store: Store) -> None:  # pragma: no cover
     """Add content_fts column with contextualized content for better FTS."""
     # Read existing chunks
     try:
-        chunks_arrow = store.chunks_table.search().to_arrow()
+        chunks_arrow = await store.chunks_table.query().to_arrow()
         rows = chunks_arrow.to_pylist()
     except Exception:
         return
@@ -38,11 +39,11 @@ def _apply_add_content_fts(store: Store) -> None:  # pragma: no cover
 
     # Drop and recreate table with new schema
     try:
-        store.db.drop_table("chunks")
+        await store.db.drop_table("chunks")
     except Exception:
         pass
 
-    store.chunks_table = store.db.create_table("chunks", schema=ChunkRecord)
+    store.chunks_table = await store.db.create_table("chunks", schema=ChunkRecord)
 
     # Populate content_fts with contextualized content
     new_records: list[ChunkRecord] = []
@@ -79,17 +80,19 @@ def _apply_add_content_fts(store: Store) -> None:  # pragma: no cover
         )
 
     if new_records:
-        store.chunks_table.add(new_records)
+        await store.chunks_table.add(new_records)
 
     # Drop old FTS index on content column if it exists
     try:
-        store.chunks_table.drop_index("content_idx")
+        await store.chunks_table.drop_index("content_idx")
     except Exception:
         pass
 
     # Create FTS index on content_fts
-    store.chunks_table.create_fts_index(
-        "content_fts", replace=True, with_position=True, remove_stop_words=False
+    await store.chunks_table.create_index(
+        "content_fts",
+        config=FTS(with_position=True, remove_stop_words=False),
+        replace=True,
     )
 
 

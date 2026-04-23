@@ -60,11 +60,13 @@ logger.info(f"QA Provider: {Config.qa.model.provider}, Model: {Config.qa.model.n
 _client: HaikuRAG | None = None
 
 
-def get_client() -> HaikuRAG:
+async def get_client() -> HaikuRAG:
     """Get or create cached client."""
     global _client
     if _client is None:
-        _client = HaikuRAG(db_path=db_path, config=Config, create=True)
+        client = HaikuRAG(db_path=db_path, config=Config, create=True)
+        await client.__aenter__()
+        _client = client
     return _client
 
 
@@ -126,7 +128,7 @@ async def list_documents(_: Request) -> JSONResponse:
     if not db_path.exists():
         return JSONResponse({"documents": [], "error": "Database not found"})
 
-    client = get_client()
+    client = await get_client()
     docs = await client.document_repository.list_all()
     return JSONResponse(
         {
@@ -151,8 +153,8 @@ async def db_info(_: Request) -> JSONResponse:
 
     from haiku.rag.store.engine import get_database_stats
 
-    client = get_client()
-    stats = get_database_stats(client.store.db)
+    client = await get_client()
+    stats = await get_database_stats(client.store.db)
 
     return JSONResponse(
         {
@@ -177,7 +179,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     if not db_path.exists():
         return JSONResponse({"error": "Database not found"}, status_code=404)
 
-    client = get_client()
+    client = await get_client()
 
     chunk = await client.chunk_repository.get_by_id(chunk_id)
     if not chunk:

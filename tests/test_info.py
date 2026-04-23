@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,7 +15,7 @@ async def test_app_info_outputs(temp_db_path, capsys):
     from lancedb.pydantic import LanceModel, Vector
     from pydantic import Field
 
-    db = lancedb.connect(temp_db_path)
+    db = await lancedb.connect_async(temp_db_path)
 
     class SettingsRecord(LanceModel):
         id: str = Field(default="settings")
@@ -31,13 +31,13 @@ async def test_app_info_outputs(temp_db_path, capsys):
         content: str
         vector: Vector(3)  # type: ignore
 
-    settings_tbl = db.create_table("settings", schema=SettingsRecord)
-    docs_tbl = db.create_table("documents", schema=DocumentRecord)
-    chunks_tbl = db.create_table("chunks", schema=ChunkRecord)
-    db.create_table("document_items", schema=DocumentItemRecord)
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = await db.create_table("documents", schema=DocumentRecord)
+    chunks_tbl = await db.create_table("chunks", schema=ChunkRecord)
+    await db.create_table("document_items", schema=DocumentItemRecord)
 
     # Insert one of each - using the new config format
-    settings_tbl.add(
+    await settings_tbl.add(
         [
             SettingsRecord(
                 id="settings",
@@ -56,8 +56,8 @@ async def test_app_info_outputs(temp_db_path, capsys):
             )
         ]
     )
-    docs_tbl.add([DocumentRecord(id="doc-1", content="hello")])
-    chunks_tbl.add(
+    await docs_tbl.add([DocumentRecord(id="doc-1", content="hello")])
+    await chunks_tbl.add(
         [ChunkRecord(id="c1", document_id="doc-1", content="c", vector=[0.1, 0.2, 0.3])]
     )
 
@@ -68,7 +68,9 @@ async def test_app_info_outputs(temp_db_path, capsys):
     # Validate expected content substrings
     # Note: Rich console may wrap long paths to new lines, so check separately
     assert "path:" in out
-    assert str(temp_db_path) in out
+    # Rich may wrap long paths across lines — check with newlines stripped
+    out_no_wrap = out.replace("\n", "")
+    assert str(temp_db_path) in out_no_wrap
     assert "haiku.rag version (db):" in out
     assert "embeddings: openai/text-embedding-3-small (dim: 3)" in out
     assert "documents: 1" in out
@@ -93,10 +95,11 @@ async def test_app_info_outputs(temp_db_path, capsys):
 async def test_app_info_with_vector_index(temp_db_path, capsys):
     # Build a database with enough chunks to create a vector index
     import lancedb
+    from lancedb.index import IvfPq
     from lancedb.pydantic import LanceModel, Vector
     from pydantic import Field
 
-    db = lancedb.connect(temp_db_path)
+    db = await lancedb.connect_async(temp_db_path)
 
     class SettingsRecord(LanceModel):
         id: str = Field(default="settings")
@@ -112,13 +115,13 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
         content: str
         vector: Vector(3)  # type: ignore
 
-    settings_tbl = db.create_table("settings", schema=SettingsRecord)
-    docs_tbl = db.create_table("documents", schema=DocumentRecord)
-    chunks_tbl = db.create_table("chunks", schema=ChunkRecord)
-    db.create_table("document_items", schema=DocumentItemRecord)
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = await db.create_table("documents", schema=DocumentRecord)
+    chunks_tbl = await db.create_table("chunks", schema=ChunkRecord)
+    await db.create_table("document_items", schema=DocumentItemRecord)
 
     # Insert settings
-    settings_tbl.add(
+    await settings_tbl.add(
         [
             SettingsRecord(
                 id="settings",
@@ -128,7 +131,7 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
     )
 
     # Insert document
-    docs_tbl.add([DocumentRecord(id="doc-1", content="test")])
+    await docs_tbl.add([DocumentRecord(id="doc-1", content="test")])
 
     # Insert 512 chunks to allow index creation (PQ needs more than 256 for training)
     chunks = [
@@ -140,10 +143,10 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
         )
         for i in range(512)
     ]
-    chunks_tbl.add(chunks)
+    await chunks_tbl.add(chunks)
 
     # Create vector index
-    chunks_tbl.create_index(metric="cosine", index_type="IVF_PQ")
+    await chunks_tbl.create_index("vector", config=IvfPq(distance_type="cosine"))
 
     app = HaikuRAGApp(db_path=temp_db_path)
     await app.info()
@@ -172,9 +175,14 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
     )
     app = HaikuRAGApp(db_path=nonexistent, config=config)
 
-    with patch("haiku.rag.store.engine.connect_lancedb") as mock_connect:
+    with patch(
+        "haiku.rag.store.engine.connect_lancedb", new_callable=AsyncMock
+    ) as mock_connect:
         # Empty DB triggers the early-return path - enough to prove connect_lancedb was used
-        mock_connect.return_value.list_tables.return_value.tables = []
+        mock_db = mock_connect.return_value
+        mock_list_result = MagicMock()
+        mock_list_result.tables = []
+        mock_db.list_tables = AsyncMock(return_value=mock_list_result)
         await app.info()
 
     mock_connect.assert_called_once_with(config, nonexistent)
@@ -188,7 +196,7 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
     from lancedb.pydantic import LanceModel, Vector
     from pydantic import Field
 
-    db = lancedb.connect(temp_db_path)
+    db = await lancedb.connect_async(temp_db_path)
 
     class SettingsRecord(LanceModel):
         id: str = Field(default="settings")
@@ -204,12 +212,12 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
         content: str
         vector: Vector(3)  # type: ignore
 
-    settings_tbl = db.create_table("settings", schema=SettingsRecord)
-    docs_tbl = db.create_table("documents", schema=DocumentRecord)
-    chunks_tbl = db.create_table("chunks", schema=ChunkRecord)
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = await db.create_table("documents", schema=DocumentRecord)
+    chunks_tbl = await db.create_table("chunks", schema=ChunkRecord)
     # Intentionally omit document_items (added in 0.40.0)
 
-    settings_tbl.add(
+    await settings_tbl.add(
         [
             SettingsRecord(
                 id="settings",
@@ -228,8 +236,8 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
             )
         ]
     )
-    docs_tbl.add([DocumentRecord(id="doc-1", content="hello")])
-    chunks_tbl.add(
+    await docs_tbl.add([DocumentRecord(id="doc-1", content="hello")])
+    await chunks_tbl.add(
         [ChunkRecord(id="c1", document_id="doc-1", content="c", vector=[0.1, 0.2, 0.3])]
     )
 
@@ -261,7 +269,7 @@ async def test_app_info_reports_up_to_date(temp_db_path, capsys):
     from lancedb.pydantic import LanceModel, Vector
     from pydantic import Field
 
-    db = lancedb.connect(temp_db_path)
+    db = await lancedb.connect_async(temp_db_path)
 
     class SettingsRecord(LanceModel):
         id: str = Field(default="settings")
@@ -277,13 +285,13 @@ async def test_app_info_reports_up_to_date(temp_db_path, capsys):
         content: str
         vector: Vector(3)  # type: ignore
 
-    settings_tbl = db.create_table("settings", schema=SettingsRecord)
-    db.create_table("documents", schema=DocumentRecord)
-    db.create_table("chunks", schema=ChunkRecord)
-    db.create_table("document_items", schema=DocumentItemRecord)
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    await db.create_table("documents", schema=DocumentRecord)
+    await db.create_table("chunks", schema=ChunkRecord)
+    await db.create_table("document_items", schema=DocumentItemRecord)
 
     current_version = metadata.version("haiku.rag-slim")
-    settings_tbl.add(
+    await settings_tbl.add(
         [
             SettingsRecord(
                 id="settings",
@@ -324,6 +332,9 @@ async def test_app_init_skips_exists_check_for_remote(tmp_path):
     app = HaikuRAGApp(db_path=nonexistent, config=config)
 
     with patch("haiku.rag.app.HaikuRAG") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
         await app.init()
         # Should have called HaikuRAG to create, not returned early
         mock_client_cls.assert_called_once()
@@ -342,9 +353,9 @@ async def test_app_history_skips_exists_check_for_remote(tmp_path):
     app = HaikuRAGApp(db_path=nonexistent, config=config)
 
     with patch("haiku.rag.store.engine.Store") as mock_store_cls:
-        mock_store = mock_store_cls.return_value
-        mock_store.documents_table.list_versions.return_value = []
-        mock_store.chunks_table.list_versions.return_value = []
-        mock_store.settings_table.list_versions.return_value = []
+        mock_store = AsyncMock()
+        mock_store.list_table_versions = AsyncMock(return_value=[])
+        mock_store_cls.return_value.__aenter__ = AsyncMock(return_value=mock_store)
+        mock_store_cls.return_value.__aexit__ = AsyncMock(return_value=False)
         await app.history()
         mock_store_cls.assert_called_once()

@@ -28,7 +28,8 @@ class TestReadOnlyError:
 
 
 class TestStoreReadOnly:
-    def test_store_read_only_raises_on_empty_directory(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_store_read_only_raises_on_empty_directory(self, tmp_path):
         """Opening an empty directory in read-only mode raises ReadOnlyError."""
         empty_dir = tmp_path / "empty_db"
         empty_dir.mkdir()
@@ -36,155 +37,148 @@ class TestStoreReadOnly:
         with pytest.raises(
             ReadOnlyError, match="Cannot create tables in read-only mode"
         ):
-            Store(
+            async with Store(
                 empty_dir,
                 read_only=True,
                 skip_validation=True,
                 skip_migration_check=True,
-            )
+            ):
+                pass
 
-    def test_store_default_is_not_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_store_default_is_not_read_only(self, temp_db_path):
         """Store defaults to not read-only."""
-        store = Store(temp_db_path, create=True)
-        assert store.is_read_only is False
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            assert store.is_read_only is False
 
-    def test_store_can_be_created_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_store_can_be_created_read_only(self, temp_db_path):
         """Store can be created with read_only=True."""
         # First create a normal store to initialize the database
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
         # Now open in read-only mode
-        store = Store(temp_db_path, read_only=True)
-        assert store.is_read_only is True
-        store.close()
+        async with Store(temp_db_path, read_only=True) as store:
+            assert store.is_read_only is True
 
-    def test_assert_writable_raises_when_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_assert_writable_raises_when_read_only(self, temp_db_path):
         """_assert_writable() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        with pytest.raises(ReadOnlyError):
-            store._assert_writable()
-        store.close()
+        async with Store(temp_db_path, read_only=True) as store:
+            with pytest.raises(ReadOnlyError):
+                store._assert_writable()
 
-    def test_assert_writable_passes_when_not_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_assert_writable_passes_when_not_read_only(self, temp_db_path):
         """_assert_writable() does not raise when read_only=False."""
-        store = Store(temp_db_path, create=True)
-        store._assert_writable()  # Should not raise
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            store._assert_writable()  # Should not raise
 
     @pytest.mark.asyncio
     async def test_vacuum_raises_when_read_only(self, temp_db_path):
         """vacuum() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        with pytest.raises(ReadOnlyError):
-            await store.vacuum()
-        store.close()
+        async with Store(temp_db_path, read_only=True) as store:
+            with pytest.raises(ReadOnlyError):
+                await store.vacuum()
 
-    def test_set_haiku_version_raises_when_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_set_haiku_version_raises_when_read_only(self, temp_db_path):
         """set_haiku_version() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        with pytest.raises(ReadOnlyError):
-            store.set_haiku_version("1.0.0")
-        store.close()
+        async with Store(temp_db_path, read_only=True) as store:
+            with pytest.raises(ReadOnlyError):
+                await store.set_haiku_version("1.0.0")
 
-    def test_recreate_embeddings_table_raises_when_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_recreate_embeddings_table_raises_when_read_only(self, temp_db_path):
         """recreate_embeddings_table() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        with pytest.raises(ReadOnlyError):
-            store.recreate_embeddings_table()
-        store.close()
+        async with Store(temp_db_path, read_only=True) as store:
+            with pytest.raises(ReadOnlyError):
+                await store.recreate_embeddings_table()
 
-    def test_restore_table_versions_raises_when_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_restore_table_versions_raises_when_read_only(self, temp_db_path):
         """restore_table_versions() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        versions = store.current_table_versions()
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            versions = await store.current_table_versions()
 
-        store = Store(temp_db_path, read_only=True)
-        with pytest.raises(ReadOnlyError):
-            store.restore_table_versions(versions)
-        store.close()
+        async with Store(temp_db_path, read_only=True) as store:
+            with pytest.raises(ReadOnlyError):
+                await store.restore_table_versions(versions)
 
 
 class TestDocumentRepositoryReadOnly:
     @pytest.mark.asyncio
     async def test_create_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.create() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        repo = DocumentRepository(store)
-        doc = Document(content="test content")
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = DocumentRepository(store)
+            doc = Document(content="test content")
 
-        with pytest.raises(ReadOnlyError):
-            await repo.create(doc)
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.create(doc)
 
     @pytest.mark.asyncio
     async def test_update_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.update() raises ReadOnlyError when read_only=True."""
         # First create a document
-        store = Store(temp_db_path, create=True)
-        repo = DocumentRepository(store)
-        doc = Document(content="test content")
-        created_doc = await repo.create(doc)
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            repo = DocumentRepository(store)
+            doc = Document(content="test content")
+            created_doc = await repo.create(doc)
 
         # Try to update in read-only mode
-        store = Store(temp_db_path, read_only=True)
-        repo = DocumentRepository(store)
-        created_doc.content = "updated content"
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = DocumentRepository(store)
+            created_doc.content = "updated content"
 
-        with pytest.raises(ReadOnlyError):
-            await repo.update(created_doc)
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.update(created_doc)
 
     @pytest.mark.asyncio
     async def test_delete_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.delete() raises ReadOnlyError when read_only=True."""
         # First create a document
-        store = Store(temp_db_path, create=True)
-        repo = DocumentRepository(store)
-        doc = Document(content="test content")
-        created_doc = await repo.create(doc)
-        assert created_doc.id is not None
-        doc_id = created_doc.id
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            repo = DocumentRepository(store)
+            doc = Document(content="test content")
+            created_doc = await repo.create(doc)
+            assert created_doc.id is not None
+            doc_id = created_doc.id
 
         # Try to delete in read-only mode
-        store = Store(temp_db_path, read_only=True)
-        repo = DocumentRepository(store)
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = DocumentRepository(store)
 
-        with pytest.raises(ReadOnlyError):
-            await repo.delete(doc_id)
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.delete(doc_id)
 
     @pytest.mark.asyncio
     async def test_delete_all_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.delete_all() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        repo = DocumentRepository(store)
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = DocumentRepository(store)
 
-        with pytest.raises(ReadOnlyError):
-            await repo.delete_all()
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.delete_all()
 
 
 class TestChunkRepositoryReadOnly:
@@ -192,86 +186,82 @@ class TestChunkRepositoryReadOnly:
     async def test_create_raises_when_read_only(self, temp_db_path):
         """ChunkRepository.create() raises ReadOnlyError when read_only=True."""
         # First create a document to have a valid document_id
-        store = Store(temp_db_path, create=True)
-        doc_repo = DocumentRepository(store)
-        doc = Document(content="test content")
-        created_doc = await doc_repo.create(doc)
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            doc_repo = DocumentRepository(store)
+            doc = Document(content="test content")
+            created_doc = await doc_repo.create(doc)
 
-        store = Store(temp_db_path, read_only=True)
-        repo = ChunkRepository(store)
-        chunk = Chunk(
-            content="test chunk",
-            document_id=created_doc.id,
-            embedding=[0.0] * store.embedder._vector_dim,
-        )
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = ChunkRepository(store)
+            chunk = Chunk(
+                content="test chunk",
+                document_id=created_doc.id,
+                embedding=[0.0] * store.embedder._vector_dim,
+            )
 
-        with pytest.raises(ReadOnlyError):
-            await repo.create(chunk)
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.create(chunk)
 
     @pytest.mark.asyncio
     async def test_delete_by_document_id_raises_when_read_only(self, temp_db_path):
         """ChunkRepository.delete_by_document_id() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        repo = ChunkRepository(store)
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = ChunkRepository(store)
 
-        with pytest.raises(ReadOnlyError):
-            await repo.delete_by_document_id("some-id")
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.delete_by_document_id("some-id")
 
     @pytest.mark.asyncio
     async def test_delete_all_raises_when_read_only(self, temp_db_path):
         """ChunkRepository.delete_all() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        repo = ChunkRepository(store)
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = ChunkRepository(store)
 
-        with pytest.raises(ReadOnlyError):
-            await repo.delete_all()
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.delete_all()
 
 
 class TestSettingsRepositoryReadOnly:
-    def test_save_current_settings_raises_when_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_save_current_settings_raises_when_read_only(self, temp_db_path):
         """SettingsRepository.save_current_settings() raises ReadOnlyError when read_only=True."""
-        store = Store(temp_db_path, create=True)
-        store.close()
+        async with Store(temp_db_path, create=True):
+            pass
 
-        store = Store(temp_db_path, read_only=True)
-        repo = SettingsRepository(store)
+        async with Store(temp_db_path, read_only=True) as store:
+            repo = SettingsRepository(store)
 
-        with pytest.raises(ReadOnlyError):
-            repo.save_current_settings()
-        store.close()
+            with pytest.raises(ReadOnlyError):
+                await repo.save_current_settings()
 
 
 class TestClientReadOnly:
-    def test_client_default_is_not_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_client_default_is_not_read_only(self, temp_db_path):
         """Client defaults to not read-only."""
-        client = HaikuRAG(temp_db_path, create=True)
-        assert client.is_read_only is False
-        client.close()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            assert client.is_read_only is False
 
-    def test_client_can_be_created_read_only(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_client_can_be_created_read_only(self, temp_db_path):
         """Client can be created with read_only=True."""
-        client = HaikuRAG(temp_db_path, create=True)
-        client.close()
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
 
-        client = HaikuRAG(temp_db_path, read_only=True)
-        assert client.is_read_only is True
-        client.close()
+        async with HaikuRAG(temp_db_path, read_only=True) as client:
+            assert client.is_read_only is True
 
     @pytest.mark.vcr()
     async def test_client_create_document_raises_when_read_only(self, temp_db_path):
         """Client.create_document() raises ReadOnlyError when read_only=True."""
-        client = HaikuRAG(temp_db_path, create=True)
-        client.close()
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
 
         async with HaikuRAG(temp_db_path, read_only=True) as client:
             with pytest.raises(ReadOnlyError):

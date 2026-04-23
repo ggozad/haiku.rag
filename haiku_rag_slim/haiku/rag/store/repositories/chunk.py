@@ -1,16 +1,13 @@
 import json
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
     import pandas as pd
-    from lancedb.query import (
-        LanceHybridQueryBuilder,
-        LanceQueryBuilder,
-        LanceVectorQueryBuilder,
-    )
+    from lancedb.query import AsyncQueryBase
 
+from lancedb.index import FTS
 from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import Store
@@ -26,11 +23,13 @@ class ChunkRepository:
         self.store = store
         self.embedder = store.embedder
 
-    def _ensure_fts_index(self) -> None:
+    async def _ensure_fts_index(self) -> None:
         """Ensure FTS index exists on the content_fts column."""
         try:
-            self.store.chunks_table.create_fts_index(
-                "content_fts", replace=True, with_position=True, remove_stop_words=False
+            await self.store.chunks_table.create_index(
+                "content_fts",
+                config=FTS(with_position=True, remove_stop_words=False),
+                replace=True,
             )
         except Exception as e:
             # Log the error but don't fail - FTS might already exist
@@ -69,7 +68,7 @@ class ChunkRepository:
                 vector=entity.embedding,
             )
 
-            self.store.chunks_table.add([chunk_record])
+            await self.store.chunks_table.add([chunk_record])
 
             entity.id = chunk_id
             return entity
@@ -105,14 +104,14 @@ class ChunkRepository:
             chunk.id = chunk_id
 
         # Single batch insert for all chunks
-        self.store.chunks_table.add(chunk_records)
+        await self.store.chunks_table.add(chunk_records)
 
         return chunks
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
         """Get a chunk by its ID."""
-        results = list(
-            self.store.chunks_table.search()
+        results = await (
+            self.store.chunks_table.query()
             .where(f"id = '{entity_id}'")
             .limit(1)
             .to_pydantic(self.store.ChunkRecord)
@@ -122,13 +121,13 @@ class ChunkRepository:
             return None
 
         chunk_record = results[0]
-        md = json.loads(chunk_record.metadata)
+        md = json.loads(chunk_record.metadata)  # ty: ignore[unresolved-attribute]
         return Chunk(
-            id=chunk_record.id,
-            document_id=chunk_record.document_id,
-            content=chunk_record.content,
+            id=chunk_record.id,  # ty: ignore[unresolved-attribute]
+            document_id=chunk_record.document_id,  # ty: ignore[unresolved-attribute]
+            content=chunk_record.content,  # ty: ignore[unresolved-attribute]
             metadata=md,
-            order=chunk_record.order,
+            order=chunk_record.order,  # ty: ignore[unresolved-attribute]
         )
 
     async def update(self, entity: Chunk) -> Chunk:
@@ -140,9 +139,8 @@ class ChunkRepository:
         assert entity.id, "Chunk ID is required for update"
         assert entity.embedding is not None, "Chunk must have an embedding"
 
-        self.store.chunks_table.update(
-            where=f"id = '{entity.id}'",
-            values={
+        await self.store.chunks_table.update(
+            {
                 "document_id": entity.document_id,
                 "content": entity.content,
                 "content_fts": self._contextualize_content(entity),
@@ -152,6 +150,7 @@ class ChunkRepository:
                 "order": int(entity.order),
                 "vector": entity.embedding,
             },
+            where=f"id = '{entity.id}'",
         )
         return entity
 
@@ -162,32 +161,32 @@ class ChunkRepository:
         if chunk is None:
             return False
 
-        self.store.chunks_table.delete(f"id = '{entity_id}'")
+        await self.store.chunks_table.delete(f"id = '{entity_id}'")
         return True
 
     async def list_all(
         self, limit: int | None = None, offset: int | None = None
     ) -> list[Chunk]:
         """List all chunks with optional pagination."""
-        query = self.store.chunks_table.search()
+        query = self.store.chunks_table.query()
 
         if offset is not None:
             query = query.offset(offset)
         if limit is not None:
             query = query.limit(limit)
 
-        results = list(query.to_pydantic(self.store.ChunkRecord))
+        results = await query.to_pydantic(self.store.ChunkRecord)
 
         chunks: list[Chunk] = []
         for rec in results:
-            md = json.loads(rec.metadata)
+            md = json.loads(rec.metadata)  # ty: ignore[unresolved-attribute]
             chunks.append(
                 Chunk(
-                    id=rec.id,
-                    document_id=rec.document_id,
-                    content=rec.content,
+                    id=rec.id,  # ty: ignore[unresolved-attribute]
+                    document_id=rec.document_id,  # ty: ignore[unresolved-attribute]
+                    content=rec.content,  # ty: ignore[unresolved-attribute]
                     metadata=md,
-                    order=rec.order,
+                    order=rec.order,  # ty: ignore[unresolved-attribute]
                 )
             )
         return chunks
@@ -196,13 +195,15 @@ class ChunkRepository:
         """Delete all chunks from the database."""
         self.store._assert_writable()
         # Drop and recreate table to clear all data
-        self.store.db.drop_table("chunks")
-        self.store.chunks_table = self.store.db.create_table(
+        await self.store.db.drop_table("chunks")
+        self.store.chunks_table = await self.store.db.create_table(
             "chunks", schema=self.store.ChunkRecord
         )
         # Create FTS index on content_fts (contextualized content) for better search
-        self.store.chunks_table.create_fts_index(
-            "content_fts", replace=True, with_position=True, remove_stop_words=False
+        await self.store.chunks_table.create_index(
+            "content_fts",
+            config=FTS(with_position=True, remove_stop_words=False),
+            replace=True,
         )
 
     async def delete_by_document_id(self, document_id: str) -> bool:
@@ -213,7 +214,7 @@ class ChunkRepository:
         if not chunks:
             return False
 
-        self.store.chunks_table.delete(f"document_id = '{document_id}'")
+        await self.store.chunks_table.delete(f"document_id = '{document_id}'")
         return True
 
     async def search(
@@ -241,8 +242,8 @@ class ChunkRepository:
             # We perform filtering as a two-step process, first filtering documents, then
             # filtering chunks based on those document IDs.
             # This is because LanceDB does not support joins directly in search queries.
-            docs_df = (
-                self.store.documents_table.search()
+            docs_df = await (
+                self.store.documents_table.query()
                 .select(["id"])
                 .where(filter)
                 .to_pandas()
@@ -256,37 +257,33 @@ class ChunkRepository:
         # Prepare search query based on search type
         if search_type == "vector":
             query_embedding = await self.embedder.embed_query(query)
-            vector_query = cast(
-                "LanceVectorQueryBuilder",
-                self.store.chunks_table.search(
-                    query_embedding, query_type="vector", vector_column_name="vector"
-                ),
-            )
-            results = vector_query.refine_factor(
-                self.store._config.search.vector_refine_factor
+            results = (
+                self.store.chunks_table.query()
+                .nearest_to(query_embedding)
+                .column("vector")
+                .refine_factor(self.store._config.search.vector_refine_factor)
             )
 
         elif search_type == "fts":
-            results = self.store.chunks_table.search(query, query_type="fts")
+            results = self.store.chunks_table.query().nearest_to_text(query)
 
         else:  # hybrid (default)
             query_embedding = await self.embedder.embed_query(query)
             # Create RRF reranker
             reranker = RRFReranker()
             # Perform native hybrid search with RRF reranking
-            hybrid_query = cast(
-                "LanceHybridQueryBuilder",
-                self.store.chunks_table.search(query_type="hybrid")
-                .vector(query_embedding)
-                .text(query),
+            results = (
+                self.store.chunks_table.query()
+                .nearest_to(query_embedding)
+                .column("vector")
+                .nearest_to_text(query)
+                .refine_factor(self.store._config.search.vector_refine_factor)
+                .rerank(reranker)
             )
-            results = hybrid_query.refine_factor(
-                self.store._config.search.vector_refine_factor
-            ).rerank(reranker)
 
         # Apply filtering if needed (common for all search types)
         if filtered_doc_ids is not None:
-            chunks_df = results.to_pandas()
+            chunks_df = await results.to_pandas()
             filtered_chunks_df = chunks_df.loc[
                 chunks_df["document_id"].isin(filtered_doc_ids)
             ].head(limit)
@@ -312,18 +309,18 @@ class ChunkRepository:
         Returns:
             List of chunks ordered by their order field.
         """
-        query = self.store.chunks_table.search().where(f"document_id = '{document_id}'")
+        query = self.store.chunks_table.query().where(f"document_id = '{document_id}'")
 
         if offset is not None:
             query = query.offset(offset)
         if limit is not None:
             query = query.limit(limit)
 
-        results = list(query.to_pydantic(self.store.ChunkRecord))
+        results = await query.to_pydantic(self.store.ChunkRecord)
 
         # Get document info (only metadata columns, skip content/docling blobs)
-        doc_rows = list(
-            self.store.documents_table.search()
+        doc_rows = await (
+            self.store.documents_table.query()
             .select(["id", "uri", "title", "metadata"])
             .where(f"id = '{document_id}'")
             .limit(1)
@@ -336,14 +333,14 @@ class ChunkRepository:
 
         chunks: list[Chunk] = []
         for rec in results:
-            md = json.loads(rec.metadata)
+            md = json.loads(rec.metadata)  # ty: ignore[unresolved-attribute]
             chunks.append(
                 Chunk(
-                    id=rec.id,
-                    document_id=rec.document_id,
-                    content=rec.content,
+                    id=rec.id,  # ty: ignore[unresolved-attribute]
+                    document_id=rec.document_id,  # ty: ignore[unresolved-attribute]
+                    content=rec.content,  # ty: ignore[unresolved-attribute]
                     metadata=md,
-                    order=rec.order,
+                    order=rec.order,  # ty: ignore[unresolved-attribute]
                     document_uri=doc_uri,
                     document_title=doc_title,
                     document_meta=json.loads(doc_meta),
@@ -355,8 +352,8 @@ class ChunkRepository:
 
     async def count_by_document_id(self, document_id: str) -> int:
         """Count the number of chunks for a specific document."""
-        df = (
-            self.store.chunks_table.search()
+        df = await (
+            self.store.chunks_table.query()
             .select(["id"])
             .where(f"document_id = '{document_id}'")
             .to_pandas()
@@ -381,29 +378,29 @@ class ChunkRepository:
             f" AND `order` >= {min_order}"
             f" AND `order` <= {max_order}"
         )
-        results = list(
-            self.store.chunks_table.search()
+        results = await (
+            self.store.chunks_table.query()
             .where(where)
             .to_pydantic(self.store.ChunkRecord)
         )
         return [
             Chunk(
-                id=rec.id,
-                document_id=rec.document_id,
-                content=rec.content,
-                metadata=json.loads(rec.metadata),
-                order=rec.order,
+                id=rec.id,  # ty: ignore[unresolved-attribute]
+                document_id=rec.document_id,  # ty: ignore[unresolved-attribute]
+                content=rec.content,  # ty: ignore[unresolved-attribute]
+                metadata=json.loads(rec.metadata),  # ty: ignore[unresolved-attribute]
+                order=rec.order,  # ty: ignore[unresolved-attribute]
             )
             for rec in results
         ]
 
     async def _process_search_results(
-        self, query_result: "pd.DataFrame | LanceQueryBuilder"
+        self, query_result: "pd.DataFrame | AsyncQueryBase"
     ) -> list[tuple[Chunk, float]]:
         """Process search results into chunks with document info and scores.
 
         Args:
-            query_result: Either a pandas DataFrame or a LanceDB query result
+            query_result: Either a pandas DataFrame or a LanceDB async query result
         """
         import pandas as pd
 
@@ -426,7 +423,7 @@ class ChunkRepository:
             df = query_result
         else:
             # Convert LanceDB query result to DataFrame
-            df = query_result.to_pandas()
+            df = await query_result.to_pandas()
 
         # Extract scores
         scores = extract_scores(df)
@@ -452,8 +449,8 @@ class ChunkRepository:
         if document_ids:
             id_list = "', '".join(document_ids)
             where_clause = f"id IN ('{id_list}')"
-            doc_rows = list(
-                self.store.documents_table.search()
+            doc_rows = await (
+                self.store.documents_table.query()
                 .select(["id", "uri", "title", "metadata"])
                 .where(where_clause)
                 .to_list()

@@ -84,8 +84,8 @@ class InfoModal(ModalScreen):
         # Connect to get table info
         config = self.client.store._config
         try:
-            db = connect_lancedb(config, self.db_path)
-            stats = get_database_stats(db)
+            db = await connect_lancedb(config, self.db_path)
+            stats = await get_database_stats(db)
         except Exception as e:
             lines.append(f"[red]Failed to open database: {e}[/red]")
             self._content_widget.update("\n".join(lines))
@@ -101,8 +101,10 @@ class InfoModal(ModalScreen):
         vector_dim: int | None = None
 
         if stats["settings"]["exists"]:
-            settings_tbl = db.open_table("settings")
-            arrow = settings_tbl.search().where("id = 'settings'").limit(1).to_arrow()
+            settings_tbl = await db.open_table("settings")
+            arrow = await (
+                settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
+            )
             rows = arrow.to_pylist() if arrow is not None else []
             if rows:
                 raw = rows[0].get("settings") or "{}"

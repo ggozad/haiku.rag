@@ -89,8 +89,8 @@ async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_pa
         assert doc.id is not None
 
         # Get embeddings before rebuild
-        records_before = list(
-            client.store.chunks_table.search()
+        records_before = await (
+            client.store.chunks_table.query()
             .where(f"document_id = '{doc.id}'")
             .to_pydantic(client.store.ChunkRecord)
         )
@@ -104,8 +104,8 @@ async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_pa
         assert doc.id in processed_ids
 
         # Get embeddings after rebuild
-        records_after = list(
-            client.store.chunks_table.search()
+        records_after = await (
+            client.store.chunks_table.query()
             .where(f"document_id = '{doc.id}'")
             .to_pydantic(client.store.ChunkRecord)
         )
@@ -156,7 +156,7 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
         ]
 
     # Step 2: Manually recreate chunks table with 4096-dim vectors (simulating old DB)
-    db = lancedb.connect(temp_db_path)
+    db = await lancedb.connect_async(temp_db_path)
 
     class ChunkRecord4096(LanceModel):
         id: str
@@ -167,8 +167,8 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
         order: int = Field(default=0)
         vector: Vector(4096) = Field(default_factory=lambda: [0.0] * 4096)  # type: ignore
 
-    db.drop_table("chunks")
-    chunks_table = db.create_table("chunks", schema=ChunkRecord4096)
+    await db.drop_table("chunks")
+    chunks_table = await db.create_table("chunks", schema=ChunkRecord4096)
 
     # Insert chunks with 4096-dim fake vectors
     records_4096 = [
@@ -183,19 +183,20 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
         )
         for c in chunk_data
     ]
-    chunks_table.add(records_4096)
+    await chunks_table.add(records_4096)
 
     # Update settings to reflect the 4096-dim model used
-    settings_table = db.open_table("settings")
+    settings_table = await db.open_table("settings")
     rows = (
-        settings_table.search().where("id = 'settings'").limit(1).to_arrow().to_pylist()
-    )
+        await settings_table.query().where("id = 'settings'").limit(1).to_arrow()
+    ).to_pylist()
     settings = json.loads(rows[0]["settings"])
     settings["embeddings"]["model"]["vector_dim"] = 4096
     settings["embeddings"]["model"]["name"] = "qwen3-embedding:8b"
-    settings_table.update(
-        where="id = 'settings'", values={"settings": json.dumps(settings)}
+    await settings_table.update(
+        {"settings": json.dumps(settings)}, where="id = 'settings'"
     )
+    db.close()
 
     # Step 3: Open with skip_validation (different config) and run embed-only rebuild
     # This should work: Store should use stored vector_dim for reading,
@@ -213,11 +214,10 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
 
         # Check that embeddings in DB are now 2560-dim
         raw_chunks = (
-            client.store.chunks_table.search()
+            await client.store.chunks_table.query()
             .where(f"document_id = '{doc.id}'")
             .to_arrow()
-            .to_pylist()
-        )
+        ).to_pylist()
         for raw_chunk in raw_chunks:
             assert len(raw_chunk["vector"]) == 2560
 

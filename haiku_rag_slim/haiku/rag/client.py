@@ -86,17 +86,12 @@ class HaikuRAG:
         if db_path is None:
             db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
 
-        self.store = Store(
-            db_path,
-            config=self._config,
-            skip_validation=skip_validation,
-            create=create,
-            read_only=read_only,
-            before=before,
-        )
-        self.document_repository = DocumentRepository(self.store)
-        self.chunk_repository = ChunkRepository(self.store)
-        self.document_item_repository = DocumentItemRepository(self.store)
+        self._db_path = db_path
+        self._skip_validation = skip_validation
+        self._create = create
+        self._read_only = read_only
+        self._before = before
+        self._vacuum_task: asyncio.Task | None = None
 
     @property
     def is_read_only(self) -> bool:
@@ -104,14 +99,26 @@ class HaikuRAG:
         return self.store.is_read_only
 
     async def __aenter__(self):
-        """Async context manager entry."""
+        """Async context manager entry — initializes store and repositories."""
+        self.store = Store(
+            self._db_path,
+            config=self._config,
+            skip_validation=self._skip_validation,
+            create=self._create,
+            read_only=self._read_only,
+            before=self._before,
+        )
+        await self.store._initialize()
+        self.document_repository = DocumentRepository(self.store)
+        self.chunk_repository = ChunkRepository(self.store)
+        self.document_item_repository = DocumentItemRepository(self.store)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
-        # Wait for any pending vacuum to complete before closing
-        async with self.store._vacuum_lock:
-            pass
+        # Wait for any pending background vacuum to complete before closing
+        if self._vacuum_task is not None and not self._vacuum_task.done():
+            await self._vacuum_task
         self.close()
         return False
 
@@ -375,7 +382,7 @@ class HaikuRAG:
         chunks = await self._ensure_chunks_embedded(chunks)
 
         # Snapshot table versions for versioned rollback (if supported)
-        versions = self.store.current_table_versions()
+        versions = await self.store.current_table_versions()
 
         # Create the document
         created_doc = await self.document_repository.create(document)
@@ -398,12 +405,12 @@ class HaikuRAG:
 
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
-                asyncio.create_task(self.store.vacuum())
+                self._vacuum_task = asyncio.create_task(self.store.vacuum())
 
             return created_doc
         except Exception:
             # Roll back to the captured versions and re-raise
-            self.store.restore_table_versions(versions)
+            await self.store.restore_table_versions(versions)
             raise
 
     async def _update_document_with_chunks(
@@ -433,7 +440,7 @@ class HaikuRAG:
         chunks = await self._ensure_chunks_embedded(chunks)
 
         # Snapshot table versions for versioned rollback
-        versions = self.store.current_table_versions()
+        versions = await self.store.current_table_versions()
 
         # Delete existing chunks before writing new ones
         await self.chunk_repository.delete_by_document_id(document.id)
@@ -461,12 +468,12 @@ class HaikuRAG:
 
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
-                asyncio.create_task(self.store.vacuum())
+                self._vacuum_task = asyncio.create_task(self.store.vacuum())
 
             return updated_doc
         except Exception:
             # Roll back to the captured versions and re-raise
-            self.store.restore_table_versions(versions)
+            await self.store.restore_table_versions(versions)
             raise
 
     async def create_document(
@@ -1395,9 +1402,13 @@ class HaikuRAG:
         Yields:
             The ID of the document currently being processed.
         """
+        # Wait for any background vacuum before destructive table operations
+        if self._vacuum_task is not None and not self._vacuum_task.done():
+            await self._vacuum_task
+
         # Update settings to current config
         settings_repo = SettingsRepository(self.store)
-        settings_repo.save_current_settings()
+        await settings_repo.save_current_settings()
 
         documents = await self.list_documents(include_content=True)
 
@@ -1409,12 +1420,12 @@ class HaikuRAG:
                 yield doc_id
         elif mode == RebuildMode.RECHUNK:
             await self.chunk_repository.delete_all()
-            self.store.recreate_embeddings_table()
+            await self.store.recreate_embeddings_table()
             async for doc_id in self._rebuild_rechunk(documents):
                 yield doc_id
         else:  # FULL
             await self.chunk_repository.delete_all()
-            self.store.recreate_embeddings_table()
+            await self.store.recreate_embeddings_table()
             async for doc_id in self._rebuild_full(documents):
                 yield doc_id
 
@@ -1480,12 +1491,12 @@ class HaikuRAG:
                 )
 
         # Recreate chunks table (handles dimension changes)
-        self.store.recreate_embeddings_table()
+        await self.store.recreate_embeddings_table()
 
         # Insert all chunks
         if all_chunk_data:
             records = [self.store.ChunkRecord(**data) for _, data in all_chunk_data]
-            self.store.chunks_table.add(records)
+            await self.store.chunks_table.add(records)
 
         # Yield all processed doc IDs
         yielded_docs: set[str] = set()
@@ -1534,8 +1545,10 @@ class HaikuRAG:
                 )
             )
 
-        self.store.documents_table.merge_insert("id").when_matched_update_all().execute(
-            doc_records
+        await (
+            self.store.documents_table.merge_insert("id")
+            .when_matched_update_all()
+            .execute(doc_records)
         )
 
         # Batch create all chunks (single LanceDB version)

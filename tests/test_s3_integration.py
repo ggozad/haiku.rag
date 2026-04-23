@@ -51,37 +51,35 @@ def _make_config() -> AppConfig:
     )
 
 
-def test_store_connect_and_create(tmp_path):
+@pytest.mark.asyncio
+async def test_store_connect_and_create(tmp_path):
     from haiku.rag.store.engine import get_database_stats
 
     config = _make_config()
-    store = Store(tmp_path / "unused", config=config, create=True)
-    stats = get_database_stats(store.db)
-    assert stats["documents"]["exists"]
-    assert stats["chunks"]["exists"]
-    store.close()
+    async with Store(tmp_path / "unused", config=config, create=True) as store:
+        stats = await get_database_stats(store.db)
+        assert stats["documents"]["exists"]
+        assert stats["chunks"]["exists"]
 
 
 @pytest.mark.asyncio
 async def test_store_vacuum(tmp_path):
     config = _make_config()
-    store = Store(tmp_path / "unused", config=config, create=True)
-    await store.vacuum()
-    store.close()
+    async with Store(tmp_path / "unused", config=config, create=True) as store:
+        await store.vacuum()
 
 
-def test_store_add_document(tmp_path):
+@pytest.mark.asyncio
+async def test_store_add_document(tmp_path):
     from haiku.rag.store.engine import DocumentRecord, get_database_stats
 
     config = _make_config()
-    store = Store(tmp_path / "unused", config=config, create=True)
+    async with Store(tmp_path / "unused", config=config, create=True) as store:
+        doc = DocumentRecord(content="The quick brown fox jumps over the lazy dog.")
+        await store.documents_table.add([doc])
 
-    doc = DocumentRecord(content="The quick brown fox jumps over the lazy dog.")
-    store.documents_table.add([doc])
-
-    stats = get_database_stats(store.db)
-    assert stats["documents"]["num_rows"] == 1
-    store.close()
+        stats = await get_database_stats(store.db)
+        assert stats["documents"]["num_rows"] == 1
 
 
 @pytest.mark.asyncio

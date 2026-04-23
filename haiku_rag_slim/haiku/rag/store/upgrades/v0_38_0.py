@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 5
 
 
-def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
+async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
     """Split docling_document into structure + pages and re-compress with zstd."""
 
     class DocumentRecordV5(LanceModel):
@@ -99,32 +99,29 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
 
     # First pass: collect document IDs to process
     try:
-        ids = [
-            row["id"]
-            for row in store.documents_table.search()
-            .select(["id"])
-            .to_arrow()
-            .to_pylist()
-        ]
+        ids = (
+            await store.documents_table.query().select(["id"]).to_arrow()
+        ).to_pylist()
+        ids = [row["id"] for row in ids]
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, OSError):
         ids = []
 
     if not ids:
         # Check for staging table from a failed migration
-        if staging_name in store.db.list_tables().tables:
-            staging_table = store.db.open_table(staging_name)
-            staging_ids = [
-                row["id"]
-                for row in staging_table.search().select(["id"]).to_arrow().to_pylist()
-            ]
+        if staging_name in (await store.db.list_tables()).tables:
+            staging_table = await store.db.open_table(staging_name)
+            staging_ids = (
+                await staging_table.query().select(["id"]).to_arrow()
+            ).to_pylist()
+            staging_ids = [row["id"] for row in staging_ids]
             if staging_ids:
                 logger.info(
                     "Recovering %d documents from failed migration", len(staging_ids)
                 )
                 store.documents_table = None
-                if "documents" in store.db.list_tables().tables:
-                    store.db.drop_table("documents")
-                store.documents_table = store.db.create_table(
+                if "documents" in (await store.db.list_tables()).tables:
+                    await store.db.drop_table("documents")
+                store.documents_table = await store.db.create_table(
                     "documents", schema=get_documents_arrow_schema_v5()
                 )
                 total_batches = (len(staging_ids) + BATCH_SIZE - 1) // BATCH_SIZE
@@ -134,32 +131,31 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
                     batch_ids = staging_ids[i : i + BATCH_SIZE]
                     id_list = ", ".join(f"'{doc_id}'" for doc_id in batch_ids)
                     batch = (
-                        staging_table.search()
+                        await staging_table.query()
                         .where(f"id IN ({id_list})")
                         .to_arrow()
-                        .to_pylist()
-                    )
+                    ).to_pylist()
                     records = [copy_staging_row(row) for row in batch]
                     if records:
-                        store.documents_table.add(records)
+                        await store.documents_table.add(records)
                         logger.info("Recovered batch %d/%d", batch_num, total_batches)
-                store.db.drop_table(staging_name)
+                await store.db.drop_table(staging_name)
                 logger.info("Recovery complete")
                 return
 
         # No documents and no staging — recreate table with new schema
         store.documents_table = None
-        if "documents" in store.db.list_tables().tables:
-            store.db.drop_table("documents")
-        store.documents_table = store.db.create_table(
+        if "documents" in (await store.db.list_tables()).tables:
+            await store.db.drop_table("documents")
+        store.documents_table = await store.db.create_table(
             "documents", schema=get_documents_arrow_schema_v5()
         )
         return
 
     # Create staging table with new schema
-    if staging_name in store.db.list_tables().tables:
-        store.db.drop_table(staging_name)
-    staging_table = store.db.create_table(
+    if staging_name in (await store.db.list_tables()).tables:
+        await store.db.drop_table(staging_name)
+    staging_table = await store.db.create_table(
         staging_name, schema=get_documents_arrow_schema_v5()
     )
 
@@ -177,15 +173,12 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
         id_list = ", ".join(f"'{doc_id}'" for doc_id in batch_ids)
 
         batch = (
-            store.documents_table.search()
-            .where(f"id IN ({id_list})")
-            .to_arrow()
-            .to_pylist()
-        )
+            await store.documents_table.query().where(f"id IN ({id_list})").to_arrow()
+        ).to_pylist()
 
         migrated_batch = [migrate_row(row) for row in batch]
         if migrated_batch:
-            staging_table.add(migrated_batch)
+            await staging_table.add(migrated_batch)
 
         logger.info(
             "Migrated batch %d/%d (%d documents)",
@@ -196,17 +189,15 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
 
     # Replace old table with staging table
     store.documents_table = None
-    if "documents" in store.db.list_tables().tables:
-        store.db.drop_table("documents")
-    store.documents_table = store.db.create_table(
+    if "documents" in (await store.db.list_tables()).tables:
+        await store.db.drop_table("documents")
+    store.documents_table = await store.db.create_table(
         "documents", schema=get_documents_arrow_schema_v5()
     )
 
     # Copy from staging to final table in batches
-    staging_ids = [
-        row["id"]
-        for row in staging_table.search().select(["id"]).to_arrow().to_pylist()
-    ]
+    staging_ids = (await staging_table.query().select(["id"]).to_arrow()).to_pylist()
+    staging_ids = [row["id"] for row in staging_ids]
 
     logger.info("Copying %d documents to new table", len(staging_ids))
 
@@ -215,22 +206,22 @@ def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
         id_list = ", ".join(f"'{doc_id}'" for doc_id in batch_ids)
 
         batch = (
-            staging_table.search().where(f"id IN ({id_list})").to_arrow().to_pylist()
-        )
+            await staging_table.query().where(f"id IN ({id_list})").to_arrow()
+        ).to_pylist()
         records = [copy_staging_row(row) for row in batch]
         if records:
-            store.documents_table.add(records)
+            await store.documents_table.add(records)
             logger.info("Copied batch %d/%d", batch_num, total_batches)
 
     # Cleanup staging table
-    if staging_name in store.db.list_tables().tables:
-        store.db.drop_table(staging_name)
+    if staging_name in (await store.db.list_tables()).tables:
+        await store.db.drop_table(staging_name)
 
     # Vacuum all tables
     logger.info("Vacuuming database")
     for table in [store.documents_table, store.chunks_table, store.settings_table]:
         try:
-            table.optimize(cleanup_older_than=timedelta(seconds=0))
+            await table.optimize(cleanup_older_than=timedelta(seconds=0))
         except Exception:
             pass
 
