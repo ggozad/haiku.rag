@@ -91,7 +91,7 @@ class HaikuRAG:
         self._create = create
         self._read_only = read_only
         self._before = before
-        self._vacuum_task: asyncio.Task | None = None
+        self._vacuum_tasks: set[asyncio.Task] = set()
 
     @property
     def is_read_only(self) -> bool:
@@ -116,11 +116,25 @@ class HaikuRAG:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
-        # Wait for any pending background vacuum to complete before closing
-        if self._vacuum_task is not None and not self._vacuum_task.done():
-            await self._vacuum_task
+        await self._await_vacuum_tasks()
         self.close()
         return False
+
+    async def _await_vacuum_tasks(self) -> None:
+        """Wait for all in-flight background vacuum tasks to complete.
+
+        Each create_document / update_document can schedule its own vacuum task;
+        all must be awaited before tearing down the connection, not just the
+        most recently scheduled one.
+        """
+        if self._vacuum_tasks:
+            await asyncio.gather(*self._vacuum_tasks, return_exceptions=True)
+
+    def _schedule_vacuum(self) -> None:
+        """Schedule a background vacuum and track the task for later awaiting."""
+        task = asyncio.create_task(self.store.vacuum())
+        self._vacuum_tasks.add(task)
+        task.add_done_callback(self._vacuum_tasks.discard)
 
     # =========================================================================
     # Processing Primitives
@@ -376,8 +390,6 @@ class HaikuRAG:
         Returns:
             The created Document instance with ID set.
         """
-        import asyncio
-
         # Ensure all chunks have embeddings before storing
         chunks = await self._ensure_chunks_embedded(chunks)
 
@@ -405,7 +417,7 @@ class HaikuRAG:
 
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
-                self._vacuum_task = asyncio.create_task(self.store.vacuum())
+                self._schedule_vacuum()
 
             return created_doc
         except Exception:
@@ -432,8 +444,6 @@ class HaikuRAG:
         Returns:
             The updated Document instance.
         """
-        import asyncio
-
         assert document.id is not None, "Document ID is required for update"
 
         # Ensure all chunks have embeddings before storing
@@ -468,7 +478,7 @@ class HaikuRAG:
 
             # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
             if self._config.storage.auto_vacuum:
-                self._vacuum_task = asyncio.create_task(self.store.vacuum())
+                self._schedule_vacuum()
 
             return updated_doc
         except Exception:
@@ -1403,8 +1413,7 @@ class HaikuRAG:
             The ID of the document currently being processed.
         """
         # Wait for any background vacuum before destructive table operations
-        if self._vacuum_task is not None and not self._vacuum_task.done():
-            await self._vacuum_task
+        await self._await_vacuum_tasks()
 
         # Update settings to current config
         settings_repo = SettingsRepository(self.store)

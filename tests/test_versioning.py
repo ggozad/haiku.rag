@@ -101,9 +101,8 @@ async def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
 
 
 async def _wait_for_background_vacuum(client):
-    """Wait for any background vacuum task to complete."""
-    if client._vacuum_task is not None and not client._vacuum_task.done():
-        await client._vacuum_task
+    """Wait for any in-flight background vacuum tasks to complete."""
+    await client._await_vacuum_tasks()
 
 
 @pytest.mark.vcr()
@@ -224,6 +223,53 @@ async def test_aexit_awaits_background_vacuum(temp_db_path, monkeypatch):
 
     assert vacuum_started.is_set(), "Background vacuum task never ran"
     assert vacuum_completed.is_set(), "__aexit__ exited before vacuum finished"
+
+
+@pytest.mark.vcr()
+async def test_aexit_awaits_all_background_vacuums(temp_db_path, monkeypatch):
+    """Multiple create_document calls schedule multiple vacuum tasks; __aexit__
+    must await all of them, not just the last-scheduled one.
+
+    Scenario: Task A acquires the vacuum lock and is slow. Task B is scheduled
+    while Task A still holds the lock — Task B sees the lock held and returns
+    immediately. If the client only tracks the most recently scheduled task,
+    __aexit__ awaits the fast no-op B and closes the connection while Task A
+    is still running.
+    """
+    from haiku.rag.config import Config
+
+    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+
+    first_vacuum_completed = asyncio.Event()
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        call_count = 0
+
+        async def slow_vacuum(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            my_num = call_count
+            # Mimic the real vacuum's skip-if-running behavior.
+            if client.store._vacuum_lock.locked():
+                return
+            async with client.store._vacuum_lock:
+                if my_num == 1:
+                    # Hold the lock longer than any other operation in the
+                    # test so Task A cannot finish incidentally. __aexit__
+                    # must explicitly wait for this task.
+                    await asyncio.sleep(2.0)
+                    first_vacuum_completed.set()
+
+        client.store.vacuum = slow_vacuum
+
+        await client.create_document(content="triggers first vacuum")
+        # Let Task A start and acquire the vacuum lock before scheduling B.
+        await asyncio.sleep(0.02)
+        await client.create_document(content="triggers second vacuum")
+
+    assert first_vacuum_completed.is_set(), (
+        "__aexit__ returned before the first vacuum task finished"
+    )
 
 
 @pytest.mark.vcr()
