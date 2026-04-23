@@ -68,6 +68,17 @@ class TestMigrationCheck:
         assert "migrate" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
+    async def test_pending_migrations_raises_error_with_create_flag(self, temp_db_path):
+        """Opening an existing DB with create=True must still check migrations."""
+        async with Store(temp_db_path, create=True) as store:
+            await store.set_haiku_version("0.19.0")
+
+        # create=True is idempotent — must not mark an existing populated DB as new
+        with pytest.raises(MigrationRequiredError):
+            async with Store(temp_db_path, create=True) as store:
+                pass
+
+    @pytest.mark.asyncio
     async def test_pending_migrations_read_only_raises_error(self, temp_db_path):
         """Read-only mode with pending migrations should still raise."""
         async with Store(temp_db_path, create=True) as store:

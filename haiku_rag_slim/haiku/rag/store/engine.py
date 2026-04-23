@@ -188,6 +188,7 @@ class Store:
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
         self._vacuum_lock = asyncio.Lock()
+        self._is_new_db = False
 
         # Check if database exists (for local filesystem only)
         if self._connection_mode == ConnectionMode.LOCAL:
@@ -197,6 +198,7 @@ class Store:
                         f"Database does not exist at {self.db_path.absolute()}. "
                         "Use 'haiku-rag init' to create a new database."
                     )
+                self._is_new_db = True
                 # Ensure parent directories exist for new databases
                 if not db_path.parent.exists():
                     Path.mkdir(db_path.parent, parents=True)
@@ -211,15 +213,11 @@ class Store:
             self._config, self.db_path
         )
 
-        # Detect new vs existing database
-        is_new_db = False
-        if self._connection_mode == ConnectionMode.LOCAL:
-            is_new_db = not self.db_path.exists() or self._create
-            # Re-check after connect: if path didn't exist before, it's new
-            existing_tables = (await self.db.list_tables()).tables
-            if not existing_tables:
-                is_new_db = True
-        else:
+        # For remote stores (and as a safety net for local paths that exist but
+        # have no tables — e.g. a previously failed init), detect new DB by
+        # checking whether any tables exist.
+        is_new_db = self._is_new_db
+        if not is_new_db:
             existing_tables = (await self.db.list_tables()).tables
             if not existing_tables:
                 is_new_db = True
