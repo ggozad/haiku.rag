@@ -1370,11 +1370,11 @@ class HaikuRAG:
                     y0, y1 = y1, y0
 
                 # Draw filled rectangle with transparency
-                fill_color = (255, 255, 0, 80)  # Yellow with transparency
-                outline_color = (255, 165, 0, 255)  # Orange outline
+                fill_color = (255, 255, 0, 40)  # Yellow with transparency
+                outline_color = (255, 165, 0, 100)  # Orange outline
 
                 draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
-                draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=3)
+                draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=1)
 
             images.append(image)
 
