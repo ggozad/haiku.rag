@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 from typing import TypedDict
 
 import pytest
@@ -263,3 +265,107 @@ async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
 
         # Chunk IDs should change (chunks are recreated)
         assert chunk_ids_before.isdisjoint(chunk_ids_after)
+
+
+@pytest.mark.vcr()
+async def test_rebuild_full_with_accessible_source(temp_db_path):
+    """FULL rebuild re-ingests from source when the URI is accessible.
+
+    Covers the main path in _rebuild_full (source-accessible branch): the
+    document is deleted and re-created from its URI, producing a new ID.
+    """
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "source.txt"
+            source_path.write_text("Fresh content from an accessible file source.")
+
+            original = await client.create_document_from_source(source=source_path)
+            assert not isinstance(original, list)
+            assert original.id is not None
+            original_id = original.id
+
+            processed_ids = [
+                doc_id
+                async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+            ]
+
+            # Original doc was deleted and a new one created; the old ID
+            # must not appear, and exactly one new ID must have been yielded.
+            assert original_id not in processed_ids
+            assert len(processed_ids) == 1
+
+            new_doc = await client.get_document_by_id(processed_ids[0])
+            assert new_doc is not None
+            assert new_doc.uri == source_path.as_uri()
+            assert "Fresh content" in new_doc.content
+
+
+async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch):
+    """TITLE_ONLY: a failure on one document does not abort the generator.
+
+    The first document raises during title generation (simulated LLM error);
+    the second succeeds. Rebuild must log-and-skip the failure, yield only
+    the successful document, and persist its new title.
+    """
+    from haiku.rag.store.models.document import Document
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Skip embedding — TITLE_ONLY only touches documents.
+        doc1 = await client.document_repository.create(
+            Document(content="doc one body", metadata={})
+        )
+        doc2 = await client.document_repository.create(
+            Document(content="doc two body", metadata={})
+        )
+        assert doc1.id is not None and doc2.id is not None
+
+        async def fake_generate_title(doc):
+            if doc.id == doc1.id:
+                raise RuntimeError("simulated LLM failure")
+            return "Second Title"
+
+        monkeypatch.setattr(client, "generate_title", fake_generate_title)
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        ]
+
+        assert processed_ids == [doc2.id]
+
+        refreshed = await client.get_document_by_id(doc2.id)
+        assert refreshed is not None
+        assert refreshed.title == "Second Title"
+
+        untouched = await client.get_document_by_id(doc1.id)
+        assert untouched is not None
+        assert untouched.title is None
+
+
+@pytest.mark.vcr()
+async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch):
+    """RECHUNK flushes in batches and yields every document.
+
+    Forces a tiny batch size so three docs trigger at least one mid-loop
+    flush plus the final flush. Regression guard for the batched-write path
+    in _rebuild_rechunk.
+    """
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        ids: list[str] = []
+        for i in range(3):
+            doc = await client.create_document(content=f"batch flush doc {i}")
+            assert doc.id is not None
+            ids.append(doc.id)
+
+        processed = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
+        ]
+
+        assert sorted(processed) == sorted(ids)
+        for doc_id in ids:
+            chunks = await client.chunk_repository.get_by_document_id(doc_id)
+            assert len(chunks) > 0

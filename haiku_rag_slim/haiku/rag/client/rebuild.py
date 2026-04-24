@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_REBUILD_BATCH_SIZE = 50
+
 
 async def rebuild_database(
     client: "HaikuRAG", mode: "RebuildMode | None" = None
@@ -204,7 +206,6 @@ async def _rebuild_rechunk(
     """Re-chunk and re-embed from existing document content."""
     from haiku.rag.embeddings import embed_chunks
 
-    batch_size = 50
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
     pending_doc_ids: list[str] = []
@@ -234,7 +235,7 @@ async def _rebuild_rechunk(
         pending_doc_ids.append(doc.id)
 
         # Flush batch when size reached
-        if len(pending_docs) >= batch_size:
+        if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
             for doc_id in pending_doc_ids:
                 yield doc_id
@@ -255,7 +256,6 @@ async def _rebuild_full(
     """Full rebuild: re-convert from source, re-chunk, re-embed."""
     from haiku.rag.embeddings import embed_chunks
 
-    batch_size = 50
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
     pending_doc_ids: list[str] = []
@@ -312,7 +312,7 @@ async def _rebuild_full(
         pending_doc_ids.append(doc.id)
 
         # Flush batch when size reached
-        if len(pending_docs) >= batch_size:
+        if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
             for doc_id in pending_doc_ids:
                 yield doc_id

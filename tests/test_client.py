@@ -1272,6 +1272,39 @@ async def test_client_convert_file_not_found(temp_db_path):
             await client.convert(Path("/nonexistent/path/file.txt"))
 
 
+async def test_client_convert_from_url(temp_db_path):
+    """convert() with an http(s) URL downloads to a tempfile and converts."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        mock_response = AsyncMock()
+        mock_response.content = (
+            b"<html><body><p>URL convert path content.</p></body></html>"
+        )
+        mock_response.headers = {"content-type": "text/html"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            docling_doc = await client.convert("https://example.com/page.html")
+
+        assert isinstance(docling_doc, DoclingDocument)
+        markdown = docling_doc.export_to_markdown()
+        assert "URL convert path content" in markdown
+
+
+async def test_client_convert_from_url_unsupported_content_type(temp_db_path):
+    """convert() rejects URLs whose content type isn't supported by the converter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        mock_response = AsyncMock()
+        mock_response.content = b"\x00\x01\x02binary"
+        mock_response.headers = {"content-type": "application/octet-stream"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            with pytest.raises(ValueError, match="Unsupported content type"):
+                await client.convert("https://example.com/blob.bin")
+
+
 @pytest.mark.vcr()
 async def test_client_convert_unsupported_extension(temp_db_path):
     """Test convert() raises ValueError for unsupported file extension."""
