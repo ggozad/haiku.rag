@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -205,6 +206,21 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     )
 
 
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    """Shut down the cached HaikuRAG client cleanly on app exit.
+
+    Awaits any in-flight background vacuum tasks and closes the LanceDB
+    connection. Without this, vacuum tasks are cancelled abruptly and the
+    connection is never closed on process shutdown.
+    """
+    yield
+    global _client
+    if _client is not None:
+        await _client.__aexit__(None, None, None)
+        _client = None
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
@@ -223,6 +239,7 @@ app = Starlette(
             allow_headers=["*"],
         )
     ],
+    lifespan=lifespan,
 )
 
 if __name__ == "__main__":
