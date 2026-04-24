@@ -590,7 +590,7 @@ class Store:
         # catching-and-swallowing drop_table's errors — a catch-all would
         # hide real failures (permissions, storage-backend errors) and then
         # the subsequent create_table would fail confusingly.
-        if "chunks" in await self.db.table_names():
+        if "chunks" in (await self.db.list_tables()).tables:
             await self.db.drop_table("chunks")
 
         # Update the ChunkRecord model with new vector dimension
