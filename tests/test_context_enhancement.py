@@ -3,6 +3,7 @@ from docling_core.types.doc.document import DoclingDocument, TableData
 from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 
@@ -314,7 +315,7 @@ async def test_expand_context_single_item_document(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         document = Document(content="Simple test content")
         document.set_docling(docling_doc)
-        doc = await client._store_document_with_chunks(document, [], docling_doc)
+        doc = await _store_document_with_chunks(client, document, [], docling_doc)
         assert doc.id is not None
 
         # Create a search result with a doc_item_ref pointing to the item

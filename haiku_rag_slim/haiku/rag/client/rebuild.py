@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from haiku.rag.client.documents import check_source_accessible
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -261,7 +262,7 @@ async def _rebuild_full(
         assert doc.id is not None
 
         # Try to rebuild from source if available
-        if doc.uri and client._check_source_accessible(doc.uri):
+        if doc.uri and check_source_accessible(doc.uri):
             try:
                 # Flush pending batch before source rebuild (creates new doc)
                 if pending_docs:

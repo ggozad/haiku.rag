@@ -1,6 +1,10 @@
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import (
+    _store_document_with_chunks,
+    _update_document_with_chunks,
+)
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import (
     DocumentItem,
@@ -217,7 +221,7 @@ class TestDocumentItemPopulation:
 
             # Use _store_document_with_chunks directly with empty chunks
             # to avoid needing embeddings
-            created = await rag._store_document_with_chunks(document, [], docling_doc)
+            created = await _store_document_with_chunks(rag, document, [], docling_doc)
             assert created.id is not None
 
             count = await rag.document_item_repository.get_item_count(created.id)
@@ -245,7 +249,7 @@ class TestDocumentItemPopulation:
                 uri="test://doc",
             )
             document.set_docling(docling_doc)
-            created = await rag._store_document_with_chunks(document, [], docling_doc)
+            created = await _store_document_with_chunks(rag, document, [], docling_doc)
             assert created.id is not None
             assert await rag.document_item_repository.get_item_count(created.id) == 6
 
@@ -254,7 +258,7 @@ class TestDocumentItemPopulation:
             new_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Only one item now.")
             created.set_docling(new_doc)
 
-            await rag._update_document_with_chunks(created, [], new_doc)
+            await _update_document_with_chunks(rag, created, [], new_doc)
             assert await rag.document_item_repository.get_item_count(created.id) == 1
 
     async def test_delete_document_cascades_items(self, temp_db_path):
@@ -269,7 +273,7 @@ class TestDocumentItemPopulation:
                 uri="test://doc",
             )
             document.set_docling(docling_doc)
-            created = await rag._store_document_with_chunks(document, [], docling_doc)
+            created = await _store_document_with_chunks(rag, document, [], docling_doc)
             assert created.id is not None
             assert await rag.document_item_repository.get_item_count(created.id) == 6
 

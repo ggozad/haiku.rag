@@ -481,49 +481,35 @@ async def test_client_create_document_from_url_http_error(temp_db_path):
                 )
 
 
-@pytest.mark.vcr()
-async def test_get_extension_from_content_type_or_url(temp_db_path):
-    """Test the helper method for determining file extensions."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Test content type mappings
-        assert (
-            client._get_extension_from_content_type_or_url("", "text/html") == ".html"
-        )
-        assert (
-            client._get_extension_from_content_type_or_url("", "application/pdf")
-            == ".pdf"
-        )
-        assert (
-            client._get_extension_from_content_type_or_url("", "text/plain") == ".txt"
-        )
+def test_get_extension_from_content_type_or_url():
+    """Test the helper function for determining file extensions."""
+    from haiku.rag.client.processing import get_extension_from_content_type_or_url
 
-        # Test URL extension detection
-        assert (
-            client._get_extension_from_content_type_or_url(
-                "https://example.com/doc.pdf", ""
-            )
-            == ".pdf"
-        )
-        assert (
-            client._get_extension_from_content_type_or_url(
-                "https://example.com/data.json", ""
-            )
-            == ".json"
-        )
+    # Content type mappings
+    assert get_extension_from_content_type_or_url("", "text/html") == ".html"
+    assert get_extension_from_content_type_or_url("", "application/pdf") == ".pdf"
+    assert get_extension_from_content_type_or_url("", "text/plain") == ".txt"
 
-        # Test default fallback
-        assert (
-            client._get_extension_from_content_type_or_url("https://example.com/", "")
-            == ".html"
-        )
+    # URL extension detection
+    assert (
+        get_extension_from_content_type_or_url("https://example.com/doc.pdf", "")
+        == ".pdf"
+    )
+    assert (
+        get_extension_from_content_type_or_url("https://example.com/data.json", "")
+        == ".json"
+    )
 
-        # Test content type priority over URL extension
-        assert (
-            client._get_extension_from_content_type_or_url(
-                "https://example.com/file.txt", "application/pdf"
-            )
-            == ".pdf"
+    # Default fallback
+    assert get_extension_from_content_type_or_url("https://example.com/", "") == ".html"
+
+    # Content type priority over URL extension
+    assert (
+        get_extension_from_content_type_or_url(
+            "https://example.com/file.txt", "application/pdf"
         )
+        == ".pdf"
+    )
 
 
 @pytest.mark.vcr()
