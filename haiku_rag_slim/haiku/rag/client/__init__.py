@@ -880,20 +880,9 @@ class HaikuRAG:
         system_prompt: str | None = None,
         filter: str | None = None,
     ) -> "tuple[str, list[Citation]]":
-        """Ask a question using the configured QA agent.
+        from haiku.rag.client.agents import ask
 
-        Args:
-            question: The question to ask.
-            system_prompt: Optional custom system prompt for the QA agent.
-            filter: SQL WHERE clause to filter documents.
-
-        Returns:
-            Tuple of (answer text, list of resolved citations).
-        """
-        from haiku.rag.agents.qa import get_qa_agent
-
-        qa_agent = get_qa_agent(self, config=self._config, system_prompt=system_prompt)
-        return await qa_agent.answer(question, filter=filter)
+        return await ask(self, question, system_prompt, filter)
 
     async def research(
         self,
@@ -902,29 +891,11 @@ class HaikuRAG:
         filter: str | None = None,
         max_iterations: int | None = None,
     ) -> "ResearchReport":
-        """Run multi-agent research to investigate a question.
+        from haiku.rag.client.agents import research
 
-        Args:
-            question: The research question to investigate.
-            filter: SQL WHERE clause to filter documents.
-            max_iterations: Override max iterations (None uses config default).
-
-        Returns:
-            ResearchReport with structured findings.
-        """
-        from haiku.rag.agents.research.dependencies import ResearchContext
-        from haiku.rag.agents.research.graph import build_research_graph
-        from haiku.rag.agents.research.state import ResearchDeps, ResearchState
-
-        graph = build_research_graph(config=self._config)
-        context = ResearchContext(original_question=question)
-        state = ResearchState.from_config(
-            context=context, config=self._config, max_iterations=max_iterations
+        return await research(
+            self, question, filter=filter, max_iterations=max_iterations
         )
-        state.search_filter = filter
-        deps = ResearchDeps(client=self)
-
-        return await graph.run(state=state, deps=deps)
 
     async def analyze(
         self,
@@ -932,76 +903,9 @@ class HaikuRAG:
         documents: list[str] | None = None,
         filter: str | None = None,
     ) -> "AnalysisResult":
-        """Answer a question using the analysis agent with code execution.
+        from haiku.rag.client.agents import analyze
 
-        The analysis agent can write and execute Python code in a sandboxed
-        environment to solve problems that require computation, aggregation,
-        or complex traversal across documents.
-
-        Args:
-            question: The question to answer.
-            documents: Optional list of document IDs or titles to pre-load.
-            filter: SQL WHERE clause to filter documents during searches.
-
-        Returns:
-            AnalysisResult with the answer and the final consolidated program.
-        """
-        from haiku.rag.agents.analysis import (
-            AnalysisContext,
-            AnalysisDeps,
-            Sandbox,
-            create_analysis_agent,
-        )
-
-        context = AnalysisContext(filter=filter)
-
-        if documents:
-            loaded_docs = []
-            for doc_ref in documents:
-                doc = await self.resolve_document(doc_ref)
-                if doc:
-                    loaded_docs.append(doc)
-            context.documents = loaded_docs if loaded_docs else None
-
-        sandbox = Sandbox(
-            db_path=self.store.db_path,
-            config=self._config,
-            context=context,
-        )
-        deps = AnalysisDeps(
-            sandbox=sandbox,
-            context=context,
-        )
-
-        from haiku.rag.agents.analysis.models import AnalysisResult
-        from haiku.rag.agents.research.models import Citation
-
-        agent = create_analysis_agent(self._config)
-        result = await agent.run(question, deps=deps)
-
-        output = result.output
-        seen: set[str] = set()
-        citations: list[Citation] = []
-        for sr in sandbox._search_results:
-            if sr.chunk_id and sr.chunk_id not in seen:
-                seen.add(sr.chunk_id)
-                citations.append(
-                    Citation(
-                        index=len(seen),
-                        document_id=sr.document_id or "",
-                        chunk_id=sr.chunk_id,
-                        document_uri=sr.document_uri or "",
-                        document_title=sr.document_title,
-                        page_numbers=sr.page_numbers,
-                        headings=sr.headings,
-                        content=sr.content,
-                    )
-                )
-        return AnalysisResult(
-            answer=output.answer,
-            program=output.program,
-            citations=citations,
-        )
+        return await analyze(self, question, documents, filter)
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         from haiku.rag.client.search import visualize_chunk
