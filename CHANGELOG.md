@@ -11,6 +11,7 @@
 ### Fixed
 
 - **Chat TUI now renders citations again.** After the 0.42.1 flattening of skill state `citations` to `list[str]`, the TUI still indexed `citations[-1]` and iterated the resulting chunk-id string character-by-character, so no citations resolved through `citation_index` and the citation panel stayed empty. Fixed by iterating `state.citations` directly.
+- **`search(..., filter=...)` no longer silently under-returns.** The filter path used to materialize LanceDB's top-N window, filter to matching `document_id`s in pandas, and `head(limit)`. When matching chunks lived outside that top-N window (selective filters, broad queries), the caller got fewer than `limit` results even though plenty of matching chunks existed in the index. The document filter is now pushed down into the chunk query as `document_id IN (...)` so `.limit(limit)` applies to matching chunks directly. Behavior change: searches that previously under-returned will start returning the requested count.
 
 ## [0.42.1] - 2026-04-22
 

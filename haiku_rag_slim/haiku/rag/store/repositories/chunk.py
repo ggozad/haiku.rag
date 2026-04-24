@@ -236,24 +236,25 @@ class ChunkRepository:
         """
         if not query.strip():
             return []
-        filtered_doc_ids = None
+
+        chunk_filter: str | None = None
         if filter:
-            # We perform filtering as a two-step process, first filtering documents, then
-            # filtering chunks based on those document IDs.
-            # This is because LanceDB does not support joins directly in search queries.
+            # Translate the document-level filter into a chunk-level
+            # document_id IN (...) clause so LanceDB can combine it with
+            # limit. The previous two-step pattern (materialize top-N,
+            # filter in pandas, head(limit)) silently under-returned
+            # whenever the top-N window lacked `limit` matching chunks.
             docs_df = await (
                 self.store.documents_table.query()
                 .select(["id"])
                 .where(filter)
                 .to_pandas()
             )
-            # Early exit if no documents match the filter
             if docs_df.empty:
                 return []
-            # Keep as pandas Series for efficient vectorized operations
-            filtered_doc_ids = docs_df["id"]
+            id_list = ", ".join(f"'{d}'" for d in docs_df["id"])
+            chunk_filter = f"document_id IN ({id_list})"
 
-        # Prepare search query based on search type
         if search_type == "vector":
             query_embedding = await self.embedder.embed_query(query)
             results = (
@@ -262,17 +263,13 @@ class ChunkRepository:
                 .column("vector")
                 .refine_factor(self.store._config.search.vector_refine_factor)
             )
-
         elif search_type == "fts":
             results = self.store.chunks_table.query().nearest_to_text(
                 query, columns="content_fts"
             )
-
         else:  # hybrid (default)
             query_embedding = await self.embedder.embed_query(query)
-            # Create RRF reranker
             reranker = RRFReranker()
-            # Perform native hybrid search with RRF reranking
             results = (
                 self.store.chunks_table.query()
                 .nearest_to(query_embedding)
@@ -282,15 +279,8 @@ class ChunkRepository:
                 .rerank(reranker)
             )
 
-        # Apply filtering if needed (common for all search types)
-        if filtered_doc_ids is not None:
-            chunks_df = await results.to_pandas()
-            filtered_chunks_df = chunks_df.loc[
-                chunks_df["document_id"].isin(filtered_doc_ids)
-            ].head(limit)
-            return await self._process_search_results(filtered_chunks_df)
-
-        # No filtering needed, apply limit and return
+        if chunk_filter is not None:
+            results = results.where(chunk_filter)
         results = results.limit(limit)
         return await self._process_search_results(results)
 

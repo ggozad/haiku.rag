@@ -179,3 +179,45 @@ async def test_search_filter_with_all_search_types(temp_db_path):
         for result in results:
             assert result.document_uri is not None
             assert "other.com" in result.document_uri
+
+
+@pytest.mark.vcr()
+async def test_search_with_filter_returns_full_limit(temp_db_path):
+    """Regression: filter + limit must return up to `limit` matching chunks
+    even when non-matching chunks would dominate the top-N window.
+
+    Previously the filter path materialized LanceDB's default top-N window
+    (~10), filtered to matching document_ids in pandas, then took `head(limit)`.
+    If the top-N window was dominated by non-matching chunks, the caller got
+    silently fewer results than requested — even when plenty of matching
+    chunks existed further down the ranking. This test puts the target
+    document behind many distractor documents and asserts we still get the
+    requested count back.
+    """
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        for i in range(12):
+            await client.create_document(
+                content=(
+                    "machine learning neural network deep learning model "
+                    "machine learning neural network deep learning model "
+                    "machine learning neural network deep learning model"
+                ),
+                uri=f"https://distractor.com/doc{i}.html",
+                title=f"Distractor {i}",
+            )
+
+        await client.create_document(
+            content="one passing mention of machine learning here",
+            uri="https://target.com/one.html",
+            title="Target One",
+        )
+
+        results = await client.search(
+            "machine learning",
+            limit=5,
+            search_type="fts",
+            filter="uri LIKE '%target.com%'",
+        )
+
+        assert len(results) == 1
+        assert results[0].document_uri == "https://target.com/one.html"
