@@ -16,21 +16,18 @@ def vcr_cassette_dir():
 @pytest.fixture
 async def client_with_docs(temp_db_path):
     """Create a client with two distinct documents."""
-    client = HaikuRAG(temp_db_path, create=True)
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add two documents with distinct content
+        doc1 = await client.create_document(
+            "Document about cats: Cats are small furry mammals that purr.",
+            title="Cat Facts",
+        )
+        doc2 = await client.create_document(
+            "Document about dogs: Dogs are loyal companions that bark.",
+            title="Dog Facts",
+        )
 
-    # Add two documents with distinct content
-    doc1 = await client.create_document(
-        "Document about cats: Cats are small furry mammals that purr.",
-        title="Cat Facts",
-    )
-    doc2 = await client.create_document(
-        "Document about dogs: Dogs are loyal companions that bark.",
-        title="Dog Facts",
-    )
-
-    yield client, doc1.id, doc2.id
-
-    client.close()
+        yield client, doc1.id, doc2.id
 
 
 @pytest.mark.vcr()

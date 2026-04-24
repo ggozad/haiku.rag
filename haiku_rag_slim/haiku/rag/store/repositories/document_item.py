@@ -38,13 +38,13 @@ class DocumentItemRepository:
             )
             for item in items
         ]
-        self.store.document_items_table.add(records)
+        await self.store.document_items_table.add(records)
 
     async def get_all_items(self, document_id: str) -> list[DocumentItem]:
         """Get all items for a document, sorted by position."""
         safe_id = escape_sql_string(document_id)
-        rows = (
-            self.store.document_items_table.search()
+        rows = await (
+            self.store.document_items_table.query()
             .where(f"document_id = '{safe_id}'")
             .to_list()
         )
@@ -64,11 +64,11 @@ class DocumentItemRepository:
         Returns:
             Dict mapping document_id to sorted list of DocumentItem.
         """
-        query = self.store.document_items_table.search()
+        query = self.store.document_items_table.query()
         if document_ids is not None:
             safe_ids = ", ".join(f"'{escape_sql_string(did)}'" for did in document_ids)
             query = query.where(f"document_id IN ({safe_ids})")
-        rows = query.to_list()
+        rows = await query.to_list()
 
         grouped: dict[str, list[DocumentItem]] = {}
         for row in rows:
@@ -83,8 +83,8 @@ class DocumentItemRepository:
     ) -> list[DocumentItem]:
         """Get items for a document within a position range (inclusive)."""
         safe_id = escape_sql_string(document_id)
-        rows = (
-            self.store.document_items_table.search()
+        rows = await (
+            self.store.document_items_table.query()
             .where(
                 f"document_id = '{safe_id}' "
                 f"AND position >= {start} AND position <= {end}"
@@ -102,8 +102,8 @@ class DocumentItemRepository:
 
         safe_id = escape_sql_string(document_id)
         refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
-        rows = (
-            self.store.document_items_table.search()
+        rows = await (
+            self.store.document_items_table.query()
             .select(["self_ref", "position"])
             .where(f"document_id = '{safe_id}' AND self_ref IN ({refs_sql})")
             .to_list()
@@ -113,7 +113,7 @@ class DocumentItemRepository:
     async def get_item_count(self, document_id: str) -> int:
         """Count items for a document."""
         safe_id = escape_sql_string(document_id)
-        return self.store.document_items_table.count_rows(
+        return await self.store.document_items_table.count_rows(
             filter=f"document_id = '{safe_id}'"
         )
 
@@ -121,4 +121,4 @@ class DocumentItemRepository:
         """Delete all items for a document."""
         self.store._assert_writable()
         safe_id = escape_sql_string(document_id)
-        self.store.document_items_table.delete(f"document_id = '{safe_id}'")
+        await self.store.document_items_table.delete(f"document_id = '{safe_id}'")

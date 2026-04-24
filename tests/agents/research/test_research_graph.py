@@ -21,28 +21,26 @@ async def test_graph_end_to_end(allow_model_requests, temp_db_path, qa_corpus):
     """Test research graph with real LLM calls recorded via VCR."""
     graph = build_research_graph()
 
-    client = HaikuRAG(temp_db_path, create=True)
-    doc = qa_corpus[0]
-    await client.create_document(
-        content=doc["document_extracted"], uri=doc["document_id"]
-    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = qa_corpus[0]
+        await client.create_document(
+            content=doc["document_extracted"], uri=doc["document_id"]
+        )
 
-    state = ResearchState(
-        context=ResearchContext(original_question=doc["question"]),
-        max_iterations=1,
-        max_concurrency=1,
-    )
+        state = ResearchState(
+            context=ResearchContext(original_question=doc["question"]),
+            max_iterations=1,
+            max_concurrency=1,
+        )
 
-    deps = ResearchDeps(client=client)
+        deps = ResearchDeps(client=client)
 
-    result = await graph.run(state=state, deps=deps)
+        result = await graph.run(state=state, deps=deps)
 
-    assert result is not None
-    assert isinstance(result, ResearchReport)
-    assert result.title
-    assert result.executive_summary
-
-    client.close()
+        assert result is not None
+        assert isinstance(result, ResearchReport)
+        assert result.title
+        assert result.executive_summary
 
 
 def test_iterative_plan_result_model():

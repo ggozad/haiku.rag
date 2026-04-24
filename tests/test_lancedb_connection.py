@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -42,25 +42,32 @@ class TestConnectionMode:
 
 
 class TestConnectLancedb:
-    def test_local_passes_db_path(self, temp_db_path):
+    @pytest.mark.asyncio
+    async def test_local_passes_db_path(self, temp_db_path):
         config = AppConfig(lancedb=LanceDBConfig(uri=""))
-        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
-            connect_lancedb(config, db_path=temp_db_path)
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ) as mock_connect:
+            await connect_lancedb(config, db_path=temp_db_path)
             mock_connect.assert_called_once_with(temp_db_path)
 
-    def test_cloud_passes_uri_api_key_region(self):
+    @pytest.mark.asyncio
+    async def test_cloud_passes_uri_api_key_region(self):
         config = AppConfig(
             lancedb=LanceDBConfig(
                 uri="db://my-database", api_key="test-key", region="us-west-2"
             )
         )
-        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
-            connect_lancedb(config)
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ) as mock_connect:
+            await connect_lancedb(config)
             mock_connect.assert_called_once_with(
                 uri="db://my-database", api_key="test-key", region="us-west-2"
             )
 
-    def test_object_storage_passes_uri_and_storage_options(self):
+    @pytest.mark.asyncio
+    async def test_object_storage_passes_uri_and_storage_options(self):
         config = AppConfig(
             lancedb=LanceDBConfig(
                 uri="s3://bucket/path",
@@ -70,8 +77,10 @@ class TestConnectLancedb:
                 },
             )
         )
-        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
-            connect_lancedb(config)
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ) as mock_connect:
+            await connect_lancedb(config)
             mock_connect.assert_called_once_with(
                 uri="s3://bucket/path",
                 storage_options={
@@ -80,120 +89,136 @@ class TestConnectLancedb:
                 },
             )
 
-    def test_object_storage_without_storage_options(self):
+    @pytest.mark.asyncio
+    async def test_object_storage_without_storage_options(self):
         config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
-        with patch("haiku.rag.store.engine.lancedb.connect") as mock_connect:
-            connect_lancedb(config)
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ) as mock_connect:
+            await connect_lancedb(config)
             mock_connect.assert_called_once_with(uri="s3://bucket/path")
 
-    def test_local_without_db_path_raises(self):
+    @pytest.mark.asyncio
+    async def test_local_without_db_path_raises(self):
         config = AppConfig(lancedb=LanceDBConfig(uri=""))
         with pytest.raises(
             ValueError, match="No lancedb.uri configured and no db_path provided"
         ):
-            connect_lancedb(config)
+            await connect_lancedb(config)
 
 
 class TestStoreConnectionMode:
-    def test_store_connection_mode_local(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        assert store._connection_mode == ConnectionMode.LOCAL
-        store.close()
+    @pytest.mark.asyncio
+    async def test_store_connection_mode_local(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            assert store._connection_mode == ConnectionMode.LOCAL
 
-    def test_store_connection_mode_cloud(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with (
-            patch.object(Config.lancedb, "uri", "db://test-database"),
-            patch.object(Config.lancedb, "api_key", "test-api-key"),
-            patch.object(Config.lancedb, "region", "us-east-1"),
-        ):
-            assert store._connection_mode == ConnectionMode.CLOUD
-        store.close()
+    @pytest.mark.asyncio
+    async def test_store_connection_mode_cloud(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            with (
+                patch.object(Config.lancedb, "uri", "db://test-database"),
+                patch.object(Config.lancedb, "api_key", "test-api-key"),
+                patch.object(Config.lancedb, "region", "us-east-1"),
+            ):
+                assert store._connection_mode == ConnectionMode.CLOUD
 
-    def test_store_connection_mode_object_storage(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
-            assert store._connection_mode == ConnectionMode.OBJECT_STORAGE
-        store.close()
+    @pytest.mark.asyncio
+    async def test_store_connection_mode_object_storage(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+                assert store._connection_mode == ConnectionMode.OBJECT_STORAGE
 
 
 class TestVacuumByConnectionMode:
     @pytest.mark.asyncio
     async def test_cloud_skips_vacuum(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with (
-            patch.object(Config.lancedb, "uri", "db://test-database"),
-            patch.object(Config.lancedb, "api_key", "test-api-key"),
-            patch.object(Config.lancedb, "region", "us-east-1"),
-        ):
-            with patch.object(store.chunks_table, "optimize") as mock_optimize:
-                await store.vacuum()
-                mock_optimize.assert_not_called()
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            with (
+                patch.object(Config.lancedb, "uri", "db://test-database"),
+                patch.object(Config.lancedb, "api_key", "test-api-key"),
+                patch.object(Config.lancedb, "region", "us-east-1"),
+            ):
+                with patch.object(
+                    store.chunks_table, "optimize", new_callable=AsyncMock
+                ) as mock_optimize:
+                    await store.vacuum()
+                    mock_optimize.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_object_storage_runs_vacuum(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
-            with patch.object(store.chunks_table, "optimize") as mock_optimize:
-                await store.vacuum()
-                mock_optimize.assert_called()
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+                with patch.object(
+                    store.chunks_table, "optimize", new_callable=AsyncMock
+                ) as mock_optimize:
+                    await store.vacuum()
+                    mock_optimize.assert_called()
 
     @pytest.mark.asyncio
     async def test_local_runs_vacuum(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with patch.object(Config.lancedb, "uri", ""):
-            with patch.object(store.chunks_table, "optimize") as mock_optimize:
-                await store.vacuum()
-                mock_optimize.assert_called()
-        store.close()
+        async with Store(temp_db_path, create=True) as store:
+            with patch.object(Config.lancedb, "uri", ""):
+                with patch.object(
+                    store.chunks_table, "optimize", new_callable=AsyncMock
+                ) as mock_optimize:
+                    await store.vacuum()
+                    mock_optimize.assert_called()
 
 
 class TestVectorIndexByConnectionMode:
-    def test_cloud_skips_index_creation(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with (
-            patch.object(Config.lancedb, "uri", "db://test-database"),
-            patch.object(Config.lancedb, "api_key", "test-api-key"),
-            patch.object(Config.lancedb, "region", "us-east-1"),
-        ):
-            with patch.object(store.chunks_table, "count_rows") as mock_count:
-                store._ensure_vector_index()
-                mock_count.assert_not_called()
-        store.close()
+    @pytest.mark.asyncio
+    async def test_cloud_skips_index_creation(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            with (
+                patch.object(Config.lancedb, "uri", "db://test-database"),
+                patch.object(Config.lancedb, "api_key", "test-api-key"),
+                patch.object(Config.lancedb, "region", "us-east-1"),
+            ):
+                with patch.object(
+                    store.chunks_table, "count_rows", new_callable=AsyncMock
+                ) as mock_count:
+                    await store._ensure_vector_index()
+                    mock_count.assert_not_called()
 
-    def test_object_storage_runs_index_creation(self, temp_db_path):
-        store = Store(temp_db_path, create=True)
-        with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
-            with patch.object(
-                store.chunks_table, "count_rows", return_value=0
-            ) as mock_count:
-                store._ensure_vector_index()
-                mock_count.assert_called()
-        store.close()
+    @pytest.mark.asyncio
+    async def test_object_storage_runs_index_creation(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+                with patch.object(
+                    store.chunks_table,
+                    "count_rows",
+                    new_callable=AsyncMock,
+                    return_value=0,
+                ) as mock_count:
+                    await store._ensure_vector_index()
+                    mock_count.assert_called()
 
 
 class TestStoreSkipsPathValidationForRemote:
-    def test_skips_path_check_for_cloud(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_skips_path_check_for_cloud(self, tmp_path):
         nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
         config = AppConfig(
             lancedb=LanceDBConfig(
                 uri="db://test-database", api_key="key", region="us-east-1"
             )
         )
-        with patch("haiku.rag.store.engine.lancedb.connect"):
-            with patch.object(Store, "_init_tables"):
-                store = Store(
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ):
+            with patch.object(Store, "_init_tables", new_callable=AsyncMock):
+                async with Store(
                     nonexistent,
                     config=config,
                     create=True,
                     skip_validation=True,
                     skip_migration_check=True,
-                )
-                store.close()
+                ) as store:
+                    assert store is not None
 
-    def test_skips_path_check_for_object_storage(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_skips_path_check_for_object_storage(self, tmp_path):
         nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
         config = AppConfig(
             lancedb=LanceDBConfig(
@@ -201,13 +226,74 @@ class TestStoreSkipsPathValidationForRemote:
                 storage_options={"endpoint": "http://localhost:9000"},
             )
         )
-        with patch("haiku.rag.store.engine.lancedb.connect"):
-            with patch.object(Store, "_init_tables"):
-                store = Store(
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ):
+            with patch.object(Store, "_init_tables", new_callable=AsyncMock):
+                async with Store(
                     nonexistent,
                     config=config,
                     create=True,
                     skip_validation=True,
                     skip_migration_check=True,
-                )
-                store.close()
+                ) as store:
+                    assert store is not None
+
+
+class TestInitFailureCleanup:
+    @pytest.mark.asyncio
+    async def test_store_aenter_closes_connection_on_init_failure(
+        self, temp_db_path, monkeypatch
+    ):
+        """If _initialize raises after connect, __aenter__ must close the
+        AsyncConnection so it doesn't leak (no __aexit__ runs in that case)."""
+        mock_conn = AsyncMock()
+        mock_conn.close = lambda: mock_conn.close_calls.append(True)  # type: ignore[attr-defined]
+        mock_conn.close_calls = []  # type: ignore[attr-defined]
+
+        async def fake_connect(*args, **kwargs):
+            return mock_conn
+
+        async def failing_init_tables(self):
+            raise RuntimeError("simulated table init failure")
+
+        monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", fake_connect)
+        monkeypatch.setattr(Store, "_init_tables", failing_init_tables)
+
+        with pytest.raises(RuntimeError, match="simulated table init failure"):
+            async with Store(temp_db_path, create=True) as store:
+                assert store is not None
+
+        assert mock_conn.close_calls == [True], (
+            "AsyncConnection.close() was not called on init failure"
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aenter_closes_store_on_init_failure(
+        self, temp_db_path, monkeypatch
+    ):
+        """HaikuRAG.__aenter__ must close the store if _initialize fails."""
+        from haiku.rag.client import HaikuRAG
+
+        close_calls: list[bool] = []
+
+        original_close = Store.close
+
+        def tracking_close(self):
+            close_calls.append(True)
+            original_close(self)
+
+        async def failing_init(self):
+            # Set db so close() has something to close
+            self.db = AsyncMock()
+            self.db.close = lambda: None
+            raise RuntimeError("simulated initialize failure")
+
+        monkeypatch.setattr(Store, "_initialize", failing_init)
+        monkeypatch.setattr(Store, "close", tracking_close)
+
+        with pytest.raises(RuntimeError, match="simulated initialize failure"):
+            async with HaikuRAG(temp_db_path, create=True):
+                pass
+
+        assert close_calls, "Store.close() was not called when _initialize raised"

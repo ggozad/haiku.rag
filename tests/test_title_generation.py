@@ -5,6 +5,7 @@ from docling_core.types.doc.document import ContentLayer, DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.titles import extract_structural_title, resolve_title
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ProcessingConfig
 from haiku.rag.embeddings import EmbedderWrapper
@@ -35,11 +36,7 @@ def mock_embedder(monkeypatch):
 
 
 class TestExtractStructuralTitle:
-    def _make_client(self, tmp_path):
-        config = AppConfig(processing=ProcessingConfig(auto_title=True))
-        return HaikuRAG(tmp_path / "test.lancedb", config=config, create=True)
-
-    def test_furniture_title(self, tmp_path):
+    def test_furniture_title(self):
         """TITLE on FURNITURE layer (HTML <title>) is extracted."""
         doc = DoclingDocument(name="test")
         doc.add_text(
@@ -49,11 +46,9 @@ class TestExtractStructuralTitle:
         )
         doc.add_text(label=DocItemLabel.PARAGRAPH, text="Body text")
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result == "Website Page Title"
+        assert extract_structural_title(doc) == "Website Page Title"
 
-    def test_body_title(self, tmp_path):
+    def test_body_title(self):
         """TITLE on BODY layer (h1, PDF title) is extracted."""
         doc = DoclingDocument(name="test")
         doc.add_text(
@@ -63,31 +58,25 @@ class TestExtractStructuralTitle:
         )
         doc.add_text(label=DocItemLabel.PARAGRAPH, text="Body text")
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result == "Document Heading"
+        assert extract_structural_title(doc) == "Document Heading"
 
-    def test_section_header_fallback(self, tmp_path):
+    def test_section_header_fallback(self):
         """First SECTION_HEADER is used when no TITLE exists."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.SECTION_HEADER, text="Introduction")
         doc.add_text(label=DocItemLabel.SECTION_HEADER, text="Background")
         doc.add_text(label=DocItemLabel.PARAGRAPH, text="Body text")
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result == "Introduction"
+        assert extract_structural_title(doc) == "Introduction"
 
-    def test_no_title_or_headers(self, tmp_path):
+    def test_no_title_or_headers(self):
         """Returns None when no TITLE or SECTION_HEADER exists."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.PARAGRAPH, text="Just a paragraph")
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result is None
+        assert extract_structural_title(doc) is None
 
-    def test_furniture_title_preferred_over_body_title(self, tmp_path):
+    def test_furniture_title_preferred_over_body_title(self):
         """FURNITURE TITLE takes priority over BODY TITLE."""
         doc = DoclingDocument(name="test")
         doc.add_text(
@@ -101,11 +90,9 @@ class TestExtractStructuralTitle:
             content_layer=ContentLayer.FURNITURE,
         )
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result == "HTML Page Title"
+        assert extract_structural_title(doc) == "HTML Page Title"
 
-    def test_whitespace_stripped(self, tmp_path):
+    def test_whitespace_stripped(self):
         """Whitespace is stripped from extracted titles."""
         doc = DoclingDocument(name="test")
         doc.add_text(
@@ -114,11 +101,9 @@ class TestExtractStructuralTitle:
             content_layer=ContentLayer.BODY,
         )
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result == "Padded Title"
+        assert extract_structural_title(doc) == "Padded Title"
 
-    def test_empty_title_text_skipped(self, tmp_path):
+    def test_empty_title_text_skipped(self):
         """Empty or whitespace-only TITLE text is skipped."""
         doc = DoclingDocument(name="test")
         doc.add_text(
@@ -128,54 +113,49 @@ class TestExtractStructuralTitle:
         )
         doc.add_text(label=DocItemLabel.SECTION_HEADER, text="Actual Heading")
 
-        client = self._make_client(tmp_path)
-        result = client._extract_structural_title(doc)
-        assert result == "Actual Heading"
+        assert extract_structural_title(doc) == "Actual Heading"
 
 
 # =========================================================================
-# _resolve_title
+# resolve_title
 # =========================================================================
 
 
 class TestResolveTitle:
-    def _make_client(self, tmp_path, auto_title=True):
-        config = AppConfig(processing=ProcessingConfig(auto_title=auto_title))
-        return HaikuRAG(tmp_path / "test.lancedb", config=config, create=True)
-
     @pytest.mark.asyncio
-    async def test_auto_title_disabled_returns_none(self, tmp_path):
+    async def test_auto_title_disabled_returns_none(self):
         """When auto_title is False, returns None (no title generation)."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.TITLE, text="Structural Title")
 
-        client = self._make_client(tmp_path, auto_title=False)
-        result = await client._resolve_title(doc, "some content")
+        config = AppConfig(processing=ProcessingConfig(auto_title=False))
+        result = await resolve_title(config, doc, "some content")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_structural_title_extracted(self, tmp_path):
+    async def test_structural_title_extracted(self):
         """Structural title is extracted when auto_title is enabled."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.TITLE, text="Auto Extracted Title")
 
-        client = self._make_client(tmp_path)
-        result = await client._resolve_title(doc, "some content")
+        config = AppConfig(processing=ProcessingConfig(auto_title=True))
+        result = await resolve_title(config, doc, "some content")
         assert result == "Auto Extracted Title"
 
     @pytest.mark.asyncio
-    async def test_llm_failure_returns_none(self, tmp_path, monkeypatch):
+    async def test_llm_failure_returns_none(self, monkeypatch):
         """LLM failure during ingestion returns None instead of raising."""
         doc = DoclingDocument(name="test")
         doc.add_text(label=DocItemLabel.PARAGRAPH, text="Just text")
 
-        client = self._make_client(tmp_path)
-
-        async def exploding_llm(self, content):
+        async def exploding_llm(config, content):
             raise RuntimeError("LLM is down")
 
-        monkeypatch.setattr(HaikuRAG, "_generate_title_with_llm", exploding_llm)
-        result = await client._resolve_title(doc, "some content")
+        monkeypatch.setattr(
+            "haiku.rag.client.titles.generate_title_with_llm", exploding_llm
+        )
+        config = AppConfig(processing=ProcessingConfig(auto_title=True))
+        result = await resolve_title(config, doc, "some content")
         assert result is None
 
 

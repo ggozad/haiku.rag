@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -58,13 +60,23 @@ logger.info(f"QA Provider: {Config.qa.model.provider}, Model: {Config.qa.model.n
 
 # Only HaikuRAG client is a singleton (expensive to create)
 _client: HaikuRAG | None = None
+_client_lock = asyncio.Lock()
 
 
-def get_client() -> HaikuRAG:
-    """Get or create cached client."""
+async def get_client() -> HaikuRAG:
+    """Get or create the cached client.
+
+    Guarded by a lock because the first request after startup can race with
+    itself: two concurrent callers would both pass the None check, each build
+    and enter a HaikuRAG, and the loser would leak its LanceDB connection.
+    """
     global _client
     if _client is None:
-        _client = HaikuRAG(db_path=db_path, config=Config, create=True)
+        async with _client_lock:
+            if _client is None:
+                client = HaikuRAG(db_path=db_path, config=Config, create=True)
+                await client.__aenter__()
+                _client = client
     return _client
 
 
@@ -126,7 +138,7 @@ async def list_documents(_: Request) -> JSONResponse:
     if not db_path.exists():
         return JSONResponse({"documents": [], "error": "Database not found"})
 
-    client = get_client()
+    client = await get_client()
     docs = await client.document_repository.list_all()
     return JSONResponse(
         {
@@ -151,8 +163,8 @@ async def db_info(_: Request) -> JSONResponse:
 
     from haiku.rag.store.engine import get_database_stats
 
-    client = get_client()
-    stats = get_database_stats(client.store.db)
+    client = await get_client()
+    stats = await get_database_stats(client.store.db)
 
     return JSONResponse(
         {
@@ -177,7 +189,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     if not db_path.exists():
         return JSONResponse({"error": "Database not found"}, status_code=404)
 
-    client = get_client()
+    client = await get_client()
 
     chunk = await client.chunk_repository.get_by_id(chunk_id)
     if not chunk:
@@ -203,6 +215,21 @@ async def visualize_chunk(request: Request) -> JSONResponse:
     )
 
 
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    """Shut down the cached HaikuRAG client cleanly on app exit.
+
+    Awaits any in-flight background vacuum tasks and closes the LanceDB
+    connection. Without this, vacuum tasks are cancelled abruptly and the
+    connection is never closed on process shutdown.
+    """
+    yield
+    global _client
+    if _client is not None:
+        await _client.__aexit__(None, None, None)
+        _client = None
+
+
 # Create Starlette app
 app = Starlette(
     routes=[
@@ -221,6 +248,7 @@ app = Starlette(
             allow_headers=["*"],
         )
     ],
+    lifespan=lifespan,
 )
 
 if __name__ == "__main__":

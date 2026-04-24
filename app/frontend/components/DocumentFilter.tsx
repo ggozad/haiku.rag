@@ -16,6 +16,8 @@ interface DocumentFilterProps {
 	onApply: (selected: string[]) => void;
 }
 
+const getDisplayName = (doc: Document) => doc.title || doc.uri || doc.id;
+
 export default function DocumentFilter({
 	isOpen,
 	onClose,
@@ -26,33 +28,40 @@ export default function DocumentFilter({
 	const [documents, setDocuments] = useState<Document[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [searchTerm, setSearchTerm] = useState("");
-	const [localSelected, setLocalSelected] = useState<Set<string>>(
-		new Set(selected),
-	);
+	// Track selection by document id — two docs can share a title, but ids
+	// are unique. Display names are only used for rendering and for the
+	// filter string returned to the parent.
+	const [localSelected, setLocalSelected] = useState<Set<string>>(new Set());
 
-	// Reset local state when modal opens
+	// Refetch on every open so newly-added or deleted documents show up.
 	useEffect(() => {
-		if (isOpen) {
-			setLocalSelected(new Set(selected));
-			setSearchTerm("");
-		}
-	}, [isOpen, selected]);
+		if (!isOpen) return;
+		setLoading(true);
+		fetch("/api/documents")
+			.then((res) => res.json())
+			.then((data) => {
+				setDocuments(data.documents || []);
+				setLoading(false);
+			})
+			.catch(() => {
+				setLoading(false);
+			});
+	}, [isOpen]);
 
-	// Fetch documents when modal opens
+	// Seed local selection from the parent's display-name list once documents
+	// are available. Any doc whose display name is in `selected` starts checked.
 	useEffect(() => {
-		if (isOpen && documents.length === 0) {
-			setLoading(true);
-			fetch("/api/documents")
-				.then((res) => res.json())
-				.then((data) => {
-					setDocuments(data.documents || []);
-					setLoading(false);
-				})
-				.catch(() => {
-					setLoading(false);
-				});
-		}
-	}, [isOpen, documents.length]);
+		if (!isOpen) return;
+		const selectedNames = new Set(selected);
+		setLocalSelected(
+			new Set(
+				documents
+					.filter((d) => selectedNames.has(getDisplayName(d)))
+					.map((d) => d.id),
+			),
+		);
+		setSearchTerm("");
+	}, [isOpen, selected, documents]);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent) => {
@@ -63,28 +72,30 @@ export default function DocumentFilter({
 		[onClose],
 	);
 
-	const toggleDocument = (displayName: string) => {
+	const toggleDocument = (docId: string) => {
 		setLocalSelected((prev) => {
 			const next = new Set(prev);
-			if (next.has(displayName)) {
-				next.delete(displayName);
+			if (next.has(docId)) {
+				next.delete(docId);
 			} else {
-				next.add(displayName);
+				next.add(docId);
 			}
 			return next;
 		});
 	};
 
 	const handleApply = () => {
-		onApply(Array.from(localSelected));
+		const names = documents
+			.filter((d) => localSelected.has(d.id))
+			.map(getDisplayName);
+		// Dedupe: two selected docs sharing a title collapse to one filter term.
+		onApply(Array.from(new Set(names)));
 		onClose();
 	};
 
 	const handleClearAll = () => {
 		setLocalSelected(new Set());
 	};
-
-	const getDisplayName = (doc: Document) => doc.title || doc.uri || doc.id;
 
 	const filteredDocuments = documents.filter((doc) => {
 		if (!searchTerm) return true;
@@ -144,8 +155,8 @@ export default function DocumentFilter({
 								<label key={doc.id} className="filter-item">
 									<input
 										type="checkbox"
-										checked={localSelected.has(displayName)}
-										onChange={() => toggleDocument(displayName)}
+										checked={localSelected.has(doc.id)}
+										onChange={() => toggleDocument(doc.id)}
 									/>
 									<span className="filter-item-label">{displayName}</span>
 								</label>

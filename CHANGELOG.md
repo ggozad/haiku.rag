@@ -1,9 +1,17 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- **Native async LanceDB**: all table I/O now uses LanceDB's async API (`connect_async`, `AsyncConnection`, `AsyncTable`). Previously, repository methods were declared `async def` but called blocking sync LanceDB under the hood, stalling the event loop on every read/write. No change to the documented `async with HaikuRAG(...) as client:` usage pattern.
+- **BREAKING (internal): `HaikuRAG` must be used via `async with`.** Store initialization now happens in `__aenter__`; constructing `HaikuRAG(...)` and calling methods directly without entering the context manager no longer works.
+- **BREAKING (internal): `download_models` is no longer a method on `HaikuRAG`.** It's now a module-level function: `from haiku.rag.client.downloads import download_models; async for progress in download_models(config): ...`. The CLI and in-repo consumers are updated.
+- **Concurrency: background vacuum tracked as a task** on the client. `__aexit__` and `rebuild_database` now await it explicitly, preventing `CreateIndex transaction was preempted` commit conflicts when destructive operations follow a `create_document` that scheduled a background vacuum.
+
 ### Fixed
 
 - **Chat TUI now renders citations again.** After the 0.42.1 flattening of skill state `citations` to `list[str]`, the TUI still indexed `citations[-1]` and iterated the resulting chunk-id string character-by-character, so no citations resolved through `citation_index` and the citation panel stayed empty. Fixed by iterating `state.citations` directly.
+- **`search(..., filter=...)` no longer silently under-returns.** The filter path used to materialize LanceDB's top-N window, filter to matching `document_id`s in pandas, and `head(limit)`. When matching chunks lived outside that top-N window (selective filters, broad queries), the caller got fewer than `limit` results even though plenty of matching chunks existed in the index. The document filter is now pushed down into the chunk query as `document_id IN (...)` so `.limit(limit)` applies to matching chunks directly. Behavior change: searches that previously under-returned will start returning the requested count.
 
 ## [0.42.1] - 2026-04-22
 

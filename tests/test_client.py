@@ -481,49 +481,35 @@ async def test_client_create_document_from_url_http_error(temp_db_path):
                 )
 
 
-@pytest.mark.vcr()
-async def test_get_extension_from_content_type_or_url(temp_db_path):
-    """Test the helper method for determining file extensions."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Test content type mappings
-        assert (
-            client._get_extension_from_content_type_or_url("", "text/html") == ".html"
-        )
-        assert (
-            client._get_extension_from_content_type_or_url("", "application/pdf")
-            == ".pdf"
-        )
-        assert (
-            client._get_extension_from_content_type_or_url("", "text/plain") == ".txt"
-        )
+def test_get_extension_from_content_type_or_url():
+    """Test the helper function for determining file extensions."""
+    from haiku.rag.client.processing import get_extension_from_content_type_or_url
 
-        # Test URL extension detection
-        assert (
-            client._get_extension_from_content_type_or_url(
-                "https://example.com/doc.pdf", ""
-            )
-            == ".pdf"
-        )
-        assert (
-            client._get_extension_from_content_type_or_url(
-                "https://example.com/data.json", ""
-            )
-            == ".json"
-        )
+    # Content type mappings
+    assert get_extension_from_content_type_or_url("", "text/html") == ".html"
+    assert get_extension_from_content_type_or_url("", "application/pdf") == ".pdf"
+    assert get_extension_from_content_type_or_url("", "text/plain") == ".txt"
 
-        # Test default fallback
-        assert (
-            client._get_extension_from_content_type_or_url("https://example.com/", "")
-            == ".html"
-        )
+    # URL extension detection
+    assert (
+        get_extension_from_content_type_or_url("https://example.com/doc.pdf", "")
+        == ".pdf"
+    )
+    assert (
+        get_extension_from_content_type_or_url("https://example.com/data.json", "")
+        == ".json"
+    )
 
-        # Test content type priority over URL extension
-        assert (
-            client._get_extension_from_content_type_or_url(
-                "https://example.com/file.txt", "application/pdf"
-            )
-            == ".pdf"
+    # Default fallback
+    assert get_extension_from_content_type_or_url("https://example.com/", "") == ".html"
+
+    # Content type priority over URL extension
+    assert (
+        get_extension_from_content_type_or_url(
+            "https://example.com/file.txt", "application/pdf"
         )
+        == ".pdf"
+    )
 
 
 @pytest.mark.vcr()
@@ -1284,6 +1270,39 @@ async def test_client_convert_file_not_found(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         with pytest.raises(ValueError, match="File does not exist"):
             await client.convert(Path("/nonexistent/path/file.txt"))
+
+
+async def test_client_convert_from_url(temp_db_path):
+    """convert() with an http(s) URL downloads to a tempfile and converts."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        mock_response = AsyncMock()
+        mock_response.content = (
+            b"<html><body><p>URL convert path content.</p></body></html>"
+        )
+        mock_response.headers = {"content-type": "text/html"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            docling_doc = await client.convert("https://example.com/page.html")
+
+        assert isinstance(docling_doc, DoclingDocument)
+        markdown = docling_doc.export_to_markdown()
+        assert "URL convert path content" in markdown
+
+
+async def test_client_convert_from_url_unsupported_content_type(temp_db_path):
+    """convert() rejects URLs whose content type isn't supported by the converter."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        mock_response = AsyncMock()
+        mock_response.content = b"\x00\x01\x02binary"
+        mock_response.headers = {"content-type": "application/octet-stream"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            with pytest.raises(ValueError, match="Unsupported content type"):
+                await client.convert("https://example.com/blob.bin")
 
 
 @pytest.mark.vcr()

@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -60,7 +62,7 @@ async def test_version_rollback_on_update_failure(temp_db_path):
         assert len(original_chunks) > 0
 
 
-def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
+async def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("run_pending_upgrades should not be called for new DB")
 
@@ -69,11 +71,13 @@ def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
         fail_if_called,
     )
 
-    Store(temp_db_path, create=True)
+    async with Store(temp_db_path, create=True):
+        pass
 
 
-def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
-    Store(temp_db_path, create=True)
+async def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
+    async with Store(temp_db_path, create=True):
+        pass
 
     from haiku.rag.store import upgrades
 
@@ -90,9 +94,15 @@ def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
     )
 
     # Opening an existing database should check for pending migrations
-    Store(temp_db_path)
+    async with Store(temp_db_path):
+        pass
 
     assert called["value"]
+
+
+async def _wait_for_background_vacuum(client):
+    """Wait for any in-flight background vacuum tasks to complete."""
+    await client._await_vacuum_tasks()
 
 
 @pytest.mark.vcr()
@@ -100,15 +110,17 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create first document
         await client.create_document(content="First document")
+        await _wait_for_background_vacuum(client)
 
         # Create second document
         await client.create_document(content="Second document")
+        await _wait_for_background_vacuum(client)
 
         store = client.store
 
         # Get initial version counts (should have multiple versions from creates)
-        initial_doc_versions = len(list(store.documents_table.list_versions()))
-        initial_chunk_versions = len(list(store.chunks_table.list_versions()))
+        initial_doc_versions = len(await store.documents_table.list_versions())
+        initial_chunk_versions = len(await store.chunks_table.list_versions())
 
         assert initial_doc_versions > 1, "Should have multiple document table versions"
         assert initial_chunk_versions > 1, "Should have multiple chunk table versions"
@@ -117,8 +129,8 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
         # Note: vacuum may create new versions even when not cleaning up old ones
         await store.vacuum()
 
-        after_default_doc_versions = len(list(store.documents_table.list_versions()))
-        after_default_chunk_versions = len(list(store.chunks_table.list_versions()))
+        after_default_doc_versions = len(await store.documents_table.list_versions())
+        after_default_chunk_versions = len(await store.chunks_table.list_versions())
 
         # After vacuum with retention, version count should stay the same or increase
         # (optimize may create new versions) but not decrease
@@ -132,8 +144,8 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
         # Vacuum with 0 threshold - should significantly reduce versions
         await store.vacuum(retention_seconds=0)
 
-        after_zero_doc_versions = len(list(store.documents_table.list_versions()))
-        after_zero_chunk_versions = len(list(store.chunks_table.list_versions()))
+        after_zero_doc_versions = len(await store.documents_table.list_versions())
+        after_zero_chunk_versions = len(await store.chunks_table.list_versions())
 
         # After aggressive vacuum, should have minimal versions (1-2)
         # Note: optimize operation may create a version after cleanup
@@ -168,16 +180,96 @@ async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
             await client.create_document(content=f"Test document {i}")
 
     # After context exit, automatic vacuum should have kept versions minimal
-    store = Store(temp_db_path, create=True)
-    final_versions = len(list(store.documents_table.list_versions()))
+    async with Store(temp_db_path, create=True) as store:
+        final_versions = len(await store.documents_table.list_versions())
 
-    # With retention_seconds=0, vacuum aggressively cleans up between operations
-    # Should have very few versions remaining (1-2)
-    assert final_versions <= 2, (
-        f"Aggressive vacuum should keep minimal versions, got {final_versions}"
+        # With retention_seconds=0, vacuum aggressively cleans up between operations
+        # Should have very few versions remaining (1-2)
+        assert final_versions <= 2, (
+            f"Aggressive vacuum should keep minimal versions, got {final_versions}"
+        )
+        assert final_versions >= 1, "Should have at least one version remaining"
+
+
+@pytest.mark.vcr()
+async def test_aexit_awaits_background_vacuum(temp_db_path, monkeypatch):
+    """__aexit__ must await any in-flight background vacuum, not just release the lock.
+
+    Background vacuum runs as an asyncio task; the event loop may not have scheduled
+    it yet when __aexit__ runs. Simply acquiring the vacuum lock (which is free until
+    the task actually starts) would let close() proceed before vacuum runs.
+    """
+    from haiku.rag.config import Config
+
+    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+
+    vacuum_started = asyncio.Event()
+    vacuum_completed = asyncio.Event()
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        original_vacuum = client.store.vacuum
+
+        async def instrumented_vacuum(*args, **kwargs):
+            vacuum_started.set()
+            # Delay so __aexit__ would see an unstarted/incomplete task if it
+            # relied on the lock rather than awaiting the task directly.
+            await asyncio.sleep(0.05)
+            await original_vacuum(*args, **kwargs)
+            vacuum_completed.set()
+
+        client.store.vacuum = instrumented_vacuum
+
+        await client.create_document(content="triggers background vacuum")
+
+    assert vacuum_started.is_set(), "Background vacuum task never ran"
+    assert vacuum_completed.is_set(), "__aexit__ exited before vacuum finished"
+
+
+@pytest.mark.vcr()
+async def test_aexit_awaits_all_background_vacuums(temp_db_path, monkeypatch):
+    """Multiple create_document calls schedule multiple vacuum tasks; __aexit__
+    must await all of them, not just the last-scheduled one.
+
+    Scenario: Task A acquires the vacuum lock and is slow. Task B is scheduled
+    while Task A still holds the lock — Task B sees the lock held and returns
+    immediately. If the client only tracks the most recently scheduled task,
+    __aexit__ awaits the fast no-op B and closes the connection while Task A
+    is still running.
+    """
+    from haiku.rag.config import Config
+
+    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+
+    first_vacuum_completed = asyncio.Event()
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        call_count = 0
+
+        async def slow_vacuum(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            my_num = call_count
+            # Mimic the real vacuum's skip-if-running behavior.
+            if client.store._vacuum_lock.locked():
+                return
+            async with client.store._vacuum_lock:
+                if my_num == 1:
+                    # Hold the lock longer than any other operation in the
+                    # test so Task A cannot finish incidentally. __aexit__
+                    # must explicitly wait for this task.
+                    await asyncio.sleep(2.0)
+                    first_vacuum_completed.set()
+
+        client.store.vacuum = slow_vacuum
+
+        await client.create_document(content="triggers first vacuum")
+        # Let Task A start and acquire the vacuum lock before scheduling B.
+        await asyncio.sleep(0.02)
+        await client.create_document(content="triggers second vacuum")
+
+    assert first_vacuum_completed.is_set(), (
+        "__aexit__ returned before the first vacuum task finished"
     )
-    assert final_versions >= 1, "Should have at least one version remaining"
-    store.close()
 
 
 @pytest.mark.vcr()
@@ -194,8 +286,8 @@ async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
             await client.create_document(content=f"Test document {i}")
 
         # Count versions - should accumulate without vacuum
-        doc_versions = len(list(client.store.documents_table.list_versions()))
-        chunk_versions = len(list(client.store.chunks_table.list_versions()))
+        doc_versions = len(await client.store.documents_table.list_versions())
+        chunk_versions = len(await client.store.chunks_table.list_versions())
 
         # Without auto-vacuum, versions should accumulate (more than 3 from creates)
         assert doc_versions >= 3, (
@@ -221,11 +313,10 @@ async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
             await client.create_document(content=f"Test document {i}")
 
     # After context exit, vacuum should have cleaned up
-    store = Store(temp_db_path, create=True)
-    final_versions = len(list(store.documents_table.list_versions()))
+    async with Store(temp_db_path, create=True) as store:
+        final_versions = len(await store.documents_table.list_versions())
 
-    # With auto_vacuum=True and retention=0, should have minimal versions
-    assert final_versions <= 2, (
-        f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
-    )
-    store.close()
+        # With auto_vacuum=True and retention=0, should have minimal versions
+        assert final_versions <= 2, (
+            f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
+        )

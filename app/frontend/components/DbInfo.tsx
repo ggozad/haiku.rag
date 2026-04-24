@@ -25,8 +25,7 @@ export default function DbInfo() {
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
-		fetch(`${backendUrl}/api/info`)
+		fetch("/api/info")
 			.then((res) => res.json())
 			.then(setInfo)
 			.catch((err) => setError(err.message));

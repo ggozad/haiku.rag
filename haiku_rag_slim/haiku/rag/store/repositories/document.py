@@ -2,7 +2,14 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
-from haiku.rag.store.engine import DocumentRecord, Store, get_documents_arrow_schema
+from lancedb.index import BTree
+
+from haiku.rag.store.engine import (
+    DocumentRecord,
+    Store,
+    get_documents_arrow_schema,
+    query_to_pydantic,
+)
 from haiku.rag.store.models.document import Document
 from haiku.rag.utils import escape_sql_string
 
@@ -78,7 +85,7 @@ class DocumentRepository:
         )
 
         # Add to table
-        self.store.documents_table.add([doc_record])
+        await self.store.documents_table.add([doc_record])
 
         entity.id = doc_id
         entity.created_at = datetime.fromisoformat(now)
@@ -88,11 +95,9 @@ class DocumentRepository:
     async def get_by_id(self, entity_id: str) -> Document | None:
         """Get a document by its ID."""
         safe_id = escape_sql_string(entity_id)
-        results = list(
-            self.store.documents_table.search()
-            .where(f"id = '{safe_id}'")
-            .limit(1)
-            .to_pydantic(DocumentRecord)
+        results = await query_to_pydantic(
+            self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
+            DocumentRecord,
         )
 
         if not results:
@@ -103,8 +108,8 @@ class DocumentRepository:
     async def get_content(self, entity_id: str) -> str | None:
         """Get only the text content of a document (skips docling blobs)."""
         safe_id = escape_sql_string(entity_id)
-        results = list(
-            self.store.documents_table.search()
+        results = await (
+            self.store.documents_table.query()
             .select(["content"])
             .where(f"id = '{safe_id}'")
             .limit(1)
@@ -119,8 +124,8 @@ class DocumentRepository:
     async def get_docling_data(self, entity_id: str) -> Document | None:
         """Get a document with only docling data loaded (skips content blob)."""
         safe_id = escape_sql_string(entity_id)
-        results = list(
-            self.store.documents_table.search()
+        results = await (
+            self.store.documents_table.query()
             .select(self._DOCLING_COLUMNS)
             .where(f"id = '{safe_id}'")
             .limit(1)
@@ -141,8 +146,8 @@ class DocumentRepository:
     async def get_pages_data(self, entity_id: str) -> Document | None:
         """Get a document with only page image data loaded."""
         safe_id = escape_sql_string(entity_id)
-        results = list(
-            self.store.documents_table.search()
+        results = await (
+            self.store.documents_table.query()
             .select(["id", "docling_pages"])
             .where(f"id = '{safe_id}'")
             .limit(1)
@@ -171,9 +176,8 @@ class DocumentRepository:
 
         # Update the record
         safe_id = escape_sql_string(entity.id)
-        self.store.documents_table.update(
-            where=f"id = '{safe_id}'",
-            values={
+        await self.store.documents_table.update(
+            {
                 "content": entity.content,
                 "uri": entity.uri,
                 "title": entity.title,
@@ -183,6 +187,7 @@ class DocumentRepository:
                 "docling_version": entity.docling_version,
                 "updated_at": now,
             },
+            where=f"id = '{safe_id}'",
         )
 
         return entity
@@ -202,7 +207,7 @@ class DocumentRepository:
 
         # Delete the document
         safe_id = escape_sql_string(entity_id)
-        self.store.documents_table.delete(f"id = '{safe_id}'")
+        await self.store.documents_table.delete(f"id = '{safe_id}'")
         return True
 
     _LISTING_COLUMNS = ["id", "title", "uri", "metadata", "created_at", "updated_at"]
@@ -226,7 +231,7 @@ class DocumentRepository:
         Returns:
             List of Document instances matching the criteria.
         """
-        query = self.store.documents_table.search()
+        query = self.store.documents_table.query()
 
         if not include_content:
             query = query.select(self._LISTING_COLUMNS)
@@ -238,7 +243,7 @@ class DocumentRepository:
             query = query.limit(limit)
 
         if include_content:
-            results = list(query.to_pydantic(DocumentRecord))
+            results = await query_to_pydantic(query, DocumentRecord)
             return [self._record_to_document(doc) for doc in results]
 
         return [
@@ -255,7 +260,7 @@ class DocumentRepository:
                 if row.get("updated_at")
                 else datetime.now(),
             )
-            for row in query.to_list()
+            for row in await query.to_list()
         ]
 
     async def count(self, filter: str | None = None) -> int:
@@ -267,16 +272,14 @@ class DocumentRepository:
         Returns:
             Number of documents matching the criteria.
         """
-        return self.store.documents_table.count_rows(filter=filter)
+        return await self.store.documents_table.count_rows(filter=filter)
 
     async def get_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI."""
         escaped_uri = escape_sql_string(uri)
-        results = list(
-            self.store.documents_table.search()
-            .where(f"uri = '{escaped_uri}'")
-            .limit(1)
-            .to_pydantic(DocumentRecord)
+        results = await query_to_pydantic(
+            self.store.documents_table.query().where(f"uri = '{escaped_uri}'").limit(1),
+            DocumentRecord,
         )
 
         if not results:
@@ -291,29 +294,29 @@ class DocumentRepository:
 
         # Delete all chunks and items first
         await self.chunk_repository.delete_all()
-        self.store.db.drop_table("document_items")
-        self.store.document_items_table = self.store.db.create_table(
+        await self.store.db.drop_table("document_items")
+        self.store.document_items_table = await self.store.db.create_table(
             "document_items", schema=DocumentItemRecord
         )
-        self.store.document_items_table.create_scalar_index(
-            "document_id", index_type="BTREE", replace=True
+        await self.store.document_items_table.create_index(
+            "document_id", config=BTree(), replace=True
         )
-        self.store.document_items_table.create_scalar_index(
-            "position", index_type="BTREE", replace=True
+        await self.store.document_items_table.create_index(
+            "position", config=BTree(), replace=True
         )
-        self.store.document_items_table.create_scalar_index(
-            "self_ref", index_type="BTREE", replace=True
+        await self.store.document_items_table.create_index(
+            "self_ref", config=BTree(), replace=True
         )
 
         # Get count before deletion
         count = len(
-            list(
-                self.store.documents_table.search().limit(1).to_pydantic(DocumentRecord)
+            await query_to_pydantic(
+                self.store.documents_table.query().limit(1), DocumentRecord
             )
         )
         if count > 0:
             # Drop and recreate table to clear all data
-            self.store.db.drop_table("documents")
-            self.store.documents_table = self.store.db.create_table(
+            await self.store.db.drop_table("documents")
+            self.store.documents_table = await self.store.db.create_table(
                 "documents", schema=get_documents_arrow_schema()
             )

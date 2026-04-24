@@ -11,27 +11,25 @@ async def test_document_list_excludes_content_by_default(
     qa_corpus: Dataset, temp_db_path
 ):
     """list_all excludes content and docling_document by default."""
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    doc = Document(
-        content=qa_corpus[0]["document_extracted"],
-        uri="https://example.com/doc.txt",
-        title="Test Document",
-        metadata={"key": "value"},
-    )
-    created = await doc_repo.create(doc)
+        doc = Document(
+            content=qa_corpus[0]["document_extracted"],
+            uri="https://example.com/doc.txt",
+            title="Test Document",
+            metadata={"key": "value"},
+        )
+        created = await doc_repo.create(doc)
 
-    docs = await doc_repo.list_all()
-    assert len(docs) == 1
-    assert docs[0].id == created.id
-    assert docs[0].title == "Test Document"
-    assert docs[0].uri == "https://example.com/doc.txt"
-    assert docs[0].metadata == {"key": "value"}
-    assert docs[0].content == ""
-    assert docs[0].docling_document is None
-
-    store.close()
+        docs = await doc_repo.list_all()
+        assert len(docs) == 1
+        assert docs[0].id == created.id
+        assert docs[0].title == "Test Document"
+        assert docs[0].uri == "https://example.com/doc.txt"
+        assert docs[0].metadata == {"key": "value"}
+        assert docs[0].content == ""
+        assert docs[0].docling_document is None
 
 
 @pytest.mark.asyncio
@@ -39,62 +37,61 @@ async def test_document_list_includes_content_when_requested(
     qa_corpus: Dataset, temp_db_path
 ):
     """list_all returns content when include_content=True."""
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    content = qa_corpus[0]["document_extracted"]
-    doc = Document(content=content, uri="https://example.com/doc.txt")
-    created = await doc_repo.create(doc)
+        content = qa_corpus[0]["document_extracted"]
+        doc = Document(content=content, uri="https://example.com/doc.txt")
+        created = await doc_repo.create(doc)
 
-    docs = await doc_repo.list_all(include_content=True)
-    assert len(docs) == 1
-    assert docs[0].id == created.id
-    assert docs[0].content == content
-
-    store.close()
+        docs = await doc_repo.list_all(include_content=True)
+        assert len(docs) == 1
+        assert docs[0].id == created.id
+        assert docs[0].content == content
 
 
 @pytest.mark.asyncio
 async def test_document_list_with_filter(qa_corpus: Dataset, temp_db_path):
     """Test listing documents with filter clause."""
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    first_doc = qa_corpus[0]
-    document_text = first_doc["document_extracted"]
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
 
-    doc1 = Document(
-        content=document_text,
-        uri="https://example.com/doc1.txt",
-        metadata={"source": "test", "category": "A"},
-    )
-    doc2 = Document(
-        content=document_text,
-        uri="https://arxiv.org/paper.pdf",
-        metadata={"source": "test", "category": "B"},
-    )
-    doc3 = Document(
-        content=document_text,
-        uri="https://example.com/doc3.txt",
-        metadata={"source": "test", "category": "A"},
-    )
+        doc1 = Document(
+            content=document_text,
+            uri="https://example.com/doc1.txt",
+            metadata={"source": "test", "category": "A"},
+        )
+        doc2 = Document(
+            content=document_text,
+            uri="https://arxiv.org/paper.pdf",
+            metadata={"source": "test", "category": "B"},
+        )
+        doc3 = Document(
+            content=document_text,
+            uri="https://example.com/doc3.txt",
+            metadata={"source": "test", "category": "A"},
+        )
 
-    created_doc1 = await doc_repo.create(doc1)
-    created_doc2 = await doc_repo.create(doc2)
-    created_doc3 = await doc_repo.create(doc3)
+        created_doc1 = await doc_repo.create(doc1)
+        created_doc2 = await doc_repo.create(doc2)
+        created_doc3 = await doc_repo.create(doc3)
 
-    all_documents = await doc_repo.list_all()
-    assert len(all_documents) == 3
+        all_documents = await doc_repo.list_all()
+        assert len(all_documents) == 3
 
-    arxiv_documents = await doc_repo.list_all(filter="uri LIKE '%arxiv%'")
-    assert len(arxiv_documents) == 1
-    assert arxiv_documents[0].id == created_doc2.id
+        arxiv_documents = await doc_repo.list_all(filter="uri LIKE '%arxiv%'")
+        assert len(arxiv_documents) == 1
+        assert arxiv_documents[0].id == created_doc2.id
 
-    example_documents = await doc_repo.list_all(filter="uri LIKE '%example.com%'")
-    assert len(example_documents) == 2
-    assert {doc.id for doc in example_documents} == {created_doc1.id, created_doc3.id}
-
-    store.close()
+        example_documents = await doc_repo.list_all(filter="uri LIKE '%example.com%'")
+        assert len(example_documents) == 2
+        assert {doc.id for doc in example_documents} == {
+            created_doc1.id,
+            created_doc3.id,
+        }
 
 
 def test_document_get_docling_document():
@@ -239,45 +236,43 @@ async def test_get_docling_data_loads_only_docling_columns(
 
     from haiku.rag.store.compression import compress_json
 
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    doc_json = {
-        "name": "test_doc",
-        "texts": [],
-        "tables": [],
-        "pictures": [],
-        "groups": [],
-        "body": {"self_ref": "#/body", "children": []},
-        "furniture": {"self_ref": "#/furniture", "children": []},
-    }
-    compressed = compress_json(json.dumps(doc_json))
+        doc_json = {
+            "name": "test_doc",
+            "texts": [],
+            "tables": [],
+            "pictures": [],
+            "groups": [],
+            "body": {"self_ref": "#/body", "children": []},
+            "furniture": {"self_ref": "#/furniture", "children": []},
+        }
+        compressed = compress_json(json.dumps(doc_json))
 
-    doc = Document(
-        content=qa_corpus[0]["document_extracted"],
-        uri="https://example.com/doc.txt",
-        docling_document=compressed,
-        docling_version="2.1.0",
-    )
-    created = await doc_repo.create(doc)
-    assert created.id is not None
+        doc = Document(
+            content=qa_corpus[0]["document_extracted"],
+            uri="https://example.com/doc.txt",
+            docling_document=compressed,
+            docling_version="2.1.0",
+        )
+        created = await doc_repo.create(doc)
+        assert created.id is not None
 
-    result = await doc_repo.get_docling_data(created.id)
-    assert result is not None
-    assert result.id == created.id
-    assert result.content == ""
-    assert result.docling_document == compressed
-    assert result.docling_version == "2.1.0"
+        result = await doc_repo.get_docling_data(created.id)
+        assert result is not None
+        assert result.id == created.id
+        assert result.content == ""
+        assert result.docling_document == compressed
+        assert result.docling_version == "2.1.0"
 
-    # Verify docling document can be parsed
-    docling_doc = result.get_docling_document()
-    assert docling_doc is not None
-    assert docling_doc.name == "test_doc"
+        # Verify docling document can be parsed
+        docling_doc = result.get_docling_document()
+        assert docling_doc is not None
+        assert docling_doc.name == "test_doc"
 
-    # Non-existent ID returns None
-    assert await doc_repo.get_docling_data("nonexistent-id") is None
-
-    store.close()
+        # Non-existent ID returns None
+        assert await doc_repo.get_docling_data("nonexistent-id") is None
 
 
 @pytest.mark.asyncio
@@ -291,27 +286,25 @@ async def test_get_pages_data_loads_only_pages_column(qa_corpus: Dataset, temp_d
         json.dumps({"1": {"size": {"width": 612, "height": 792}, "page_no": 1}})
     )
 
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    doc = Document(
-        content=qa_corpus[0]["document_extracted"],
-        uri="https://example.com/doc.txt",
-        docling_pages=pages_blob,
-    )
-    created = await doc_repo.create(doc)
-    assert created.id is not None
+        doc = Document(
+            content=qa_corpus[0]["document_extracted"],
+            uri="https://example.com/doc.txt",
+            docling_pages=pages_blob,
+        )
+        created = await doc_repo.create(doc)
+        assert created.id is not None
 
-    result = await doc_repo.get_pages_data(created.id)
-    assert result is not None
-    assert result.id == created.id
-    assert result.content == ""
-    assert result.docling_pages == pages_blob
+        result = await doc_repo.get_pages_data(created.id)
+        assert result is not None
+        assert result.id == created.id
+        assert result.content == ""
+        assert result.docling_pages == pages_blob
 
-    # Non-existent ID returns None
-    assert await doc_repo.get_pages_data("nonexistent-id") is None
-
-    store.close()
+        # Non-existent ID returns None
+        assert await doc_repo.get_pages_data("nonexistent-id") is None
 
 
 @pytest.mark.asyncio
@@ -319,22 +312,20 @@ async def test_get_pages_data_none_for_markdown_document(
     qa_corpus: Dataset, temp_db_path
 ):
     """Markdown documents have no page images — get_pages_data returns None pages."""
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    doc = Document(
-        content=qa_corpus[0]["document_extracted"],
-        uri="https://example.com/doc.md",
-    )
-    created = await doc_repo.create(doc)
-    assert created.id is not None
+        doc = Document(
+            content=qa_corpus[0]["document_extracted"],
+            uri="https://example.com/doc.md",
+        )
+        created = await doc_repo.create(doc)
+        assert created.id is not None
 
-    result = await doc_repo.get_pages_data(created.id)
-    assert result is not None
-    assert result.id == created.id
-    assert result.docling_pages is None
-
-    store.close()
+        result = await doc_repo.get_pages_data(created.id)
+        assert result is not None
+        assert result.id == created.id
+        assert result.docling_pages is None
 
 
 @pytest.mark.asyncio
@@ -342,23 +333,21 @@ async def test_document_get_by_uri_with_special_characters(
     qa_corpus: Dataset, temp_db_path
 ):
     """Test get_by_uri handles URIs with special characters like single quotes."""
-    store = Store(temp_db_path, create=True)
-    doc_repo = DocumentRepository(store)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
 
-    first_doc = qa_corpus[0]
-    document_text = first_doc["document_extracted"]
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
 
-    doc_with_quote = Document(
-        content=document_text,
-        uri="Hamish and Andy's Gap Year",
-        metadata={"source": "test"},
-    )
+        doc_with_quote = Document(
+            content=document_text,
+            uri="Hamish and Andy's Gap Year",
+            metadata={"source": "test"},
+        )
 
-    created_doc = await doc_repo.create(doc_with_quote)
+        created_doc = await doc_repo.create(doc_with_quote)
 
-    retrieved = await doc_repo.get_by_uri("Hamish and Andy's Gap Year")
-    assert retrieved is not None
-    assert retrieved.id == created_doc.id
-    assert retrieved.uri == "Hamish and Andy's Gap Year"
-
-    store.close()
+        retrieved = await doc_repo.get_by_uri("Hamish and Andy's Gap Year")
+        assert retrieved is not None
+        assert retrieved.id == created_doc.id
+        assert retrieved.uri == "Hamish and Andy's Gap Year"

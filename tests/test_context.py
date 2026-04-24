@@ -1,5 +1,6 @@
 import pytest
 
+from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.context import (
     _expand_outward,
     _find_expansion_range,
@@ -249,7 +250,8 @@ class TestExpandWithItems:
         from haiku.rag.store.models.document import Document
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
-            doc = await rag._store_document_with_chunks(
+            doc = await _store_document_with_chunks(
+                rag,
                 Document(content="test"),
                 [],
                 __import__(
@@ -262,6 +264,7 @@ class TestExpandWithItems:
                 document_id=doc.id,
                 doc_item_refs=["#/texts/999999"],
             )
+            assert doc.id is not None
             expanded = await expand_with_items(
                 rag.document_item_repository, doc.id, [result], 5000
             )

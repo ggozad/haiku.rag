@@ -376,7 +376,7 @@ function MessageViewWithCitations({
 						if (latestCitations.length > 0) {
 							result.push(
 								<CitationBlock
-									key={`citations-${i}`}
+									key={`citations-${msg.id}`}
 									citations={latestCitations}
 								/>,
 							);
