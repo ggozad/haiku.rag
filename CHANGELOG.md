@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.43.0] - 2026-04-24
+
 ### Changed
 
 - **Native async LanceDB**: all table I/O now uses LanceDB's async API (`connect_async`, `AsyncConnection`, `AsyncTable`). Previously, repository methods were declared `async def` but called blocking sync LanceDB under the hood, stalling the event loop on every read/write. No change to the documented `async with HaikuRAG(...) as client:` usage pattern.
@@ -1433,7 +1435,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.42.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.43.0...HEAD
+[0.43.0]: https://github.com/ggozad/haiku.rag/compare/0.42.1...0.43.0
 [0.42.1]: https://github.com/ggozad/haiku.rag/compare/0.42.0...0.42.1
 [0.42.0]: https://github.com/ggozad/haiku.rag/compare/0.41.0...0.42.0
 [0.41.0]: https://github.com/ggozad/haiku.rag/compare/0.40.1...0.41.0
