@@ -31,10 +31,13 @@ async def rebuild_database(
     if mode is None:
         mode = RebuildMode.FULL
 
-    # Wait for any background vacuum before destructive table operations.
-    # Rebuild drops and recreates tables (+ creates indices); a concurrent
-    # optimize on the same table fails with "CreateIndex transaction was
-    # preempted" from lance.
+    # Wait for any already-scheduled background vacuum before the destructive
+    # table operations at the top of RECHUNK / FULL. Rebuild drops and
+    # recreates tables (and creates indices); a concurrent optimize on the
+    # same table fails with "CreateIndex transaction was preempted" from
+    # lance. Note: FULL calls create_document_from_source inside its loop,
+    # which may schedule *new* background vacuums — those run after the
+    # destructive phase and are fine.
     await client._await_vacuum_tasks()
 
     # Update settings to current config
@@ -60,12 +63,14 @@ async def rebuild_database(
         async for doc_id in _rebuild_full(client, documents):
             yield doc_id
 
-    # Final maintenance if auto_vacuum enabled
+    # Final maintenance if auto_vacuum enabled. Swallowing only so that a
+    # failed post-rebuild optimize doesn't mask a successful rebuild — but
+    # log it so the failure is visible in the output.
     if client._config.storage.auto_vacuum:
         try:
             await client.store.vacuum()
         except Exception:
-            pass
+            logger.warning("Post-rebuild vacuum failed", exc_info=True)
 
 
 async def _rebuild_title_only(
