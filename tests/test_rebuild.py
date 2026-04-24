@@ -344,7 +344,7 @@ async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch)
 
 @pytest.mark.vcr()
 async def test_rebuild_full_source_failure_is_logged_and_skipped(
-    temp_db_path, monkeypatch, caplog
+    temp_db_path, monkeypatch
 ):
     """FULL rebuild logs-and-continues when re-ingesting from source fails.
 
@@ -353,6 +353,8 @@ async def test_rebuild_full_source_failure_is_logged_and_skipped(
     the error is logged. Regression guard against silent failures.
     """
     import logging
+
+    from haiku.rag.client import rebuild as rebuild_module
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -369,16 +371,30 @@ async def test_rebuild_full_source_failure_is_logged_and_skipped(
 
             monkeypatch.setattr(client, "create_document_from_source", failing_create)
 
-            with caplog.at_level(logging.ERROR, logger="haiku.rag.client.rebuild"):
+            # Attach directly to the rebuild module's logger rather than
+            # relying on caplog — `haiku.rag.logging.get_logger()` (invoked
+            # by other tests) sets `propagate=False` on the `haiku.rag`
+            # logger, which breaks caplog under xdist ordering.
+            records: list[logging.LogRecord] = []
+
+            class _ListHandler(logging.Handler):
+                def emit(self, record: logging.LogRecord) -> None:
+                    records.append(record)
+
+            handler = _ListHandler(level=logging.ERROR)
+            rebuild_module.logger.addHandler(handler)
+            try:
                 processed_ids = [
                     doc_id
                     async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
                 ]
+            finally:
+                rebuild_module.logger.removeHandler(handler)
 
             assert processed_ids == []
             assert any(
-                "Error recreating document from source" in rec.message
-                for rec in caplog.records
+                "Error recreating document from source" in rec.getMessage()
+                for rec in records
             )
 
 
