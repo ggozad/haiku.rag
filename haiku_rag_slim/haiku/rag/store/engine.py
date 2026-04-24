@@ -70,7 +70,7 @@ async def connect_lancedb(
     else:
         if db_path is None:
             raise ValueError("No lancedb.uri configured and no db_path provided")
-        return await lancedb.connect_async(db_path)
+        return await lancedb.connect_async(db_path.absolute())
 
 
 class DocumentRecord(LanceModel):

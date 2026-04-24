@@ -1,7 +1,30 @@
+import pathlib
+from unittest import mock
+
 import pytest
 
+from haiku.rag.config import AppConfig
 from haiku.rag.store import Store
-from haiku.rag.store.engine import get_database_stats
+from haiku.rag.store.engine import connect_lancedb, get_database_stats
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("w_relative", [False, True])
+@mock.patch("lancedb.connect_async")
+async def test_connect_lancedb(ldbca, w_relative):
+    config = AppConfig(environment="testing")
+    relative_db_path = pathlib.Path("path/to/lancedb")
+    absolute_db_path = relative_db_path.absolute()
+
+    if w_relative:
+        db_path = relative_db_path
+    else:
+        db_path = absolute_db_path
+
+    found = await connect_lancedb(config, db_path)
+
+    assert found is ldbca.return_value
+    ldbca.assert_awaited_once_with(absolute_db_path)
 
 
 class TestGetDatabaseStats:
