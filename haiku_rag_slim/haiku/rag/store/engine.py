@@ -274,7 +274,14 @@ class Store:
             await self._validate_configuration()
 
     async def __aenter__(self):
-        await self._initialize()
+        # If _initialize connects to LanceDB but then fails (e.g. migration
+        # check, config validation), close the connection so it doesn't
+        # leak — __aexit__ won't run because the `async with` never entered.
+        try:
+            await self._initialize()
+        except BaseException:
+            self.close()
+            raise
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002

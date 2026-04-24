@@ -29,7 +29,10 @@ async def rebuild_database(
     if mode is None:
         mode = RebuildMode.FULL
 
-    # Wait for any background vacuum before destructive table operations
+    # Wait for any background vacuum before destructive table operations.
+    # Rebuild drops and recreates tables (+ creates indices); a concurrent
+    # optimize on the same table fails with "CreateIndex transaction was
+    # preempted" from lance.
     await client._await_vacuum_tasks()
 
     # Update settings to current config

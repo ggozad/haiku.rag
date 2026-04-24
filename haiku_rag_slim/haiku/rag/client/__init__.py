@@ -96,7 +96,14 @@ class HaikuRAG:
             read_only=self._read_only,
             before=self._before,
         )
-        await self.store._initialize()
+        # If _initialize fails mid-way (e.g. migration check raises after
+        # connect), close the store so we don't leak the LanceDB connection —
+        # __aexit__ won't run because the `async with` never entered.
+        try:
+            await self.store._initialize()
+        except BaseException:
+            self.store.close()
+            raise
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
         self.document_item_repository = DocumentItemRepository(self.store)

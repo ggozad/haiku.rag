@@ -238,3 +238,62 @@ class TestStoreSkipsPathValidationForRemote:
                     skip_migration_check=True,
                 ) as store:
                     assert store is not None
+
+
+class TestInitFailureCleanup:
+    @pytest.mark.asyncio
+    async def test_store_aenter_closes_connection_on_init_failure(
+        self, temp_db_path, monkeypatch
+    ):
+        """If _initialize raises after connect, __aenter__ must close the
+        AsyncConnection so it doesn't leak (no __aexit__ runs in that case)."""
+        mock_conn = AsyncMock()
+        mock_conn.close = lambda: mock_conn.close_calls.append(True)  # type: ignore[attr-defined]
+        mock_conn.close_calls = []  # type: ignore[attr-defined]
+
+        async def fake_connect(*args, **kwargs):
+            return mock_conn
+
+        async def failing_init_tables(self):
+            raise RuntimeError("simulated table init failure")
+
+        monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", fake_connect)
+        monkeypatch.setattr(Store, "_init_tables", failing_init_tables)
+
+        with pytest.raises(RuntimeError, match="simulated table init failure"):
+            async with Store(temp_db_path, create=True) as store:
+                assert store is not None
+
+        assert mock_conn.close_calls == [True], (
+            "AsyncConnection.close() was not called on init failure"
+        )
+
+    @pytest.mark.asyncio
+    async def test_client_aenter_closes_store_on_init_failure(
+        self, temp_db_path, monkeypatch
+    ):
+        """HaikuRAG.__aenter__ must close the store if _initialize fails."""
+        from haiku.rag.client import HaikuRAG
+
+        close_calls: list[bool] = []
+
+        original_close = Store.close
+
+        def tracking_close(self):
+            close_calls.append(True)
+            original_close(self)
+
+        async def failing_init(self):
+            # Set db so close() has something to close
+            self.db = AsyncMock()
+            self.db.close = lambda: None
+            raise RuntimeError("simulated initialize failure")
+
+        monkeypatch.setattr(Store, "_initialize", failing_init)
+        monkeypatch.setattr(Store, "close", tracking_close)
+
+        with pytest.raises(RuntimeError, match="simulated initialize failure"):
+            async with HaikuRAG(temp_db_path, create=True):
+                pass
+
+        assert close_calls, "Store.close() was not called when _initialize raised"
