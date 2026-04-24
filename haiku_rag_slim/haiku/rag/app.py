@@ -645,16 +645,14 @@ class HaikuRAGApp:  # pragma: no cover
 
     async def download_models(self):
         """Download Docling, HuggingFace tokenizer, and Ollama models per config."""
-        from haiku.rag.client import HaikuRAG
-
-        client = HaikuRAG(db_path=None, config=self.config)
+        from haiku.rag.client.downloads import download_models
 
         progress: Progress | None = None
         task_id: TaskID | None = None
         current_model = ""
         current_digest = ""
 
-        async for event in client.download_models():
+        async for event in download_models(self.config):
             if event.status == "start":
                 self.console.print(
                     f"[bold blue]Downloading {event.model}...[/bold blue]"
