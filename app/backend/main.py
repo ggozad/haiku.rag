@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -59,15 +60,23 @@ logger.info(f"QA Provider: {Config.qa.model.provider}, Model: {Config.qa.model.n
 
 # Only HaikuRAG client is a singleton (expensive to create)
 _client: HaikuRAG | None = None
+_client_lock = asyncio.Lock()
 
 
 async def get_client() -> HaikuRAG:
-    """Get or create cached client."""
+    """Get or create the cached client.
+
+    Guarded by a lock because the first request after startup can race with
+    itself: two concurrent callers would both pass the None check, each build
+    and enter a HaikuRAG, and the loser would leak its LanceDB connection.
+    """
     global _client
     if _client is None:
-        client = HaikuRAG(db_path=db_path, config=Config, create=True)
-        await client.__aenter__()
-        _client = client
+        async with _client_lock:
+            if _client is None:
+                client = HaikuRAG(db_path=db_path, config=Config, create=True)
+                await client.__aenter__()
+                _client = client
     return _client
 
 
