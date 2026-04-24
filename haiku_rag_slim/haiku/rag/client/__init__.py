@@ -265,100 +265,28 @@ class HaikuRAG:
     def _extract_structural_title(
         self, docling_document: "DoclingDocument"
     ) -> str | None:
-        """Extract a title from DoclingDocument structural metadata.
+        from haiku.rag.client.titles import extract_structural_title
 
-        Priority: FURNITURE TITLE > BODY TITLE > first SECTION_HEADER.
-        """
-        from docling_core.types.doc.document import ContentLayer
-        from docling_core.types.doc.labels import DocItemLabel
-
-        furniture_title = None
-        body_title = None
-        first_section_header = None
-
-        for item in docling_document.texts:
-            if item.label == DocItemLabel.TITLE:
-                text = item.text.strip()
-                if not text:
-                    continue
-                if item.content_layer == ContentLayer.FURNITURE:
-                    furniture_title = text
-                elif body_title is None:
-                    body_title = text
-            elif (
-                item.label == DocItemLabel.SECTION_HEADER
-                and first_section_header is None
-            ):
-                text = item.text.strip()
-                if text:
-                    first_section_header = text
-
-        return furniture_title or body_title or first_section_header
+        return extract_structural_title(docling_document)
 
     async def _generate_title_with_llm(self, content: str) -> str | None:
-        """Generate a title using LLM from document content."""
-        from pydantic_ai import Agent
+        from haiku.rag.client.titles import generate_title_with_llm
 
-        from haiku.rag.utils import get_model
-
-        truncated = content[:2000]
-
-        model = get_model(self._config.processing.title_model, self._config)
-        agent: Agent[None, str] = Agent(
-            model=model,
-            output_type=str,
-            instructions=(
-                "Generate a concise, descriptive title for the following document. "
-                "The title should be at most 10 words. "
-                "Return ONLY the title text, nothing else."
-            ),
-        )
-        result = await agent.run(truncated)
-        title = result.output.strip()
-        return title if title else None
+        return await generate_title_with_llm(self._config, content)
 
     async def _resolve_title(
         self,
         docling_document: "DoclingDocument",
         content: str,
     ) -> str | None:
-        """Auto-generate a title from document structure or LLM.
+        from haiku.rag.client.titles import resolve_title
 
-        Returns None if auto_title is disabled or generation fails.
-        """
-        if not self._config.processing.auto_title:
-            return None
-
-        structural = self._extract_structural_title(docling_document)
-        if structural:
-            return structural
-
-        try:
-            return await self._generate_title_with_llm(content)
-        except Exception:
-            logger.warning(
-                "LLM title generation failed during ingestion", exc_info=True
-            )
-            return None
+        return await resolve_title(self._config, docling_document, content)
 
     async def generate_title(self, document: Document) -> str | None:
-        """Generate a title for a document.
+        from haiku.rag.client.titles import generate_title
 
-        Attempts structural extraction from the stored DoclingDocument,
-        then falls back to LLM generation. Bypasses the auto_title config
-        since this is an explicit call.
-
-        Does NOT update the document — caller decides.
-        """
-        docling_doc = document.get_docling_document()
-        content = document.content or ""
-
-        if docling_doc is not None:
-            structural = self._extract_structural_title(docling_doc)
-            if structural:
-                return structural
-
-        return await self._generate_title_with_llm(content)
+        return await generate_title(self._config, document)
 
     async def _store_document_with_chunks(
         self,
