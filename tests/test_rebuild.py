@@ -343,6 +343,46 @@ async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch)
 
 
 @pytest.mark.vcr()
+async def test_rebuild_full_source_failure_is_logged_and_skipped(
+    temp_db_path, monkeypatch, caplog
+):
+    """FULL rebuild logs-and-continues when re-ingesting from source fails.
+
+    Covers _rebuild_full's `except Exception` branch: when
+    create_document_from_source raises, the doc is skipped (no yield) and
+    the error is logged. Regression guard against silent failures.
+    """
+    import logging
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "source.txt"
+            source_path.write_text("Content that will vanish by rebuild time.")
+
+            original = await client.create_document_from_source(source=source_path)
+            assert not isinstance(original, list)
+            assert original.id is not None
+
+            # Force the source rebuild branch to raise.
+            async def failing_create(*args, **kwargs):
+                raise RuntimeError("simulated ingestion failure")
+
+            monkeypatch.setattr(client, "create_document_from_source", failing_create)
+
+            with caplog.at_level(logging.ERROR, logger="haiku.rag.client.rebuild"):
+                processed_ids = [
+                    doc_id
+                    async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+                ]
+
+            assert processed_ids == []
+            assert any(
+                "Error recreating document from source" in rec.message
+                for rec in caplog.records
+            )
+
+
+@pytest.mark.vcr()
 async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch):
     """RECHUNK flushes in batches and yields every document.
 
