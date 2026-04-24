@@ -634,11 +634,6 @@ class Store:
         await self.settings_table.restore(int(versions["settings"]))
         return True
 
-    @property
-    def _connection(self):
-        """Compatibility property for repositories expecting _connection."""
-        return self
-
     async def _checkout_tables_before(self, before: datetime) -> None:
         """Checkout all tables to their state at or before the given datetime.
 

@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from haiku.rag.client.processing import ensure_chunks_embedded
+from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -29,7 +31,7 @@ async def _store_document_with_chunks(
     Handles versioning/rollback on failure.
     """
     # Ensure all chunks have embeddings before storing
-    chunks = await client._ensure_chunks_embedded(chunks)
+    chunks = await ensure_chunks_embedded(client._config, chunks)
 
     # Snapshot table versions for versioned rollback (if supported)
     versions = await client.store.current_table_versions()
@@ -77,7 +79,7 @@ async def _update_document_with_chunks(
     """
     assert document.id is not None, "Document ID is required for update"
 
-    chunks = await client._ensure_chunks_embedded(chunks)
+    chunks = await ensure_chunks_embedded(client._config, chunks)
 
     versions = await client.store.current_table_versions()
 
@@ -134,7 +136,7 @@ async def create_document(
     stored_content = docling_document.export_to_markdown()
 
     if title is None:
-        title = await client._resolve_title(docling_document, stored_content)
+        title = await resolve_title(client._config, docling_document, stored_content)
 
     document = Document(
         content=stored_content,
@@ -164,7 +166,7 @@ async def import_document(
     """
     content = docling_document.export_to_markdown()
     if title is None:
-        title = await client._resolve_title(docling_document, content)
+        title = await resolve_title(client._config, docling_document, content)
 
     document = Document(
         content=content,
@@ -285,15 +287,17 @@ async def _create_document_from_file(
         if title is not None:
             existing_doc.title = title
         elif existing_doc.title is None:
-            existing_doc.title = await client._resolve_title(
-                docling_document, stored_content
+            existing_doc.title = await resolve_title(
+                client._config, docling_document, stored_content
             )
         return await _update_document_with_chunks(
             client, existing_doc, embedded_chunks, docling_document
         )
     else:
         if title is None:
-            title = await client._resolve_title(docling_document, stored_content)
+            title = await resolve_title(
+                client._config, docling_document, stored_content
+            )
         document = Document(
             content=stored_content,
             uri=uri,
@@ -379,15 +383,17 @@ async def _create_or_update_document_from_url(
             if title is not None:
                 existing_doc.title = title
             elif existing_doc.title is None:
-                existing_doc.title = await client._resolve_title(
-                    docling_document, stored_content
+                existing_doc.title = await resolve_title(
+                    client._config, docling_document, stored_content
                 )
             return await _update_document_with_chunks(
                 client, existing_doc, embedded_chunks, docling_document
             )
         else:
             if title is None:
-                title = await client._resolve_title(docling_document, stored_content)
+                title = await resolve_title(
+                    client._config, docling_document, stored_content
+                )
             document = Document(
                 content=stored_content,
                 uri=url,

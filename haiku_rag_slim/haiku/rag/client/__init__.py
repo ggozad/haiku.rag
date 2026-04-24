@@ -155,35 +155,9 @@ class HaikuRAG:
 
         return await chunk(self._config, docling_document)
 
-    async def _ensure_chunks_embedded(self, chunks: list[Chunk]) -> list[Chunk]:
-        from haiku.rag.client.processing import ensure_chunks_embedded
-
-        return await ensure_chunks_embedded(self._config, chunks)
-
     # =========================================================================
     # Title Generation
     # =========================================================================
-
-    def _extract_structural_title(
-        self, docling_document: "DoclingDocument"
-    ) -> str | None:
-        from haiku.rag.client.titles import extract_structural_title
-
-        return extract_structural_title(docling_document)
-
-    async def _generate_title_with_llm(self, content: str) -> str | None:
-        from haiku.rag.client.titles import generate_title_with_llm
-
-        return await generate_title_with_llm(self._config, content)
-
-    async def _resolve_title(
-        self,
-        docling_document: "DoclingDocument",
-        content: str,
-    ) -> str | None:
-        from haiku.rag.client.titles import resolve_title
-
-        return await resolve_title(self._config, docling_document, content)
 
     async def generate_title(self, document: Document) -> str | None:
         from haiku.rag.client.titles import generate_title
