@@ -328,13 +328,11 @@ class ChatApp(App):
             state = self._toolset.get_namespace(namespace)
             if not state:
                 continue
-            citation_turns = getattr(state, "citations", [])
+            cited_ids = getattr(state, "citations", [])
             citation_index = getattr(state, "citation_index", {})
-            if citation_turns:
-                latest_ids = citation_turns[-1]
-                for cid in latest_ids:
-                    if cid in citation_index:
-                        citations.append(citation_index[cid])
+            for cid in cited_ids:
+                if cid in citation_index:
+                    citations.append(citation_index[cid])
         if citations:
             await chat_history.add_citations(citations)
 

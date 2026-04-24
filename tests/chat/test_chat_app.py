@@ -277,6 +277,41 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
+    """Citations in state (flat list[str]) render into the chat history."""
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+
+    app, mock_client = _make_app_with_state(temp_db_path)
+
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+        async with app.run_test() as pilot:
+            rag_state = app._toolset.get_namespace(RAG_STATE_NAMESPACE)
+            assert isinstance(rag_state, RAGState)
+
+            citation = Citation(
+                index=1,
+                document_id="doc1",
+                chunk_id="chunk1",
+                document_uri="file:///test/doc1.pdf",
+                document_title="Test Document",
+                page_numbers=[1],
+                content="Cited content",
+            )
+            rag_state.citation_index["chunk1"] = citation
+            rag_state.citations.append("chunk1")
+
+            chat_history = app.query_one(ChatHistory)
+            await app._show_citations_and_programs(chat_history)
+            await pilot.pause()
+
+            widgets = list(chat_history.query(CitationWidget))
+            assert len(widgets) == 1
+            assert widgets[0].citation.chunk_id == "chunk1"
+
+
+@pytest.mark.asyncio
 async def test_document_filter_updates_rag_state(temp_db_path: Path):
     """Test that selecting document filters updates RAGState.document_filter."""
     from haiku.rag.chat.app import RAG_STATE_NAMESPACE

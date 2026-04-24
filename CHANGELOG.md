@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **Chat TUI now renders citations again.** After the 0.42.1 flattening of skill state `citations` to `list[str]`, the TUI still indexed `citations[-1]` and iterated the resulting chunk-id string character-by-character, so no citations resolved through `citation_index` and the citation panel stayed empty. Fixed by iterating `state.citations` directly.
+
 ## [0.42.1] - 2026-04-22
 
 ### Changed
