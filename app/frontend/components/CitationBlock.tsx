@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Citation } from "../lib/sessionStorage";
 
 interface CitationBlockProps {
@@ -73,8 +73,20 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 		loading: false,
 		error: null,
 	});
+	// AbortController for the in-flight visualize fetch so a rapid close/reopen
+	// doesn't let a stale response overwrite the new request's state.
+	const abortRef = useRef<AbortController | null>(null);
+
+	// Abort any in-flight request on unmount.
+	useEffect(() => {
+		return () => abortRef.current?.abort();
+	}, []);
 
 	const fetchVisualGrounding = useCallback(async (chunkId: string) => {
+		abortRef.current?.abort();
+		const controller = new AbortController();
+		abortRef.current = controller;
+
 		setVisualGrounding({
 			isOpen: true,
 			chunkId,
@@ -84,10 +96,12 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 		});
 
 		try {
-			const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
-			const response = await fetch(`${backendUrl}/api/visualize/${chunkId}`);
+			const response = await fetch(`/api/visualize/${chunkId}`, {
+				signal: controller.signal,
+			});
 			const data = await response.json();
 
+			if (controller.signal.aborted) return;
 			if (!response.ok) {
 				throw new Error(data.error || "Failed to fetch visual grounding");
 			}
@@ -99,6 +113,7 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 				error: data.images?.length === 0 ? data.message : null,
 			}));
 		} catch (err) {
+			if (controller.signal.aborted) return;
 			setVisualGrounding((prev) => ({
 				...prev,
 				loading: false,
@@ -108,6 +123,8 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 	}, []);
 
 	const closeVisualGrounding = useCallback(() => {
+		abortRef.current?.abort();
+		abortRef.current = null;
 		setVisualGrounding({
 			isOpen: false,
 			chunkId: null,
