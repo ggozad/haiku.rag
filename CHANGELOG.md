@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **`Store` and CLI commands accept relative database paths again.** The 0.43 migration to `lancedb.connect_async` started routing the path through LanceDB's async URI sanitizer, which treats anything that doesn't look like an absolute local path as a possibly-cloud URI and demands `api_key`/`region`, surfacing as `ValueError: An api_key is required when connecting to LanceDb Cloud`. The path is now resolved to absolute before being handed to LanceDB.
+
 ## [0.43.0] - 2026-04-24
 
 ### Changed
