@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.43.1] - 2026-04-25
+
 ### Fixed
 
 - **Relative `db_path` no longer trips the LanceDB cloud-URI sanitizer.** The 0.43 migration to `lancedb.connect_async` started routing the path through an async URI sanitizer that treats anything not clearly an absolute local path as a possible cloud URI, raising `ValueError: An api_key is required when connecting to LanceDb Cloud` on invocations like `haiku-rag info --db db/rag.lancedb`. The path is now made absolute before being handed to LanceDB.
@@ -1439,7 +1441,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.43.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.43.1...HEAD
+[0.43.1]: https://github.com/ggozad/haiku.rag/compare/0.43.0...0.43.1
 [0.43.0]: https://github.com/ggozad/haiku.rag/compare/0.42.1...0.43.0
 [0.42.1]: https://github.com/ggozad/haiku.rag/compare/0.42.0...0.42.1
 [0.42.0]: https://github.com/ggozad/haiku.rag/compare/0.41.0...0.42.0
