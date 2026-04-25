@@ -43,13 +43,26 @@ class TestConnectionMode:
 
 class TestConnectLancedb:
     @pytest.mark.asyncio
-    async def test_local_passes_db_path(self, temp_db_path):
+    async def test_local_passes_absolute_db_path(self, temp_db_path):
         config = AppConfig(lancedb=LanceDBConfig(uri=""))
         with patch(
             "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
         ) as mock_connect:
             await connect_lancedb(config, db_path=temp_db_path)
-            mock_connect.assert_called_once_with(temp_db_path)
+            mock_connect.assert_called_once_with(temp_db_path.absolute())
+
+    @pytest.mark.asyncio
+    async def test_local_resolves_relative_db_path(self, tmp_path, monkeypatch):
+        from pathlib import Path
+
+        monkeypatch.chdir(tmp_path)
+        relative = Path("db/rag.lancedb")
+        config = AppConfig(lancedb=LanceDBConfig(uri=""))
+        with patch(
+            "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
+        ) as mock_connect:
+            await connect_lancedb(config, db_path=relative)
+            mock_connect.assert_called_once_with(relative.absolute())
 
     @pytest.mark.asyncio
     async def test_cloud_passes_uri_api_key_region(self):
