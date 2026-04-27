@@ -4,6 +4,19 @@ from haiku.rag.store.engine import DocumentItemRecord, Store
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.utils import escape_sql_string
 
+# Columns returned by the lightweight read path. `picture_data` is intentionally
+# excluded so context expansion and the analysis-sandbox items.jsonl build don't
+# pull MB-scale image bytes into memory. Use get_picture_bytes /
+# get_pictures_for_chunk to fetch picture_data explicitly.
+_LIGHT_COLUMNS = [
+    "document_id",
+    "position",
+    "self_ref",
+    "label",
+    "text",
+    "page_numbers",
+]
+
 
 class DocumentItemRepository:
     """Repository for DocumentItem operations."""
@@ -35,6 +48,7 @@ class DocumentItemRepository:
                 label=item.label,
                 text=item.text,
                 page_numbers=json.dumps(item.page_numbers),
+                picture_data=item.picture_data,
             )
             for item in items
         ]
@@ -45,6 +59,7 @@ class DocumentItemRepository:
         safe_id = escape_sql_string(document_id)
         rows = await (
             self.store.document_items_table.query()
+            .select(_LIGHT_COLUMNS)
             .where(f"document_id = '{safe_id}'")
             .to_list()
         )
@@ -64,7 +79,7 @@ class DocumentItemRepository:
         Returns:
             Dict mapping document_id to sorted list of DocumentItem.
         """
-        query = self.store.document_items_table.query()
+        query = self.store.document_items_table.query().select(_LIGHT_COLUMNS)
         if document_ids is not None:
             safe_ids = ", ".join(f"'{escape_sql_string(did)}'" for did in document_ids)
             query = query.where(f"document_id IN ({safe_ids})")
@@ -85,6 +100,7 @@ class DocumentItemRepository:
         safe_id = escape_sql_string(document_id)
         rows = await (
             self.store.document_items_table.query()
+            .select(_LIGHT_COLUMNS)
             .where(
                 f"document_id = '{safe_id}' "
                 f"AND position >= {start} AND position <= {end}"
@@ -122,3 +138,44 @@ class DocumentItemRepository:
         self.store._assert_writable()
         safe_id = escape_sql_string(document_id)
         await self.store.document_items_table.delete(f"document_id = '{safe_id}'")
+
+    async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
+        """Fetch raw picture bytes for a single picture item by self_ref."""
+        safe_id = escape_sql_string(document_id)
+        safe_ref = escape_sql_string(self_ref)
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["picture_data"])
+            .where(f"document_id = '{safe_id}' AND self_ref = '{safe_ref}'")
+            .limit(1)
+            .to_list()
+        )
+        if not rows:
+            return None
+        return rows[0].get("picture_data")
+
+    async def get_pictures_for_chunk(
+        self, document_id: str, refs: list[str]
+    ) -> dict[str, bytes]:
+        """Fetch picture bytes for multiple self_refs within a single document.
+
+        Returns a mapping of self_ref → bytes, including only refs that have
+        non-null picture_data. Refs without bytes (or unknown refs) are omitted.
+        """
+        if not refs:
+            return {}
+
+        safe_id = escape_sql_string(document_id)
+        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["self_ref", "picture_data"])
+            .where(f"document_id = '{safe_id}' AND self_ref IN ({refs_sql})")
+            .to_list()
+        )
+        result: dict[str, bytes] = {}
+        for row in rows:
+            data = row.get("picture_data")
+            if data:
+                result[row["self_ref"]] = data
+        return result

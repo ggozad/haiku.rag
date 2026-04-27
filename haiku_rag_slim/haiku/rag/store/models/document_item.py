@@ -13,6 +13,7 @@ class DocumentItem(BaseModel):
     label: str = ""
     text: str = ""
     page_numbers: list[int] = []
+    picture_data: bytes | None = None
 
 
 def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str | None:

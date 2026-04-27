@@ -349,3 +349,85 @@ class TestDocumentItemMigration:
 
             # No items should have been created
             assert await store.document_items_table.count_rows() == 0
+
+
+@pytest.mark.asyncio
+class TestPictureDataStorage:
+    async def test_create_and_get_picture_bytes(self, temp_db_path):
+        """Round-trip picture bytes through DocumentItem and the repository."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+
+            png_bytes = b"\x89PNG\r\n\x1a\nfake-picture-bytes"
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="paragraph",
+                    text="Some text",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="",
+                    picture_data=png_bytes,
+                ),
+            ]
+            await repo.create_items("doc-1", items)
+
+            # Single-ref lookup
+            got = await repo.get_picture_bytes("doc-1", "#/pictures/0")
+            assert got == png_bytes
+            # Missing ref returns None
+            assert await repo.get_picture_bytes("doc-1", "#/pictures/999") is None
+            # Non-picture row has no bytes
+            assert await repo.get_picture_bytes("doc-1", "#/texts/0") is None
+
+            # Batch lookup omits refs without bytes
+            batch = await repo.get_pictures_for_chunk(
+                "doc-1", ["#/pictures/0", "#/texts/0", "#/pictures/999"]
+            )
+            assert batch == {"#/pictures/0": png_bytes}
+
+            # Empty refs returns empty dict
+            assert await repo.get_pictures_for_chunk("doc-1", []) == {}
+
+    async def test_hot_paths_exclude_picture_data(self, temp_db_path):
+        """Light read paths must NOT pull picture_data into memory."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+
+            heavy = b"x" * 1024
+            await repo.create_items(
+                "doc-1",
+                [
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=0,
+                        self_ref="#/pictures/0",
+                        label="picture",
+                        text="",
+                        picture_data=heavy,
+                    ),
+                ],
+            )
+
+            for item in await repo.get_all_items("doc-1"):
+                assert item.picture_data is None
+            for item in await repo.get_items_in_range("doc-1", 0, 10):
+                assert item.picture_data is None
+            grouped = await repo.get_all_items_grouped(["doc-1"])
+            for item in grouped["doc-1"]:
+                assert item.picture_data is None
+
+            # But the picture-byte accessors still work
+            assert (await repo.get_picture_bytes("doc-1", "#/pictures/0")) == heavy
+
+    async def test_fresh_db_has_picture_data_column(self, temp_db_path):
+        """A newly-created DB has picture_data on document_items via _init_tables."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            schema = await rag.store.document_items_table.schema()
+            assert "picture_data" in {f.name for f in schema}

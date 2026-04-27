@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Storage column for embedded picture bytes.** `DocumentItemRecord` gains a `picture_data: bytes | None` column (Arrow `large_binary`) to hold per-`PictureItem` image bytes addressable by `(document_id, self_ref)`. New repository accessors `get_picture_bytes` and `get_pictures_for_chunk` expose them; the existing items read paths (`get_all_items`, `get_all_items_grouped`, `get_items_in_range`, `_record_to_item`) now project an explicit lightweight column set so context expansion and the analysis-sandbox `items.jsonl` build never pull picture bytes into memory. Existing databases pick up the column via the `0.45.0` migration alongside the picture-byte backfill (see below). Foundation for upcoming vision-in-context retrieval; not yet wired into ingestion or search.
+
 ## [0.44.0] - 2026-04-29
 
 ### Added
