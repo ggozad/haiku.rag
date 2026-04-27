@@ -195,13 +195,23 @@ async def _flush_rebuild_batch(
     if chunks:
         await client.chunk_repository.create(chunks)
 
-    # Repopulate document items from stored docling data
+    # Repopulate document items from stored docling data. The stored docling
+    # blob has had its picture URIs stripped (compress_docling_split), so
+    # re-extracting from it would lose picture_data; snapshot the existing
+    # bytes per document and merge them back during extraction.
     for doc in documents:
         assert doc.id is not None
         docling_doc = doc.get_docling_document()
         if docling_doc is not None:
+            existing_picture_data = (
+                await client.document_item_repository.get_all_picture_data(doc.id)
+            )
             await client.document_item_repository.delete_by_document_id(doc.id)
-            items = extract_items(doc.id, docling_doc)
+            items = extract_items(
+                doc.id,
+                docling_doc,
+                existing_picture_data=existing_picture_data,
+            )
             await client.document_item_repository.create_items(doc.id, items)
 
 

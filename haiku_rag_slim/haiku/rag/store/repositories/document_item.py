@@ -154,6 +154,28 @@ class DocumentItemRepository:
             return None
         return rows[0].get("picture_data")
 
+    async def get_all_picture_data(self, document_id: str) -> dict[str, bytes]:
+        """Snapshot every picture row's bytes for a single document.
+
+        Returns ``{self_ref: picture_data}`` for every row whose
+        ``picture_data`` is non-null. Used by rebuild / update flows to
+        preserve picture bytes across a delete-and-re-extract cycle when the
+        live docling document has already been stripped of its picture URIs.
+        """
+        safe_id = escape_sql_string(document_id)
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["self_ref", "picture_data"])
+            .where(f"document_id = '{safe_id}'")
+            .to_list()
+        )
+        result: dict[str, bytes] = {}
+        for row in rows:
+            data = row.get("picture_data")
+            if data:
+                result[row["self_ref"]] = data
+        return result
+
     async def get_pictures_for_chunk(
         self, document_id: str, refs: list[str]
     ) -> dict[str, bytes]:

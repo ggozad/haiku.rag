@@ -34,12 +34,22 @@ def decompress_json(data: bytes) -> str:
 def compress_docling_split(json_str: str) -> tuple[bytes, bytes | None]:
     """Split a DoclingDocument JSON into structure and pages, compress both with zstd.
 
+    Picture image URIs are stripped from the structure blob — they are stored on
+    the corresponding ``document_items.picture_data`` rows and don't need to be
+    duplicated inside the structure JSON. ``ImageRef.uri`` is required when the
+    field is present, so each picture's ``image`` is set to ``None`` rather than
+    partially mutated to keep the JSON re-validating cleanly.
+
     Returns:
         Tuple of (structure_bytes, pages_bytes). pages_bytes is None if the
         document has no page images.
     """
     data = json.loads(json_str)
     pages = data.pop("pages", None)
+
+    for picture in data.get("pictures") or []:
+        if isinstance(picture, dict):
+            picture["image"] = None
 
     structure_bytes = _zstd_compress(json.dumps(data).encode("utf-8"))
 

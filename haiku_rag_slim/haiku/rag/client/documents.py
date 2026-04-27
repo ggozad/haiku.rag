@@ -96,10 +96,22 @@ async def _update_document_with_chunks(
 
         await client.chunk_repository.create(chunks)
 
-        # Replace document items when a new DoclingDocument is provided
+        # Replace document items when a new DoclingDocument is provided.
+        # Snapshot existing picture bytes first so they survive the
+        # delete-and-re-extract cycle when the live docling has already had
+        # its picture URIs stripped (rebuild / round-trip scenarios).
         if docling_document is not None:
+            existing_picture_data = (
+                await client.document_item_repository.get_all_picture_data(
+                    updated_doc.id
+                )
+            )
             await client.document_item_repository.delete_by_document_id(updated_doc.id)
-            items = extract_items(updated_doc.id, docling_document)
+            items = extract_items(
+                updated_doc.id,
+                docling_document,
+                existing_picture_data=existing_picture_data,
+            )
             await client.document_item_repository.create_items(updated_doc.id, items)
 
         if client._config.storage.auto_vacuum:
