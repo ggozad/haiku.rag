@@ -79,6 +79,46 @@ def create_async_workflow_mocks(
     return submit_response, poll_response, result_response
 
 
+def create_async_workflow_zip_mocks(
+    doc_json: dict,
+    artifacts: dict[str, bytes] | None = None,
+    task_id: str = "test-task-zip",
+) -> tuple[Mock, Mock, Mock]:
+    """Mock responses for the ``target_type=zip`` async workflow.
+
+    Builds a real zip in memory containing the document JSON at the archive
+    root and each ``artifacts[name] = bytes`` entry under ``artifacts/<name>``.
+    The result response exposes the zip via ``.content`` (raw bytes) so the
+    converter's zip-parsing path is exercised end-to-end.
+    """
+    import io
+    import json as _json
+    import zipfile
+
+    submit_response = Mock()
+    submit_response.status_code = 200
+    submit_response.json.return_value = {"task_id": task_id, "task_status": "pending"}
+    submit_response.raise_for_status = Mock()
+
+    poll_response = Mock()
+    poll_response.status_code = 200
+    poll_response.json.return_value = {"task_id": task_id, "task_status": "success"}
+    poll_response.raise_for_status = Mock()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w") as zf:
+        zf.writestr(f"{doc_json.get('name', 'document')}.json", _json.dumps(doc_json))
+        for filename, blob in (artifacts or {}).items():
+            zf.writestr(f"artifacts/{filename}", blob)
+
+    result_response = Mock()
+    result_response.status_code = 200
+    result_response.content = buf.getvalue()
+    result_response.raise_for_status = Mock()
+
+    return submit_response, poll_response, result_response
+
+
 class TestTextFileHandler:
     """Tests for TextFileHandler utility class."""
 
@@ -713,6 +753,122 @@ class TestDoclingServeConverter:
             assert data["ocr_engine"] == "rapidocr"
 
     @pytest.mark.asyncio
+    async def test_picture_images_request_uses_referenced_zip(self, config):
+        """When generate_picture_images is on, the request flips to
+        image_export_mode=referenced + target_type=zip and consumes a zip
+        response — mirrors the upstream docling-serve#576 workaround.
+        """
+        config.processing.conversion_options.generate_picture_images = True
+        converter = DoclingServeConverter(config)
+
+        doc_json = create_mock_docling_document("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_text("# Test")
+
+            data = mock_client.post.call_args.kwargs["data"]
+            assert data["image_export_mode"] == "referenced"
+            assert data["target_type"] == "zip"
+            assert data["include_images"] == "true"
+
+    def test_parse_zip_rehydrates_picture_uri(self, config):
+        """Zip path inlines artifact bytes as data: URIs on PictureItem.image.
+
+        target_type=zip mode emits the URI as ``artifacts/<filename>`` — the
+        same string we use to read the entry out of the archive.
+        """
+        import base64
+        import io
+        import json as _json
+        import zipfile
+
+        converter = DoclingServeConverter(config)
+
+        doc_json = create_mock_docling_document("test")
+        doc_json["pictures"] = [
+            {
+                "self_ref": "#/pictures/0",
+                "parent": {"cref": "#/body"},
+                "children": [],
+                "content_layer": "body",
+                "label": "picture",
+                "prov": [],
+                "captions": [],
+                "references": [],
+                "footnotes": [],
+                "annotations": [],
+                "image": {
+                    "mimetype": "image/png",
+                    "dpi": 144,
+                    "size": {"width": 1.0, "height": 1.0},
+                    "uri": "artifacts/image_000000_test.png",
+                },
+            }
+        ]
+        fake_png = b"\x89PNG\r\n\x1a\nfake-bytes-for-test"
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            zf.writestr("test.json", _json.dumps(doc_json))
+            zf.writestr("artifacts/image_000000_test.png", fake_png)
+
+        doc = converter._parse_zip_to_docling(buf.getvalue(), "test")
+
+        assert len(doc.pictures) == 1
+        image = doc.pictures[0].image
+        assert image is not None
+        uri = str(image.uri)
+        assert uri.startswith("data:image/png;base64,")
+        decoded = base64.b64decode(uri.split(",", 1)[1])
+        assert decoded == fake_png
+
+    def test_parse_zip_leaves_unknown_artifact_uri_unchanged(self, config):
+        """If a PictureItem references an artifact that is not in the zip,
+        the URI is left as-is (no crash, no truncation)."""
+        import io
+        import json as _json
+        import zipfile
+
+        converter = DoclingServeConverter(config)
+        doc_json = create_mock_docling_document("test")
+        doc_json["pictures"] = [
+            {
+                "self_ref": "#/pictures/0",
+                "parent": {"cref": "#/body"},
+                "children": [],
+                "content_layer": "body",
+                "label": "picture",
+                "prov": [],
+                "captions": [],
+                "references": [],
+                "footnotes": [],
+                "annotations": [],
+                "image": {
+                    "mimetype": "image/png",
+                    "dpi": 144,
+                    "size": {"width": 1.0, "height": 1.0},
+                    "uri": "artifacts/missing.png",
+                },
+            }
+        ]
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            zf.writestr("test.json", _json.dumps(doc_json))
+
+        doc = converter._parse_zip_to_docling(buf.getvalue(), "test")
+        assert doc.pictures[0].image is not None
+        assert str(doc.pictures[0].image.uri) == "artifacts/missing.png"
+
+    @pytest.mark.asyncio
     async def test_convert_text_connection_error(self, converter):
         """Test handling of connection errors."""
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -880,7 +1036,12 @@ class TestDoclingServeConverterPictureDescription:
 
     @pytest.mark.asyncio
     async def test_picture_description_options_passed_to_api(self, config):
-        """Test that picture description options are passed to docling-serve API."""
+        """Test that picture description options are passed to docling-serve API.
+
+        Picture descriptions force ``generate_picture_images=True`` upstream,
+        which routes the request through the ``target_type=zip`` path so the
+        VLM can see the actual figures. The test mocks the zip workflow.
+        """
         import json
 
         config.processing.conversion_options.picture_description.enabled = True
@@ -896,7 +1057,7 @@ class TestDoclingServeConverterPictureDescription:
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -914,6 +1075,8 @@ class TestDoclingServeConverterPictureDescription:
 
             assert data["do_picture_description"] == "true"
             assert data["include_images"] == "true"
+            assert data["image_export_mode"] == "referenced"
+            assert data["target_type"] == "zip"
             assert "picture_description_api" in data
 
             api_config = json.loads(data["picture_description_api"])
@@ -1090,15 +1253,18 @@ class TestDoclingServeConverterIntegration:
         assert len(doc.pages) > 0
         assert len(doc.export_to_markdown().strip()) > 100
 
-    @pytest.mark.xfail(
-        reason="docling-serve does not return picture image data in JSON response "
-        "even with include_images=true. Page images work, but extracted picture/figure "
-        "images are not included. This is a docling-serve limitation."
-    )
     @pytest.mark.vcr()
     @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(self, config):
-        """Test PDF conversion includes picture images when enabled."""
+        """Test PDF conversion includes picture images when enabled.
+
+        docling-serve only emits picture image bytes when
+        ``image_export_mode="referenced"`` (upstream issue
+        docling-project/docling-serve#576). The converter switches to
+        ``referenced`` + ``target_type="zip"`` when picture images are
+        wanted, then rehydrates the bundled artifact files into ``data:``
+        URIs so the result is shape-equivalent to the local converter.
+        """
         pdf_path = Path("tests/data/doclaynet.pdf")
         config.processing.conversion_options.generate_picture_images = True
         converter = DoclingServeConverter(config)
@@ -1106,9 +1272,13 @@ class TestDoclingServeConverterIntegration:
         doc = await converter.convert_file(pdf_path)
         assert isinstance(doc, DoclingDocument)
 
-        # Check that at least some pictures have image data
         pictures_with_images = [p for p in doc.pictures if p.image is not None]
-        if doc.pictures:
-            assert len(pictures_with_images) > 0, (
-                "Pictures should have image data when generate_picture_images=True"
-            )
+        assert doc.pictures, "doclaynet.pdf is expected to contain at least one picture"
+        assert len(pictures_with_images) > 0, (
+            "Pictures should have image data when generate_picture_images=True"
+        )
+        sample = pictures_with_images[0]
+        assert sample.image is not None
+        assert str(sample.image.uri).startswith("data:image/"), (
+            "Rehydrated picture URI should be a data: URI, not a bare artifact filename"
+        )
