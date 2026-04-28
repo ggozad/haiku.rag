@@ -291,7 +291,6 @@ class TestRunOptimization:
             document_mapper=lambda doc: None,
             qa_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            system_prompt="You are a test assistant.",
         )
 
     def test_returns_results(self, tmp_path: Path, gepa_mock_result: MagicMock) -> None:

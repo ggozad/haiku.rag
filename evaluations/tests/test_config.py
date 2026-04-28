@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
-from haiku.rag.config.models import AppConfig
 
 
 def _make_spec(**kwargs: object) -> DatasetSpec:
@@ -52,25 +51,6 @@ class TestDatasetSpecDefaults:
         assert spec.retrieval_mapper is None
         assert spec.retrieval_evaluator is None
         assert spec.document_limit is None
-        assert spec.system_prompt is None
-
-
-class TestResolveSystemPrompt:
-    def test_config_prompt_overrides_spec_prompt(self) -> None:
-        spec = _make_spec(system_prompt="spec prompt")
-        config = AppConfig()
-        config.prompts.qa = "config prompt"
-        assert spec.resolve_system_prompt(config) == "config prompt"
-
-    def test_spec_prompt_used_when_config_unset(self) -> None:
-        spec = _make_spec(system_prompt="spec prompt")
-        config = AppConfig()
-        assert spec.resolve_system_prompt(config) == "spec prompt"
-
-    def test_returns_none_when_both_unset(self) -> None:
-        spec = _make_spec()
-        config = AppConfig()
-        assert spec.resolve_system_prompt(config) is None
 
 
 class TestDocumentPayload:

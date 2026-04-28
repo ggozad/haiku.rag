@@ -7,8 +7,6 @@ from datasets import Dataset
 from pydantic_evals import Case
 from pydantic_evals.evaluators import Evaluator
 
-from haiku.rag.config.models import AppConfig
-
 
 @dataclass
 class DocumentPayload:
@@ -47,7 +45,6 @@ class DatasetSpec:
     retrieval_mapper: RetrievalMapper | None = None
     retrieval_evaluator: Evaluator | None = None
     document_limit: int | None = None
-    system_prompt: str | None = None
 
     def db_path(self, override_path: Path | None = None) -> Path:
         """Get the database path.
@@ -65,11 +62,3 @@ class DatasetSpec:
 
         data_dir = get_default_data_dir()
         return data_dir / "evaluations" / "dbs" / self.db_filename
-
-    def resolve_system_prompt(self, config: AppConfig) -> str | None:
-        """Resolve the QA system prompt.
-
-        Precedence: config.prompts.qa > spec.system_prompt > None
-        (get_qa_agent handles the final fallback to QA_SYSTEM_PROMPT)
-        """
-        return config.prompts.qa or self.system_prompt

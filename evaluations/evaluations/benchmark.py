@@ -406,9 +406,7 @@ async def run_qa_benchmark(
 
     if target == "qa":
         async with HaikuRAG(db, config=config) as rag:
-            qa = get_qa_agent(
-                rag, config, system_prompt=spec.resolve_system_prompt(config)
-            )
+            qa = get_qa_agent(rag, config)
 
             async def answer_question(question: str) -> str:
                 answer, _ = await qa.answer(question)
