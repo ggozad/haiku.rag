@@ -61,6 +61,8 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
 - `--judge-model PROVIDER:NAME` - Override the LLM judge model (default: `config.qa.model`)
+- `--target {qa,rag-skill,analysis-skill}` - Choose what to benchmark (default: `qa`). `rag-skill` and `analysis-skill` run the corresponding [skill](skills/index.md) end-to-end against the same datasets and judge as the QA agent.
+- `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`). Only valid with skill targets.
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
@@ -86,6 +88,12 @@ If no config file is specified, the script searches standard locations: `./haiku
 ### QA Accuracy
 
 For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. By default the judge uses the same model as QA (`config.qa.model`); override with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
+
+### Citation Retrieval
+
+When benchmarking a skill (`--target rag-skill` or `--target analysis-skill`), a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MRR / MAP math as raw retrieval. The score key is `cited_mrr` for single-doc datasets and `cited_map` for multi-doc. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
+
+This is computed alongside QA accuracy from the same skill run — no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
 
 ## RepliQA
 

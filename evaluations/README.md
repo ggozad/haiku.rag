@@ -39,6 +39,21 @@ evaluations run repliqa --skip-qa
 evaluations run repliqa --limit 100
 ```
 
+### Benchmarking the skills
+
+By default `evaluations run` benchmarks the QA agent. Pass `--target` to
+benchmark the RAG or analysis skill instead, against the same datasets and judge:
+
+```bash
+evaluations run wix --target rag-skill
+evaluations run wix --target analysis-skill --skill-model ollama:gpt-oss
+```
+
+`--skill-model "provider:name"` overrides the skill model independently from
+the judge (defaults to `qa.model`). For skill targets, a citation retrieval
+metric (`cited_mrr` / `cited_map`) is computed alongside QA accuracy from the
+URIs the skill registered via the `cite` tool.
+
 ### Pre-built Databases
 
 Download pre-built evaluation databases from HuggingFace:
