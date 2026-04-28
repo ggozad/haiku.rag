@@ -401,7 +401,19 @@ class ChatApp(App):
         """Show the current session state."""
         from haiku.skills.chat.app import StateScreen
 
-        self.push_screen(StateScreen(self._state))
+        self.push_screen(StateScreen(self._state, on_save=self._apply_state_edit))
+
+    def _apply_state_edit(self, new_state: dict[str, Any]) -> None:
+        if self._toolset is None:
+            return
+        if not isinstance(new_state, dict):
+            raise ValueError("state must be a JSON object")
+        for namespace, data in new_state.items():
+            current = self._toolset.get_namespace(namespace)
+            if current is not None:
+                type(current).model_validate(data)
+        self._toolset.restore_state_snapshot(new_state)
+        self._state = self._toolset.build_state_snapshot()
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""
