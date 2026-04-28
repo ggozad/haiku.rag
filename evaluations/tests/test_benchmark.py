@@ -192,3 +192,133 @@ class TestEvaluateDatasetJudgeModel:
 
         mock_qa.assert_called_once()
         assert mock_qa.call_args[1]["judge_model"] is custom_judge
+
+
+class TestExperimentMetadataTargets:
+    def test_default_target_is_qa(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test", test_cases=1, config=AppConfig()
+        )
+        assert result["target"] == "qa"
+        assert "skill_provider" not in result
+        assert "skill_model" not in result
+
+    def test_skill_target_includes_skill_config(self) -> None:
+        skill = ModelConfig(provider="ollama", name="gpt-oss-large", temperature=0.2)
+        result = build_experiment_metadata(
+            dataset_key="test",
+            test_cases=1,
+            config=AppConfig(),
+            target="rag-skill",
+            skill_config=skill,
+        )
+        assert result["target"] == "rag-skill"
+        assert result["skill_provider"] == "ollama"
+        assert result["skill_model"] == "gpt-oss-large"
+        assert result["skill_temperature"] == 0.2
+
+
+class TestEvaluateDatasetTarget:
+    def _spec(self) -> DatasetSpec:
+        return DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        )
+
+    @pytest.mark.asyncio
+    async def test_threads_target_and_skill_model(self) -> None:
+        skill = ModelConfig(provider="ollama", name="gpt-oss")
+        with patch(
+            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+        ) as mock_qa:
+            await evaluate_dataset(
+                spec=self._spec(),
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=True,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+                target="rag-skill",
+                skill_model=skill,
+            )
+
+        mock_qa.assert_called_once()
+        assert mock_qa.call_args[1]["target"] == "rag-skill"
+        assert mock_qa.call_args[1]["skill_model"] is skill
+
+    @pytest.mark.asyncio
+    async def test_default_target_is_qa(self) -> None:
+        with patch(
+            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+        ) as mock_qa:
+            await evaluate_dataset(
+                spec=self._spec(),
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=True,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+            )
+        assert mock_qa.call_args[1]["target"] == "qa"
+        assert mock_qa.call_args[1]["skill_model"] is None
+
+
+class TestRunQaBenchmarkSkillTarget:
+    def _spec(self, tmp_path: Path) -> DatasetSpec:
+        return DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        )
+
+    @pytest.mark.asyncio
+    async def test_rag_skill_target_uses_run_skill_question(
+        self, tmp_path: Path
+    ) -> None:
+        from evaluations.skill_runner import SkillRunResult
+
+        skill_run = AsyncMock(return_value=SkillRunResult(answer="from skill"))
+        with (
+            patch("evaluations.benchmark.get_model") as mock_get_model,
+            patch(
+                "evaluations.benchmark.run_skill_question", new=skill_run
+            ) as mock_run_skill,
+            patch("evaluations.benchmark.HaikuRAG") as mock_haiku,
+        ):
+            mock_get_model.return_value = "fake-model"
+            await run_qa_benchmark(
+                self._spec(tmp_path),
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                target="rag-skill",
+            )
+
+        # When target is rag-skill, HaikuRAG context manager is NOT entered
+        # (the skill manages its own client via lifespan).
+        mock_haiku.assert_not_called()
+        # skill model defaults to qa.model when not provided
+        skill_call = mock_get_model.call_args_list[-1]
+        assert skill_call[0][0] == AppConfig().qa.model
+        assert mock_run_skill is skill_run
+
+    @pytest.mark.asyncio
+    async def test_analysis_skill_target_resolves_factory(self, tmp_path: Path) -> None:
+        from evaluations.benchmark import _skill_factory_for_target
+        from haiku.rag.skills.analysis import create_skill as analysis_factory
+        from haiku.rag.skills.rag import create_skill as rag_factory
+
+        assert _skill_factory_for_target("rag-skill") is rag_factory
+        assert _skill_factory_for_target("analysis-skill") is analysis_factory
+        with pytest.raises(ValueError, match="not a skill target"):
+            _skill_factory_for_target("qa")  # type: ignore[arg-type]

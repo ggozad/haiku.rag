@@ -2,7 +2,7 @@ import asyncio
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import logfire
 import typer
@@ -17,12 +17,16 @@ from rich.progress import Progress
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
+from evaluations.skill_runner import SkillFactory, run_skill_question
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model, parse_model_option
+
+Target = Literal["qa", "rag-skill", "analysis-skill"]
+TARGETS: tuple[Target, ...] = ("qa", "rag-skill", "analysis-skill")
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -39,11 +43,14 @@ def build_experiment_metadata(
     test_cases: int,
     config: AppConfig,
     judge_config: ModelConfig | None = None,
+    target: Target = "qa",
+    skill_config: ModelConfig | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
     metadata: dict[str, Any] = {
         "dataset": dataset_key,
         "test_cases": test_cases,
+        "target": target,
         "embedder_provider": config.embeddings.model.provider,
         "embedder_model": config.embeddings.model.name,
         "embedder_dim": config.embeddings.model.vector_dim,
@@ -69,6 +76,16 @@ def build_experiment_metadata(
                 "judge_temperature": judge_config.temperature,
                 "judge_max_tokens": judge_config.max_tokens,
                 "judge_enable_thinking": judge_config.enable_thinking,
+            }
+        )
+    if skill_config is not None:
+        metadata.update(
+            {
+                "skill_provider": skill_config.provider,
+                "skill_model": skill_config.name,
+                "skill_temperature": skill_config.temperature,
+                "skill_max_tokens": skill_config.max_tokens,
+                "skill_enable_thinking": skill_config.enable_thinking,
             }
         )
     return metadata
@@ -260,6 +277,18 @@ async def run_retrieval_benchmark(
     }
 
 
+def _skill_factory_for_target(target: Target) -> SkillFactory:
+    if target == "rag-skill":
+        from haiku.rag.skills.rag import create_skill
+
+        return create_skill
+    if target == "analysis-skill":
+        from haiku.rag.skills.analysis import create_skill
+
+        return create_skill
+    raise ValueError(f"target {target!r} is not a skill target")
+
+
 async def run_qa_benchmark(
     spec: DatasetSpec,
     config: AppConfig,
@@ -267,6 +296,8 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
+    target: Target = "qa",
+    skill_model: ModelConfig | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     if limit is not None:
@@ -298,21 +329,49 @@ async def run_qa_benchmark(
     )
 
     db = spec.db_path(db_path)
-    async with HaikuRAG(db, config=config) as rag:
-        qa = get_qa_agent(rag, config, system_prompt=spec.resolve_system_prompt(config))
+    skill_config = skill_model or config.qa.model if target != "qa" else None
+
+    eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
+    experiment_metadata = build_experiment_metadata(
+        dataset_key=spec.key,
+        test_cases=len(cases),
+        config=config,
+        judge_config=judge_config,
+        target=target,
+        skill_config=skill_config,
+    )
+
+    if target == "qa":
+        async with HaikuRAG(db, config=config) as rag:
+            qa = get_qa_agent(
+                rag, config, system_prompt=spec.resolve_system_prompt(config)
+            )
+
+            async def answer_question(question: str) -> str:
+                answer, _ = await qa.answer(question)
+                return answer
+
+            report = await evaluation_dataset.evaluate(
+                answer_question,
+                name=eval_name,
+                max_concurrency=1,
+                progress=True,
+                metadata=experiment_metadata,
+            )
+    else:
+        skill_factory = _skill_factory_for_target(target)
+        assert skill_config is not None
+        resolved_skill_model = get_model(skill_config, config)
 
         async def answer_question(question: str) -> str:
-            answer, _ = await qa.answer(question)
-            return answer
-
-        eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
-
-        experiment_metadata = build_experiment_metadata(
-            dataset_key=spec.key,
-            test_cases=len(cases),
-            config=config,
-            judge_config=judge_config,
-        )
+            result = await run_skill_question(
+                skill_factory=skill_factory,
+                db_path=db,
+                config=config,
+                question=question,
+                skill_model=resolved_skill_model,
+            )
+            return result.answer
 
         report = await evaluation_dataset.evaluate(
             answer_question,
@@ -361,6 +420,8 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
+    target: Target = "qa",
+    skill_model: ModelConfig | None = None,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -380,7 +441,9 @@ async def evaluate_dataset(
         )
 
     if not skip_qa:
-        console.print("\nRunning QA benchmarks...", style="bold yellow")
+        console.print(
+            f"\nRunning QA benchmarks (target={target})...", style="bold yellow"
+        )
         await run_qa_benchmark(
             spec,
             config,
@@ -388,6 +451,8 @@ async def evaluate_dataset(
             name=name,
             db_path=db_path,
             judge_model=judge_model,
+            target=target,
+            skill_model=skill_model,
         )
 
 
@@ -462,10 +527,33 @@ def run(
         "--judge-model",
         help="Judge model as 'provider:name' (e.g. 'ollama:gpt-oss').",
     ),
+    target: str = typer.Option(
+        "qa",
+        "--target",
+        help="What to benchmark: qa | rag-skill | analysis-skill.",
+    ),
+    skill_model: str | None = typer.Option(
+        None,
+        "--skill-model",
+        help=(
+            "Skill model as 'provider:name'. Used when --target is rag-skill or "
+            "analysis-skill. Defaults to qa.model from the config."
+        ),
+    ),
 ) -> None:
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
+    if target not in TARGETS:
+        raise typer.BadParameter(
+            f"Unknown target {target!r}. Choose from: {', '.join(TARGETS)}"
+        )
+    target_value = cast(Target, target)
     judge_model_config = parse_model_option(judge_model) if judge_model else None
+    skill_model_config = parse_model_option(skill_model) if skill_model else None
+    if target_value == "qa" and skill_model_config is not None:
+        raise typer.BadParameter(
+            "--skill-model is only valid when --target is rag-skill or analysis-skill."
+        )
 
     asyncio.run(
         evaluate_dataset(
@@ -480,6 +568,8 @@ def run(
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
             judge_model=judge_model_config,
+            target=target_value,
+            skill_model=skill_model_config,
         )
     )
 
