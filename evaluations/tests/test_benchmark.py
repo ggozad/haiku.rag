@@ -322,3 +322,94 @@ class TestRunQaBenchmarkSkillTarget:
         assert _skill_factory_for_target("analysis-skill") is analysis_factory
         with pytest.raises(ValueError, match="not a skill target"):
             _skill_factory_for_target("qa")  # type: ignore[arg-type]
+
+
+class TestCitationEvaluatorWiring:
+    def test_returns_mrr_twin_for_mrr_evaluator(self) -> None:
+        from evaluations.benchmark import _citation_evaluator_for
+        from evaluations.evaluators import CitationMRREvaluator, MRREvaluator
+
+        result = _citation_evaluator_for(MRREvaluator())
+        assert isinstance(result, CitationMRREvaluator)
+
+    def test_returns_map_twin_for_map_evaluator(self) -> None:
+        from evaluations.benchmark import _citation_evaluator_for
+        from evaluations.evaluators import CitationMAPEvaluator, MAPEvaluator
+
+        result = _citation_evaluator_for(MAPEvaluator())
+        assert isinstance(result, CitationMAPEvaluator)
+
+    def test_returns_none_for_no_evaluator(self) -> None:
+        from evaluations.benchmark import _citation_evaluator_for
+
+        assert _citation_evaluator_for(None) is None
+
+
+class TestAttachRelevantUris:
+    def test_joins_by_question(self) -> None:
+        from pydantic_evals import Case
+
+        from evaluations.benchmark import _attach_relevant_uris
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MRREvaluator
+
+        cases: list[Case[str, str, dict]] = [
+            Case(name="c1", inputs="What is X?", expected_output="X is a thing"),
+            Case(
+                name="c2",
+                inputs="What is Y?",
+                expected_output="Y is another",
+                metadata={"existing": "value"},
+            ),
+            Case(
+                name="c3",
+                inputs="What is Z?",
+                expected_output="not in retrieval set",
+            ),
+        ]
+
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            retrieval_loader=lambda: [  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                {"q": "What is X?", "uris": ("uri-x",)},
+                {"q": "What is Y?", "uris": ("uri-y1", "uri-y2")},
+            ],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluator=MRREvaluator(),
+        )
+
+        _attach_relevant_uris(cases, spec, limit=None)
+
+        assert cases[0].metadata == {"relevant_uris": ["uri-x"]}
+        assert cases[1].metadata == {
+            "existing": "value",
+            "relevant_uris": ["uri-y1", "uri-y2"],
+        }
+        # case c3 has no matching retrieval sample — metadata untouched
+        assert cases[2].metadata is None
+
+    def test_no_op_without_retrieval_loader(self) -> None:
+        from pydantic_evals import Case
+
+        from evaluations.benchmark import _attach_relevant_uris
+
+        cases: list[Case[str, str, dict]] = [
+            Case(name="c1", inputs="q", expected_output="a"),
+        ]
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        )
+        _attach_relevant_uris(cases, spec, limit=None)
+        assert cases[0].metadata is None

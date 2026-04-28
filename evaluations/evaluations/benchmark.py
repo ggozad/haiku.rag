@@ -1,6 +1,6 @@
 import asyncio
 import shutil
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -8,15 +8,21 @@ import logfire
 import typer
 from dotenv import find_dotenv, load_dotenv
 from huggingface_hub import HfApi, snapshot_download
-from pydantic_evals import Case, Dataset as EvalDataset
-from pydantic_evals.evaluators import LLMJudge
+from pydantic_evals import Case, Dataset as EvalDataset, set_eval_attribute
+from pydantic_evals.evaluators import Evaluator, LLMJudge
 from pydantic_evals.reporting import ReportCaseFailure
 from rich.console import Console
 from rich.progress import Progress
 
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
-from evaluations.evaluators import ANSWER_EQUIVALENCE_RUBRIC
+from evaluations.evaluators import (
+    ANSWER_EQUIVALENCE_RUBRIC,
+    CitationMAPEvaluator,
+    CitationMRREvaluator,
+    MAPEvaluator,
+    MRREvaluator,
+)
 from evaluations.skill_runner import SkillFactory, run_skill_question
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
@@ -24,6 +30,11 @@ from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model, parse_model_option
+
+_CITATION_EVALUATORS: dict[type[Evaluator], type[Evaluator]] = {
+    MRREvaluator: CitationMRREvaluator,
+    MAPEvaluator: CitationMAPEvaluator,
+}
 
 Target = Literal["qa", "rag-skill", "analysis-skill"]
 TARGETS: tuple[Target, ...] = ("qa", "rag-skill", "analysis-skill")
@@ -289,6 +300,44 @@ def _skill_factory_for_target(target: Target) -> SkillFactory:
     raise ValueError(f"target {target!r} is not a skill target")
 
 
+def _citation_evaluator_for(retrieval_evaluator: Evaluator | None) -> Evaluator | None:
+    """Return the citation-scoring twin of the dataset's retrieval evaluator."""
+    if retrieval_evaluator is None:
+        return None
+    twin = _CITATION_EVALUATORS.get(type(retrieval_evaluator))
+    return twin() if twin is not None else None
+
+
+def _attach_relevant_uris(
+    cases: list[Case[str, str, dict[str, Any]]],
+    spec: DatasetSpec,
+    limit: int | None,
+) -> None:
+    """Augment QA cases with `relevant_uris` joined from retrieval samples.
+
+    Mutates each case's metadata in place. Cases with no matching retrieval
+    sample (by question) are left untouched.
+    """
+    if spec.retrieval_loader is None or spec.retrieval_mapper is None:
+        return
+    corpus = spec.retrieval_loader()
+    if limit is not None:
+        corpus = corpus.select(range(min(limit, len(corpus))))
+    expected_by_question: dict[str, tuple[str, ...]] = {}
+    for raw in corpus:
+        sample = spec.retrieval_mapper(cast(Mapping[str, Any], raw))
+        if sample is None or sample.skip:
+            continue
+        expected_by_question[sample.question] = sample.expected_uris
+    for case in cases:
+        uris = expected_by_question.get(case.inputs)
+        if uris is None:
+            continue
+        metadata = case.metadata if case.metadata is not None else {}
+        metadata["relevant_uris"] = list(uris)
+        case.metadata = metadata
+
+
 async def run_qa_benchmark(
     spec: DatasetSpec,
     config: AppConfig,
@@ -309,27 +358,32 @@ async def run_qa_benchmark(
     ]
 
     judge_config = judge_model or config.qa.model
-    judge = get_model(judge_config, config)
+    skill_config = (skill_model or config.qa.model) if target != "qa" else None
+    db = spec.db_path(db_path)
+
+    citation_evaluator: Evaluator | None = None
+    if target != "qa":
+        _attach_relevant_uris(cases, spec, limit)
+        citation_evaluator = _citation_evaluator_for(spec.retrieval_evaluator)
+
+    evaluators: list[Evaluator] = [
+        LLMJudge(
+            rubric=ANSWER_EQUIVALENCE_RUBRIC,
+            include_input=True,
+            include_expected_output=True,
+            model=get_model(judge_config, config),
+            assertion={
+                "evaluation_name": "answer_equivalent",
+                "include_reason": True,
+            },
+        ),
+    ]
+    if citation_evaluator is not None:
+        evaluators.append(citation_evaluator)
 
     evaluation_dataset = EvalDataset[str, str, dict[str, str]](
-        name=spec.key,
-        cases=cases,
-        evaluators=[
-            LLMJudge(
-                rubric=ANSWER_EQUIVALENCE_RUBRIC,
-                include_input=True,
-                include_expected_output=True,
-                model=judge,
-                assertion={
-                    "evaluation_name": "answer_equivalent",
-                    "include_reason": True,
-                },
-            ),
-        ],
+        name=spec.key, cases=cases, evaluators=evaluators
     )
-
-    db = spec.db_path(db_path)
-    skill_config = skill_model or config.qa.model if target != "qa" else None
 
     eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
     experiment_metadata = build_experiment_metadata(
@@ -341,6 +395,15 @@ async def run_qa_benchmark(
         skill_config=skill_config,
     )
 
+    async def _evaluate(answer_fn: Callable[[str], Awaitable[str]]):
+        return await evaluation_dataset.evaluate(
+            answer_fn,
+            name=eval_name,
+            max_concurrency=1,
+            progress=True,
+            metadata=experiment_metadata,
+        )
+
     if target == "qa":
         async with HaikuRAG(db, config=config) as rag:
             qa = get_qa_agent(
@@ -351,13 +414,7 @@ async def run_qa_benchmark(
                 answer, _ = await qa.answer(question)
                 return answer
 
-            report = await evaluation_dataset.evaluate(
-                answer_question,
-                name=eval_name,
-                max_concurrency=1,
-                progress=True,
-                metadata=experiment_metadata,
-            )
+            report = await _evaluate(answer_question)
     else:
         skill_factory = _skill_factory_for_target(target)
         assert skill_config is not None
@@ -371,15 +428,10 @@ async def run_qa_benchmark(
                 question=question,
                 skill_model=resolved_skill_model,
             )
+            set_eval_attribute("cited_uris", result.cited_uris)
             return result.answer
 
-        report = await evaluation_dataset.evaluate(
-            answer_question,
-            name=eval_name,
-            max_concurrency=1,
-            progress=True,
-            metadata=experiment_metadata,
-        )
+        report = await _evaluate(answer_question)
 
     passing_cases = sum(
         1
@@ -389,13 +441,36 @@ async def run_qa_benchmark(
     )
     total_processed = len(report.cases)
     failures = report.failures
-
     accuracy = passing_cases / total_processed if total_processed > 0 else 0
 
     console.print("\n=== QA Benchmark Results ===", style="bold cyan")
     console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
+
+    if citation_evaluator is not None:
+        score_key = citation_evaluator.get_default_evaluation_name()
+        scores = [
+            case.scores[score_key].value
+            for case in report.cases
+            if score_key in case.scores
+        ]
+        if scores:
+            cited_count = sum(
+                1 for case in report.cases if case.attributes.get("cited_uris")
+            )
+            mean_citations = sum(
+                len(case.attributes.get("cited_uris") or []) for case in report.cases
+            ) / len(report.cases)
+            mean_score = sum(scores) / len(scores)
+            console.print(
+                f"\n=== Citation Retrieval ({score_key}) ===", style="bold cyan"
+            )
+            console.print(f"Mean {score_key}: {mean_score:.4f}")
+            console.print(
+                f"Cite rate (≥1 citation): {cited_count / len(report.cases):.2%}"
+            )
+            console.print(f"Mean citations per case: {mean_citations:.2f}")
 
     if failures:
         console.print("[red]\nSummary of failures:[/red]")

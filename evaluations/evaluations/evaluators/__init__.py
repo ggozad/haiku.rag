@@ -1,3 +1,7 @@
+from evaluations.evaluators.citation import (
+    CitationMAPEvaluator,
+    CitationMRREvaluator,
+)
 from evaluations.evaluators.judge import (
     ANSWER_EQUIVALENCE_RUBRIC,
     LLMJudge,
@@ -8,6 +12,8 @@ from evaluations.evaluators.mrr import MRREvaluator
 
 __all__ = [
     "ANSWER_EQUIVALENCE_RUBRIC",
+    "CitationMAPEvaluator",
+    "CitationMRREvaluator",
     "LLMJudge",
     "LLMJudgeResponseSchema",
     "MAPEvaluator",
