@@ -39,6 +39,11 @@ _CITATION_EVALUATORS: dict[type[Evaluator], type[Evaluator]] = {
 Target = Literal["qa", "rag-skill", "analysis-skill"]
 TARGETS: tuple[Target, ...] = ("qa", "rag-skill", "analysis-skill")
 
+# Pinned judge model. Decoupled from `config.qa.model` so a user changing
+# their QA model does not inadvertently change the judge — keeps cross-run
+# comparisons stable. Override per-run with `--judge-model provider:name`.
+DEFAULT_JUDGE_MODEL = ModelConfig(provider="ollama", name="qwen3.6")
+
 load_dotenv(find_dotenv(usecwd=True))
 
 HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
@@ -357,7 +362,7 @@ async def run_qa_benchmark(
         for index, doc in enumerate(corpus, start=1)
     ]
 
-    judge_config = judge_model or config.qa.model
+    judge_config = judge_model or DEFAULT_JUDGE_MODEL
     skill_config = (skill_model or config.qa.model) if target != "qa" else None
     db = spec.db_path(db_path)
 
@@ -598,7 +603,7 @@ def run(
     judge_model: str | None = typer.Option(
         None,
         "--judge-model",
-        help="Judge model as 'provider:name' (e.g. 'ollama:gpt-oss').",
+        help="Judge model as 'provider:name'. Defaults to ollama:qwen3.6.",
     ),
     target: str = typer.Option(
         "qa",
@@ -666,7 +671,7 @@ def optimize(
     judge_model: str | None = typer.Option(
         None,
         "--judge-model",
-        help="Judge model as 'provider:name' (e.g. 'ollama:gpt-oss').",
+        help="Judge model as 'provider:name'. Defaults to ollama:qwen3.6.",
     ),
     reflect_model: str | None = typer.Option(
         None,

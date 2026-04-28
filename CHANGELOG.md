@@ -9,6 +9,8 @@
 
 ### Changed
 
+- **Pinned eval judge defaults to `ollama:gpt-oss`.** Previously `--judge-model` defaulted to `config.qa.model`, so changing the QA or skill model also changed the judge — destabilizing cross-run comparisons and re-introducing self-judging whenever the answerer was already gpt-oss. The default is now a fixed `ollama:gpt-oss`; pass `--judge-model provider:name` to override.
+- **Tightened `cite` framing in the RAG skill's `SKILL.md`.** `cite` is now a precondition for the final answer: the model identifies supporting chunk IDs and calls `cite` *before* writing the response. The "MUST cite before answering" requirement carries an explicit refusal carve-out so the model does not cite irrelevant chunks when knowledge is missing. On the wix benchmark this lifted cite rate from 32% → 96%, mean `cited_map` from 0.15 → 0.48, and cut the "correct answer with no citation" pattern from 52% of cases to 1%, with QA accuracy holding at ~78%.
 - **Removed dataset-specific eval system prompts.** `WIX_SUPPORT_PROMPT` and `ORB_SYSTEM_PROMPT` duplicated guidance already in the shipped `QA_SYSTEM_PROMPT` and `SKILL.md`, and ORB's referenced the obsolete `search_documents` tool name. The eval-side machinery for injecting them (`DatasetSpec.system_prompt`, `resolve_system_prompt()`) is removed. `config.prompts.qa` remains as the user-facing override knob.
 
 ## [0.43.1] - 2026-04-25

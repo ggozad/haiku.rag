@@ -60,7 +60,7 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--judge-model PROVIDER:NAME` - Override the LLM judge model (default: `config.qa.model`)
+- `--judge-model PROVIDER:NAME` - Override the LLM judge model. Defaults to `ollama:qwen3.6` so the judge stays stable when the QA / skill model changes.
 - `--target {qa,rag-skill,analysis-skill}` - Choose what to benchmark (default: `qa`). `rag-skill` and `analysis-skill` run the corresponding [skill](skills/index.md) end-to-end against the same datasets and judge as the QA agent.
 - `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`). Only valid with skill targets.
 
@@ -87,7 +87,9 @@ If no config file is specified, the script searches standard locations: `./haiku
 
 ### QA Accuracy
 
-For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. By default the judge uses the same model as QA (`config.qa.model`); override with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
+For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. The default judge is `ollama:qwen3.6` — pinned so changes to the QA or skill model don't change the judge underneath. Override per run with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
+
+We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
 ### Citation Retrieval
 
@@ -143,6 +145,16 @@ We benchmark both the plain text version (HTML stripped, no structure) and HTML 
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.82     | html, `chunk-radius=2`       |
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.80     | html, `chunk-radius=2`       |
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.83     | html, `chunk-radius=2`, `jinaai/jina-reranker-v3` |
+
+### Skill QA + citation retrieval
+
+`evaluations run wix --target rag-skill` benchmarks the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
+
+| Skill model      | QA accuracy | Cite rate | Mean `cited_map` |
+|------------------|-------------|-----------|------------------|
+| `ollama:gpt-oss` | 0.78        | 0.96      | 0.48             |
+
+35 % of cases produce a perfect citation (`cited_map` = 1.0). 1 % of correct answers come back without a citation — the rest are grounded.
 
 ## HotpotQA
 

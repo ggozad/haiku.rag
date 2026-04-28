@@ -145,7 +145,9 @@ class TestRunQaBenchmarkJudgeModel:
         mock_get_model.assert_called_once_with(custom_judge, AppConfig())
 
     @pytest.mark.asyncio
-    async def test_defaults_to_judge_model_config(self, tmp_path: Path) -> None:
+    async def test_defaults_to_pinned_judge_model(self, tmp_path: Path) -> None:
+        from evaluations.benchmark import DEFAULT_JUDGE_MODEL
+
         with (
             patch("evaluations.benchmark.get_model") as mock_get_model,
             patch("evaluations.benchmark.HaikuRAG"),
@@ -158,7 +160,7 @@ class TestRunQaBenchmarkJudgeModel:
                 db_path=tmp_path / "test.lancedb",
             )
 
-        mock_get_model.assert_called_once_with(AppConfig().qa.model, AppConfig())
+        mock_get_model.assert_called_once_with(DEFAULT_JUDGE_MODEL, AppConfig())
 
 
 class TestEvaluateDatasetJudgeModel:
