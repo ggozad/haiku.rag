@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -18,6 +19,29 @@ jobs:
           python-version-file: "pyproject.toml"
       - name: Install dependencies
         run: uv sync --package haiku.rag-slim --extra docling --no-dev
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Wait for Ollama
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/version >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Ollama did not become ready within 30s" >&2
+          exit 1
+      - name: Cache Ollama models
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-models-qwen3-embedding-4b-v1
+      - name: Pull embedding model
+        run: ollama pull qwen3-embedding:4b
+      - name: Warm embedding model
+        run: |
+          curl -sf -X POST http://localhost:11434/api/embed \
+            -d '{"model":"qwen3-embedding:4b","input":"warmup"}' >/dev/null
       - name: Restore previous RAG database
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,9 +62,6 @@ jobs:
             uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml init --db rag.lancedb
           fi
       - name: Build RAG database
-        env:
-          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml add-src docs/ --db rag.lancedb
       - name: Vacuum database
         run: uv run haiku-rag --config ${{ github.workspace }}/.github/haiku.rag.yaml vacuum --db rag.lancedb
