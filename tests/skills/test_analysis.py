@@ -273,10 +273,10 @@ class TestAnalysisLifespan:
         from pydantic_ai.models.test import TestModel
 
         from haiku.rag.skills.analysis import create_skill
-        from haiku.skills.agent import _run_skill
+        from haiku.skills.agent import run_skill
 
         skill = create_skill(db_path=rag_db)
-        result, *_ = await _run_skill(TestModel(), skill, "Print the document count.")
+        result, *_ = await run_skill(TestModel(), skill, "Print the document count.")
         assert result
 
     async def test_lifespan_clears_executions_citations_searches(self, rag_db):

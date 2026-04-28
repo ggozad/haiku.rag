@@ -1,6 +1,16 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Skill-based QA evaluation via `evaluations run --target {qa,rag-skill,analysis-skill}`.** Benchmark the RAG and analysis skills end-to-end alongside the existing QA agent path, against the same datasets and judge. `--skill-model "provider:name"` overrides the skill model independently from the judge.
+- **Citation retrieval as a second eval metric.** `CitationMRREvaluator` and `CitationMAPEvaluator` score the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, alongside the existing LLMJudge. Console output gains a "Citation Retrieval" summary (mean score, cite rate, mean citations per case). Zero extra skill runs — cited URIs are surfaced via `pydantic_evals.set_eval_attribute`.
+- Bumps `haiku.skills` to `>=0.16.0` for the public `run_skill` API and `Skill.request_limit`.
+
+### Changed
+
+- **Removed dataset-specific eval system prompts.** `WIX_SUPPORT_PROMPT` and `ORB_SYSTEM_PROMPT` duplicated guidance already in the shipped `QA_SYSTEM_PROMPT` and `SKILL.md`, and ORB's referenced the obsolete `search_documents` tool name. The eval-side machinery for injecting them (`DatasetSpec.system_prompt`, `resolve_system_prompt()`) is removed. `config.prompts.qa` remains as the user-facing override knob.
+
 ## [0.43.1] - 2026-04-25
 
 ### Fixed

@@ -1570,7 +1570,7 @@ requires-dist = [
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.21.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.84.0" },
     { name = "docling-core", specifier = ">=2.71.0,<2.72" },
-    { name = "haiku-skills", specifier = ">=0.15.0" },
+    { name = "haiku-skills", specifier = ">=0.16.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jsonpatch", specifier = ">=1.33" },
@@ -1604,7 +1604,7 @@ provides-extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "jin
 
 [[package]]
 name = "haiku-skills"
-version = "0.15.0"
+version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -1614,9 +1614,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "skills-ref" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/a1/e2bd00a72d002f9db1c53c068167ed436a457dae0f8996399f116c087f6a/haiku_skills-0.15.0.tar.gz", hash = "sha256:ce93e6846e05397f5d96c144f956edd395b9e7308cb5cef6213c49c183a08bbc", size = 252030, upload-time = "2026-04-22T09:00:13.775Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/12/98ea5ee4ca14d4053019b4ec4b22e39af8ae1bc054aea107c87f5ecb025e/haiku_skills-0.16.0.tar.gz", hash = "sha256:e7bfa8141523912f3eb4469bf0b611408fa1e1e54707c9b475d0b3e04ea7ffbc", size = 256020, upload-time = "2026-04-28T08:44:23.347Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/68/3df2c9761fc0b0592b60f4723c87adeda5f335ea0835b4cf77ca07784379/haiku_skills-0.15.0-py3-none-any.whl", hash = "sha256:a1771b16e0ffe7da775f28d38c704e029f8e8757791616d7f27e73feb2c16fd0", size = 32041, upload-time = "2026-04-22T09:00:12.824Z" },
+    { url = "https://files.pythonhosted.org/packages/55/ca/4cc0b026ee3e25d4b7f85267a210d1248988079fcac73649a09e9f9a5873/haiku_skills-0.16.0-py3-none-any.whl", hash = "sha256:50dec4e24594dceadc781242cafb20ced3b1fe743fdb7035a081756fbb402aa1", size = 32794, upload-time = "2026-04-28T08:44:21.855Z" },
 ]
 
 [[package]]
