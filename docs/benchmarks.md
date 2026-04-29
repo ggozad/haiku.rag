@@ -97,19 +97,43 @@ When benchmarking a skill (`--target rag-skill` or `--target analysis-skill`), a
 
 This is computed alongside QA accuracy from the same skill run — no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
 
-## RepliQA
+## Current results
+
+Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `haiku.rag` version.
+
+### Wix
+
+[WixQA](https://huggingface.co/datasets/Wix/WixQA) — real customer support questions paired with curated answers. 200 cases.
+
+#### Skill QA + citation retrieval
+
+`evaluations run wix --target rag-skill` benchmarks the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
+
+| Skill model      | QA accuracy | Mean `cited_map` |
+|------------------|-------------|------------------|
+| `ollama:gpt-oss` | 0.85        | 0.40             |
+
+*Measured on haiku.rag v0.43.1, judged by `ollama:qwen3.6` (current default), on 199 of 200 completed cases.* 28 % of cases produce a perfect citation (`cited_map` = 1.0).
+
+## Past results
+
+These were measured under the prior pinned judge (`ollama:gpt-oss`). The pinned default has since switched to `ollama:qwen3.6` (see [Methodology — QA Accuracy](#qa-accuracy)) — under the new judge the QA accuracy numbers below typically shift up by ~5–10 pp.
+
+Retrieval tables don't depend on the judge but are kept here because they were measured on the same older `haiku.rag` versions as their accompanying QA tables.
+
+### RepliQA
 
 [RepliQA](https://huggingface.co/datasets/ServiceNow/repliqa) contains synthetic news stories with question-answer pairs. We use `News Stories` from `repliqa_3` (1035 documents). Each question has exactly one relevant document, so we use MRR for retrieval evaluation.
 
-*Results from v0.19.6*
-
-### Retrieval (MRR)
+#### Retrieval (MRR)
 
 | Embedding Model               | MRR  | Reranker |
 |-------------------------------|------|----------|
 | Ollama / `qwen3-embedding:8b` | 0.91 | -        |
 
-### QA Accuracy
+*Measured on haiku.rag v0.19.6.*
+
+#### QA Accuracy
 
 | Embedding Model              | QA Model                         | Accuracy | Reranker               |
 |------------------------------|----------------------------------|----------|------------------------|
@@ -119,17 +143,15 @@ This is computed alongside QA accuracy from the same skill run — no extra invo
 | Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.87     | `mxbai-rerank-base-v2` |
 | Ollama / `mxbai-embed-large`    | Ollama / `qwen3:0.6b`            | 0.28     | None                   |
 
+*Measured on haiku.rag v0.19.6, judged by `ollama:gpt-oss`.*
+
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
 
-## Wix
+### Wix
 
-[WixQA](https://huggingface.co/datasets/Wix/WixQA) contains real customer support questions paired with curated answers from Wix. The benchmark follows the evaluation protocol from the [WixQA paper](https://arxiv.org/abs/2505.08643). Each query can have multiple relevant passages, so we use MAP for retrieval evaluation.
+[WixQA](https://huggingface.co/datasets/Wix/WixQA) — see description above. We benchmark both the plain text version (HTML stripped, no structure) and HTML version. Since HTML chunks are small (typically a phrase), we use `chunk_radius=2` to expand context.
 
-We benchmark both the plain text version (HTML stripped, no structure) and HTML version. Since HTML chunks are small (typically a phrase), we use `chunk_radius=2` to expand context.
-
-*Results from v0.27.2*
-
-### Retrieval (MAP)
+#### Retrieval (MAP)
 
 | Embedding Model        | Chunk size | MAP  | Reranker               | Notes                        |
 |------------------------|------------|------|------------------------|------------------------------|
@@ -138,7 +160,9 @@ We benchmark both the plain text version (HTML stripped, no structure) and HTML 
 | `qwen3-embedding:4b`   | 256        | 0.43 | None                   | plain text, `chunk-radius=0` |
 | `qwen3-embedding:4b`   | 512        | 0.45 | None                   | plain text, `chunk-radius=0` |
 
-### QA Accuracy
+*Measured on haiku.rag v0.27.2.*
+
+#### QA Accuracy
 
 | Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                        |
 |----------------------|------------|-----------------------------|----------|------------------------------|
@@ -146,50 +170,46 @@ We benchmark both the plain text version (HTML stripped, no structure) and HTML 
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.80     | html, `chunk-radius=2`       |
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.83     | html, `chunk-radius=2`, `jinaai/jina-reranker-v3` |
 
-### Skill QA + citation retrieval
+*Measured on haiku.rag v0.27.2, judged by `ollama:gpt-oss`.*
 
-`evaluations run wix --target rag-skill` benchmarks the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
-
-| Skill model      | QA accuracy | Cite rate | Mean `cited_map` |
-|------------------|-------------|-----------|------------------|
-| `ollama:gpt-oss` | 0.78        | 0.96      | 0.48             |
-
-35 % of cases produce a perfect citation (`cited_map` = 1.0). 1 % of correct answers come back without a citation — the rest are grounded.
-
-## HotpotQA
+### HotpotQA
 
 [HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is a multi-hop question answering dataset requiring reasoning over multiple Wikipedia paragraphs. Each question requires evidence from 2+ documents, making it ideal for testing retrieval and reasoning capabilities. We use MAP for retrieval evaluation since queries have multiple relevant documents.
 
-*Results from v0.20.2*
-
-### Retrieval (MAP)
+#### Retrieval (MAP)
 
 | Embedding Model      | MAP  | Reranker |
 |----------------------|------|----------|
 | `qwen3-embedding:4b` | 0.69 | none     |
 
-### QA Accuracy
+*Measured on haiku.rag v0.20.2.*
+
+#### QA Accuracy
 
 | Embedding Model      | QA Model                 | Accuracy |
 |----------------------|--------------------------|----------|
 | `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
 
-## OpenRAG Bench (ORB)
+*Measured on haiku.rag v0.20.2, judged by `ollama:gpt-oss`.*
+
+### OpenRAG Bench (ORB)
 
 [OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval over visual content like figures, charts, and diagrams. We use MAP for retrieval evaluation since each query maps to one relevant document.
 
 **Multimodal processing**: Picture descriptions are generated using a Vision Language Model (VLM) during document conversion, making embedded images searchable via text queries. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
 
-*Results from v0.26.8*
-
-### Retrieval (MAP)
+#### Retrieval (MAP)
 
 | Embedding Model      | MAP    | VLM                  |
 |----------------------|--------|----------------------|
 | `qwen3-embedding:4b` | 0.9626 | Ollama / ministral-3 |
 
-### QA Accuracy
+*Measured on haiku.rag v0.26.8.*
+
+#### QA Accuracy
 
 | Embedding Model      | QA Model                    | Accuracy | VLM                  |
 |----------------------|-----------------------------|----------|----------------------|
 | `qwen3-embedding:4b` | `gpt-oss:20b` - no thinking | 0.912    | Ollama / ministral-3 |
+
+*Measured on haiku.rag v0.26.8, judged by `ollama:gpt-oss`.*
