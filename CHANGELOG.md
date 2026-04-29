@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.44.0] - 2026-04-29
+
 ### Added
 
 - **Skill-based QA evaluation via `evaluations run --target {qa,rag-skill,analysis-skill}`.** Benchmark the RAG and analysis skills end-to-end alongside the existing QA agent path, against the same datasets and judge. `--skill-model "provider:name"` overrides the skill model independently from the judge.
@@ -1453,7 +1455,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.43.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.44.0...HEAD
+[0.44.0]: https://github.com/ggozad/haiku.rag/compare/0.43.1...0.44.0
 [0.43.1]: https://github.com/ggozad/haiku.rag/compare/0.43.0...0.43.1
 [0.43.0]: https://github.com/ggozad/haiku.rag/compare/0.42.1...0.43.0
 [0.42.1]: https://github.com/ggozad/haiku.rag/compare/0.42.0...0.42.1
