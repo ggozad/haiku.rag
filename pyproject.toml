@@ -38,6 +38,7 @@ haiku-rag = "haiku.rag.cli:cli"
 
 [project.optional-dependencies]
 tui = ["textual>=1.0.0"]
+s3 = ["haiku.rag-slim[s3]==0.44.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -56,6 +57,14 @@ exclude = [
 
 [tool.hatch.build.targets.wheel]
 only-include = ["/README.md"]
+
+[tool.uv]
+conflicts = [
+    [
+        { package = "haiku.rag-slim", extra = "s3" },
+        { package = "pydantic-ai-slim", extra = "bedrock" },
+    ],
+]
 
 [tool.uv.workspace]
 members = ["haiku_rag_slim", "evaluations"]

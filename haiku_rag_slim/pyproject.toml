@@ -43,6 +43,8 @@ dependencies = [
 [project.optional-dependencies]
 # Document processing
 docling = ["docling>=2.84.0", "opencv-python-headless>=4.13.0.92"]
+# S3 / object-storage monitoring
+s3 = ["aioboto3>=13"]
 # Embedding providers
 voyageai = ["pydantic-ai-slim[voyageai]"]
 # Rerankers
