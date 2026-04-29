@@ -1,5 +1,4 @@
 import asyncio
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,59 +9,53 @@ from haiku.rag.store.models.document import Document
 
 
 @pytest.fixture
-def fake_aioboto3(monkeypatch):
-    fake = MagicMock()
-    monkeypatch.setitem(sys.modules, "aioboto3", fake)
-    return fake
+def s3_listing(monkeypatch):
+    """Patch `obstore.list_obs` with an async-iterator returning controllable batches.
+
+    Returns `(set_batches, list_mock)`. `set_batches([[meta, ...], ...])`
+    seeds the next call's pages.
+    """
+    import obstore
+
+    batches: list[list[MagicMock]] = []
+
+    def list_obs(_store, *_, **__):
+        async def _iter():
+            for batch in batches:
+                yield batch
+
+        return _iter()
+
+    list_mock = MagicMock(side_effect=list_obs)
+    monkeypatch.setattr(obstore, "list", list_mock)
+
+    def set_batches(new_batches):
+        batches.clear()
+        batches.extend(new_batches)
+
+    return set_batches, list_mock
 
 
-@pytest.fixture
-def s3_paginator():
-    """Return (paginator_mock, set_pages) — `set_pages([page, ...])` rewires the iterator."""
-    pages: list[dict] = []
-
-    async def _paginate(**_kwargs):
-        for page in pages:
-            yield page
-
-    paginator = MagicMock()
-    paginator.paginate.side_effect = lambda **kw: _paginate(**kw)
-
-    def set_pages(new_pages):
-        pages.clear()
-        pages.extend(new_pages)
-
-    return paginator, set_pages
-
-
-@pytest.fixture
-def fake_s3_client(fake_aioboto3, s3_paginator):
-    paginator, set_pages = s3_paginator
-    s3_client = MagicMock()
-    s3_client.get_paginator.return_value = paginator
-
-    client_ctx = AsyncMock()
-    client_ctx.__aenter__.return_value = s3_client
-    client_ctx.__aexit__.return_value = None
-
-    session = MagicMock()
-    session.client.return_value = client_ctx
-    fake_aioboto3.Session.return_value = session
-
-    return s3_client, set_pages
-
-
-def _entry(**kwargs):
-    base = {
-        "uri": "s3://my-bucket/incoming/",
-        "poll_interval": 60,
-        "delete_orphans": False,
-        "ignore_patterns": [],
-        "include_patterns": [],
-        "storage_options": {},
+def _meta(path: str, etag: str) -> dict:
+    # Real obstore ObjectMeta is a TypedDict; raw S3 ETags include quotes.
+    return {
+        "path": path,
+        "e_tag": f'"{etag}"',
+        "size": 0,
+        "last_modified": None,
     }
-    base.update(kwargs)
-    return S3MonitorEntry(**base)
+
+
+def _entry(**kwargs) -> S3MonitorEntry:
+    return S3MonitorEntry(
+        uri=kwargs.pop("uri", "s3://my-bucket/incoming/"),
+        poll_interval=kwargs.pop("poll_interval", 60),
+        delete_orphans=kwargs.pop("delete_orphans", False),
+        ignore_patterns=kwargs.pop("ignore_patterns", []),
+        include_patterns=kwargs.pop("include_patterns", []),
+        storage_options=kwargs.pop("storage_options", {}),
+        **kwargs,
+    )
 
 
 def _doc(uri: str, etag: str, doc_id: str | None = None) -> Document:
@@ -75,18 +68,9 @@ def _doc(uri: str, etag: str, doc_id: str | None = None) -> Document:
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_refresh_upserts_new_objects(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages(
-        [
-            {
-                "Contents": [
-                    {"Key": "incoming/a.txt", "ETag": '"abc"'},
-                    {"Key": "incoming/b.txt", "ETag": '"def"'},
-                ]
-            }
-        ]
-    )
+async def test_s3_watcher_refresh_upserts_new_objects(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches([[_meta("incoming/a.txt", "abc"), _meta("incoming/b.txt", "def")]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -110,9 +94,9 @@ async def test_s3_watcher_refresh_upserts_new_objects(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_skips_unchanged_etag(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages([{"Contents": [{"Key": "incoming/a.txt", "ETag": '"abc"'}]}])
+async def test_s3_watcher_skips_unchanged_etag(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches([[_meta("incoming/a.txt", "abc")]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -126,9 +110,9 @@ async def test_s3_watcher_skips_unchanged_etag(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_upserts_when_etag_differs(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages([{"Contents": [{"Key": "incoming/a.txt", "ETag": '"new"'}]}])
+async def test_s3_watcher_upserts_when_etag_differs(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches([[_meta("incoming/a.txt", "new")]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -147,9 +131,9 @@ async def test_s3_watcher_upserts_when_etag_differs(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_strips_etag_quotes(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages([{"Contents": [{"Key": "incoming/a.txt", "ETag": '"abc"'}]}])
+async def test_s3_watcher_strips_etag_quotes(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches([[_meta("incoming/a.txt", "abc")]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -165,9 +149,9 @@ async def test_s3_watcher_strips_etag_quotes(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_deletes_orphans_when_enabled(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages([{"Contents": [{"Key": "incoming/a.txt", "ETag": '"abc"'}]}])
+async def test_s3_watcher_deletes_orphans_when_enabled(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches([[_meta("incoming/a.txt", "abc")]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -189,9 +173,9 @@ async def test_s3_watcher_deletes_orphans_when_enabled(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_does_not_delete_orphans_when_disabled(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages([{"Contents": []}])
+async def test_s3_watcher_does_not_delete_orphans_when_disabled(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches([[]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -211,10 +195,10 @@ async def test_s3_watcher_does_not_delete_orphans_when_disabled(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_orphan_scope_is_per_entry(fake_s3_client):
+async def test_s3_watcher_orphan_scope_is_per_entry(s3_listing):
     """A doc under a different bucket prefix must not be touched."""
-    s3, set_pages = fake_s3_client
-    set_pages([{"Contents": []}])
+    set_batches, _ = s3_listing
+    set_batches([[]])
 
     from haiku.rag.monitor import S3Watcher
 
@@ -234,17 +218,15 @@ async def test_s3_watcher_orphan_scope_is_per_entry(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_applies_include_and_ignore_patterns(fake_s3_client):
-    s3, set_pages = fake_s3_client
-    set_pages(
+async def test_s3_watcher_applies_include_and_ignore_patterns(s3_listing):
+    set_batches, _ = s3_listing
+    set_batches(
         [
-            {
-                "Contents": [
-                    {"Key": "incoming/keep.md", "ETag": '"1"'},
-                    {"Key": "incoming/draft.md", "ETag": '"2"'},
-                    {"Key": "incoming/skip.txt", "ETag": '"3"'},
-                ]
-            }
+            [
+                _meta("incoming/keep.md", "1"),
+                _meta("incoming/draft.md", "2"),
+                _meta("incoming/skip.txt", "3"),
+            ]
         ]
     )
 
@@ -271,24 +253,27 @@ async def test_s3_watcher_applies_include_and_ignore_patterns(fake_s3_client):
 
 
 @pytest.mark.asyncio
-async def test_s3_watcher_observe_survives_transient_list_failure(fake_s3_client):
+async def test_s3_watcher_observe_survives_transient_list_failure(s3_listing):
     """First refresh succeeds; second refresh raises; loop survives and recovers."""
-    s3, set_pages = fake_s3_client
+    set_batches, list_mock = s3_listing
 
-    pages_initial = [{"Contents": [{"Key": "incoming/a.txt", "ETag": '"abc"'}]}]
-    pages_after = [{"Contents": [{"Key": "incoming/a.txt", "ETag": '"abc"'}]}]
+    pages_initial = [[_meta("incoming/a.txt", "abc")]]
+    pages_after = [[_meta("incoming/a.txt", "abc")]]
 
-    set_pages(pages_initial)
     paginate_calls = {"n": 0}
 
-    async def paginate_side_effect(**_kwargs):
+    def list_obs_side_effect(_store, *_, **__):
         paginate_calls["n"] += 1
         if paginate_calls["n"] == 2:
             raise RuntimeError("transient list failure")
-        for page in pages_after if paginate_calls["n"] > 1 else pages_initial:
-            yield page
 
-    s3.get_paginator.return_value.paginate.side_effect = paginate_side_effect
+        async def _iter():
+            for batch in pages_after if paginate_calls["n"] > 1 else pages_initial:
+                yield batch
+
+        return _iter()
+
+    list_mock.side_effect = list_obs_side_effect
 
     from haiku.rag.monitor import S3Watcher
 
@@ -305,7 +290,6 @@ async def test_s3_watcher_observe_survives_transient_list_failure(fake_s3_client
     )
     task = asyncio.create_task(watcher.observe())
 
-    # Let three iterations run: initial refresh, transient failure, recovery.
     for _ in range(20):
         await asyncio.sleep(0)
         if paginate_calls["n"] >= 3:
@@ -334,15 +318,13 @@ async def test_s3_watcher_invalid_uri_rejected():
 
 
 @pytest.mark.asyncio
-async def test_serve_starts_one_s3_task_per_entry(monkeypatch, fake_s3_client):
+async def test_serve_starts_one_s3_task_per_entry(monkeypatch, s3_listing):
     """`serve` wires one S3Watcher task per MonitorConfig.s3 entry."""
     from haiku.rag import app as app_module
 
-    captured_tasks: list = []
     original_create_task = asyncio.create_task
 
     def tracking_create_task(coro, *args, **kwargs):
-        captured_tasks.append(coro)
         return original_create_task(coro, *args, **kwargs)
 
     monkeypatch.setattr(app_module.asyncio, "create_task", tracking_create_task)
@@ -370,7 +352,6 @@ async def test_serve_starts_one_s3_task_per_entry(monkeypatch, fake_s3_client):
 
     monkeypatch.setattr(app_module.S3Watcher, "observe", fake_s3_observe)
 
-    # Provide a dummy supported_extensions to skip docling import.
     class _Conv:
         supported_extensions = [".txt"]
 
@@ -387,6 +368,5 @@ async def test_serve_starts_one_s3_task_per_entry(monkeypatch, fake_s3_client):
 
         await app.serve(enable_monitor=True, enable_mcp=False)
 
-    # Both S3 entries should have triggered observe(), plus the FileWatcher.
     assert fw_observe_calls["n"] == 1
     assert s3_observe_calls["n"] == 2

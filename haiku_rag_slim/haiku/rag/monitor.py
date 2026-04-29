@@ -234,7 +234,7 @@ class S3Watcher:
         entry: S3MonitorEntry,
         supported_extensions: list[str],
     ) -> None:
-        from haiku.rag.s3 import make_s3_session
+        from haiku.rag.s3 import make_s3_store
 
         parsed = urlparse(entry.uri)
         if not parsed.netloc:
@@ -245,7 +245,7 @@ class S3Watcher:
         self.bucket = parsed.netloc
         self.prefix = parsed.path.lstrip("/")
         self.uri_prefix = f"s3://{self.bucket}/{self.prefix}"
-        self._make_s3_session = make_s3_session
+        self._make_s3_store = make_s3_store
         self.filter = FileFilter(
             ignore_patterns=entry.ignore_patterns or None,
             include_patterns=entry.include_patterns or None,
@@ -265,20 +265,18 @@ class S3Watcher:
                 logger.error(f"S3 watcher refresh failed for {self.entry.uri}: {e}")
 
     async def refresh(self) -> None:
-        uris_seen: dict[str, str] = {}
-        session, client_kwargs = self._make_s3_session(self.entry.storage_options)
+        import obstore  # type: ignore[import-not-found]
 
-        async with session.client("s3", **client_kwargs) as s3:
-            paginator = s3.get_paginator("list_objects_v2")
-            async for page in paginator.paginate(
-                Bucket=self.bucket, Prefix=self.prefix
-            ):
-                for obj in page.get("Contents", []):
-                    key = obj["Key"]
-                    if not self.filter.include_file(key):
-                        continue
-                    uri = f"s3://{self.bucket}/{key}"
-                    uris_seen[uri] = obj["ETag"].strip('"')
+        uris_seen: dict[str, str] = {}
+        store = self._make_s3_store(self.bucket, self.entry.storage_options)
+
+        async for batch in obstore.list(store, prefix=self.prefix or None):
+            for obj in batch:
+                key = obj["path"]
+                if not self.filter.include_file(key):
+                    continue
+                uri = f"s3://{self.bucket}/{key}"
+                uris_seen[uri] = (obj.get("e_tag") or "").strip('"')
 
         existing_etags = await self._existing_etags_under_prefix()
 

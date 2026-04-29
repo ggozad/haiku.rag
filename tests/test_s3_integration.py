@@ -14,7 +14,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig, S3MonitorEntry
 from haiku.rag.store.engine import Store
 
-HAS_AIOBOTO3 = importlib.util.find_spec("aioboto3") is not None
+HAS_OBSTORE = importlib.util.find_spec("obstore") is not None
 
 S3_ENDPOINT = "http://localhost:8333"
 S3_BUCKET = "test-bucket"
@@ -161,42 +161,28 @@ async def test_app_info_empty_db(tmp_path, capsys):
 # local — these tests verify the watcher path, not LanceDB-on-S3.
 
 
-_aioboto3_required = pytest.mark.skipif(
-    not HAS_AIOBOTO3,
-    reason="aioboto3 not installed (uv sync --extra s3)",
+_obstore_required = pytest.mark.skipif(
+    not HAS_OBSTORE,
+    reason="obstore not installed (uv sync --extra s3)",
 )
 
 
-async def _put_object(prefix: str, key: str, body: bytes) -> None:
-    import aioboto3  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+def _watcher_store():
+    from haiku.rag.s3 import make_s3_store
 
-    session = aioboto3.Session(
-        aws_access_key_id=S3_STORAGE_OPTIONS["aws_access_key_id"],
-        aws_secret_access_key=S3_STORAGE_OPTIONS["aws_secret_access_key"],
-        region_name=S3_STORAGE_OPTIONS["region"],
-    )
-    async with session.client(
-        "s3", endpoint_url=S3_STORAGE_OPTIONS["endpoint"], use_ssl=False
-    ) as s3:
-        try:
-            await s3.create_bucket(Bucket=S3_BUCKET)
-        except Exception:
-            pass  # bucket already exists
-        await s3.put_object(Bucket=S3_BUCKET, Key=f"{prefix}/{key}", Body=body)
+    return make_s3_store(S3_BUCKET, S3_STORAGE_OPTIONS)
+
+
+async def _put_object(prefix: str, key: str, body: bytes) -> None:
+    import obstore
+
+    await obstore.put_async(_watcher_store(), f"{prefix}/{key}", body)
 
 
 async def _delete_object(prefix: str, key: str) -> None:
-    import aioboto3  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+    import obstore
 
-    session = aioboto3.Session(
-        aws_access_key_id=S3_STORAGE_OPTIONS["aws_access_key_id"],
-        aws_secret_access_key=S3_STORAGE_OPTIONS["aws_secret_access_key"],
-        region_name=S3_STORAGE_OPTIONS["region"],
-    )
-    async with session.client(
-        "s3", endpoint_url=S3_STORAGE_OPTIONS["endpoint"], use_ssl=False
-    ) as s3:
-        await s3.delete_object(Bucket=S3_BUCKET, Key=f"{prefix}/{key}")
+    await obstore.delete_async(_watcher_store(), f"{prefix}/{key}")
 
 
 def _watcher_entry(prefix: str, **overrides) -> S3MonitorEntry:
@@ -210,7 +196,7 @@ def _watcher_entry(prefix: str, **overrides) -> S3MonitorEntry:
     )
 
 
-@_aioboto3_required
+@_obstore_required
 @pytest.mark.asyncio
 async def test_s3_watcher_initial_sweep(tmp_path):
     from haiku.rag.monitor import S3Watcher
@@ -236,7 +222,7 @@ async def test_s3_watcher_initial_sweep(tmp_path):
     ]
 
 
-@_aioboto3_required
+@_obstore_required
 @pytest.mark.asyncio
 async def test_s3_watcher_detects_new_object(tmp_path):
     from haiku.rag.monitor import S3Watcher
@@ -258,7 +244,7 @@ async def test_s3_watcher_detects_new_object(tmp_path):
         assert await rag.count_documents() == 2
 
 
-@_aioboto3_required
+@_obstore_required
 @pytest.mark.asyncio
 async def test_s3_watcher_detects_modified_object(tmp_path):
     from haiku.rag.monitor import S3Watcher
@@ -290,7 +276,7 @@ async def test_s3_watcher_detects_modified_object(tmp_path):
         assert "new content body" in second.content
 
 
-@_aioboto3_required
+@_obstore_required
 @pytest.mark.asyncio
 async def test_s3_watcher_orphan_deletion(tmp_path):
     from haiku.rag.monitor import S3Watcher

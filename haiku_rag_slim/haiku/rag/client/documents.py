@@ -426,13 +426,15 @@ async def _create_or_update_document_from_s3(
     """Create or update a document from an s3:// URL.
 
     Two-stage change detection:
-    - HeadObject ETag matches stored metadata["etag"] → skip GetObject and re-chunk.
+    - HEAD ETag matches stored metadata["etag"] → skip GET and re-chunk.
     - ETag differs but content MD5 matches → refresh etag only, no re-chunk.
     - Otherwise download, convert, chunk, embed.
     """
+    import obstore  # type: ignore[import-not-found]
+
     from haiku.rag.client.processing import get_extension_from_content_type_or_url
     from haiku.rag.embeddings import embed_chunks
-    from haiku.rag.s3 import make_s3_session
+    from haiku.rag.s3 import make_s3_store
 
     metadata = metadata or {}
 
@@ -445,39 +447,39 @@ async def _create_or_update_document_from_s3(
     converter = get_converter(client._config)
     supported_extensions = converter.supported_extensions
 
-    session, client_kwargs = make_s3_session(storage_options)
+    store = make_s3_store(bucket, storage_options)
 
-    async with session.client("s3", **client_kwargs) as s3:
-        head = await s3.head_object(Bucket=bucket, Key=key)
-        etag = head["ETag"].strip('"')
-        content_type = (head.get("ContentType") or "").lower()
-        if not content_type:
-            content_type = "application/octet-stream"
+    head = await obstore.head_async(store, key)
+    etag = (head.get("e_tag") or "").strip('"')
 
-        existing_doc = await client.get_document_by_uri(url)
-        if existing_doc and existing_doc.metadata.get("etag") == etag:
-            updated = False
-            if title is not None and title != existing_doc.title:
-                existing_doc.title = title
-                updated = True
+    existing_doc = await client.get_document_by_uri(url)
+    if existing_doc and existing_doc.metadata.get("etag") == etag:
+        updated = False
+        if title is not None and title != existing_doc.title:
+            existing_doc.title = title
+            updated = True
 
-            merged_metadata = {**(existing_doc.metadata or {}), **metadata}
-            if merged_metadata != existing_doc.metadata:
-                existing_doc.metadata = merged_metadata
-                updated = True
+        merged_metadata = {**(existing_doc.metadata or {}), **metadata}
+        if merged_metadata != existing_doc.metadata:
+            existing_doc.metadata = merged_metadata
+            updated = True
 
-            if updated:
-                return await client.document_repository.update(existing_doc)
-            return existing_doc
+        if updated:
+            return await client.document_repository.update(existing_doc)
+        return existing_doc
 
-        file_extension = get_extension_from_content_type_or_url(url, content_type)
-        if file_extension not in supported_extensions:
-            raise ValueError(
-                f"Unsupported content type/extension: {content_type}/{file_extension}"
-            )
+    content_type, _ = mimetypes.guess_type(key)
+    if not content_type:
+        content_type = "application/octet-stream"
 
-        get_resp = await s3.get_object(Bucket=bucket, Key=key)
-        body = await get_resp["Body"].read()
+    file_extension = get_extension_from_content_type_or_url(url, content_type)
+    if file_extension not in supported_extensions:
+        raise ValueError(
+            f"Unsupported content type/extension: {content_type}/{file_extension}"
+        )
+
+    get_resp = await obstore.get_async(store, key)
+    body = await get_resp.bytes_async()
 
     md5_hash = hashlib.md5(body, usedforsecurity=False).hexdigest()
 
