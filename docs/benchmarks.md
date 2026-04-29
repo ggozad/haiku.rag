@@ -105,6 +105,14 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 
 [WixQA](https://huggingface.co/datasets/Wix/WixQA) — real customer support questions paired with curated answers. 200 cases.
 
+#### QA Accuracy
+
+| Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                  |
+|----------------------|------------|-----------------------------|----------|------------------------|
+| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.88     | html, `chunk-radius=2` |
+
+*Measured on haiku.rag v0.43.1, judged by `ollama:qwen3.6` (current default), 175 / 200 = 87.5 %.*
+
 #### Skill QA + citation retrieval
 
 `evaluations run wix --target rag-skill` benchmarks the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
@@ -166,7 +174,6 @@ Note the significant degradation when very small models are used such as `qwen3:
 
 | Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                        |
 |----------------------|------------|-----------------------------|----------|------------------------------|
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.82     | html, `chunk-radius=2`       |
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.80     | html, `chunk-radius=2`       |
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.83     | html, `chunk-radius=2`, `jinaai/jina-reranker-v3` |
 
