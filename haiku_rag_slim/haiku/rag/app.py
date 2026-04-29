@@ -21,7 +21,7 @@ from rich.syntax import Syntax
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
-from haiku.rag.monitor import FileWatcher
+from haiku.rag.monitor import FileWatcher, S3Watcher
 from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
@@ -799,6 +799,20 @@ class HaikuRAGApp:  # pragma: no cover
                     monitor = FileWatcher(client=client, config=self.config)
                     monitor_task = asyncio.create_task(monitor.observe())
                     tasks.append(monitor_task)
+
+                    if self.config.monitor.s3:
+                        from haiku.rag.converters import get_converter
+
+                        supported_extensions = get_converter(
+                            self.config
+                        ).supported_extensions
+                        for entry in self.config.monitor.s3:
+                            s3_watcher = S3Watcher(
+                                client=client,
+                                entry=entry,
+                                supported_extensions=supported_extensions,
+                            )
+                            tasks.append(asyncio.create_task(s3_watcher.observe()))
 
             # Start MCP server if enabled
             if enable_mcp:

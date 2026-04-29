@@ -74,6 +74,17 @@ The `storage_options` keys are case-insensitive and passed directly to the under
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
+### Deployment Pattern: One Writer, Many Readers
+
+LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state — this is a LanceDB property, not something `haiku.rag` enforces.
+
+The recommended layout for production is "different buckets, same account, separate IAM roles per process":
+
+- **Ingestion process** — IAM role with `s3:Get/List` on the documents bucket and `s3:Get/Put/Delete` on the LanceDB bucket. Runs `haiku-rag serve --monitor` (with `monitor.s3` entries pointing at the documents bucket). Exactly one such process per LanceDB URI.
+- **Consumer processes** (1..N) — IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag serve --read-only --mcp`, the chat TUI, etc. They never see the documents bucket.
+
+Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
+
 ## Database Creation
 
 Databases must be explicitly created before use:

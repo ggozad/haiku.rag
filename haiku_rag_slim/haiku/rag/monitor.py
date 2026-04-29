@@ -2,13 +2,15 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import pathspec
 from watchfiles import Change, DefaultFilter, awatch
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, Config, S3MonitorEntry
 from haiku.rag.store.models.document import Document
+from haiku.rag.utils import escape_sql_string
 
 if TYPE_CHECKING:
     pass
@@ -215,3 +217,104 @@ class FileWatcher:
                 logger.info(f"Deleted document {existing_doc.id} for {file}")
         except Exception as e:
             logger.error(f"Failed to delete document for {file}: {e}")
+
+
+class S3Watcher:
+    """Polls an S3 prefix and keeps documents in sync with the index.
+
+    Uses ListObjectsV2 ETags as the cheap-skip key. When a key's listing
+    ETag differs from the stored `metadata["etag"]`, delegates to
+    `client.create_document_from_source` which performs the full
+    HeadObject + GetObject + MD5 compare two-stage detection.
+    """
+
+    def __init__(
+        self,
+        client: HaikuRAG,
+        entry: S3MonitorEntry,
+        supported_extensions: list[str],
+    ) -> None:
+        from haiku.rag.s3 import make_s3_store
+
+        parsed = urlparse(entry.uri)
+        if not parsed.netloc:
+            raise ValueError(f"Invalid S3 monitor URI: {entry.uri}")
+
+        self.client = client
+        self.entry = entry
+        self.bucket = parsed.netloc
+        self.prefix = parsed.path.lstrip("/")
+        self.uri_prefix = f"s3://{self.bucket}/{self.prefix}"
+        self._make_s3_store = make_s3_store
+        self.filter = FileFilter(
+            ignore_patterns=entry.ignore_patterns or None,
+            include_patterns=entry.include_patterns or None,
+            supported_extensions=supported_extensions,
+        )
+
+    async def observe(self) -> None:
+        logger.info(
+            f"Watching S3 {self.entry.uri} (poll_interval={self.entry.poll_interval}s)"
+        )
+        await self.refresh()
+        while True:
+            await asyncio.sleep(self.entry.poll_interval)
+            try:
+                await self.refresh()
+            except Exception as e:
+                logger.error(f"S3 watcher refresh failed for {self.entry.uri}: {e}")
+
+    async def refresh(self) -> None:
+        import obstore  # type: ignore[import-not-found]
+
+        uris_seen: dict[str, str] = {}
+        store = self._make_s3_store(self.bucket, self.entry.storage_options)
+
+        async for batch in obstore.list(store, prefix=self.prefix or None):
+            for obj in batch:
+                key = obj["path"]
+                if not self.filter.include_file(key):
+                    continue
+                uri = f"s3://{self.bucket}/{key}"
+                uris_seen[uri] = (obj.get("e_tag") or "").strip('"')
+
+        existing_etags = await self._existing_etags_under_prefix()
+
+        for uri, etag in uris_seen.items():
+            if existing_etags.get(uri) == etag:
+                continue
+            await self._upsert_object(uri)
+
+        if self.entry.delete_orphans:
+            await self._delete_orphans(set(uris_seen.keys()), existing_etags)
+
+    async def _existing_etags_under_prefix(self) -> dict[str, str]:
+        safe_prefix = escape_sql_string(self.uri_prefix)
+        docs = await self.client.list_documents(filter=f"uri LIKE '{safe_prefix}%'")
+        return {
+            doc.uri: (doc.metadata or {}).get("etag", "") for doc in docs if doc.uri
+        }
+
+    async def _upsert_object(self, uri: str) -> Document | None:
+        try:
+            result = await self.client.create_document_from_source(
+                uri, storage_options=self.entry.storage_options
+            )
+            doc = result if isinstance(result, Document) else result[0]
+            logger.info(f"Upserted document {doc.id} from {uri}")
+            return doc
+        except Exception as e:
+            logger.error(f"Failed to upsert document from {uri}: {e}")
+            return None
+
+    async def _delete_orphans(
+        self, uris_seen: set[str], existing_etags: dict[str, str]
+    ) -> None:
+        for uri in existing_etags.keys() - uris_seen:
+            try:
+                doc = await self.client.get_document_by_uri(uri)
+                if doc and doc.id:
+                    await self.client.delete_document(doc.id)
+                    logger.info(f"Deleted orphaned document {doc.id} for {uri}")
+            except Exception as e:
+                logger.error(f"Failed to delete orphan {uri}: {e}")

@@ -184,6 +184,7 @@ async def create_document_from_source(
     source: str | Path,
     title: str | None = None,
     metadata: dict | None = None,
+    storage_options: dict[str, str] | None = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -201,6 +202,14 @@ async def create_document_from_source(
     if parsed_url.scheme in ("http", "https"):
         return await _create_or_update_document_from_url(
             client, source_str, title=title, metadata=metadata
+        )
+    elif parsed_url.scheme == "s3":
+        return await _create_or_update_document_from_s3(
+            client,
+            source_str,
+            storage_options=storage_options,
+            title=title,
+            metadata=metadata,
         )
     elif parsed_url.scheme == "file":
         source_path = Path(parsed_url.path)
@@ -406,6 +415,136 @@ async def _create_or_update_document_from_url(
             )
 
 
+async def _create_or_update_document_from_s3(
+    client: "HaikuRAG",
+    url: str,
+    *,
+    storage_options: dict[str, str] | None = None,
+    title: str | None = None,
+    metadata: dict | None = None,
+) -> Document:
+    """Create or update a document from an s3:// URL.
+
+    Two-stage change detection:
+    - HEAD ETag matches stored metadata["etag"] → skip GET and re-chunk.
+    - ETag differs but content MD5 matches → refresh etag only, no re-chunk.
+    - Otherwise download, convert, chunk, embed.
+    """
+    import obstore  # type: ignore[import-not-found]
+
+    from haiku.rag.client.processing import get_extension_from_content_type_or_url
+    from haiku.rag.embeddings import embed_chunks
+    from haiku.rag.s3 import make_s3_store
+
+    metadata = metadata or {}
+
+    parsed = urlparse(url)
+    bucket = parsed.netloc
+    key = parsed.path.lstrip("/")
+    if not bucket or not key:
+        raise ValueError(f"Invalid S3 URI: {url}")
+
+    converter = get_converter(client._config)
+    supported_extensions = converter.supported_extensions
+
+    store = make_s3_store(bucket, storage_options)
+
+    head = await obstore.head_async(store, key)
+    etag = (head.get("e_tag") or "").strip('"')
+
+    existing_doc = await client.get_document_by_uri(url)
+    if existing_doc and existing_doc.metadata.get("etag") == etag:
+        updated = False
+        if title is not None and title != existing_doc.title:
+            existing_doc.title = title
+            updated = True
+
+        merged_metadata = {**(existing_doc.metadata or {}), **metadata}
+        if merged_metadata != existing_doc.metadata:
+            existing_doc.metadata = merged_metadata
+            updated = True
+
+        if updated:
+            return await client.document_repository.update(existing_doc)
+        return existing_doc
+
+    content_type, _ = mimetypes.guess_type(key)
+    if not content_type:
+        content_type = "application/octet-stream"
+
+    file_extension = get_extension_from_content_type_or_url(url, content_type)
+    if file_extension not in supported_extensions:
+        raise ValueError(
+            f"Unsupported content type/extension: {content_type}/{file_extension}"
+        )
+
+    get_resp = await obstore.get_async(store, key)
+    body = await get_resp.bytes_async()
+
+    md5_hash = hashlib.md5(body, usedforsecurity=False).hexdigest()
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb", suffix=file_extension, delete=False
+    ) as temp_file:
+        temp_file.write(body)
+        temp_file.flush()
+        temp_path = Path(temp_file.name)
+
+    metadata.update({"contentType": content_type, "md5": md5_hash, "etag": etag})
+
+    if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
+        temp_path.unlink(missing_ok=True)
+        merged_metadata = {**(existing_doc.metadata or {}), **metadata}
+        updated = False
+        if merged_metadata != existing_doc.metadata:
+            existing_doc.metadata = merged_metadata
+            updated = True
+        if title is not None and title != existing_doc.title:
+            existing_doc.title = title
+            updated = True
+        if updated:
+            return await client.document_repository.update(existing_doc)
+        return existing_doc
+
+    try:
+        docling_document = await client.convert(temp_path)
+        chunks = await client.chunk(docling_document)
+        embedded_chunks = await embed_chunks(chunks, client._config)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    stored_content = docling_document.export_to_markdown()
+
+    if existing_doc:
+        existing_doc.content = stored_content
+        existing_doc.metadata = metadata
+        existing_doc.set_docling(docling_document)
+        if title is not None:
+            existing_doc.title = title
+        elif existing_doc.title is None:
+            existing_doc.title = await resolve_title(
+                client._config, docling_document, stored_content
+            )
+        return await _update_document_with_chunks(
+            client, existing_doc, embedded_chunks, docling_document
+        )
+    else:
+        if title is None:
+            title = await resolve_title(
+                client._config, docling_document, stored_content
+            )
+        document = Document(
+            content=stored_content,
+            uri=url,
+            title=title,
+            metadata=metadata,
+        )
+        document.set_docling(docling_document)
+        return await _store_document_with_chunks(
+            client, document, embedded_chunks, docling_document
+        )
+
+
 async def update_document(
     client: "HaikuRAG",
     document_id: str,
@@ -490,7 +629,7 @@ def check_source_accessible(uri: str) -> bool:
     try:
         if parsed_url.scheme == "file":
             return Path(parsed_url.path).exists()
-        elif parsed_url.scheme in ("http", "https"):
+        elif parsed_url.scheme in ("http", "https", "s3"):
             return True
         return False
     except Exception:
