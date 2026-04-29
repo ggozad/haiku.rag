@@ -75,6 +75,17 @@ From directory (recursively adds all supported files):
 haiku-rag add-src /path/to/documents/
 ```
 
+From an S3 bucket (requires the `[s3]` extra — see [Server Mode → S3 / Object Storage Monitoring](server.md#s3-object-storage-monitoring)):
+```bash
+# AWS S3 with credentials in the default chain (env vars, IAM role, AWS profile)
+haiku-rag add-src s3://my-bucket/path/to/document.pdf
+
+# S3-compatible endpoint (SeaweedFS, MinIO, Cloudflare R2, etc.)
+AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
+  AWS_ENDPOINT_URL=http://localhost:8333 \
+  haiku-rag add-src s3://my-bucket/path/to/document.pdf
+```
+
 !!! note
     When adding a directory, the same content filters configured for [file monitoring](configuration/processing.md#filtering-monitored-files) are applied. This means `ignore_patterns` and `include_patterns` from your configuration will be used to filter which files are added.
 
