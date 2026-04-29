@@ -1,42 +1,39 @@
 from typing import Any
 
 
-def make_s3_session(
-    storage_options: dict[str, str] | None,
-) -> tuple[Any, dict[str, Any]]:
-    """Build an aioboto3 Session and S3 client kwargs from LanceDB-style options.
+def make_s3_store(bucket: str, storage_options: dict[str, str] | None) -> Any:
+    """Build an obstore `S3Store` from LanceDB-style storage_options.
 
-    Accepts the same dict shape as `LanceDBConfig.storage_options` so users can
-    copy-paste their LanceDB credentials. Recognized keys: aws_access_key_id,
-    aws_secret_access_key, aws_session_token, region (or region_name), endpoint
-    (or endpoint_url), allow_http. Empty/missing keys fall back to the boto3
-    default credential chain (environment variables, IAM role, AWS profile).
+    Accepts the same dict shape as `LanceDBConfig.storage_options` (the same
+    Rust `object_store` crate is used by both LanceDB and obstore, so the keys
+    line up). Recognized keys include aws_access_key_id, aws_secret_access_key,
+    aws_session_token, region (or aws_region), endpoint (or aws_endpoint),
+    allow_http. Empty/missing keys fall back to the AWS default credential
+    chain (environment variables, IAM role, AWS profile).
     """
     try:
-        import aioboto3  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+        from obstore.store import (
+            S3Store,  # type: ignore[import-not-found]
+        )
     except ImportError as e:
         raise ImportError(
-            "aioboto3 is required for s3:// sources. "
+            "obstore is required for s3:// sources. "
             "Install with: pip install haiku.rag-slim[s3]"
         ) from e
 
-    storage_options = storage_options or {}
-    session_kwargs: dict[str, Any] = {}
-    client_kwargs: dict[str, Any] = {}
+    options = dict(storage_options or {})
+    allow_http = str(options.pop("allow_http", "")).lower() == "true"
 
-    for key in ("aws_access_key_id", "aws_secret_access_key", "aws_session_token"):
-        if key in storage_options:
-            session_kwargs[key] = storage_options[key]
+    # Custom endpoints (SeaweedFS, MinIO, etc.) need path-style requests; AWS
+    # accepts virtual-hosted-style by default.
+    has_custom_endpoint = bool(options.get("endpoint") or options.get("aws_endpoint"))
 
-    region = storage_options.get("region") or storage_options.get("region_name")
-    if region:
-        session_kwargs["region_name"] = region
+    kwargs: dict[str, Any] = {}
+    if options:
+        kwargs["config"] = options
+    if allow_http:
+        kwargs["client_options"] = {"allow_http": True}
+    if has_custom_endpoint:
+        kwargs["virtual_hosted_style_request"] = False
 
-    endpoint = storage_options.get("endpoint") or storage_options.get("endpoint_url")
-    if endpoint:
-        client_kwargs["endpoint_url"] = endpoint
-
-    if str(storage_options.get("allow_http", "")).lower() == "true":
-        client_kwargs["use_ssl"] = False
-
-    return aioboto3.Session(**session_kwargs), client_kwargs
+    return S3Store(bucket, **kwargs)
