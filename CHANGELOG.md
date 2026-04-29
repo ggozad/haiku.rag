@@ -1,6 +1,18 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **`s3://` is a first-class document source.** `create_document_from_source`, the CLI `haiku-rag add-src`, and the MCP `add_document_from_url` tool all dispatch on the `s3` URL scheme. Two-stage change detection keeps `metadata["md5"]` semantically uniform across all sources: HEAD ETag matching the stored `metadata["etag"]` short-circuits without GET; if ETag differs but bytes hash to the same MD5 (multipart re-upload, server-side `CopyObject`, SSE mode change), only the etag refreshes — no re-chunk or re-embed. Closes #357.
+- **S3 / object-storage monitoring.** `monitor.s3: list[S3MonitorEntry]` adds a polling watcher per bucket prefix alongside the existing local-directory watcher. Each entry has its own `poll_interval`, `include_patterns`, `ignore_patterns`, `delete_orphans`, and `storage_options`. The same `serve --monitor` flag enables both. Orphan deletion is per-entry (scoped via `uri LIKE 's3://bucket/prefix/%'`); other buckets and prefixes are never touched.
+- **`[s3]` optional extra** (`obstore>=0.9`). Required for `s3://` sources and the S3 watcher. Uses obstore — the Python binding to the same Rust `object_store` crate that LanceDB uses internally — so `monitor.s3[*].storage_options` accepts the same dict shape as `lancedb.storage_options`. Empty/missing options fall back to the AWS default credential chain.
+- **`scripts/run-integration-tests.sh`** — wraps `docker compose up --wait`, `pytest -m integration`, and tear-down so the SeaweedFS-backed integration suite is a one-liner.
+
+### Documentation
+
+- New "S3 / Object Storage Monitoring" section in `docs/server.md` and `docs/configuration/processing.md` covering the `[s3]` extra, polling cadence, ETag semantics, credentials, and CLI usage.
+- New "Deployment Pattern: One Writer, Many Readers" subsection in `docs/configuration/storage.md` documenting the recommended IAM split (one ingestion process + N read-only consumers).
+
 ## [0.44.0] - 2026-04-29
 
 ### Added

@@ -364,3 +364,29 @@ Patterns follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_f
 - `**` matches zero or more directories
 - `?` matches any single character
 - `[abc]` matches any character in the set
+
+### S3 / Object Storage Sources
+
+In addition to local directories, the watcher can poll S3-compatible buckets (AWS S3, SeaweedFS, MinIO, Cloudflare R2, etc.). Install the `[s3]` extra and configure one or more entries under `monitor.s3`:
+
+```yaml
+monitor:
+  s3:
+    - uri: s3://my-bucket/incoming/
+      poll_interval: 300        # seconds between sweeps; default 300
+      include_patterns: ["*.pdf", "*.md"]
+      ignore_patterns: ["draft*"]
+      delete_orphans: true
+      storage_options:
+        endpoint: http://seaweed:8333
+        aws_access_key_id: ${AWS_KEY}
+        aws_secret_access_key: ${AWS_SECRET}
+        region: us-east-1
+        allow_http: "true"
+```
+
+Each entry is independent — own poll interval, own include/ignore patterns, own `delete_orphans` setting, own credentials. Omit `storage_options` to fall back to the AWS default credential chain (env vars, IAM role, AWS profile).
+
+The dict shape matches `lancedb.storage_options` — the same Rust `object_store` library is used by both, so credentials configured for the LanceDB backend can be copy-pasted here.
+
+See [Server Mode → S3 / Object Storage Monitoring](../server.md#s3-object-storage-monitoring) for behaviour details (ETag-based change detection, orphan-deletion scope, CLI `add-src s3://…`).
