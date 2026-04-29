@@ -66,6 +66,7 @@ def test_make_s3_store_missing_obstore_raises_actionable_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_create_document_from_s3_new(fake_obstore_io, temp_db_path):
     head_async, get_async = fake_obstore_io
     text = b"S3 hosted content"
@@ -84,6 +85,7 @@ async def test_create_document_from_s3_new(fake_obstore_io, temp_db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_create_document_from_s3_skips_when_etag_unchanged(
     fake_obstore_io, temp_db_path
 ):
@@ -106,6 +108,7 @@ async def test_create_document_from_s3_skips_when_etag_unchanged(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
     fake_obstore_io, temp_db_path
 ):
@@ -137,6 +140,7 @@ async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_create_document_from_s3_etag_changed_md5_changed_rechunks(
     fake_obstore_io, temp_db_path
 ):
