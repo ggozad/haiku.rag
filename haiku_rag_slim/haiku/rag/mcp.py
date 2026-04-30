@@ -91,12 +91,20 @@ def create_mcp_server(
     # Read tools - always registered
     @mcp.tool()
     async def search_documents(
-        query: str, limit: int | None = None
+        query: str, limit: int | None = None, include_images: bool = True
     ) -> list[SearchResult]:
-        """Search the RAG system for documents using hybrid search (vector similarity + full-text search)."""
+        """Search the RAG system for documents using hybrid search (vector similarity + full-text search).
+
+        When include_images is True (default) and a picture-labeled chunk is
+        in the result set, ``SearchResult.image_data`` carries base64-encoded
+        PNG bytes keyed by self_ref. Set to False to omit the bytes from the
+        response (smaller JSON payload for plain-text consumers).
+        """
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                return await rag.search(query, limit=limit)
+                return await rag.search(
+                    query, limit=limit, include_images=include_images
+                )
         except Exception:
             return []
 

@@ -26,6 +26,8 @@ Each result includes:
 - Type: content type like paragraph, table, code, list_item (when available)
 - Content: the actual text
 
+When a result is of `Type: picture` (a figure or diagram), the search tool may also attach the picture itself as image content alongside the text — use it for visual reasoning when answering. Reference it by its chunk_id like any other source.
+
 IMPORTANT: You MUST include in cited_chunks the COMPLETE IDs of every chunk you reference. Copy the full ID string without brackets — e.g. "5ae52166-5329-42e9-b6a5-756fc0cb7200" not "[5ae52166]" or "5ae52166". Never truncate IDs. Never leave cited_chunks empty if you found relevant content.
 
 Guidelines:

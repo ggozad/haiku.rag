@@ -322,10 +322,11 @@ class HaikuRAG:
         limit: int | None = None,
         search_type: str = "hybrid",
         filter: str | None = None,
+        include_images: bool = True,
     ) -> list[SearchResult]:
         from haiku.rag.client.search import search
 
-        return await search(self, query, limit, search_type, filter)
+        return await search(self, query, limit, search_type, filter, include_images)
 
     async def expand_context(
         self,

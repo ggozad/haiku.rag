@@ -238,6 +238,13 @@ async def expand_with_items(
                 if item.label:
                     labels.add(item.label)
                 pages.update(item.page_numbers)
+            elif item.label == "picture":
+                # Pictures may legitimately have empty text (no VLM
+                # description configured). Keep their self_ref so the
+                # downstream image_data lookup can still attach bytes.
+                refs.append(item.self_ref)
+                labels.add(item.label)
+                pages.update(item.page_numbers)
 
         all_headings: list[str] = []
         for r in original_results:

@@ -1,6 +1,8 @@
+import base64
 from collections.abc import Callable
 
 from pydantic_ai import FunctionToolset, RunContext
+from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
@@ -40,7 +42,7 @@ def create_search_toolset(
         ctx: RunContext[RAGDeps],
         query: str,
         limit: int | None = None,
-    ) -> str:
+    ) -> str | ToolReturn:
         """Search the knowledge base for relevant documents.
 
         Args:
@@ -48,7 +50,11 @@ def create_search_toolset(
             limit: Number of results to return (default: from config).
 
         Returns:
-            Formatted search results with content and metadata.
+            Formatted search results with content and metadata. When a
+            picture-labeled chunk is in the result set, returns a
+            ``pydantic_ai.messages.ToolReturn`` whose ``content`` carries the
+            corresponding ``BinaryContent`` parts so a vision-capable model
+            sees the figures alongside the text.
         """
         rid = ctx.run_id or ""
         search_counts[rid] = search_counts.get(rid, 0) + 1
@@ -82,7 +88,32 @@ def create_search_toolset(
             r.format_for_agent(rank=i + 1, total=total)
             for i, r in enumerate(results_list)
         ]
-        return "\n\n".join(formatted)
+        text = "\n\n".join(formatted)
+
+        binary_parts: list[BinaryContent] = []
+        seen: set[str] = set()
+        for result in results_list:
+            if not result.image_data:
+                continue
+            for self_ref, b64 in result.image_data.items():
+                if self_ref in seen:
+                    continue
+                try:
+                    raw = base64.b64decode(b64)
+                except (ValueError, TypeError):
+                    continue
+                binary_parts.append(
+                    BinaryContent(
+                        data=raw,
+                        media_type="image/png",
+                        identifier=self_ref,
+                    )
+                )
+                seen.add(self_ref)
+
+        if binary_parts:
+            return ToolReturn(return_value=text, content=binary_parts)
+        return text
 
     toolset: FunctionToolset[RAGDeps] = FunctionToolset()
     toolset.add_function(search, name=tool_name, retries=3)
