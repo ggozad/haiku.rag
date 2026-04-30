@@ -470,6 +470,17 @@ class TestExtractItemsPictureBytes:
         picture_items = [i for i in items if i.label == "picture"]
         assert picture_items[0].picture_data == b"snapshot-picture-bytes"
 
+    def test_live_image_uri_wins_over_existing_picture_data(self):
+        """When both an inline URI and a snapshot are available, the URI wins."""
+        doc = _docling_doc_with_picture()
+        snapshot = {"#/pictures/0": b"snapshot-bytes-should-not-be-used"}
+        items = extract_items("doc-1", doc, existing_picture_data=snapshot)
+        picture_items = [i for i in items if i.label == "picture"]
+        data = picture_items[0].picture_data
+        assert data is not None
+        assert data.startswith(b"\x89PNG")
+        assert data != b"snapshot-bytes-should-not-be-used"
+
 
 class TestExtractItemTextDescription:
     """A2b: extract_item_text returns VLM description text for PictureItems."""
