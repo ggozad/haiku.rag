@@ -184,6 +184,7 @@ async def create_document_from_source(
     source: str | Path,
     title: str | None = None,
     metadata: dict | None = None,
+    uri: str | None = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -191,6 +192,12 @@ async def create_document_from_source(
     - If MD5 is unchanged, returns existing document
     - If MD5 changed, updates the document
     - If no document exists, creates a new one
+
+    If ``uri`` is provided, it overrides the URI auto-derived from the source
+    (which is normally ``file://`` for local files or the URL for remote
+    sources). This is useful when callers want to persist documents under a
+    logical identifier (e.g. an ArXiv ID) rather than the on-disk path. Not
+    supported for directory sources, which produce one document per file.
 
     Returns a single Document for files/URLs, a list for directories.
     """
@@ -200,7 +207,7 @@ async def create_document_from_source(
     parsed_url = urlparse(source_str)
     if parsed_url.scheme in ("http", "https"):
         return await _create_or_update_document_from_url(
-            client, source_str, title=title, metadata=metadata
+            client, source_str, title=title, metadata=metadata, uri=uri
         )
     elif parsed_url.scheme == "file":
         source_path = Path(parsed_url.path)
@@ -208,6 +215,11 @@ async def create_document_from_source(
         source_path = Path(source) if isinstance(source, str) else source
 
     if source_path.is_dir():
+        if uri is not None:
+            raise ValueError(
+                "uri override is not supported for directory sources; each file "
+                "produces its own document with its own auto-derived URI."
+            )
         from haiku.rag.monitor import FileFilter
 
         documents = []
@@ -224,7 +236,7 @@ async def create_document_from_source(
         return documents
 
     return await _create_document_from_file(
-        client, source_path, title=title, metadata=metadata
+        client, source_path, title=title, metadata=metadata, uri=uri
     )
 
 
@@ -233,8 +245,13 @@ async def _create_document_from_file(
     source_path: Path,
     title: str | None = None,
     metadata: dict | None = None,
+    uri: str | None = None,
 ) -> Document:
-    """Create or update a document from a single file path."""
+    """Create or update a document from a single file path.
+
+    ``uri`` overrides the auto-derived ``file://`` URI; it's used as the
+    canonical document identifier for lookup and storage.
+    """
     from haiku.rag.embeddings import embed_chunks
 
     metadata = metadata or {}
@@ -246,7 +263,8 @@ async def _create_document_from_file(
     if not source_path.exists():
         raise ValueError(f"File does not exist: {source_path}")
 
-    uri = source_path.absolute().as_uri()
+    if uri is None:
+        uri = source_path.absolute().as_uri()
     md5_hash = hashlib.md5(source_path.read_bytes(), usedforsecurity=False).hexdigest()
 
     content_type, _ = mimetypes.guess_type(str(source_path))
@@ -315,12 +333,17 @@ async def _create_or_update_document_from_url(
     url: str,
     title: str | None = None,
     metadata: dict | None = None,
+    uri: str | None = None,
 ) -> Document:
-    """Create or update a document from a URL by downloading and parsing the content."""
+    """Create or update a document from a URL by downloading and parsing the content.
+
+    ``uri`` overrides the URL as the stored document identifier.
+    """
     from haiku.rag.client.processing import get_extension_from_content_type_or_url
     from haiku.rag.embeddings import embed_chunks
 
     metadata = metadata or {}
+    stored_uri = uri if uri is not None else url
 
     converter = get_converter(client._config)
     supported_extensions = converter.supported_extensions
@@ -334,7 +357,7 @@ async def _create_or_update_document_from_url(
         content_type = response.headers.get("content-type", "").lower()
 
         # Check if document already exists
-        existing_doc = await client.get_document_by_uri(url)
+        existing_doc = await client.get_document_by_uri(stored_uri)
         if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
             updated = False
             if title is not None and title != existing_doc.title:
@@ -396,7 +419,7 @@ async def _create_or_update_document_from_url(
                 )
             document = Document(
                 content=stored_content,
-                uri=url,
+                uri=stored_uri,
                 title=title,
                 metadata=metadata,
             )

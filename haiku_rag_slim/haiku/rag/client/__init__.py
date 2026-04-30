@@ -195,10 +195,11 @@ class HaikuRAG:
         source: str | Path,
         title: str | None = None,
         metadata: dict | None = None,
+        uri: str | None = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
-        return await create_document_from_source(self, source, title, metadata)
+        return await create_document_from_source(self, source, title, metadata, uri=uri)
 
     async def update_document(
         self,

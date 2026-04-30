@@ -123,6 +123,20 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 
 *Measured on haiku.rag v0.43.1, judged by `ollama:qwen3.6` (current default), on 199 of 200 completed cases.* 28 % of cases produce a perfect citation (`cited_map` = 1.0).
 
+### OpenRAG Bench (ORB)
+
+[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval over visual content like figures, charts, and diagrams. Each query maps to one relevant document.
+
+**Multimodal processing**: Picture descriptions are generated using a Vision Language Model (VLM) during document conversion, making embedded images searchable via text queries. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
+
+#### Skill QA + citation retrieval
+
+| Skill model      | QA accuracy | Mean `cited_map` | VLM                  |
+|------------------|-------------|------------------|----------------------|
+| `ollama:gpt-oss` | 0.94        | 0.86             | Ollama / ministral-3 |
+
+*Measured on haiku.rag v0.44.0, judged by `ollama:qwen3.6` (current default), on 2992 of 3044 completed cases.*
+
 ## Past results
 
 These were measured under the prior pinned judge (`ollama:gpt-oss`). The pinned default has since switched to `ollama:qwen3.6` (see [Methodology — QA Accuracy](#qa-accuracy)) — under the new judge the QA accuracy numbers below typically shift up by ~5–10 pp.
@@ -198,25 +212,3 @@ Note the significant degradation when very small models are used such as `qwen3:
 | `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
 
 *Measured on haiku.rag v0.20.2, judged by `ollama:gpt-oss`.*
-
-### OpenRAG Bench (ORB)
-
-[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval over visual content like figures, charts, and diagrams. We use MAP for retrieval evaluation since each query maps to one relevant document.
-
-**Multimodal processing**: Picture descriptions are generated using a Vision Language Model (VLM) during document conversion, making embedded images searchable via text queries. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
-
-#### Retrieval (MAP)
-
-| Embedding Model      | MAP    | VLM                  |
-|----------------------|--------|----------------------|
-| `qwen3-embedding:4b` | 0.9626 | Ollama / ministral-3 |
-
-*Measured on haiku.rag v0.26.8.*
-
-#### QA Accuracy
-
-| Embedding Model      | QA Model                    | Accuracy | VLM                  |
-|----------------------|-----------------------------|----------|----------------------|
-| `qwen3-embedding:4b` | `gpt-oss:20b` - no thinking | 0.912    | Ollama / ministral-3 |
-
-*Measured on haiku.rag v0.26.8, judged by `ollama:gpt-oss`.*
