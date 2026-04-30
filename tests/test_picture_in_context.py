@@ -167,6 +167,32 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
 
 
 @pytest.mark.asyncio
+async def test_rechunk_preserves_picture_data(temp_db_path):
+    """``rebuild --rechunk`` keeps ``picture_data`` for every picture row."""
+    from haiku.rag.client import RebuildMode
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        rag._config.processing.pictures = "image"
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        assert created.id is not None
+        before = await rag.document_item_repository.get_all_picture_data(created.id)
+        assert before.get("#/pictures/0") is not None
+
+        async for _ in rag.rebuild_database(mode=RebuildMode.RECHUNK):
+            pass
+
+        after = await rag.document_item_repository.get_all_picture_data(created.id)
+        assert after.get("#/pictures/0") == before.get("#/pictures/0")
+
+
+@pytest.mark.asyncio
 async def test_update_clears_picture_data_when_mode_none(temp_db_path):
     """Switching to ``pictures="none"`` and re-running update_document
     drops picture_data — the snapshot/merge gate is what gives users a

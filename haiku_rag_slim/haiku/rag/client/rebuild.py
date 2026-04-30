@@ -223,27 +223,26 @@ async def _flush_rebuild_batch(
 async def _rebuild_rechunk(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
-    """Re-chunk and re-embed from existing document content."""
+    """Re-chunk and re-embed each document from its stored docling blob."""
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
     pending_doc_ids: list[str] = []
 
-    converter = get_converter(client._config)
-
     for doc in documents:
         assert doc.id is not None
 
-        # Convert stored markdown to DoclingDocument
-        docling_document = await converter.convert_text(doc.content, format="md")
+        docling_document = doc.get_docling_document()
+        if docling_document is None:
+            raise ValueError(
+                f"Document {doc.id} has no stored docling document; rechunk "
+                "requires it. Run a full rebuild (without --rechunk) instead."
+            )
 
         # Chunk and embed
         chunks = await client.chunk(docling_document)
         embedded_chunks = await embed_chunks(chunks, client._config)
-
-        # Update document fields
-        doc.set_docling(docling_document)
 
         # Prepare chunks with document_id and order
         for order, chunk in enumerate(embedded_chunks):
