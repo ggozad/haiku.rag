@@ -167,6 +167,42 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
 
 
 @pytest.mark.asyncio
+async def test_update_clears_picture_data_when_mode_none(temp_db_path):
+    """Switching to ``pictures="none"`` and re-running update_document
+    drops picture_data — the snapshot/merge gate is what gives users a
+    "rebuild reclaims storage" path when they downgrade modes."""
+    from haiku.rag.client.documents import (
+        _store_document_with_chunks,
+        _update_document_with_chunks,
+    )
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        # Ingest under "image" so picture bytes land in document_items.
+        rag._config.processing.pictures = "image"
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        assert created.id is not None
+        before = await rag.document_item_repository.get_all_picture_data(created.id)
+        assert before.get("#/pictures/0") is not None
+
+        # Downgrade to "none" and re-run update with the (already stripped)
+        # docling pulled from storage. The snapshot/merge must be skipped so
+        # picture_data is cleared on the new items rows.
+        rag._config.processing.pictures = "none"
+        from_blob = created.get_docling_document()
+        assert from_blob is not None
+        await _update_document_with_chunks(rag, created, [], from_blob)
+
+        after = await rag.document_item_repository.get_all_picture_data(created.id)
+        assert after.get("#/pictures/0") is None
+
+
+@pytest.mark.asyncio
 async def test_expand_context_repopulates_image_data(temp_db_path):
     """expand_context rebuilds SearchResult objects via expand_with_items, so
     it must re-attach picture bytes — otherwise vision flows downstream see

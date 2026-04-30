@@ -431,6 +431,8 @@ class TestPictureDataStorage:
         async with HaikuRAG(temp_db_path, create=True) as rag:
             schema = await rag.store.document_items_table.schema()
             assert "picture_data" in {f.name for f in schema}
+
+
 def _docling_doc_with_picture():
     """Build a tiny DoclingDocument with one PictureItem carrying real PNG bytes
     via ImageRef.from_pil. Used by the picture-extraction tests."""
@@ -634,6 +636,8 @@ class TestPictureDataPreservedThroughRoundTrip:
         docling_doc = _docling_doc_with_picture()
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
+            # Preservation only kicks in under modes that retain picture bytes.
+            rag._config.processing.pictures = "image"
             document = Document(content="Hello world", uri="test://doc")
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(rag, document, [], docling_doc)

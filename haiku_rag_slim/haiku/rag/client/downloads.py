@@ -105,7 +105,10 @@ async def download_models(
     if config.reranking.model and config.reranking.model.provider == "ollama":
         required_models.add(config.reranking.model.name)
     pic_desc = config.processing.conversion_options.picture_description
-    if pic_desc.enabled and pic_desc.model.provider == "ollama":
+    if (
+        config.processing.pictures == "description"
+        and pic_desc.model.provider == "ollama"
+    ):
         required_models.add(pic_desc.model.name)
     if (
         config.processing.auto_title

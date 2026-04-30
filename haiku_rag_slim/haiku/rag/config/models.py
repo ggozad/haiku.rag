@@ -110,9 +110,12 @@ class AnalysisConfig(BaseModel):
 
 
 class PictureDescriptionConfig(BaseModel):
-    """Configuration for VLM-based picture description."""
+    """Settings for the VLM that runs at ingest under ``pictures="description"``.
 
-    enabled: bool = False
+    Whether the VLM runs at all is decided by ``ProcessingConfig.pictures``;
+    these fields only describe *how* it runs once enabled.
+    """
+
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
@@ -143,12 +146,14 @@ class ConversionOptions(BaseModel):
     # Image options
     images_scale: float = 2.0
     generate_page_images: bool = True
-    generate_picture_images: bool = False
 
-    # VLM picture description
+    # VLM picture description (only effective when ProcessingConfig.pictures == "description")
     picture_description: PictureDescriptionConfig = Field(
         default_factory=PictureDescriptionConfig
     )
+
+
+PicturesMode = Literal["none", "description", "image"]
 
 
 class ProcessingConfig(BaseModel):
@@ -160,6 +165,18 @@ class ProcessingConfig(BaseModel):
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
+    pictures: PicturesMode = "none"
+    """How embedded pictures are handled at ingest.
+
+    - ``"none"``: docling skips picture-image generation; structural
+      ``label="picture"`` rows still exist but carry no bytes or description.
+    - ``"description"``: docling generates picture images, the VLM produces
+      text descriptions woven into chunk text, and the bytes are also
+      retained in ``document_items.picture_data`` so a vision-capable QA
+      model can be turned on later without reingesting.
+    - ``"image"``: docling generates picture images and stores them in
+      ``document_items.picture_data``; no VLM runs at ingest.
+    """
     auto_title: bool = False
     title_model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(

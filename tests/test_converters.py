@@ -378,7 +378,7 @@ class TestDoclingLocalConverter:
     async def test_convert_pdf_without_picture_images(self, config):
         """Test PDF conversion excludes embedded images by default."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.conversion_options.generate_picture_images = False
+        config.processing.pictures = "none"
         converter = DoclingLocalConverter(config)
 
         doc = await converter.convert_file(pdf_path)
@@ -387,14 +387,14 @@ class TestDoclingLocalConverter:
         # Check that pictures don't have image data
         for picture in doc.pictures:
             assert picture.image is None, (
-                "Pictures should not have image data when generate_picture_images=False"
+                'Pictures should not have image data when pictures="none"'
             )
 
     @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(self, config):
         """Test PDF conversion includes embedded images when enabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.conversion_options.generate_picture_images = True
+        config.processing.pictures = "image"
         converter = DoclingLocalConverter(config)
 
         doc = await converter.convert_file(pdf_path)
@@ -404,7 +404,7 @@ class TestDoclingLocalConverter:
         pictures_with_images = [p for p in doc.pictures if p.image is not None]
         if doc.pictures:
             assert len(pictures_with_images) > 0, (
-                "Pictures should have image data when generate_picture_images=True"
+                'Pictures should have image data when pictures="image"'
             )
 
     @pytest.mark.asyncio
@@ -549,7 +549,7 @@ class TestDoclingLocalConverter:
 
     def test_picture_description_config_defaults(self, config):
         """Test that picture description config has correct defaults."""
-        assert config.processing.conversion_options.picture_description.enabled is False
+        assert config.processing.pictures == "none"
         assert (
             config.processing.conversion_options.picture_description.model.provider
             == "ollama"
@@ -567,12 +567,12 @@ class TestDoclingLocalConverter:
 
     def test_picture_description_config_applied(self, config):
         """Test that picture description config is applied to converter."""
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.timeout = 120
         converter = DoclingLocalConverter(config)
 
+        assert converter.config.processing.pictures == "description"
         pic_desc = converter.config.processing.conversion_options.picture_description
-        assert pic_desc.enabled is True
         assert pic_desc.timeout == 120
 
     @pytest.mark.asyncio
@@ -584,7 +584,7 @@ class TestDoclingLocalConverter:
         # Disable OCR (not needed for native PDF, avoids model downloads)
         config.processing.conversion_options.do_ocr = False
         # Enable picture description with Ollama
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -700,7 +700,7 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.table_cell_matching = False
         config.processing.conversion_options.do_table_structure = False
         config.processing.conversion_options.images_scale = 3.0
-        config.processing.conversion_options.generate_picture_images = False
+        config.processing.pictures = "none"
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
@@ -754,11 +754,11 @@ class TestDoclingServeConverter:
 
     @pytest.mark.asyncio
     async def test_picture_images_request_uses_referenced_zip(self, config):
-        """When generate_picture_images is on, the request flips to
+        """When pictures="image" the request flips to
         image_export_mode=referenced + target_type=zip and consumes a zip
         response — mirrors the upstream docling-serve#576 workaround.
         """
-        config.processing.conversion_options.generate_picture_images = True
+        config.processing.pictures = "image"
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
@@ -1038,13 +1038,13 @@ class TestDoclingServeConverterPictureDescription:
     async def test_picture_description_options_passed_to_api(self, config):
         """Test that picture description options are passed to docling-serve API.
 
-        Picture descriptions force ``generate_picture_images=True`` upstream,
-        which routes the request through the ``target_type=zip`` path so the
-        VLM can see the actual figures. The test mocks the zip workflow.
+        ``pictures="description"`` requires picture images for the VLM, which
+        routes the request through the ``target_type=zip`` path. The test
+        mocks the zip workflow.
         """
         import json
 
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -1155,7 +1155,7 @@ class TestDoclingServeConverterIntegration:
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -1228,7 +1228,7 @@ class TestDoclingServeConverterIntegration:
     async def test_convert_pdf_without_picture_images(self, config):
         """Test PDF conversion excludes picture images when disabled."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.conversion_options.generate_picture_images = False
+        config.processing.pictures = "none"
         converter = DoclingServeConverter(config)
 
         doc = await converter.convert_file(pdf_path)
@@ -1237,7 +1237,7 @@ class TestDoclingServeConverterIntegration:
         # Check that pictures don't have image data
         for picture in doc.pictures:
             assert picture.image is None, (
-                "Pictures should not have image data when generate_picture_images=False"
+                'Pictures should not have image data when pictures="none"'
             )
 
     @pytest.mark.vcr()
@@ -1266,7 +1266,7 @@ class TestDoclingServeConverterIntegration:
         URIs so the result is shape-equivalent to the local converter.
         """
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.conversion_options.generate_picture_images = True
+        config.processing.pictures = "image"
         converter = DoclingServeConverter(config)
 
         doc = await converter.convert_file(pdf_path)
@@ -1275,7 +1275,7 @@ class TestDoclingServeConverterIntegration:
         pictures_with_images = [p for p in doc.pictures if p.image is not None]
         assert doc.pictures, "doclaynet.pdf is expected to contain at least one picture"
         assert len(pictures_with_images) > 0, (
-            "Pictures should have image data when generate_picture_images=True"
+            'Pictures should have image data when pictures="image"'
         )
         sample = pictures_with_images[0]
         assert sample.image is not None

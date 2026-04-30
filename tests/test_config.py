@@ -225,3 +225,92 @@ def test_init_config_creates_valid_yaml(tmp_path):
     # Validate it
     config = AppConfig.model_validate(loaded_data)
     assert config.environment == "production"
+
+
+# A4: legacy `generate_picture_images` + `picture_description.enabled` translation
+
+
+def _write(tmp_path, body: str):
+    p = tmp_path / "haiku.rag.yaml"
+    p.write_text(body)
+    return p
+
+
+def test_load_yaml_legacy_picture_description_maps_to_description(tmp_path, caplog):
+    """`picture_description.enabled=true` (with or without the image flag)
+    maps to `processing.pictures: description`."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  conversion_options:
+    generate_picture_images: false
+    picture_description:
+      enabled: true
+      timeout: 120
+""",
+    )
+    with caplog.at_level("WARNING", logger="haiku.rag.config.loader"):
+        data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.pictures == "description"
+    assert cfg.processing.conversion_options.picture_description.timeout == 120
+    assert any("picture_description.enabled=true" in m.message for m in caplog.records)
+
+
+def test_load_yaml_legacy_generate_picture_images_maps_to_image(tmp_path, caplog):
+    """`generate_picture_images=true` alone maps to `pictures: image`."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  conversion_options:
+    generate_picture_images: true
+""",
+    )
+    with caplog.at_level("WARNING", logger="haiku.rag.config.loader"):
+        data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.pictures == "image"
+    assert any("generate_picture_images=true" in m.message for m in caplog.records)
+
+
+def test_load_yaml_no_legacy_fields_keeps_default_none(tmp_path, caplog):
+    """Empty processing block leaves the default `none` mode untouched and
+    does not warn."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  chunk_size: 256
+""",
+    )
+    with caplog.at_level("WARNING", logger="haiku.rag.config.loader"):
+        data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.pictures == "none"
+    assert not caplog.records
+
+
+def test_load_yaml_explicit_pictures_wins_over_legacy(tmp_path):
+    """When the user has migrated to `pictures: ...` we keep their choice
+    and silently drop legacy fields if both are present (e.g. from a
+    half-migrated config)."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  pictures: image
+  conversion_options:
+    generate_picture_images: false
+    picture_description:
+      enabled: true
+""",
+    )
+    data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.pictures == "image"
+    # Legacy fields scrubbed so Pydantic validation doesn't trip on extras.
+    opts = data["processing"]["conversion_options"]
+    assert "generate_picture_images" not in opts
+    assert "enabled" not in opts.get("picture_description", {})

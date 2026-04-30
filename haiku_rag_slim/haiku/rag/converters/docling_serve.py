@@ -85,13 +85,8 @@ class DoclingServeConverter(DocumentConverter):
         raise ValueError(f"Unsupported VLM provider: {model.provider}")
 
     def _picture_images_enabled(self) -> bool:
-        """Whether the conversion should produce embedded picture images.
-
-        True if the user explicitly enabled ``generate_picture_images`` or if
-        ``picture_description.enabled`` is on (the VLM needs the picture bytes).
-        """
-        opts = self.config.processing.conversion_options
-        return opts.generate_picture_images or opts.picture_description.enabled
+        """Whether the conversion should produce embedded picture images."""
+        return self.config.processing.pictures != "none"
 
     def _build_conversion_data(self) -> dict[str, str | list[str]]:
         """Build form data for conversion request.
@@ -108,7 +103,9 @@ class DoclingServeConverter(DocumentConverter):
         """
         opts = self.config.processing.conversion_options
         pic_desc = opts.picture_description
-        picture_images_enabled = self._picture_images_enabled()
+        pictures_mode = self.config.processing.pictures
+        picture_images_enabled = pictures_mode != "none"
+        runs_vlm = pictures_mode == "description"
 
         if picture_images_enabled:
             image_export_mode = "referenced"
@@ -128,7 +125,7 @@ class DoclingServeConverter(DocumentConverter):
             "images_scale": str(opts.images_scale),
             "image_export_mode": image_export_mode,
             "include_images": str(picture_images_enabled).lower(),
-            "do_picture_description": str(pic_desc.enabled).lower(),
+            "do_picture_description": str(runs_vlm).lower(),
         }
 
         if picture_images_enabled:
@@ -137,7 +134,7 @@ class DoclingServeConverter(DocumentConverter):
         if opts.ocr_lang:
             data["ocr_lang"] = opts.ocr_lang
 
-        if pic_desc.enabled:
+        if runs_vlm:
             prompt = self.config.prompts.picture_description
             picture_description_api = {
                 "url": self._get_vlm_api_url(pic_desc.model),

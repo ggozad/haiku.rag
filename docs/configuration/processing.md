@@ -28,6 +28,9 @@ processing:
     name: gpt-oss
     enable_thinking: false
 
+  # Picture handling (none / description / image)
+  pictures: none                             # See "Picture Handling" below
+
   # Conversion options (works with both local and remote converters)
   conversion_options:
     # OCR settings
@@ -44,11 +47,9 @@ processing:
     # Image settings
     images_scale: 2.0                        # Image scale factor
     generate_page_images: true               # Include rendered page images (for visualize_chunk)
-    generate_picture_images: false           # Include embedded figure/diagram images
 
-    # VLM picture description (optional)
+    # VLM picture description settings (only effective when pictures: description)
     picture_description:
-      enabled: false                         # Enable VLM image descriptions
       model:
         provider: ollama
         name: ministral-3
@@ -100,34 +101,44 @@ conversion_options:
 conversion_options:
   images_scale: 2.0               # Image resolution scale factor
   generate_page_images: true      # Include rendered page images
-  generate_picture_images: false  # Include embedded figure/diagram images
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **generate_picture_images**: When `true`, embedded images (figures, diagrams) are included as base64-encoded data in the document. When `false` (default), images are excluded to reduce chunk size and avoid context bloat.
 
-**Note:** With `docling-serve`, `generate_picture_images` has limited support - picture image data may not be returned in the JSON response. Page images work correctly with both local and remote converters.
+Embedded picture extraction is controlled by `processing.pictures` (see [Picture Handling](#picture-handling) below), not by an image-settings flag.
 
-#### Picture Description (VLM)
+#### Picture Handling
 
-Use a Vision Language Model (VLM) to automatically describe images in documents. Descriptions become searchable text, improving RAG retrieval for visual content.
+`processing.pictures` is a single enum that decides how embedded picture images (figures, diagrams) are handled at ingest. Three modes:
+
+| Mode | VLM at ingest | `picture_data` populated | Chunk text contains description |
+|---|---|---|---|
+| `none` (default) | no | no | no |
+| `description` | yes | yes | yes |
+| `image` | no | yes | no |
+
+- **`none`**: docling skips picture-image generation. `label="picture"` rows still appear in the items table for structural metadata, but they carry no bytes and no description. Cheapest mode; non-vision QA is unaffected.
+- **`description`**: docling generates picture images, the configured VLM produces a description woven into chunk text, and the bytes are also retained in `document_items.picture_data`. Picture-text is searchable via FTS, vision-capable QA models also receive the bytes via the agent's search tool. Bytes are kept (not just thrown away after the VLM runs) so a vision-only QA strategy can be turned on later without reingesting.
+- **`image`**: docling generates picture images and stores them in `document_items.picture_data` without running the VLM. Vision-capable QA models reason directly about the figures; non-vision QA only sees the picture's caption/surrounding text.
 
 ```yaml
-conversion_options:
-  picture_description:
-    enabled: true                  # Enable VLM picture description
-    model:
-      provider: ollama             # ollama, openai, or custom
-      name: ministral-3            # VLM model name
-      temperature: 0.0             # Default: 0.0 (factual descriptions)
-    timeout: 90                    # Request timeout in seconds
-    max_tokens: 200                # Maximum tokens in response
+processing:
+  pictures: description          # none / description / image
+  conversion_options:
+    picture_description:         # only effective when pictures: description
+      model:
+        provider: ollama         # ollama, openai, or custom
+        name: ministral-3        # VLM model name
+        temperature: 0.0
+      timeout: 90                # Request timeout in seconds
+      max_tokens: 200            # Maximum tokens in response
 ```
 
-**Configuration options:**
+**Switching modes on an existing database.** No reingest is required if you only need to change between `description` and `image` — the bytes are already there. Run `haiku-rag rebuild --rechunk` after the config change so the chunk-text composition reflects the new mode. Switching *down* to `none` clears `picture_data` on rebuild, reclaiming storage.
 
-- **enabled**: When `true`, each embedded image is sent to a VLM for description. Requires `generate_picture_images` to be `true` (automatically enabled).
+**`picture_description.model` configuration** (used only under `pictures: description`):
+
 - **model**: Standard model configuration
   - `provider`: `ollama` (default), `openai`, or use `base_url` for custom endpoints
   - `name`: Model name (e.g., `ministral-3`, `granite3.2-vision`, `gpt-4-vision`)
@@ -155,12 +166,13 @@ prompts:
 **Using with Ollama:**
 
 ```yaml
-conversion_options:
-  picture_description:
-    enabled: true
-    model:
-      provider: ollama
-      name: ministral-3
+processing:
+  pictures: description
+  conversion_options:
+    picture_description:
+      model:
+        provider: ollama
+        name: ministral-3
 ```
 
 Requires Ollama running with a vision-capable model:
@@ -173,13 +185,14 @@ ollama serve
 **Using with vLLM or custom endpoints:**
 
 ```yaml
-conversion_options:
-  picture_description:
-    enabled: true
-    model:
-      provider: openai           # Use OpenAI-compatible API format
-      name: granite-vision
-      base_url: http://my-vllm-server:8000
+processing:
+  pictures: description
+  conversion_options:
+    picture_description:
+      model:
+        provider: openai           # Use OpenAI-compatible API format
+        name: granite-vision
+        base_url: http://my-vllm-server:8000
 ```
 
 **How it works:**
@@ -199,12 +212,14 @@ When using `converter: docling-serve`, the VLM calls are made by the docling-ser
 **Docker networking:** If docling-serve runs in Docker and your VLM runs on the host, use `host.docker.internal` instead of `localhost`:
 
 ```yaml
-picture_description:
-  enabled: true
-  model:
-    provider: ollama
-    name: ministral-3
-    base_url: http://host.docker.internal:11434  # NOT localhost!
+processing:
+  pictures: description
+  conversion_options:
+    picture_description:
+      model:
+        provider: ollama
+        name: ministral-3
+        base_url: http://host.docker.internal:11434  # NOT localhost!
 ```
 
 See [VLM Picture Description with docling-serve](../remote-processing.md#vlm-picture-description-with-docling-serve) for a complete example.

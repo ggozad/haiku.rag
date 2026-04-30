@@ -99,12 +99,16 @@ async def _update_document_with_chunks(
         # Replace document items when a new DoclingDocument is provided.
         # Snapshot existing picture bytes first so they survive the
         # delete-and-re-extract cycle when the live docling has already had
-        # its picture URIs stripped (rebuild / round-trip scenarios).
+        # its picture URIs stripped (rebuild / round-trip scenarios). Under
+        # `pictures="none"` we skip the snapshot so updates reclaim storage.
         if docling_document is not None:
+            keep_picture_data = client._config.processing.pictures != "none"
             existing_picture_data = (
                 await client.document_item_repository.get_all_picture_data(
                     updated_doc.id
                 )
+                if keep_picture_data
+                else None
             )
             await client.document_item_repository.delete_by_document_id(updated_doc.id)
             items = extract_items(
