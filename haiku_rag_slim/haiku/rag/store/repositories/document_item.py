@@ -4,11 +4,10 @@ from haiku.rag.store.engine import DocumentItemRecord, Store
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.utils import escape_sql_string
 
-# Columns returned by the lightweight read path. `picture_data` is intentionally
-# excluded so context expansion and the analysis-sandbox items.jsonl build don't
-# pull MB-scale image bytes into memory. Use get_picture_bytes /
-# get_pictures_for_chunk to fetch picture_data explicitly.
-_LIGHT_COLUMNS = [
+# Per-item metadata columns. The payload column ``picture_data`` is fetched
+# explicitly via ``get_picture_bytes`` / ``get_pictures_for_chunk`` /
+# ``get_all_picture_data`` so bulk scans don't pull MB-scale image bytes.
+_METADATA_COLUMNS = [
     "document_id",
     "position",
     "self_ref",
@@ -59,7 +58,7 @@ class DocumentItemRepository:
         safe_id = escape_sql_string(document_id)
         rows = await (
             self.store.document_items_table.query()
-            .select(_LIGHT_COLUMNS)
+            .select(_METADATA_COLUMNS)
             .where(f"document_id = '{safe_id}'")
             .to_list()
         )
@@ -79,7 +78,7 @@ class DocumentItemRepository:
         Returns:
             Dict mapping document_id to sorted list of DocumentItem.
         """
-        query = self.store.document_items_table.query().select(_LIGHT_COLUMNS)
+        query = self.store.document_items_table.query().select(_METADATA_COLUMNS)
         if document_ids is not None:
             safe_ids = ", ".join(f"'{escape_sql_string(did)}'" for did in document_ids)
             query = query.where(f"document_id IN ({safe_ids})")
@@ -100,7 +99,7 @@ class DocumentItemRepository:
         safe_id = escape_sql_string(document_id)
         rows = await (
             self.store.document_items_table.query()
-            .select(_LIGHT_COLUMNS)
+            .select(_METADATA_COLUMNS)
             .where(
                 f"document_id = '{safe_id}' "
                 f"AND position >= {start} AND position <= {end}"
