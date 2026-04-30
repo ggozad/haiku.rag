@@ -120,6 +120,8 @@ async def _apply_extract_picture_bytes(store: Store) -> None:  # pragma: no cove
             if updates:
                 # Find the matching items rows so we can preserve their
                 # position/label/text/page_numbers and just attach bytes.
+                # Earlier migrations (v0.40.0) populate items rows for every
+                # picture self_ref, so the lookup below is total.
                 self_refs = [u[0] for u in updates]
                 ref_clause = ", ".join(f"'{escape_sql_string(r)}'" for r in self_refs)
                 existing_items = await (
@@ -129,35 +131,26 @@ async def _apply_extract_picture_bytes(store: Store) -> None:  # pragma: no cove
                 )
                 existing_by_ref = {r["self_ref"]: r for r in existing_items}
 
-                new_records: list[DocumentItemRecord] = []
-                for ref, img_bytes in updates:
-                    existing = existing_by_ref.get(ref)
-                    if existing is None:
-                        # No item row for this self_ref — likely a legacy DB
-                        # where v0.40.0 didn't run. Skip; rerun migrations.
-                        continue
-                    new_records.append(
-                        DocumentItemRecord(
-                            document_id=doc_id,
-                            position=existing["position"],
-                            self_ref=ref,
-                            label=existing.get("label", ""),
-                            text=existing.get("text", ""),
-                            page_numbers=existing.get("page_numbers", "[]"),
-                            picture_data=img_bytes,
-                        )
+                new_records = [
+                    DocumentItemRecord(
+                        document_id=doc_id,
+                        position=existing_by_ref[ref]["position"],
+                        self_ref=ref,
+                        label=existing_by_ref[ref].get("label", ""),
+                        text=existing_by_ref[ref].get("text", ""),
+                        page_numbers=existing_by_ref[ref].get("page_numbers", "[]"),
+                        picture_data=img_bytes,
                     )
+                    for ref, img_bytes in updates
+                ]
 
-                if new_records:
-                    await (
-                        store.document_items_table.merge_insert(
-                            ["document_id", "self_ref"]
-                        )
-                        .when_matched_update_all()
-                        .when_not_matched_insert_all()
-                        .execute(new_records)
-                    )
-                    wrote_items = True
+                await (
+                    store.document_items_table.merge_insert(["document_id", "self_ref"])
+                    .when_matched_update_all()
+                    .when_not_matched_insert_all()
+                    .execute(new_records)
+                )
+                wrote_items = True
 
             new_structure_bytes = compress_json(json.dumps(data))
             await store.documents_table.update(
