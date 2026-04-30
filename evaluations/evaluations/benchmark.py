@@ -133,13 +133,12 @@ async def populate_db(
                     progress.advance(task)
                     continue
 
-                # Use the actual URI that will be stored in the database
-                if payload.source_path is not None:
-                    lookup_uri = payload.source_path.absolute().as_uri()
-                else:
-                    lookup_uri = payload.uri
-
-                existing = await rag.get_document_by_uri(lookup_uri)
+                # `payload.uri` is the canonical document identifier and is now
+                # honored by both `create_document` and (via the `uri=` override)
+                # `create_document_from_source`, so it's also the right key to
+                # look up an existing document, regardless of whether the source
+                # is a file path or inline content.
+                existing = await rag.get_document_by_uri(payload.uri)
                 if existing is not None:
                     assert existing.id
                     chunks = await rag.chunk_repository.get_by_document_id(existing.id)
@@ -153,6 +152,7 @@ async def populate_db(
                         source=payload.source_path,
                         title=payload.title,
                         metadata=payload.metadata,
+                        uri=payload.uri,
                     )
                 else:
                     assert payload.content is not None
