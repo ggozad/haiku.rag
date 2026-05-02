@@ -1,3 +1,5 @@
+import platform
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -216,3 +218,177 @@ async def test_embed_chunks_preserves_all_fields(allow_model_requests):
     assert embedded[0].document_title == "Test Document"
     assert embedded[0].document_meta == {"author": "Test"}
     assert embedded[0].embedding is not None
+
+
+# B1: multimodal embedder support
+
+
+def _ollama_text_only_config():
+    return AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama", name="mxbai-embed-large", vector_dim=1024
+            )
+        )
+    )
+
+
+async def test_text_only_embedder_does_not_support_images():
+    embedder = get_embedder(_ollama_text_only_config())
+    assert embedder.supports_images is False
+    with pytest.raises(NotImplementedError, match="multimodal provider"):
+        await embedder.embed_image_query(b"\x89PNG\r\n\x1a\n")
+    with pytest.raises(NotImplementedError, match="multimodal provider"):
+        await embedder.embed_images([b"\x89PNG\r\n\x1a\n"])
+
+
+async def test_vllm_embed_text_request_shape(monkeypatch):
+    """vLLM text embedding posts a `messages` array with a single text part."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            captured["body"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="Qwen/Qwen3-VL-Embedding-2B",
+        vector_dim=2048,
+        base_url="http://localhost:8000/v1",
+    )
+    vec = await embedder.embed_query("a photo of a cat")
+    assert vec == [0.1, 0.2, 0.3]
+    assert captured["url"] == "http://localhost:8000/v1/embeddings"
+    body = captured["body"]
+    assert body["model"] == "Qwen/Qwen3-VL-Embedding-2B"
+    assert body["messages"] == [
+        {"role": "user", "content": [{"type": "text", "text": "a photo of a cat"}]}
+    ]
+    assert body["encoding_format"] == "float"
+
+
+async def test_vllm_embed_image_request_shape(monkeypatch):
+    """vLLM image embedding posts an `image_url` content part with a data: URI."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.4] * 4}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["body"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="some-model",
+        vector_dim=4,
+        base_url="http://localhost:8000/v1",
+    )
+    raw = b"\x89PNG\r\n\x1a\nfake"
+    vec = await embedder.embed_image_query(raw)
+    assert vec == [0.4, 0.4, 0.4, 0.4]
+    content = captured["body"]["messages"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "image_url"
+    url = content[0]["image_url"]["url"]
+    assert url.startswith("data:image/png;base64,")
+
+
+async def test_vllm_supports_images_flag():
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    assert embedder.supports_images is True
+
+
+async def test_vllm_get_embedder_routes_to_multimodal():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="vllm",
+                name="Qwen/Qwen3-VL-Embedding-2B",
+                vector_dim=2048,
+                base_url="http://my-vllm:8000/v1",
+            )
+        )
+    )
+    embedder = get_embedder(config)
+    assert embedder.supports_images is True
+    assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+
+def test_mlx_platform_guard_raises_off_apple_silicon(monkeypatch):
+    monkeypatch.setattr("sys.platform", "linux")
+    from haiku.rag.embeddings.mlx import MLXEmbedder
+
+    with pytest.raises(RuntimeError, match="Apple Silicon"):
+        MLXEmbedder(model_name="any", vector_dim=2048)
+
+
+def test_mlx_smoke():
+    """End-to-end smoke against a real MLX model. Requires the [mlx] extra."""
+    pytest.importorskip("mlx")
+    if not (sys.platform == "darwin" and platform.machine() == "arm64"):
+        pytest.skip("MLX path requires Apple Silicon")
+
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.embeddings.mlx import MLXEmbedder
+
+    embedder = MLXEmbedder(
+        model_name="jinaai/jina-embeddings-v4-mlx-8bit",
+        vector_dim=2048,
+    )
+
+    async def run():
+        text_vec = await embedder.embed_query("a photo of a cat")
+        assert len(text_vec) == 2048
+        img_vec = await embedder.embed_image_query(
+            PILImageModule.new("RGB", (224, 224), "red")
+        )
+        assert len(img_vec) == 2048
+        assert sum(a * b for a, b in zip(text_vec, img_vec)) != 0.0
+
+    import asyncio
+
+    asyncio.run(run())

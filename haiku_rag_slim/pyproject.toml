@@ -45,6 +45,12 @@ dependencies = [
 docling = ["docling>=2.84.0", "opencv-python-headless>=4.13.0.92"]
 # Embedding providers
 voyageai = ["pydantic-ai-slim[voyageai]"]
+mlx = [
+    "mlx>=0.20.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-lm>=0.20.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "huggingface-hub>=0.27.0",
+    "pillow>=10.0.0",
+]
 # Rerankers
 mxbai = ["mxbai-rerank>=0.1.6"]
 cohere = ["cohere>=5.21.1"]
