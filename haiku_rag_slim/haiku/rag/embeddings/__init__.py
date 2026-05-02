@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.embeddings import Embedder
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
@@ -8,18 +8,34 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from haiku.rag.config import AppConfig, Config
 
 if TYPE_CHECKING:
+    from PIL import Image as PILImage
+
     from haiku.rag.store.models.chunk import Chunk
 
 
-class EmbedderWrapper:
-    """Wrapper around pydantic-ai Embedder with explicit query/document methods."""
+ImageInput = "bytes | PILImage.Image"
 
-    def __init__(self, embedder: Embedder, vector_dim: int):
+
+class EmbedderWrapper:
+    """Wrapper around pydantic-ai Embedder with explicit query/document methods.
+
+    Subclasses set ``supports_images = True`` and override the image methods
+    when the underlying model can encode pictures into the same vector space.
+    """
+
+    supports_images: bool = False
+
+    def __init__(self, embedder: Embedder | None, vector_dim: int):
         self._embedder = embedder
         self._vector_dim = vector_dim
 
+    @property
+    def vector_dim(self) -> int:
+        return self._vector_dim
+
     async def embed_query(self, text: str) -> list[float]:
         """Embed a search query."""
+        assert self._embedder is not None
         result = await self._embedder.embed_query(text)
         return list(result.embeddings[0])
 
@@ -27,8 +43,25 @@ class EmbedderWrapper:
         """Embed documents/chunks for indexing."""
         if not texts:
             return []
+        assert self._embedder is not None
         result = await self._embedder.embed_documents(texts)
         return [list(e) for e in result.embeddings]
+
+    async def embed_image_query(self, image: "Any") -> list[float]:
+        """Embed a single image as a search query."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support image embedding. "
+            "Configure a multimodal provider (e.g. provider='mlx' or "
+            "provider='vllm')."
+        )
+
+    async def embed_images(self, images: list["Any"]) -> list[list[float]]:
+        """Batch-embed images for indexing into the same vector space as text."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support image embedding. "
+            "Configure a multimodal provider (e.g. provider='mlx' or "
+            "provider='vllm')."
+        )
 
 
 def contextualize(chunks: list["Chunk"]) -> list[str]:
@@ -147,5 +180,16 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
         return EmbedderWrapper(
             Embedder(f"sentence-transformers:{model_name}"), vector_dim
         )
+
+    if provider == "mlx":
+        from haiku.rag.embeddings.mlx import MLXEmbedder
+
+        return MLXEmbedder(model_name, vector_dim)
+
+    if provider == "vllm":
+        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+        base_url = embedding_model.base_url or "http://localhost:8000/v1"
+        return VLLMMultimodalEmbedder(model_name, vector_dim, base_url=base_url)
 
     raise ValueError(f"Unsupported embedding provider: {provider}")

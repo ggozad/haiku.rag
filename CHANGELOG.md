@@ -3,6 +3,10 @@
 
 ### Added
 
+- **Multimodal embedder support (`provider="mlx"` and `provider="vllm"`).** `EmbedderWrapper` gains `supports_images: bool`, `embed_image_query`, and `embed_images`. Two pluggable paths:
+  - `provider="mlx"` — Apple Silicon, in-process via the new `[mlx]` optional extra (env-marker-guarded so `uv sync --all-extras` works on Linux/Windows/Intel-Mac without resolver errors). Loads any HF repo that ships an MLX `load_model.py` (default tested model: `jinaai/jina-embeddings-v4-mlx-8bit`, 2048-dim).
+  - `provider="vllm"` — cross-platform, talks HTTP to a vLLM server's OpenAI-compatible `/v1/embeddings` endpoint with vLLM's `messages` superset (text or `image_url` content parts, base64 data URIs). Works with `Qwen/Qwen3-VL-Embedding-8B` and `jinaai/jina-embeddings-v4`. No Python ML deps added — uses `httpx`.
+  - Text-only providers (`ollama`, `openai`, `cohere`, `sentence-transformers`) report `supports_images=False` and raise a clear error if image methods are called.
 - **Picture-handling mode enum.** `processing.pictures: "none" | "description" | "image"` (default `"none"`) replaces the legacy `generate_picture_images` + `picture_description.enabled` pair.
   - `none` — no picture bytes, no VLM, just structural picture rows.
   - `description` — VLM runs at ingest, descriptions woven into chunk text, bytes also retained on `document_items.picture_data` so vision QA can be turned on later without reingesting.
