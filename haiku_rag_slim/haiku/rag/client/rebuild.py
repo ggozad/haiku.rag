@@ -224,11 +224,12 @@ async def _rebuild_rechunk(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Re-chunk and re-embed each document from its stored docling blob."""
-    from haiku.rag.embeddings import embed_chunks
+    from haiku.rag.embeddings import embed_chunks, get_embedder
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
     pending_doc_ids: list[str] = []
+    embedder = get_embedder(client._config)
 
     for doc in documents:
         assert doc.id is not None
@@ -240,8 +241,18 @@ async def _rebuild_rechunk(
                 "requires it. Run a full rebuild (without --rechunk) instead."
             )
 
-        # Chunk and embed
-        chunks = await client.chunk(docling_document)
+        # Stored blob has stripped picture URIs; pass the snapshot so
+        # build_picture_chunks (inside chunk()) can recover the bytes.
+        existing_picture_data = (
+            await client.document_item_repository.get_all_picture_data(doc.id)
+            if embedder.supports_images
+            else None
+        )
+        chunks = await client.chunk(
+            docling_document,
+            existing_picture_data=existing_picture_data,
+            document_id=doc.id,
+        )
         embedded_chunks = await embed_chunks(chunks, client._config)
 
         # Prepare chunks with document_id and order

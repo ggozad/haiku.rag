@@ -322,6 +322,252 @@ async def test_search_tool_returns_multimodal_when_picture_present():
     assert part.data == PICTURE_BYTES
 
 
+# B2: synthetic picture chunks at ingestion
+
+
+def test_build_picture_chunks_uses_live_uri():
+    from haiku.rag.client.processing import build_picture_chunks
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    doc = _docling_doc_with_picture()
+    chunks = build_picture_chunks(doc, document_id="doc-1")
+
+    assert len(chunks) == 1
+    chunk = chunks[0]
+    assert chunk.metadata["doc_item_refs"] == ["#/pictures/0"]
+    assert chunk.metadata["labels"] == ["picture"]
+    assert chunk._picture_data is not None
+    assert chunk._picture_data.startswith(b"\x89PNG")
+    assert chunk.document_id == "doc-1"
+
+
+def test_build_picture_chunks_falls_back_to_existing_picture_data():
+    """When the live docling has its picture URIs stripped, the snapshot
+    fills the gap so rebuild round-trips don't lose picture chunks."""
+    from haiku.rag.client.processing import build_picture_chunks
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    doc = _docling_doc_with_picture()
+    for picture in doc.pictures:
+        picture.image = None
+
+    chunks = build_picture_chunks(
+        doc,
+        document_id="doc-1",
+        existing_picture_data={"#/pictures/0": b"snapshot-bytes"},
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0]._picture_data == b"snapshot-bytes"
+
+
+def test_build_picture_chunks_skips_pictures_without_bytes():
+    from haiku.rag.client.processing import build_picture_chunks
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    doc = _docling_doc_with_picture()
+    for picture in doc.pictures:
+        picture.image = None
+
+    chunks = build_picture_chunks(doc, document_id="doc-1")
+    assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
+    """``chunk()`` merges text and picture chunks by their first
+    ``doc_item_ref``'s position in ``iterate_items()``, so picture chunks
+    sit where they appear in the document, not appended at the end.
+    """
+    from haiku.rag.client.processing import chunk
+    from haiku.rag.config import AppConfig
+    from haiku.rag.embeddings import EmbedderWrapper
+    from haiku.rag.store.models.chunk import Chunk
+
+    class StubMultimodalEmbedder(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+    class StubChunker:
+        async def chunk(self, document):
+            # Two text chunks straddling the picture's structural position.
+            # iterate_items order on the fixture below: texts/0, texts/1,
+            # pictures/0, texts/2 — positions 0,1,2,3.
+            return [
+                Chunk(
+                    content="before",
+                    metadata={"doc_item_refs": ["#/texts/0", "#/texts/1"]},
+                ),
+                Chunk(
+                    content="after",
+                    metadata={"doc_item_refs": ["#/texts/2"]},
+                ),
+            ]
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder",
+        lambda *a, **kw: StubMultimodalEmbedder(),
+    )
+    monkeypatch.setattr(
+        "haiku.rag.chunkers.get_chunker", lambda *a, **kw: StubChunker()
+    )
+
+    from docling_core.types.doc.document import DoclingDocument, ImageRef
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PILImageModule
+
+    img = PILImageModule.new("RGB", (8, 8), "blue")
+    doc = DoclingDocument(name="ordered")
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="A")
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="B")
+    doc.add_picture(image=ImageRef.from_pil(img, dpi=72))
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="C")
+
+    chunks = await chunk(AppConfig(), doc)
+
+    contents = [c.content for c in chunks]
+    assert contents == ["before", "", "after"], (
+        f"expected [before, picture, after], got {contents}"
+    )
+    assert chunks[1].metadata["labels"] == ["picture"]
+    assert chunks[1].metadata["doc_item_refs"] == ["#/pictures/0"]
+    assert chunks[1]._picture_data is not None
+    # chunk.order matches list index after the merge sort.
+    for i, c in enumerate(chunks):
+        assert c.order == i
+
+
+@pytest.mark.asyncio
+async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
+    """embed_chunks routes text chunks through embed_documents (batched) and
+    picture chunks through embed_image_query (one at a time), reassembling
+    in original order."""
+    from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
+    from haiku.rag.store.models.chunk import Chunk
+
+    text_calls: list[list[str]] = []
+    image_calls: list[bytes] = []
+
+    class StubEmbedder(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+        async def embed_documents(self, texts):
+            text_calls.append(list(texts))
+            return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
+
+        async def embed_image_query(self, image):
+            image_calls.append(image)
+            return [0.9, 0.8, 0.7, 0.6]
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder", lambda *a, **kw: StubEmbedder()
+    )
+
+    text_chunk = Chunk(content="hello", order=0)
+    pic_chunk = Chunk(
+        content="figure 1",
+        metadata={"labels": ["picture"], "doc_item_refs": ["#/pictures/0"]},
+        order=1,
+    )
+    pic_chunk._picture_data = b"PNGBYTES"
+
+    embedded = await embed_chunks([text_chunk, pic_chunk, text_chunk.model_copy()])
+
+    assert len(embedded) == 3
+    assert embedded[0].embedding == [0.1, 0.2, 0.3, 0.4]
+    assert embedded[1].embedding == [0.9, 0.8, 0.7, 0.6]
+    assert embedded[2].embedding == [0.1, 0.2, 0.3, 0.4]
+    assert text_calls == [["hello", "hello"]]
+    assert image_calls == [b"PNGBYTES"]
+
+
+@pytest.mark.asyncio
+async def test_embed_chunks_raises_on_picture_chunks_with_text_only_embedder(
+    monkeypatch,
+):
+    from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
+    from haiku.rag.store.models.chunk import Chunk
+
+    class TextOnlyEmbedder(EmbedderWrapper):
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+        async def embed_documents(self, texts):
+            return [[0.0] * 4 for _ in texts]
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder", lambda *a, **kw: TextOnlyEmbedder()
+    )
+
+    pic_chunk = Chunk(content="x", metadata={"labels": ["picture"]}, order=0)
+    pic_chunk._picture_data = b"PNG"
+    with pytest.raises(ValueError, match="multimodal embedder"):
+        await embed_chunks([pic_chunk])
+
+
+@pytest.mark.asyncio
+async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
+    temp_db_path, monkeypatch
+):
+    """End-to-end: ingest a docling doc with one picture under a stub
+    multimodal embedder; chunks_table contains a picture-labelled chunk
+    pointing at the picture's self_ref."""
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    class StubMultimodalEmbedder(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+        async def embed_documents(self, texts):
+            return [[0.1] * 4 for _ in texts]
+
+        async def embed_image_query(self, image):
+            return [0.9] * 4
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder",
+        lambda *a, **kw: StubMultimodalEmbedder(),
+    )
+
+    docling_doc = _docling_doc_with_picture()
+
+    from haiku.rag.config import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(provider="ollama", name="stub", vector_dim=4)
+        )
+    )
+    config.processing.pictures = "image"
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        chunks = await rag.chunk(docling_doc)
+        embedded = await embed_chunks(chunks, rag._config)
+
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        await _store_document_with_chunks(rag, document, embedded, docling_doc)
+
+        all_db_chunks = await rag.chunk_repository.store.chunks_table.query().to_list()
+        picture_db_chunks = [
+            c for c in all_db_chunks if "picture" in (c.get("metadata") or "")
+        ]
+        assert len(picture_db_chunks) >= 1
+        assert any(
+            "#/pictures/0" in (c.get("metadata") or "") for c in picture_db_chunks
+        )
+
+
 @pytest.mark.asyncio
 async def test_search_tool_returns_plain_string_when_no_pictures():
     """When no result carries image_data the tool returns a plain str (no

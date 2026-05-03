@@ -150,10 +150,21 @@ class HaikuRAG:
 
         return await convert(self._config, source, format=format)
 
-    async def chunk(self, docling_document: "DoclingDocument") -> list[Chunk]:
+    async def chunk(
+        self,
+        docling_document: "DoclingDocument",
+        *,
+        existing_picture_data: dict[str, bytes] | None = None,
+        document_id: str | None = None,
+    ) -> list[Chunk]:
         from haiku.rag.client.processing import chunk
 
-        return await chunk(self._config, docling_document)
+        return await chunk(
+            self._config,
+            docling_document,
+            existing_picture_data=existing_picture_data,
+            document_id=document_id,
+        )
 
     # =========================================================================
     # Title Generation

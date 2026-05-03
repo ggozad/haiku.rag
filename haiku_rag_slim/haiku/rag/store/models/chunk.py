@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
@@ -102,6 +102,11 @@ class Chunk(BaseModel):
     document_title: str | None = None
     document_meta: dict = {}
     embedding: list[float] | None = None
+
+    # Transient: picture bytes for synthetic picture chunks. Set by
+    # build_picture_chunks; consumed by embed_chunks to route through
+    # embed_images. Excluded from serialization (PrivateAttr).
+    _picture_data: bytes | None = PrivateAttr(default=None)
 
     def get_chunk_metadata(self) -> ChunkMetadata:
         """Parse metadata dict into structured ChunkMetadata."""

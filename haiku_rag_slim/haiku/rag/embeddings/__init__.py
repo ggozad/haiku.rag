@@ -90,20 +90,12 @@ EMBEDDING_BATCH_SIZE = 512
 async def embed_chunks(
     chunks: list["Chunk"], config: AppConfig = Config
 ) -> list["Chunk"]:
-    """Generate embeddings for chunks.
+    """Generate embeddings for chunks, dispatching text vs picture variants.
 
-    Contextualizes chunks (prepends headings) before embedding for better
-    semantic search. Returns new Chunk objects with embeddings set.
-
-    Embeddings are generated in batches to avoid request size limits
-    and timeouts with large document sets.
-
-    Args:
-        chunks: List of chunks to embed.
-        config: Configuration for embedder selection.
-
-    Returns:
-        New list of Chunk objects with embedding field populated.
+    Text chunks are contextualized (headings prepended) and routed through
+    ``embed_documents``. Picture chunks (those carrying ``_picture_data``)
+    are routed through ``embed_images`` and require a multimodal embedder.
+    Vectors land in the original chunk order.
     """
     if not chunks:
         return []
@@ -111,15 +103,36 @@ async def embed_chunks(
     from haiku.rag.store.models.chunk import Chunk
 
     embedder = get_embedder(config)
-    texts = contextualize(chunks)
 
-    # Batch embedding calls to avoid request size limits
-    all_embeddings: list[list[float]] = []
-    for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
-        batch = texts[i : i + EMBEDDING_BATCH_SIZE]
-        batch_embeddings = await embedder.embed_documents(batch)
-        all_embeddings.extend(batch_embeddings)
+    text_chunks: list[Chunk] = []
+    picture_chunks: list[Chunk] = []
+    for chunk in chunks:
+        if chunk._picture_data is not None:
+            picture_chunks.append(chunk)
+        else:
+            text_chunks.append(chunk)
 
+    text_embeddings: list[list[float]] = []
+    if text_chunks:
+        texts = contextualize(text_chunks)
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+            text_embeddings.extend(await embedder.embed_documents(batch))
+
+    picture_embeddings: list[list[float]] = []
+    if picture_chunks:
+        if not embedder.supports_images:
+            raise ValueError(
+                "Picture chunks require a multimodal embedder. Configure "
+                "provider='mlx' or provider='vllm', or omit picture chunks."
+            )
+        for chunk in picture_chunks:
+            picture_embeddings.append(
+                await embedder.embed_image_query(chunk._picture_data)
+            )
+
+    text_iter = iter(text_embeddings)
+    picture_iter = iter(picture_embeddings)
     return [
         Chunk(
             id=chunk.id,
@@ -130,9 +143,13 @@ async def embed_chunks(
             document_uri=chunk.document_uri,
             document_title=chunk.document_title,
             document_meta=chunk.document_meta,
-            embedding=embedding,
+            embedding=(
+                next(picture_iter)
+                if chunk._picture_data is not None
+                else next(text_iter)
+            ),
         )
-        for chunk, embedding in zip(chunks, all_embeddings)
+        for chunk in chunks
     ]
 
 

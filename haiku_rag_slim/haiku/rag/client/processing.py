@@ -91,16 +91,118 @@ async def convert(
         return await converter.convert_text(source, format=format)
 
 
-async def chunk(config: AppConfig, docling_document: "DoclingDocument") -> list[Chunk]:
+async def chunk(
+    config: AppConfig,
+    docling_document: "DoclingDocument",
+    *,
+    existing_picture_data: dict[str, bytes] | None = None,
+    document_id: str | None = None,
+) -> list[Chunk]:
     """Chunk a DoclingDocument into Chunks.
 
-    Returns chunks without embeddings or document_id. Each chunk's `order`
-    field is set to its position in the list.
+    When the configured embedder supports images, also emit one synthetic
+    Chunk per ``PictureItem`` with available bytes (see ``build_picture_chunks``)
+    and merge them with text chunks in structural (``iterate_items()``) order.
+    ``chunk.order`` is the index in the merged list.
+
+    ``existing_picture_data`` (snapshot keyed by ``self_ref``) supplies bytes
+    for pictures whose ``image.uri`` has been stripped — used by the rebuild
+    path where the docling is loaded from the stored blob.
     """
     from haiku.rag.chunkers import get_chunker
+    from haiku.rag.embeddings import get_embedder
 
     chunker = get_chunker(config)
-    return await chunker.chunk(docling_document)
+    text_chunks = await chunker.chunk(docling_document)
+
+    if not get_embedder(config).supports_images:
+        for i, c in enumerate(text_chunks):
+            c.order = i
+        return text_chunks
+
+    picture_chunks = build_picture_chunks(
+        docling_document,
+        document_id=document_id,
+        existing_picture_data=existing_picture_data,
+    )
+
+    if not picture_chunks:
+        for i, c in enumerate(text_chunks):
+            c.order = i
+        return text_chunks
+
+    positions = {
+        item.self_ref: pos
+        for pos, (item, _level) in enumerate(docling_document.iterate_items())
+    }
+
+    def first_pos(c: Chunk) -> int:
+        refs = (c.metadata or {}).get("doc_item_refs") or []
+        return positions.get(refs[0], len(positions)) if refs else len(positions)
+
+    merged = sorted(text_chunks + picture_chunks, key=first_pos)
+    for i, c in enumerate(merged):
+        c.order = i
+    return merged
+
+
+def build_picture_chunks(
+    docling_document: "DoclingDocument",
+    *,
+    document_id: str | None = None,
+    existing_picture_data: dict[str, bytes] | None = None,
+) -> list[Chunk]:
+    """Emit one synthetic ``Chunk`` per ``PictureItem`` with available bytes.
+
+    Bytes come from ``picture.image.uri`` (live data URI on a freshly-converted
+    docling) or from ``existing_picture_data`` keyed by ``self_ref`` (snapshot
+    taken before a delete-and-re-extract cycle, when the live docling has had
+    its picture URIs stripped). Pictures with no available bytes are skipped.
+
+    The bytes ride on ``Chunk._picture_data`` (a PrivateAttr — not serialized)
+    so ``embed_chunks`` can route them through ``embed_image_query``. The
+    ``order`` field is left at its default (0); the caller (``chunk()``)
+    reassigns it after merging with text chunks in structural order.
+    """
+    from haiku.rag.store.models.document_item import (
+        _decode_picture_bytes,
+        extract_item_text,
+    )
+
+    existing = existing_picture_data or {}
+    chunks: list[Chunk] = []
+
+    for picture in docling_document.pictures:
+        picture_data = _decode_picture_bytes(picture)
+        if picture_data is None:
+            picture_data = existing.get(picture.self_ref)
+        if picture_data is None:
+            continue
+
+        text = extract_item_text(picture, docling_document) or ""
+
+        page_numbers: list[int] = []
+        if prov := getattr(picture, "prov", None):
+            for p in prov:
+                page_no = getattr(p, "page_no", None)
+                if page_no is not None and page_no not in page_numbers:
+                    page_numbers.append(page_no)
+
+        metadata = {
+            "doc_item_refs": [picture.self_ref],
+            "labels": ["picture"],
+            "page_numbers": sorted(page_numbers),
+            "headings": None,
+        }
+        chunk = Chunk(
+            document_id=document_id,
+            content=text,
+            metadata=metadata,
+        )
+        chunk._picture_data = picture_data
+        chunks.append(chunk)
+
+    return chunks
 
 
 async def ensure_chunks_embedded(config: AppConfig, chunks: list[Chunk]) -> list[Chunk]:
