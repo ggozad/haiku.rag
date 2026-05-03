@@ -48,15 +48,13 @@ class EmbedderWrapper:
         return [list(e) for e in result.embeddings]
 
     async def embed_image_query(self, image: "Any") -> list[float]:
-        """Embed a single image as a search query."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not support image embedding. "
-            "Configure a multimodal provider (e.g. provider='mlx' or "
-            "provider='vllm')."
-        )
+        """Embed a single image into the same vector space as text.
 
-    async def embed_images(self, images: list["Any"]) -> list[list[float]]:
-        """Batch-embed images for indexing into the same vector space as text."""
+        Multimodal providers override this. Picture embedding is single-image:
+        vLLM's ``/v1/embeddings`` accepts one image per request via the
+        ``messages`` superset, and MLX runs forward passes one at a time.
+        Callers loop when they need many.
+        """
         raise NotImplementedError(
             f"{type(self).__name__} does not support image embedding. "
             "Configure a multimodal provider (e.g. provider='mlx' or "

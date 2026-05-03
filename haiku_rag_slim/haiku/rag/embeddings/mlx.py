@@ -77,15 +77,7 @@ class MLXEmbedder(EmbedderWrapper):
         return await asyncio.to_thread(self._encode_texts, texts)
 
     async def embed_image_query(self, image: "bytes | PILImage.Image") -> list[float]:
-        embeddings = await self.embed_images([image])
-        return embeddings[0]
-
-    async def embed_images(
-        self, images: list["bytes | PILImage.Image"]
-    ) -> list[list[float]]:
-        if not images:
-            return []
-        return await asyncio.to_thread(self._encode_images, images)
+        return await asyncio.to_thread(self._encode_image, image)
 
     def _encode_texts(self, texts: list[str]) -> list[list[float]]:
         import mlx.core as mx  # ty: ignore[unresolved-import,unused-ignore-comment]
@@ -107,34 +99,27 @@ class MLXEmbedder(EmbedderWrapper):
         mx.eval(embeddings)
         return [list(map(float, row)) for row in embeddings]
 
-    def _encode_images(
-        self, images: list["bytes | PILImage.Image"]
-    ) -> list[list[float]]:
+    def _encode_image(self, image: "bytes | PILImage.Image") -> list[float]:
         import mlx.core as mx  # ty: ignore[unresolved-import,unused-ignore-comment]
-        from PIL import Image as PILImageModule
 
         model, processor = self._ensure_loaded()
-        pil_images = [_to_pil(img) for img in images]
-        out: list[list[float]] = []
-        for pil_image in pil_images:
-            assert isinstance(pil_image, PILImageModule.Image)
-            inputs = processor(
-                text=[_DEFAULT_IMAGE_PROMPT],
-                images=[pil_image],
-                return_tensors="np",
-                padding=True,
-            )
-            pixel_values = inputs["pixel_values"]
-            embedding = model.encode_image(
-                input_ids=mx.array(inputs["input_ids"]),
-                pixel_values=mx.array(pixel_values.reshape(-1, pixel_values.shape[-1])),
-                image_grid_thw=[tuple(r) for r in inputs["image_grid_thw"]],
-                attention_mask=mx.array(inputs["attention_mask"]),
-                task="retrieval",
-            )
-            mx.eval(embedding)
-            out.append([float(x) for x in embedding[0]])
-        return out
+        pil_image = _to_pil(image)
+        inputs = processor(
+            text=[_DEFAULT_IMAGE_PROMPT],
+            images=[pil_image],
+            return_tensors="np",
+            padding=True,
+        )
+        pixel_values = inputs["pixel_values"]
+        embedding = model.encode_image(
+            input_ids=mx.array(inputs["input_ids"]),
+            pixel_values=mx.array(pixel_values.reshape(-1, pixel_values.shape[-1])),
+            image_grid_thw=[tuple(r) for r in inputs["image_grid_thw"]],
+            attention_mask=mx.array(inputs["attention_mask"]),
+            task="retrieval",
+        )
+        mx.eval(embedding)
+        return [float(x) for x in embedding[0]]
 
 
 def _to_pil(image: "bytes | PILImage.Image") -> "PILImage.Image":

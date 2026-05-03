@@ -238,12 +238,12 @@ async def test_text_only_embedder_does_not_support_images():
     assert embedder.supports_images is False
     with pytest.raises(NotImplementedError, match="multimodal provider"):
         await embedder.embed_image_query(b"\x89PNG\r\n\x1a\n")
-    with pytest.raises(NotImplementedError, match="multimodal provider"):
-        await embedder.embed_images([b"\x89PNG\r\n\x1a\n"])
 
 
 async def test_vllm_embed_text_request_shape(monkeypatch):
-    """vLLM text embedding posts a `messages` array with a single text part."""
+    """vLLM text embedding posts a standard OpenAI ``input`` array (real
+    server-side batching), not the ``messages`` superset (which is reserved
+    for image inputs)."""
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
     captured: dict = {}
@@ -253,7 +253,12 @@ async def test_vllm_embed_text_request_shape(monkeypatch):
             pass
 
         def json(self):
-            return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+            return {
+                "data": [
+                    {"embedding": [0.1, 0.2, 0.3]},
+                    {"embedding": [0.4, 0.5, 0.6]},
+                ]
+            }
 
     class FakeAsyncClient:
         def __init__(self, *args, **kwargs):
@@ -277,14 +282,13 @@ async def test_vllm_embed_text_request_shape(monkeypatch):
         vector_dim=2048,
         base_url="http://localhost:8000/v1",
     )
-    vec = await embedder.embed_query("a photo of a cat")
-    assert vec == [0.1, 0.2, 0.3]
+    vecs = await embedder.embed_documents(["a photo of a cat", "a sleeping dog"])
+    assert vecs == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
     assert captured["url"] == "http://localhost:8000/v1/embeddings"
     body = captured["body"]
     assert body["model"] == "Qwen/Qwen3-VL-Embedding-2B"
-    assert body["messages"] == [
-        {"role": "user", "content": [{"type": "text", "text": "a photo of a cat"}]}
-    ]
+    assert body["input"] == ["a photo of a cat", "a sleeping dog"]
+    assert "messages" not in body
     assert body["encoding_format"] == "float"
 
 

@@ -1,15 +1,16 @@
 """Multimodal embedder backed by a vLLM OpenAI-compatible HTTP server.
 
-vLLM's ``/v1/embeddings`` endpoint is a superset of OpenAI's: when the
-request body uses a ``messages`` array (instead of ``input``), the server
-treats it as a chat-style multimodal embedding request and accepts
-``image_url`` content parts carrying base64 data URIs. Models like
-``Qwen/Qwen3-VL-Embedding-8B`` and ``jinaai/jina-embeddings-v4`` ship with
-chat templates that map both text and image inputs into a shared vector
-space.
+vLLM's ``/v1/embeddings`` endpoint is a superset of OpenAI's:
+
+- Text inputs use the standard ``input: list[str]`` field — one HTTP call
+  returns N embeddings.
+- Image inputs use a ``messages`` array carrying an ``image_url`` content
+  part with a base64 data URI. One image per HTTP call.
+
+Models like ``Qwen/Qwen3-VL-Embedding-8B`` and ``jinaai/jina-embeddings-v4``
+ship with chat templates that map both shapes into a shared vector space.
 """
 
-import asyncio
 import base64
 import io
 from typing import TYPE_CHECKING, Any
@@ -45,12 +46,7 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
 
-    async def _post_messages(self, content: list[dict[str, Any]]) -> list[float]:
-        body = {
-            "model": self._model_name,
-            "messages": [{"role": "user", "content": content}],
-            "encoding_format": "float",
-        }
+    async def _post(self, body: dict[str, Any]) -> list[list[float]]:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(
@@ -79,27 +75,48 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         data = payload.get("data") or []
         if not data:
             raise ValueError(f"vLLM returned no embeddings: {payload}")
-        return list(data[0]["embedding"])
+        return [list(d["embedding"]) for d in data]
 
     async def embed_query(self, text: str) -> list[float]:
-        return await self._post_messages([{"type": "text", "text": text}])
+        rows = await self._post(
+            {
+                "model": self._model_name,
+                "input": [text],
+                "encoding_format": "float",
+            }
+        )
+        return rows[0]
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        return await asyncio.gather(*(self.embed_query(t) for t in texts))
-
-    async def embed_image_query(self, image: "bytes | PILImage.Image") -> list[float]:
-        return await self._post_messages(
-            [{"type": "image_url", "image_url": {"url": _to_data_uri(image)}}]
+        return await self._post(
+            {
+                "model": self._model_name,
+                "input": texts,
+                "encoding_format": "float",
+            }
         )
 
-    async def embed_images(
-        self, images: list["bytes | PILImage.Image"]
-    ) -> list[list[float]]:
-        if not images:
-            return []
-        return await asyncio.gather(*(self.embed_image_query(img) for img in images))
+    async def embed_image_query(self, image: "bytes | PILImage.Image") -> list[float]:
+        rows = await self._post(
+            {
+                "model": self._model_name,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": _to_data_uri(image)},
+                            }
+                        ],
+                    }
+                ],
+                "encoding_format": "float",
+            }
+        )
+        return rows[0]
 
 
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
