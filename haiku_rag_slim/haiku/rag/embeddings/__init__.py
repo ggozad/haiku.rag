@@ -52,13 +52,11 @@ class EmbedderWrapper:
 
         Multimodal providers override this. Picture embedding is single-image:
         vLLM's ``/v1/embeddings`` accepts one image per request via the
-        ``messages`` superset, and MLX runs forward passes one at a time.
-        Callers loop when they need many.
+        ``messages`` superset. Callers loop when they need many.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not support image embedding. "
-            "Configure a multimodal provider (e.g. provider='mlx' or "
-            "provider='vllm')."
+            "Configure a multimodal provider (e.g. provider='vllm')."
         )
 
 
@@ -124,7 +122,7 @@ async def embed_chunks(
         if not embedder.supports_images:
             raise ValueError(
                 "Picture chunks require a multimodal embedder. Configure "
-                "provider='mlx' or provider='vllm', or omit picture chunks."
+                "provider='vllm', or omit picture chunks."
             )
         for chunk in picture_chunks:
             picture_embeddings.append(
@@ -195,11 +193,6 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
         return EmbedderWrapper(
             Embedder(f"sentence-transformers:{model_name}"), vector_dim
         )
-
-    if provider == "mlx":
-        from haiku.rag.embeddings.mlx import MLXEmbedder
-
-        return MLXEmbedder(model_name, vector_dim)
 
     if provider == "vllm":
         from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder

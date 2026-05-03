@@ -1,5 +1,3 @@
-import platform
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -359,40 +357,3 @@ async def test_vllm_get_embedder_routes_to_multimodal():
     embedder = get_embedder(config)
     assert embedder.supports_images is True
     assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-
-
-def test_mlx_platform_guard_raises_off_apple_silicon(monkeypatch):
-    monkeypatch.setattr("sys.platform", "linux")
-    from haiku.rag.embeddings.mlx import MLXEmbedder
-
-    with pytest.raises(RuntimeError, match="Apple Silicon"):
-        MLXEmbedder(model_name="any", vector_dim=2048)
-
-
-def test_mlx_smoke():
-    """End-to-end smoke against a real MLX model. Requires the [mlx] extra."""
-    pytest.importorskip("mlx")
-    if not (sys.platform == "darwin" and platform.machine() == "arm64"):
-        pytest.skip("MLX path requires Apple Silicon")
-
-    from PIL import Image as PILImageModule
-
-    from haiku.rag.embeddings.mlx import MLXEmbedder
-
-    embedder = MLXEmbedder(
-        model_name="jinaai/jina-embeddings-v4-mlx-8bit",
-        vector_dim=2048,
-    )
-
-    async def run():
-        text_vec = await embedder.embed_query("a photo of a cat")
-        assert len(text_vec) == 2048
-        img_vec = await embedder.embed_image_query(
-            PILImageModule.new("RGB", (224, 224), "red")
-        )
-        assert len(img_vec) == 2048
-        assert sum(a * b for a, b in zip(text_vec, img_vec)) != 0.0
-
-    import asyncio
-
-    asyncio.run(run())
