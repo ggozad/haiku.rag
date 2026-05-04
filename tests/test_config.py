@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 import yaml
 
@@ -7,6 +9,16 @@ from haiku.rag.config.loader import (
     generate_default_config,
     load_yaml_config,
 )
+from haiku.rag.config.loader import logger as loader_logger
+
+
+class _ListHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
 
 
 def test_load_yaml_config(tmp_path):
@@ -237,7 +249,7 @@ def _write(tmp_path, body: str):
     return p
 
 
-def test_load_yaml_legacy_picture_description_maps_to_description(tmp_path, caplog):
+def test_load_yaml_legacy_picture_description_maps_to_description(tmp_path):
     """`picture_description.enabled=true` (with or without the image flag)
     maps to `processing.pictures: description`."""
     config_file = _write(
@@ -251,15 +263,21 @@ processing:
       timeout: 120
 """,
     )
-    with caplog.at_level("WARNING", logger="haiku.rag.config.loader"):
+    handler = _ListHandler()
+    loader_logger.addHandler(handler)
+    try:
         data = load_yaml_config(config_file)
+    finally:
+        loader_logger.removeHandler(handler)
     cfg = AppConfig.model_validate(data)
     assert cfg.processing.pictures == "description"
     assert cfg.processing.conversion_options.picture_description.timeout == 120
-    assert any("picture_description.enabled=true" in m.message for m in caplog.records)
+    assert any(
+        "picture_description.enabled=true" in r.getMessage() for r in handler.records
+    )
 
 
-def test_load_yaml_legacy_generate_picture_images_maps_to_image(tmp_path, caplog):
+def test_load_yaml_legacy_generate_picture_images_maps_to_image(tmp_path):
     """`generate_picture_images=true` alone maps to `pictures: image`."""
     config_file = _write(
         tmp_path,
@@ -269,14 +287,20 @@ processing:
     generate_picture_images: true
 """,
     )
-    with caplog.at_level("WARNING", logger="haiku.rag.config.loader"):
+    handler = _ListHandler()
+    loader_logger.addHandler(handler)
+    try:
         data = load_yaml_config(config_file)
+    finally:
+        loader_logger.removeHandler(handler)
     cfg = AppConfig.model_validate(data)
     assert cfg.processing.pictures == "image"
-    assert any("generate_picture_images=true" in m.message for m in caplog.records)
+    assert any(
+        "generate_picture_images=true" in r.getMessage() for r in handler.records
+    )
 
 
-def test_load_yaml_no_legacy_fields_keeps_default_none(tmp_path, caplog):
+def test_load_yaml_no_legacy_fields_keeps_default_none(tmp_path):
     """Empty processing block leaves the default `none` mode untouched and
     does not warn."""
     config_file = _write(
@@ -286,11 +310,15 @@ processing:
   chunk_size: 256
 """,
     )
-    with caplog.at_level("WARNING", logger="haiku.rag.config.loader"):
+    handler = _ListHandler()
+    loader_logger.addHandler(handler)
+    try:
         data = load_yaml_config(config_file)
+    finally:
+        loader_logger.removeHandler(handler)
     cfg = AppConfig.model_validate(data)
     assert cfg.processing.pictures == "none"
-    assert not caplog.records
+    assert not handler.records
 
 
 def test_load_yaml_explicit_pictures_wins_over_legacy(tmp_path):

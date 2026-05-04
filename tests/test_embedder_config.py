@@ -75,3 +75,39 @@ def test_unsupported_provider_raises():
 
     with pytest.raises(ValueError, match="Unsupported embedding provider"):
         get_embedder(custom_config)
+
+
+def test_ollama_embedder_appends_v1_when_missing():
+    """Per-model base_url without /v1 should get it appended for Ollama."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama",
+                name="qwen3-embedding:4b",
+                vector_dim=2560,
+                base_url="http://my-ollama:11434",
+            ),
+        ),
+    )
+    embedder = get_embedder(config)
+    pa_model = embedder._embedder._model  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+    assert str(pa_model.base_url).rstrip("/").endswith("/v1")  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+
+
+def test_ollama_embedder_does_not_double_append_v1():
+    """If the user already includes /v1 we leave it alone."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama",
+                name="qwen3-embedding:4b",
+                vector_dim=2560,
+                base_url="http://my-ollama:11434/v1",
+            ),
+        ),
+    )
+    embedder = get_embedder(config)
+    pa_model = embedder._embedder._model  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+    url = str(pa_model.base_url).rstrip("/")  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+    assert url.endswith("/v1")
+    assert not url.endswith("/v1/v1")

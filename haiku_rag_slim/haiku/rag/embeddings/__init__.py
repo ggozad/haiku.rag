@@ -167,7 +167,9 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
 
     if provider == "ollama":
         # Use model-level base_url if set, otherwise fall back to providers config
-        base_url = embedding_model.base_url or f"{config.providers.ollama.base_url}/v1"
+        base_url = embedding_model.base_url or config.providers.ollama.base_url
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
         model = OpenAIEmbeddingModel(
             model_name,
             provider=OllamaProvider(base_url=base_url),

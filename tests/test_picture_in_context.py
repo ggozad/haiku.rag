@@ -12,7 +12,7 @@ from pydantic_ai.usage import RunUsage
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.search import _populate_image_data
-from haiku.rag.config import Config
+from haiku.rag.config import AppConfig, Config
 from haiku.rag.context import expand_with_items
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
@@ -167,6 +167,7 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
         assert "picture" in out.labels
 
 
+@pytest.mark.vcr()
 @pytest.mark.asyncio
 async def test_rechunk_preserves_picture_data(temp_db_path):
     """``rebuild --rechunk`` keeps ``picture_data`` for every picture row."""
@@ -177,8 +178,10 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
 
     docling_doc = _docling_doc_with_picture()
 
-    async with HaikuRAG(temp_db_path, create=True) as rag:
-        rag._config.processing.pictures = "image"
+    config = AppConfig()
+    config.processing.pictures = "image"
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(rag, document, [], docling_doc)
@@ -193,6 +196,7 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
         assert after.get("#/pictures/0") == before.get("#/pictures/0")
 
 
+@pytest.mark.vcr()
 @pytest.mark.asyncio
 async def test_update_clears_picture_data_when_mode_none(temp_db_path):
     """Switching to ``pictures="none"`` and re-running update_document
@@ -207,9 +211,11 @@ async def test_update_clears_picture_data_when_mode_none(temp_db_path):
 
     docling_doc = _docling_doc_with_picture()
 
-    async with HaikuRAG(temp_db_path, create=True) as rag:
+    config = AppConfig()
+    config.processing.pictures = "image"
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         # Ingest under "image" so picture bytes land in document_items.
-        rag._config.processing.pictures = "image"
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(rag, document, [], docling_doc)
