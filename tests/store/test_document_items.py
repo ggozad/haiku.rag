@@ -448,7 +448,7 @@ def _docling_doc_with_picture():
 
 
 class TestExtractItemsPictureBytes:
-    """A2b: extract_items decodes picture image bytes from data URIs."""
+    """extract_items decodes picture image bytes from data URIs."""
 
     def test_decodes_picture_bytes_from_live_doc(self):
         doc = _docling_doc_with_picture()
@@ -483,7 +483,7 @@ class TestExtractItemsPictureBytes:
 
 
 class TestExtractItemTextDescription:
-    """A2b: extract_item_text returns VLM description text for PictureItems."""
+    """extract_item_text returns VLM description text for PictureItems."""
 
     def test_returns_description_text_when_present(self):
         from docling_core.types.doc.document import (
@@ -503,7 +503,7 @@ class TestExtractItemTextDescription:
 
 
 class TestCompressDoclingSplitStripsPictureUris:
-    """A2b: compress_docling_split removes inline picture URIs from the structure."""
+    """compress_docling_split removes inline picture URIs from the structure."""
 
     def test_picture_image_set_to_none_in_structure(self):
         import json
@@ -540,7 +540,7 @@ class TestCompressDoclingSplitStripsPictureUris:
 
 @pytest.mark.asyncio
 class TestPictureDataMigrationBackfill:
-    """A2b: v0.45.0 migration backfills picture_data and strips URIs from blobs."""
+    """0.45.0 migration backfills picture_data and strips URIs from blobs."""
 
     async def test_backfill_populates_column_and_strips_blob(self, temp_db_path):
         import base64
@@ -630,7 +630,7 @@ class TestPictureDataMigrationBackfill:
 
 @pytest.mark.asyncio
 class TestPictureDataPreservedThroughRoundTrip:
-    """A2b: snapshot/merge keeps picture bytes through update / rebuild cycles."""
+    """Snapshot/merge keeps picture bytes through update / rebuild cycles."""
 
     async def test_update_preserves_picture_data_when_blob_round_tripped(
         self, temp_db_path

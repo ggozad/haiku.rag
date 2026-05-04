@@ -1,4 +1,4 @@
-"""A3: SearchResult.image_data, expand_context preservation, multimodal ToolReturn."""
+"""Picture-bearing search results: image_data attachment, expansion, multimodal ToolReturn."""
 
 import base64
 from dataclasses import dataclass
@@ -107,8 +107,9 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
     """A picture item with empty text must keep its self_ref through expansion."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
         # Build an items table with a section header + a paragraph match + an
-        # adjacent picture row that has no text. expand_with_items used to
-        # filter the picture out via the `if item.text:` guard; A3 keeps it.
+        # adjacent picture row that has no text. The expansion must keep
+        # picture self_refs even when item.text is empty so picture bytes
+        # are still attached downstream.
         await rag.document_item_repository.create_items(
             "doc-1",
             [
@@ -326,7 +327,7 @@ async def test_search_tool_returns_multimodal_when_picture_present():
     assert part.data == PICTURE_BYTES
 
 
-# B2: synthetic picture chunks at ingestion
+# Synthetic picture chunks at ingest
 
 
 def test_build_picture_chunks_uses_live_uri():

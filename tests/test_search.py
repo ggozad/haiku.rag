@@ -327,3 +327,116 @@ def test_search_result_primary_label_prioritizes_structural_types():
         labels=[],
     )
     assert result._get_primary_label() is None
+
+
+# Image queries (bytes / PIL.Image)
+
+
+@pytest.mark.asyncio
+async def test_search_with_bytes_query_uses_multimodal_embedder(
+    temp_db_path, monkeypatch
+):
+    """``client.search(bytes)`` embeds via ``embed_image_query`` and dispatches
+    to vector-only chunk search (skipping FTS and reranker)."""
+    from haiku.rag.embeddings import EmbedderWrapper
+    from haiku.rag.store.models.chunk import Chunk
+
+    image_calls: list[bytes] = []
+
+    class StubMultimodal(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+        async def embed_image_query(self, image):
+            image_calls.append(image)
+            return [0.5, 0.5, 0.5, 0.5]
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder",
+        lambda *a, **kw: StubMultimodal(),
+    )
+
+    received_kwargs: dict = {}
+
+    async def fake_chunk_search(
+        query="", limit=5, search_type="hybrid", filter=None, query_vector=None
+    ):
+        received_kwargs.update(
+            {
+                "query": query,
+                "limit": limit,
+                "search_type": search_type,
+                "filter": filter,
+                "query_vector": query_vector,
+            }
+        )
+        return [
+            (
+                Chunk(
+                    content="figure 1",
+                    metadata={"labels": ["picture"], "doc_item_refs": ["#/pictures/0"]},
+                ),
+                0.91,
+            )
+        ]
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
+        results = await rag.search(b"\x89PNG\r\n\x1a\n", limit=3, include_images=False)
+
+    assert len(results) == 1
+    assert results[0].score == 0.91
+    # The bytes were sent through the image embedder once.
+    assert image_calls == [b"\x89PNG\r\n\x1a\n"]
+    # The chunk repo received a pre-computed vector and an empty text query.
+    assert received_kwargs["query_vector"] == [0.5, 0.5, 0.5, 0.5]
+    assert received_kwargs["query"] == ""
+
+
+@pytest.mark.asyncio
+async def test_search_with_pil_image_works_like_bytes(temp_db_path, monkeypatch):
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.embeddings import EmbedderWrapper
+    from haiku.rag.store.models.chunk import Chunk
+
+    seen_types: list[type] = []
+
+    class StubMultimodal(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+        async def embed_image_query(self, image):
+            seen_types.append(type(image))
+            return [0.1] * 4
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder",
+        lambda *a, **kw: StubMultimodal(),
+    )
+
+    async def fake_chunk_search(**kwargs):
+        return [(Chunk(content="x", metadata={}), 1.0)]
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
+        img = PILImageModule.new("RGB", (8, 8), "red")
+        results = await rag.search(img, include_images=False)
+
+    assert len(results) == 1
+    assert seen_types == [PILImageModule.Image]
+
+
+@pytest.mark.asyncio
+async def test_search_with_bytes_query_raises_for_text_only_embedder(
+    temp_db_path,
+):
+    """A text-only embedder configured for QA must reject image queries
+    with a clear error rather than silently degrading."""
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        with pytest.raises(ValueError, match="multimodal embedder"):
+            await rag.search(b"\x89PNG\r\n\x1a\n")

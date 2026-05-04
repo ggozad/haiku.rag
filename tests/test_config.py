@@ -227,7 +227,8 @@ def test_init_config_creates_valid_yaml(tmp_path):
     assert config.environment == "production"
 
 
-# A4: legacy `generate_picture_images` + `picture_description.enabled` translation
+# Legacy picture-handling field translation (`generate_picture_images` and
+# `picture_description.enabled` → `processing.pictures` enum)
 
 
 def _write(tmp_path, body: str):

@@ -28,6 +28,7 @@ from haiku.rag.utils import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
+    from PIL import Image as PILImage
 
     from haiku.rag.agents.analysis.models import AnalysisResult
     from haiku.rag.agents.research.models import (
@@ -329,7 +330,7 @@ class HaikuRAG:
 
     async def search(
         self,
-        query: str,
+        query: "str | bytes | PILImage.Image",
         limit: int | None = None,
         search_type: str = "hybrid",
         filter: str | None = None,

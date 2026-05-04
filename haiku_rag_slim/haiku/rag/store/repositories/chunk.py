@@ -218,23 +218,25 @@ class ChunkRepository:
 
     async def search(
         self,
-        query: str,
+        query: str = "",
         limit: int = 5,
         search_type: str = "hybrid",
         filter: str | None = None,
+        query_vector: list[float] | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using the specified search method.
 
         Args:
-            query: The search query string.
+            query: Text query. Empty when ``query_vector`` is supplied.
             limit: Maximum number of results to return.
-            search_type: Type of search - "vector", "fts", or "hybrid" (default).
+            search_type: "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
+            query_vector: Pre-computed query embedding; forces vector-only search.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
         """
-        if not query.strip():
+        if query_vector is None and not query.strip():
             return []
 
         chunk_filter: str | None = None
@@ -255,7 +257,15 @@ class ChunkRepository:
             id_list = ", ".join(f"'{d}'" for d in docs_df["id"])
             chunk_filter = f"document_id IN ({id_list})"
 
-        if search_type == "vector":
+        if query_vector is not None:
+            # Image-as-query: vector-only against the pre-computed embedding.
+            results = (
+                self.store.chunks_table.query()
+                .nearest_to(query_vector)
+                .column("vector")
+                .refine_factor(self.store._config.search.vector_refine_factor)
+            )
+        elif search_type == "vector":
             query_embedding = await self.embedder.embed_query(query)
             results = (
                 self.store.chunks_table.query()

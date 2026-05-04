@@ -218,7 +218,7 @@ async def test_embed_chunks_preserves_all_fields(allow_model_requests):
     assert embedded[0].embedding is not None
 
 
-# B1: multimodal embedder support
+# Multimodal embedder support
 
 
 def _ollama_text_only_config():

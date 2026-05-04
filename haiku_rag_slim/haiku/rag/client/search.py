@@ -5,12 +5,14 @@ from haiku.rag.reranking import get_reranker
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 
 if TYPE_CHECKING:
+    from PIL import Image as PILImage
+
     from haiku.rag.client import HaikuRAG
 
 
 async def search(
     client: "HaikuRAG",
-    query: str,
+    query: "str | bytes | PILImage.Image",
     limit: int | None = None,
     search_type: str = "hybrid",
     filter: str | None = None,
@@ -20,14 +22,13 @@ async def search(
 
     Args:
         client: The HaikuRAG client (provides config + chunk repository).
-        query: The search query string.
+        query: Text (``str``) or image (``bytes`` / ``PIL.Image.Image``).
+            Image queries require a multimodal embedder and run vector-only.
         limit: Maximum number of results to return. Defaults to config.search.limit.
-        search_type: Type of search - "vector", "fts", or "hybrid" (default).
+        search_type: "vector", "fts", or "hybrid" (default). Text queries only.
         filter: Optional SQL WHERE clause to filter documents before searching chunks.
         include_images: When True, populate ``SearchResult.image_data`` with
-            base64-encoded picture bytes for picture-labeled chunks. Set to
-            False to skip the lookup (e.g. for plain-text MCP consumers that
-            don't want the JSON bloat).
+            base64 picture bytes for picture-labeled chunks.
 
     Returns:
         List of SearchResult objects ordered by relevance.
@@ -35,19 +36,36 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
-    reranker = get_reranker(config=client._config)
+    if isinstance(query, str):
+        reranker = get_reranker(config=client._config)
 
-    if reranker is None:
-        chunk_results = await client.chunk_repository.search(
-            query, limit, search_type, filter
-        )
+        if reranker is None:
+            chunk_results = await client.chunk_repository.search(
+                query, limit, search_type, filter
+            )
+        else:
+            search_limit = limit * 10
+            raw_results = await client.chunk_repository.search(
+                query, search_limit, search_type, filter
+            )
+            chunks = [chunk for chunk, _ in raw_results]
+            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
     else:
-        search_limit = limit * 10
-        raw_results = await client.chunk_repository.search(
-            query, search_limit, search_type, filter
+        from haiku.rag.embeddings import get_embedder
+
+        embedder = get_embedder(client._config)
+        if not embedder.supports_images:
+            raise ValueError(
+                "Image queries require a multimodal embedder. Configure "
+                "provider='vllm' (or another image-capable provider)."
+            )
+        query_vector = await embedder.embed_image_query(query)
+        chunk_results = await client.chunk_repository.search(
+            query="",
+            limit=limit,
+            filter=filter,
+            query_vector=query_vector,
         )
-        chunks = [chunk for chunk, _ in raw_results]
-        chunk_results = await reranker.rerank(query, chunks, top_n=limit)
 
     results = [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
 
