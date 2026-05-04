@@ -101,13 +101,9 @@ def create_search_toolset(
             for self_ref, b64 in result.image_data.items():
                 if self_ref in seen:
                     continue
-                try:
-                    raw = base64.b64decode(b64)
-                except (ValueError, TypeError):
-                    continue
                 binary_parts.append(
                     BinaryContent(
-                        data=raw,
+                        data=base64.b64decode(b64),
                         media_type="image/png",
                         identifier=self_ref,
                     )

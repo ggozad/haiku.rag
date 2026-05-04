@@ -1,5 +1,4 @@
 import base64
-import binascii
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -44,27 +43,16 @@ def _decode_picture_bytes(item: "PictureItem") -> bytes | None:
     """Decode a PictureItem's embedded image into raw bytes.
 
     Reads ``item.image.uri`` and base64-decodes it when it is a ``data:`` URI.
-    Returns None for items whose image is absent, stripped, or not a data URI
-    (e.g. file references). Tolerant of malformed data — returns None on any
-    decode failure rather than raising.
+    Returns None for items whose image is absent or stripped, or whose URI is
+    a file reference rather than inline data.
     """
-    image = getattr(item, "image", None)
-    if image is None:
+    if item.image is None:
         return None
-    uri = getattr(image, "uri", None)
-    if uri is None:
+    uri = str(item.image.uri)
+    if not uri.startswith("data:"):
         return None
-    uri_str = str(uri)
-    if not uri_str.startswith("data:"):
-        return None
-    try:
-        _, encoded = uri_str.split(",", 1)
-    except ValueError:
-        return None
-    try:
-        return base64.b64decode(encoded, validate=False)
-    except (ValueError, binascii.Error):
-        return None
+    _, encoded = uri.split(",", 1)
+    return base64.b64decode(encoded, validate=False)
 
 
 def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str | None:

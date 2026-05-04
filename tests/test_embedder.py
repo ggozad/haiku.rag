@@ -160,6 +160,25 @@ async def test_embed_chunks_empty_list():
     assert result == []
 
 
+async def test_embed_chunks_picture_with_text_only_embedder_raises():
+    """A picture chunk fed through a text-only embedder must surface a
+    clear error, not silently drop the chunk or call ``embed_image_query``
+    on something that doesn't support it."""
+    chunk = Chunk(id="pic", content="x")
+    chunk._picture_data = b"\x89PNG\r\n\x1a\nfake"
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama", name="qwen3-embedding:4b", vector_dim=2560
+            )
+        )
+    )
+
+    with pytest.raises(ValueError, match="multimodal embedder"):
+        await embed_chunks([chunk], config)
+
+
 async def test_embed_chunks_batches_large_inputs(monkeypatch):
     """Test that embed_chunks batches calls when chunk count exceeds batch size."""
     from haiku.rag.embeddings import EMBEDDING_BATCH_SIZE, EmbedderWrapper

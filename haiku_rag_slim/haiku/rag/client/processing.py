@@ -182,11 +182,9 @@ def build_picture_chunks(
         text = extract_item_text(picture, docling_document) or ""
 
         page_numbers: list[int] = []
-        if prov := getattr(picture, "prov", None):
-            for p in prov:
-                page_no = getattr(p, "page_no", None)
-                if page_no is not None and page_no not in page_numbers:
-                    page_numbers.append(page_no)
+        for p in picture.prov:
+            if p.page_no not in page_numbers:
+                page_numbers.append(p.page_no)
 
         metadata = {
             "doc_item_refs": [picture.self_ref],
