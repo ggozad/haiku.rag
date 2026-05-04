@@ -357,3 +357,48 @@ async def test_vllm_get_embedder_routes_to_multimodal():
     embedder = get_embedder(config)
     assert embedder.supports_images is True
     assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+
+@pytest.mark.integration
+async def test_vllm_embed_text_and_image_end_to_end():
+    """Hit a real vLLM ``/v1/embeddings`` server and confirm both the text
+    (``input`` array) and image (``messages`` with ``image_url``) shapes
+    return embeddings of the configured dimension in the same vector space.
+
+    Configure via env vars:
+      HAIKU_RAG_VLLM_BASE_URL  (default http://localhost:8000/v1)
+      HAIKU_RAG_VLLM_MODEL     (default Qwen/Qwen3-VL-Embedding-8B)
+      HAIKU_RAG_VLLM_VECTOR_DIM (default 4096)
+
+    Run a server first, e.g.:
+        vllm serve Qwen/Qwen3-VL-Embedding-8B \\
+            --runner pooling --dtype bfloat16 --trust-remote-code
+    """
+    import os
+
+    from PIL import Image
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    base_url = os.environ.get("HAIKU_RAG_VLLM_BASE_URL", "http://localhost:8000/v1")
+    model_name = os.environ.get("HAIKU_RAG_VLLM_MODEL", "Qwen/Qwen3-VL-Embedding-8B")
+    vector_dim = int(os.environ.get("HAIKU_RAG_VLLM_VECTOR_DIM", "4096"))
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name=model_name,
+        vector_dim=vector_dim,
+        base_url=base_url,
+    )
+
+    text_vec = await embedder.embed_query("a photo of a red square")
+    assert len(text_vec) == vector_dim
+    assert any(abs(x) > 1e-6 for x in text_vec), "text embedding is all zeros"
+
+    text_batch = await embedder.embed_documents(["hello world", "another doc"])
+    assert len(text_batch) == 2
+    assert all(len(v) == vector_dim for v in text_batch)
+
+    image = Image.new("RGB", (64, 64), color=(255, 0, 0))
+    image_vec = await embedder.embed_image_query(image)
+    assert len(image_vec) == vector_dim
+    assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
