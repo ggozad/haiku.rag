@@ -108,6 +108,39 @@ def create_mcp_server(
         except Exception:
             return []
 
+    # Image-as-query tool, only registered when the configured embedder
+    # supports image embeddings.
+    from haiku.rag.embeddings import get_embedder
+
+    if get_embedder(config).supports_images:
+
+        @mcp.tool()
+        async def search_documents_by_image(
+            image_base64: str,
+            limit: int | None = None,
+            include_images: bool = True,
+        ) -> list[SearchResult]:
+            """Search the RAG system using an image as the query.
+
+            ``image_base64`` is a base64-encoded image (PNG/JPEG bytes). The
+            image is embedded via the configured multimodal embedder and the
+            chunks table is searched vector-only. ``include_images`` controls
+            whether picture bytes are attached to picture-labeled results.
+            """
+            import base64
+
+            try:
+                raw = base64.b64decode(image_base64)
+            except Exception:
+                return []
+            try:
+                async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
+                    return await rag.search(
+                        raw, limit=limit, include_images=include_images
+                    )
+            except Exception:
+                return []
+
     @mcp.tool()
     async def get_document(document_id: str) -> Document | None:
         """Get a document by its ID."""

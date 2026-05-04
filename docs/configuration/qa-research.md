@@ -29,10 +29,12 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3          # Default: 0.3
+    vision: false             # Set true for vision-capable QA models
   max_searches: 3       # Maximum search tool calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
+- **model.vision**: Set to `true` for vision-capable QA models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The agent's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures--embedder--qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search tool calls the QA agent can make per question (default: 3)
 
 ## Research Configuration

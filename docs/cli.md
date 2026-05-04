@@ -134,6 +134,13 @@ haiku-rag search "transformers" --filter "title = 'Deep Learning Guide'"
 haiku-rag search "AI" --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
 ```
 
+Image-as-query (requires a multimodal embedder):
+```bash
+haiku-rag search --image path/to/figure.png --limit 5
+```
+
+When `--image` is used, the positional query is omitted. Pass one or the other, not both.
+
 ## Question Answering
 
 Ask questions about your documents:

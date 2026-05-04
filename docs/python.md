@@ -357,6 +357,28 @@ results = await client.search(
 - `created_at`, `updated_at` - Timestamps
 - `metadata` - Document metadata (as string, use LIKE for pattern matching)
 
+### Image queries
+
+`client.search()` accepts an image instead of a text query when the configured embedder is multimodal (e.g. `provider: vllm` against a vision-language embedding model). The image is embedded once and the chunks table is searched vector-only — full-text search and reranking don't apply without a text query.
+
+```python
+from PIL import Image
+
+# Bytes
+results = await client.search(
+    open("figure.png", "rb").read(),
+    limit=5,
+)
+
+# PIL.Image works equivalently
+results = await client.search(
+    Image.open("figure.png"),
+    limit=5,
+)
+```
+
+Image queries surface picture chunks (synthetic per-figure chunks emitted at ingest under a multimodal embedder) and any text chunks whose vectors land near the image vector in the shared embedding space. Calling `client.search(bytes)` against a text-only embedder raises a `ValueError`.
+
 ### Expanding Search Context
 
 Expand search results with surrounding content from the document:
