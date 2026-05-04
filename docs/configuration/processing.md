@@ -137,6 +137,53 @@ processing:
 
 **Switching modes on an existing database.** No reingest is required if you only need to change between `description` and `image` — the bytes are already there. Run `haiku-rag rebuild --rechunk` after the config change so the chunk-text composition reflects the new mode. Switching *down* to `none` clears `picture_data` on rebuild, reclaiming storage.
 
+#### Pictures × embedder × QA model: how the pieces compose
+
+Three orthogonal settings drive what gets stored, what gets retrieved, and what reaches the QA model. Each setting answers one question:
+
+| Setting | Question it answers | Values |
+|---|---|---|
+| `processing.pictures` | What gets captured at ingest? | `none` / `description` / `image` |
+| `embeddings.model.provider` | Can the embedder index image content? | text-only providers (`ollama`, `openai`, `cohere`, `sentence-transformers`) vs `vllm` (multimodal) |
+| `qa.model.vision` | Can the QA model interpret images? | `false` (default) / `true` |
+
+**What gets stored** for each `pictures` × embedder combination:
+
+| `pictures` | Embedder | Text chunks contain… | `document_items.picture_data` | Synthetic picture chunks |
+|---|---|---|---|---|
+| `none` | text-only or multimodal | regular text only | empty | none |
+| `description` | text-only | text + VLM descriptions | populated (kept for later use) | none |
+| `description` | multimodal | text + VLM descriptions | populated | one per picture, content = description, vector = image embedding |
+| `image` | text-only | text only (caption/surrounding) | populated (kept for later use) | none |
+| `image` | multimodal | text only | populated | one per picture, content = caption/empty, vector = image embedding |
+
+**What QA receives** at search time, given stored state and `qa.model.vision`:
+
+| `pictures` at ingest | `qa.model.vision` | QA receives |
+|---|---|---|
+| `none` | either | text chunks only |
+| `description` | `false` | text chunks (descriptions in chunk text answer figure questions in prose) |
+| `description` | `true` | text chunks + raw picture bytes; vision model uses both signals |
+| `image` | `false` | text chunks only (caption + surrounding text); model has no figure content to draw on |
+| `image` | `true` | text chunks + raw picture bytes; vision model reads the figures directly |
+
+A few invariants worth knowing:
+
+- **`qa.model.vision` is independent of ingestion.** It only controls whether the agent's `search` tool attaches picture bytes to its `ToolReturn`. A text-only QA model with `vision: true` won't suddenly understand images — it will silently accept the bytes and confabulate. Default `false` is the safe choice.
+- **`description` mode preserves the bytes**, so flipping the QA strategy later (text-only → vision, or vice versa) doesn't require reingesting. Just change `qa.model.vision` and optionally `qa.model` itself.
+- **Cross-modal search** (text query → picture-chunk hits) requires a multimodal embedder. With a text-only embedder, picture-chunk vectors aren't generated; figures only surface via section-bounded expansion off matching text chunks.
+- **`image` mode + text-only embedder** is rarely the right choice — pictures are stored but neither searchable as image vectors nor described in text. Picture bytes are then only reachable via expand-context's section bounds when an adjacent text chunk matches.
+
+**Recommended combinations** by use case:
+
+| Use case | `pictures` | Embedder | `qa.model.vision` |
+|---|---|---|---|
+| Pure text RAG, no figures | `none` | text-only | `false` |
+| Text RAG, figures answered through descriptions | `description` | text-only | `false` |
+| Vision QA on figure-rich docs (no cross-modal search) | `description` | text-only | `true` |
+| Cross-modal search + vision QA (the full multimodal stack) | `description` or `image` | multimodal | `true` |
+| Cross-modal search, text QA only | `description` | multimodal | `false` |
+
 **`picture_description.model` configuration** (used only under `pictures: description`):
 
 - **model**: Standard model configuration

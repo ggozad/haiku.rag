@@ -284,7 +284,9 @@ class _Deps:
 @pytest.mark.asyncio
 async def test_search_tool_returns_multimodal_when_picture_present():
     """The agent-facing search tool must wrap text + BinaryContent in ToolReturn
-    whenever a result carries picture image_data."""
+    whenever a result carries picture image_data AND the QA model is vision-capable."""
+    from haiku.rag.config import AppConfig
+
     picture_result = SearchResult(
         content="A diagram of the layout",
         score=1.0,
@@ -299,7 +301,9 @@ async def test_search_tool_returns_multimodal_when_picture_present():
     fake_client.search = AsyncMock(return_value=[picture_result])
     fake_client.expand_context = AsyncMock(return_value=[picture_result])
 
-    toolset = create_search_toolset(Config, expand_context=False)
+    config = AppConfig()
+    config.qa.model.vision = True
+    toolset = create_search_toolset(config, expand_context=False)
     func = toolset.tools["search"].function
 
     ctx = RunContext(
@@ -566,6 +570,45 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
         assert any(
             "#/pictures/0" in (c.get("metadata") or "") for c in picture_db_chunks
         )
+
+
+@pytest.mark.asyncio
+async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
+    """The agent search tool must NOT attach picture bytes when the QA model
+    is text-only (``qa.model.vision = False``, the default). Sending image
+    parts to a text-only model would cause it to hallucinate confidently —
+    Ollama silently accepts the bytes and the model guesses."""
+    from haiku.rag.config import AppConfig
+
+    picture_result = SearchResult(
+        content="A diagram of the layout",
+        score=1.0,
+        chunk_id="chunk-1",
+        document_id="doc-1",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": PICTURE_B64},
+    )
+
+    fake_client = AsyncMock()
+    fake_client.search = AsyncMock(return_value=[picture_result])
+    fake_client.expand_context = AsyncMock(return_value=[picture_result])
+
+    config = AppConfig()
+    # vision defaults to False; assert anyway so the test reads explicitly.
+    assert config.qa.model.vision is False
+    toolset = create_search_toolset(config, expand_context=False)
+    func = toolset.tools["search"].function
+
+    ctx = RunContext(
+        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
+        model=TestModel(),
+        usage=RunUsage(),
+        run_id="run-1",
+    )
+    result = await func(ctx, "anything")
+
+    assert isinstance(result, str)
 
 
 @pytest.mark.asyncio

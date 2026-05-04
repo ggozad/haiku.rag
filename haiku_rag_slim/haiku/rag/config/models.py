@@ -16,6 +16,7 @@ class ModelConfig(BaseModel):
         enable_thinking: Control reasoning behavior (true/false/None for default)
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
+        vision: True if the model can interpret images. Default False.
     """
 
     provider: str = "ollama"
@@ -25,6 +26,7 @@ class ModelConfig(BaseModel):
     enable_thinking: bool | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    vision: bool = False
 
 
 class EmbeddingModelConfig(BaseModel):

@@ -90,6 +90,9 @@ def create_search_toolset(
         ]
         text = "\n\n".join(formatted)
 
+        if not config.qa.model.vision:
+            return text
+
         binary_parts: list[BinaryContent] = []
         seen: set[str] = set()
         for result in results_list:
