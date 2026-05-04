@@ -68,11 +68,38 @@ async def search(
         )
 
     results = [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
+    results = _dedup_picture_chunks(results)
 
     if include_images:
         await _populate_image_data(client, results)
 
     return results
+
+
+def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
+    """Collapse duplicate picture-only chunks to one result per ``self_ref``.
+
+    A single picture can produce two chunks for the same self_ref: one whose
+    vector is the text embedding of the picture's description, and one whose
+    vector is the image embedding of the picture's bytes. Both can rank for
+    the same query. When two results share a single picture self_ref as
+    their only ref, keep the higher-scoring one. Wider chunks that span the
+    picture plus surrounding items pass through untouched.
+    """
+    seen: dict[tuple[str | None, str], int] = {}
+    keep: list[bool] = [True] * len(results)
+    for i, r in enumerate(results):
+        if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith("#/pictures/"):
+            key = (r.document_id, r.doc_item_refs[0])
+            prior = seen.get(key)
+            if prior is None:
+                seen[key] = i
+            elif r.score > results[prior].score:
+                keep[prior] = False
+                seen[key] = i
+            else:
+                keep[i] = False
+    return [r for r, k in zip(results, keep) if k]
 
 
 async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -> None:

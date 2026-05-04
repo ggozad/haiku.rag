@@ -440,3 +440,63 @@ async def test_search_with_bytes_query_raises_for_text_only_embedder(
     async with HaikuRAG(temp_db_path, create=True) as rag:
         with pytest.raises(ValueError, match="multimodal embedder"):
             await rag.search(b"\x89PNG\r\n\x1a\n")
+
+
+def _picture_only_result(
+    self_ref: str, score: float, document_id: str = "doc-1"
+) -> SearchResult:
+    return SearchResult(
+        content="x",
+        score=score,
+        chunk_id=f"chunk-{self_ref}-{score}",
+        document_id=document_id,
+        doc_item_refs=[self_ref],
+        labels=["picture"],
+    )
+
+
+def test_dedup_keeps_higher_scoring_picture_chunk():
+    """Two results referencing the same single picture self_ref collapse
+    to the one with the higher score."""
+    from haiku.rag.client.search import _dedup_picture_chunks
+
+    text_chunk = _picture_only_result("#/pictures/0", score=0.7)
+    pic_chunk = _picture_only_result("#/pictures/0", score=0.9)
+    other = _picture_only_result("#/pictures/1", score=0.6)
+
+    deduped = _dedup_picture_chunks([text_chunk, pic_chunk, other])
+
+    assert len(deduped) == 2
+    chosen = next(r for r in deduped if r.doc_item_refs == ["#/pictures/0"])
+    assert chosen.score == 0.9
+    assert any(r.doc_item_refs == ["#/pictures/1"] for r in deduped)
+
+
+def test_dedup_preserves_wider_chunks_referencing_same_picture():
+    """A wider chunk that contains the picture plus surrounding items
+    is independent signal — keep it alongside a picture-only chunk."""
+    from haiku.rag.client.search import _dedup_picture_chunks
+
+    pic_only = _picture_only_result("#/pictures/0", score=0.9)
+    wider = SearchResult(
+        content="surrounding paragraph text and a figure",
+        score=0.7,
+        chunk_id="wider",
+        document_id="doc-1",
+        doc_item_refs=["#/texts/3", "#/pictures/0", "#/texts/4"],
+        labels=["text", "picture", "text"],
+    )
+
+    deduped = _dedup_picture_chunks([pic_only, wider])
+    assert len(deduped) == 2
+
+
+def test_dedup_does_not_collapse_across_documents():
+    """Same self_ref in different documents is different content."""
+    from haiku.rag.client.search import _dedup_picture_chunks
+
+    a = _picture_only_result("#/pictures/0", score=0.5, document_id="doc-1")
+    b = _picture_only_result("#/pictures/0", score=0.9, document_id="doc-2")
+
+    deduped = _dedup_picture_chunks([a, b])
+    assert len(deduped) == 2

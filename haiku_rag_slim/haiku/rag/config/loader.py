@@ -53,21 +53,19 @@ def load_yaml_config(path: Path) -> dict:
 
 
 def _translate_legacy_picture_fields(data: dict) -> None:
-    """Map pre-A4 picture knobs onto ``processing.pictures``.
+    """Map legacy picture knobs onto ``processing.pictures``.
 
-    Pre-A4 the same intent was expressed by two booleans on
+    Older configs expressed the same intent through two booleans on
     ``conversion_options``: ``generate_picture_images`` and
     ``picture_description.enabled``. Translation, in priority order:
 
     - ``picture_description.enabled = true`` (regardless of the image flag)
-      → ``pictures = "description"``. Mirrors the original behavior where
-      enabling the VLM implicitly forced docling to produce picture bytes.
+      → ``pictures = "description"``.
     - ``generate_picture_images = true`` (and no description) → ``"image"``.
     - both false / missing → no translation; default ``"none"`` applies.
 
-    If ``pictures`` is already set on the loaded YAML it wins — users who
-    have migrated keep their explicit choice. Mutates ``data`` in-place
-    and emits one warning per legacy field encountered.
+    If ``pictures`` is already set on the loaded YAML it wins. Mutates
+    ``data`` in-place and emits one warning per legacy field encountered.
     """
     processing = data.get("processing")
     if not isinstance(processing, dict):
