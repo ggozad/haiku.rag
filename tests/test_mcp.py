@@ -240,3 +240,30 @@ class TestMCPImageQuery:
         results = await search_by_image(image_base64=png_b64)
         # Empty list is fine (the stub vector won't match the toy fixture).
         assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_image_query_returns_empty_on_invalid_base64(
+        self, mcp_db, monkeypatch
+    ):
+        """Garbage base64 from the caller is swallowed, returning an empty
+        list rather than crashing the MCP server."""
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        class StubMultimodal(EmbedderWrapper):
+            supports_images = True
+
+            def __init__(self):
+                super().__init__(embedder=None, vector_dim=2560)
+
+        monkeypatch.setattr(
+            "haiku.rag.embeddings.get_embedder",
+            lambda *a, **kw: StubMultimodal(),
+        )
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        search_by_image = await _get_tool(mcp, "search_documents_by_image")
+
+        # Not valid base64 (contains non-base64 chars) — the strict decoder
+        # in search_documents_by_image rejects it.
+        results = await search_by_image(image_base64="!!! not base64 !!!")
+        assert results == []

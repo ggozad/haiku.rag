@@ -362,6 +362,211 @@ async def test_vllm_supports_images_flag():
     assert embedder.supports_images is True
 
 
+async def test_vllm_connect_error_surfaces_helpful_message(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            raise httpx.ConnectError("All connection attempts failed")
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://nope:8000/v1"
+    )
+    with pytest.raises(ValueError, match="Could not connect to vLLM"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_timeout_surfaces_helpful_message(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    with pytest.raises(ValueError, match="timed out"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_401_surfaces_auth_error(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        status_code = 401
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "401",
+                request=httpx.Request("POST", "http://x"),
+                response=self,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            )
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1", api_key="bad"
+    )
+    with pytest.raises(ValueError, match="Authentication failed"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_other_http_error_surfaces(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        status_code = 500
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "500",
+                request=httpx.Request("POST", "http://x"),
+                response=self,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            )
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    with pytest.raises(ValueError, match="HTTP error from vLLM"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_empty_data_response_raises(monkeypatch):
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": []}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    with pytest.raises(ValueError, match="returned no embeddings"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_embed_documents_empty_list_skips_request(monkeypatch):
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    called = False
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            nonlocal called
+            called = True
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    assert await embedder.embed_documents([]) == []
+    assert called is False
+
+
+async def test_vllm_pil_image_roundtrips_to_data_uri():
+    from PIL import Image
+
+    from haiku.rag.embeddings.vllm import _to_data_uri
+
+    img = Image.new("RGB", (4, 4), color="red")
+    uri = _to_data_uri(img)
+    assert uri.startswith("data:image/png;base64,")
+
+
+async def test_vllm_to_data_uri_rejects_unsupported():
+    from haiku.rag.embeddings.vllm import _to_data_uri
+
+    with pytest.raises(TypeError):
+        _to_data_uri("not bytes")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+
+
 async def test_vllm_get_embedder_routes_to_multimodal():
     config = AppConfig(
         embeddings=EmbeddingsConfig(
