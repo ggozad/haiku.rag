@@ -437,6 +437,7 @@ async def test_rebuild_descriptions_requires_enabled(temp_db_path):
                 pass
 
 
+@pytest.mark.vcr()
 async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkeypatch):
     """End-to-end: ingest a doc with a picture (no VLM at ingest), then run
     rebuild --descriptions with the VLM mocked. The docling blob should gain
@@ -503,6 +504,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         assert any("A red square (mocked)." in (c.content or "") for c in chunks)
 
 
+@pytest.mark.vcr()
 async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkeypatch):
     """Pictures that already carry a description must not be re-sent to the
     VLM, so the operation is safe to re-run after a partial failure."""

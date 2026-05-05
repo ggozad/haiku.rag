@@ -264,6 +264,64 @@ async def test_client_update_title_noop_behavior(temp_db_path):
 
 
 @pytest.mark.vcr()
+async def test_client_create_document_from_source_with_uri_override(temp_db_path):
+    """A `uri` override is honored as the canonical document identifier."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "2412.06611v2.pdf-ish.txt"
+            temp_path.write_text("Synthetic content for URI-override test.")
+
+            doc = await client.create_document_from_source(
+                source=temp_path, uri="2412.06611v2"
+            )
+            assert isinstance(doc, Document)
+            assert doc.uri == "2412.06611v2"
+            assert doc.uri != temp_path.as_uri()
+
+            # The override URI is the lookup key for subsequent reads.
+            looked_up = await client.get_document_by_uri("2412.06611v2")
+            assert looked_up is not None
+            assert looked_up.id == doc.id
+
+            # The original file URI is NOT a key.
+            assert await client.get_document_by_uri(temp_path.as_uri()) is None
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_uri_override_dedupes(temp_db_path):
+    """Re-creating from the same source with the same override is a no-op."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "doc.txt"
+            temp_path.write_text("Stable content for dedup test.")
+
+            doc1 = await client.create_document_from_source(
+                source=temp_path, uri="paper-id-1"
+            )
+            doc2 = await client.create_document_from_source(
+                source=temp_path, uri="paper-id-1"
+            )
+            assert isinstance(doc1, Document) and isinstance(doc2, Document)
+            assert doc1.id == doc2.id
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_uri_override_rejected_for_dir(
+    temp_db_path,
+):
+    """Directory sources reject the `uri` override (would collide on multiple files)."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "a.txt").write_text("a")
+            (Path(temp_dir) / "b.txt").write_text("b")
+
+            with pytest.raises(ValueError, match="directory sources"):
+                await client.create_document_from_source(
+                    source=Path(temp_dir), uri="some-uri"
+                )
+
+
+@pytest.mark.vcr()
 async def test_client_create_document_from_source_unsupported(temp_db_path):
     """Test creating a document from an unsupported file type."""
     async with HaikuRAG(temp_db_path, create=True) as client:
