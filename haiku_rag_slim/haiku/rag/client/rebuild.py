@@ -57,6 +57,11 @@ async def rebuild_database(
         await client.store.recreate_embeddings_table()
         async for doc_id in _rebuild_rechunk(client, documents):
             yield doc_id
+    elif mode == RebuildMode.DESCRIPTIONS:
+        await client.chunk_repository.delete_all()
+        await client.store.recreate_embeddings_table()
+        async for doc_id in _rebuild_descriptions(client, documents):
+            yield doc_id
     else:  # FULL
         await client.chunk_repository.delete_all()
         await client.store.recreate_embeddings_table()
@@ -273,6 +278,149 @@ async def _rebuild_rechunk(
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
         for doc_id in pending_doc_ids:
             yield doc_id
+
+
+async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
+    """Run the VLM against pictures lacking a description, patch the docling
+    blob in-place. Returns the number of newly described pictures.
+    Pictures that already carry ``meta.description.text`` are skipped, so the
+    operation is safe to re-run after a partial failure.
+    """
+    from haiku.rag.providers.picture_description import describe_pictures
+
+    assert doc.id is not None
+    docling_doc = doc.get_docling_document()
+    if docling_doc is None or not docling_doc.pictures:
+        return 0
+
+    needs_description: list[str] = []
+    for pic in docling_doc.pictures:
+        meta = getattr(pic, "meta", None)
+        existing = (
+            getattr(getattr(meta, "description", None), "text", None) if meta else None
+        )
+        if not (isinstance(existing, str) and existing.strip()):
+            needs_description.append(pic.self_ref)
+
+    if not needs_description:
+        return 0
+
+    bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
+        doc.id, needs_description
+    )
+    if not bytes_by_ref:
+        logger.warning(
+            "Document %s has %d pictures missing descriptions but no stored "
+            "picture bytes — skipping. Run a full rebuild from source to "
+            "recover the bytes.",
+            doc.id,
+            len(needs_description),
+        )
+        return 0
+
+    descriptions = await describe_pictures(bytes_by_ref, config=client._config)
+
+    if not descriptions:
+        return 0
+
+    # Patch the docling document in-place. PictureMeta + DescriptionMetaField
+    # are pydantic models; build them and assign.
+    from docling_core.types.doc.document import (
+        DescriptionMetaField,
+        PictureMeta,
+    )
+
+    for pic in docling_doc.pictures:
+        text = descriptions.get(pic.self_ref)
+        if not text:
+            continue
+        if pic.meta is None:
+            pic.meta = PictureMeta()
+        pic.meta.description = DescriptionMetaField(text=text)
+
+    doc.set_docling(docling_doc)
+    return len(descriptions)
+
+
+async def _rebuild_descriptions(
+    client: "HaikuRAG", documents: list[Document]
+) -> AsyncGenerator[str, None]:
+    """Run the VLM over already-stored picture bytes, patch descriptions into
+    the docling blob, then re-chunk + re-embed.
+
+    Skips the docling parse entirely (the blob is already there); only the VLM
+    cost remains. Idempotent: pictures whose ``meta.description.text`` is
+    already populated are not re-described.
+    """
+    from haiku.rag.embeddings import embed_chunks, get_embedder
+
+    if not client._config.processing.conversion_options.picture_description.enabled:
+        raise ValueError(
+            "rebuild --descriptions requires "
+            "processing.conversion_options.picture_description.enabled = true "
+            "in your config."
+        )
+
+    pending_chunks: list[Chunk] = []
+    pending_docs: list[Document] = []
+    pending_doc_ids: list[str] = []
+    embedder = get_embedder(client._config)
+
+    described_total = 0
+    for doc in documents:
+        assert doc.id is not None
+
+        docling_document = doc.get_docling_document()
+        if docling_document is None:
+            raise ValueError(
+                f"Document {doc.id} has no stored docling document; "
+                "rebuild --descriptions requires it. Run a full rebuild instead."
+            )
+
+        n = await _patch_picture_descriptions(client, doc)
+        described_total += n
+        # Use the (possibly patched) docling document for chunking.
+        docling_document = doc.get_docling_document()
+        assert docling_document is not None
+
+        existing_picture_data = (
+            await client.document_item_repository.get_all_picture_data(doc.id)
+            if embedder.supports_images
+            else None
+        )
+        chunks = await client.chunk(
+            docling_document,
+            existing_picture_data=existing_picture_data,
+            document_id=doc.id,
+        )
+        embedded_chunks = await embed_chunks(chunks, client._config)
+
+        for order, chunk in enumerate(embedded_chunks):
+            chunk.document_id = doc.id
+            chunk.order = order
+
+        pending_chunks.extend(embedded_chunks)
+        pending_docs.append(doc)
+        pending_doc_ids.append(doc.id)
+
+        if len(pending_docs) >= _REBUILD_BATCH_SIZE:
+            await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+            for doc_id in pending_doc_ids:
+                yield doc_id
+            pending_chunks = []
+            pending_docs = []
+            pending_doc_ids = []
+
+    if pending_docs:
+        await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+        for doc_id in pending_doc_ids:
+            yield doc_id
+
+    logger.info(
+        "rebuild --descriptions: %d new picture descriptions added across %d documents",
+        described_total,
+        len(documents),
+    )
 
 
 async def _rebuild_full(

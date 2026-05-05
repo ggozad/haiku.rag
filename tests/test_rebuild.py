@@ -425,3 +425,133 @@ async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch):
         for doc_id in ids:
             chunks = await client.chunk_repository.get_by_document_id(doc_id)
             assert len(chunks) > 0
+
+
+async def test_rebuild_descriptions_requires_enabled(temp_db_path):
+    """Calling rebuild --descriptions without picture_description.enabled is
+    a config error: the user has nothing to gain and the resulting state is
+    indistinguishable from a plain --rechunk."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="picture_description.enabled"):
+            async for _ in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
+                pass
+
+
+async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkeypatch):
+    """End-to-end: ingest a doc with a picture (no VLM at ingest), then run
+    rebuild --descriptions with the VLM mocked. The docling blob should gain
+    the description in meta, and the chunk text should pick it up."""
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+
+    config = AppConfig()
+    config.processing.conversion_options.picture_description.enabled = True
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        assert created.id is not None
+
+        from_blob = (
+            await rag.document_repository.get_by_id(created.id)
+        ).get_docling_document()  # type: ignore[union-attr]
+        assert from_blob is not None and from_blob.pictures
+        # No description in the freshly-ingested doc
+        meta = from_blob.pictures[0].meta
+        existing = (
+            getattr(getattr(meta, "description", None), "text", None) if meta else None
+        )
+        assert not existing
+
+        async def fake_describe(image_bytes_by_ref, *, config):
+            return {ref: "A red square (mocked)." for ref in image_bytes_by_ref}
+
+        monkeypatch.setattr(
+            "haiku.rag.client.rebuild.describe_pictures", fake_describe, raising=False
+        )
+        # The function is imported lazily inside _patch_picture_descriptions, so
+        # patch the module-of-origin too.
+        monkeypatch.setattr(
+            "haiku.rag.providers.picture_description.describe_pictures",
+            fake_describe,
+        )
+
+        processed = [
+            doc_id
+            async for doc_id in rag.rebuild_database(mode=RebuildMode.DESCRIPTIONS)
+        ]
+        assert created.id in processed
+
+        # The stored docling blob now has the description
+        after = await rag.document_repository.get_by_id(created.id)
+        assert after is not None
+        after_doc = after.get_docling_document()
+        assert after_doc is not None and after_doc.pictures
+        meta = after_doc.pictures[0].meta
+        text = (
+            getattr(getattr(meta, "description", None), "text", None) if meta else None
+        )
+        assert text == "A red square (mocked)."
+
+        # And the description reaches chunk text
+        chunks = await rag.chunk_repository.get_by_document_id(created.id)
+        assert any("A red square (mocked)." in (c.content or "") for c in chunks)
+
+
+async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkeypatch):
+    """Pictures that already carry a description must not be re-sent to the
+    VLM, so the operation is safe to re-run after a partial failure."""
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+
+    # Pre-populate the description directly on the docling document
+    from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
+    docling_doc.pictures[0].meta = PictureMeta(
+        description=DescriptionMetaField(text="Pre-existing description.")
+    )
+
+    config = AppConfig()
+    config.processing.conversion_options.picture_description.enabled = True
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        assert created.id is not None
+
+        called_with: list[dict[str, bytes]] = []
+
+        async def fake_describe(image_bytes_by_ref, *, config):
+            called_with.append(image_bytes_by_ref)
+            return {ref: "Should not be used." for ref in image_bytes_by_ref}
+
+        monkeypatch.setattr(
+            "haiku.rag.providers.picture_description.describe_pictures",
+            fake_describe,
+        )
+
+        async for _ in rag.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
+            pass
+
+        # VLM was never called for this picture (it already had a description)
+        assert called_with == [] or all(not d for d in called_with)
+
+        after = await rag.document_repository.get_by_id(created.id)
+        assert after is not None
+        after_doc = after.get_docling_document()
+        assert after_doc is not None
+        meta = after_doc.pictures[0].meta
+        text = (
+            getattr(getattr(meta, "description", None), "text", None) if meta else None
+        )
+        assert text == "Pre-existing description."

@@ -46,6 +46,8 @@ class RebuildMode(Enum):
     RECHUNK = "rechunk"  # Re-chunk from existing content, re-embed
     EMBED_ONLY = "embed_only"  # Keep chunks, only regenerate embeddings
     TITLE_ONLY = "title_only"  # Only generate titles for untitled documents
+    DESCRIPTIONS = "descriptions"  # Run the VLM over already-stored picture
+    # bytes, patch descriptions into the docling blob, then re-chunk + re-embed.
 
 
 class HaikuRAG:

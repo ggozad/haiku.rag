@@ -222,6 +222,13 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK):
 # Only regenerate embeddings (fastest, keeps existing chunks)
 async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
     print(f"Processed document {doc_id}")
+
+# Add VLM picture descriptions to an existing database — runs the VLM
+# over already-stored picture bytes, patches descriptions into the
+# docling blob, then re-chunks + re-embeds. Requires
+# picture_description.enabled=true in the config.
+async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
+    print(f"Described pictures in {doc_id}")
 ```
 
 **Rebuild modes:**
@@ -230,6 +237,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
 - `RebuildMode.RECHUNK` - Re-chunk from existing document content, re-embed
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
+- `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent — pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
 ### Generating Titles
 

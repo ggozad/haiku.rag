@@ -123,7 +123,10 @@ processing:
 
 When `enabled: false` (default), the VLM doesn't run; chunks contain only their natural text (captions, surrounding paragraphs). When `enabled: true`, each picture's description is woven into the chunk text and is searchable via FTS.
 
-**Switching the VLM on or off on an existing database.** Picture bytes are already stored, so no reingest is required. Run `haiku-rag rebuild --rechunk` after flipping `enabled` so the chunk-text composition reflects the new setting.
+**Switching the VLM on or off on an existing database.** Picture bytes are already stored, so no reingest is required.
+
+- To turn the VLM **off** (descriptions already exist, you want to drop them): flip `enabled: false` and run `haiku-rag rebuild --rechunk`. Chunk text recomposes from the stripped docling blob.
+- To turn the VLM **on** (descriptions don't exist yet, you want them now): flip `enabled: true` and run `haiku-rag rebuild --descriptions`. The VLM is driven over the picture bytes already in `document_items.picture_data`, descriptions are patched into the docling blob, and chunks are recomposed. The docling parse is skipped entirely. See [Rebuild Database](../cli.md#rebuild-database) for full details.
 
 #### Picture descriptions × embedder × QA model: how the pieces compose
 

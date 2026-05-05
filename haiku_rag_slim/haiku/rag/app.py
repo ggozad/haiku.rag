@@ -587,6 +587,7 @@ class HaikuRAGApp:  # pragma: no cover
                 RebuildMode.RECHUNK: "rechunk",
                 RebuildMode.EMBED_ONLY: "embed only",
                 RebuildMode.TITLE_ONLY: "title only",
+                RebuildMode.DESCRIPTIONS: "picture descriptions",
             }[mode]
 
             self.console.print(

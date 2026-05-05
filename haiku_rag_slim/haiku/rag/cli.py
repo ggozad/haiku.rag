@@ -490,13 +490,23 @@ def rebuild(
         "--title-only",
         help="Only generate titles for documents without one",
     ),
+    descriptions: bool = typer.Option(
+        False,
+        "--descriptions",
+        help=(
+            "Run the VLM over already-stored picture bytes, patch descriptions "
+            "into the docling blob, then re-chunk + re-embed. Skips the docling "
+            "parse entirely. Requires picture_description.enabled=true."
+        ),
+    ),
 ):
     from haiku.rag.client import RebuildMode
 
-    exclusive = sum([embed_only, rechunk, title_only])
+    exclusive = sum([embed_only, rechunk, title_only, descriptions])
     if exclusive > 1:
         typer.echo(
-            "Error: --embed-only, --rechunk, and --title-only are mutually exclusive"
+            "Error: --embed-only, --rechunk, --title-only, and --descriptions "
+            "are mutually exclusive"
         )
         raise typer.Exit(1)
 
@@ -506,6 +516,8 @@ def rebuild(
         mode = RebuildMode.RECHUNK
     elif title_only:  # pragma: no cover
         mode = RebuildMode.TITLE_ONLY
+    elif descriptions:  # pragma: no cover
+        mode = RebuildMode.DESCRIPTIONS
     else:  # pragma: no cover
         mode = RebuildMode.FULL
 

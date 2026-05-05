@@ -470,6 +470,10 @@ haiku-rag rebuild --embed-only
 
 # Only generate titles for untitled documents
 haiku-rag rebuild --title-only
+
+# Run the VLM over already-stored picture bytes and patch descriptions
+# into the docling blob. Skips the docling parse entirely.
+haiku-rag rebuild --descriptions
 ```
 
 **Rebuild modes:**
@@ -480,6 +484,9 @@ haiku-rag rebuild --title-only
 | Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
 | Embed only | `--embed-only` | Changed embedding model or vector dimensions |
 | Title only | `--title-only` | Generate titles for documents without one |
+| Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
+
+**`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `picture_description.enabled: true` in the config. Idempotent — pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely; only the VLM time is paid.
 
 ### Download Models
 
