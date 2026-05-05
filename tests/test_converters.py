@@ -54,31 +54,6 @@ def create_mock_docling_document(name: str = "test") -> dict:
     }
 
 
-def create_async_workflow_mocks(
-    doc_json: dict, task_id: str = "test-task-123"
-) -> tuple[Mock, Mock, Mock]:
-    """Create mock responses for docling-serve async workflow.
-
-    Returns tuple of (submit_response, poll_response, result_response).
-    """
-    submit_response = Mock()
-    submit_response.status_code = 200
-    submit_response.json.return_value = {"task_id": task_id, "task_status": "pending"}
-    submit_response.raise_for_status = Mock()
-
-    poll_response = Mock()
-    poll_response.status_code = 200
-    poll_response.json.return_value = {"task_id": task_id, "task_status": "success"}
-    poll_response.raise_for_status = Mock()
-
-    result_response = Mock()
-    result_response.status_code = 200
-    result_response.json.return_value = {"document": {"json_content": doc_json}}
-    result_response.raise_for_status = Mock()
-
-    return submit_response, poll_response, result_response
-
-
 def create_async_workflow_zip_mocks(
     doc_json: dict,
     artifacts: dict[str, bytes] | None = None,
@@ -375,36 +350,19 @@ class TestDoclingLocalConverter:
         )
 
     @pytest.mark.asyncio
-    async def test_convert_pdf_without_picture_images(self, config):
-        """Test PDF conversion excludes embedded images by default."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.pictures = "none"
-        converter = DoclingLocalConverter(config)
-
-        doc = await converter.convert_file(pdf_path)
-        assert isinstance(doc, DoclingDocument)
-
-        # Check that pictures don't have image data
-        for picture in doc.pictures:
-            assert picture.image is None, (
-                'Pictures should not have image data when pictures="none"'
-            )
-
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(self, config):
-        """Test PDF conversion includes embedded images when enabled."""
+        """Picture bytes are produced by the local converter for PDFs that
+        contain figures."""
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.pictures = "image"
         converter = DoclingLocalConverter(config)
 
         doc = await converter.convert_file(pdf_path)
         assert isinstance(doc, DoclingDocument)
 
-        # Check that at least some pictures have image data
         pictures_with_images = [p for p in doc.pictures if p.image is not None]
         if doc.pictures:
             assert len(pictures_with_images) > 0, (
-                'Pictures should have image data when pictures="image"'
+                "Pictures should carry image data after conversion"
             )
 
     @pytest.mark.asyncio
@@ -652,7 +610,7 @@ class TestDoclingServeConverter:
     async def test_convert_text_success(self, converter):
         """Test successful text conversion via docling-serve async workflow."""
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -674,7 +632,7 @@ class TestDoclingServeConverter:
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -700,11 +658,10 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.table_cell_matching = False
         config.processing.conversion_options.do_table_structure = False
         config.processing.conversion_options.images_scale = 3.0
-        config.processing.pictures = "none"
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -726,39 +683,14 @@ class TestDoclingServeConverter:
             assert data["table_cell_matching"] == "false"
             assert data["do_table_structure"] == "false"
             assert data["images_scale"] == "3.0"
-            assert data["include_images"] == "false"
-            assert data["image_export_mode"] == "embedded"
+            assert data["include_images"] == "true"
+            assert data["image_export_mode"] == "referenced"
+            assert data["target_type"] == "zip"
 
     @pytest.mark.asyncio
     async def test_ocr_engine_passed_to_api(self, config):
         """Test that ocr_engine is passed to docling-serve API."""
         config.processing.conversion_options.ocr_engine = "rapidocr"
-        converter = DoclingServeConverter(config)
-
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            await converter.convert_text("# Test")
-
-            call_kwargs = mock_client.post.call_args.kwargs
-            data = call_kwargs["data"]
-            assert data["ocr_engine"] == "rapidocr"
-
-    @pytest.mark.asyncio
-    async def test_picture_images_request_uses_referenced_zip(self, config):
-        """When pictures="image" the request flips to
-        image_export_mode=referenced + target_type=zip and consumes a zip
-        response — mirrors the upstream docling-serve#576 workaround.
-        """
-        config.processing.pictures = "image"
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
@@ -774,10 +706,9 @@ class TestDoclingServeConverter:
 
             await converter.convert_text("# Test")
 
-            data = mock_client.post.call_args.kwargs["data"]
-            assert data["image_export_mode"] == "referenced"
-            assert data["target_type"] == "zip"
-            assert data["include_images"] == "true"
+            call_kwargs = mock_client.post.call_args.kwargs
+            data = call_kwargs["data"]
+            assert data["ocr_engine"] == "rapidocr"
 
     def test_parse_zip_rehydrates_picture_uri(self, config):
         """Zip path inlines artifact bytes as data: URIs on PictureItem.image.
@@ -917,30 +848,10 @@ class TestDoclingServeConverter:
                 await converter.convert_text("# Test")
 
     @pytest.mark.asyncio
-    async def test_convert_text_no_json_content(self, converter):
-        """Test handling when docling-serve returns no JSON content."""
-        submit_resp, poll_resp, _ = create_async_workflow_mocks({})
-        result_resp = Mock()
-        result_resp.status_code = 200
-        result_resp.json.return_value = {"document": {"json_content": None}}
-        result_resp.raise_for_status = Mock()
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            with pytest.raises(ValueError, match="did not return JSON content"):
-                await converter.convert_text("# Test")
-
-    @pytest.mark.asyncio
     async def test_convert_file_pdf(self, converter):
         """Test converting PDF file via docling-serve async workflow."""
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -963,7 +874,7 @@ class TestDoclingServeConverter:
     async def test_convert_file_text(self, converter):
         """Test converting text file (reads locally, sends to docling-serve)."""
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -1092,7 +1003,7 @@ class TestDoclingServeConverterPictureDescription:
         converter = DoclingServeConverter(config)
 
         doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(doc_json)
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -1225,23 +1136,6 @@ class TestDoclingServeConverterIntegration:
 
     @pytest.mark.vcr()
     @pytest.mark.asyncio
-    async def test_convert_pdf_without_picture_images(self, config):
-        """Test PDF conversion excludes picture images when disabled."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.pictures = "none"
-        converter = DoclingServeConverter(config)
-
-        doc = await converter.convert_file(pdf_path)
-        assert isinstance(doc, DoclingDocument)
-
-        # Check that pictures don't have image data
-        for picture in doc.pictures:
-            assert picture.image is None, (
-                'Pictures should not have image data when pictures="none"'
-            )
-
-    @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_ocr_engine(self, config):
         """Test PDF conversion with explicit OCR engine selection."""
         pdf_path = Path("tests/data/doclaynet.pdf")
@@ -1256,17 +1150,16 @@ class TestDoclingServeConverterIntegration:
     @pytest.mark.vcr()
     @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(self, config):
-        """Test PDF conversion includes picture images when enabled.
+        """Picture bytes are produced for PDFs that contain figures.
 
-        docling-serve only emits picture image bytes when
-        ``image_export_mode="referenced"`` (upstream issue
-        docling-project/docling-serve#576). The converter switches to
-        ``referenced`` + ``target_type="zip"`` when picture images are
-        wanted, then rehydrates the bundled artifact files into ``data:``
-        URIs so the result is shape-equivalent to the local converter.
+        docling-serve only emits picture image bytes via the
+        ``image_export_mode="referenced"`` + ``target_type="zip"`` path
+        (upstream issue docling-project/docling-serve#576). The converter
+        always uses that path and rehydrates the bundled artifact files
+        into ``data:`` URIs so the result is shape-equivalent to the local
+        converter.
         """
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.pictures = "image"
         converter = DoclingServeConverter(config)
 
         doc = await converter.convert_file(pdf_path)
@@ -1275,7 +1168,7 @@ class TestDoclingServeConverterIntegration:
         pictures_with_images = [p for p in doc.pictures if p.image is not None]
         assert doc.pictures, "doclaynet.pdf is expected to contain at least one picture"
         assert len(pictures_with_images) > 0, (
-            'Pictures should have image data when pictures="image"'
+            "Pictures should carry image data after conversion"
         )
         sample = pictures_with_images[0]
         assert sample.image is not None
