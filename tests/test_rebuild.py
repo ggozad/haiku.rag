@@ -559,6 +559,7 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
         assert text == "Pre-existing description."
 
 
+@pytest.mark.vcr()
 @pytest.mark.asyncio
 async def test_patch_picture_descriptions_returns_zero_for_doc_without_pictures(
     temp_db_path,
