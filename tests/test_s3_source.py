@@ -169,3 +169,37 @@ async def test_create_document_from_s3_rejects_invalid_uri(
     async with HaikuRAG(temp_db_path, create=True) as client:
         with pytest.raises(ValueError, match="Invalid S3 URI"):
             await client.create_document_from_source("s3://only-bucket-no-key")
+
+
+@pytest.mark.asyncio
+async def test_create_document_from_s3_rejects_unsupported_extension(
+    fake_obstore_io, temp_db_path
+):
+    head_async, _ = fake_obstore_io
+    head_async.return_value = _meta('"abc"')
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="Unsupported content type"):
+            await client.create_document_from_source("s3://my-bucket/file.unsupported")
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_create_document_from_s3_uri_override(fake_obstore_io, temp_db_path):
+    """`uri=` kwarg overrides the s3:// URL as the stored document identifier."""
+    head_async, get_async = fake_obstore_io
+    head_async.return_value = _meta('"abc"')
+    get_async.return_value = _get_result(b"override target content")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(
+            "s3://my-bucket/file.txt", uri="arxiv:2401.00001"
+        )
+
+        assert doc.uri == "arxiv:2401.00001"
+        # The override is the canonical identifier — lookup by it must hit the doc.
+        looked_up = await client.get_document_by_uri("arxiv:2401.00001")
+        assert looked_up is not None
+        assert looked_up.id == doc.id
+        # The s3:// URL is NOT a stored identifier.
+        assert await client.get_document_by_uri("s3://my-bucket/file.txt") is None

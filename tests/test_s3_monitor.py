@@ -318,6 +318,37 @@ async def test_s3_watcher_invalid_uri_rejected():
 
 
 @pytest.mark.asyncio
+async def test_s3_watcher_upsert_failure_does_not_abort_sweep(s3_listing):
+    """A failing upsert doesn't propagate; the refresh keeps processing siblings."""
+    set_batches, _ = s3_listing
+    set_batches([[_meta("incoming/bad.txt", "abc"), _meta("incoming/good.txt", "def")]])
+
+    from haiku.rag.monitor import S3Watcher
+
+    rag = AsyncMock(spec=HaikuRAG)
+    rag.list_documents.return_value = []
+
+    good_doc = Document(
+        id="good-id", content="...", uri="s3://my-bucket/incoming/good.txt"
+    )
+
+    async def maybe_fail(uri, **_):
+        if uri.endswith("bad.txt"):
+            raise RuntimeError("boom")
+        return good_doc
+
+    rag.create_document_from_source.side_effect = maybe_fail
+
+    watcher = S3Watcher(client=rag, entry=_entry(), supported_extensions=[".txt"])
+
+    # The failing upsert must not propagate out of refresh().
+    await watcher.refresh()
+
+    # Both objects were attempted — the first failure didn't abort the sibling.
+    assert rag.create_document_from_source.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_serve_starts_one_s3_task_per_entry(monkeypatch, s3_listing):
     """`serve` wires one S3Watcher task per MonitorConfig.s3 entry."""
     from haiku.rag import app as app_module
