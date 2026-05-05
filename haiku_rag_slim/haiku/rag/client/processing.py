@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -8,9 +9,47 @@ import httpx
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.document_item import _picture_description_text
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
+
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_if_descriptions_missing(
+    config: AppConfig, doc: "DoclingDocument", source: str
+) -> None:
+    """Warn when picture-description was requested but produced nothing.
+
+    docling-serve swallows VLM errors (network failures, missing models,
+    etc.) and returns a successful conversion with empty descriptions.
+    docling-local can do the same when the VLM endpoint is unreachable.
+    Surface the silent failure: when ``picture_description.enabled=True``
+    AND the document has at least one picture AND zero descriptions came
+    back, log a clear warning so the user can fix their VLM config before
+    a thousand-document ingest produces an empty corpus.
+    """
+    if not config.processing.conversion_options.picture_description.enabled:
+        return
+    pictures = list(doc.pictures or [])
+    if not pictures:
+        return
+    described = sum(1 for p in pictures if _picture_description_text(p))
+    if described == 0:
+        model = config.processing.conversion_options.picture_description.model
+        logger.warning(
+            "picture_description.enabled is True but no descriptions came back "
+            "for %s (%d pictures, 0 described). The VLM call likely failed "
+            "silently inside the converter. Check that the VLM at %s is "
+            "reachable from the converter and that the model name '%s' "
+            "resolves on the server.",
+            source,
+            len(pictures),
+            model.base_url or "<provider default>",
+            model.name,
+        )
 
 
 async def convert(
@@ -44,7 +83,9 @@ async def convert(
             raise ValueError(f"File does not exist: {source}")
         if source.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {source.suffix}")
-        return await converter.convert_file(source)
+        doc = await converter.convert_file(source)
+        _warn_if_descriptions_missing(config, doc, str(source))
+        return doc
 
     # String - check if URL or text
     parsed = urlparse(source)
@@ -73,7 +114,9 @@ async def convert(
                 temp_path = Path(temp_file.name)
 
             try:
-                return await converter.convert_file(temp_path)
+                doc = await converter.convert_file(temp_path)
+                _warn_if_descriptions_missing(config, doc, source)
+                return doc
             finally:
                 temp_path.unlink(missing_ok=True)
 
@@ -84,7 +127,9 @@ async def convert(
             raise ValueError(f"File does not exist: {file_path}")
         if file_path.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {file_path.suffix}")
-        return await converter.convert_file(file_path)
+        doc = await converter.convert_file(file_path)
+        _warn_if_descriptions_missing(config, doc, str(file_path))
+        return doc
 
     else:
         # Treat as text content
