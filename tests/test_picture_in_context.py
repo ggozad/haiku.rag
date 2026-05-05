@@ -290,6 +290,62 @@ async def test_search_tool_returns_multimodal_when_picture_present():
     assert part.data == PICTURE_BYTES
 
 
+@pytest.mark.asyncio
+async def test_search_tool_attaches_same_self_ref_from_different_documents():
+    """Two different documents both have ``#/pictures/0`` — the dedup must
+    key on ``(document_id, self_ref)`` so each document's figure reaches
+    the model. Keying on ``self_ref`` alone silently drops the second
+    document's bytes, leaving the model with text only for that result."""
+    other_bytes = b"\x89PNG\r\n\x1a\nother-doc-bytes"
+    other_b64 = base64.b64encode(other_bytes).decode("ascii")
+
+    doc_a = SearchResult(
+        content="Figure from doc A",
+        score=1.0,
+        chunk_id="chunk-a",
+        document_id="doc-A",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": PICTURE_B64},
+    )
+    doc_b = SearchResult(
+        content="Figure from doc B (same self_ref, different bytes)",
+        score=0.9,
+        chunk_id="chunk-b",
+        document_id="doc-B",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": other_b64},
+    )
+
+    fake_client = AsyncMock()
+    fake_client.search = AsyncMock(return_value=[doc_a, doc_b])
+    fake_client.expand_context = AsyncMock(return_value=[doc_a, doc_b])
+
+    config = AppConfig()
+    config.qa.model.vision = True
+    toolset = create_search_toolset(config, expand_context=False)
+    func = toolset.tools["search"].function
+
+    ctx = RunContext(
+        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
+        model=TestModel(),
+        usage=RunUsage(),
+        run_id="run-1",
+    )
+    result = await func(ctx, "anything")
+
+    assert isinstance(result, ToolReturn)
+    assert result.content is not None
+    assert len(result.content) == 2, (
+        "Both documents' figures must reach the model — dedup keyed on "
+        "self_ref alone would drop doc-B's bytes."
+    )
+    payloads = {part.data for part in result.content}  # type: ignore[attr-defined]
+    assert PICTURE_BYTES in payloads
+    assert other_bytes in payloads
+
+
 # Synthetic picture chunks at ingest
 
 

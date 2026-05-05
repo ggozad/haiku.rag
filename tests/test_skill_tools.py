@@ -185,3 +185,47 @@ async def test_skill_search_dedups_picture_bytes_by_self_ref():
     assert result.content is not None
     assert len(result.content) == 1
     assert result.content[0].identifier == "#/pictures/0"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_skill_search_keeps_same_self_ref_from_different_documents():
+    """``#/pictures/0`` in document A and ``#/pictures/0`` in document B
+    are different figures. Dedup must key on ``(document_id, self_ref)``;
+    keying on ``self_ref`` alone would drop document B's bytes."""
+    other_bytes = b"\x89PNG\r\n\x1a\nother-doc-bytes"
+    other_b64 = base64.b64encode(other_bytes).decode("ascii")
+
+    doc_a = SearchResult(
+        content="Figure in doc A",
+        score=1.0,
+        chunk_id="chunk-a",
+        document_id="doc-A",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": PICTURE_B64},
+    )
+    doc_b = SearchResult(
+        content="Figure in doc B",
+        score=0.9,
+        chunk_id="chunk-b",
+        document_id="doc-B",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": other_b64},
+    )
+
+    config = AppConfig()
+    config.qa.model.vision = True
+
+    search = _build_search_tool(config)
+    rag = _fake_rag([doc_a, doc_b])
+    ctx = _make_ctx(rag, RAGState())
+
+    result = await search(ctx, "figure")
+
+    assert isinstance(result, ToolReturn)
+    assert result.content is not None
+    assert len(result.content) == 2
+    payloads = {part.data for part in result.content}  # type: ignore[attr-defined]
+    assert PICTURE_BYTES in payloads
+    assert other_bytes in payloads

@@ -94,12 +94,13 @@ def create_search_toolset(
             return text
 
         binary_parts: list[BinaryContent] = []
-        seen: set[str] = set()
+        seen: set[tuple[str | None, str]] = set()
         for result in results_list:
             if not result.image_data:
                 continue
             for self_ref, b64 in result.image_data.items():
-                if self_ref in seen:
+                key = (result.document_id, self_ref)
+                if key in seen:
                     continue
                 binary_parts.append(
                     BinaryContent(
@@ -108,7 +109,7 @@ def create_search_toolset(
                         identifier=self_ref,
                     )
                 )
-                seen.add(self_ref)
+                seen.add(key)
 
         if binary_parts:
             return ToolReturn(return_value=text, content=binary_parts)
