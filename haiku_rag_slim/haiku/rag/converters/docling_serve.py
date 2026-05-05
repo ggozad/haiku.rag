@@ -99,7 +99,7 @@ class DoclingServeConverter(DocumentConverter):
         """
         opts = self.config.processing.conversion_options
         pic_desc = opts.picture_description
-        runs_vlm = self.config.processing.pictures == "description"
+        runs_vlm = pic_desc.enabled
 
         data: dict[str, str | list[str]] = {
             "to_formats": "json",

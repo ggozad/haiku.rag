@@ -53,56 +53,54 @@ def load_yaml_config(path: Path) -> dict:
 
 
 def _translate_legacy_picture_fields(data: dict) -> None:
-    """Map legacy picture knobs onto ``processing.pictures``.
+    """Map legacy picture-handling knobs onto
+    ``processing.conversion_options.picture_description.enabled``.
 
-    Older configs expressed the same intent through two booleans on
-    ``conversion_options``: ``generate_picture_images`` and
-    ``picture_description.enabled``. Translation, in priority order:
+    Two earlier shapes need translating:
 
-    - ``picture_description.enabled = true`` (regardless of the image flag)
-      → ``pictures = "description"``.
-    - ``generate_picture_images = true`` (and no description) → ``"image"``.
-    - both false / missing → no translation; default ``"none"`` applies.
+    - ``processing.pictures: "description"`` →
+      ``picture_description.enabled = true``. The other values
+      (``"none"``, ``"image"``) collapse to ``false`` since the only
+      remaining decision is whether the VLM runs; picture bytes are
+      always stored.
+    - ``processing.conversion_options.generate_picture_images: <any>`` is a
+      no-op now (docling always extracts picture bytes) and is dropped
+      with a one-time warning.
 
-    If ``pictures`` is already set on the loaded YAML it wins. Mutates
-    ``data`` in-place and emits one warning per legacy field encountered.
+    If ``picture_description.enabled`` is already explicitly set on the
+    loaded YAML, it wins. Mutates ``data`` in-place and emits one warning
+    per legacy field encountered.
     """
     processing = data.get("processing")
     if not isinstance(processing, dict):
         return
 
-    if "pictures" in processing:
-        # User has migrated; legacy fields may still be present but should not
-        # override the explicit choice. Drop them silently to avoid confusion.
-        opts = processing.get("conversion_options")
-        if isinstance(opts, dict):
-            opts.pop("generate_picture_images", None)
-            pic = opts.get("picture_description")
-            if isinstance(pic, dict):
-                pic.pop("enabled", None)
-        return
+    legacy_pictures = processing.pop("pictures", None)
+    if legacy_pictures is not None:
+        opts = processing.setdefault("conversion_options", {})
+        if not isinstance(opts, dict):
+            opts = {}
+            processing["conversion_options"] = opts
+        pic = opts.setdefault("picture_description", {})
+        if not isinstance(pic, dict):
+            pic = {}
+            opts["picture_description"] = pic
+        if "enabled" not in pic:
+            pic["enabled"] = legacy_pictures == "description"
+        logger.warning(
+            "Config: 'processing.pictures' is deprecated; use "
+            "'processing.conversion_options.picture_description.enabled' "
+            "instead. Picture bytes are now always stored. Please update "
+            "your haiku.rag.yaml."
+        )
 
     opts = processing.get("conversion_options")
-    if not isinstance(opts, dict):
-        return
-
-    pic = opts.get("picture_description") if isinstance(opts, dict) else None
-    legacy_describe = pic.pop("enabled", None) if isinstance(pic, dict) else None
-    legacy_image = opts.pop("generate_picture_images", None)
-
-    if legacy_describe:
-        processing["pictures"] = "description"
+    if isinstance(opts, dict) and "generate_picture_images" in opts:
+        opts.pop("generate_picture_images", None)
         logger.warning(
-            "Config: 'processing.conversion_options.picture_description.enabled=true' is "
-            "deprecated; mapped to 'processing.pictures: description'. Please update your "
-            "haiku.rag.yaml."
-        )
-    elif legacy_image:
-        processing["pictures"] = "image"
-        logger.warning(
-            "Config: 'processing.conversion_options.generate_picture_images=true' is "
-            "deprecated; mapped to 'processing.pictures: image'. Please update your "
-            "haiku.rag.yaml."
+            "Config: 'processing.conversion_options.generate_picture_images' "
+            "is deprecated and ignored; picture bytes are always extracted. "
+            "Please update your haiku.rag.yaml."
         )
 
 

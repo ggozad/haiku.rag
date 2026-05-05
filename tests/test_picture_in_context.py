@@ -178,10 +178,7 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
 
     docling_doc = _docling_doc_with_picture()
 
-    config = AppConfig()
-    config.processing.pictures = "image"
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+    async with HaikuRAG(temp_db_path, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(rag, document, [], docling_doc)
@@ -253,7 +250,6 @@ class _Deps:
 async def test_search_tool_returns_multimodal_when_picture_present():
     """The agent-facing search tool must wrap text + BinaryContent in ToolReturn
     whenever a result carries picture image_data AND the QA model is vision-capable."""
-    from haiku.rag.config import AppConfig
 
     picture_result = SearchResult(
         content="A diagram of the layout",
@@ -352,7 +348,6 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
     sit where they appear in the document, not appended at the end.
     """
     from haiku.rag.client.processing import chunk
-    from haiku.rag.config import AppConfig
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.store.models.chunk import Chunk
 
@@ -513,14 +508,13 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
 
     docling_doc = _docling_doc_with_picture()
 
-    from haiku.rag.config import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
+    from haiku.rag.config import EmbeddingModelConfig, EmbeddingsConfig
 
     config = AppConfig(
         embeddings=EmbeddingsConfig(
             model=EmbeddingModelConfig(provider="ollama", name="stub", vector_dim=4)
         )
     )
-    config.processing.pictures = "image"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         chunks = await rag.chunk(docling_doc)
@@ -546,7 +540,6 @@ async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
     is text-only (``qa.model.vision = False``, the default). Sending image
     parts to a text-only model would cause it to hallucinate confidently —
     Ollama silently accepts the bytes and the model guesses."""
-    from haiku.rag.config import AppConfig
 
     picture_result = SearchResult(
         content="A diagram of the layout",

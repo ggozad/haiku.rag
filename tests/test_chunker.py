@@ -676,7 +676,6 @@ async def test_serve_chunker_accepts_picture_laden_docling():
     from haiku.rag.converters.docling_serve import DoclingServeConverter
 
     config = AppConfig()
-    config.processing.pictures = "image"
     config.processing.conversion_options.do_ocr = False
     config.processing.chunk_size = 256
     config.processing.chunker_type = "hybrid"

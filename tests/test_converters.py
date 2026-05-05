@@ -507,30 +507,23 @@ class TestDoclingLocalConverter:
 
     def test_picture_description_config_defaults(self, config):
         """Test that picture description config has correct defaults."""
-        assert config.processing.pictures == "none"
-        assert (
-            config.processing.conversion_options.picture_description.model.provider
-            == "ollama"
-        )
-        assert (
-            config.processing.conversion_options.picture_description.model.name
-            == "ministral-3"
-        )
-        assert config.processing.conversion_options.picture_description.timeout == 90
-        assert (
-            config.processing.conversion_options.picture_description.max_tokens == 200
-        )
+        pic_desc = config.processing.conversion_options.picture_description
+        assert pic_desc.enabled is False
+        assert pic_desc.model.provider == "ollama"
+        assert pic_desc.model.name == "ministral-3"
+        assert pic_desc.timeout == 90
+        assert pic_desc.max_tokens == 200
         # Default prompt is in PromptsConfig
         assert "blind user" in config.prompts.picture_description
 
     def test_picture_description_config_applied(self, config):
         """Test that picture description config is applied to converter."""
-        config.processing.pictures = "description"
+        config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.timeout = 120
         converter = DoclingLocalConverter(config)
 
-        assert converter.config.processing.pictures == "description"
         pic_desc = converter.config.processing.conversion_options.picture_description
+        assert pic_desc.enabled is True
         assert pic_desc.timeout == 120
 
     @pytest.mark.asyncio
@@ -542,7 +535,7 @@ class TestDoclingLocalConverter:
         # Disable OCR (not needed for native PDF, avoids model downloads)
         config.processing.conversion_options.do_ocr = False
         # Enable picture description with Ollama
-        config.processing.pictures = "description"
+        config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -947,15 +940,11 @@ class TestDoclingServeConverterPictureDescription:
 
     @pytest.mark.asyncio
     async def test_picture_description_options_passed_to_api(self, config):
-        """Test that picture description options are passed to docling-serve API.
-
-        ``pictures="description"`` requires picture images for the VLM, which
-        routes the request through the ``target_type=zip`` path. The test
-        mocks the zip workflow.
-        """
+        """Picture-description options reach the docling-serve API when the
+        VLM is enabled."""
         import json
 
-        config.processing.pictures = "description"
+        config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -1066,7 +1055,7 @@ class TestDoclingServeConverterIntegration:
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.pictures = "description"
+        config.processing.conversion_options.picture_description.enabled = True
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )

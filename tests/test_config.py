@@ -239,8 +239,10 @@ def test_init_config_creates_valid_yaml(tmp_path):
     assert config.environment == "production"
 
 
-# Legacy picture-handling field translation (`generate_picture_images` and
-# `picture_description.enabled` → `processing.pictures` enum)
+# Legacy picture-handling field translation:
+#   processing.pictures: "description" -> picture_description.enabled = true
+#   processing.pictures: "none" | "image" -> picture_description.enabled = false
+#   processing.conversion_options.generate_picture_images: <any> -> ignored
 
 
 def _write(tmp_path, body: str):
@@ -249,17 +251,16 @@ def _write(tmp_path, body: str):
     return p
 
 
-def test_load_yaml_legacy_picture_description_maps_to_description(tmp_path):
-    """`picture_description.enabled=true` (with or without the image flag)
-    maps to `processing.pictures: description`."""
+def test_load_yaml_legacy_pictures_description_maps_to_enabled(tmp_path):
+    """`processing.pictures: description` maps to
+    `picture_description.enabled = true` and warns."""
     config_file = _write(
         tmp_path,
         """
 processing:
+  pictures: description
   conversion_options:
-    generate_picture_images: false
     picture_description:
-      enabled: true
       timeout: 120
 """,
     )
@@ -270,15 +271,49 @@ processing:
     finally:
         loader_logger.removeHandler(handler)
     cfg = AppConfig.model_validate(data)
-    assert cfg.processing.pictures == "description"
+    assert cfg.processing.conversion_options.picture_description.enabled is True
     assert cfg.processing.conversion_options.picture_description.timeout == 120
-    assert any(
-        "picture_description.enabled=true" in r.getMessage() for r in handler.records
+    assert any("processing.pictures" in r.getMessage() for r in handler.records)
+
+
+def test_load_yaml_legacy_pictures_image_maps_to_disabled(tmp_path):
+    """`processing.pictures: image` is the bytes-only mode in the old
+    enum; under always-store semantics it collapses to
+    `picture_description.enabled = false`."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  pictures: image
+""",
     )
+    handler = _ListHandler()
+    loader_logger.addHandler(handler)
+    try:
+        data = load_yaml_config(config_file)
+    finally:
+        loader_logger.removeHandler(handler)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.conversion_options.picture_description.enabled is False
 
 
-def test_load_yaml_legacy_generate_picture_images_maps_to_image(tmp_path):
-    """`generate_picture_images=true` alone maps to `pictures: image`."""
+def test_load_yaml_legacy_pictures_none_maps_to_disabled(tmp_path):
+    """`processing.pictures: none` maps to `picture_description.enabled = false`."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  pictures: none
+""",
+    )
+    data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.conversion_options.picture_description.enabled is False
+
+
+def test_load_yaml_legacy_generate_picture_images_warns_and_drops(tmp_path):
+    """`generate_picture_images` is now a no-op (bytes always extracted);
+    it gets dropped with a deprecation warning."""
     config_file = _write(
         tmp_path,
         """
@@ -294,15 +329,14 @@ processing:
     finally:
         loader_logger.removeHandler(handler)
     cfg = AppConfig.model_validate(data)
-    assert cfg.processing.pictures == "image"
-    assert any(
-        "generate_picture_images=true" in r.getMessage() for r in handler.records
-    )
+    assert cfg.processing.conversion_options.picture_description.enabled is False
+    assert "generate_picture_images" not in data["processing"]["conversion_options"]
+    assert any("generate_picture_images" in r.getMessage() for r in handler.records)
 
 
-def test_load_yaml_no_legacy_fields_keeps_default_none(tmp_path):
-    """Empty processing block leaves the default `none` mode untouched and
-    does not warn."""
+def test_load_yaml_no_legacy_fields_keeps_default_disabled(tmp_path):
+    """Empty processing block leaves picture_description.enabled at the
+    default (False) and does not warn."""
     config_file = _write(
         tmp_path,
         """
@@ -317,29 +351,23 @@ processing:
     finally:
         loader_logger.removeHandler(handler)
     cfg = AppConfig.model_validate(data)
-    assert cfg.processing.pictures == "none"
+    assert cfg.processing.conversion_options.picture_description.enabled is False
     assert not handler.records
 
 
-def test_load_yaml_explicit_pictures_wins_over_legacy(tmp_path):
-    """When the user has migrated to `pictures: ...` we keep their choice
-    and silently drop legacy fields if both are present (e.g. from a
-    half-migrated config)."""
+def test_load_yaml_explicit_enabled_wins_over_legacy_pictures(tmp_path):
+    """If the user already set `picture_description.enabled` explicitly,
+    a stale `processing.pictures` value does not override it."""
     config_file = _write(
         tmp_path,
         """
 processing:
-  pictures: image
+  pictures: none
   conversion_options:
-    generate_picture_images: false
     picture_description:
       enabled: true
 """,
     )
     data = load_yaml_config(config_file)
     cfg = AppConfig.model_validate(data)
-    assert cfg.processing.pictures == "image"
-    # Legacy fields scrubbed so Pydantic validation doesn't trip on extras.
-    opts = data["processing"]["conversion_options"]
-    assert "generate_picture_images" not in opts
-    assert "enabled" not in opts.get("picture_description", {})
+    assert cfg.processing.conversion_options.picture_description.enabled is True

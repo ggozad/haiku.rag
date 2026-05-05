@@ -28,9 +28,6 @@ processing:
     name: gpt-oss
     enable_thinking: false
 
-  # Picture handling (none / description / image)
-  pictures: none                             # See "Picture Handling" below
-
   # Conversion options (works with both local and remote converters)
   conversion_options:
     # OCR settings
@@ -48,8 +45,9 @@ processing:
     images_scale: 2.0                        # Image scale factor
     generate_page_images: true               # Include rendered page images (for visualize_chunk)
 
-    # VLM picture description settings (only effective when pictures: description)
+    # VLM picture description (off by default; see "Picture Handling" below)
     picture_description:
+      enabled: false
       model:
         provider: ollama
         name: ministral-3
@@ -106,27 +104,15 @@ conversion_options:
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
 
-Embedded picture extraction is controlled by `processing.pictures` (see [Picture Handling](#picture-handling) below), not by an image-settings flag.
-
 #### Picture Handling
 
-`processing.pictures` is a single enum that decides how embedded picture images (figures, diagrams) are handled at ingest. Three modes:
-
-| Mode | VLM at ingest | `picture_data` populated | Chunk text contains description |
-|---|---|---|---|
-| `none` (default) | no | no | no |
-| `description` | yes | yes | yes |
-| `image` | no | yes | no |
-
-- **`none`**: docling skips picture-image generation. `label="picture"` rows still appear in the items table for structural metadata, but they carry no bytes and no description. Cheapest mode; non-vision QA is unaffected.
-- **`description`**: docling generates picture images, the configured VLM produces a description woven into chunk text, and the bytes are also retained in `document_items.picture_data`. Picture-text is searchable via FTS, vision-capable QA models also receive the bytes via the agent's search tool. Bytes are kept (not just thrown away after the VLM runs) so a vision-only QA strategy can be turned on later without reingesting.
-- **`image`**: docling generates picture images and stores them in `document_items.picture_data` without running the VLM. Vision-capable QA models reason directly about the figures; non-vision QA only sees the picture's caption/surrounding text.
+Picture bytes (figures, diagrams) are always extracted and stored in `document_items.picture_data` for every ingested document. The single configurable knob is whether a Vision Language Model (VLM) runs at ingest time to generate textual descriptions, set via `picture_description.enabled`:
 
 ```yaml
 processing:
-  pictures: description          # none / description / image
   conversion_options:
-    picture_description:         # only effective when pictures: description
+    picture_description:
+      enabled: true              # default false; runs the VLM at ingest
       model:
         provider: ollama         # ollama, openai, or custom
         name: ministral-3        # VLM model name
@@ -135,56 +121,55 @@ processing:
       max_tokens: 200            # Maximum tokens in response
 ```
 
-**Switching modes on an existing database.** No reingest is required if you only need to change between `description` and `image` — the bytes are already there. Run `haiku-rag rebuild --rechunk` after the config change so the chunk-text composition reflects the new mode. Switching *down* to `none` clears `picture_data` on rebuild, reclaiming storage.
+When `enabled: false` (default), the VLM doesn't run; chunks contain only their natural text (captions, surrounding paragraphs). When `enabled: true`, each picture's description is woven into the chunk text and is searchable via FTS.
 
-#### Pictures × embedder × QA model: how the pieces compose
+**Switching the VLM on or off on an existing database.** Picture bytes are already stored, so no reingest is required. Run `haiku-rag rebuild --rechunk` after flipping `enabled` so the chunk-text composition reflects the new setting.
 
-Three orthogonal settings drive what gets stored, what gets retrieved, and what reaches the QA model. Each setting answers one question:
+#### Picture descriptions × embedder × QA model: how the pieces compose
+
+Three settings drive what gets stored, what gets retrieved, and what reaches the QA model:
 
 | Setting | Question it answers | Values |
 |---|---|---|
-| `processing.pictures` | What gets captured at ingest? | `none` / `description` / `image` |
+| `picture_description.enabled` | Should a VLM weave descriptions into chunk text at ingest? | `false` (default) / `true` |
 | `embeddings.model.provider` | Can the embedder index image content? | text-only providers (`ollama`, `openai`, `cohere`, `sentence-transformers`) vs `vllm` (multimodal) |
 | `qa.model.vision` | Can the QA model interpret images? | `false` (default) / `true` |
 
-**What gets stored** for each `pictures` × embedder combination:
+Picture bytes are always stored, regardless of these settings.
 
-| `pictures` | Embedder | Text chunks contain… | `document_items.picture_data` | Synthetic picture chunks |
-|---|---|---|---|---|
-| `none` | text-only or multimodal | regular text only | empty | none |
-| `description` | text-only | text + VLM descriptions | populated (kept for later use) | none |
-| `description` | multimodal | text + VLM descriptions | populated | one per picture, content = description, vector = image embedding |
-| `image` | text-only | text only (caption/surrounding) | populated (kept for later use) | none |
-| `image` | multimodal | text only | populated | one per picture, content = caption/empty, vector = image embedding |
+**What gets stored** for each `picture_description.enabled` × embedder combination:
+
+| `enabled` | Embedder | Text chunks contain… | Synthetic picture chunks |
+|---|---|---|---|
+| `false` | text-only | text only (caption/surrounding) | none |
+| `false` | multimodal | text only | one per picture, content = caption/empty, vector = image embedding |
+| `true` | text-only | text + VLM descriptions | none |
+| `true` | multimodal | text + VLM descriptions | one per picture, content = description, vector = image embedding |
 
 **What QA receives** at search time, given stored state and `qa.model.vision`:
 
-| `pictures` at ingest | `qa.model.vision` | QA receives |
-|---|---|---|
-| `none` | either | text chunks only |
-| `description` | `false` | text chunks (descriptions in chunk text answer figure questions in prose) |
-| `description` | `true` | text chunks + raw picture bytes; vision model uses both signals |
-| `image` | `false` | text chunks only (caption + surrounding text); model has no figure content to draw on |
-| `image` | `true` | text chunks + raw picture bytes; vision model reads the figures directly |
+| `qa.model.vision` | QA receives |
+|---|---|
+| `false` | text chunks only (descriptions in chunk text answer figure questions in prose when `picture_description.enabled` was true) |
+| `true` | text chunks + raw picture bytes; vision model reads the figures directly |
 
 A few invariants worth knowing:
 
 - **`qa.model.vision` is independent of ingestion.** It only controls whether the agent's `search` tool attaches picture bytes to its `ToolReturn`. A text-only QA model with `vision: true` won't suddenly understand images — it will silently accept the bytes and confabulate. Default `false` is the safe choice.
-- **`description` mode preserves the bytes**, so flipping the QA strategy later (text-only → vision, or vice versa) doesn't require reingesting. Just change `qa.model.vision` and optionally `qa.model` itself.
+- **The bytes are always there**, so flipping the QA strategy later (text-only → vision, or vice versa) doesn't require reingesting. Just change `qa.model.vision` and optionally `qa.model` itself.
 - **Cross-modal search** (text query → picture-chunk hits) requires a multimodal embedder. With a text-only embedder, picture-chunk vectors aren't generated; figures only surface via section-bounded expansion off matching text chunks.
-- **`image` mode + text-only embedder** is rarely the right choice — pictures are stored but neither searchable as image vectors nor described in text. Picture bytes are then only reachable via expand-context's section bounds when an adjacent text chunk matches.
 
 **Recommended combinations** by use case:
 
-| Use case | `pictures` | Embedder | `qa.model.vision` |
+| Use case | `picture_description.enabled` | Embedder | `qa.model.vision` |
 |---|---|---|---|
-| Pure text RAG, no figures | `none` | text-only | `false` |
-| Text RAG, figures answered through descriptions | `description` | text-only | `false` |
-| Vision QA on figure-rich docs (no cross-modal search) | `description` | text-only | `true` |
-| Cross-modal search + vision QA (the full multimodal stack) | `description` or `image` | multimodal | `true` |
-| Cross-modal search, text QA only | `description` | multimodal | `false` |
+| Pure text RAG, no figures | `false` | text-only | `false` |
+| Text RAG, figures answered through descriptions | `true` | text-only | `false` |
+| Vision QA on figure-rich docs (no cross-modal search) | `true` or `false` | text-only | `true` |
+| Cross-modal search + vision QA (the full multimodal stack) | `true` or `false` | multimodal | `true` |
+| Cross-modal search, text QA only | `true` | multimodal | `false` |
 
-**`picture_description.model` configuration** (used only under `pictures: description`):
+**`picture_description.model` configuration** (used only when `picture_description.enabled: true`):
 
 - **model**: Standard model configuration
   - `provider`: `ollama` (default), `openai`, or use `base_url` for custom endpoints
@@ -214,9 +199,9 @@ prompts:
 
 ```yaml
 processing:
-  pictures: description
   conversion_options:
     picture_description:
+      enabled: true
       model:
         provider: ollama
         name: ministral-3
@@ -233,9 +218,9 @@ ollama serve
 
 ```yaml
 processing:
-  pictures: description
   conversion_options:
     picture_description:
+      enabled: true
       model:
         provider: openai           # Use OpenAI-compatible API format
         name: granite-vision
@@ -260,9 +245,9 @@ When using `converter: docling-serve`, the VLM calls are made by the docling-ser
 
 ```yaml
 processing:
-  pictures: description
   conversion_options:
     picture_description:
+      enabled: true
       model:
         provider: ollama
         name: ministral-3

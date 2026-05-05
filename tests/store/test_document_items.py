@@ -5,7 +5,6 @@ from haiku.rag.client.documents import (
     _store_document_with_chunks,
     _update_document_with_chunks,
 )
-from haiku.rag.config import AppConfig
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import (
     DocumentItem,
@@ -647,11 +646,7 @@ class TestPictureDataPreservedThroughRoundTrip:
 
         docling_doc = _docling_doc_with_picture()
 
-        config = AppConfig()
-        # Preservation only kicks in under modes that retain picture bytes.
-        config.processing.pictures = "image"
-
-        async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        async with HaikuRAG(temp_db_path, create=True) as rag:
             document = Document(content="Hello world", uri="test://doc")
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(rag, document, [], docling_doc)

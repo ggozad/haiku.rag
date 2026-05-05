@@ -123,7 +123,7 @@ class DoclingLocalConverter(DocumentConverter):
 
         opts = self.config.processing.conversion_options
         pic_desc = opts.picture_description
-        runs_vlm = self.config.processing.pictures == "description"
+        runs_vlm = pic_desc.enabled
 
         pipeline_options = PdfPipelineOptions(
             do_ocr=opts.do_ocr,
