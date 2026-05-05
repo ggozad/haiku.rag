@@ -200,6 +200,8 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
         from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
         base_url = embedding_model.base_url or "http://localhost:8000/v1"
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
         return VLLMMultimodalEmbedder(model_name, vector_dim, base_url=base_url)
 
     raise ValueError(f"Unsupported embedding provider: {provider}")

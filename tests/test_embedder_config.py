@@ -111,3 +111,40 @@ def test_ollama_embedder_does_not_double_append_v1():
     url = str(pa_model.base_url).rstrip("/")  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
     assert url.endswith("/v1")
     assert not url.endswith("/v1/v1")
+
+
+def test_vllm_embedder_appends_v1_when_missing():
+    """vLLM's chat-completions endpoint also lives under /v1. A user who
+    forgets the suffix would otherwise POST to <host>/embeddings and get
+    a 404 — match the Ollama behavior and append it."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="vllm",
+                name="Qwen/Qwen3-VL-Embedding-8B",
+                vector_dim=4096,
+                base_url="http://my-vllm:8000",
+            ),
+        ),
+    )
+    embedder = get_embedder(config)
+    base_url = embedder._base_url  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    assert base_url.endswith("/v1")
+
+
+def test_vllm_embedder_does_not_double_append_v1():
+    """If the user already includes /v1 we leave it alone."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="vllm",
+                name="Qwen/Qwen3-VL-Embedding-8B",
+                vector_dim=4096,
+                base_url="http://my-vllm:8000/v1",
+            ),
+        ),
+    )
+    embedder = get_embedder(config)
+    base_url = embedder._base_url.rstrip("/")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    assert base_url.endswith("/v1")
+    assert not base_url.endswith("/v1/v1")
