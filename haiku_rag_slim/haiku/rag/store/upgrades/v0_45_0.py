@@ -11,7 +11,7 @@ from haiku.rag.utils import escape_sql_string
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 5
+PROGRESS_INTERVAL = 5
 
 
 async def _ensure_picture_data_column(store: Store) -> None:
@@ -29,7 +29,7 @@ async def _ensure_picture_data_column(store: Store) -> None:
     )
 
 
-async def _apply_extract_picture_bytes(store: Store) -> None:  # pragma: no cover
+async def _apply_extract_picture_bytes(store: Store) -> None:
     """Add the ``picture_data`` column to ``document_items`` (if missing),
     backfill it from existing docling blobs, and strip the inline picture
     URIs out of those blobs.
@@ -59,8 +59,8 @@ async def _apply_extract_picture_bytes(store: Store) -> None:  # pragma: no cove
     blob_only = 0
     skipped = 0
 
-    for batch_start in range(0, total, BATCH_SIZE):
-        batch_ids = ids[batch_start : batch_start + BATCH_SIZE]
+    for batch_start in range(0, total, PROGRESS_INTERVAL):
+        batch_ids = ids[batch_start : batch_start + PROGRESS_INTERVAL]
         for doc_id in batch_ids:
             safe_id = escape_sql_string(doc_id)
             rows = await (
@@ -120,8 +120,8 @@ async def _apply_extract_picture_bytes(store: Store) -> None:  # pragma: no cove
             if updates:
                 # Find the matching items rows so we can preserve their
                 # position/label/text/page_numbers and just attach bytes.
-                # Earlier migrations (v0.40.0) populate items rows for every
-                # picture self_ref, so the lookup below is total.
+                # v0.40.0 runs before v0.45.0 and populates items rows for
+                # every picture self_ref, so the lookup below is total.
                 self_refs = [u[0] for u in updates]
                 ref_clause = ", ".join(f"'{escape_sql_string(r)}'" for r in self_refs)
                 existing_items = await (
