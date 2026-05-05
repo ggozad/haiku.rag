@@ -162,7 +162,7 @@ async def test_embed_chunks_empty_list():
 
 async def test_embed_chunks_picture_with_text_only_embedder_raises():
     """A picture chunk fed through a text-only embedder must surface a
-    clear error, not silently drop the chunk or call ``embed_image_query``
+    clear error, not silently drop the chunk or call ``embed_image``
     on something that doesn't support it."""
     chunk = Chunk(id="pic", content="x")
     chunk._picture_data = b"\x89PNG\r\n\x1a\nfake"
@@ -254,7 +254,7 @@ async def test_text_only_embedder_does_not_support_images():
     embedder = get_embedder(_ollama_text_only_config())
     assert embedder.supports_images is False
     with pytest.raises(NotImplementedError, match="multimodal provider"):
-        await embedder.embed_image_query(b"\x89PNG\r\n\x1a\n")
+        await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
 
 
 async def test_vllm_embed_text_request_shape(monkeypatch):
@@ -344,7 +344,7 @@ async def test_vllm_embed_image_request_shape(monkeypatch):
         base_url="http://localhost:8000/v1",
     )
     raw = b"\x89PNG\r\n\x1a\nfake"
-    vec = await embedder.embed_image_query(raw)
+    vec = await embedder.embed_image(raw)
     assert vec == [0.4, 0.4, 0.4, 0.4]
     content = captured["body"]["messages"][0]["content"]
     assert len(content) == 1
@@ -623,6 +623,6 @@ async def test_vllm_embed_text_and_image_end_to_end():
     assert all(len(v) == vector_dim for v in text_batch)
 
     image = Image.new("RGB", (64, 64), color=(255, 0, 0))
-    image_vec = await embedder.embed_image_query(image)
+    image_vec = await embedder.embed_image(image)
     assert len(image_vec) == vector_dim
     assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"

@@ -98,7 +98,7 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             }
         )
 
-    async def embed_image_query(self, image: "bytes | PILImage.Image") -> list[float]:
+    async def embed_image(self, image: "bytes | PILImage.Image") -> list[float]:
         rows = await self._post(
             {
                 "model": self._model_name,

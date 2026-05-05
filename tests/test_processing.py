@@ -89,9 +89,10 @@ def test_no_warning_when_doc_has_no_pictures(caplog_warnings):
 
 
 def test_warns_when_pictures_present_but_no_descriptions(caplog_warnings):
-    """The silent-failure case: VLM was requested, the doc has pictures,
-    but the converter returned zero descriptions. Warn loudly so the user
-    can fix their VLM config before a long ingest."""
+    """VLM was requested via ``picture_description.enabled = True``, the
+    doc has pictures, but the converter returned zero descriptions
+    (docling-serve swallows VLM errors). Warn loudly so the user can fix
+    their VLM config before a long ingest."""
     config = AppConfig()
     config.processing.conversion_options.picture_description.enabled = True
     config.processing.conversion_options.picture_description.model.name = "qwen3.6"
@@ -128,9 +129,10 @@ def test_no_warning_when_at_least_one_description_came_back(caplog_warnings):
 async def test_convert_emits_warning_via_chokepoint(
     monkeypatch, tmp_path, caplog_warnings
 ):
-    """End-to-end: ``convert(...)`` invokes the guard after the converter
-    returns, so a silent VLM failure surfaces as a warning to the user
-    regardless of which converter (local vs serve) actually ran."""
+    """End-to-end: ``convert(...)`` runs the description-missing check
+    after the converter returns, so a VLM error swallowed inside
+    docling-serve still surfaces as a warning at the haiku.rag layer
+    regardless of which converter (local vs serve) ran."""
     from haiku.rag.converters.base import DocumentConverter
 
     pdf = tmp_path / "fake.pdf"
@@ -162,3 +164,38 @@ async def test_convert_emits_warning_via_chokepoint(
         "0 described" in r.getMessage() and "fake.pdf" in r.getMessage()
         for r in caplog_warnings
     )
+
+
+@pytest.mark.asyncio
+async def test_convert_text_path_also_warns(monkeypatch, caplog_warnings):
+    """Raw text input (HTML, markdown) can still produce pictures via
+    docling, so the description-missing check must run on the
+    convert_text branch too — otherwise an HTML-with-images source
+    would never trigger the warning even when picture_description is
+    enabled and the VLM didn't actually run."""
+    from haiku.rag.converters.base import DocumentConverter
+
+    class StubConverter(DocumentConverter):
+        @property
+        def supported_extensions(self) -> list[str]:
+            return [".html"]
+
+        async def convert_file(self, path: Path):
+            return _doc_without_pictures()
+
+        async def convert_text(
+            self, text: str, name: str = "content.md", format: str = "md"
+        ):
+            return _doc_with_pictures(with_descriptions=False)
+
+    monkeypatch.setattr(
+        "haiku.rag.client.processing.get_converter", lambda config: StubConverter()
+    )
+
+    config = AppConfig()
+    config.processing.conversion_options.picture_description.enabled = True
+
+    # No URL scheme, no Path → drops into the convert_text branch.
+    await convert(config, "<html><img src='...'/></html>")
+
+    assert any("0 described" in r.getMessage() for r in caplog_warnings)

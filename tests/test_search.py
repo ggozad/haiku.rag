@@ -336,7 +336,7 @@ def test_search_result_primary_label_prioritizes_structural_types():
 async def test_search_with_bytes_query_uses_multimodal_embedder(
     temp_db_path, monkeypatch
 ):
-    """``client.search(bytes)`` embeds via ``embed_image_query`` and dispatches
+    """``client.search(bytes)`` embeds via ``embed_image`` and dispatches
     to vector-only chunk search (skipping FTS and reranker)."""
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.store.models.chunk import Chunk
@@ -349,7 +349,7 @@ async def test_search_with_bytes_query_uses_multimodal_embedder(
         def __init__(self):
             super().__init__(embedder=None, vector_dim=4)
 
-        async def embed_image_query(self, image):
+        async def embed_image(self, image):
             image_calls.append(image)
             return [0.5, 0.5, 0.5, 0.5]
 
@@ -410,7 +410,7 @@ async def test_search_with_pil_image_works_like_bytes(temp_db_path, monkeypatch)
         def __init__(self):
             super().__init__(embedder=None, vector_dim=4)
 
-        async def embed_image_query(self, image):
+        async def embed_image(self, image):
             seen_types.append(type(image))
             return [0.1] * 4
 

@@ -47,7 +47,7 @@ class EmbedderWrapper:
         result = await self._embedder.embed_documents(texts)
         return [list(e) for e in result.embeddings]
 
-    async def embed_image_query(self, image: "Any") -> list[float]:
+    async def embed_image(self, image: "Any") -> list[float]:
         """Embed a single image into the same vector space as text.
 
         Multimodal providers override this. Picture embedding is single-image:
@@ -125,9 +125,7 @@ async def embed_chunks(
                 "provider='vllm', or omit picture chunks."
             )
         for chunk in picture_chunks:
-            picture_embeddings.append(
-                await embedder.embed_image_query(chunk._picture_data)
-            )
+            picture_embeddings.append(await embedder.embed_image(chunk._picture_data))
 
     text_iter = iter(text_embeddings)
     picture_iter = iter(picture_embeddings)

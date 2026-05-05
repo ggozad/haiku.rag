@@ -465,7 +465,7 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
 @pytest.mark.asyncio
 async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
     """embed_chunks routes text chunks through embed_documents (batched) and
-    picture chunks through embed_image_query (one at a time), reassembling
+    picture chunks through embed_image (one at a time), reassembling
     in original order."""
     from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
     from haiku.rag.store.models.chunk import Chunk
@@ -483,7 +483,7 @@ async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
             text_calls.append(list(texts))
             return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
 
-        async def embed_image_query(self, image):
+        async def embed_image(self, image):
             image_calls.append(image)
             return [0.9, 0.8, 0.7, 0.6]
 
@@ -554,7 +554,7 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
         async def embed_documents(self, texts):
             return [[0.1] * 4 for _ in texts]
 
-        async def embed_image_query(self, image):
+        async def embed_image(self, image):
             return [0.9] * 4
 
     monkeypatch.setattr(

@@ -132,8 +132,11 @@ async def convert(
         return doc
 
     else:
-        # Treat as text content
-        return await converter.convert_text(source, format=format)
+        # Raw text content — HTML and markdown can still embed pictures
+        # via <img>/![](...) so the same description check applies.
+        doc = await converter.convert_text(source, format=format)
+        _warn_if_descriptions_missing(config, doc, "<text input>")
+        return doc
 
 
 async def chunk(
@@ -205,7 +208,7 @@ def build_picture_chunks(
     its picture URIs stripped). Pictures with no available bytes are skipped.
 
     The bytes ride on ``Chunk._picture_data`` (a PrivateAttr — not serialized)
-    so ``embed_chunks`` can route them through ``embed_image_query``. The
+    so ``embed_chunks`` can route them through ``embed_image``. The
     ``order`` field is left at its default (0); the caller (``chunk()``)
     reassigns it after merging with text chunks in structural order.
     """

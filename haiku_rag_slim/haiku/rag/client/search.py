@@ -59,7 +59,7 @@ async def search(
                 "Image queries require a multimodal embedder. Configure "
                 "provider='vllm' (or another image-capable provider)."
             )
-        query_vector = await embedder.embed_image_query(query)
+        query_vector = await embedder.embed_image(query)
         chunk_results = await client.chunk_repository.search(
             query="",
             limit=limit,

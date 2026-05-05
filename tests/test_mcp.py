@@ -219,7 +219,7 @@ class TestMCPImageQuery:
             def __init__(self):
                 super().__init__(embedder=None, vector_dim=2560)
 
-            async def embed_image_query(self, image):
+            async def embed_image(self, image):
                 # Produce a deterministic-ish vector of the right dim.
                 return [0.0] * 2560
 
