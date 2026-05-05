@@ -123,6 +123,32 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 
 *Measured on haiku.rag v0.43.1, judged by `ollama:qwen3.6` (current default), on 199 of 200 completed cases.* 28 % of cases produce a perfect citation (`cited_map` = 1.0).
 
+### OpenRAG Bench (ORB)
+
+[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval and reasoning over visual content like figures, charts, and diagrams.
+
+**Multimodal embeddings**: Picture bytes are embedded directly into the same vector space as text via a multimodal embedder (`Qwen/Qwen3-VL-Embedding-8B` served by vLLM). No VLM descriptions are needed — figures are searchable through their image embedding alongside their captions and surrounding text.
+
+#### Retrieval (MAP)
+
+| Embedding Model              | Source bucket      | Cases | MAP    |
+|------------------------------|--------------------|------:|-------:|
+| `Qwen/Qwen3-VL-Embedding-8B` | text only          |  1914 | 0.9801 |
+| `Qwen/Qwen3-VL-Embedding-8B` | text + image       |   763 | 0.9720 |
+| `Qwen/Qwen3-VL-Embedding-8B` | text + table       |   148 | 0.9786 |
+| `Qwen/Qwen3-VL-Embedding-8B` | text + table+image |   220 | 0.9720 |
+| `Qwen/Qwen3-VL-Embedding-8B` | **all**            |  3045 | **0.9774** |
+
+#### QA Accuracy
+
+| Embedding Model              | QA Model                | Source bucket | Cases | Accuracy |
+|------------------------------|-------------------------|---------------|------:|---------:|
+| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision) | text only   |   682 |   96.9 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision) | with image  |   299 |   91.3 % |
+
+
+The text-vs-image gap on retrieval is small (0.81 pp) but on QA it widens to ~5.6 pp — most of the loss is downstream of retrieval, in the model reasoning over image-bearing chunks rather than in finding them.
+
 ## Past results
 
 These were measured under the prior pinned judge (`ollama:gpt-oss`). The pinned default has since switched to `ollama:qwen3.6` (see [Methodology — QA Accuracy](#qa-accuracy)) — under the new judge the QA accuracy numbers below typically shift up by ~5–10 pp.
@@ -198,25 +224,3 @@ Note the significant degradation when very small models are used such as `qwen3:
 | `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
 
 *Measured on haiku.rag v0.20.2, judged by `ollama:gpt-oss`.*
-
-### OpenRAG Bench (ORB)
-
-[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval over visual content like figures, charts, and diagrams. We use MAP for retrieval evaluation since each query maps to one relevant document.
-
-**Multimodal processing**: Picture descriptions are generated using a Vision Language Model (VLM) during document conversion, making embedded images searchable via text queries. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
-
-#### Retrieval (MAP)
-
-| Embedding Model      | MAP    | VLM                  |
-|----------------------|--------|----------------------|
-| `qwen3-embedding:4b` | 0.9626 | Ollama / ministral-3 |
-
-*Measured on haiku.rag v0.26.8.*
-
-#### QA Accuracy
-
-| Embedding Model      | QA Model                    | Accuracy | VLM                  |
-|----------------------|-----------------------------|----------|----------------------|
-| `qwen3-embedding:4b` | `gpt-oss:20b` - no thinking | 0.912    | Ollama / ministral-3 |
-
-*Measured on haiku.rag v0.26.8, judged by `ollama:gpt-oss`.*
