@@ -218,7 +218,7 @@ def is_multimodal_query(source: str) -> bool:
 
 OPEN_RAG_BENCH_SPEC = DatasetSpec(
     key="orb",
-    db_filename="open_rag_bench.lancedb",
+    db_filename="open_rag_bench_text.lancedb",
     document_loader=load_orb_corpus,
     document_mapper=map_orb_document,
     qa_loader=load_orb_qa,

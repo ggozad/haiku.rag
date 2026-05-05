@@ -35,7 +35,8 @@ Available datasets:
 | `repliqa` | ~30MB |
 | `hotpotqa` | ~331MB |
 | `wix` | ~511MB |
-| `open_rag_bench` | ~14GB |
+| `open_rag_bench` (text embedder + VLM picture descriptions) | ~15GB |
+| `open_rag_bench` (multimodal embedder, override with `--db`) | ~16GB |
 
 After downloading, run benchmarks with `--skip-db` to use the pre-built database:
 
