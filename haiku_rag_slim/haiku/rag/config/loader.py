@@ -48,59 +48,28 @@ def load_yaml_config(path: Path) -> dict:
     with open(path) as f:
         data = yaml.safe_load(f)
     data = data or {}
-    _translate_legacy_picture_fields(data)
+    _drop_legacy_generate_picture_images(data)
     return data
 
 
-def _translate_legacy_picture_fields(data: dict) -> None:
-    """Map legacy picture-handling knobs onto
-    ``processing.conversion_options.picture_description.enabled``.
+def _drop_legacy_generate_picture_images(data: dict) -> None:
+    """Drop ``processing.conversion_options.generate_picture_images`` from
+    loaded YAML and log that it is no longer needed.
 
-    Two earlier shapes need translating:
-
-    - ``processing.pictures: "description"`` →
-      ``picture_description.enabled = true``. The other values
-      (``"none"``, ``"image"``) collapse to ``false`` since the only
-      remaining decision is whether the VLM runs; picture bytes are
-      always stored.
-    - ``processing.conversion_options.generate_picture_images: <any>`` is a
-      no-op now (docling always extracts picture bytes) and is dropped
-      with a one-time warning.
-
-    If ``picture_description.enabled`` is already explicitly set on the
-    loaded YAML, it wins. Mutates ``data`` in-place and emits one warning
-    per legacy field encountered.
+    Picture bytes are always extracted now, so the flag has no effect.
+    Old YAMLs keep working; users see one log line telling them they can
+    remove the entry.
     """
     processing = data.get("processing")
     if not isinstance(processing, dict):
         return
-
-    legacy_pictures = processing.pop("pictures", None)
-    if legacy_pictures is not None:
-        opts = processing.setdefault("conversion_options", {})
-        if not isinstance(opts, dict):
-            opts = {}
-            processing["conversion_options"] = opts
-        pic = opts.setdefault("picture_description", {})
-        if not isinstance(pic, dict):
-            pic = {}
-            opts["picture_description"] = pic
-        if "enabled" not in pic:
-            pic["enabled"] = legacy_pictures == "description"
-        logger.warning(
-            "Config: 'processing.pictures' is deprecated; use "
-            "'processing.conversion_options.picture_description.enabled' "
-            "instead. Picture bytes are now always stored. Please update "
-            "your haiku.rag.yaml."
-        )
-
     opts = processing.get("conversion_options")
     if isinstance(opts, dict) and "generate_picture_images" in opts:
         opts.pop("generate_picture_images", None)
         logger.warning(
             "Config: 'processing.conversion_options.generate_picture_images' "
-            "is deprecated and ignored; picture bytes are always extracted. "
-            "Please update your haiku.rag.yaml."
+            "no longer has any effect (picture bytes are always extracted). "
+            "Remove it from your haiku.rag.yaml."
         )
 
 
