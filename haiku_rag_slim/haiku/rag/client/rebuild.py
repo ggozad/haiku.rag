@@ -250,7 +250,6 @@ async def _rebuild_rechunk(
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    pending_doc_ids: list[str] = []
     embedder = get_embedder(client._config)
 
     async for doc in _hydrate(client, documents):
@@ -283,22 +282,22 @@ async def _rebuild_rechunk(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        pending_doc_ids.append(doc.id)
+        # Yield per-doc so progress reporting moves immediately. The actual
+        # write batches up to _REBUILD_BATCH_SIZE for throughput; if the
+        # process is interrupted between yield and flush, up to one
+        # batch's worth of trailing yields aren't persisted, which is
+        # consistent with the rebuild already being non-atomic.
+        yield doc.id
 
         # Flush batch when size reached
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-            for doc_id in pending_doc_ids:
-                yield doc_id
             pending_chunks = []
             pending_docs = []
-            pending_doc_ids = []
 
     # Flush remaining
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-        for doc_id in pending_doc_ids:
-            yield doc_id
 
 
 async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
@@ -384,7 +383,6 @@ async def _rebuild_descriptions(
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    pending_doc_ids: list[str] = []
     embedder = get_embedder(client._config)
 
     described_total = 0
@@ -421,20 +419,15 @@ async def _rebuild_descriptions(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        pending_doc_ids.append(doc.id)
+        yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-            for doc_id in pending_doc_ids:
-                yield doc_id
             pending_chunks = []
             pending_docs = []
-            pending_doc_ids = []
 
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-        for doc_id in pending_doc_ids:
-            yield doc_id
 
     logger.info(
         "rebuild --descriptions: %d new picture descriptions added across %d documents",
@@ -451,7 +444,6 @@ async def _rebuild_full(
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    pending_doc_ids: list[str] = []
     converter = get_converter(client._config)
 
     for light_doc in documents:
@@ -464,11 +456,8 @@ async def _rebuild_full(
                 # Flush pending batch before source rebuild (creates new doc)
                 if pending_docs:
                     await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-                    for doc_id in pending_doc_ids:
-                        yield doc_id
                     pending_chunks = []
                     pending_docs = []
-                    pending_doc_ids = []
 
                 await client.delete_document(light_doc.id)
                 new_doc = await client.create_document_from_source(
@@ -508,19 +497,14 @@ async def _rebuild_full(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        pending_doc_ids.append(doc.id)
+        yield doc.id
 
         # Flush batch when size reached
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-            for doc_id in pending_doc_ids:
-                yield doc_id
             pending_chunks = []
             pending_docs = []
-            pending_doc_ids = []
 
     # Flush remaining
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-        for doc_id in pending_doc_ids:
-            yield doc_id
