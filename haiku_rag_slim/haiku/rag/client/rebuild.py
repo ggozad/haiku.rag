@@ -44,7 +44,11 @@ async def rebuild_database(
     settings_repo = SettingsRepository(client.store)
     await settings_repo.save_current_settings()
 
-    documents = await client.list_documents(include_content=True)
+    # Light listing — id/uri/title/metadata only. Each rebuild function
+    # fetches full content (including the multi-MB docling_pages blob) one
+    # document at a time so a 1000-doc database doesn't pull ~15 GB of
+    # blobs into memory before the loop starts.
+    documents = await client.list_documents(include_content=False)
 
     if mode == RebuildMode.TITLE_ONLY:
         async for doc_id in _rebuild_title_only(client, documents):
@@ -78,14 +82,31 @@ async def rebuild_database(
             logger.warning("Post-rebuild vacuum failed", exc_info=True)
 
 
+async def _hydrate(
+    client: "HaikuRAG", light_docs: list[Document]
+) -> AsyncGenerator[Document, None]:
+    """Yield fully-loaded documents one at a time from a light listing.
+
+    The light listing in ``rebuild_database`` skips the multi-MB
+    ``docling_document``/``docling_pages`` blobs; this helper fetches each
+    full record on demand so peak memory stays at ~one document. Documents
+    that disappeared between listing and processing are silently skipped.
+    """
+    for light_doc in light_docs:
+        assert light_doc.id is not None
+        doc = await client.get_document_by_id(light_doc.id)
+        if doc is None:
+            continue
+        assert doc.id is not None
+        yield doc
+
+
 async def _rebuild_title_only(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Generate titles for documents that don't have one."""
-    for doc in documents:
-        if doc.title is not None:
-            continue
-        assert doc.id is not None
+    untitled = [d for d in documents if d.title is None]
+    async for doc in _hydrate(client, untitled):
         try:
             title = await client.generate_title(doc)
         except Exception:
@@ -96,6 +117,7 @@ async def _rebuild_title_only(
         if title is not None:
             doc.title = title
             await client.document_repository.update(doc)
+            assert doc.id is not None
             yield doc.id
 
 
@@ -231,9 +253,8 @@ async def _rebuild_rechunk(
     pending_doc_ids: list[str] = []
     embedder = get_embedder(client._config)
 
-    for doc in documents:
+    async for doc in _hydrate(client, documents):
         assert doc.id is not None
-
         docling_document = doc.get_docling_document()
         if docling_document is None:
             raise ValueError(
@@ -367,9 +388,8 @@ async def _rebuild_descriptions(
     embedder = get_embedder(client._config)
 
     described_total = 0
-    for doc in documents:
+    async for doc in _hydrate(client, documents):
         assert doc.id is not None
-
         docling_document = doc.get_docling_document()
         if docling_document is None:
             raise ValueError(
@@ -434,11 +454,12 @@ async def _rebuild_full(
     pending_doc_ids: list[str] = []
     converter = get_converter(client._config)
 
-    for doc in documents:
-        assert doc.id is not None
+    for light_doc in documents:
+        assert light_doc.id is not None
 
-        # Try to rebuild from source if available
-        if doc.uri and check_source_accessible(doc.uri):
+        # Try to rebuild from source if available — uses the light listing
+        # directly, no need to load the stored content/blobs first.
+        if light_doc.uri and check_source_accessible(light_doc.uri):
             try:
                 # Flush pending batch before source rebuild (creates new doc)
                 if pending_docs:
@@ -449,9 +470,9 @@ async def _rebuild_full(
                     pending_docs = []
                     pending_doc_ids = []
 
-                await client.delete_document(doc.id)
+                await client.delete_document(light_doc.id)
                 new_doc = await client.create_document_from_source(
-                    source=doc.uri, metadata=doc.metadata or {}
+                    source=light_doc.uri, metadata=light_doc.metadata or {}
                 )
                 assert isinstance(new_doc, Document)
                 assert new_doc.id is not None
@@ -460,12 +481,17 @@ async def _rebuild_full(
             except Exception as e:
                 logger.error(
                     "Error recreating document from source %s: %s",
-                    doc.uri,
+                    light_doc.uri,
                     e,
                 )
                 continue
 
-        # Fallback: rebuild from stored content
+        # Fallback: rebuild from stored content. Now we need the full
+        # record (content + docling_pages for the round-trip write).
+        doc = await client.get_document_by_id(light_doc.id)
+        if doc is None:
+            continue
+        assert doc.id is not None
         if doc.uri:
             logger.warning("Source missing for %s, re-embedding from content", doc.uri)
 
