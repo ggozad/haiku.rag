@@ -358,7 +358,17 @@ async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
             pic.meta = PictureMeta()
         pic.meta.description = DescriptionMetaField(text=text)
 
-    doc.set_docling(docling_doc)
+    # Update only docling_document — set_docling would also overwrite
+    # docling_pages by routing through compress_docling_split, which
+    # extracts pages from the in-memory JSON and finds none (the pages
+    # blob is stored separately and is not loaded by get_docling_document).
+    # That would silently destroy page rasters for every doc with at
+    # least one undescribed picture.
+    from haiku.rag.store.compression import compress_docling_split
+
+    structure_bytes, _ = compress_docling_split(docling_doc.model_dump_json())
+    doc.docling_document = structure_bytes
+    doc.docling_version = docling_doc.version
     return len(descriptions)
 
 

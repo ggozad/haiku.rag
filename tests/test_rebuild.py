@@ -440,8 +440,17 @@ async def test_rebuild_descriptions_requires_enabled(temp_db_path):
 @pytest.mark.vcr()
 async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkeypatch):
     """End-to-end: ingest a doc with a picture (no VLM at ingest), then run
-    rebuild --descriptions with the VLM mocked. The docling blob should gain
-    the description in meta, and the chunk text should pick it up."""
+    rebuild --descriptions with the VLM mocked. After the rebuild:
+
+    - the docling blob has the description in meta;
+    - the chunk text picks it up;
+    - the docling_pages blob is preserved untouched.
+
+    The pages assertion guards against a foot-gun in compress_docling_split:
+    the docling document loaded via get_docling_document() never carries
+    pages (they live in a separate column), so calling set_docling() after
+    patching would write pages_bytes=None and silently destroy page rasters
+    on disk — breaking visualize_chunk for the affected docs."""
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
@@ -457,6 +466,14 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(rag, document, [], docling_doc)
         assert created.id is not None
+
+        # _docling_doc_with_picture has no PageItems, so set_docling leaves
+        # docling_pages as None. Inject sentinel bytes to stand in for what
+        # a real ingest with generate_page_images=True would store.
+        sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
+        await rag.store.documents_table.update(
+            {"docling_pages": sentinel_pages}, where=f"id = '{created.id}'"
+        )
 
         from_blob = (
             await rag.document_repository.get_by_id(created.id)
@@ -502,6 +519,9 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         # And the description reaches chunk text
         chunks = await rag.chunk_repository.get_by_document_id(created.id)
         assert any("A red square (mocked)." in (c.content or "") for c in chunks)
+
+        # docling_pages must survive untouched — see docstring.
+        assert after.docling_pages == sentinel_pages
 
 
 @pytest.mark.vcr()
