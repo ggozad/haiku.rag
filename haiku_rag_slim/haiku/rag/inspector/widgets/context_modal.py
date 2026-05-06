@@ -1,10 +1,14 @@
+import base64
+from io import BytesIO
 from typing import TYPE_CHECKING
 
+from PIL import Image as PILImage
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Markdown, Static
+from textual_image.widget import Image as TextualImage
 
 from haiku.rag.store.models import SearchResult
 
@@ -42,6 +46,17 @@ class ContextModal(Screen):
     #context-content Markdown {
         width: 100%;
     }
+
+    #context-content Image {
+        margin: 1 0;
+        height: auto;
+        max-height: 30;
+    }
+
+    .picture-caption {
+        color: $text-muted;
+        margin-top: 1;
+    }
     """
 
     def __init__(self, chunk: "Chunk", client: "HaikuRAG"):
@@ -56,8 +71,6 @@ class ContextModal(Screen):
             yield self._content_widget
 
     async def on_mount(self) -> None:
-        """Load and display the expanded context."""
-        # Create a SearchResult from the chunk
         chunk_meta = self.chunk.get_chunk_metadata()
         search_result = SearchResult(
             content=self.chunk.content,
@@ -72,18 +85,45 @@ class ContextModal(Screen):
             labels=chunk_meta.labels,
         )
 
-        # Expand context using the client (this is what agents actually receive)
         expanded_results = await self.client.expand_context([search_result])
         expanded = expanded_results[0] if expanded_results else search_result
 
-        formatted = expanded.format_for_agent()
+        vision = self.client._config.qa.model.vision
+        attached = expanded.image_data or {}
 
-        content = (
-            "*This is how the chunk appears to agents after context expansion:*\n\n---\n\n"
-            f"{formatted}"
+        if vision and attached:
+            preface = (
+                f"*This is what the LLM receives. Vision is enabled — {len(attached)} "
+                "picture(s) are attached as image content (rendered below).*"
+            )
+        elif vision:
+            preface = (
+                "*This is what the LLM receives. Vision is enabled, but no pictures "
+                "are in this expanded context.*"
+            )
+        elif attached:
+            preface = (
+                f"*This is what the LLM receives. Vision is disabled — {len(attached)} "
+                "picture(s) are suppressed; any VLM descriptions remain inline below.*"
+            )
+        else:
+            preface = "*This is what the LLM receives.*"
+
+        await self._content_widget.update(
+            f"{preface}\n\n---\n\n{expanded.format_for_agent()}"
         )
 
-        await self._content_widget.update(content)
+        if vision and attached:
+            scroll = self.query_one("#context-content", VerticalScroll)
+            for self_ref, b64 in attached.items():
+                try:
+                    pil = PILImage.open(BytesIO(base64.b64decode(b64)))
+                except Exception:
+                    continue
+                await scroll.mount(
+                    Static(f"[b]{self_ref}[/b]", classes="picture-caption")
+                )
+                await scroll.mount(TextualImage(pil))
 
     async def action_dismiss(self, result=None) -> None:
         self.app.pop_screen()

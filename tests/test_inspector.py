@@ -1,12 +1,45 @@
-from unittest.mock import AsyncMock, patch
+import base64
+from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from PIL import Image as PILImage
 from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
-from haiku.rag.store.models import Document
+from haiku.rag.store.models import Chunk, Document, SearchResult
 
 runner = CliRunner()
+
+
+def _png_b64(color: str = "red", size: tuple[int, int] = (8, 8)) -> str:
+    img = PILImage.new("RGB", size, color)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _make_client(*, vision: bool, image_data: dict[str, str] | None) -> MagicMock:
+    """Stub HaikuRAG that returns one expanded SearchResult with the given attachments."""
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.qa.model.vision = vision
+
+    expanded = SearchResult(
+        content="expanded text incl. picture descriptions if any",
+        score=0.5,
+        chunk_id="chunk-1",
+        document_id="doc-1",
+        doc_item_refs=["#/texts/0"] + (list(image_data) if image_data else []),
+        page_numbers=[1],
+        labels=["paragraph"] + (["picture"] if image_data else []),
+        image_data=image_data,
+    )
+    client = MagicMock()
+    client._config = config
+    client.expand_context = AsyncMock(return_value=[expanded])
+    return client
 
 
 def test_inspect_command():
@@ -130,3 +163,63 @@ async def test_document_list_tracks_has_more():
         await doc_list.load_more(mock_client)
         # After loading partial batch (<50), has_more should be False
         assert doc_list.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_context_modal_renders_pictures_when_vision_enabled():
+    """ContextModal must mount one TextualImage per attached picture
+    when qa.model.vision is True — that's what the LLM actually sees."""
+    from textual.app import App
+    from textual_image.widget import Image as TextualImage
+
+    from haiku.rag.inspector.widgets.context_modal import ContextModal
+
+    chunk = Chunk(
+        id="chunk-1", document_id="doc-1", content="raw chunk text", metadata={}
+    )
+    client = _make_client(
+        vision=True,
+        image_data={"#/pictures/0": _png_b64("red"), "#/pictures/1": _png_b64("blue")},
+    )
+
+    class TestApp(App):
+        async def on_mount(self) -> None:
+            await self.push_screen(ContextModal(chunk=chunk, client=client))
+
+    app = TestApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        modal = app.screen
+        images = list(modal.query(TextualImage))
+        assert len(images) == 2
+
+
+@pytest.mark.asyncio
+async def test_context_modal_suppresses_pictures_when_vision_disabled():
+    """ContextModal must NOT mount picture widgets when vision is off,
+    even if expansion attached image_data — text-only models would never
+    see those bytes, so the inspector shouldn't show them either."""
+    from textual.app import App
+    from textual_image.widget import Image as TextualImage
+
+    from haiku.rag.inspector.widgets.context_modal import ContextModal
+
+    chunk = Chunk(
+        id="chunk-1", document_id="doc-1", content="raw chunk text", metadata={}
+    )
+    client = _make_client(
+        vision=False,
+        image_data={"#/pictures/0": _png_b64("red")},
+    )
+
+    class TestApp(App):
+        async def on_mount(self) -> None:
+            await self.push_screen(ContextModal(chunk=chunk, client=client))
+
+    app = TestApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        modal = app.screen
+        assert list(modal.query(TextualImage)) == []
