@@ -771,9 +771,14 @@ def upload(
     for the multi-GB ORB databases which would otherwise abort on any transient
     network failure under plain ``upload_folder``.
 
-    The local folder basename equals ``spec.db_filename`` (see
-    ``DatasetSpec.db_path``), so the folder lands at that path on the Hub.
+    ``upload_large_folder`` has no ``path_in_repo`` — it ships the contents of
+    ``folder_path`` to the repo root. Stage the db under a temp parent with
+    hardlinks so the basename becomes the remote path, leaving everything
+    else at the root undisturbed.
     """
+    import os
+    import tempfile
+
     specs = _resolve_datasets(dataset)
 
     api = HfApi()
@@ -796,12 +801,23 @@ def upload(
         except Exception:
             pass
 
-        console.print(f"[blue]Uploading {spec.key} ({db})...[/blue]")
-        api.upload_large_folder(
-            folder_path=str(db),
-            repo_id=HF_REPO_ID,
-            repo_type="dataset",
-        )
+        with tempfile.TemporaryDirectory() as staging:
+            target = Path(staging) / spec.db_filename
+            target.mkdir()
+            for src in db.rglob("*"):
+                if not src.is_file():
+                    continue
+                rel = src.relative_to(db)
+                dest = target / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                os.link(src, dest)
+
+            console.print(f"[blue]Uploading {spec.key} ({db})...[/blue]")
+            api.upload_large_folder(
+                folder_path=staging,
+                repo_id=HF_REPO_ID,
+                repo_type="dataset",
+            )
 
         console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
 
