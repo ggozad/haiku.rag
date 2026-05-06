@@ -583,46 +583,37 @@ async def test_vllm_get_embedder_routes_to_multimodal():
     assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
 
-@pytest.mark.integration
+@pytest.mark.vcr()
 async def test_vllm_embed_text_and_image_end_to_end():
-    """Hit a real vLLM ``/v1/embeddings`` server and confirm both the text
-    (``input`` array) and image (``messages`` with ``image_url``) shapes
-    return embeddings of the configured dimension in the same vector space.
+    """End-to-end against a real vLLM ``/v1/embeddings`` server: confirm
+    both the text (``input`` array) and image (``messages`` with
+    ``image_url``) shapes return embeddings of the configured dimension
+    in the same vector space.
 
-    Configure via env vars:
-      HAIKU_RAG_VLLM_BASE_URL  (default http://localhost:8000/v1)
-      HAIKU_RAG_VLLM_MODEL     (default Qwen/Qwen3-VL-Embedding-8B)
-      HAIKU_RAG_VLLM_VECTOR_DIM (default 4096)
-
-    Run a server first, e.g.:
-        vllm serve Qwen/Qwen3-VL-Embedding-8B \\
-            --runner pooling --dtype bfloat16 --trust-remote-code
-    """
-    import os
-
+    Recorded against ``Qwen/Qwen3-VL-Embedding-8B`` (4096-dim) served by
+    a real vLLM build (the multimodal ``messages``-with-``image_url``
+    superset on ``/v1/embeddings`` is a real-vLLM feature, not currently
+    available in vllm-mlx). To re-record, point port 8000 at such a vLLM
+    and run with ``--record-mode=rewrite``."""
     from PIL import Image
 
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
-    base_url = os.environ.get("HAIKU_RAG_VLLM_BASE_URL", "http://localhost:8000/v1")
-    model_name = os.environ.get("HAIKU_RAG_VLLM_MODEL", "Qwen/Qwen3-VL-Embedding-8B")
-    vector_dim = int(os.environ.get("HAIKU_RAG_VLLM_VECTOR_DIM", "4096"))
-
     embedder = VLLMMultimodalEmbedder(
-        model_name=model_name,
-        vector_dim=vector_dim,
-        base_url=base_url,
+        model_name="qwen3-embedding-v-8b",
+        vector_dim=4096,
+        base_url="http://localhost:8000/v1",
     )
 
     text_vec = await embedder.embed_query("a photo of a red square")
-    assert len(text_vec) == vector_dim
+    assert len(text_vec) == 4096
     assert any(abs(x) > 1e-6 for x in text_vec), "text embedding is all zeros"
 
     text_batch = await embedder.embed_documents(["hello world", "another doc"])
     assert len(text_batch) == 2
-    assert all(len(v) == vector_dim for v in text_batch)
+    assert all(len(v) == 4096 for v in text_batch)
 
     image = Image.new("RGB", (64, 64), color=(255, 0, 0))
     image_vec = await embedder.embed_image(image)
-    assert len(image_vec) == vector_dim
+    assert len(image_vec) == 4096
     assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
