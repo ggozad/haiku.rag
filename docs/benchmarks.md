@@ -35,8 +35,8 @@ Available datasets:
 | `repliqa` | ~30MB |
 | `hotpotqa` | ~331MB |
 | `wix` | ~511MB |
-| `open_rag_bench` (text embedder + VLM picture descriptions) | ~15GB |
-| `open_rag_bench` (multimodal embedder, override with `--db`) | ~16GB |
+| `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~15GB |
+| `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16GB |
 
 After downloading, run benchmarks with `--skip-db` to use the pre-built database:
 

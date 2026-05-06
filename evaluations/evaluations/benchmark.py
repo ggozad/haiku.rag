@@ -765,7 +765,15 @@ def download(
 def upload(
     dataset: str = typer.Argument(..., help="Dataset key or 'all' to upload all."),
 ) -> None:
-    """Upload evaluation database to HuggingFace (maintainer only)."""
+    """Upload evaluation database to HuggingFace (maintainer only).
+
+    Uses ``upload_large_folder`` for resumable, parallel transfer — important
+    for the multi-GB ORB databases which would otherwise abort on any transient
+    network failure under plain ``upload_folder``.
+
+    The local folder basename equals ``spec.db_filename`` (see
+    ``DatasetSpec.db_path``), so the folder lands at that path on the Hub.
+    """
     specs = _resolve_datasets(dataset)
 
     api = HfApi()
@@ -776,13 +784,23 @@ def upload(
             console.print(f"[red]Database not found at {db}[/red]")
             continue
 
-        console.print(f"[blue]Uploading {spec.key}...[/blue]")
-        api.upload_folder(
+        # Wipe the existing remote path so we don't accumulate orphaned files
+        # from prior uploads. upload_large_folder doesn't accept delete_patterns,
+        # so we do this as a separate commit. Safe to run if the path is missing.
+        try:
+            api.delete_folder(
+                path_in_repo=spec.db_filename,
+                repo_id=HF_REPO_ID,
+                repo_type="dataset",
+            )
+        except Exception:
+            pass
+
+        console.print(f"[blue]Uploading {spec.key} ({db})...[/blue]")
+        api.upload_large_folder(
             folder_path=str(db),
-            path_in_repo=spec.db_filename,
             repo_id=HF_REPO_ID,
             repo_type="dataset",
-            delete_patterns="*",
         )
 
         console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
