@@ -216,14 +216,26 @@ def is_multimodal_query(source: str) -> bool:
     return "image" in source
 
 
-OPEN_RAG_BENCH_SPEC = DatasetSpec(
-    key="orb",
-    db_filename="open_rag_bench.lancedb",
-    document_loader=load_orb_corpus,
-    document_mapper=map_orb_document,
-    qa_loader=load_orb_qa,
-    qa_case_builder=build_orb_case,
-    retrieval_loader=load_orb_retrieval,
-    retrieval_mapper=map_orb_retrieval,
-    retrieval_evaluator=MAPEvaluator(),
+def _orb_spec(key: str, db_filename: str) -> DatasetSpec:
+    return DatasetSpec(
+        key=key,
+        db_filename=db_filename,
+        document_loader=load_orb_corpus,
+        document_mapper=map_orb_document,
+        qa_loader=load_orb_qa,
+        qa_case_builder=build_orb_case,
+        retrieval_loader=load_orb_retrieval,
+        retrieval_mapper=map_orb_retrieval,
+        retrieval_evaluator=MAPEvaluator(),
+    )
+
+
+ORB_TEXT_SPEC = _orb_spec(
+    key="orb_text",
+    db_filename="open_rag_bench_text.lancedb",
+)
+
+ORB_MULTIMODAL_SPEC = _orb_spec(
+    key="orb_multimodal",
+    db_filename="open_rag_bench_multimodal.lancedb",
 )

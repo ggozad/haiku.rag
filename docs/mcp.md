@@ -38,6 +38,12 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
 - **`search_documents`** - Search using hybrid search (vector + full-text)
   - `query` (required): Search query
   - `limit` (optional): Maximum results (uses config default if not specified)
+  - `include_images` (optional, default `true`): Attach base64-encoded picture bytes to picture-labeled results
+
+- **`search_documents_by_image`** - Search using an image as the query (registered only when the configured embedder supports images)
+  - `image_base64` (required): Base64-encoded image (PNG/JPEG bytes)
+  - `limit` (optional): Maximum results
+  - `include_images` (optional, default `true`)
 
 ### Question Answering
 

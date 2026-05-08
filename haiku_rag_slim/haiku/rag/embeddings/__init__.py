@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.embeddings import Embedder
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
@@ -8,18 +8,34 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from haiku.rag.config import AppConfig, Config
 
 if TYPE_CHECKING:
+    from PIL import Image as PILImage
+
     from haiku.rag.store.models.chunk import Chunk
 
 
-class EmbedderWrapper:
-    """Wrapper around pydantic-ai Embedder with explicit query/document methods."""
+ImageInput = "bytes | PILImage.Image"
 
-    def __init__(self, embedder: Embedder, vector_dim: int):
+
+class EmbedderWrapper:
+    """Wrapper around pydantic-ai Embedder with explicit query/document methods.
+
+    Subclasses set ``supports_images = True`` and override the image methods
+    when the underlying model can encode pictures into the same vector space.
+    """
+
+    supports_images: bool = False
+
+    def __init__(self, embedder: Embedder | None, vector_dim: int):
         self._embedder = embedder
         self._vector_dim = vector_dim
 
+    @property
+    def vector_dim(self) -> int:
+        return self._vector_dim
+
     async def embed_query(self, text: str) -> list[float]:
         """Embed a search query."""
+        assert self._embedder is not None
         result = await self._embedder.embed_query(text)
         return list(result.embeddings[0])
 
@@ -27,8 +43,21 @@ class EmbedderWrapper:
         """Embed documents/chunks for indexing."""
         if not texts:
             return []
+        assert self._embedder is not None
         result = await self._embedder.embed_documents(texts)
         return [list(e) for e in result.embeddings]
+
+    async def embed_image(self, image: "Any") -> list[float]:
+        """Embed a single image into the same vector space as text.
+
+        Multimodal providers override this. Picture embedding is single-image:
+        vLLM's ``/v1/embeddings`` accepts one image per request via the
+        ``messages`` superset. Callers loop when they need many.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support image embedding. "
+            "Configure a multimodal provider (e.g. provider='vllm')."
+        )
 
 
 def contextualize(chunks: list["Chunk"]) -> list[str]:
@@ -59,20 +88,12 @@ EMBEDDING_BATCH_SIZE = 512
 async def embed_chunks(
     chunks: list["Chunk"], config: AppConfig = Config
 ) -> list["Chunk"]:
-    """Generate embeddings for chunks.
+    """Generate embeddings for chunks, dispatching text vs picture variants.
 
-    Contextualizes chunks (prepends headings) before embedding for better
-    semantic search. Returns new Chunk objects with embeddings set.
-
-    Embeddings are generated in batches to avoid request size limits
-    and timeouts with large document sets.
-
-    Args:
-        chunks: List of chunks to embed.
-        config: Configuration for embedder selection.
-
-    Returns:
-        New list of Chunk objects with embedding field populated.
+    Text chunks are contextualized (headings prepended) and routed through
+    ``embed_documents``. Picture chunks (those carrying ``_picture_data``)
+    are routed through ``embed_images`` and require a multimodal embedder.
+    Vectors land in the original chunk order.
     """
     if not chunks:
         return []
@@ -80,15 +101,34 @@ async def embed_chunks(
     from haiku.rag.store.models.chunk import Chunk
 
     embedder = get_embedder(config)
-    texts = contextualize(chunks)
 
-    # Batch embedding calls to avoid request size limits
-    all_embeddings: list[list[float]] = []
-    for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
-        batch = texts[i : i + EMBEDDING_BATCH_SIZE]
-        batch_embeddings = await embedder.embed_documents(batch)
-        all_embeddings.extend(batch_embeddings)
+    text_chunks: list[Chunk] = []
+    picture_chunks: list[Chunk] = []
+    for chunk in chunks:
+        if chunk._picture_data is not None:
+            picture_chunks.append(chunk)
+        else:
+            text_chunks.append(chunk)
 
+    text_embeddings: list[list[float]] = []
+    if text_chunks:
+        texts = contextualize(text_chunks)
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+            text_embeddings.extend(await embedder.embed_documents(batch))
+
+    picture_embeddings: list[list[float]] = []
+    if picture_chunks:
+        if not embedder.supports_images:
+            raise ValueError(
+                "Picture chunks require a multimodal embedder. Configure "
+                "provider='vllm', or omit picture chunks."
+            )
+        for chunk in picture_chunks:
+            picture_embeddings.append(await embedder.embed_image(chunk._picture_data))
+
+    text_iter = iter(text_embeddings)
+    picture_iter = iter(picture_embeddings)
     return [
         Chunk(
             id=chunk.id,
@@ -99,9 +139,13 @@ async def embed_chunks(
             document_uri=chunk.document_uri,
             document_title=chunk.document_title,
             document_meta=chunk.document_meta,
-            embedding=embedding,
+            embedding=(
+                next(picture_iter)
+                if chunk._picture_data is not None
+                else next(text_iter)
+            ),
         )
-        for chunk, embedding in zip(chunks, all_embeddings)
+        for chunk in chunks
     ]
 
 
@@ -121,7 +165,9 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
 
     if provider == "ollama":
         # Use model-level base_url if set, otherwise fall back to providers config
-        base_url = embedding_model.base_url or f"{config.providers.ollama.base_url}/v1"
+        base_url = embedding_model.base_url or config.providers.ollama.base_url
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
         model = OpenAIEmbeddingModel(
             model_name,
             provider=OllamaProvider(base_url=base_url),
@@ -147,5 +193,13 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
         return EmbedderWrapper(
             Embedder(f"sentence-transformers:{model_name}"), vector_dim
         )
+
+    if provider == "vllm":
+        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+        base_url = embedding_model.base_url or "http://localhost:8000/v1"
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
+        return VLLMMultimodalEmbedder(model_name, vector_dim, base_url=base_url)
 
     raise ValueError(f"Unsupported embedding provider: {provider}")

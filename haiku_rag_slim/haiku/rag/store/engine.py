@@ -140,6 +140,27 @@ class DocumentItemRecord(LanceModel):
     label: str = Field(default="")
     text: str = Field(default="")
     page_numbers: str = Field(default="[]")
+    picture_data: bytes | None = None
+
+
+def get_document_items_arrow_schema() -> pa.Schema:
+    """Generate Arrow schema for document_items with large_binary for picture_data.
+
+    LanceDB maps Python `bytes` to Arrow's `binary` type, which uses 32-bit offsets
+    and is limited to ~2GB per column in a fragment. Many embedded picture PNGs in
+    one fragment can exceed that limit. `large_binary` uses 64-bit offsets and has
+    no practical size limit — same reasoning as `docling_document` on the
+    documents table.
+    """
+    base_schema = DocumentItemRecord.to_arrow_schema()
+    large_binary_columns = {"picture_data"}
+    fields = []
+    for field in base_schema:
+        if field.name in large_binary_columns:
+            fields.append(pa.field(field.name, pa.large_binary()))
+        else:
+            fields.append(field)
+    return pa.schema(fields)
 
 
 class SettingsRecord(LanceModel):
@@ -456,7 +477,7 @@ class Store:
             self.document_items_table = await self.db.open_table("document_items")
         else:
             self.document_items_table = await self.db.create_table(
-                "document_items", schema=DocumentItemRecord
+                "document_items", schema=get_document_items_arrow_schema()
             )
             await self.document_items_table.create_index(
                 "document_id", config=BTree(), replace=True

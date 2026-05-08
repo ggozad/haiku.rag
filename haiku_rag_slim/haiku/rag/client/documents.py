@@ -79,6 +79,15 @@ async def _update_document_with_chunks(
     """
     assert document.id is not None, "Document ID is required for update"
 
+    # Snapshot existing picture bytes before deleting items so the post-delete
+    # extract_items can merge them back when the live docling has had its
+    # picture URIs stripped (rebuild / re-extract via the stored blob).
+    existing_picture_data: dict[str, bytes] | None = None
+    if docling_document is not None:
+        existing_picture_data = (
+            await client.document_item_repository.get_all_picture_data(document.id)
+        )
+
     chunks = await ensure_chunks_embedded(client._config, chunks)
 
     versions = await client.store.current_table_versions()
@@ -96,10 +105,13 @@ async def _update_document_with_chunks(
 
         await client.chunk_repository.create(chunks)
 
-        # Replace document items when a new DoclingDocument is provided
         if docling_document is not None:
             await client.document_item_repository.delete_by_document_id(updated_doc.id)
-            items = extract_items(updated_doc.id, docling_document)
+            items = extract_items(
+                updated_doc.id,
+                docling_document,
+                existing_picture_data=existing_picture_data,
+            )
             await client.document_item_repository.create_items(updated_doc.id, items)
 
         if client._config.storage.auto_vacuum:

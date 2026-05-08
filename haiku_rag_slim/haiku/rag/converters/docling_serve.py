@@ -85,9 +85,21 @@ class DoclingServeConverter(DocumentConverter):
         raise ValueError(f"Unsupported VLM provider: {model.provider}")
 
     def _build_conversion_data(self) -> dict[str, str | list[str]]:
-        """Build form data for conversion request."""
+        """Build form data for conversion request.
+
+        Picture bytes are always retrieved via ``image_export_mode="referenced"``
+        + ``target_type="zip"``. Per docling-jobkit, ``generate_picture_images=True``
+        is only honored when ``image_export_mode == "referenced"``; with
+        ``"embedded"`` the server emits page images but leaves
+        ``PictureItem.image=None`` (upstream issue
+        docling-project/docling-serve#576). The zip target ships the picture
+        (and page) bytes as files under ``artifacts/`` which the caller
+        rehydrates back into ``data:`` URIs for parity with the local
+        converter.
+        """
         opts = self.config.processing.conversion_options
         pic_desc = opts.picture_description
+        runs_vlm = pic_desc.enabled
 
         data: dict[str, str | list[str]] = {
             "to_formats": "json",
@@ -98,19 +110,16 @@ class DoclingServeConverter(DocumentConverter):
             "table_mode": opts.table_mode,
             "table_cell_matching": str(opts.table_cell_matching).lower(),
             "images_scale": str(opts.images_scale),
-            "image_export_mode": "embedded"
-            if opts.generate_page_images
-            else "placeholder",
-            "include_images": str(
-                opts.generate_picture_images or pic_desc.enabled
-            ).lower(),
-            "do_picture_description": str(pic_desc.enabled).lower(),
+            "image_export_mode": "referenced",
+            "include_images": "true",
+            "do_picture_description": str(runs_vlm).lower(),
+            "target_type": "zip",
         }
 
         if opts.ocr_lang:
             data["ocr_lang"] = opts.ocr_lang
 
-        if pic_desc.enabled:
+        if runs_vlm:
             prompt = self.config.prompts.picture_description
             picture_description_api = {
                 "url": self._get_vlm_api_url(pic_desc.model),
@@ -125,6 +134,75 @@ class DoclingServeConverter(DocumentConverter):
 
         return data
 
+    def _parse_zip_to_docling(self, zip_bytes: bytes, name: str) -> "DoclingDocument":
+        """Parse a docling-serve ``target_type=zip`` response.
+
+        The archive contains the document JSON at the root plus an
+        ``artifacts/`` directory holding referenced image files (PNG, one per
+        picture and per page). ``ImageRef.uri`` in the JSON points at the
+        bare filename inside ``artifacts/``; this helper inlines those bytes
+        as ``data:<mime>;base64,...`` URIs so the resulting
+        :class:`DoclingDocument` is shape-equivalent to what the local
+        converter produces.
+        """
+        import base64
+        import io
+        import zipfile
+
+        from docling_core.types.doc.document import DoclingDocument
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            top_level_jsons = [
+                n for n in zf.namelist() if n.endswith(".json") and "/" not in n
+            ]
+            if not top_level_jsons:
+                raise ValueError(
+                    f"docling-serve zip for {name} has no top-level JSON document"
+                )
+            with zf.open(top_level_jsons[0]) as f:
+                doc_json = json.loads(f.read().decode("utf-8"))
+
+            artifact_cache: dict[str, bytes] = {}
+
+            def _inline(image_field: dict | None) -> None:
+                if not image_field:
+                    return
+                uri = image_field.get("uri")
+                # In target_type=zip mode docling-serve writes the URI as the
+                # in-archive path, e.g. "artifacts/image_000000_<sha>.png".
+                # Anything else (data: URI, missing field, weird shape) is left
+                # alone.
+                if not isinstance(uri, str) or not uri.startswith("artifacts/"):
+                    return
+                if uri not in artifact_cache:
+                    try:
+                        artifact_cache[uri] = zf.read(uri)
+                    except KeyError:
+                        return
+                mime = image_field.get("mimetype") or "image/png"
+                b64 = base64.b64encode(artifact_cache[uri]).decode("ascii")
+                image_field["uri"] = f"data:{mime};base64,{b64}"
+
+            for picture in doc_json.get("pictures") or []:
+                _inline(picture.get("image"))
+
+            # Docling-serve always bundles page rasters when
+            # image_export_mode="referenced". Honor the local
+            # ``generate_page_images`` flag by stripping them when the user
+            # didn't ask for whole-page images.
+            keep_page_images = (
+                self.config.processing.conversion_options.generate_page_images
+            )
+            for page in (doc_json.get("pages") or {}).values():
+                if not isinstance(page, dict):
+                    continue
+                if keep_page_images:
+                    _inline(page.get("image"))
+                else:
+                    page["image"] = None
+
+        return DoclingDocument.model_validate(doc_json)
+
     async def _make_request(self, files: dict, name: str) -> "DoclingDocument":
         """Make an async request to docling-serve and poll for results.
 
@@ -138,29 +216,15 @@ class DoclingServeConverter(DocumentConverter):
         Raises:
             ValueError: If conversion fails or service is unavailable
         """
-        from docling_core.types.doc.document import DoclingDocument
-
         data = self._build_conversion_data()
-        result = await self.client.submit_and_poll(
+
+        zip_bytes = await self.client.submit_and_poll_zip(
             endpoint="/v1/convert/file/async",
             files=files,
             data=data,
             name=name,
         )
-
-        if result.get("status") not in ("success", "partial_success", None):
-            errors = result.get("errors", [])
-            raise ValueError(f"Conversion failed: {errors}")
-
-        json_content = result.get("document", {}).get("json_content")
-
-        if json_content is None:
-            raise ValueError(
-                f"docling-serve did not return JSON content for {name}. "
-                "This may indicate an unsupported file format."
-            )
-
-        return DoclingDocument.model_validate(json_content)
+        return self._parse_zip_to_docling(zip_bytes, name)
 
     async def convert_file(self, path: Path) -> "DoclingDocument":
         """Convert a file to DoclingDocument using docling-serve.

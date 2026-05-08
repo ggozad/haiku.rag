@@ -1,9 +1,10 @@
+import base64
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from docling_core.types.doc.document import DoclingDocument, NodeItem
+    from docling_core.types.doc.document import DoclingDocument, NodeItem, PictureItem
 
 
 class DocumentItem(BaseModel):
@@ -13,6 +14,42 @@ class DocumentItem(BaseModel):
     label: str = ""
     text: str = ""
     page_numbers: list[int] = []
+    picture_data: bytes | None = None
+
+
+def _picture_description_text(item: "PictureItem") -> str | None:
+    """Return the VLM-generated description text for a PictureItem, if any.
+
+    Tries the modern ``meta.description`` location first (docling 2.91+) and
+    falls back to ``annotations`` entries that carry a ``text`` field
+    (PictureDescriptionData and similar).
+    """
+    if item.meta and item.meta.description:
+        text = item.meta.description.text
+        if text and text.strip():
+            return text
+    # Annotations is a tagged union; only some variants carry `text`.
+    for ann in item.annotations:
+        text = getattr(ann, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text
+    return None
+
+
+def _decode_picture_bytes(item: "PictureItem") -> bytes | None:
+    """Decode a PictureItem's embedded image into raw bytes.
+
+    Reads ``item.image.uri`` and base64-decodes it when it is a ``data:`` URI.
+    Returns None for items whose image is absent or stripped, or whose URI is
+    a file reference rather than inline data.
+    """
+    if item.image is None:
+        return None
+    uri = str(item.image.uri)
+    if not uri.startswith("data:"):
+        return None
+    _, encoded = uri.split(",", 1)
+    return base64.b64decode(encoded, validate=False)
 
 
 def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str | None:
@@ -21,7 +58,10 @@ def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str |
     Handles different item types:
     - TextItem, SectionHeaderItem, etc.: Use .text attribute
     - TableItem: Use export_to_markdown() for table content
-    - PictureItem: Use export_to_markdown() with PLACEHOLDER mode to avoid base64
+    - PictureItem: Prefer the VLM description (when picture_description is on)
+      so pictures carry meaningful prose into chunk text and survive
+      ``expand_with_items``' ``if item.text:`` filter; otherwise fall back to
+      a placeholder markdown export (no base64).
     """
     from docling_core.types.doc.base import ImageRefMode
     from docling_core.types.doc.document import PictureItem, TableItem
@@ -30,6 +70,8 @@ def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str |
         return text
 
     if isinstance(item, PictureItem):
+        if description := _picture_description_text(item):
+            return description
         return item.export_to_markdown(
             docling_doc,
             image_mode=ImageRefMode.PLACEHOLDER,
@@ -50,7 +92,9 @@ def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str |
 
 
 def extract_items(
-    document_id: str, docling_doc: "DoclingDocument"
+    document_id: str,
+    docling_doc: "DoclingDocument",
+    existing_picture_data: dict[str, bytes] | None = None,
 ) -> list[DocumentItem]:
     """Extract document items from a DoclingDocument for the items table.
 
@@ -58,7 +102,17 @@ def extract_items(
     self_ref, label, pre-rendered text, and page numbers from provenance.
     Items are stored as docling produces them — container items (e.g., list_item)
     may have empty text with content in their children.
+
+    For PictureItems, the embedded image is decoded from ``image.uri`` (a base64
+    data URI) and stored on ``DocumentItem.picture_data``. When the live docling
+    has already had its picture URIs stripped (rebuild / re-extract scenarios
+    where the docling structure round-trips through the compressed blob), a
+    fall-back lookup against ``existing_picture_data`` (keyed by ``self_ref``)
+    preserves the bytes that were captured at original ingest time.
     """
+    from docling_core.types.doc.document import PictureItem
+
+    existing = existing_picture_data or {}
     items: list[DocumentItem] = []
 
     for position, (item, _level) in enumerate(docling_doc.iterate_items()):
@@ -74,6 +128,12 @@ def extract_items(
                 if page_no is not None and page_no not in page_numbers:
                     page_numbers.append(page_no)
 
+        picture_data: bytes | None = None
+        if isinstance(item, PictureItem):
+            picture_data = _decode_picture_bytes(item)
+            if picture_data is None:
+                picture_data = existing.get(item.self_ref)
+
         items.append(
             DocumentItem(
                 document_id=document_id,
@@ -82,6 +142,7 @@ def extract_items(
                 label=label_str,
                 text=text,
                 page_numbers=sorted(page_numbers),
+                picture_data=picture_data,
             )
         )
 

@@ -44,11 +44,10 @@ processing:
     # Image settings
     images_scale: 2.0                        # Image scale factor
     generate_page_images: true               # Include rendered page images (for visualize_chunk)
-    generate_picture_images: false           # Include embedded figure/diagram images
 
-    # VLM picture description (optional)
+    # VLM picture description (off by default; see "Picture Handling" below)
     picture_description:
-      enabled: false                         # Enable VLM image descriptions
+      enabled: false
       model:
         provider: ollama
         name: ministral-3
@@ -100,114 +99,73 @@ conversion_options:
 conversion_options:
   images_scale: 2.0               # Image resolution scale factor
   generate_page_images: true      # Include rendered page images
-  generate_picture_images: false  # Include embedded figure/diagram images
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **generate_picture_images**: When `true`, embedded images (figures, diagrams) are included as base64-encoded data in the document. When `false` (default), images are excluded to reduce chunk size and avoid context bloat.
 
-**Note:** With `docling-serve`, `generate_picture_images` has limited support - picture image data may not be returned in the JSON response. Page images work correctly with both local and remote converters.
+#### Picture Handling
 
-#### Picture Description (VLM)
-
-Use a Vision Language Model (VLM) to automatically describe images in documents. Descriptions become searchable text, improving RAG retrieval for visual content.
+Picture bytes (figures, diagrams) are always extracted and stored in `document_items.picture_data` for every ingested document. The single configurable knob is whether a Vision Language Model (VLM) runs at ingest to generate textual descriptions:
 
 ```yaml
-conversion_options:
-  picture_description:
-    enabled: true                  # Enable VLM picture description
-    model:
-      provider: ollama             # ollama, openai, or custom
-      name: ministral-3            # VLM model name
-      temperature: 0.0             # Default: 0.0 (factual descriptions)
-    timeout: 90                    # Request timeout in seconds
-    max_tokens: 200                # Maximum tokens in response
+processing:
+  conversion_options:
+    picture_description:
+      enabled: true              # default false
+      model:
+        provider: ollama         # any OpenAI-compatible /v1/chat/completions provider
+        name: ministral-3
+      timeout: 90
+      max_tokens: 200
 ```
 
-**Configuration options:**
+When `enabled: true`, each picture's description is woven into the chunk text and is searchable via FTS. The prompt is configurable under `prompts.picture_description` — see [Prompts](prompts.md).
 
-- **enabled**: When `true`, each embedded image is sent to a VLM for description. Requires `generate_picture_images` to be `true` (automatically enabled).
-- **model**: Standard model configuration
-  - `provider`: `ollama` (default), `openai`, or use `base_url` for custom endpoints
-  - `name`: Model name (e.g., `ministral-3`, `granite3.2-vision`, `gpt-4-vision`)
-  - `base_url`: Optional custom API endpoint for vLLM, LM Studio, etc.
-- **timeout**: Request timeout in seconds
-- **max_tokens**: Maximum tokens in the VLM response
+**Switching the VLM on or off on an existing database** doesn't require reingesting (the bytes are already there):
 
-**Note:** Requires an OpenAI-compatible `/v1/chat/completions` endpoint. Providers with different API formats (e.g., Anthropic Claude) are not supported.
+- Off → on: `haiku-rag rebuild --descriptions` runs the VLM over stored bytes and re-chunks. Skips the docling parse entirely.
+- On → off: `haiku-rag rebuild --rechunk` recomposes chunk text from the stripped docling blob without descriptions.
 
-**Default prompt** (configured in `prompts.picture_description`):
+When using `converter: docling-serve`, the VLM is invoked from docling-serve rather than haiku.rag — see [Remote processing](../remote-processing.md#vlm-picture-description-with-docling-serve).
 
-```
-Describe this image for a blind user. State the image type
-(screenshot, chart, photo, etc.), what it depicts, any visible text,
-and key visual details. Be concise and accurate.
-```
+#### Pictures × embedder × QA model: how the pieces compose
 
-To customize the prompt globally:
+Three independent settings drive ingest, retrieval, and QA:
 
-```yaml
-prompts:
-  picture_description: "Your custom prompt here..."
-```
+| Setting | Question it answers | Values |
+|---|---|---|
+| `picture_description.enabled` | Should a VLM weave descriptions into chunk text at ingest? | `false` (default) / `true` |
+| `embeddings.model.provider` | Can the embedder index image content? | text-only (`ollama`, `openai`, `cohere`, `sentence-transformers`) vs `vllm` (multimodal) |
+| `qa.model.vision` | Can the QA model interpret images? | `false` (default) / `true` |
 
-**Using with Ollama:**
+Picture bytes are always stored, regardless of these settings.
 
-```yaml
-conversion_options:
-  picture_description:
-    enabled: true
-    model:
-      provider: ollama
-      name: ministral-3
-```
+**What gets stored** by `enabled` × embedder:
 
-Requires Ollama running with a vision-capable model:
+| `enabled` | Embedder | Text chunks | Synthetic picture chunks |
+|---|---|---|---|
+| `false` | text-only | text only (caption/surrounding) | none |
+| `false` | multimodal | text only | one per picture, vector = image embedding |
+| `true` | text-only | text + descriptions | none |
+| `true` | multimodal | text + descriptions | one per picture, vector = image embedding |
 
-```bash
-ollama pull ministral-3
-ollama serve
-```
+**What QA receives** at search time:
 
-**Using with vLLM or custom endpoints:**
+- `qa.model.vision: false` — text chunks only (descriptions, when present, answer figure questions in prose).
+- `qa.model.vision: true` — text chunks + raw picture bytes via `BinaryContent`; the model reads figures directly.
 
-```yaml
-conversion_options:
-  picture_description:
-    enabled: true
-    model:
-      provider: openai           # Use OpenAI-compatible API format
-      name: granite-vision
-      base_url: http://my-vllm-server:8000
-```
+`qa.model.vision` is independent of ingestion — flipping it never requires reingesting. Setting `vision: true` against a text-only model causes silent acceptance and confabulation on Ollama and a 400 on OpenAI; default `false` is the safe choice.
 
-**How it works:**
+**Recommended combinations:**
 
-1. During PDF conversion, docling extracts embedded images
-2. Each image is sent to the configured VLM for description
-3. Descriptions are added as annotations on the image
-4. When exported to markdown, descriptions appear as searchable text
-
-**Using with docling-serve:**
-
-When using `converter: docling-serve`, the VLM calls are made by the docling-serve instance, not by haiku.rag. You must:
-
-1. Set `DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true` when running docling-serve
-2. Ensure the VLM endpoint is accessible from where docling-serve is running
-
-**Docker networking:** If docling-serve runs in Docker and your VLM runs on the host, use `host.docker.internal` instead of `localhost`:
-
-```yaml
-picture_description:
-  enabled: true
-  model:
-    provider: ollama
-    name: ministral-3
-    base_url: http://host.docker.internal:11434  # NOT localhost!
-```
-
-See [VLM Picture Description with docling-serve](../remote-processing.md#vlm-picture-description-with-docling-serve) for a complete example.
+| Use case | `picture_description.enabled` | Embedder | `qa.model.vision` |
+|---|---|---|---|
+| Pure text RAG, no figures | `false` | text-only | `false` |
+| Text RAG, figures answered through descriptions | `true` | text-only | `false` |
+| Vision QA on figure-rich docs (no cross-modal search) | `true` or `false` | text-only | `true` |
+| Cross-modal search + vision QA | `true` or `false` | multimodal | `true` |
+| Cross-modal search, text QA only | `true` | multimodal | `false` |
 
 ### Automatic Title Generation
 

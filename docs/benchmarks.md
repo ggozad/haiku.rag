@@ -35,7 +35,8 @@ Available datasets:
 | `repliqa` | ~30MB |
 | `hotpotqa` | ~331MB |
 | `wix` | ~511MB |
-| `open_rag_bench` | ~14GB |
+| `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
+| `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 
 After downloading, run benchmarks with `--skip-db` to use the pre-built database:
 
@@ -125,15 +126,41 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 
 ### OpenRAG Bench (ORB)
 
-[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval over visual content like figures, charts, and diagrams. Each query maps to one relevant document.
+[OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval and reasoning over visual content like figures, charts, and diagrams. Each query maps to one relevant document.
 
-**Multimodal processing**: Picture descriptions are generated using a Vision Language Model (VLM) during document conversion, making embedded images searchable via text queries. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
+Two approaches are benchmarked separately:
 
-#### Skill QA + citation retrieval
+- **Multimodal embedder** (`Qwen/Qwen3-VL-Embedding-8B`, served via vLLM): picture bytes and text live in a shared vector space, no VLM is run at ingest.
+- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are woven into chunk text; retrieval runs over text only. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
 
-| Skill model      | QA accuracy | Mean `cited_map` | VLM                  |
-|------------------|-------------|------------------|----------------------|
-| `ollama:gpt-oss` | 0.94        | 0.86             | Ollama / ministral-3 |
+#### Multimodal embedder
+
+##### Retrieval (MAP)
+
+| Embedding Model              | Source bucket      | Cases | MAP    |
+|------------------------------|--------------------|------:|-------:|
+| `Qwen/Qwen3-VL-Embedding-8B` | text only          |  1914 | 0.9801 |
+| `Qwen/Qwen3-VL-Embedding-8B` | text + image       |   763 | 0.9720 |
+| `Qwen/Qwen3-VL-Embedding-8B` | text + table       |   148 | 0.9786 |
+| `Qwen/Qwen3-VL-Embedding-8B` | text + table+image |   220 | 0.9720 |
+| `Qwen/Qwen3-VL-Embedding-8B` | **all**            |  3045 | **0.9774** |
+
+##### QA Accuracy
+
+| Embedding Model              | QA Model                | Source bucket | Cases | Accuracy |
+|------------------------------|-------------------------|---------------|------:|---------:|
+| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision) | text only   |   682 |   96.9 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision) | with image  |   299 |   91.3 % |
+
+The text-vs-image gap on retrieval is small (0.81 pp) but on QA it widens to ~5.6 pp — most of the loss is downstream of retrieval, in the model reasoning over image-bearing chunks rather than in finding them.
+
+#### Text embedder + VLM picture descriptions
+
+##### Skill QA + citation retrieval
+
+| Embedding Model        | VLM                  | Skill model      | QA accuracy | Mean `cited_map` |
+|------------------------|----------------------|------------------|-------------|------------------|
+| `qwen3-embedding:4b`   | Ollama / ministral-3 | `ollama:gpt-oss` | 0.94        | 0.86             |
 
 *Measured on haiku.rag v0.44.0, judged by `ollama:qwen3.6` (current default), on 2992 of 3044 completed cases.*
 

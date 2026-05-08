@@ -349,3 +349,320 @@ class TestDocumentItemMigration:
 
             # No items should have been created
             assert await store.document_items_table.count_rows() == 0
+
+
+@pytest.mark.asyncio
+class TestPictureDataStorage:
+    async def test_create_and_get_picture_bytes(self, temp_db_path):
+        """Round-trip picture bytes through DocumentItem and the repository."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+
+            png_bytes = b"\x89PNG\r\n\x1a\nfake-picture-bytes"
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="paragraph",
+                    text="Some text",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="",
+                    picture_data=png_bytes,
+                ),
+            ]
+            await repo.create_items("doc-1", items)
+
+            # Single-ref lookup
+            got = await repo.get_picture_bytes("doc-1", "#/pictures/0")
+            assert got == png_bytes
+            # Missing ref returns None
+            assert await repo.get_picture_bytes("doc-1", "#/pictures/999") is None
+            # Non-picture row has no bytes
+            assert await repo.get_picture_bytes("doc-1", "#/texts/0") is None
+
+            # Batch lookup omits refs without bytes
+            batch = await repo.get_pictures_for_chunk(
+                "doc-1", ["#/pictures/0", "#/texts/0", "#/pictures/999"]
+            )
+            assert batch == {"#/pictures/0": png_bytes}
+
+            # Empty refs returns empty dict
+            assert await repo.get_pictures_for_chunk("doc-1", []) == {}
+
+    async def test_hot_paths_exclude_picture_data(self, temp_db_path):
+        """Light read paths must NOT pull picture_data into memory."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+
+            heavy = b"x" * 1024
+            await repo.create_items(
+                "doc-1",
+                [
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=0,
+                        self_ref="#/pictures/0",
+                        label="picture",
+                        text="",
+                        picture_data=heavy,
+                    ),
+                ],
+            )
+
+            for item in await repo.get_all_items("doc-1"):
+                assert item.picture_data is None
+            for item in await repo.get_items_in_range("doc-1", 0, 10):
+                assert item.picture_data is None
+            grouped = await repo.get_all_items_grouped(["doc-1"])
+            for item in grouped["doc-1"]:
+                assert item.picture_data is None
+
+            # But the picture-byte accessors still work
+            assert (await repo.get_picture_bytes("doc-1", "#/pictures/0")) == heavy
+
+    async def test_fresh_db_has_picture_data_column(self, temp_db_path):
+        """A newly-created DB has picture_data on document_items via _init_tables."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            schema = await rag.store.document_items_table.schema()
+            assert "picture_data" in {f.name for f in schema}
+
+
+def _docling_doc_with_picture():
+    """Build a tiny DoclingDocument with one PictureItem carrying real PNG bytes
+    via ImageRef.from_pil. Used by the picture-extraction tests."""
+    from docling_core.types.doc.document import DoclingDocument, ImageRef
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    img = PilImageModule.new("RGB", (8, 8), "red")
+    doc = DoclingDocument(name="test-with-picture")
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
+    doc.add_picture(image=ImageRef.from_pil(img, dpi=72))
+    return doc
+
+
+class TestExtractItemsPictureBytes:
+    """extract_items decodes picture image bytes from data URIs."""
+
+    def test_decodes_picture_bytes_from_live_doc(self):
+        doc = _docling_doc_with_picture()
+        items = extract_items("doc-1", doc)
+        picture_items = [i for i in items if i.label == "picture"]
+        assert len(picture_items) == 1
+        data = picture_items[0].picture_data
+        assert data is not None and len(data) > 0
+        # PNG magic header — confirms we round-tripped real bytes, not a mangled URI.
+        assert data.startswith(b"\x89PNG")
+
+    def test_existing_picture_data_used_when_image_stripped(self):
+        """Rebuild round-trip: live docling has image=None, snapshot fills the gap."""
+        doc = _docling_doc_with_picture()
+        for picture in doc.pictures:
+            picture.image = None
+        snapshot = {"#/pictures/0": b"snapshot-picture-bytes"}
+        items = extract_items("doc-1", doc, existing_picture_data=snapshot)
+        picture_items = [i for i in items if i.label == "picture"]
+        assert picture_items[0].picture_data == b"snapshot-picture-bytes"
+
+    def test_live_image_uri_wins_over_existing_picture_data(self):
+        """When both an inline URI and a snapshot are available, the URI wins."""
+        doc = _docling_doc_with_picture()
+        snapshot = {"#/pictures/0": b"snapshot-bytes-should-not-be-used"}
+        items = extract_items("doc-1", doc, existing_picture_data=snapshot)
+        picture_items = [i for i in items if i.label == "picture"]
+        data = picture_items[0].picture_data
+        assert data is not None
+        assert data.startswith(b"\x89PNG")
+        assert data != b"snapshot-bytes-should-not-be-used"
+
+
+class TestExtractItemTextDescription:
+    """extract_item_text returns VLM description text for PictureItems."""
+
+    def test_returns_description_text_when_present(self):
+        from docling_core.types.doc.document import (
+            DescriptionAnnotation,
+            DoclingDocument,
+        )
+
+        doc = DoclingDocument(name="t")
+        doc.add_picture(
+            annotations=[
+                DescriptionAnnotation(text="A small red square", provenance="test")
+            ]
+        )
+        items = extract_items("doc-1", doc)
+        picture_items = [i for i in items if i.label == "picture"]
+        assert picture_items[0].text == "A small red square"
+
+
+class TestCompressDoclingSplitStripsPictureUris:
+    """compress_docling_split removes inline picture URIs from the structure."""
+
+    def test_picture_image_set_to_none_in_structure(self):
+        import json
+
+        from haiku.rag.store.compression import (
+            compress_docling_split,
+            decompress_json,
+        )
+
+        doc_json = {
+            "schema_name": "DoclingDocument",
+            "version": "1.10.0",
+            "name": "test",
+            "pictures": [
+                {
+                    "self_ref": "#/pictures/0",
+                    "image": {
+                        "mimetype": "image/png",
+                        "uri": "data:image/png;base64,abc",
+                    },
+                },
+                {"self_ref": "#/pictures/1", "image": None},
+            ],
+            "pages": {},
+        }
+
+        structure_bytes, pages_bytes = compress_docling_split(json.dumps(doc_json))
+        decoded = json.loads(decompress_json(structure_bytes))
+
+        for pic in decoded["pictures"]:
+            assert pic["image"] is None
+        assert pages_bytes is None  # no pages in this fixture
+
+
+@pytest.mark.asyncio
+class TestPictureDataMigrationBackfill:
+    """0.45.0 migration backfills picture_data and strips URIs from blobs."""
+
+    async def test_backfill_populates_column_and_strips_blob(self, temp_db_path):
+        import base64
+        import json
+
+        from haiku.rag.store.compression import compress_json, decompress_json
+        from haiku.rag.store.engine import DocumentItemRecord, DocumentRecord
+
+        fake_png = b"\x89PNG\r\n\x1a\nlegacy-picture-bytes-for-test"
+        data_uri = "data:image/png;base64," + base64.b64encode(fake_png).decode("ascii")
+        blob_data = {
+            "schema_name": "DoclingDocument",
+            "version": "1.10.0",
+            "name": "legacy",
+            "pictures": [
+                {
+                    "self_ref": "#/pictures/0",
+                    "label": "picture",
+                    "image": {"mimetype": "image/png", "uri": data_uri},
+                },
+            ],
+        }
+        blob_bytes = compress_json(json.dumps(blob_data))
+
+        # Build a legacy-state DB at v0.44.0 *without* the picture_data column,
+        # mirroring users coming from main's 0.44.0 release. The 0.45.0
+        # migration must add the column AND backfill it from the blob in one
+        # pass.
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await store.set_haiku_version("0.44.0")
+            await store.documents_table.add(
+                [
+                    DocumentRecord(
+                        id="legacy-doc",
+                        content="legacy",
+                        docling_document=blob_bytes,
+                    )
+                ]
+            )
+            # Items row exists (v0.40.0 would have placed it) but no picture_data yet.
+            await store.document_items_table.add(
+                [
+                    DocumentItemRecord(
+                        document_id="legacy-doc",
+                        position=0,
+                        self_ref="#/pictures/0",
+                        label="picture",
+                        text="",
+                        page_numbers="[]",
+                    )
+                ]
+            )
+            # Drop the column so the migration's column-add path is exercised.
+            await store.document_items_table.drop_columns(["picture_data"])
+            schema_before = await store.document_items_table.schema()
+            assert "picture_data" not in {f.name for f in schema_before}
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            applied = await store.migrate()
+            assert any("picture" in d.lower() for d in applied)
+
+            # Column was added by the migration
+            schema_after = await store.document_items_table.schema()
+            assert "picture_data" in {f.name for f in schema_after}
+
+            # picture_data backfilled with the legacy bytes
+            rows = await (
+                store.document_items_table.query()
+                .select(["self_ref", "picture_data"])
+                .where("document_id = 'legacy-doc'")
+                .to_list()
+            )
+            picture_rows = [r for r in rows if r["self_ref"] == "#/pictures/0"]
+            assert len(picture_rows) == 1
+            assert picture_rows[0]["picture_data"] == fake_png
+
+            # docling_document blob has been re-compressed with image=None
+            doc_rows = await (
+                store.documents_table.query()
+                .select(["docling_document"])
+                .where("id = 'legacy-doc'")
+                .to_list()
+            )
+            decoded = json.loads(decompress_json(doc_rows[0]["docling_document"]))
+            assert decoded["pictures"][0]["image"] is None
+
+
+@pytest.mark.asyncio
+class TestPictureDataPreservedThroughRoundTrip:
+    """Snapshot/merge keeps picture bytes through update / rebuild cycles."""
+
+    async def test_update_preserves_picture_data_when_blob_round_tripped(
+        self, temp_db_path
+    ):
+        """update_document on a docling pulled from the (stripped) blob must
+        not clobber picture_data — the snapshot/merge in
+        _update_document_with_chunks handles it."""
+        from haiku.rag.client.documents import (
+            _store_document_with_chunks,
+            _update_document_with_chunks,
+        )
+        from haiku.rag.store.models.document import Document
+
+        docling_doc = _docling_doc_with_picture()
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            document = Document(content="Hello world", uri="test://doc")
+            document.set_docling(docling_doc)
+            created = await _store_document_with_chunks(rag, document, [], docling_doc)
+            assert created.id is not None
+
+            original = await rag.document_item_repository.get_all_picture_data(
+                created.id
+            )
+            assert original.get("#/pictures/0") is not None
+
+            # Re-load the docling from the stored blob — pictures now have image=None
+            from_blob = created.get_docling_document()
+            assert from_blob is not None
+            assert all(p.image is None for p in from_blob.pictures)
+
+            await _update_document_with_chunks(rag, created, [], from_blob)
+
+            after = await rag.document_item_repository.get_all_picture_data(created.id)
+            assert after.get("#/pictures/0") == original.get("#/pictures/0")

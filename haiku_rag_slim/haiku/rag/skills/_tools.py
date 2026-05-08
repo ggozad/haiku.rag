@@ -1,8 +1,10 @@
+import base64
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import RunContext
+from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
@@ -167,10 +169,14 @@ def create_skill_tools(
 
         async def search(
             ctx: RunContext[RAGRunDeps], query: str, limit: int | None = None
-        ) -> str:
+        ) -> str | ToolReturn:
             """Search the knowledge base using hybrid search (vector + full-text).
 
-            Returns ranked results with content and metadata.
+            Returns ranked results with content and metadata. When picture
+            content is in the result set and the configured QA model is
+            vision-capable (``qa.model.vision = true``), picture bytes are
+            attached as ``BinaryContent`` parts so the model sees figures
+            alongside text.
 
             Args:
                 query: The search query.
@@ -192,6 +198,30 @@ def create_skill_tools(
             )
             if state:
                 state.searches[query] = results
+
+            if not config.qa.model.vision:
+                return formatted
+
+            binary_parts: list[BinaryContent] = []
+            seen: set[tuple[str | None, str]] = set()
+            for result in results:
+                if not result.image_data:
+                    continue
+                for self_ref, b64 in result.image_data.items():
+                    key = (result.document_id, self_ref)
+                    if key in seen:
+                        continue
+                    binary_parts.append(
+                        BinaryContent(
+                            data=base64.b64decode(b64),
+                            media_type="image/png",
+                            identifier=self_ref,
+                        )
+                    )
+                    seen.add(key)
+
+            if binary_parts:
+                return ToolReturn(return_value=formatted, content=binary_parts)
             return formatted
 
         tools["search"] = search

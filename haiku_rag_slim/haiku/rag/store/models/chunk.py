@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
@@ -103,13 +103,25 @@ class Chunk(BaseModel):
     document_meta: dict = {}
     embedding: list[float] | None = None
 
+    # Transient: picture bytes for synthetic picture chunks. Set by
+    # build_picture_chunks; consumed by embed_chunks to route through
+    # embed_images. Excluded from serialization (PrivateAttr).
+    _picture_data: bytes | None = PrivateAttr(default=None)
+
     def get_chunk_metadata(self) -> ChunkMetadata:
         """Parse metadata dict into structured ChunkMetadata."""
         return ChunkMetadata.model_validate(self.metadata)
 
 
 class SearchResult(BaseModel):
-    """Search result with optional provenance information for citations."""
+    """Search result with optional provenance information for citations.
+
+    ``image_data`` carries embedded picture bytes (base64-encoded PNG) keyed by
+    ``self_ref`` for picture-labeled chunks. Empty/None when no pictures or
+    when the caller asked to omit them via ``include_images=False`` on
+    ``client.search``. Same shape is used everywhere — MCP, in-process search,
+    agent toolsets — so non-vision callers see ``None`` and pay nothing.
+    """
 
     content: str
     score: float
@@ -122,12 +134,14 @@ class SearchResult(BaseModel):
     page_numbers: list[int] = []
     headings: list[str] | None = None
     labels: list[str] = []
+    image_data: dict[str, str] | None = None
 
     @classmethod
     def from_chunk(
         cls,
         chunk: "Chunk",
         score: float,
+        image_data: dict[str, str] | None = None,
     ) -> "SearchResult":
         """Create from a Chunk."""
         meta = chunk.get_chunk_metadata()
@@ -143,6 +157,7 @@ class SearchResult(BaseModel):
             page_numbers=meta.page_numbers,
             headings=meta.headings,
             labels=meta.labels,
+            image_data=image_data,
         )
 
     def format_for_agent(

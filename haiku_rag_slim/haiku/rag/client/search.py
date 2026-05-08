@@ -1,27 +1,34 @@
+import base64
 from typing import TYPE_CHECKING
 
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 
 if TYPE_CHECKING:
+    from PIL import Image as PILImage
+
     from haiku.rag.client import HaikuRAG
 
 
 async def search(
     client: "HaikuRAG",
-    query: str,
+    query: "str | bytes | PILImage.Image",
     limit: int | None = None,
     search_type: str = "hybrid",
     filter: str | None = None,
+    include_images: bool = True,
 ) -> list[SearchResult]:
     """Search for relevant chunks with optional reranking.
 
     Args:
         client: The HaikuRAG client (provides config + chunk repository).
-        query: The search query string.
+        query: Text (``str``) or image (``bytes`` / ``PIL.Image.Image``).
+            Image queries require a multimodal embedder and run vector-only.
         limit: Maximum number of results to return. Defaults to config.search.limit.
-        search_type: Type of search - "vector", "fts", or "hybrid" (default).
+        search_type: "vector", "fts", or "hybrid" (default). Text queries only.
         filter: Optional SQL WHERE clause to filter documents before searching chunks.
+        include_images: When True, populate ``SearchResult.image_data`` with
+            base64 picture bytes for picture-labeled chunks.
 
     Returns:
         List of SearchResult objects ordered by relevance.
@@ -29,21 +36,110 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
-    reranker = get_reranker(config=client._config)
+    if isinstance(query, str):
+        reranker = get_reranker(config=client._config)
 
-    if reranker is None:
-        chunk_results = await client.chunk_repository.search(
-            query, limit, search_type, filter
-        )
+        if reranker is None:
+            chunk_results = await client.chunk_repository.search(
+                query, limit, search_type, filter
+            )
+        else:
+            search_limit = limit * 10
+            raw_results = await client.chunk_repository.search(
+                query, search_limit, search_type, filter
+            )
+            chunks = [chunk for chunk, _ in raw_results]
+            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
     else:
-        search_limit = limit * 10
-        raw_results = await client.chunk_repository.search(
-            query, search_limit, search_type, filter
-        )
-        chunks = [chunk for chunk, _ in raw_results]
-        chunk_results = await reranker.rerank(query, chunks, top_n=limit)
+        from haiku.rag.embeddings import get_embedder
 
-    return [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
+        embedder = get_embedder(client._config)
+        if not embedder.supports_images:
+            raise ValueError(
+                "Image queries require a multimodal embedder. Configure "
+                "provider='vllm' (or another image-capable provider)."
+            )
+        query_vector = await embedder.embed_image(query)
+        chunk_results = await client.chunk_repository.search(
+            query="",
+            limit=limit,
+            filter=filter,
+            query_vector=query_vector,
+        )
+
+    results = [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
+    results = _dedup_picture_chunks(results)
+
+    if include_images:
+        await _populate_image_data(client, results)
+
+    return results
+
+
+def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
+    """Collapse duplicate picture-only chunks to one result per ``self_ref``.
+
+    A single picture can produce two chunks for the same self_ref: one whose
+    vector is the text embedding of the picture's description, and one whose
+    vector is the image embedding of the picture's bytes. Both can rank for
+    the same query. When two results share a single picture self_ref as
+    their only ref, keep the higher-scoring one. Wider chunks that span the
+    picture plus surrounding items pass through untouched.
+    """
+    seen: dict[tuple[str | None, str], int] = {}
+    keep: list[bool] = [True] * len(results)
+    for i, r in enumerate(results):
+        if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith("#/pictures/"):
+            key = (r.document_id, r.doc_item_refs[0])
+            prior = seen.get(key)
+            if prior is None:
+                seen[key] = i
+            elif r.score > results[prior].score:
+                keep[prior] = False
+                seen[key] = i
+            else:
+                keep[i] = False
+    return [r for r, k in zip(results, keep) if k]
+
+
+async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -> None:
+    """Attach base64 picture bytes to ``SearchResult.image_data`` in-place.
+
+    Groups results by document_id and batches one picture-bytes lookup per
+    document so a result set spanning N documents costs N reads, not one per
+    picture. Only refs starting with ``#/pictures/`` are queried.
+    """
+    by_doc: dict[str, list[SearchResult]] = {}
+    for r in results:
+        if not r.document_id:
+            continue
+        if not any(ref.startswith("#/pictures/") for ref in r.doc_item_refs):
+            continue
+        by_doc.setdefault(r.document_id, []).append(r)
+
+    for doc_id, doc_results in by_doc.items():
+        wanted: list[str] = []
+        seen: set[str] = set()
+        for r in doc_results:
+            for ref in r.doc_item_refs:
+                if ref.startswith("#/pictures/") and ref not in seen:
+                    wanted.append(ref)
+                    seen.add(ref)
+        if not wanted:
+            continue
+        bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
+            doc_id, wanted
+        )
+        if not bytes_by_ref:
+            continue
+        for r in doc_results:
+            attached: dict[str, str] = {}
+            for ref in r.doc_item_refs:
+                blob = bytes_by_ref.get(ref)
+                if blob:
+                    attached[ref] = base64.b64encode(blob).decode("ascii")
+            if attached:
+                r.image_data = attached
 
 
 async def expand_context(
@@ -92,6 +188,9 @@ async def expand_context(
         expanded_results.extend(expanded)
 
     expanded_results.sort(key=lambda r: r.score, reverse=True)
+    # expand_with_items rebuilds SearchResult objects, so attach picture bytes
+    # to the fresh set — picture self_refs may have grown via section expansion.
+    await _populate_image_data(client, expanded_results)
     return expanded_results
 
 

@@ -1,14 +1,15 @@
 interactions:
 - request:
-    body: "--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition:
-      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition:
-      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data;
-      name=\"do_table_structure\"\r\n\r\ntrue\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition:
-      form-data; name=\"table_cell_matching\"\r\n\r\ntrue\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data;
-      name=\"images_scale\"\r\n\r\n2.0\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data; name=\"image_export_mode\"\r\n\r\nembedded\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition:
-      form-data; name=\"include_images\"\r\n\r\nfalse\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data;
-      name=\"do_picture_description\"\r\n\r\nfalse\r\n--b76818aa08785867d7feea5e663b3613\r\nContent-Disposition: form-data;
-      name=\"files\"; filename=\"content.md\"\r\nContent-Type: text/markdown\r\n\r\n# Test Document\n\nThis is a test.\r\n--b76818aa08785867d7feea5e663b3613--\r\n"
+    body: "--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition:
+      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition:
+      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data;
+      name=\"do_table_structure\"\r\n\r\ntrue\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition:
+      form-data; name=\"table_cell_matching\"\r\n\r\ntrue\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data;
+      name=\"images_scale\"\r\n\r\n2.0\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data; name=\"image_export_mode\"\r\n\r\nreferenced\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition:
+      form-data; name=\"include_images\"\r\n\r\ntrue\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data;
+      name=\"do_picture_description\"\r\n\r\nfalse\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data;
+      name=\"target_type\"\r\n\r\nzip\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7\r\nContent-Disposition: form-data; name=\"files\";
+      filename=\"content.md\"\r\nContent-Type: text/markdown\r\n\r\n# Test Document\n\nThis is a test.\r\n--e8cb45d53bf32f9efdc69acc0aab5ba7--\r\n"
     headers:
       accept:
       - '*/*'
@@ -17,9 +18,9 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1300'
+      - '1396'
       content-type:
-      - multipart/form-data; boundary=b76818aa08785867d7feea5e663b3613
+      - multipart/form-data; boundary=e8cb45d53bf32f9efdc69acc0aab5ba7
       host:
       - localhost:5001
     method: POST
@@ -32,65 +33,7 @@ interactions:
       - application/json
     parsed_body:
       error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 2
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 2
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
+      task_id: 4f56c428-78b8-4a62-815c-9da38f85e1e7
       task_meta: null
       task_position: 1
       task_status: pending
@@ -110,297 +53,7 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-  response:
-    headers:
-      content-length:
-      - '152'
-      content-type:
-      - application/json
-    parsed_body:
-      error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
-      task_meta: null
-      task_position: 1
-      task_status: pending
-      task_type: convert
-    status:
-      code: 200
-      message: OK
-- request:
-    body: ''
-    headers:
-      accept:
-      - '*/*'
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      host:
-      - localhost:5001
-    method: GET
-    uri: http://localhost:5001/v1/status/poll/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
+    uri: http://localhost:5001/v1/status/poll/4f56c428-78b8-4a62-815c-9da38f85e1e7
   response:
     headers:
       content-length:
@@ -409,7 +62,65 @@ interactions:
       - application/json
     parsed_body:
       error_message: null
-      task_id: 1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
+      task_id: 4f56c428-78b8-4a62-815c-9da38f85e1e7
+      task_meta: null
+      task_position: null
+      task_status: started
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/4f56c428-78b8-4a62-815c-9da38f85e1e7
+  response:
+    headers:
+      content-length:
+      - '155'
+      content-type:
+      - application/json
+    parsed_body:
+      error_message: null
+      task_id: 4f56c428-78b8-4a62-815c-9da38f85e1e7
+      task_meta: null
+      task_position: null
+      task_status: started
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/4f56c428-78b8-4a62-815c-9da38f85e1e7
+  response:
+    headers:
+      content-length:
+      - '155'
+      content-type:
+      - application/json
+    parsed_body:
+      error_message: null
+      task_id: 4f56c428-78b8-4a62-815c-9da38f85e1e7
       task_meta: null
       task_position: null
       task_status: success
@@ -429,82 +140,28 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/result/1ad62ce1-5260-4fdb-aab7-e17f7adc8ee5
+    uri: http://localhost:5001/v1/result/4f56c428-78b8-4a62-815c-9da38f85e1e7
   response:
+    body:
+      string: !!binary |
+        UEsDBBQAAAAAAIU7pVwAAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACACFO6VcZbiO
+        d4ABAADNBAAADAAAAGNvbnRlbnQuanNvbsWT306DMBTG73kKgl4ujKqZuGsfwTtjSIEDNOsf0pYp
+        WXh32w4YY8wZb0xISM/3nfb7lcPB8/1AZRUwnHDMINj6wavIKOGleTUMuA5W1rMHqYjgVkchisLo
+        WB56MsH16BWSlMRaD2Zl1oww0G3tjBq+9JphucvFJ3d2Y0gJx7JNKqwq40Exenp5ROhhs4kRip6f
+        URz3xoJQmB0ZsjwwYudOLhrJiW4knA5XQItEQmFb7tYnQ79jVhGaS7Bp3z+G2nHnhOIWpO276Boy
+        JFIInQxVilOgttxwVUNGCgKTbKnI22uxnLaQyFX8vsep92OPvUm1joJe61a3zWg0u/dV3mmcv6CW
+        UjS1Gq/UfXQ18gwBZ3cw8AwcQY2lHantMpHLOGdf+pw3AKcwmmgKkwBS7M83spNtjW+gtH/2gzjZ
+        IlzK3iTij+zoX9lt9t+gV0T55sG+NpThAvzM4A0Dd5yFmmT2T5pOB07pdL2DNtlj2kBCNLCJUAjJ
+        5rUal6730HndN1BLAQIUAxQAAAAAAIU7pVwAAAAAAAAAAAAAAAAKAAAAAAAAAAAAEADtQQAAAABh
+        cnRpZmFjdHMvUEsBAhQDFAAAAAgAhTulXGW4jneAAQAAzQQAAAwAAAAAAAAAAAAAAKSBKAAAAGNv
+        bnRlbnQuanNvblBLBQYAAAAAAgACAHIAAADSAQAAAAA=
     headers:
+      content-disposition:
+      - attachment; filename="converted_docs.zip"
       content-length:
-      - '1226'
+      - '602'
       content-type:
-      - application/json
-    parsed_body:
-      document:
-        doctags_content: null
-        filename: content.md
-        html_content: null
-        json_content:
-          body:
-            children:
-            - $ref: '#/texts/0'
-            - $ref: '#/texts/1'
-            content_layer: body
-            label: unspecified
-            meta: null
-            name: _root_
-            parent: null
-            self_ref: '#/body'
-          form_items: []
-          furniture:
-            children: []
-            content_layer: furniture
-            label: unspecified
-            meta: null
-            name: _root_
-            parent: null
-            self_ref: '#/furniture'
-          groups: []
-          key_value_items: []
-          name: content
-          origin:
-            binary_hash: 18149311266811077188
-            filename: content.md
-            mimetype: text/markdown
-            uri: null
-          pages: {}
-          pictures: []
-          schema_name: DoclingDocument
-          tables: []
-          texts:
-          - children: []
-            content_layer: body
-            formatting: null
-            hyperlink: null
-            label: title
-            meta: null
-            orig: Test Document
-            parent:
-              $ref: '#/body'
-            prov: []
-            self_ref: '#/texts/0'
-            text: Test Document
-          - children: []
-            content_layer: body
-            formatting: null
-            hyperlink: null
-            label: text
-            meta: null
-            orig: This is a test.
-            parent:
-              $ref: '#/body'
-            prov: []
-            self_ref: '#/texts/1'
-            text: This is a test.
-          version: 1.10.0
-        md_content: null
-        text_content: null
-      errors: []
-      processing_time: 0.003092042010393925
-      status: success
-      timings: {}
+      - application/zip
     status:
       code: 200
       message: OK

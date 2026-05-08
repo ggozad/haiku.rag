@@ -44,7 +44,11 @@ async def rebuild_database(
     settings_repo = SettingsRepository(client.store)
     await settings_repo.save_current_settings()
 
-    documents = await client.list_documents(include_content=True)
+    # Light listing — id/uri/title/metadata only. Each rebuild function
+    # fetches full content (including the multi-MB docling_pages blob) one
+    # document at a time so a 1000-doc database doesn't pull ~15 GB of
+    # blobs into memory before the loop starts.
+    documents = await client.list_documents(include_content=False)
 
     if mode == RebuildMode.TITLE_ONLY:
         async for doc_id in _rebuild_title_only(client, documents):
@@ -56,6 +60,11 @@ async def rebuild_database(
         await client.chunk_repository.delete_all()
         await client.store.recreate_embeddings_table()
         async for doc_id in _rebuild_rechunk(client, documents):
+            yield doc_id
+    elif mode == RebuildMode.DESCRIPTIONS:
+        await client.chunk_repository.delete_all()
+        await client.store.recreate_embeddings_table()
+        async for doc_id in _rebuild_descriptions(client, documents):
             yield doc_id
     else:  # FULL
         await client.chunk_repository.delete_all()
@@ -73,14 +82,31 @@ async def rebuild_database(
             logger.warning("Post-rebuild vacuum failed", exc_info=True)
 
 
+async def _hydrate(
+    client: "HaikuRAG", light_docs: list[Document]
+) -> AsyncGenerator[Document, None]:
+    """Yield fully-loaded documents one at a time from a light listing.
+
+    The light listing in ``rebuild_database`` skips the multi-MB
+    ``docling_document``/``docling_pages`` blobs; this helper fetches each
+    full record on demand so peak memory stays at ~one document. Documents
+    that disappeared between listing and processing are silently skipped.
+    """
+    for light_doc in light_docs:
+        assert light_doc.id is not None
+        doc = await client.get_document_by_id(light_doc.id)
+        if doc is None:
+            continue
+        assert doc.id is not None
+        yield doc
+
+
 async def _rebuild_title_only(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Generate titles for documents that don't have one."""
-    for doc in documents:
-        if doc.title is not None:
-            continue
-        assert doc.id is not None
+    untitled = [d for d in documents if d.title is None]
+    async for doc in _hydrate(client, untitled):
         try:
             title = await client.generate_title(doc)
         except Exception:
@@ -91,6 +117,7 @@ async def _rebuild_title_only(
         if title is not None:
             doc.title = title
             await client.document_repository.update(doc)
+            assert doc.id is not None
             yield doc.id
 
 
@@ -195,40 +222,58 @@ async def _flush_rebuild_batch(
     if chunks:
         await client.chunk_repository.create(chunks)
 
-    # Repopulate document items from stored docling data
+    # Repopulate document items from stored docling data. The stored docling
+    # blob has had its picture URIs stripped (compress_docling_split), so
+    # re-extracting from it would lose picture_data — snapshot the existing
+    # bytes per document and merge them back.
     for doc in documents:
         assert doc.id is not None
         docling_doc = doc.get_docling_document()
         if docling_doc is not None:
+            existing_picture_data = (
+                await client.document_item_repository.get_all_picture_data(doc.id)
+            )
             await client.document_item_repository.delete_by_document_id(doc.id)
-            items = extract_items(doc.id, docling_doc)
+            items = extract_items(
+                doc.id,
+                docling_doc,
+                existing_picture_data=existing_picture_data,
+            )
             await client.document_item_repository.create_items(doc.id, items)
 
 
 async def _rebuild_rechunk(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
-    """Re-chunk and re-embed from existing document content."""
-    from haiku.rag.embeddings import embed_chunks
+    """Re-chunk and re-embed each document from its stored docling blob."""
+    from haiku.rag.embeddings import embed_chunks, get_embedder
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    pending_doc_ids: list[str] = []
+    embedder = get_embedder(client._config)
 
-    converter = get_converter(client._config)
-
-    for doc in documents:
+    async for doc in _hydrate(client, documents):
         assert doc.id is not None
+        docling_document = doc.get_docling_document()
+        if docling_document is None:
+            raise ValueError(
+                f"Document {doc.id} has no stored docling document; rechunk "
+                "requires it. Run a full rebuild (without --rechunk) instead."
+            )
 
-        # Convert stored markdown to DoclingDocument
-        docling_document = await converter.convert_text(doc.content, format="md")
-
-        # Chunk and embed
-        chunks = await client.chunk(docling_document)
+        # Stored blob has stripped picture URIs; pass the snapshot so
+        # build_picture_chunks (inside chunk()) can recover the bytes.
+        existing_picture_data = (
+            await client.document_item_repository.get_all_picture_data(doc.id)
+            if embedder.supports_images
+            else None
+        )
+        chunks = await client.chunk(
+            docling_document,
+            existing_picture_data=existing_picture_data,
+            document_id=doc.id,
+        )
         embedded_chunks = await embed_chunks(chunks, client._config)
-
-        # Update document fields
-        doc.set_docling(docling_document)
 
         # Prepare chunks with document_id and order
         for order, chunk in enumerate(embedded_chunks):
@@ -237,22 +282,167 @@ async def _rebuild_rechunk(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        pending_doc_ids.append(doc.id)
+        # Yield per-doc so progress reporting moves immediately. The actual
+        # write batches up to _REBUILD_BATCH_SIZE for throughput; if the
+        # process is interrupted between yield and flush, up to one
+        # batch's worth of trailing yields aren't persisted, which is
+        # consistent with the rebuild already being non-atomic.
+        yield doc.id
 
         # Flush batch when size reached
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-            for doc_id in pending_doc_ids:
-                yield doc_id
             pending_chunks = []
             pending_docs = []
-            pending_doc_ids = []
 
     # Flush remaining
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-        for doc_id in pending_doc_ids:
-            yield doc_id
+
+
+async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
+    """Run the VLM against pictures lacking a description, patch the docling
+    blob in-place. Returns the number of newly described pictures.
+    Pictures that already carry ``meta.description.text`` are skipped, so the
+    operation is safe to re-run after a partial failure.
+    """
+    from haiku.rag.providers.picture_description import describe_pictures
+
+    assert doc.id is not None
+    docling_doc = doc.get_docling_document()
+    if docling_doc is None or not docling_doc.pictures:
+        return 0
+
+    needs_description: list[str] = []
+    for pic in docling_doc.pictures:
+        existing = (
+            pic.meta.description.text if pic.meta and pic.meta.description else None
+        )
+        if not (existing and existing.strip()):
+            needs_description.append(pic.self_ref)
+
+    if not needs_description:
+        return 0
+
+    bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
+        doc.id, needs_description
+    )
+    if not bytes_by_ref:
+        logger.warning(
+            "Document %s has %d pictures missing descriptions but no stored "
+            "picture bytes — skipping. Run a full rebuild from source to "
+            "recover the bytes.",
+            doc.id,
+            len(needs_description),
+        )
+        return 0
+
+    descriptions = await describe_pictures(bytes_by_ref, config=client._config)
+
+    if not descriptions:
+        return 0
+
+    # Patch the docling document in-place. PictureMeta + DescriptionMetaField
+    # are pydantic models; build them and assign.
+    from docling_core.types.doc.document import (
+        DescriptionMetaField,
+        PictureMeta,
+    )
+
+    for pic in docling_doc.pictures:
+        text = descriptions.get(pic.self_ref)
+        if not text:
+            continue
+        if pic.meta is None:
+            pic.meta = PictureMeta()
+        pic.meta.description = DescriptionMetaField(text=text)
+
+    # Update only docling_document — set_docling would also overwrite
+    # docling_pages by routing through compress_docling_split, which
+    # extracts pages from the in-memory JSON and finds none (the pages
+    # blob is stored separately and is not loaded by get_docling_document).
+    # That would silently destroy page rasters for every doc with at
+    # least one undescribed picture.
+    from haiku.rag.store.compression import compress_docling_split
+
+    structure_bytes, _ = compress_docling_split(docling_doc.model_dump_json())
+    doc.docling_document = structure_bytes
+    doc.docling_version = docling_doc.version
+    return len(descriptions)
+
+
+async def _rebuild_descriptions(
+    client: "HaikuRAG", documents: list[Document]
+) -> AsyncGenerator[str, None]:
+    """Run the VLM over already-stored picture bytes, patch descriptions into
+    the docling blob, then re-chunk + re-embed.
+
+    Skips the docling parse entirely (the blob is already there); only the VLM
+    cost remains. Idempotent: pictures whose ``meta.description.text`` is
+    already populated are not re-described.
+    """
+    from haiku.rag.embeddings import embed_chunks, get_embedder
+
+    if not client._config.processing.conversion_options.picture_description.enabled:
+        raise ValueError(
+            "rebuild --descriptions requires "
+            "processing.conversion_options.picture_description.enabled = true "
+            "in your config."
+        )
+
+    pending_chunks: list[Chunk] = []
+    pending_docs: list[Document] = []
+    embedder = get_embedder(client._config)
+
+    described_total = 0
+    async for doc in _hydrate(client, documents):
+        assert doc.id is not None
+        docling_document = doc.get_docling_document()
+        if docling_document is None:
+            raise ValueError(
+                f"Document {doc.id} has no stored docling document; "
+                "rebuild --descriptions requires it. Run a full rebuild instead."
+            )
+
+        n = await _patch_picture_descriptions(client, doc)
+        described_total += n
+        # Use the (possibly patched) docling document for chunking.
+        docling_document = doc.get_docling_document()
+        assert docling_document is not None
+
+        existing_picture_data = (
+            await client.document_item_repository.get_all_picture_data(doc.id)
+            if embedder.supports_images
+            else None
+        )
+        chunks = await client.chunk(
+            docling_document,
+            existing_picture_data=existing_picture_data,
+            document_id=doc.id,
+        )
+        embedded_chunks = await embed_chunks(chunks, client._config)
+
+        for order, chunk in enumerate(embedded_chunks):
+            chunk.document_id = doc.id
+            chunk.order = order
+
+        pending_chunks.extend(embedded_chunks)
+        pending_docs.append(doc)
+        yield doc.id
+
+        if len(pending_docs) >= _REBUILD_BATCH_SIZE:
+            await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+            pending_chunks = []
+            pending_docs = []
+
+    if pending_docs:
+        await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+
+    logger.info(
+        "rebuild --descriptions: %d new picture descriptions added across %d documents",
+        described_total,
+        len(documents),
+    )
 
 
 async def _rebuild_full(
@@ -263,27 +453,24 @@ async def _rebuild_full(
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    pending_doc_ids: list[str] = []
     converter = get_converter(client._config)
 
-    for doc in documents:
-        assert doc.id is not None
+    for light_doc in documents:
+        assert light_doc.id is not None
 
-        # Try to rebuild from source if available
-        if doc.uri and check_source_accessible(doc.uri):
+        # Try to rebuild from source if available — uses the light listing
+        # directly, no need to load the stored content/blobs first.
+        if light_doc.uri and check_source_accessible(light_doc.uri):
             try:
                 # Flush pending batch before source rebuild (creates new doc)
                 if pending_docs:
                     await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-                    for doc_id in pending_doc_ids:
-                        yield doc_id
                     pending_chunks = []
                     pending_docs = []
-                    pending_doc_ids = []
 
-                await client.delete_document(doc.id)
+                await client.delete_document(light_doc.id)
                 new_doc = await client.create_document_from_source(
-                    source=doc.uri, metadata=doc.metadata or {}
+                    source=light_doc.uri, metadata=light_doc.metadata or {}
                 )
                 assert isinstance(new_doc, Document)
                 assert new_doc.id is not None
@@ -292,12 +479,17 @@ async def _rebuild_full(
             except Exception as e:
                 logger.error(
                     "Error recreating document from source %s: %s",
-                    doc.uri,
+                    light_doc.uri,
                     e,
                 )
                 continue
 
-        # Fallback: rebuild from stored content
+        # Fallback: rebuild from stored content. Now we need the full
+        # record (content + docling_pages for the round-trip write).
+        doc = await client.get_document_by_id(light_doc.id)
+        if doc is None:
+            continue
+        assert doc.id is not None
         if doc.uri:
             logger.warning("Source missing for %s, re-embedding from content", doc.uri)
 
@@ -314,19 +506,14 @@ async def _rebuild_full(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        pending_doc_ids.append(doc.id)
+        yield doc.id
 
         # Flush batch when size reached
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-            for doc_id in pending_doc_ids:
-                yield doc_id
             pending_chunks = []
             pending_docs = []
-            pending_doc_ids = []
 
     # Flush remaining
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-        for doc_id in pending_doc_ids:
-            yield doc_id

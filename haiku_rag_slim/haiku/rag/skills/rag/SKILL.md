@@ -16,8 +16,10 @@ Search the knowledge base using hybrid search (vector + full-text). Returns rank
 Each result includes:
 - `chunk_id` in brackets and rank position (rank 1 = most relevant)
 - Source: document title and section hierarchy
-- Type: content type (paragraph, table, code, list_item)
+- Type: content type (paragraph, table, code, list_item, picture)
 - Content: the actual text
+
+When a result's Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text. Use the image directly to answer questions about figures, diagrams, charts, screenshots.
 
 ### list_documents
 List available documents in the knowledge base. Use when the user wants to browse what's available.

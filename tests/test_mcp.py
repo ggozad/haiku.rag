@@ -193,3 +193,77 @@ class TestMCPWriteTools:
 
         result = await delete_doc(document_id="nonexistent-id")
         assert result is False
+
+
+class TestMCPImageQuery:
+    """search_documents_by_image is registered only when the embedder is multimodal."""
+
+    @pytest.mark.asyncio
+    async def test_image_query_tool_absent_for_text_only_embedder(self, mcp_db):
+        """Default text-only embedder must not expose the image-query tool."""
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        names = {t.name for t in await mcp.list_tools()}
+        assert "search_documents_by_image" not in names
+
+    @pytest.mark.asyncio
+    async def test_image_query_tool_registered_for_multimodal_embedder(
+        self, mcp_db, monkeypatch
+    ):
+        """When the embedder reports supports_images=True, the tool exists
+        and routes a base64 image through ``client.search``."""
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        class StubMultimodal(EmbedderWrapper):
+            supports_images = True
+
+            def __init__(self):
+                super().__init__(embedder=None, vector_dim=2560)
+
+            async def embed_image(self, image):
+                # Produce a deterministic-ish vector of the right dim.
+                return [0.0] * 2560
+
+        monkeypatch.setattr(
+            "haiku.rag.embeddings.get_embedder",
+            lambda *a, **kw: StubMultimodal(),
+        )
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        names = {t.name for t in await mcp.list_tools()}
+        assert "search_documents_by_image" in names
+
+        search_by_image = await _get_tool(mcp, "search_documents_by_image")
+        # Standalone PNG header (won't decode to a real image but our stub doesn't care).
+        import base64
+
+        png_b64 = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")
+        results = await search_by_image(image_base64=png_b64)
+        # Empty list is fine (the stub vector won't match the toy fixture).
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_image_query_returns_empty_on_invalid_base64(
+        self, mcp_db, monkeypatch
+    ):
+        """Garbage base64 from the caller is swallowed, returning an empty
+        list rather than crashing the MCP server."""
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        class StubMultimodal(EmbedderWrapper):
+            supports_images = True
+
+            def __init__(self):
+                super().__init__(embedder=None, vector_dim=2560)
+
+        monkeypatch.setattr(
+            "haiku.rag.embeddings.get_embedder",
+            lambda *a, **kw: StubMultimodal(),
+        )
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        search_by_image = await _get_tool(mcp, "search_documents_by_image")
+
+        # Not valid base64 (contains non-base64 chars) — the strict decoder
+        # in search_documents_by_image rejects it.
+        results = await search_by_image(image_base64="!!! not base64 !!!")
+        assert results == []

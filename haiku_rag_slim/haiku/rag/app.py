@@ -357,15 +357,35 @@ class HaikuRAGApp:  # pragma: no cover
                 )
 
     async def search(
-        self, query: str, limit: int | None = None, filter: str | None = None
+        self,
+        query: str | None = None,
+        limit: int | None = None,
+        filter: str | None = None,
+        image: Path | None = None,
     ):
+        if query is None and image is None:
+            self.console.print(
+                "[red]Provide either a query argument or --image PATH.[/red]"
+            )
+            return
+        if query is not None and image is not None:
+            self.console.print("[red]Pass either a query or --image, not both.[/red]")
+            return
+
+        search_input: str | bytes
+        if image is not None:
+            search_input = image.read_bytes()
+        else:
+            assert query is not None
+            search_input = query
+
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            results = await self.client.search(query, limit=limit, filter=filter)
+            results = await self.client.search(search_input, limit=limit, filter=filter)
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
                 return
@@ -567,6 +587,7 @@ class HaikuRAGApp:  # pragma: no cover
                 RebuildMode.RECHUNK: "rechunk",
                 RebuildMode.EMBED_ONLY: "embed only",
                 RebuildMode.TITLE_ONLY: "title only",
+                RebuildMode.DESCRIPTIONS: "picture descriptions",
             }[mode]
 
             self.console.print(

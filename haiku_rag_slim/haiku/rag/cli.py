@@ -296,8 +296,9 @@ _cli.command("rm", help="Alias for delete: remove a document by its ID")(
 
 @_cli.command("search", help="Search for documents by a query")
 def search(  # pragma: no cover
-    query: str = typer.Argument(
-        help="The search query to use",
+    query: str | None = typer.Argument(
+        None,
+        help="The search query (omit when using --image)",
     ),
     limit: int | None = typer.Option(
         None,
@@ -311,6 +312,11 @@ def search(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    image: Path | None = typer.Option(
+        None,
+        "--image",
+        help="Path to an image file to use as the query (requires a multimodal embedder)",
+    ),
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -318,7 +324,7 @@ def search(  # pragma: no cover
     ),
 ):
     app = create_app(db)
-    asyncio.run(app.search(query=query, limit=limit, filter=filter))
+    asyncio.run(app.search(query=query, limit=limit, filter=filter, image=image))
 
 
 @_cli.command("visualize", help="Show visual grounding for a chunk")
@@ -484,13 +490,23 @@ def rebuild(
         "--title-only",
         help="Only generate titles for documents without one",
     ),
+    descriptions: bool = typer.Option(
+        False,
+        "--descriptions",
+        help=(
+            "Run the VLM over already-stored picture bytes, patch descriptions "
+            "into the docling blob, then re-chunk + re-embed. Skips the docling "
+            "parse entirely. Requires picture_description.enabled=true."
+        ),
+    ),
 ):
     from haiku.rag.client import RebuildMode
 
-    exclusive = sum([embed_only, rechunk, title_only])
+    exclusive = sum([embed_only, rechunk, title_only, descriptions])
     if exclusive > 1:
         typer.echo(
-            "Error: --embed-only, --rechunk, and --title-only are mutually exclusive"
+            "Error: --embed-only, --rechunk, --title-only, and --descriptions "
+            "are mutually exclusive"
         )
         raise typer.Exit(1)
 
@@ -500,6 +516,8 @@ def rebuild(
         mode = RebuildMode.RECHUNK
     elif title_only:  # pragma: no cover
         mode = RebuildMode.TITLE_ONLY
+    elif descriptions:  # pragma: no cover
+        mode = RebuildMode.DESCRIPTIONS
     else:  # pragma: no cover
         mode = RebuildMode.FULL
 

@@ -28,6 +28,7 @@ from haiku.rag.utils import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
+    from PIL import Image as PILImage
 
     from haiku.rag.agents.analysis.models import AnalysisResult
     from haiku.rag.agents.research.models import (
@@ -45,6 +46,8 @@ class RebuildMode(Enum):
     RECHUNK = "rechunk"  # Re-chunk from existing content, re-embed
     EMBED_ONLY = "embed_only"  # Keep chunks, only regenerate embeddings
     TITLE_ONLY = "title_only"  # Only generate titles for untitled documents
+    DESCRIPTIONS = "descriptions"  # Run the VLM over already-stored picture
+    # bytes, patch descriptions into the docling blob, then re-chunk + re-embed.
 
 
 class HaikuRAG:
@@ -150,10 +153,21 @@ class HaikuRAG:
 
         return await convert(self._config, source, format=format)
 
-    async def chunk(self, docling_document: "DoclingDocument") -> list[Chunk]:
+    async def chunk(
+        self,
+        docling_document: "DoclingDocument",
+        *,
+        existing_picture_data: dict[str, bytes] | None = None,
+        document_id: str | None = None,
+    ) -> list[Chunk]:
         from haiku.rag.client.processing import chunk
 
-        return await chunk(self._config, docling_document)
+        return await chunk(
+            self._config,
+            docling_document,
+            existing_picture_data=existing_picture_data,
+            document_id=document_id,
+        )
 
     # =========================================================================
     # Title Generation
@@ -319,14 +333,15 @@ class HaikuRAG:
 
     async def search(
         self,
-        query: str,
+        query: "str | bytes | PILImage.Image",
         limit: int | None = None,
         search_type: str = "hybrid",
         filter: str | None = None,
+        include_images: bool = True,
     ) -> list[SearchResult]:
         from haiku.rag.client.search import search
 
-        return await search(self, query, limit, search_type, filter)
+        return await search(self, query, limit, search_type, filter, include_images)
 
     async def expand_context(
         self,

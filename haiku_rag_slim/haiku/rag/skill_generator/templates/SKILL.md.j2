@@ -11,7 +11,7 @@ description: {{ description }}
 {% if "search" in tool_names %}
 
 ### search
-Search the knowledge base using hybrid search (vector + full-text). Returns ranked results with context-expanded content. Use for answering questions, finding passages, exploring topics.
+Search the knowledge base using hybrid search (vector + full-text). Returns ranked results with context-expanded content. Use for answering questions, finding passages, exploring topics. Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
 {% endif %}
 {% if "list_documents" in tool_names %}
 

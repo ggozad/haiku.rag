@@ -626,7 +626,6 @@ async def test_local_and_serve_chunkers_produce_same_output():
         f"Chunk count mismatch: local={len(local_chunks)}, serve={len(serve_chunks)}"
     )
 
-    # Compare each chunk
     for i, (local, serve) in enumerate(zip(local_chunks, serve_chunks)):
         # Text should match
         assert local.content == serve.content, f"Chunk {i} content mismatch"
@@ -657,3 +656,50 @@ async def test_local_and_serve_chunkers_produce_same_output():
             f"Chunk {i} page_numbers mismatch: "
             f"local={local_meta.page_numbers}, serve={serve_meta.page_numbers}"
         )
+
+
+@pytest.mark.vcr()
+@pytest.mark.asyncio
+async def test_serve_chunker_accepts_picture_laden_docling():
+    """Round-trip a picture-bearing PDF through docling-serve's chunker.
+
+    Catches the schema-shape failure we hit in production: when the
+    converter routes through ``image_export_mode=referenced`` + ``target_type=zip``
+    and rehydrates picture URIs as inline base64 ``data:`` URIs, the chunker
+    must still accept the resulting docling JSON. A version-drift between
+    the docling-serve container's docling-core and the local one would
+    surface as ``Input document document.json is not valid``.
+    """
+    from pathlib import Path
+
+    from haiku.rag.chunkers.docling_serve import DoclingServeChunker
+    from haiku.rag.converters.docling_serve import DoclingServeConverter
+
+    config = AppConfig()
+    config.processing.conversion_options.do_ocr = False
+    config.processing.chunk_size = 256
+    config.processing.chunker_type = "hybrid"
+
+    converter = DoclingServeConverter(config)
+    pdf_path = Path("tests/data/doclaynet.pdf")
+    doc = await converter.convert_file(pdf_path)
+
+    # Sanity: at least one picture has bytes inlined as a data URI — that's
+    # the payload shape that broke us in production.
+    pictures_with_uris = [
+        p for p in doc.pictures if p.image is not None and p.image.uri
+    ]
+    assert pictures_with_uris, (
+        "doclaynet.pdf is expected to yield at least one picture with bytes "
+        "under pictures='image'"
+    )
+    sample_image = pictures_with_uris[0].image
+    assert sample_image is not None  # narrow for ty
+    assert str(sample_image.uri).startswith("data:image/"), (
+        "Expected inline data: URI from referenced+zip rehydration"
+    )
+
+    serve_chunker = DoclingServeChunker(config)
+    chunks = await serve_chunker.chunk(doc)
+
+    assert len(chunks) > 0, "docling-serve chunker returned 0 chunks"

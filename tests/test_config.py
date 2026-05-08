@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 import yaml
 
@@ -7,6 +9,16 @@ from haiku.rag.config.loader import (
     generate_default_config,
     load_yaml_config,
 )
+from haiku.rag.config.loader import logger as loader_logger
+
+
+class _ListHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
 
 
 def test_load_yaml_config(tmp_path):
@@ -225,3 +237,38 @@ def test_init_config_creates_valid_yaml(tmp_path):
     # Validate it
     config = AppConfig.model_validate(loaded_data)
     assert config.environment == "production"
+
+
+# Removed-field handling: processing.conversion_options.generate_picture_images
+# was honored by earlier releases. It's dropped from loaded YAML now and a
+# warning is logged so the user knows they can remove it from their config.
+
+
+def _write(tmp_path, body: str):
+    p = tmp_path / "haiku.rag.yaml"
+    p.write_text(body)
+    return p
+
+
+def test_load_yaml_drops_generate_picture_images(tmp_path):
+    """``generate_picture_images`` from earlier releases is dropped from
+    the parsed dict and a warning tells the user to remove it from the
+    YAML."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  conversion_options:
+    generate_picture_images: true
+""",
+    )
+    handler = _ListHandler()
+    loader_logger.addHandler(handler)
+    try:
+        data = load_yaml_config(config_file)
+    finally:
+        loader_logger.removeHandler(handler)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.conversion_options.picture_description.enabled is False
+    assert "generate_picture_images" not in data["processing"]["conversion_options"]
+    assert any("generate_picture_images" in r.getMessage() for r in handler.records)

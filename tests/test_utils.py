@@ -162,6 +162,27 @@ def test_get_model_ollama_with_settings():
     assert isinstance(result, OpenAIChatModel)
 
 
+def test_get_model_ollama_appends_v1_to_per_model_base_url():
+    """Per-model base_url without /v1 should get it appended."""
+    model_config = ModelConfig(
+        provider="ollama", name="qwen3.6", base_url="http://my-ollama:11434"
+    )
+    result = get_model(model_config)
+    assert isinstance(result, OpenAIChatModel)
+    assert str(result.client.base_url).rstrip("/").endswith("/v1")
+
+
+def test_get_model_ollama_does_not_double_append_v1():
+    """If the per-model base_url already ends with /v1, leave it alone."""
+    model_config = ModelConfig(
+        provider="ollama", name="qwen3.6", base_url="http://my-ollama:11434/v1"
+    )
+    result = get_model(model_config)
+    url = str(result.client.base_url).rstrip("/")
+    assert url.endswith("/v1")
+    assert not url.endswith("/v1/v1")
+
+
 def test_get_model_openai():
     """Test get_model returns OpenAIChatModel for OpenAI."""
     model_config = ModelConfig(provider="openai", name="gpt-4o")

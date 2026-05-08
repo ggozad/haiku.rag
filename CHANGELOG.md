@@ -1,6 +1,27 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **Vision capabilities.** Picture-aware ingestion, vision QA, multimodal embeddings, and image-as-query search.
+- **Picture bytes always stored** at ingest in a new `document_items.picture_data` column (`large_binary`), addressable by `(document_id, self_ref)`. Bulk read paths project metadata-only so bytes never leak into context expansion or analysis-sandbox builds. The 0.45.0 migration adds the column on existing DBs and backfills it from each doc's docling blob; URIs are then stripped from the blob so bytes live in one place.
+- **VLM picture descriptions** at ingest via `processing.conversion_options.picture_description.enabled` (default `false`). When enabled, descriptions are woven into chunk text. The earlier `generate_picture_images` flag is dropped with a one-time warning. `haiku-rag rebuild --descriptions` runs the VLM over stored bytes after the fact, idempotently — skipping the docling parse entirely.
+- **Multimodal embedder (`provider="vllm"`)** for cross-modal retrieval. Talks HTTP to a vLLM `/v1/embeddings` endpoint (`input` array for text, `messages` superset with `image_url` for images). Tested with `Qwen/Qwen3-VL-Embedding-8B` and `jinaai/jina-embeddings-v4`. No new Python ML dependencies. Under multimodal embedders, ingest emits one synthetic picture chunk per `PictureItem`, sharing the chunks table with text.
+- **Image-as-query search.** `client.search()` accepts `str | bytes | PIL.Image.Image`. Image queries embed once and run vector-only against the chunks table. New CLI flag `haiku-rag search --image PATH` and new MCP tool `search_documents_by_image(image_base64, ...)` (registered only when the embedder supports images).
+- **Vision QA via `qa.model.vision: bool` flag** on `ModelConfig` (default `false`). When `true`, the agent's `search` tool attaches picture bytes as `BinaryContent` parts on its `ToolReturn`. Default is `false` because providers behave inconsistently when an image is sent to a text-only model (Ollama silently accepts and confabulates; OpenAI returns 400). `SearchResult.image_data: dict[str, str] | None` carries base64 picture bytes keyed by `self_ref`; `client.search()` and MCP `search_documents` gain `include_images: bool = True`.
+- **Silent-failure guard for picture descriptions.** When `picture_description.enabled=true` and a conversion returns at least one picture but zero descriptions, log a warning naming the source, picture count, VLM model, and base URL. Surfaces docling-serve's swallowed VLM errors (unreachable host, missing model) before they pollute a long ingest.
+- **Inspector renders attached pictures** under `qa.model.vision=true` in the context modal (`c` key) so the inspector reflects what the LLM actually receives.
+
+### Fixed
+
+- **`rebuild --descriptions` no longer destroys `docling_pages`.** The previous implementation called `set_docling()` after a structure-only docling load, which writes `docling_pages=None` and clobbered page rasters for every doc with at least one undescribed picture (silently breaking `visualize_chunk` for the affected docs).
+- **docling-serve picture-image extraction.** docling-serve only emits picture bytes under `image_export_mode="referenced"` (upstream [docling-project/docling-serve#576](https://github.com/docling-project/docling-serve/issues/576)). The converter switches to `referenced` + `target_type="zip"` when picture images are requested and rehydrates `artifacts/<filename>` URIs back into `data:` URIs.
+- **`rebuild --rechunk` reuses the stored docling blob** instead of re-converting from the markdown export, which dropped every `PictureItem` on the floor. Documents without a stored docling blob now raise instead of silently falling back.
+
+### Changed
+
+- **Lazy document hydration during rebuild.** Each mode loop now fetches one full record at a time instead of eagerly loading all docs with their multi-MB blobs. Drops startup memory from ~15 GB to ~one document on a 1000-doc database.
+
 ## [0.44.0] - 2026-04-29
 
 ### Added

@@ -158,8 +158,11 @@ def get_model(
             model_settings, OpenAIChatModelSettings, model_config
         )
 
-        # Use model-level base_url if set, otherwise fall back to providers config
-        base_url = model_config.base_url or f"{app_config.providers.ollama.base_url}/v1"
+        # Ollama's OpenAI-compatible API lives under /v1. Append it if the
+        # configured base_url doesn't already include it.
+        base_url = model_config.base_url or app_config.providers.ollama.base_url
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
 
         return OpenAIChatModel(
             model_name=model,

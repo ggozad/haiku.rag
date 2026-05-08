@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -8,9 +9,46 @@ import httpx
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.document_item import _picture_description_text
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
+
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_if_descriptions_missing(
+    config: AppConfig, doc: "DoclingDocument", source: str
+) -> None:
+    """Warn when picture-description was requested but produced nothing.
+
+    docling-serve swallows VLM errors (network failures, missing models,
+    etc.) and returns a successful conversion with empty descriptions.
+    docling-local can do the same when the VLM endpoint is unreachable.
+    Surface the silent failure: when ``picture_description.enabled=True``
+    AND the document has at least one picture AND zero descriptions came
+    back, log a clear warning so the user can fix their VLM config before
+    a thousand-document ingest produces an empty corpus.
+    """
+    if not config.processing.conversion_options.picture_description.enabled:
+        return
+    if not doc.pictures:
+        return
+    described = sum(1 for p in doc.pictures if _picture_description_text(p))
+    if described == 0:
+        model = config.processing.conversion_options.picture_description.model
+        logger.warning(
+            "picture_description.enabled is True but no descriptions came back "
+            "for %s (%d pictures, 0 described). The VLM call likely failed "
+            "silently inside the converter. Check that the VLM at %s is "
+            "reachable from the converter and that the model name '%s' "
+            "resolves on the server.",
+            source,
+            len(doc.pictures),
+            model.base_url or "<provider default>",
+            model.name,
+        )
 
 
 async def convert(
@@ -44,7 +82,9 @@ async def convert(
             raise ValueError(f"File does not exist: {source}")
         if source.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {source.suffix}")
-        return await converter.convert_file(source)
+        doc = await converter.convert_file(source)
+        _warn_if_descriptions_missing(config, doc, str(source))
+        return doc
 
     # String - check if URL or text
     parsed = urlparse(source)
@@ -73,7 +113,9 @@ async def convert(
                 temp_path = Path(temp_file.name)
 
             try:
-                return await converter.convert_file(temp_path)
+                doc = await converter.convert_file(temp_path)
+                _warn_if_descriptions_missing(config, doc, source)
+                return doc
             finally:
                 temp_path.unlink(missing_ok=True)
 
@@ -84,23 +126,128 @@ async def convert(
             raise ValueError(f"File does not exist: {file_path}")
         if file_path.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {file_path.suffix}")
-        return await converter.convert_file(file_path)
+        doc = await converter.convert_file(file_path)
+        _warn_if_descriptions_missing(config, doc, str(file_path))
+        return doc
 
     else:
-        # Treat as text content
-        return await converter.convert_text(source, format=format)
+        # Raw text content — HTML and markdown can still embed pictures
+        # via <img>/![](...) so the same description check applies.
+        doc = await converter.convert_text(source, format=format)
+        _warn_if_descriptions_missing(config, doc, "<text input>")
+        return doc
 
 
-async def chunk(config: AppConfig, docling_document: "DoclingDocument") -> list[Chunk]:
+async def chunk(
+    config: AppConfig,
+    docling_document: "DoclingDocument",
+    *,
+    existing_picture_data: dict[str, bytes] | None = None,
+    document_id: str | None = None,
+) -> list[Chunk]:
     """Chunk a DoclingDocument into Chunks.
 
-    Returns chunks without embeddings or document_id. Each chunk's `order`
-    field is set to its position in the list.
+    When the configured embedder supports images, also emit one synthetic
+    Chunk per ``PictureItem`` with available bytes (see ``build_picture_chunks``)
+    and merge them with text chunks in structural (``iterate_items()``) order.
+    ``chunk.order`` is the index in the merged list.
+
+    ``existing_picture_data`` (snapshot keyed by ``self_ref``) supplies bytes
+    for pictures whose ``image.uri`` has been stripped — used by the rebuild
+    path where the docling is loaded from the stored blob.
     """
     from haiku.rag.chunkers import get_chunker
+    from haiku.rag.embeddings import get_embedder
 
     chunker = get_chunker(config)
-    return await chunker.chunk(docling_document)
+    text_chunks = await chunker.chunk(docling_document)
+
+    if not get_embedder(config).supports_images:
+        for i, c in enumerate(text_chunks):
+            c.order = i
+        return text_chunks
+
+    picture_chunks = build_picture_chunks(
+        docling_document,
+        document_id=document_id,
+        existing_picture_data=existing_picture_data,
+    )
+
+    if not picture_chunks:
+        for i, c in enumerate(text_chunks):
+            c.order = i
+        return text_chunks
+
+    positions = {
+        item.self_ref: pos
+        for pos, (item, _level) in enumerate(docling_document.iterate_items())
+    }
+
+    def first_pos(c: Chunk) -> int:
+        refs = (c.metadata or {}).get("doc_item_refs") or []
+        return positions.get(refs[0], len(positions)) if refs else len(positions)
+
+    merged = sorted(text_chunks + picture_chunks, key=first_pos)
+    for i, c in enumerate(merged):
+        c.order = i
+    return merged
+
+
+def build_picture_chunks(
+    docling_document: "DoclingDocument",
+    *,
+    document_id: str | None = None,
+    existing_picture_data: dict[str, bytes] | None = None,
+) -> list[Chunk]:
+    """Emit one synthetic ``Chunk`` per ``PictureItem`` with available bytes.
+
+    Bytes come from ``picture.image.uri`` (live data URI on a freshly-converted
+    docling) or from ``existing_picture_data`` keyed by ``self_ref`` (snapshot
+    taken before a delete-and-re-extract cycle, when the live docling has had
+    its picture URIs stripped). Pictures with no available bytes are skipped.
+
+    The bytes ride on ``Chunk._picture_data`` (a PrivateAttr — not serialized)
+    so ``embed_chunks`` can route them through ``embed_image``. The
+    ``order`` field is left at its default (0); the caller (``chunk()``)
+    reassigns it after merging with text chunks in structural order.
+    """
+    from haiku.rag.store.models.document_item import (
+        _decode_picture_bytes,
+        extract_item_text,
+    )
+
+    existing = existing_picture_data or {}
+    chunks: list[Chunk] = []
+
+    for picture in docling_document.pictures:
+        picture_data = _decode_picture_bytes(picture)
+        if picture_data is None:
+            picture_data = existing.get(picture.self_ref)
+        if picture_data is None:
+            continue
+
+        text = extract_item_text(picture, docling_document) or ""
+
+        page_numbers: list[int] = []
+        for p in picture.prov:
+            if p.page_no not in page_numbers:
+                page_numbers.append(p.page_no)
+
+        metadata = {
+            "doc_item_refs": [picture.self_ref],
+            "labels": ["picture"],
+            "page_numbers": sorted(page_numbers),
+            "headings": None,
+        }
+        chunk = Chunk(
+            document_id=document_id,
+            content=text,
+            metadata=metadata,
+        )
+        chunk._picture_data = picture_data
+        chunks.append(chunk)
+
+    return chunks
 
 
 async def ensure_chunks_embedded(config: AppConfig, chunks: list[Chunk]) -> list[Chunk]:

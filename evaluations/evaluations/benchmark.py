@@ -765,7 +765,20 @@ def download(
 def upload(
     dataset: str = typer.Argument(..., help="Dataset key or 'all' to upload all."),
 ) -> None:
-    """Upload evaluation database to HuggingFace (maintainer only)."""
+    """Upload evaluation database to HuggingFace (maintainer only).
+
+    Uses ``upload_large_folder`` for resumable, parallel transfer — important
+    for the multi-GB ORB databases which would otherwise abort on any transient
+    network failure under plain ``upload_folder``.
+
+    ``upload_large_folder`` has no ``path_in_repo`` — it ships the contents of
+    ``folder_path`` to the repo root. Stage the db under a temp parent with
+    hardlinks so the basename becomes the remote path, leaving everything
+    else at the root undisturbed.
+    """
+    import os
+    import tempfile
+
     specs = _resolve_datasets(dataset)
 
     api = HfApi()
@@ -776,14 +789,35 @@ def upload(
             console.print(f"[red]Database not found at {db}[/red]")
             continue
 
-        console.print(f"[blue]Uploading {spec.key}...[/blue]")
-        api.upload_folder(
-            folder_path=str(db),
-            path_in_repo=spec.db_filename,
-            repo_id=HF_REPO_ID,
-            repo_type="dataset",
-            delete_patterns="*",
-        )
+        # Wipe the existing remote path so we don't accumulate orphaned files
+        # from prior uploads. upload_large_folder doesn't accept delete_patterns,
+        # so we do this as a separate commit. Safe to run if the path is missing.
+        try:
+            api.delete_folder(
+                path_in_repo=spec.db_filename,
+                repo_id=HF_REPO_ID,
+                repo_type="dataset",
+            )
+        except Exception:
+            pass
+
+        with tempfile.TemporaryDirectory() as staging:
+            target = Path(staging) / spec.db_filename
+            target.mkdir()
+            for src in db.rglob("*"):
+                if not src.is_file():
+                    continue
+                rel = src.relative_to(db)
+                dest = target / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                os.link(src, dest)
+
+            console.print(f"[blue]Uploading {spec.key} ({db})...[/blue]")
+            api.upload_large_folder(
+                folder_path=staging,
+                repo_id=HF_REPO_ID,
+                repo_type="dataset",
+            )
 
         console.print(f"[green]Uploaded {spec.key} to {HF_REPO_ID}[/green]")
 

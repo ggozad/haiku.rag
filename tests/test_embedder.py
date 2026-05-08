@@ -160,6 +160,25 @@ async def test_embed_chunks_empty_list():
     assert result == []
 
 
+async def test_embed_chunks_picture_with_text_only_embedder_raises():
+    """A picture chunk fed through a text-only embedder must surface a
+    clear error, not silently drop the chunk or call ``embed_image``
+    on something that doesn't support it."""
+    chunk = Chunk(id="pic", content="x")
+    chunk._picture_data = b"\x89PNG\r\n\x1a\nfake"
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama", name="qwen3-embedding:4b", vector_dim=2560
+            )
+        )
+    )
+
+    with pytest.raises(ValueError, match="multimodal embedder"):
+        await embed_chunks([chunk], config)
+
+
 async def test_embed_chunks_batches_large_inputs(monkeypatch):
     """Test that embed_chunks batches calls when chunk count exceeds batch size."""
     from haiku.rag.embeddings import EMBEDDING_BATCH_SIZE, EmbedderWrapper
@@ -216,3 +235,385 @@ async def test_embed_chunks_preserves_all_fields(allow_model_requests):
     assert embedded[0].document_title == "Test Document"
     assert embedded[0].document_meta == {"author": "Test"}
     assert embedded[0].embedding is not None
+
+
+# Multimodal embedder support
+
+
+def _ollama_text_only_config():
+    return AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama", name="mxbai-embed-large", vector_dim=1024
+            )
+        )
+    )
+
+
+async def test_text_only_embedder_does_not_support_images():
+    embedder = get_embedder(_ollama_text_only_config())
+    assert embedder.supports_images is False
+    with pytest.raises(NotImplementedError, match="multimodal provider"):
+        await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
+
+
+async def test_vllm_embed_text_request_shape(monkeypatch):
+    """vLLM text embedding posts a standard OpenAI ``input`` array (real
+    server-side batching), not the ``messages`` superset (which is reserved
+    for image inputs)."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "data": [
+                    {"embedding": [0.1, 0.2, 0.3]},
+                    {"embedding": [0.4, 0.5, 0.6]},
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            captured["body"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="Qwen/Qwen3-VL-Embedding-2B",
+        vector_dim=2048,
+        base_url="http://localhost:8000/v1",
+    )
+    vecs = await embedder.embed_documents(["a photo of a cat", "a sleeping dog"])
+    assert vecs == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    assert captured["url"] == "http://localhost:8000/v1/embeddings"
+    body = captured["body"]
+    assert body["model"] == "Qwen/Qwen3-VL-Embedding-2B"
+    assert body["input"] == ["a photo of a cat", "a sleeping dog"]
+    assert "messages" not in body
+    assert body["encoding_format"] == "float"
+
+
+async def test_vllm_embed_image_request_shape(monkeypatch):
+    """vLLM image embedding posts an `image_url` content part with a data: URI."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.4] * 4}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["body"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="some-model",
+        vector_dim=4,
+        base_url="http://localhost:8000/v1",
+    )
+    raw = b"\x89PNG\r\n\x1a\nfake"
+    vec = await embedder.embed_image(raw)
+    assert vec == [0.4, 0.4, 0.4, 0.4]
+    content = captured["body"]["messages"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "image_url"
+    url = content[0]["image_url"]["url"]
+    assert url.startswith("data:image/png;base64,")
+
+
+async def test_vllm_supports_images_flag():
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    assert embedder.supports_images is True
+
+
+async def test_vllm_connect_error_surfaces_helpful_message(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            raise httpx.ConnectError("All connection attempts failed")
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://nope:8000/v1"
+    )
+    with pytest.raises(ValueError, match="Could not connect to vLLM"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_timeout_surfaces_helpful_message(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    with pytest.raises(ValueError, match="timed out"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_401_surfaces_auth_error(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        status_code = 401
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "401",
+                request=httpx.Request("POST", "http://x"),
+                response=self,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            )
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1", api_key="bad"
+    )
+    with pytest.raises(ValueError, match="Authentication failed"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_other_http_error_surfaces(monkeypatch):
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        status_code = 500
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "500",
+                request=httpx.Request("POST", "http://x"),
+                response=self,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            )
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    with pytest.raises(ValueError, match="HTTP error from vLLM"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_empty_data_response_raises(monkeypatch):
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": []}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    with pytest.raises(ValueError, match="returned no embeddings"):
+        await embedder.embed_query("hi")
+
+
+async def test_vllm_embed_documents_empty_list_skips_request(monkeypatch):
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    called = False
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            nonlocal called
+            called = True
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    assert await embedder.embed_documents([]) == []
+    assert called is False
+
+
+async def test_vllm_pil_image_roundtrips_to_data_uri():
+    from PIL import Image
+
+    from haiku.rag.embeddings.vllm import _to_data_uri
+
+    img = Image.new("RGB", (4, 4), color="red")
+    uri = _to_data_uri(img)
+    assert uri.startswith("data:image/png;base64,")
+
+
+async def test_vllm_to_data_uri_rejects_unsupported():
+    from haiku.rag.embeddings.vllm import _to_data_uri
+
+    with pytest.raises(TypeError):
+        _to_data_uri("not bytes")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+
+
+async def test_vllm_get_embedder_routes_to_multimodal():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="vllm",
+                name="Qwen/Qwen3-VL-Embedding-2B",
+                vector_dim=2048,
+                base_url="http://my-vllm:8000/v1",
+            )
+        )
+    )
+    embedder = get_embedder(config)
+    assert embedder.supports_images is True
+    assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+
+@pytest.mark.vcr()
+async def test_vllm_embed_text_and_image_end_to_end():
+    """End-to-end against a real vLLM ``/v1/embeddings`` server: confirm
+    both the text (``input`` array) and image (``messages`` with
+    ``image_url``) shapes return embeddings of the configured dimension
+    in the same vector space.
+
+    Recorded against ``Qwen/Qwen3-VL-Embedding-8B`` (4096-dim) served by
+    a real vLLM build (the multimodal ``messages``-with-``image_url``
+    superset on ``/v1/embeddings`` is a real-vLLM feature, not currently
+    available in vllm-mlx). To re-record, point port 8000 at such a vLLM
+    and run with ``--record-mode=rewrite``."""
+    from PIL import Image
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="qwen3-embedding-v-8b",
+        vector_dim=4096,
+        base_url="http://localhost:8000/v1",
+    )
+
+    text_vec = await embedder.embed_query("a photo of a red square")
+    assert len(text_vec) == 4096
+    assert any(abs(x) > 1e-6 for x in text_vec), "text embedding is all zeros"
+
+    text_batch = await embedder.embed_documents(["hello world", "another doc"])
+    assert len(text_batch) == 2
+    assert all(len(v) == 4096 for v in text_batch)
+
+    image = Image.new("RGB", (64, 64), color=(255, 0, 0))
+    image_vec = await embedder.embed_image(image)
+    assert len(image_vec) == 4096
+    assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
