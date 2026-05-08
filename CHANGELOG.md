@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.45.0] - 2026-05-08
+
 ### Added
 
 - **Vision capabilities.** Picture-aware ingestion, vision QA, multimodal embeddings, and image-as-query search.
@@ -1476,7 +1478,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.44.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.45.0...HEAD
+[0.45.0]: https://github.com/ggozad/haiku.rag/compare/0.44.0...0.45.0
 [0.44.0]: https://github.com/ggozad/haiku.rag/compare/0.43.1...0.44.0
 [0.43.1]: https://github.com/ggozad/haiku.rag/compare/0.43.0...0.43.1
 [0.43.0]: https://github.com/ggozad/haiku.rag/compare/0.42.1...0.43.0
