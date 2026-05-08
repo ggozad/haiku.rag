@@ -33,10 +33,9 @@ def _warn_if_descriptions_missing(
     """
     if not config.processing.conversion_options.picture_description.enabled:
         return
-    pictures = list(doc.pictures or [])
-    if not pictures:
+    if not doc.pictures:
         return
-    described = sum(1 for p in pictures if _picture_description_text(p))
+    described = sum(1 for p in doc.pictures if _picture_description_text(p))
     if described == 0:
         model = config.processing.conversion_options.picture_description.model
         logger.warning(
@@ -46,7 +45,7 @@ def _warn_if_descriptions_missing(
             "reachable from the converter and that the model name '%s' "
             "resolves on the server.",
             source,
-            len(pictures),
+            len(doc.pictures),
             model.base_url or "<provider default>",
             model.name,
         )

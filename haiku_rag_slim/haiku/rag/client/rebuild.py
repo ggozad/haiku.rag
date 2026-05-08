@@ -315,11 +315,10 @@ async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
 
     needs_description: list[str] = []
     for pic in docling_doc.pictures:
-        meta = getattr(pic, "meta", None)
         existing = (
-            getattr(getattr(meta, "description", None), "text", None) if meta else None
+            pic.meta.description.text if pic.meta and pic.meta.description else None
         )
-        if not (isinstance(existing, str) and existing.strip()):
+        if not (existing and existing.strip()):
             needs_description.append(pic.self_ref)
 
     if not needs_description:

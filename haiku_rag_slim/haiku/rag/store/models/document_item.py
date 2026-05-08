@@ -24,15 +24,12 @@ def _picture_description_text(item: "PictureItem") -> str | None:
     falls back to ``annotations`` entries that carry a ``text`` field
     (PictureDescriptionData and similar).
     """
-    meta = getattr(item, "meta", None)
-    if meta is not None:
-        description = getattr(meta, "description", None)
-        if description is not None:
-            text = getattr(description, "text", None)
-            if isinstance(text, str) and text.strip():
-                return text
-    annotations = getattr(item, "annotations", None) or []
-    for ann in annotations:
+    if item.meta and item.meta.description:
+        text = item.meta.description.text
+        if text and text.strip():
+            return text
+    # Annotations is a tagged union; only some variants carry `text`.
+    for ann in item.annotations:
         text = getattr(ann, "text", None)
         if isinstance(text, str) and text.strip():
             return text
