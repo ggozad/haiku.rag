@@ -190,6 +190,23 @@ embeddings:
 
 **Note:** The `base_url` must include the `/v1` path for OpenAI-compatible endpoints.
 
+### vLLM (multimodal)
+
+For cross-modal retrieval (text and pictures share a single vector space), use the dedicated `vllm` provider against a vLLM server hosting a multimodal embedding model:
+
+```yaml
+embeddings:
+  model:
+    provider: vllm
+    name: Qwen/Qwen3-VL-Embedding-8B
+    vector_dim: 4096
+    base_url: http://localhost:8000/v1
+```
+
+Tested with `Qwen/Qwen3-VL-Embedding-8B` (4096-dim) and `jinaai/jina-embeddings-v4` (2048-dim). Run vLLM separately; haiku.rag adds no Python ML dependencies for this path. Text inputs use the standard OpenAI `input` field; image inputs use vLLM's `messages`-with-`image_url` superset, transparently to the caller.
+
+Picture chunks for retrieval are emitted at ingest under any embedder reporting `supports_images=True`. See [Picture Handling](processing.md#picture-handling).
+
 ## Question Answering Providers
 
 Configure which LLM provider to use for question answering. Any provider and model supported by [Pydantic AI](https://ai.pydantic.dev/models/) can be used.
