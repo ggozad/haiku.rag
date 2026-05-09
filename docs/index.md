@@ -1,78 +1,47 @@
 # haiku.rag
 
-Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/).
+haiku.rag is an agentic RAG that runs locally and scales to production. Index PDFs, web pages, or whole directories. Ask questions and get cited answers. Build agents, skills, and MCP integrations on top.
 
-> **New: vision and multimodal search.** Picture-aware ingestion captures embedded figure bytes; vision-capable QA models receive them alongside text. Multimodal embedders (vLLM with `Qwen3-VL-Embedding-8B` or `jinaai/jina-embeddings-v4`) put picture vectors in the same space as text, enabling text-as-query → figure hits and image-as-query retrieval.
+haiku.rag is open-source first. The defaults run open models through [Ollama](https://ollama.com/) so the full pipeline works without external API keys. Any provider Pydantic AI supports works in its place.
 
-## Features
+Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/). Embedded database, no servers required.
 
-- **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
-- **Multimodal & cross-modal search** — Multimodal embedders (vLLM) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
-- **Question answering** — RAG skill with citations (page numbers, section headings)
-- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text via pydantic-ai `BinaryContent` when `qa.model.vision = true`
-- **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
-- **Analysis skill** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
-- **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
-- **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
-- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM (multimodal). QA: any model supported by Pydantic AI
-- **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
-- **CLI & Python API** — Full functionality from command line or code
-- **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
-- **Visual grounding** — View chunks highlighted on original page images
-- **File monitoring** — Watch directories and auto-index on changes
-- **Time travel** — Query the database at any historical point with `--before`
-- **Inspector** — TUI for browsing documents, chunks, and search results
-
-## Quick Start
-
-Install haiku.rag:
+## See it work
 
 ```bash
 uv pip install haiku.rag
+
+ollama pull qwen3-embedding:4b
+ollama pull gpt-oss
+
+haiku-rag init
+haiku-rag add-src ~/Documents/some-paper.pdf
+haiku-rag chat
 ```
 
-Use from Python:
+The chat TUI is the fastest way to test retrieval and answer quality. `haiku-rag ask` and `haiku-rag search` cover one-shot CLI usage. Beyond that, the same database backs Python integrations, agents, skills, and the MCP server.
 
-```python
-from haiku.rag.client import HaikuRAG
+## What it does
 
-async with HaikuRAG("database.lancedb", create=True) as client:
-    # Add a document
-    doc = await client.create_document("Your content here")
+**Ingest.** PDFs, DOCX, HTML, images, and 40+ formats via Docling. Add files, URLs, or whole directories. Monitor folders and reindex on change.
 
-    # Search documents
-    results = await client.search("query")
+**Search.** Hybrid retrieval (vector + full-text with reciprocal rank fusion), optional cross-encoder reranking, structure-aware context expansion. Image-as-query and cross-modal retrieval when configured with a multimodal embedder.
 
-    # Ask questions (returns answer and citations)
-    answer, citations = await client.ask("Who is the author of haiku.rag?")
-```
+**Answer.** RAG skill with citations including page numbers, section headings, and visual grounding. Vision-capable models receive figure bytes alongside chunk text. Analysis skill with a sandboxed Python interpreter for aggregation and computation across documents.
 
-Or use the CLI:
+**Integrate.** Use it from Python, the CLI, the [MCP server](mcp.md), or as composable [skills](skills/index.md) built on haiku.skills. Skills bundle tools, prompts, and state for use inside any Pydantic AI agent.
 
-```bash
-haiku-rag add "Your document content"
-haiku-rag add "Your document content" --meta author=alice
-haiku-rag add-src /path/to/document.pdf --title "Q3 Financial Report" --meta source=manual
-haiku-rag search "query"
-haiku-rag ask "Who is the author of haiku.rag?"
-haiku-rag chat  # Interactive conversation mode
-```
+**Operate.** Embedded LanceDB by default. Also runs on S3, GCS, Azure, or LanceDB Cloud. Time-travel queries via LanceDB versioning. File-monitoring mode for production deployments.
 
-## Documentation
+## Where to go next
 
-- [Getting started](tutorial.md) - Tutorial
-- [Installation](installation.md) - Install haiku.rag with different providers
-- [Configuration](configuration/index.md) - Environment variables and settings
-- [CLI](cli.md) - Command line interface usage
-- [Python](python.md) - Python API reference
-- [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
-- [Skills](skills/index.md) - The RAG and analysis skills the client wraps
-- [Analysis](agents/analysis.md) - Complex analytical tasks via code execution
-- [Applications](apps.md) - Chat TUI, web app, and inspector
-- [Server](server.md) - File monitoring and server mode
-- [MCP](mcp.md) - Model Context Protocol integration
-- [Remote processing](remote-processing.md) - Remote document processing with docling-serve
+- [Quickstart](tutorial.md): install through first chat in five minutes.
+- [Skills](skills/index.md): the rag and rag-analysis skills you compose into Pydantic AI agents.
+- [Python API](python.md): use haiku.rag from code.
+- [MCP server](mcp.md): expose haiku.rag to Claude Desktop or other AI assistants.
+- [Tuning](tuning.md): improve retrieval quality.
+- [Configuration](configuration/index.md): every setting.
 
 ## License
 
-This project is licensed under the [MIT License](https://raw.githubusercontent.com/ggozad/haiku.rag/main/LICENSE).
+MIT. Source on [GitHub](https://github.com/ggozad/haiku.rag).
