@@ -155,13 +155,20 @@ class DoclingLocalConverter(DocumentConverter):
 
         return pipeline_options
 
-    def _build_format_options(self) -> "dict[InputFormat, FormatOption]":
+    def _build_format_options(
+        self, source_uri: str | None = None
+    ) -> "dict[InputFormat, FormatOption]":
         """Per-format options shared between file and text conversion paths.
 
         Every wired FormatOption gets the same `PdfPipelineOptions` instance so
         picture-description / classification / chart settings apply uniformly
         across PDF, IMAGE, HTML, MD, DOCX, PPTX. HTML and Markdown additionally
         receive backend options gated on `fetch_remote_images`.
+
+        Args:
+            source_uri: Origin URI used by the HTML and Markdown backends to
+                resolve relative `<img src="/path">` references (e.g. when
+                ingesting a downloaded HTML page).
         """
         from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.backend_options import (
@@ -177,10 +184,12 @@ class DoclingLocalConverter(DocumentConverter):
             PowerpointFormatOption,
             WordFormatOption,
         )
+        from pydantic import AnyUrl
 
         opts = self.config.processing.conversion_options
         pipeline_options = self._build_pipeline_options()
         fetch = opts.fetch_remote_images
+        source_url = AnyUrl(source_uri) if source_uri else None
 
         return {
             InputFormat.PDF: PdfFormatOption(
@@ -193,6 +202,7 @@ class DoclingLocalConverter(DocumentConverter):
                 backend_options=HTMLBackendOptions(
                     fetch_images=fetch,
                     enable_remote_fetch=fetch,
+                    source_uri=source_url,
                 ),
             ),
             InputFormat.MD: MarkdownFormatOption(
@@ -200,27 +210,36 @@ class DoclingLocalConverter(DocumentConverter):
                 backend_options=MarkdownBackendOptions(
                     fetch_images=fetch,
                     enable_remote_fetch=fetch,
+                    source_uri=source_url,
                 ),
             ),
             InputFormat.DOCX: WordFormatOption(pipeline_options=pipeline_options),
             InputFormat.PPTX: PowerpointFormatOption(pipeline_options=pipeline_options),
         }
 
-    def _sync_convert_docling_file(self, path: Path) -> "DoclingDocument":
+    def _sync_convert_docling_file(
+        self, path: Path, source_uri: str | None = None
+    ) -> "DoclingDocument":
         """Synchronous conversion of docling-supported files."""
         from docling.document_converter import (
             DocumentConverter as DoclingDocConverter,
         )
 
-        converter = DoclingDocConverter(format_options=self._build_format_options())
+        converter = DoclingDocConverter(
+            format_options=self._build_format_options(source_uri=source_uri)
+        )
         result = converter.convert(path)
         return result.document
 
-    async def convert_file(self, path: Path) -> "DoclingDocument":
+    async def convert_file(
+        self, path: Path, source_uri: str | None = None
+    ) -> "DoclingDocument":
         """Convert a file to DoclingDocument using local docling.
 
         Args:
             path: Path to the file to convert.
+            source_uri: Optional origin URI used by docling's HTML/Markdown
+                backends to resolve relative image references.
 
         Returns:
             DoclingDocument representation of the file.
@@ -232,21 +251,33 @@ class DoclingLocalConverter(DocumentConverter):
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
-                return await asyncio.to_thread(self._sync_convert_docling_file, path)
+                return await asyncio.to_thread(
+                    self._sync_convert_docling_file, path, source_uri
+                )
             elif file_extension in TextFileHandler.text_extensions:
                 content = await asyncio.to_thread(path.read_text, encoding="utf-8")
                 prepared_content = TextFileHandler.prepare_text_content(
                     content, file_extension
                 )
-                return await self.convert_text(prepared_content, name=f"{path.stem}.md")
+                return await self.convert_text(
+                    prepared_content,
+                    name=f"{path.stem}.md",
+                    source_uri=source_uri,
+                )
             else:
                 content = await asyncio.to_thread(path.read_text, encoding="utf-8")
-                return await self.convert_text(content, name=f"{path.stem}.md")
+                return await self.convert_text(
+                    content, name=f"{path.stem}.md", source_uri=source_uri
+                )
         except Exception:
             raise ValueError(f"Failed to parse file: {path}")
 
     async def convert_text(
-        self, text: str, name: str = "content.md", format: str = "md"
+        self,
+        text: str,
+        name: str = "content.md",
+        format: str = "md",
+        source_uri: str | None = None,
     ) -> "DoclingDocument":
         """Convert text content to DoclingDocument using local docling.
 
@@ -255,6 +286,8 @@ class DoclingLocalConverter(DocumentConverter):
             name: The name to use for the document (defaults to "content.md").
             format: The format of the text content ("md", "html", or "plain").
                 Defaults to "md". Use "plain" for plain text without parsing.
+            source_uri: Optional origin URI used by docling's HTML/Markdown
+                backends to resolve relative image references.
 
         Returns:
             DoclingDocument representation of the text.
@@ -275,12 +308,14 @@ class DoclingLocalConverter(DocumentConverter):
 
         try:
             return await asyncio.to_thread(
-                self._sync_convert_docling_text, text, doc_name
+                self._sync_convert_docling_text, text, doc_name, source_uri
             )
         except Exception as e:
             raise ValueError(f"Failed to convert text to DoclingDocument: {e}")
 
-    def _sync_convert_docling_text(self, text: str, doc_name: str) -> "DoclingDocument":
+    def _sync_convert_docling_text(
+        self, text: str, doc_name: str, source_uri: str | None = None
+    ) -> "DoclingDocument":
         """Synchronous text-to-DoclingDocument using the shared format options."""
         from io import BytesIO
 
@@ -292,7 +327,9 @@ class DoclingLocalConverter(DocumentConverter):
 
         bytes_io = BytesIO(text.encode("utf-8"))
         doc_stream = DocumentStream(name=doc_name, stream=bytes_io)
-        converter = DoclingDocConverter(format_options=self._build_format_options())
+        converter = DoclingDocConverter(
+            format_options=self._build_format_options(source_uri=source_uri)
+        )
         try:
             result = converter.convert(doc_stream)
             return result.document

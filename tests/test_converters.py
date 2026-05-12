@@ -473,6 +473,69 @@ class TestDoclingLocalConverter:
         assert md_bo.fetch_images is False
         assert md_bo.enable_remote_fetch is False
 
+    def test_build_format_options_threads_source_uri(self, config):
+        """`_build_format_options(source_uri=...)` plumbs the URI into the
+        HTML and Markdown backend options so docling can resolve relative
+        `<img src="/foo.jpg">` paths during URL ingest."""
+        from docling.datamodel.backend_options import (
+            HTMLBackendOptions,
+            MarkdownBackendOptions,
+        )
+        from docling.datamodel.base_models import InputFormat
+
+        converter = DoclingLocalConverter(config)
+        opts = converter._build_format_options(source_uri="https://example.com/article")
+
+        html_bo = opts[InputFormat.HTML].backend_options
+        md_bo = opts[InputFormat.MD].backend_options
+        assert isinstance(html_bo, HTMLBackendOptions)
+        assert str(html_bo.source_uri) == "https://example.com/article"
+        assert isinstance(md_bo, MarkdownBackendOptions)
+        assert str(md_bo.source_uri) == "https://example.com/article"
+
+        # No source_uri ⇒ both stay None
+        opts_no_uri = converter._build_format_options()
+        html_bo = opts_no_uri[InputFormat.HTML].backend_options
+        md_bo = opts_no_uri[InputFormat.MD].backend_options
+        assert isinstance(html_bo, HTMLBackendOptions)
+        assert html_bo.source_uri is None
+        assert isinstance(md_bo, MarkdownBackendOptions)
+        assert md_bo.source_uri is None
+
+    @pytest.mark.asyncio
+    async def test_convert_text_html_source_uri_resolves_relative_img(
+        self, config, monkeypatch
+    ):
+        """`convert_text(..., source_uri=...)` lets docling resolve a relative
+        `<img src="/path">` against the source URL. We patch the docling HTML
+        backend's `_load_image_data` to capture the resolved absolute URL
+        instead of doing a real network fetch."""
+        captured: list[str] = []
+
+        def fake_load_image_data(self, src_loc: str):
+            captured.append(src_loc)
+            return None  # docling treats as a fetch failure → placeholder
+
+        from docling.backend import html_backend as html_backend_module
+
+        monkeypatch.setattr(
+            html_backend_module.HTMLDocumentBackend,
+            "_load_image_data",
+            fake_load_image_data,
+        )
+
+        html = '<html><body><img src="/static/cat.jpg"/></body></html>'
+        converter = DoclingLocalConverter(config)
+
+        await converter.convert_text(
+            html, format="html", source_uri="https://example.com/article"
+        )
+
+        assert captured, "_load_image_data should have been invoked"
+        assert captured[0] == "https://example.com/static/cat.jpg", (
+            f"Expected absolute URL resolved via source_uri, got {captured[0]!r}"
+        )
+
     @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(self, config):
         """Picture bytes are produced by the local converter for PDFs that

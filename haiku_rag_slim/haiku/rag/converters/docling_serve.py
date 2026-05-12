@@ -226,11 +226,16 @@ class DoclingServeConverter(DocumentConverter):
         )
         return self._parse_zip_to_docling(zip_bytes, name)
 
-    async def convert_file(self, path: Path) -> "DoclingDocument":
+    async def convert_file(
+        self, path: Path, source_uri: str | None = None
+    ) -> "DoclingDocument":
         """Convert a file to DoclingDocument using docling-serve.
 
         Args:
             path: Path to the file to convert.
+            source_uri: Ignored. docling-serve has no API path for
+                ``HTMLBackendOptions.source_uri``; the kwarg is accepted for
+                interface compatibility with docling-local.
 
         Returns:
             DoclingDocument representation of the file.
@@ -261,7 +266,11 @@ class DoclingServeConverter(DocumentConverter):
     SUPPORTED_FORMATS = ("md", "html", "plain")
 
     async def convert_text(
-        self, text: str, name: str = "content.md", format: str = "md"
+        self,
+        text: str,
+        name: str = "content.md",
+        format: str = "md",
+        source_uri: str | None = None,
     ) -> "DoclingDocument":
         """Convert text content to DoclingDocument via docling-serve.
 
@@ -272,6 +281,9 @@ class DoclingServeConverter(DocumentConverter):
             name: The name to use for the document (defaults to "content.md").
             format: The format of the text content ("md", "html", or "plain").
                 Defaults to "md". Use "plain" for plain text without parsing.
+            source_uri: Ignored. docling-serve has no API path for
+                ``HTMLBackendOptions.source_uri``; the kwarg is accepted for
+                interface compatibility with docling-local.
 
         Returns:
             DoclingDocument representation of the text.

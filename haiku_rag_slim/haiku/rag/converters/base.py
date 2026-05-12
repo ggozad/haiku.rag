@@ -26,11 +26,18 @@ class DocumentConverter(ABC):
         pass
 
     @abstractmethod
-    async def convert_file(self, path: Path) -> "DoclingDocument":
+    async def convert_file(
+        self, path: Path, source_uri: str | None = None
+    ) -> "DoclingDocument":
         """Convert a file to DoclingDocument format.
 
         Args:
             path: Path to the file to convert.
+            source_uri: Optional origin URI (e.g. the URL the file was
+                downloaded from) used by docling's HTML/Markdown backends to
+                resolve relative `<img src="/path">` references. Ignored by
+                converters that have no equivalent backend option (notably
+                docling-serve).
 
         Returns:
             DoclingDocument representation of the file.
@@ -44,7 +51,11 @@ class DocumentConverter(ABC):
 
     @abstractmethod
     async def convert_text(
-        self, text: str, name: str = "content.md", format: str = "md"
+        self,
+        text: str,
+        name: str = "content.md",
+        format: str = "md",
+        source_uri: str | None = None,
     ) -> "DoclingDocument":
         """Convert text content to DoclingDocument format.
 
@@ -53,6 +64,8 @@ class DocumentConverter(ABC):
             name: The name to use for the document (defaults to "content.md").
             format: The format of the text content ("md", "html", or "plain").
                 Defaults to "md". Use "plain" for plain text without parsing.
+            source_uri: Optional origin URI used by docling's HTML/Markdown
+                backends to resolve relative image references.
 
         Returns:
             DoclingDocument representation of the text.
