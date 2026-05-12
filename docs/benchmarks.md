@@ -156,6 +156,22 @@ The text-vs-image gap on retrieval is small (0.81 pp) but on QA it widens to ~5.
 
 #### Text embedder + VLM picture descriptions
 
+##### Retrieval (MAP)
+
+| Embedding Model      | VLM                  | Source bucket | Cases | MAP        |
+|----------------------|----------------------|---------------|------:|-----------:|
+| `qwen3-embedding:4b` | Ollama / ministral-3 | **all**       |  3045 | **0.9722** |
+
+*Measured on haiku.rag v0.45.0.*
+
+##### QA Accuracy
+
+| Embedding Model      | VLM                  | QA Model         | Accuracy |
+|----------------------|----------------------|------------------|---------:|
+| `qwen3-embedding:4b` | Ollama / ministral-3 | `ollama:qwen3.6` |     0.95 |
+
+*Measured on haiku.rag v0.45.0, judged by `ollama:qwen3.6` (current default).*
+
 ##### Skill QA + citation retrieval
 
 | Embedding Model        | VLM                  | Skill model      | QA accuracy | Mean `cited_map` |
