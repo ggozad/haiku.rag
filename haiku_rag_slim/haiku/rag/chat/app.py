@@ -233,9 +233,11 @@ class ChatApp(App):
                         assert isinstance(event, TextMessageContentEvent)
                         accumulated_text += event.delta
                         if message:
-                            message.update_content(accumulated_text)
+                            await message.append_delta(event.delta)
                             chat_history.scroll_end(animate=False)
                     elif event.type == EventType.TEXT_MESSAGE_END:
+                        if message:
+                            await message.finish_stream()
                         self._messages.append(
                             AssistantMessage(
                                 id=str(uuid.uuid4()),
@@ -308,9 +310,13 @@ class ChatApp(App):
 
         except asyncio.CancelledError:
             chat_history.hide_thinking()
+            if message:
+                await message.finish_stream()
             await chat_history.add_message("assistant", "*Cancelled*")
         except Exception as e:
             chat_history.hide_thinking()
+            if message:
+                await message.finish_stream()
             await chat_history.add_message("assistant", f"Error: {e}")
         finally:
             self._is_processing = False

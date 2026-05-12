@@ -9,6 +9,10 @@
 - **`[s3]` optional extra** (`obstore>=0.9`). Required for `s3://` sources and the S3 watcher. Uses obstore — the Python binding to the same Rust `object_store` crate that LanceDB uses internally — so `monitor.s3[*].storage_options` accepts the same dict shape as `lancedb.storage_options`. Empty/missing options fall back to the AWS default credential chain.
 - **`scripts/run-integration-tests.sh`** — wraps `docker compose up --wait`, `pytest -m integration`, and tear-down so the SeaweedFS-backed integration suite is a one-liner.
 
+### Changed
+
+- **Chat TUI streams markdown incrementally.** Assistant messages now use Textual's `MarkdownStream` (`Markdown.get_stream`) and write per-token deltas instead of re-parsing the entire accumulated message on every token. Removes the O(n²) re-parse that visibly stuttered long responses. Bumps `textual` floor to `>=8.2.4` so `Markdown.get_stream` is reachable via the public API.
+
 ### Fixed
 
 - **Conversion options now apply to non-PDF formats.** `DoclingLocalConverter` previously wired its `PdfPipelineOptions` only to `InputFormat.PDF`, so user settings (OCR knobs, `picture_description.enabled`, `images_scale`, etc.) silently no-op'd for HTML, Markdown, DOCX, PPTX, and IMAGE inputs. The converter now shares a single `PdfPipelineOptions` instance across PDF, IMAGE, HTML, MD, DOCX, and PPTX `FormatOption`s. SimplePipeline-backed formats ignore the PDF-specific fields; `ConvertPipelineOptions`-level enrichments (picture description / classification / chart extraction) now run uniformly. HTML and Markdown additionally receive `HTMLBackendOptions` / `MarkdownBackendOptions` gated on `fetch_remote_images`.

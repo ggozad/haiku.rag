@@ -1,8 +1,10 @@
 from typing import TYPE_CHECKING, Any
 
 from textual.containers import Horizontal, VerticalScroll
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import Collapsible, LoadingIndicator, Markdown, Static
+from textual.widgets.markdown import MarkdownStream
 
 from haiku.rag.agents.research.models import Citation
 
@@ -17,18 +19,36 @@ class ChatMessage(Static):
     def __init__(self, role: str, content: str = "", **kwargs) -> None:
         super().__init__(**kwargs)
         self.role = role
-        self.content = content
+        self.body_text: str = content
+        self._stream: MarkdownStream | None = None
 
     def compose(self) -> "ComposeResult":
-        prefix = "**You:**" if self.role == "user" else "**Assistant:**"
-        yield Markdown(f"{prefix}\n\n{self.content}", id="message-content")
+        prefix = "You:" if self.role == "user" else "Assistant:"
+        yield Static(prefix, classes="message-prefix")
+        yield Markdown(self.body_text, classes="message-body")
 
-    def update_content(self, content: str) -> None:
-        """Update the message content (for streaming)."""
-        self.content = content
-        prefix = "**You:**" if self.role == "user" else "**Assistant:**"
-        markdown = self.query_one("#message-content", Markdown)
-        markdown.update(f"{prefix}\n\n{content}")
+    async def append_delta(self, delta: str) -> None:
+        if not delta:
+            return
+        if self._stream is None:
+            try:
+                body = self.query_one(".message-body", Markdown)
+            except NoMatches:
+                return
+            self._stream = Markdown.get_stream(body)
+        self.body_text += delta
+        await self._stream.write(delta)
+
+    async def finish_stream(self) -> None:
+        if self._stream is None:
+            return
+        await self._stream.stop()
+        self._stream = None
+        try:
+            body = self.query_one(".message-body", Markdown)
+        except NoMatches:
+            return
+        await body.update(self.body_text)
 
 
 class ToolCallWidget(Static):
@@ -214,6 +234,10 @@ class ChatHistory(VerticalScroll):
     ChatMessage Markdown {
         margin: 0;
         padding: 0;
+    }
+
+    ChatMessage .message-prefix {
+        text-style: bold;
     }
 
     /* Tool calls */
