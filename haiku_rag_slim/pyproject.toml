@@ -53,7 +53,7 @@ cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]
 jina = ["transformers>=4.40.0", "torch>=2.0.0"]
 # TUI (chat and inspect commands)
-tui = ["textual>=8.2.1", "textual-image>=0.8.5"]
+tui = ["textual>=8.2.4", "textual-image>=0.8.5"]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]
