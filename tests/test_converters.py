@@ -503,6 +503,96 @@ class TestDoclingLocalConverter:
         assert md_bo.source_uri is None
 
     @pytest.mark.asyncio
+    async def test_convert_text_html_mixed_img_sources(self, config, monkeypatch):
+        """End-to-end: HTML with a mix of remote http, data:, broken http, and
+        file:// `<img>` sources. Remote and data: URIs land as picture bytes;
+        broken URLs and file:// stay as placeholder pictures. Models the
+        wix-style ingest where most images are remote URLs with a handful of
+        broken or local-only references mixed in."""
+        import base64
+
+        from docling.backend import html_backend as html_backend_module
+
+        canned_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        good_url = "https://cdn.example.com/static/cat.png"
+        broken_url = "https://cdn.example.com/missing.png"
+
+        def fake_load_image_data(self, src_loc: str):
+            if src_loc == good_url:
+                return canned_png
+            if src_loc == broken_url:
+                # Simulate a 404: docling's _create_image_ref swallows HTTPError
+                # via its except clause and returns None for the picture.
+                import requests
+
+                resp = requests.Response()
+                resp.status_code = 404
+                raise requests.HTTPError(response=resp)
+            return None  # data: and file:// fall back to docling's own path
+
+        # Wrap rather than replace so data: URIs still decode through the real
+        # `_load_image_data`. Only intercept when src is one of our test URLs.
+        original = html_backend_module.HTMLDocumentBackend._load_image_data
+
+        def wrapped(self, src_loc: str):
+            if src_loc in (good_url, broken_url):
+                return fake_load_image_data(self, src_loc)
+            return original(self, src_loc)
+
+        monkeypatch.setattr(
+            html_backend_module.HTMLDocumentBackend, "_load_image_data", wrapped
+        )
+
+        png_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        html = (
+            "<html><body>"
+            f'<img src="{good_url}" alt="cat"/>'
+            f'<img src="data:image/png;base64,{png_b64}" alt="dot"/>'
+            f'<img src="{broken_url}" alt="missing"/>'
+            '<img src="file:///etc/passwd" alt="local"/>'
+            "</body></html>"
+        )
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_text(html, format="html")
+
+        assert len(doc.pictures) == 4, f"expected 4 pictures, got {len(doc.pictures)}"
+        with_bytes = sum(1 for p in doc.pictures if p.image is not None)
+        without_bytes = sum(1 for p in doc.pictures if p.image is None)
+        assert with_bytes == 2, (
+            f"good remote + data: should produce bytes; got {with_bytes}"
+        )
+        assert without_bytes == 2, (
+            f"broken http + file:// should stay placeholder; got {without_bytes}"
+        )
+
+    def test_image_format_shares_pdf_pipeline_options(self, config):
+        """IMAGE FormatOption shares the same PdfPipelineOptions instance as
+        PDF. Without this, `do_ocr` / `picture_description.enabled` / etc.
+        silently no-op when ingesting raw `.png` / `.jpg` files (which run
+        through StandardPdfPipeline). End-to-end image conversion is covered
+        by the PDF picture test — both paths feed the same pipeline class."""
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+        config.processing.conversion_options.do_ocr = False
+        config.processing.conversion_options.images_scale = 3.5
+        fmt_opts = DoclingLocalConverter(config)._build_format_options()
+
+        pdf_pipe = fmt_opts[InputFormat.PDF].pipeline_options
+        image_pipe = fmt_opts[InputFormat.IMAGE].pipeline_options
+        assert image_pipe is pdf_pipe
+        assert isinstance(pdf_pipe, PdfPipelineOptions)
+        assert pdf_pipe.do_ocr is False
+        assert pdf_pipe.images_scale == 3.5
+
+    @pytest.mark.asyncio
     async def test_convert_text_html_source_uri_resolves_relative_img(
         self, config, monkeypatch
     ):
