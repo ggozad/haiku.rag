@@ -17,6 +17,8 @@
 
 ### Documentation
 
+- New "External image fetching" subsection in `docs/configuration/processing.md` documenting `fetch_remote_images`, the SSRF / size / timeout guards inherited from docling, and a per-format table of which conversion options actually apply (PDF, IMAGE, HTML, MD, DOCX/PPTX, others).
+- New "HTML Image Fetching" section in `docs/remote-processing.md` calling out that docling-serve cannot fetch external `<img>` URLs and recommending docling-local for HTML ingest when picture bytes matter.
 - New "S3 / Object Storage Monitoring" section in `docs/server.md` and `docs/configuration/processing.md` covering the `[s3]` extra, polling cadence, ETag semantics, credentials, and CLI usage.
 - New "Deployment Pattern: One Writer, Many Readers" subsection in `docs/configuration/storage.md` documenting the recommended IAM split (one ingestion process + N read-only consumers).
 

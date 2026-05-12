@@ -99,10 +99,36 @@ conversion_options:
 conversion_options:
   images_scale: 2.0               # Image resolution scale factor
   generate_page_images: true      # Include rendered page images
+  fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
+- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to docling-local; see [Remote processing](../remote-processing.md#html-image-fetching) for the docling-serve limitation.
+
+#### External image fetching
+
+For HTML and Markdown inputs, docling fetches images referenced by URL when `fetch_remote_images: true`. Pictures end up in `document_items.picture_data` alongside the ones extracted from PDF/DOCX/PPTX. Inherited from docling:
+
+- **SSRF guard**: hostnames must resolve to a global IP. Loopback, private (RFC1918), link-local, reserved, multicast, and unspecified addresses are rejected.
+- **Size cap**: 20 MB per image (sent as a `Range` header), enforced again when streaming the response body.
+- **Timeouts**: 5 s connect, 30 s read.
+- **SVGs are skipped** (PIL cannot rasterize them).
+- **`data:` URIs** are decoded inline (no network).
+- **`file://` URIs** are *not* fetched — `enable_local_fetch` stays off to keep the SSRF surface narrow for arbitrary HTML/MD content.
+
+Per-image failures (404, timeout, oversized, unreadable) leave that picture as a placeholder with `picture_data=NULL` — the rest of the document still ingests.
+
+**Scope of conversion options across formats:**
+
+| Input | OCR / table options | `images_scale` / `generate_page_images` | `picture_description` | `fetch_remote_images` |
+|---|---|---|---|---|
+| `.pdf` | ✅ | ✅ | ✅ | n/a |
+| `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a |
+| `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ |
+| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (only `<img>` HTML blocks; native `![alt](url)` syntax is not fetched by docling) |
+| `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a |
+| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`) | n/a | n/a | n/a | n/a |
 
 #### Picture Handling
 
