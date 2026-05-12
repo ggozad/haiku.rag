@@ -3,10 +3,16 @@
 
 ### Added
 
+- **`processing.conversion_options.fetch_remote_images`** (default `true`). Controls whether docling fetches images referenced by URL in HTML and Markdown inputs. docling-local only — docling-serve cannot fetch external images via its API regardless of this flag.
 - **`s3://` is a first-class document source.** `create_document_from_source`, the CLI `haiku-rag add-src`, and the MCP `add_document_from_url` tool all dispatch on the `s3` URL scheme. Two-stage change detection keeps `metadata["md5"]` semantically uniform across all sources: HEAD ETag matching the stored `metadata["etag"]` short-circuits without GET; if ETag differs but bytes hash to the same MD5 (multipart re-upload, server-side `CopyObject`, SSE mode change), only the etag refreshes — no re-chunk or re-embed. Closes #357.
 - **S3 / object-storage monitoring.** `monitor.s3: list[S3MonitorEntry]` adds a polling watcher per bucket prefix alongside the existing local-directory watcher. Each entry has its own `poll_interval`, `include_patterns`, `ignore_patterns`, `delete_orphans`, and `storage_options`. The same `serve --monitor` flag enables both. Orphan deletion is per-entry (scoped via `uri LIKE 's3://bucket/prefix/%'`); other buckets and prefixes are never touched.
 - **`[s3]` optional extra** (`obstore>=0.9`). Required for `s3://` sources and the S3 watcher. Uses obstore — the Python binding to the same Rust `object_store` crate that LanceDB uses internally — so `monitor.s3[*].storage_options` accepts the same dict shape as `lancedb.storage_options`. Empty/missing options fall back to the AWS default credential chain.
 - **`scripts/run-integration-tests.sh`** — wraps `docker compose up --wait`, `pytest -m integration`, and tear-down so the SeaweedFS-backed integration suite is a one-liner.
+
+### Fixed
+
+- **Conversion options now apply to non-PDF formats.** `DoclingLocalConverter` previously wired its `PdfPipelineOptions` only to `InputFormat.PDF`, so user settings (OCR knobs, `picture_description.enabled`, `images_scale`, etc.) silently no-op'd for HTML, Markdown, DOCX, PPTX, and IMAGE inputs. The converter now shares a single `PdfPipelineOptions` instance across PDF, IMAGE, HTML, MD, DOCX, and PPTX `FormatOption`s. SimplePipeline-backed formats ignore the PDF-specific fields; `ConvertPipelineOptions`-level enrichments (picture description / classification / chart extraction) now run uniformly. HTML and Markdown additionally receive `HTMLBackendOptions` / `MarkdownBackendOptions` gated on `fetch_remote_images`.
+- **HTML text ingest path picks up converter options.** `convert_text(format="html"/"md")` previously used a bare `DoclingDocConverter()` with zero format options — the wix corpus ingest path. It now uses the same shared `_build_format_options()` helper as the file path.
 
 ### Documentation
 

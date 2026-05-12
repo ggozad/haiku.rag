@@ -161,6 +161,10 @@ class ConversionOptions(BaseModel):
     images_scale: float = 2.0
     generate_page_images: bool = True
 
+    # Fetch images referenced by URL in HTML and Markdown inputs.
+    # docling-local only — docling-serve cannot fetch external images.
+    fetch_remote_images: bool = True
+
     picture_description: PictureDescriptionConfig = Field(
         default_factory=PictureDescriptionConfig
     )
