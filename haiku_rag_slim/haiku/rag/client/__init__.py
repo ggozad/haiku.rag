@@ -210,10 +210,18 @@ class HaikuRAG:
         title: str | None = None,
         metadata: dict | None = None,
         uri: str | None = None,
+        storage_options: dict[str, str] | None = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
-        return await create_document_from_source(self, source, title, metadata, uri=uri)
+        return await create_document_from_source(
+            self,
+            source,
+            title,
+            metadata,
+            uri=uri,
+            storage_options=storage_options,
+        )
 
     async def update_document(
         self,
