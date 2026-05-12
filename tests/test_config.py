@@ -272,3 +272,31 @@ processing:
     assert cfg.processing.conversion_options.picture_description.enabled is False
     assert "generate_picture_images" not in data["processing"]["conversion_options"]
     assert any("generate_picture_images" in r.getMessage() for r in handler.records)
+
+
+def test_fetch_remote_images_default_true():
+    """`fetch_remote_images` defaults to True and round-trips through YAML."""
+    from haiku.rag.config.models import ConversionOptions
+
+    assert ConversionOptions().fetch_remote_images is True
+
+    cfg = AppConfig()
+    assert cfg.processing.conversion_options.fetch_remote_images is True
+
+    data = generate_default_config()
+    assert data["processing"]["conversion_options"]["fetch_remote_images"] is True
+
+
+def test_fetch_remote_images_override_via_yaml(tmp_path):
+    """User can disable image fetching via YAML."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  conversion_options:
+    fetch_remote_images: false
+""",
+    )
+    data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.conversion_options.fetch_remote_images is False

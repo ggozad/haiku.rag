@@ -411,7 +411,7 @@ async def _create_or_update_document_from_url(
             temp_path = Path(temp_file.name)
 
         try:
-            docling_document = await client.convert(temp_path)
+            docling_document = await client.convert(temp_path, source_uri=url)
             chunks = await client.chunk(docling_document)
             embedded_chunks = await embed_chunks(chunks, client._config)
         finally:
@@ -547,7 +547,7 @@ async def _create_or_update_document_from_s3(
         return existing_doc
 
     try:
-        docling_document = await client.convert(temp_path)
+        docling_document = await client.convert(temp_path, source_uri=url)
         chunks = await client.chunk(docling_document)
         embedded_chunks = await embed_chunks(chunks, client._config)
     finally:

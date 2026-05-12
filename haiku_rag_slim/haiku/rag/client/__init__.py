@@ -139,19 +139,25 @@ class HaikuRAG:
     # =========================================================================
 
     @overload
-    async def convert(self, source: Path) -> "DoclingDocument": ...
+    async def convert(
+        self, source: Path, *, source_uri: str | None = None
+    ) -> "DoclingDocument": ...
 
     @overload
     async def convert(
-        self, source: str, *, format: str = "md"
+        self, source: str, *, format: str = "md", source_uri: str | None = None
     ) -> "DoclingDocument": ...
 
     async def convert(
-        self, source: Path | str, *, format: str = "md"
+        self,
+        source: Path | str,
+        *,
+        format: str = "md",
+        source_uri: str | None = None,
     ) -> "DoclingDocument":
         from haiku.rag.client.processing import convert
 
-        return await convert(self._config, source, format=format)
+        return await convert(self._config, source, format=format, source_uri=source_uri)
 
     async def chunk(
         self,

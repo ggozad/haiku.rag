@@ -52,7 +52,11 @@ def _warn_if_descriptions_missing(
 
 
 async def convert(
-    config: AppConfig, source: Path | str, *, format: str = "md"
+    config: AppConfig,
+    source: Path | str,
+    *,
+    format: str = "md",
+    source_uri: str | None = None,
 ) -> "DoclingDocument":
     """Convert a file, URL, or text to DoclingDocument.
 
@@ -66,6 +70,10 @@ async def convert(
             Defaults to "md". Use "plain" for plain text without parsing.
             Only used when source is raw text (not a file path or URL).
             Files and URLs determine format from extension/content-type.
+        source_uri: Origin URI used by docling's HTML/Markdown backends to
+            resolve relative `<img src="/path">` references. When omitted,
+            defaults to the URL (URL ingest) or `file://` URI (file ingest);
+            raw text input has no origin so no default is derived.
 
     Returns:
         DoclingDocument from the converted source.
@@ -82,7 +90,8 @@ async def convert(
             raise ValueError(f"File does not exist: {source}")
         if source.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {source.suffix}")
-        doc = await converter.convert_file(source)
+        effective_uri = source_uri or source.absolute().as_uri()
+        doc = await converter.convert_file(source, source_uri=effective_uri)
         _warn_if_descriptions_missing(config, doc, str(source))
         return doc
 
@@ -113,7 +122,8 @@ async def convert(
                 temp_path = Path(temp_file.name)
 
             try:
-                doc = await converter.convert_file(temp_path)
+                effective_uri = source_uri or source
+                doc = await converter.convert_file(temp_path, source_uri=effective_uri)
                 _warn_if_descriptions_missing(config, doc, source)
                 return doc
             finally:
@@ -126,14 +136,15 @@ async def convert(
             raise ValueError(f"File does not exist: {file_path}")
         if file_path.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {file_path.suffix}")
-        doc = await converter.convert_file(file_path)
+        effective_uri = source_uri or file_path.absolute().as_uri()
+        doc = await converter.convert_file(file_path, source_uri=effective_uri)
         _warn_if_descriptions_missing(config, doc, str(file_path))
         return doc
 
     else:
         # Raw text content — HTML and markdown can still embed pictures
         # via <img>/![](...) so the same description check applies.
-        doc = await converter.convert_text(source, format=format)
+        doc = await converter.convert_text(source, format=format, source_uri=source_uri)
         _warn_if_descriptions_missing(config, doc, "<text input>")
         return doc
 

@@ -143,11 +143,15 @@ async def test_convert_emits_warning_via_chokepoint(
         def supported_extensions(self) -> list[str]:
             return [".pdf"]
 
-        async def convert_file(self, path: Path):
+        async def convert_file(self, path: Path, source_uri: str | None = None):
             return _doc_with_pictures(with_descriptions=False)
 
         async def convert_text(
-            self, text: str, name: str = "content.md", format: str = "md"
+            self,
+            text: str,
+            name: str = "content.md",
+            format: str = "md",
+            source_uri: str | None = None,
         ):
             return _doc_without_pictures()
 
@@ -180,11 +184,15 @@ async def test_convert_text_path_also_warns(monkeypatch, caplog_warnings):
         def supported_extensions(self) -> list[str]:
             return [".html"]
 
-        async def convert_file(self, path: Path):
+        async def convert_file(self, path: Path, source_uri: str | None = None):
             return _doc_without_pictures()
 
         async def convert_text(
-            self, text: str, name: str = "content.md", format: str = "md"
+            self,
+            text: str,
+            name: str = "content.md",
+            format: str = "md",
+            source_uri: str | None = None,
         ):
             return _doc_with_pictures(with_descriptions=False)
 

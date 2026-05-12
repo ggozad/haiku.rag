@@ -134,6 +134,14 @@ processing:
 - `false` (default): Tables as narrative text
 - `true`: Tables as markdown format
 
+## HTML Image Fetching
+
+docling-serve does **not** fetch external `<img src="https://...">` URLs in HTML inputs. The `ConvertDocumentsOptions` API exposes no equivalent of docling-local's `HTMLBackendOptions.fetch_images` / `enable_remote_fetch`, and the server-side `DoclingConverterManager` registers `format_options` only for PDF and IMAGE — HTML falls through to docling's defaults (`fetch_images=False`).
+
+Consequence: ingesting HTML with external image references through docling-serve produces picture items with `picture_data=NULL`. The same input through docling-local fetches the bytes (subject to the SSRF / size / timeout guards documented in [Configuration → External image fetching](configuration/processing.md#external-image-fetching)).
+
+To preserve image bytes when ingesting HTML or Markdown that references remote images, use `converter: docling-local`. The `processing.conversion_options.fetch_remote_images` flag has no effect on docling-serve and the `source_uri` kwarg on `HaikuRAG.convert()` is accepted but ignored on this path.
+
 ## VLM Picture Description with docling-serve
 
 When using VLM picture description with docling-serve, the VLM API calls are made by the docling-serve container, not by haiku.rag. This requires additional configuration.
