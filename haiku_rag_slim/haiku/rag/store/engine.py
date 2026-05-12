@@ -141,6 +141,8 @@ class DocumentItemRecord(LanceModel):
     text: str = Field(default="")
     page_numbers: str = Field(default="[]")
     picture_data: bytes | None = None
+    heading_level: int = Field(default=0)
+    tree_depth: int = Field(default=0)
 
 
 def get_document_items_arrow_schema() -> pa.Schema:

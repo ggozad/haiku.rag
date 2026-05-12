@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **`heading_level` and `tree_depth` on `DocumentItem`.** `extract_items` now captures docling's `SectionHeaderItem.level` (H1–H6 for headers, `0` elsewhere) and the traversal depth from `iterate_items()` for every item, persisting both in the `document_items` table. Foundations for tree-based document navigation in the analysis sandbox. The 0.48.0 migration adds the columns to existing DBs and backfills them from each doc's docling blob.
+
 ### Changed
 
 - Bump `docling>=2.93.0` and `docling-core>=2.75.0`.

@@ -29,6 +29,23 @@ def _make_docling_doc():
     return doc
 
 
+def _make_docling_doc_with_levels():
+    """DoclingDocument with explicit multi-level headings for hierarchy tests."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name="leveled")
+    doc.add_heading(text="Introduction", level=1)
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Opening paragraph.")
+    doc.add_heading(text="Background", level=2)
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Background paragraph.")
+    doc.add_heading(text="Prior Work", level=3)
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Prior-work paragraph.")
+    doc.add_heading(text="Methods", level=1)
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Methods paragraph.")
+    return doc
+
+
 class TestExtractItems:
     def test_extracts_all_items(self):
         doc = _make_docling_doc()
@@ -69,6 +86,39 @@ class TestExtractItems:
         assert table_item.label == "table"
         # Table should have some text from export_to_markdown
         assert isinstance(table_item.text, str)
+
+
+class TestExtractItemsHierarchy:
+    """heading_level and tree_depth populated from docling structure."""
+
+    def test_heading_level_on_section_headers(self):
+        doc = _make_docling_doc_with_levels()
+        items = extract_items("doc-1", doc)
+        headers = [i for i in items if i.label == "section_header"]
+        assert [h.heading_level for h in headers] == [1, 2, 3, 1]
+
+    def test_heading_level_zero_on_non_headers(self):
+        doc = _make_docling_doc_with_levels()
+        items = extract_items("doc-1", doc)
+        non_headers = [i for i in items if i.label != "section_header"]
+        assert non_headers
+        assert all(i.heading_level == 0 for i in non_headers)
+
+    def test_tree_depth_set_for_all_items(self):
+        doc = _make_docling_doc_with_levels()
+        items = extract_items("doc-1", doc)
+        assert all(i.tree_depth > 0 for i in items)
+
+    def test_plain_doc_has_zero_heading_level(self):
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        doc = DoclingDocument(name="plain")
+        doc.add_text(label=DocItemLabel.PARAGRAPH, text="One.")
+        doc.add_text(label=DocItemLabel.PARAGRAPH, text="Two.")
+        items = extract_items("doc-1", doc)
+        assert items
+        assert all(i.heading_level == 0 for i in items)
 
 
 class TestExtractItemText:
@@ -176,6 +226,63 @@ class TestDocumentItemRepository:
 
             assert await repo.get_item_count("doc-1") == 0
             assert await repo.get_item_count("doc-2") == 5
+
+    async def test_round_trip_preserves_heading_level_and_tree_depth(
+        self, temp_db_path
+    ):
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Intro",
+                    heading_level=1,
+                    tree_depth=1,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="section_header",
+                    text="Background",
+                    heading_level=2,
+                    tree_depth=2,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="paragraph",
+                    text="A paragraph.",
+                    heading_level=0,
+                    tree_depth=2,
+                ),
+            ]
+            await repo.create_items("doc-1", items)
+
+            got = await repo.get_all_items("doc-1")
+            assert [(i.heading_level, i.tree_depth) for i in got] == [
+                (1, 1),
+                (2, 2),
+                (0, 2),
+            ]
+
+            in_range = await repo.get_items_in_range("doc-1", 0, 2)
+            assert [(i.heading_level, i.tree_depth) for i in in_range] == [
+                (1, 1),
+                (2, 2),
+                (0, 2),
+            ]
+
+            grouped = await repo.get_all_items_grouped(["doc-1"])
+            assert [(i.heading_level, i.tree_depth) for i in grouped["doc-1"]] == [
+                (1, 1),
+                (2, 2),
+                (0, 2),
+            ]
 
     async def test_empty_refs_returns_empty(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:

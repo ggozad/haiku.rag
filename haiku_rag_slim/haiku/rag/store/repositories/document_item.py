@@ -14,6 +14,8 @@ _METADATA_COLUMNS = [
     "label",
     "text",
     "page_numbers",
+    "heading_level",
+    "tree_depth",
 ]
 
 
@@ -31,6 +33,8 @@ class DocumentItemRepository:
             label=row.get("label", ""),
             text=row.get("text", ""),
             page_numbers=json.loads(row.get("page_numbers", "[]")),
+            heading_level=row.get("heading_level", 0) or 0,
+            tree_depth=row.get("tree_depth", 0) or 0,
         )
 
     async def create_items(self, document_id: str, items: list[DocumentItem]) -> None:
@@ -48,6 +52,8 @@ class DocumentItemRepository:
                 text=item.text,
                 page_numbers=json.dumps(item.page_numbers),
                 picture_data=item.picture_data,
+                heading_level=item.heading_level,
+                tree_depth=item.tree_depth,
             )
             for item in items
         ]

@@ -1467,7 +1467,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.47.0"
+version = "0.48.0"
 source = { editable = "." }
 dependencies = [
     { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "mxbai", "tui", "voyageai", "zeroentropy"] },
@@ -1559,7 +1559,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-slim"
-version = "0.47.0"
+version = "0.48.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "docling-core" },

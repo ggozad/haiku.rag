@@ -15,6 +15,8 @@ class DocumentItem(BaseModel):
     text: str = ""
     page_numbers: list[int] = []
     picture_data: bytes | None = None
+    heading_level: int = 0
+    tree_depth: int = 0
 
 
 def _picture_description_text(item: "PictureItem") -> str | None:
@@ -110,12 +112,12 @@ def extract_items(
     fall-back lookup against ``existing_picture_data`` (keyed by ``self_ref``)
     preserves the bytes that were captured at original ingest time.
     """
-    from docling_core.types.doc.document import PictureItem
+    from docling_core.types.doc.document import PictureItem, SectionHeaderItem
 
     existing = existing_picture_data or {}
     items: list[DocumentItem] = []
 
-    for position, (item, _level) in enumerate(docling_doc.iterate_items()):
+    for position, (item, level) in enumerate(docling_doc.iterate_items()):
         label = getattr(item, "label", None)
         label_str = str(label.value) if hasattr(label, "value") else str(label or "")
 
@@ -134,6 +136,8 @@ def extract_items(
             if picture_data is None:
                 picture_data = existing.get(item.self_ref)
 
+        heading_level = item.level if isinstance(item, SectionHeaderItem) else 0
+
         items.append(
             DocumentItem(
                 document_id=document_id,
@@ -143,6 +147,8 @@ def extract_items(
                 text=text,
                 page_numbers=sorted(page_numbers),
                 picture_data=picture_data,
+                heading_level=heading_level,
+                tree_depth=level,
             )
         )
 
