@@ -14,6 +14,7 @@
 ### Changed
 
 - **Chat TUI streams markdown incrementally.** Assistant messages now use Textual's `MarkdownStream` (`Markdown.get_stream`) and write per-token deltas instead of re-parsing the entire accumulated message on every token. Removes the O(n²) re-parse that visibly stuttered long responses. Bumps `textual` floor to `>=8.2.4` so `Markdown.get_stream` is reachable via the public API.
+- **Embedding compatibility check only raises on `vector_dim` mismatch.** `provider` and `name` drift (legitimate when the same model is served by a different stack, e.g. Ollama → vLLM-via-openai) now logs a one-time warning and updates the stored settings to match the current config. Subsequent opens are silent. Run `rebuild --embed-only` if you also want to re-embed under the new stack.
 
 ### Fixed
 

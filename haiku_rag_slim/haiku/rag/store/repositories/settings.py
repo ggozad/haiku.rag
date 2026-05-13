@@ -1,6 +1,9 @@
 import json
+import logging
 
 from haiku.rag.store.engine import SettingsRecord, Store, query_to_pydantic
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigMismatchError(Exception):
@@ -99,7 +102,15 @@ class SettingsRepository:
             await self.store.settings_table.add([settings_record])
 
     async def validate_config_compatibility(self) -> None:
-        """Validate that the current configuration is compatible with stored settings."""
+        """Validate that the current configuration is compatible with stored settings.
+
+        ``vector_dim`` mismatches raise — corpus and query vectors must live in
+        the same dimensional space. ``provider`` and ``name`` mismatches are
+        treated as soft drift: legitimate when the same model is served by a
+        different stack (Ollama vs vLLM-via-openai, etc.). Surface the change
+        once via a warning and overwrite stored settings so the warning does
+        not fire on every subsequent open.
+        """
         stored_settings = await self.get_current_settings()
 
         # If no stored settings, this is a new database - save current config and return
@@ -109,13 +120,9 @@ class SettingsRepository:
 
         current_config = self.store._config.model_dump(mode="json")
 
-        # Check if embedding provider or model has changed
         # Both stored and current use nested structure: embeddings.model.{provider,name,vector_dim}
-        stored_embeddings = stored_settings.get("embeddings", {})
-        current_embeddings = current_config.get("embeddings", {})
-
-        stored_model_obj = stored_embeddings.get("model", {})
-        current_model_obj = current_embeddings.get("model", {})
+        stored_model_obj = stored_settings.get("embeddings", {}).get("model", {})
+        current_model_obj = current_config.get("embeddings", {}).get("model", {})
 
         stored_provider = stored_model_obj.get("provider")
         current_provider = current_model_obj.get("provider")
@@ -126,28 +133,31 @@ class SettingsRepository:
         stored_vector_dim = stored_model_obj.get("vector_dim")
         current_vector_dim = current_model_obj.get("vector_dim")
 
-        # Check for incompatible changes
-        incompatible_changes = []
-
-        if stored_provider and stored_provider != current_provider:
-            incompatible_changes.append(
-                f"Stored (db) embedding provider: '{stored_provider}' -> Environment (current) embedding provider: '{current_provider}'"
-            )
-
-        if stored_model and stored_model != current_model:
-            incompatible_changes.append(
-                f"Stored (db) embedding model '{stored_model}' -> Environment (current) embedding model '{current_model}'"
-            )
-
-        if stored_vector_dim and stored_vector_dim != current_vector_dim:
-            incompatible_changes.append(
-                f"Stored (db) embedding vector dimension {stored_vector_dim} -> Environment (current) embedding vector dimension {current_vector_dim}"
-            )
-
-        if incompatible_changes:
-            error_msg = (
+        if (
+            stored_vector_dim
+            and current_vector_dim
+            and stored_vector_dim != current_vector_dim
+        ):
+            raise ConfigMismatchError(
                 "Database configuration is incompatible with current settings:\n"
-                + "\n".join(f"  - {change}" for change in incompatible_changes)
+                f"  - Stored (db) embedding vector dimension {stored_vector_dim} -> "
+                f"Environment (current) embedding vector dimension {current_vector_dim}\n"
+                "\nPlease rebuild the database using: haiku-rag rebuild"
             )
-            error_msg += "\n\nPlease rebuild the database using: haiku-rag rebuild"
-            raise ConfigMismatchError(error_msg)
+
+        soft_changes: list[str] = []
+        if stored_provider and stored_provider != current_provider:
+            soft_changes.append(
+                f"provider: '{stored_provider}' -> '{current_provider}'"
+            )
+        if stored_model and stored_model != current_model:
+            soft_changes.append(f"model: '{stored_model}' -> '{current_model}'")
+
+        if soft_changes:
+            logger.warning(
+                "Embedding identity changed (vector_dim matches, stored settings "
+                "will be updated to match current config): %s. If this is not "
+                "intentional, revert your config to match the stored settings.",
+                "; ".join(soft_changes),
+            )
+            await self.save_current_settings()

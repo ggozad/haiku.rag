@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from haiku.rag.config import AppConfig, Config
@@ -90,16 +92,27 @@ class TestValidateConfigCompatibility:
             await settings_repo.validate_config_compatibility()
 
     @pytest.mark.asyncio
-    async def test_provider_mismatch_raises_error(self, temp_db_path):
-        """Different embedding provider raises ConfigMismatchError."""
+    async def test_provider_mismatch_warns_and_syncs(
+        self, temp_db_path, caplog, monkeypatch
+    ):
+        """Provider mismatch with matching vector_dim warns and overwrites stored.
+
+        Same model served by a different stack (Ollama vs vLLM via openai-compat)
+        legitimately differs in `provider`. Validation should surface the change
+        once, then trust the user's config as the new source of truth so the
+        warning doesn't fire on every subsequent open.
+        """
         from haiku.rag.store.engine import Store
         from haiku.rag.store.repositories.settings import SettingsRepository
 
-        # Create store with default config (ollama)
+        # haiku.rag.logging.get_logger() sets propagate=False on the
+        # `haiku.rag` logger. caplog's handler attaches to root by default,
+        # so without restoring propagation the records never reach it.
+        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
+
         async with Store(temp_db_path, create=True):
             pass
 
-        # Create new config with different provider
         new_config = AppConfig()
         new_config.embeddings.model.provider = "openai"
 
@@ -108,24 +121,41 @@ class TestValidateConfigCompatibility:
         ) as store2:
             settings_repo = SettingsRepository(store2)
 
-            with pytest.raises(ConfigMismatchError) as exc_info:
+            with caplog.at_level(logging.WARNING):
                 await settings_repo.validate_config_compatibility()
 
-            assert "embedding provider" in str(exc_info.value)
-            assert "ollama" in str(exc_info.value)
-            assert "openai" in str(exc_info.value)
+            # Warning surfaced the change
+            assert any(
+                "provider" in r.getMessage()
+                and "ollama" in r.getMessage()
+                and "openai" in r.getMessage()
+                for r in caplog.records
+            )
+
+            # Stored settings now match current
+            saved = await settings_repo.get_current_settings()
+            assert saved["embeddings"]["model"]["provider"] == "openai"
+
+            # Second open is silent — stored matches current.
+            caplog.clear()
+            with caplog.at_level(logging.WARNING):
+                await settings_repo.validate_config_compatibility()
+            assert not any("provider" in r.getMessage() for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_model_mismatch_raises_error(self, temp_db_path):
-        """Different embedding model raises ConfigMismatchError."""
+    async def test_model_mismatch_warns_and_syncs(
+        self, temp_db_path, caplog, monkeypatch
+    ):
+        """Model name mismatch with matching vector_dim warns and overwrites stored."""
         from haiku.rag.store.engine import Store
         from haiku.rag.store.repositories.settings import SettingsRepository
 
-        # Create store with default config
+        # See test_provider_mismatch_warns_and_syncs for the propagate=True rationale.
+        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
+
         async with Store(temp_db_path, create=True):
             pass
 
-        # Create new config with different model
         new_config = AppConfig()
         new_config.embeddings.model.name = "different-model"
 
@@ -134,10 +164,16 @@ class TestValidateConfigCompatibility:
         ) as store2:
             settings_repo = SettingsRepository(store2)
 
-            with pytest.raises(ConfigMismatchError) as exc_info:
+            with caplog.at_level(logging.WARNING):
                 await settings_repo.validate_config_compatibility()
 
-            assert "embedding model" in str(exc_info.value)
+            assert any(
+                "model" in r.getMessage() and "different-model" in r.getMessage()
+                for r in caplog.records
+            )
+
+            saved = await settings_repo.get_current_settings()
+            assert saved["embeddings"]["model"]["name"] == "different-model"
 
     @pytest.mark.asyncio
     async def test_vector_dim_mismatch_raises_error(self, temp_db_path):
