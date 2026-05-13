@@ -19,6 +19,7 @@
 - **HTML text ingest path picks up converter options.** `convert_text(format="html"/"md")` previously used a bare `DoclingDocConverter()` with zero format options — the wix corpus ingest path. It now uses the same shared `_build_format_options()` helper as the file path.
 - **Relative `<img>` paths resolve during URL ingest.** `HaikuRAG.convert()` and the converter `convert_file` / `convert_text` methods now thread a `source_uri` through to `HTMLBackendOptions.source_uri` / `MarkdownBackendOptions.source_uri`. URL ingest uses the originating URL; file ingest uses `file://`; raw text accepts an optional override. docling-serve accepts the kwarg as a no-op (its API has no equivalent option).
 - **CLI tracebacks no longer dump per-frame locals.** The Typer app now passes `pretty_exceptions_show_locals=False`, so exceptions involving a `DoclingDocument` (or any large object) print readable rich tracebacks instead of pages of inline base64 image URIs. Set `_TYPER_STANDARD_TRACEBACK=1` for plain Python tracebacks.
+- **Batch ingest no longer hits HF Hub's 429 rate limit.** The chunking tokenizer is now loaded once per process via `@functools.cache` instead of once per chunker instance.
 
 ### Documentation
 

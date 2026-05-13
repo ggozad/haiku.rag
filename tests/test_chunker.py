@@ -84,6 +84,27 @@ def test_get_chunker_invalid():
         get_chunker(config)
 
 
+def test_tokenizer_cached_across_chunker_instances():
+    """Repeated DoclingLocalChunker instantiations share one loaded tokenizer.
+
+    Each `AutoTokenizer.from_pretrained` call triggers an `HfApi.model_info`
+    HTTP request to check for revision drift. Batch ingest creates one
+    chunker per document, which without caching hits HF Hub's 1000-per-5min
+    limit and crashes with HTTP 429.
+    """
+    from haiku.rag.chunkers.docling_local import _get_tokenizer
+
+    _get_tokenizer.cache_clear()
+
+    DoclingLocalChunker()
+    DoclingLocalChunker()
+    DoclingLocalChunker()
+
+    info = _get_tokenizer.cache_info()
+    assert info.misses == 1
+    assert info.hits == 2
+
+
 @pytest.mark.asyncio
 async def test_local_chunker_hierarchical(qa_corpus: Dataset):
     """Test DoclingLocalChunker with hierarchical chunking."""

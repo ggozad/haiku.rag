@@ -1,3 +1,4 @@
+from functools import cache
 from typing import TYPE_CHECKING, cast
 
 from haiku.rag.chunkers.base import DocumentChunker
@@ -7,6 +8,16 @@ from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 if TYPE_CHECKING:
     from docling_core.transforms.chunker.doc_chunk import DocMeta
     from docling_core.types.doc.document import DoclingDocument
+
+
+@cache
+def _get_tokenizer(name: str):
+    # `AutoTokenizer.from_pretrained` triggers an HF Hub `model_info` request
+    # per call. Batch ingest builds one chunker per document, so without this
+    # cache HF rate-limits at 1000 requests / 5 minutes.
+    from transformers import AutoTokenizer
+
+    return AutoTokenizer.from_pretrained(name)
 
 
 def _create_markdown_serializer_provider(use_markdown_tables: bool = True):
@@ -64,7 +75,6 @@ class DoclingLocalChunker(DocumentChunker):
         from docling_core.transforms.chunker.tokenizer.huggingface import (
             HuggingFaceTokenizer,
         )
-        from transformers import AutoTokenizer
 
         self.config = config
         self.chunk_size = config.processing.chunk_size
@@ -72,7 +82,7 @@ class DoclingLocalChunker(DocumentChunker):
         self.tokenizer_name = config.processing.chunking_tokenizer
 
         if self.chunker_type == "hybrid":
-            hf_tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
+            hf_tokenizer = _get_tokenizer(self.tokenizer_name)
             tokenizer = HuggingFaceTokenizer(
                 tokenizer=hf_tokenizer, max_tokens=self.chunk_size
             )
