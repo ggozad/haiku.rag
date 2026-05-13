@@ -82,9 +82,6 @@ def contextualize(chunks: list["Chunk"]) -> list[str]:
     return texts
 
 
-EMBEDDING_BATCH_SIZE = 512
-
-
 async def embed_chunks(
     chunks: list["Chunk"], config: AppConfig = Config
 ) -> list["Chunk"]:
@@ -113,8 +110,9 @@ async def embed_chunks(
     text_embeddings: list[list[float]] = []
     if text_chunks:
         texts = contextualize(text_chunks)
-        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
-            batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+        batch_size = config.embeddings.batch_size
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
             text_embeddings.extend(await embedder.embed_documents(batch))
 
     picture_embeddings: list[list[float]] = []

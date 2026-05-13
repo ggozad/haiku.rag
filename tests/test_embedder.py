@@ -179,9 +179,15 @@ async def test_embed_chunks_picture_with_text_only_embedder_raises():
         await embed_chunks([chunk], config)
 
 
-async def test_embed_chunks_batches_large_inputs(monkeypatch):
-    """Test that embed_chunks batches calls when chunk count exceeds batch size."""
-    from haiku.rag.embeddings import EMBEDDING_BATCH_SIZE, EmbedderWrapper
+async def test_embed_chunks_respects_configured_batch_size(monkeypatch):
+    """`embeddings.batch_size` controls how `embed_chunks` slices its input.
+
+    Voyage models cap total tokens per /embeddings call (120K for
+    voyage-3-large and friends). Exposing the slice size lets users tune
+    it down without dropping `chunk_size` and harming retrieval quality.
+    """
+    from haiku.rag.config import AppConfig
+    from haiku.rag.embeddings import EmbedderWrapper
 
     call_sizes: list[int] = []
 
@@ -191,20 +197,20 @@ async def test_embed_chunks_batches_large_inputs(monkeypatch):
 
     monkeypatch.setattr(EmbedderWrapper, "embed_documents", tracking_embed)
 
-    # Create more chunks than one batch
-    num_chunks = EMBEDDING_BATCH_SIZE + 100
+    config = AppConfig()
+    config.embeddings.batch_size = 7
+
+    num_chunks = 20
     chunks = [
         Chunk(id=f"chunk-{i}", content=f"Content {i}", order=i)
         for i in range(num_chunks)
     ]
 
-    result = await embed_chunks(chunks)
+    result = await embed_chunks(chunks, config)
 
     assert len(result) == num_chunks
-    assert len(call_sizes) == 2
-    assert call_sizes[0] == EMBEDDING_BATCH_SIZE
-    assert call_sizes[1] == 100
-    # Verify order is preserved
+    # 20 chunks / 7 per batch -> 7, 7, 6
+    assert call_sizes == [7, 7, 6]
     assert result[0].id == "chunk-0"
     assert result[-1].id == f"chunk-{num_chunks - 1}"
     assert all(r.embedding == [0.1] * 10 for r in result)

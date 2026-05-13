@@ -83,6 +83,7 @@ class LanceDBConfig(BaseModel):
 
 class EmbeddingsConfig(BaseModel):
     model: EmbeddingModelConfig = Field(default_factory=EmbeddingModelConfig)
+    batch_size: int = 512
 
 
 class RerankingConfig(BaseModel):

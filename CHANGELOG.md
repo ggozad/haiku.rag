@@ -9,6 +9,7 @@
 - **`[s3]` optional extra** (`obstore>=0.9`). Required for `s3://` sources and the S3 watcher. Uses obstore — the Python binding to the same Rust `object_store` crate that LanceDB uses internally — so `monitor.s3[*].storage_options` accepts the same dict shape as `lancedb.storage_options`. Empty/missing options fall back to the AWS default credential chain.
 - **`scripts/run-integration-tests.sh`** — wraps `docker compose up --wait`, `pytest -m integration`, and tear-down so the SeaweedFS-backed integration suite is a one-liner.
 - **`ModelConfig.extra_body`**. Optional dict forwarded verbatim to `ModelSettings.extra_body`, the raw pass-through pydantic-ai exposes for openai/ollama/anthropic/groq. Lets configs reach provider-specific keys without haiku.rag modelling them — e.g. `extra_body: {chat_template_kwargs: {enable_thinking: false}}` to disable Qwen3 thinking on a vLLM endpoint, where the high-level `enable_thinking` flag is a no-op.
+- **`embeddings.batch_size`** (default `512`). Number of text chunks per `/v1/embeddings` call during ingest. Lower it when your provider caps total tokens per request. Closes #365.
 
 ### Changed
 
