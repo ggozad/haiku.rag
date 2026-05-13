@@ -574,7 +574,7 @@ class TestDoclingLocalConverter:
 
     def test_image_format_shares_pdf_pipeline_options(self, config):
         """IMAGE FormatOption shares the same PdfPipelineOptions instance as
-        PDF. Without this, `do_ocr` / `picture_description.enabled` / etc.
+        PDF. Without this, `do_ocr` / `processing.pictures='description'` / etc.
         silently no-op when ingesting raw `.png` / `.jpg` files (which run
         through StandardPdfPipeline). End-to-end image conversion is covered
         by the PDF picture test — both paths feed the same pipeline class."""
@@ -785,7 +785,7 @@ class TestDoclingLocalConverter:
     def test_picture_description_config_defaults(self, config):
         """Test that picture description config has correct defaults."""
         pic_desc = config.processing.conversion_options.picture_description
-        assert pic_desc.enabled is False
+        assert config.processing.pictures == "image"
         assert pic_desc.model.provider == "ollama"
         assert pic_desc.model.name == "ministral-3"
         assert pic_desc.timeout == 90
@@ -795,12 +795,12 @@ class TestDoclingLocalConverter:
 
     def test_picture_description_config_applied(self, config):
         """Test that picture description config is applied to converter."""
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.timeout = 120
         converter = DoclingLocalConverter(config)
 
+        assert converter.config.processing.pictures == "description"
         pic_desc = converter.config.processing.conversion_options.picture_description
-        assert pic_desc.enabled is True
         assert pic_desc.timeout == 120
 
     @pytest.mark.asyncio
@@ -812,7 +812,7 @@ class TestDoclingLocalConverter:
         # Disable OCR (not needed for native PDF, avoids model downloads)
         config.processing.conversion_options.do_ocr = False
         # Enable picture description with Ollama
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -1221,7 +1221,7 @@ class TestDoclingServeConverterPictureDescription:
         VLM is enabled."""
         import json
 
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
@@ -1332,7 +1332,7 @@ class TestDoclingServeConverterIntegration:
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
         pdf_path = Path("tests/data/doclaynet.pdf")
-        config.processing.conversion_options.picture_description.enabled = True
+        config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )

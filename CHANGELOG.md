@@ -15,6 +15,7 @@
 
 - **Chat TUI streams markdown incrementally.** Assistant messages now use Textual's `MarkdownStream` (`Markdown.get_stream`) and write per-token deltas instead of re-parsing the entire accumulated message on every token. Removes the O(n²) re-parse that visibly stuttered long responses. Bumps `textual` floor to `>=8.2.4` so `Markdown.get_stream` is reachable via the public API.
 - **Embedding compatibility check only raises on `vector_dim` mismatch.** `provider` and `name` drift (legitimate when the same model is served by a different stack, e.g. Ollama → vLLM-via-openai) now logs a one-time warning and updates the stored settings to match the current config. Subsequent opens are silent. Run `rebuild --embed-only` if you also want to re-embed under the new stack.
+- **`processing.pictures` enum replaces `picture_description.enabled`.** Three modes: `none` (skip picture generation entirely — lower RAM, smaller DBs), `description` (generate images, run VLM, store bytes), `image` (default — generate images, store bytes, no VLM). Closes #366. Breaking change: rename `picture_description.enabled: true` → `pictures: description`, `picture_description.enabled: false` → `pictures: image`. The pre-April-30 `generate_picture_images` flag is also gone; use `pictures: none` for that opt-out.
 
 ### Fixed
 

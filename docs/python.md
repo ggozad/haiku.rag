@@ -226,7 +226,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
 # Add VLM picture descriptions to an existing database — runs the VLM
 # over already-stored picture bytes, patches descriptions into the
 # docling blob, then re-chunks + re-embeds. Requires
-# picture_description.enabled=true in the config.
+# processing.pictures='description' in the config.
 async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
     print(f"Described pictures in {doc_id}")
 ```

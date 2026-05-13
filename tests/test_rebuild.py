@@ -427,12 +427,12 @@ async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch):
             assert len(chunks) > 0
 
 
-async def test_rebuild_descriptions_requires_enabled(temp_db_path):
-    """Calling rebuild --descriptions without picture_description.enabled is
-    a config error: the user has nothing to gain and the resulting state is
+async def test_rebuild_descriptions_requires_description_mode(temp_db_path):
+    """Calling rebuild --descriptions without `processing.pictures='description'`
+    is a config error: the user has nothing to gain and the resulting state is
     indistinguishable from a plain --rechunk."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        with pytest.raises(ValueError, match="picture_description.enabled"):
+        with pytest.raises(ValueError, match="processing.pictures"):
             async for _ in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
                 pass
 
@@ -459,7 +459,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
     docling_doc = _docling_doc_with_picture()
 
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
@@ -543,7 +543,7 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
     )
 
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
@@ -589,7 +589,7 @@ async def test_patch_picture_descriptions_returns_zero_for_doc_without_pictures(
     from haiku.rag.config import AppConfig
 
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         doc = await rag.create_document(content="Just text, no pictures.")
@@ -613,7 +613,7 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path, c
 
     docling_doc = _docling_doc_with_picture()
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
@@ -670,7 +670,7 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
     )
 
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
@@ -708,7 +708,7 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
 
     docling_doc = _docling_doc_with_picture()
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")

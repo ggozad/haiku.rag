@@ -99,7 +99,8 @@ class DoclingServeConverter(DocumentConverter):
         """
         opts = self.config.processing.conversion_options
         pic_desc = opts.picture_description
-        runs_vlm = pic_desc.enabled
+        pictures = self.config.processing.pictures
+        runs_vlm = pictures == "description"
 
         data: dict[str, str | list[str]] = {
             "to_formats": "json",
@@ -111,7 +112,7 @@ class DoclingServeConverter(DocumentConverter):
             "table_cell_matching": str(opts.table_cell_matching).lower(),
             "images_scale": str(opts.images_scale),
             "image_export_mode": "referenced",
-            "include_images": "true",
+            "include_images": str(pictures != "none").lower(),
             "do_picture_description": str(runs_vlm).lower(),
             "target_type": "zip",
         }

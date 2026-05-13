@@ -26,12 +26,12 @@ def _warn_if_descriptions_missing(
     docling-serve swallows VLM errors (network failures, missing models,
     etc.) and returns a successful conversion with empty descriptions.
     docling-local can do the same when the VLM endpoint is unreachable.
-    Surface the silent failure: when ``picture_description.enabled=True``
+    Surface the silent failure: when ``processing.pictures="description"``
     AND the document has at least one picture AND zero descriptions came
     back, log a clear warning so the user can fix their VLM config before
     a thousand-document ingest produces an empty corpus.
     """
-    if not config.processing.conversion_options.picture_description.enabled:
+    if config.processing.pictures != "description":
         return
     if not doc.pictures:
         return
@@ -39,7 +39,7 @@ def _warn_if_descriptions_missing(
     if described == 0:
         model = config.processing.conversion_options.picture_description.model
         logger.warning(
-            "picture_description.enabled is True but no descriptions came back "
+            "processing.pictures='description' but no descriptions came back "
             "for %s (%d pictures, 0 described). The VLM call likely failed "
             "silently inside the converter. Check that the VLM at %s is "
             "reachable from the converter and that the model name '%s' "
