@@ -8,10 +8,12 @@ text only.
 """
 
 import base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image as PILImageModule
 from pydantic_ai import RunContext
 from pydantic_ai.messages import BinaryContent, ToolReturn
 from pydantic_ai.models.test import TestModel
@@ -23,7 +25,14 @@ from haiku.rag.skills._tools import create_skill_tools
 from haiku.rag.skills.rag import RAGState
 from haiku.rag.store.models.chunk import SearchResult
 
-PICTURE_BYTES = b"\x89PNG\r\n\x1a\nfake-picture-bytes"
+
+def _make_png(color: str = "red") -> bytes:
+    buf = BytesIO()
+    PILImageModule.new("RGB", (4, 4), color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+PICTURE_BYTES = _make_png("red")
 PICTURE_B64 = base64.b64encode(PICTURE_BYTES).decode("ascii")
 
 
@@ -192,7 +201,7 @@ async def test_skill_search_keeps_same_self_ref_from_different_documents():
     """``#/pictures/0`` in document A and ``#/pictures/0`` in document B
     are different figures. Dedup must key on ``(document_id, self_ref)``;
     keying on ``self_ref`` alone would drop document B's bytes."""
-    other_bytes = b"\x89PNG\r\n\x1a\nother-doc-bytes"
+    other_bytes = _make_png("blue")
     other_b64 = base64.b64encode(other_bytes).decode("ascii")
 
     doc_a = SearchResult(

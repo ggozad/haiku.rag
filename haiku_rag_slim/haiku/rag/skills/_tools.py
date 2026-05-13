@@ -1,16 +1,16 @@
-import base64
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import RunContext
-from pydantic_ai.messages import BinaryContent, ToolReturn
+from pydantic_ai.messages import ToolReturn
 
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.tools.search import build_binary_parts_from_results
 
 
 class CodeExecutionEntry(BaseModel):
@@ -202,24 +202,7 @@ def create_skill_tools(
             if not config.qa.model.vision:
                 return formatted
 
-            binary_parts: list[BinaryContent] = []
-            seen: set[tuple[str | None, str]] = set()
-            for result in results:
-                if not result.image_data:
-                    continue
-                for self_ref, b64 in result.image_data.items():
-                    key = (result.document_id, self_ref)
-                    if key in seen:
-                        continue
-                    binary_parts.append(
-                        BinaryContent(
-                            data=base64.b64decode(b64),
-                            media_type="image/png",
-                            identifier=self_ref,
-                        )
-                    )
-                    seen.add(key)
-
+            binary_parts = build_binary_parts_from_results(results)
             if binary_parts:
                 return ToolReturn(return_value=formatted, content=binary_parts)
             return formatted

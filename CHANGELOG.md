@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- **Picture bytes attached to multimodal tool returns are PNG-verified via `PIL.Image.verify()`.** Bytes that fail verification are dropped.
 - **Conversion options now apply to non-PDF formats.** `DoclingLocalConverter` previously wired its `PdfPipelineOptions` only to `InputFormat.PDF`, so user settings (OCR knobs, `picture_description.enabled`, `images_scale`, etc.) silently no-op'd for HTML, Markdown, DOCX, PPTX, and IMAGE inputs. The converter now shares a single `PdfPipelineOptions` instance across PDF, IMAGE, HTML, MD, DOCX, and PPTX `FormatOption`s. SimplePipeline-backed formats ignore the PDF-specific fields; `ConvertPipelineOptions`-level enrichments (picture description / classification / chart extraction) now run uniformly. HTML and Markdown additionally receive `HTMLBackendOptions` / `MarkdownBackendOptions` gated on `fetch_remote_images`.
 - **HTML text ingest path picks up converter options.** `convert_text(format="html"/"md")` previously used a bare `DoclingDocConverter()` with zero format options — the wix corpus ingest path. It now uses the same shared `_build_format_options()` helper as the file path.
 - **Relative `<img>` paths resolve during URL ingest.** `HaikuRAG.convert()` and the converter `convert_file` / `convert_text` methods now thread a `source_uri` through to `HTMLBackendOptions.source_uri` / `MarkdownBackendOptions.source_uri`. URL ingest uses the originating URL; file ingest uses `file://`; raw text accepts an optional override. docling-serve accepts the kwarg as a no-op (its API has no equivalent option).

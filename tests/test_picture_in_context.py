@@ -2,9 +2,11 @@
 
 import base64
 from dataclasses import dataclass
+from io import BytesIO
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image as PILImageModule
 from pydantic_ai import RunContext
 from pydantic_ai.messages import BinaryContent, ToolReturn
 from pydantic_ai.models.test import TestModel
@@ -18,7 +20,14 @@ from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.tools.search import create_search_toolset
 
-PICTURE_BYTES = b"\x89PNG\r\n\x1a\nfake-picture-bytes"
+
+def _make_png(color: str = "red", size: tuple[int, int] = (4, 4)) -> bytes:
+    buf = BytesIO()
+    PILImageModule.new("RGB", size, color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+PICTURE_BYTES = _make_png("red")
 PICTURE_B64 = base64.b64encode(PICTURE_BYTES).decode("ascii")
 
 
@@ -296,7 +305,7 @@ async def test_search_tool_attaches_same_self_ref_from_different_documents():
     key on ``(document_id, self_ref)`` so each document's figure reaches
     the model. Keying on ``self_ref`` alone silently drops the second
     document's bytes, leaving the model with text only for that result."""
-    other_bytes = b"\x89PNG\r\n\x1a\nother-doc-bytes"
+    other_bytes = _make_png("blue")
     other_b64 = base64.b64encode(other_bytes).decode("ascii")
 
     doc_a = SearchResult(
@@ -614,6 +623,100 @@ async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
     config = AppConfig()
     # vision defaults to False; assert anyway so the test reads explicitly.
     assert config.qa.model.vision is False
+    toolset = create_search_toolset(config, expand_context=False)
+    func = toolset.tools["search"].function
+
+    ctx = RunContext(
+        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
+        model=TestModel(),
+        usage=RunUsage(),
+        run_id="run-1",
+    )
+    result = await func(ctx, "anything")
+
+    assert isinstance(result, str)
+
+
+@pytest.mark.asyncio
+async def test_search_tool_drops_invalid_image_bytes():
+    """A picture whose bytes cannot be decoded by PIL must not produce a
+    BinaryContent part. Otherwise the model adapter emits a vision
+    placeholder for an image the server can't decode, leaving Qwen3-VL's
+    processor with an off-by-one count and a 400 from
+    ``Qwen3VLProcessor``."""
+    from io import BytesIO
+
+    from PIL import Image as PILImageModule
+
+    buf = BytesIO()
+    PILImageModule.new("RGB", (4, 4), "red").save(buf, "PNG")
+    valid_png = buf.getvalue()
+    valid_b64 = base64.b64encode(valid_png).decode("ascii")
+
+    # Truthy bytes (passes ``if blob`` guards) but not a decodable PNG.
+    invalid_bytes = b"\x89PNG\r\n\x1a\ngarbage"
+    invalid_b64 = base64.b64encode(invalid_bytes).decode("ascii")
+
+    picture_result = SearchResult(
+        content="Two figures",
+        score=1.0,
+        chunk_id="chunk-1",
+        document_id="doc-1",
+        doc_item_refs=["#/pictures/0", "#/pictures/1"],
+        labels=["picture"],
+        image_data={"#/pictures/0": valid_b64, "#/pictures/1": invalid_b64},
+    )
+
+    fake_client = AsyncMock()
+    fake_client.search = AsyncMock(return_value=[picture_result])
+    fake_client.expand_context = AsyncMock(return_value=[picture_result])
+
+    config = AppConfig()
+    config.qa.model.vision = True
+    toolset = create_search_toolset(config, expand_context=False)
+    func = toolset.tools["search"].function
+
+    ctx = RunContext(
+        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
+        model=TestModel(),
+        usage=RunUsage(),
+        run_id="run-1",
+    )
+    result = await func(ctx, "anything")
+
+    assert isinstance(result, ToolReturn)
+    assert result.content is not None
+    identifiers = {p.identifier for p in result.content}  # type: ignore[attr-defined]
+    assert identifiers == {"#/pictures/0"}, (
+        "Only the decodable PNG should reach the model — the corrupt "
+        "ref must be dropped so we don't emit a placeholder for an "
+        "image the server can't decode."
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_tool_drops_all_invalid_returns_plain_text():
+    """If every picture in the result set fails decode, fall back to a
+    plain string return — there's nothing to attach, so wrapping in
+    ``ToolReturn`` with an empty ``content`` list would surface an empty
+    user message downstream."""
+    bad_b64 = base64.b64encode(b"\x89PNGnope").decode("ascii")
+    picture_result = SearchResult(
+        content="One broken figure",
+        score=1.0,
+        chunk_id="chunk-1",
+        document_id="doc-1",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": bad_b64},
+    )
+
+    fake_client = AsyncMock()
+    fake_client.search = AsyncMock(return_value=[picture_result])
+    fake_client.expand_context = AsyncMock(return_value=[picture_result])
+
+    config = AppConfig()
+    config.qa.model.vision = True
     toolset = create_search_toolset(config, expand_context=False)
     func = toolset.tools["search"].function
 
