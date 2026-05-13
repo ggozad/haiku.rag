@@ -29,6 +29,7 @@ qa:
 - **max_tokens**: Maximum tokens in response. Default: unset (provider default), except title generation (100).
 - **enable_thinking**: Control reasoning behavior (see below)
 - **base_url**: Custom endpoint for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+- **extra_body**: Raw dict forwarded to the model SDK (see [Raw Provider Pass-through](#raw-provider-pass-through))
 
 ### Thinking Control
 
@@ -65,6 +66,27 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 **When to use:**
 - Enable for QA, research, complex reasoning, and mathematical problems
 - Disable for speed-critical applications, title generation, and simple tasks
+
+### Raw Provider Pass-through
+
+The `extra_body` setting takes a dict that haiku.rag forwards verbatim to the underlying model SDK as `ModelSettings.extra_body`. Use it to reach provider-specific keys that haiku.rag does not model with a dedicated field.
+
+**Example — disable Qwen3 thinking on vLLM:**
+
+```yaml
+qa:
+  model:
+    provider: openai
+    name: qwen3.6-35b
+    base_url: http://localhost:11430/v1
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+```
+
+vLLM serves Qwen3 chat templates that read their thinking switch from `chat_template_kwargs.enable_thinking`. The high-level `enable_thinking` setting on the openai provider maps to vLLM's `reasoning_effort` parameter, which Qwen3 templates ignore, so the field is a no-op for this combination. `extra_body` reaches the chat template directly and disables thinking. With it off, Qwen3 returns the answer in `content` immediately instead of emitting a hidden reasoning trace first.
+
+**Provider support:** honored by openai, ollama, anthropic, and groq via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by gemini and bedrock.
 
 ## Embedding Providers
 

@@ -17,6 +17,11 @@ class ModelConfig(BaseModel):
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
         vision: True if the model can interpret images. Default False.
+        extra_body: Raw dict forwarded verbatim to the model SDK as
+            `ModelSettings.extra_body`. Provider-side escape hatch for
+            keys haiku.rag doesn't model explicitly (e.g. vLLM's
+            `chat_template_kwargs.enable_thinking: false` for Qwen3).
+            Honored by openai/ollama/anthropic/groq; ignored by gemini/bedrock.
     """
 
     provider: str = "ollama"
@@ -27,6 +32,7 @@ class ModelConfig(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     vision: bool = False
+    extra_body: dict | None = None
 
 
 class EmbeddingModelConfig(BaseModel):
