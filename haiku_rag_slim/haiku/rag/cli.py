@@ -30,7 +30,9 @@ from haiku.rag.store.exceptions import (  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 _cli = typer.Typer(
-    context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
+    context_settings={"help_option_names": ["-h", "--help"]},
+    no_args_is_help=True,
+    pretty_exceptions_show_locals=False,
 )
 
 
