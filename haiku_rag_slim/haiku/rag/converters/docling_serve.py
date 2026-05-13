@@ -253,7 +253,7 @@ class DoclingServeConverter(DocumentConverter):
                 )
                 return await self.convert_text(prepared_content, name=f"{path.stem}.md")
             except Exception as e:
-                raise ValueError(f"Failed to read text file {path}: {e}")
+                raise ValueError(f"Failed to read text file {path}: {e}") from e
 
         def read_file():
             with open(path, "rb") as f:

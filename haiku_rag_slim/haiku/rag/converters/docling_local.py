@@ -311,7 +311,7 @@ class DoclingLocalConverter(DocumentConverter):
                 self._sync_convert_docling_text, text, doc_name, source_uri
             )
         except Exception as e:
-            raise ValueError(f"Failed to convert text to DoclingDocument: {e}")
+            raise ValueError(f"Failed to convert text to DoclingDocument: {e}") from e
 
     def _sync_convert_docling_text(
         self, text: str, doc_name: str, source_uri: str | None = None

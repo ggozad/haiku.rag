@@ -103,21 +103,21 @@ class DoclingServeClient:
             raise ValueError(
                 f"Could not connect to docling-serve at {self.base_url}. "
                 f"Ensure the service is running and accessible. Error: {e}"
-            )
+            ) from e
         except httpx.TimeoutException as e:
             raise ValueError(
                 f"Request to docling-serve timed out after {self.timeout}s. Error: {e}"
-            )
+            ) from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ValueError(
                     "Authentication failed. Check your API key configuration."
-                )
-            raise ValueError(f"HTTP error from docling-serve: {e}")
+                ) from e
+            raise ValueError(f"HTTP error from docling-serve: {e}") from e
         except ValueError:
             raise
         except Exception as e:
-            raise ValueError(f"Failed to process via docling-serve: {e}")
+            raise ValueError(f"Failed to process via docling-serve: {e}") from e
 
     async def submit_and_poll_zip(
         self,
@@ -149,18 +149,18 @@ class DoclingServeClient:
             raise ValueError(
                 f"Could not connect to docling-serve at {self.base_url}. "
                 f"Ensure the service is running and accessible. Error: {e}"
-            )
+            ) from e
         except httpx.TimeoutException as e:
             raise ValueError(
                 f"Request to docling-serve timed out after {self.timeout}s. Error: {e}"
-            )
+            ) from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ValueError(
                     "Authentication failed. Check your API key configuration."
-                )
-            raise ValueError(f"HTTP error from docling-serve: {e}")
+                ) from e
+            raise ValueError(f"HTTP error from docling-serve: {e}") from e
         except ValueError:
             raise
         except Exception as e:
-            raise ValueError(f"Failed to process via docling-serve: {e}")
+            raise ValueError(f"Failed to process via docling-serve: {e}") from e
