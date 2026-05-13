@@ -101,7 +101,11 @@ def apply_common_settings(
     Returns:
         Updated settings instance or None if no settings to apply
     """
-    if model_config.temperature is None and model_config.max_tokens is None:
+    if (
+        model_config.temperature is None
+        and model_config.max_tokens is None
+        and model_config.extra_body is None
+    ):
         return settings
 
     if settings is None:
@@ -114,6 +118,9 @@ def apply_common_settings(
 
     if model_config.max_tokens is not None:
         settings_dict["max_tokens"] = model_config.max_tokens
+
+    if model_config.extra_body is not None:
+        settings_dict["extra_body"] = model_config.extra_body
 
     return settings_dict
 

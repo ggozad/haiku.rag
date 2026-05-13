@@ -208,6 +208,47 @@ def test_get_model_openai_non_reasoning_model_ignores_thinking():
     assert result._settings is None
 
 
+def test_get_model_openai_extra_body_forwarded():
+    """`extra_body` on ModelConfig is forwarded to ModelSettings.extra_body.
+
+    pydantic-ai's OpenAI model branch reads `model_settings["extra_body"]`
+    and passes it verbatim to the OpenAI SDK. Enables vLLM-specific keys
+    like `chat_template_kwargs.enable_thinking` without coupling them to
+    the high-level `enable_thinking` flag.
+    """
+    extra = {"chat_template_kwargs": {"enable_thinking": False}}
+    model_config = ModelConfig(
+        provider="openai",
+        name="qwen3.6-35b",
+        base_url="http://localhost:11430/v1",
+        extra_body=extra,
+    )
+    result = get_model(model_config)
+    assert isinstance(result, OpenAIChatModel)
+    assert result._settings is not None
+    assert result._settings.get("extra_body") == extra
+
+
+def test_get_model_ollama_extra_body_forwarded():
+    """`extra_body` is forwarded through the Ollama (openai-compatible) branch too."""
+    extra = {"chat_template_kwargs": {"enable_thinking": False}}
+    model_config = ModelConfig(provider="ollama", name="qwen3", extra_body=extra)
+    result = get_model(model_config)
+    assert isinstance(result, OpenAIChatModel)
+    assert result._settings is not None
+    assert result._settings.get("extra_body") == extra
+
+
+def test_get_model_extra_body_absent_when_unset():
+    """No `extra_body` key appears on the settings when the config omits it."""
+    model_config = ModelConfig(provider="openai", name="gpt-4o-mini", temperature=0.3)
+    result = get_model(model_config)
+    assert isinstance(result, OpenAIChatModel)
+    # temperature triggers settings construction; extra_body should not be there.
+    assert result._settings is not None
+    assert "extra_body" not in result._settings
+
+
 @pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
 def test_get_model_anthropic():
     """Test get_model returns AnthropicModel for Anthropic."""
