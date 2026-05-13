@@ -92,6 +92,10 @@ vLLM serves Qwen3 chat templates that read their thinking switch from `chat_temp
 
 Embedding models require three settings: `provider`, `name`, and `vector_dim`. Optionally, use `base_url` for OpenAI-compatible servers.
 
+### Batch Size
+
+`embeddings.batch_size` (default `512`) sets how many text chunks are sent per `/v1/embeddings` call during ingest. Lower it if your provider caps total tokens per request. Picture embeddings are always sent one image per call and are unaffected.
+
 ### Ollama (Default)
 
 ```yaml
