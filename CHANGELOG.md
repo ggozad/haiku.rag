@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.46.0] - 2026-05-13
+
 ### Added
 
 - **`processing.conversion_options.fetch_remote_images`** (default `true`). Controls whether docling fetches images referenced by URL in HTML and Markdown inputs. docling-local only — docling-serve cannot fetch external images via its API regardless of this flag.
@@ -1510,7 +1512,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.45.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.46.0...HEAD
+[0.46.0]: https://github.com/ggozad/haiku.rag/compare/0.45.0...0.46.0
 [0.45.0]: https://github.com/ggozad/haiku.rag/compare/0.44.0...0.45.0
 [0.44.0]: https://github.com/ggozad/haiku.rag/compare/0.43.1...0.44.0
 [0.43.1]: https://github.com/ggozad/haiku.rag/compare/0.43.0...0.43.1
