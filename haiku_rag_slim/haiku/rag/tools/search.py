@@ -1,12 +1,52 @@
 import base64
 from collections.abc import Callable
+from io import BytesIO
 
+from PIL import Image
 from pydantic_ai import FunctionToolset, RunContext
 from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import RAGDeps
+
+
+def build_binary_parts_from_results(
+    results: list[SearchResult],
+) -> list[BinaryContent]:
+    """Decode and validate picture bytes attached to search results.
+
+    Dedup keyed on ``(document_id, self_ref)`` so the same picture in
+    different chunks is sent once. Pictures that fail
+    ``PIL.Image.verify()`` are skipped — the model adapter renders one
+    vision placeholder per ``BinaryContent``, so emitting one for an
+    image the server can't decode leaves the processor with an
+    off-by-one count.
+    """
+    parts: list[BinaryContent] = []
+    seen: set[tuple[str | None, str]] = set()
+    for result in results:
+        if not result.image_data:
+            continue
+        for self_ref, b64 in result.image_data.items():
+            key = (result.document_id, self_ref)
+            if key in seen:
+                continue
+            data = base64.b64decode(b64)
+            try:
+                with Image.open(BytesIO(data)) as img:
+                    img.verify()
+            except Exception:
+                continue
+            parts.append(
+                BinaryContent(
+                    data=data,
+                    media_type="image/png",
+                    identifier=self_ref,
+                )
+            )
+            seen.add(key)
+    return parts
 
 
 def create_search_toolset(
@@ -93,24 +133,7 @@ def create_search_toolset(
         if not config.qa.model.vision:
             return text
 
-        binary_parts: list[BinaryContent] = []
-        seen: set[tuple[str | None, str]] = set()
-        for result in results_list:
-            if not result.image_data:
-                continue
-            for self_ref, b64 in result.image_data.items():
-                key = (result.document_id, self_ref)
-                if key in seen:
-                    continue
-                binary_parts.append(
-                    BinaryContent(
-                        data=base64.b64decode(b64),
-                        media_type="image/png",
-                        identifier=self_ref,
-                    )
-                )
-                seen.add(key)
-
+        binary_parts = build_binary_parts_from_results(results_list)
         if binary_parts:
             return ToolReturn(return_value=text, content=binary_parts)
         return text
