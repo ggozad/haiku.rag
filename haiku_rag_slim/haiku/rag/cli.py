@@ -498,7 +498,7 @@ def rebuild(
         help=(
             "Run the VLM over already-stored picture bytes, patch descriptions "
             "into the docling blob, then re-chunk + re-embed. Skips the docling "
-            "parse entirely. Requires picture_description.enabled=true."
+            "parse entirely. Requires processing.pictures='description'."
         ),
     ),
 ):

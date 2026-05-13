@@ -119,14 +119,15 @@ class DoclingLocalConverter(DocumentConverter):
 
         opts = self.config.processing.conversion_options
         pic_desc = opts.picture_description
-        runs_vlm = pic_desc.enabled
+        pictures = self.config.processing.pictures
+        runs_vlm = pictures == "description"
 
         pipeline_options = PdfPipelineOptions(
             do_ocr=opts.do_ocr,
             do_table_structure=opts.do_table_structure,
             images_scale=opts.images_scale,
             generate_page_images=opts.generate_page_images,
-            generate_picture_images=True,
+            generate_picture_images=pictures != "none",
             table_structure_options=TableStructureOptions(
                 do_cell_matching=opts.table_cell_matching,
                 mode=(

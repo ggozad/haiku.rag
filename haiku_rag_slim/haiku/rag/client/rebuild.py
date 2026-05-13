@@ -383,10 +383,9 @@ async def _rebuild_descriptions(
     """
     from haiku.rag.embeddings import embed_chunks, get_embedder
 
-    if not client._config.processing.conversion_options.picture_description.enabled:
+    if client._config.processing.pictures != "description":
         raise ValueError(
-            "rebuild --descriptions requires "
-            "processing.conversion_options.picture_description.enabled = true "
+            "rebuild --descriptions requires processing.pictures = 'description' "
             "in your config."
         )
 

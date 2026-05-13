@@ -47,30 +47,7 @@ def load_yaml_config(path: Path) -> dict:
     """Load and parse a YAML config file."""
     with open(path) as f:
         data = yaml.safe_load(f)
-    data = data or {}
-    _drop_legacy_generate_picture_images(data)
-    return data
-
-
-def _drop_legacy_generate_picture_images(data: dict) -> None:
-    """Drop ``processing.conversion_options.generate_picture_images`` from
-    loaded YAML and log that it is no longer needed.
-
-    Picture bytes are always extracted now, so the flag has no effect.
-    Old YAMLs keep working; users see one log line telling them they can
-    remove the entry.
-    """
-    processing = data.get("processing")
-    if not isinstance(processing, dict):
-        return
-    opts = processing.get("conversion_options")
-    if isinstance(opts, dict) and "generate_picture_images" in opts:
-        opts.pop("generate_picture_images", None)
-        logger.warning(
-            "Config: 'processing.conversion_options.generate_picture_images' "
-            "no longer has any effect (picture bytes are always extracted). "
-            "Remove it from your haiku.rag.yaml."
-        )
+    return data or {}
 
 
 def generate_default_config() -> dict:

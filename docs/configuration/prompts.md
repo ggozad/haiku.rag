@@ -119,7 +119,7 @@ prompts:
     Be concise and factual.
 ```
 
-The prompt is used when `processing.conversion_options.picture_description.enabled` is `true`. See [Picture Handling](processing.md#picture-handling) for full configuration.
+The prompt is used when `processing.pictures` is `"description"`. See [Picture Handling](processing.md#picture-handling) for full configuration.
 
 ## Programmatic Configuration
 

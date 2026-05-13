@@ -65,10 +65,10 @@ def caplog_warnings(caplog):
 
 
 def test_no_warning_when_picture_description_disabled(caplog_warnings):
-    """Default config has picture_description.enabled=False — even a
-    document full of pictures with no descriptions should not warn."""
+    """Default config has pictures='image' — even a document full of
+    pictures with no descriptions should not warn."""
     config = AppConfig()
-    assert config.processing.conversion_options.picture_description.enabled is False
+    assert config.processing.pictures == "image"
     doc = _doc_with_pictures(with_descriptions=False)
 
     _warn_if_descriptions_missing(config, doc, "fake.pdf")
@@ -80,7 +80,7 @@ def test_no_warning_when_doc_has_no_pictures(caplog_warnings):
     """A picture-less document under enabled=True shouldn't warn — there
     was simply nothing to describe."""
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
     doc = _doc_without_pictures()
 
     _warn_if_descriptions_missing(config, doc, "no-pictures.txt")
@@ -89,12 +89,12 @@ def test_no_warning_when_doc_has_no_pictures(caplog_warnings):
 
 
 def test_warns_when_pictures_present_but_no_descriptions(caplog_warnings):
-    """VLM was requested via ``picture_description.enabled = True``, the
+    """VLM was requested via ``processing.pictures='description'``, the
     doc has pictures, but the converter returned zero descriptions
     (docling-serve swallows VLM errors). Warn loudly so the user can fix
     their VLM config before a long ingest."""
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
     config.processing.conversion_options.picture_description.model.name = "qwen3.6"
     config.processing.conversion_options.picture_description.model.base_url = (
         "http://host.docker.internal:11434"
@@ -117,7 +117,7 @@ def test_no_warning_when_at_least_one_description_came_back(caplog_warnings):
     and does not warn — the user might have area-threshold filtering or
     classification gating."""
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
     doc = _doc_with_pictures(with_descriptions=True)
 
     _warn_if_descriptions_missing(config, doc, "fine.pdf")
@@ -160,7 +160,7 @@ async def test_convert_emits_warning_via_chokepoint(
     )
 
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     await convert(config, pdf)
 
@@ -201,7 +201,7 @@ async def test_convert_text_path_also_warns(monkeypatch, caplog_warnings):
     )
 
     config = AppConfig()
-    config.processing.conversion_options.picture_description.enabled = True
+    config.processing.pictures = "description"
 
     # No URL scheme, no Path → drops into the convert_text branch.
     await convert(config, "<html><img src='...'/></html>")
