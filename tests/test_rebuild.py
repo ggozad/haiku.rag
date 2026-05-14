@@ -1,3 +1,4 @@
+import json
 import tempfile
 from pathlib import Path
 from typing import TypedDict
@@ -81,6 +82,238 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
         # Content should be identical
         for chunk in chunks_after:
             assert chunk.content == chunk_contents_before[chunk.id]
+
+
+@pytest.mark.vcr()
+async def test_rebuild_embed_only_multi_doc_streams_via_staging(
+    qa_corpus: Dataset, temp_db_path
+):
+    """Embed-only rebuild with multiple documents preserves chunks via staging.
+
+    Regression guard for the OOM bug: the previous implementation buffered
+    all chunks across all documents in memory before flushing. The current
+    streaming implementation copies chunks to a staging table, recreates
+    the chunks table, then streams doc-by-doc. This test verifies:
+
+    - chunks survive across multiple documents (correctness),
+    - the staging table is dropped at the end (no leak), and
+    - the rebuild yields every document with chunks.
+    """
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc1 = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc2 = await client.create_document(content=qa_corpus["document_extracted"][1])
+        assert doc1.id is not None and doc2.id is not None
+
+        chunks_before_1 = await client.chunk_repository.get_by_document_id(doc1.id)
+        chunks_before_2 = await client.chunk_repository.get_by_document_id(doc2.id)
+        assert chunks_before_1 and chunks_before_2
+        ids_before = {c.id for c in chunks_before_1} | {c.id for c in chunks_before_2}
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+
+        assert doc1.id in processed_ids
+        assert doc2.id in processed_ids
+
+        chunks_after_1 = await client.chunk_repository.get_by_document_id(doc1.id)
+        chunks_after_2 = await client.chunk_repository.get_by_document_id(doc2.id)
+        ids_after = {c.id for c in chunks_after_1} | {c.id for c in chunks_after_2}
+
+        # Same chunk IDs survive; content unchanged.
+        assert ids_before == ids_after
+        contents_before = {c.id: c.content for c in chunks_before_1 + chunks_before_2}
+        for chunk in chunks_after_1 + chunks_after_2:
+            assert chunk.content == contents_before[chunk.id]
+
+        # Staging table was cleaned up.
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" not in tables
+
+
+@pytest.mark.vcr()
+async def test_rebuild_drops_leftover_staging_table(qa_corpus: Dataset, temp_db_path):
+    """Staging table without marker is treated as partial phase 1 and dropped.
+
+    Simulates a phase-1 interruption by creating only the staging table (no
+    marker). On the next rebuild ``_resolve_rebuild_recovery`` should drop
+    the partial staging — the live chunks table is still authoritative.
+    """
+    from haiku.rag.client.rebuild import _StagingChunkRecord
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        assert doc.id is not None
+
+        # Simulate a partial phase 1 (staging exists, marker absent).
+        await client.store.db.create_table(
+            "chunks_rebuild_staging", schema=_StagingChunkRecord
+        )
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" in tables
+        assert "chunks_rebuild_marker" not in tables
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+        assert doc.id in processed_ids
+
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" not in tables
+        assert "chunks_rebuild_marker" not in tables
+
+
+@pytest.mark.vcr()
+async def test_rebuild_resumes_phase2_from_staging_after_crash(
+    qa_corpus: Dataset, temp_db_path
+):
+    """Marker + staging present → phase 2 resumes from staging instead of
+    redoing phase 1.
+
+    Simulates a phase-2 crash: pre-populate staging with the original chunks,
+    create the marker, then drop the live chunks table entirely (the worst
+    case — crash right after ``recreate_embeddings_table`` succeeded but
+    before any phase-2 batch flushed). The rebuild must reconstruct the
+    chunks table from staging without losing data.
+    """
+    from haiku.rag.client.rebuild import (
+        _StagingChunkRecord,
+        _StagingMarkerRecord,
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        assert doc.id is not None
+        original_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert original_chunks
+        original_ids = {c.id for c in original_chunks}
+        original_contents = {c.id: c.content for c in original_chunks}
+
+        # Snapshot chunk data into staging (simulating phase 1's output).
+        staging = await client.store.db.create_table(
+            "chunks_rebuild_staging", schema=_StagingChunkRecord
+        )
+        await staging.add(
+            [
+                _StagingChunkRecord(
+                    id=c.id or "",
+                    document_id=c.document_id or "",
+                    content=c.content,
+                    metadata=json.dumps(c.metadata),
+                    order=c.order,
+                )
+                for c in original_chunks
+            ]
+        )
+
+        # Mark phase 1 complete (simulating the marker write that happens
+        # just before phase 2 starts).
+        marker = await client.store.db.create_table(
+            "chunks_rebuild_marker", schema=_StagingMarkerRecord
+        )
+        await marker.add([_StagingMarkerRecord(id="phase1_complete")])
+
+        # Wipe the live chunks table to simulate a worst-case phase-2 crash
+        # after recreate_embeddings_table but before any chunks were
+        # written.
+        await client.store.db.drop_table("chunks")
+
+        # Recovery: rebuild_database should detect marker+staging and have
+        # _rebuild_embed_only skip phase 1.
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+        assert doc.id in processed_ids
+
+        recovered = await client.chunk_repository.get_by_document_id(doc.id)
+        assert {c.id for c in recovered} == original_ids
+        for chunk in recovered:
+            assert chunk.content == original_contents[chunk.id]
+
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" not in tables
+        assert "chunks_rebuild_marker" not in tables
+
+
+def test_staging_chunk_record_mirrors_chunk_record_schema():
+    """``_StagingChunkRecord`` must hold every ``ChunkRecordBase`` field except
+    those that are re-derived (``content_fts``) or replaced (``vector``).
+
+    If someone adds a column to ``ChunkRecordBase`` without updating
+    ``_StagingChunkRecord``, embed-only rebuilds will silently drop that
+    column on every crash-recovery cycle. This test fails loudly instead.
+    """
+    from haiku.rag.client.rebuild import _StagingChunkRecord
+    from haiku.rag.store.engine import ChunkRecordBase
+
+    expected = set(ChunkRecordBase.model_fields) - {"content_fts", "vector"}
+    assert set(_StagingChunkRecord.model_fields) == expected
+
+
+async def test_rebuild_drops_orphan_marker(temp_db_path):
+    """Marker without staging is treated as corrupted and dropped.
+
+    No embeddings are needed: ``_resolve_rebuild_recovery`` decides on
+    tables before any embed call, and the empty database has no documents
+    to embed.
+    """
+    from haiku.rag.client.rebuild import _StagingMarkerRecord
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        marker = await client.store.db.create_table(
+            "chunks_rebuild_marker", schema=_StagingMarkerRecord
+        )
+        await marker.add([_StagingMarkerRecord(id="phase1_complete")])
+
+        _ = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_marker" not in tables
+        assert "chunks_rebuild_staging" not in tables
+
+
+@pytest.mark.vcr()
+async def test_rebuild_non_embed_mode_drops_staging_recovery_state(
+    qa_corpus: Dataset, temp_db_path
+):
+    """Staging + marker from a prior embed-only crash → dropped on RECHUNK.
+
+    If a user runs a different rebuild mode after a crashed embed-only, the
+    staging tables are stale: the new mode recreates chunks from a
+    different source (e.g. the stored docling blob), so the staging copy is
+    not useful.
+    """
+    from haiku.rag.client.rebuild import (
+        _StagingChunkRecord,
+        _StagingMarkerRecord,
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        assert doc.id is not None
+
+        await client.store.db.create_table(
+            "chunks_rebuild_staging", schema=_StagingChunkRecord
+        )
+        marker = await client.store.db.create_table(
+            "chunks_rebuild_marker", schema=_StagingMarkerRecord
+        )
+        await marker.add([_StagingMarkerRecord(id="phase1_complete")])
+
+        processed_ids = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
+        ]
+        assert doc.id in processed_ids
+
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" not in tables
+        assert "chunks_rebuild_marker" not in tables
 
 
 @pytest.mark.vcr()

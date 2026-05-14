@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **`rebuild --embed-only` no longer buffers the entire corpus in memory.** The previous implementation accumulated every chunk's id, content, content_fts, metadata, and new embedding vector in a single Python list before flushing. The rebuild now stream-copies non-vector columns into a `chunks_rebuild_staging` table (1000 rows / page), recreates the chunks table fresh to honour vector-dim changes, then streams from staging one document at a time, embedding in batches of `embeddings.batch_size` and flushing to the new chunks table every 50 documents.
+- **`rebuild --embed-only` is now idempotent across crashes.** A second table, `chunks_rebuild_marker`, is written immediately after phase 1 (staging copy) finishes. Its presence flips the next rebuild into resume mode: phase 1 is skipped, the live chunks table is recreated, and phase 2 (re-embed) runs from the existing staging snapshot. Cleanup drops the marker before the staging table, so an interruption between the two drops leaves a markerless staging that the next run discards harmlessly. A staging table without a marker is treated as a partial phase 1 and dropped (the live chunks table is still authoritative). Running a non-embed-only mode (FULL / RECHUNK / DESCRIPTIONS / TITLE_ONLY) after a crashed embed-only correctly discards the staging recovery state. Phase 1's pagination was switched from `offset/limit` to `to_batches`, removing the latent offset-drift risk and the O(N²) cost at high offsets.
+
 ## [0.46.0] - 2026-05-13
 
 ### Added
