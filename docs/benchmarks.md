@@ -166,11 +166,15 @@ The text-vs-image gap on retrieval is small (0.81 pp) but on QA it widens to ~5.
 
 ##### QA Accuracy
 
-| Embedding Model      | VLM                  | QA Model         | Accuracy |
-|----------------------|----------------------|------------------|---------:|
-| `qwen3-embedding:4b` | Ollama / ministral-3 | `ollama:qwen3.6` |     0.95 |
+| Embedding Model      | VLM                  | QA Model                            | Reranker               | Accuracy |
+|----------------------|----------------------|-------------------------------------|------------------------|---------:|
+| `qwen3-embedding:4b` | Ollama / ministral-3 | `ollama:qwen3.6`                    | none                   |     0.95 |
+| `qwen3-embedding:4b` | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4`        | none                   |     0.81 |
+| `qwen3-embedding:4b` | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4`        | `mxbai-rerank-base-v2` |     0.92 |
 
-*Measured on haiku.rag v0.45.0, judged by `ollama:qwen3.6` (current default).*
+*Measured on haiku.rag v0.45.0, judged by `ollama:qwen3.6` (current default). T
+
+On Gemma-4 the reranker is worth +11 percentage points. Inspecting the no-reranker failures, the dominant patterns are RRF score compression (the right chunk in top-8 but not top-1), FTS keyword bleed from unrelated papers, and References-section chunks competing with body sections. `mxbai-rerank-base-v2` resolves all three on most cases.
 
 ##### Skill QA + citation retrieval
 
