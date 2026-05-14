@@ -84,6 +84,85 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.vcr()
+async def test_rebuild_embed_only_multi_doc_streams_via_staging(
+    qa_corpus: Dataset, temp_db_path
+):
+    """Embed-only rebuild with multiple documents preserves chunks via staging.
+
+    Regression guard for the OOM bug: the previous implementation buffered
+    all chunks across all documents in memory before flushing. The current
+    streaming implementation copies chunks to a staging table, recreates
+    the chunks table, then streams doc-by-doc. This test verifies:
+
+    - chunks survive across multiple documents (correctness),
+    - the staging table is dropped at the end (no leak), and
+    - the rebuild yields every document with chunks.
+    """
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc1 = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc2 = await client.create_document(content=qa_corpus["document_extracted"][1])
+        assert doc1.id is not None and doc2.id is not None
+
+        chunks_before_1 = await client.chunk_repository.get_by_document_id(doc1.id)
+        chunks_before_2 = await client.chunk_repository.get_by_document_id(doc2.id)
+        assert chunks_before_1 and chunks_before_2
+        ids_before = {c.id for c in chunks_before_1} | {c.id for c in chunks_before_2}
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+
+        assert doc1.id in processed_ids
+        assert doc2.id in processed_ids
+
+        chunks_after_1 = await client.chunk_repository.get_by_document_id(doc1.id)
+        chunks_after_2 = await client.chunk_repository.get_by_document_id(doc2.id)
+        ids_after = {c.id for c in chunks_after_1} | {c.id for c in chunks_after_2}
+
+        # Same chunk IDs survive; content unchanged.
+        assert ids_before == ids_after
+        contents_before = {c.id: c.content for c in chunks_before_1 + chunks_before_2}
+        for chunk in chunks_after_1 + chunks_after_2:
+            assert chunk.content == contents_before[chunk.id]
+
+        # Staging table was cleaned up.
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" not in tables
+
+
+@pytest.mark.vcr()
+async def test_rebuild_drops_leftover_staging_table(qa_corpus: Dataset, temp_db_path):
+    """A staging table left behind by a previous interrupted rebuild gets dropped.
+
+    Simulates a crash mid-rebuild by manually creating a ``chunks_rebuild_staging``
+    table before a fresh rebuild starts. ``rebuild_database`` should detect
+    and drop it before doing anything else.
+    """
+    from haiku.rag.client.rebuild import _StagingChunkRecord
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        assert doc.id is not None
+
+        # Simulate a stale staging table from an interrupted rebuild.
+        await client.store.db.create_table(
+            "chunks_rebuild_staging", schema=_StagingChunkRecord
+        )
+        assert "chunks_rebuild_staging" in (await client.store.db.list_tables()).tables
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+        assert doc.id in processed_ids
+
+        # Stale staging gone, fresh staging from this rebuild also gone.
+        tables = (await client.store.db.list_tables()).tables
+        assert "chunks_rebuild_staging" not in tables
+
+
+@pytest.mark.vcr()
 async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_path):
     """Test embed-only rebuild skips chunks with unchanged embeddings."""
     async with HaikuRAG(temp_db_path, create=True) as client:

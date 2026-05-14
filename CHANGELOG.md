@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- **`rebuild --embed-only` no longer buffers the entire corpus in memory.** The previous implementation accumulated every chunk's id, content, content_fts, metadata, and new embedding vector in a single Python list before flushing — on a multi-million-chunk corpus with a 3072-dim model this trivially exceeded 40 GB of RAM. The rebuild now stream-copies non-vector columns into a `chunks_rebuild_staging` table (1000 rows / page), recreates the chunks table fresh to honour vector-dim changes, then streams from staging one document at a time, embedding in batches of `embeddings.batch_size` and flushing to the new chunks table every 50 documents. Peak memory is bounded to one batch regardless of corpus size; LanceDB OSS does not support `rename_table`, so the staging copy is the only safe way to preserve chunk identity while the live table is recreated. A leftover staging table from an interrupted previous rebuild is dropped at the top of `rebuild_database` — note that an interruption mid-rebuild may still leave the chunks table in a partial state until a follow-up adds idempotent recovery from staging.
+
 ## [0.46.0] - 2026-05-13
 
 ### Added

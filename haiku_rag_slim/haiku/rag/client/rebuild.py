@@ -4,6 +4,8 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from lancedb.pydantic import LanceModel
+
 from haiku.rag.client.documents import check_source_accessible
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
@@ -17,6 +19,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REBUILD_BATCH_SIZE = 50
+_STAGING_TABLE_NAME = "chunks_rebuild_staging"
+_STAGING_COPY_PAGE_SIZE = 1000
+
+
+class _StagingChunkRecord(LanceModel):
+    """Non-vector copy of a chunk row, used by ``_rebuild_embed_only``.
+
+    The staging table holds the original chunks' identity and content while
+    the live ``chunks`` table is dropped and recreated with a potentially
+    different vector dimension. The vector itself is omitted — re-embedding
+    is the whole point.
+    """
+
+    id: str
+    document_id: str
+    content: str
+    metadata: str
+    order: int
 
 
 async def rebuild_database(
@@ -30,6 +50,10 @@ async def rebuild_database(
 
     if mode is None:
         mode = RebuildMode.FULL
+
+    # If a previous embed-only rebuild was interrupted, a leftover staging
+    # table may remain. Drop it so the new rebuild starts from a clean slate.
+    await _drop_leftover_staging_table(client)
 
     # Wait for any already-scheduled background vacuum before the destructive
     # table operations at the top of RECHUNK / FULL. Rebuild drops and
@@ -121,54 +145,169 @@ async def _rebuild_title_only(
             yield doc.id
 
 
+async def _drop_leftover_staging_table(client: "HaikuRAG") -> None:
+    """Drop a stale staging table left over from an interrupted rebuild.
+
+    Same crash-recovery semantics as the other rebuild modes (RECHUNK/FULL
+    also leave the database non-atomic if interrupted): the user is expected
+    to re-run rebuild from whatever state the database is in.
+    """
+    tables = (await client.store.db.list_tables()).tables
+    if _STAGING_TABLE_NAME not in tables:
+        return
+    logger.warning(
+        "Dropping leftover '%s' table from a previous interrupted rebuild.",
+        _STAGING_TABLE_NAME,
+    )
+    await client.store.db.drop_table(_STAGING_TABLE_NAME)
+
+
+async def _populate_staging_table(client: "HaikuRAG") -> None:
+    """Stream-copy the non-vector columns of the chunks table into staging.
+
+    Reads ``_STAGING_COPY_PAGE_SIZE`` rows per page so peak memory stays
+    bounded regardless of corpus size. The vector column is omitted — the
+    point of embed-only rebuild is to regenerate it.
+    """
+    db = client.store.db
+    tables = (await db.list_tables()).tables
+    if _STAGING_TABLE_NAME in tables:
+        await db.drop_table(_STAGING_TABLE_NAME)
+
+    staging = await db.create_table(_STAGING_TABLE_NAME, schema=_StagingChunkRecord)
+    if "chunks" not in tables:
+        return
+
+    offset = 0
+    while True:
+        rows = (
+            await client.store.chunks_table.query()
+            .select(["id", "document_id", "content", "metadata", "order"])
+            .offset(offset)
+            .limit(_STAGING_COPY_PAGE_SIZE)
+            .to_arrow()
+        ).to_pylist()
+        if not rows:
+            break
+        records = [
+            _StagingChunkRecord(
+                id=r["id"],
+                document_id=r["document_id"],
+                content=r["content"],
+                metadata=r["metadata"],
+                order=r["order"],
+            )
+            for r in rows
+        ]
+        await staging.add(records)
+        offset += _STAGING_COPY_PAGE_SIZE
+
+
+async def _read_chunks_from_staging(staging_table, document_id: str) -> list[Chunk]:
+    """Read chunks for one document from the staging table.
+
+    Only non-vector columns are selected: the staging table may have a
+    different vector dimension than the new chunks table (during a dim
+    migration), and we re-embed anyway.
+    """
+    rows = (
+        await staging_table.query()
+        .where(f"document_id = '{document_id}'")
+        .select(["id", "document_id", "content", "metadata", "order"])
+        .to_arrow()
+    ).to_pylist()
+    chunks: list[Chunk] = []
+    for row in rows:
+        chunks.append(
+            Chunk(
+                id=row["id"],
+                document_id=row["document_id"],
+                content=row["content"],
+                metadata=json.loads(row["metadata"]),
+                order=row["order"],
+            )
+        )
+    chunks.sort(key=lambda c: c.order)
+    return chunks
+
+
 async def _rebuild_embed_only(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
-    """Re-embed all chunks without changing chunk boundaries."""
+    """Re-embed all chunks without changing chunk boundaries.
+
+    Two-phase pattern that keeps peak memory bounded regardless of corpus
+    size:
+
+    1. Stream-copy the chunks table's non-vector columns into a staging
+       table. LanceDB OSS doesn't support ``rename_table``, so this is the
+       only safe way to preserve the original chunk identity while we drop
+       and recreate the live chunks table with a (potentially) new vector
+       dim.
+    2. Drop and recreate ``chunks`` with the current schema, then stream
+       from staging one document at a time, re-embed in batches of
+       ``embeddings.batch_size``, and flush to the new chunks table every
+       ``_REBUILD_BATCH_SIZE`` documents.
+    """
     from haiku.rag.embeddings import contextualize
 
-    # Collect all chunks with new embeddings
-    all_chunk_data: list[tuple[str, dict]] = []
+    db = client.store.db
+    batch_size = client._config.embeddings.batch_size
 
-    for doc in documents:
-        assert doc.id is not None
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-        if not chunks:
-            continue
+    # Phase 1: copy chunks into staging. After this we can safely destroy
+    # the live chunks table without losing chunk identity / content.
+    await _populate_staging_table(client)
 
-        texts = contextualize(chunks)
-        embeddings = await client.chunk_repository.embedder.embed_documents(texts)
-
-        for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
-            all_chunk_data.append(
-                (
-                    doc.id,
-                    {
-                        "id": chunk.id,
-                        "document_id": chunk.document_id,
-                        "content": chunk.content,
-                        "content_fts": content_fts,
-                        "metadata": json.dumps(chunk.metadata),
-                        "order": chunk.order,
-                        "vector": embedding,
-                    },
-                )
-            )
-
-    # Recreate chunks table (handles dimension changes)
+    # Recreate the chunks table fresh (handles vector-dim changes).
     await client.store.recreate_embeddings_table()
 
-    # Insert all chunks
-    if all_chunk_data:
-        records = [client.store.ChunkRecord(**data) for _, data in all_chunk_data]
-        await client.store.chunks_table.add(records)
+    staging_table = await db.open_table(_STAGING_TABLE_NAME)
 
-    # Yield all processed doc IDs
+    pending_records: list = []
     yielded_docs: set[str] = set()
-    for doc_id, _ in all_chunk_data:
-        if doc_id not in yielded_docs:
-            yielded_docs.add(doc_id)
-            yield doc_id
+
+    try:
+        for doc in documents:
+            assert doc.id is not None
+            chunks = await _read_chunks_from_staging(staging_table, doc.id)
+            if not chunks:
+                continue
+
+            texts = contextualize(chunks)
+            embeddings: list[list[float]] = []
+            for i in range(0, len(texts), batch_size):
+                batch_embeddings = (
+                    await client.chunk_repository.embedder.embed_documents(
+                        texts[i : i + batch_size]
+                    )
+                )
+                embeddings.extend(batch_embeddings)
+
+            for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
+                pending_records.append(
+                    client.store.ChunkRecord(
+                        id=chunk.id,
+                        document_id=chunk.document_id,
+                        content=chunk.content,
+                        content_fts=content_fts,
+                        metadata=json.dumps(chunk.metadata),
+                        order=chunk.order,
+                        vector=embedding,
+                    )
+                )
+
+            yielded_docs.add(doc.id)
+            yield doc.id
+
+            if len(yielded_docs) % _REBUILD_BATCH_SIZE == 0 and pending_records:
+                await client.store.chunks_table.add(pending_records)
+                pending_records = []
+
+        if pending_records:
+            await client.store.chunks_table.add(pending_records)
+    finally:
+        if _STAGING_TABLE_NAME in (await db.list_tables()).tables:
+            await db.drop_table(_STAGING_TABLE_NAME)
 
     # Yield docs with no chunks
     for doc in documents:
