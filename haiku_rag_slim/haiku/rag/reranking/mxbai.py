@@ -1,3 +1,5 @@
+import asyncio
+
 from mxbai_rerank import MxbaiRerankV2  # pyright: ignore[reportMissingImports]
 
 from haiku.rag.config import Config
@@ -22,7 +24,9 @@ class MxBAIReranker(RerankerBase):
 
         documents = [chunk.content for chunk in chunks]
 
-        results = self._client.rank(query=query, documents=documents, top_k=top_n)
+        results = await asyncio.to_thread(
+            lambda: self._client.rank(query=query, documents=documents, top_k=top_n)
+        )
         reranked_chunks = []
         for result in results:
             original_chunk = chunks[result.index]

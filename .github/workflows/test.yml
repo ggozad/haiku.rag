@@ -66,6 +66,8 @@ jobs:
           key: huggingface-${{ runner.os }}-qwen-tokenizer-v1
       - name: Pre-download tokenizer
         run: uv run python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-0.6B')"
+      - name: Pre-download cross-encoder test model
+        run: uv run python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
       - name: Run tests with coverage
         run: uv run pytest -m "not integration" --cov=haiku --cov-report=xml
       - name: Upload coverage to Codecov

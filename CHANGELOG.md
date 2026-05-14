@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- **`cross-encoder` reranking provider.** Runs any HuggingFace cross-encoder reranker in-process via `sentence_transformers.CrossEncoder` — no separate server. Useful for BGE (`BAAI/bge-reranker-v2-m3`), Qwen3-Reranker, MS-MARCO MiniLM, and other CrossEncoder-compatible models when vLLM is not an option. New `[cross-encoder]` extra pulls `sentence-transformers`.
+
 ### Fixed
 
 - **`rebuild --embed-only` no longer buffers the entire corpus in memory.** The previous implementation accumulated every chunk's id, content, content_fts, metadata, and new embedding vector in a single Python list before flushing. The rebuild now stream-copies non-vector columns into a `chunks_rebuild_staging` table (1000 rows / page), recreates the chunks table fresh to honour vector-dim changes, then streams from staging one document at a time, embedding in batches of `embeddings.batch_size` and flushing to the new chunks table every 50 documents.

@@ -63,6 +63,18 @@ async def test_mxbai_reranker():
 
 
 @pytest.mark.asyncio
+async def test_mxbai_reranker_empty_chunks():
+    try:
+        from haiku.rag.reranking.mxbai import MxBAIReranker
+
+        reranker = MxBAIReranker()
+        result = await reranker.rerank("query", [], top_n=2)
+        assert result == []
+    except ImportError:
+        pytest.skip("MxBAI package not installed")
+
+
+@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_cohere_reranker():
     try:
@@ -124,6 +136,15 @@ class TestGetReranker:
             )
         )
         with pytest.raises(ValueError, match="vLLM reranker requires base_url"):
+            get_reranker(config)
+
+    def test_cross_encoder_provider_without_name_raises_error(self):
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="cross-encoder", name="")
+            )
+        )
+        with pytest.raises(ValueError, match="cross-encoder reranker requires name"):
             get_reranker(config)
 
     @pytest.mark.parametrize(
@@ -195,6 +216,15 @@ class TestGetReranker:
                 {"_model": "jinaai/jina-reranker-v3"},
                 {},
             ),
+            (
+                "cross-encoder",
+                "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                "haiku.rag.reranking.cross_encoder",
+                "CrossEncoderReranker",
+                {},
+                {"_model": "cross-encoder/ms-marco-MiniLM-L-6-v2"},
+                {},
+            ),
         ],
         ids=[
             "mxbai",
@@ -204,6 +234,7 @@ class TestGetReranker:
             "zeroentropy-default",
             "jina",
             "jina-local",
+            "cross-encoder",
         ],
     )
     def test_provider(
@@ -298,3 +329,33 @@ async def test_jina_local_reranker():
         assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
     except ImportError:
         pytest.skip("Jina local dependencies not installed")
+
+
+@pytest.mark.asyncio
+async def test_cross_encoder_reranker():
+    try:
+        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert len(reranked) == 2
+        assert all(isinstance(score, float) for chunk, score in reranked)
+        top_ids = [chunk.document_id for chunk, score in reranked]
+        assert "0" in top_ids or "2" in top_ids
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
+
+
+@pytest.mark.asyncio
+async def test_cross_encoder_reranker_empty_chunks():
+    try:
+        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        result = await reranker.rerank("query", [], top_n=2)
+        assert result == []
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
