@@ -13,6 +13,7 @@ wheels/
 # tests
 .coverage*
 evaluations/evaluations/data/
+evaluations/scripts/
 tests/data/
 .pytest_cache/
 .ruff_cache/

@@ -736,7 +736,7 @@ async def test_client_search(temp_db_path):
         assert first_result.document_id == doc1.id
 
         # Test search with different query
-        ml_results = await client.search("machine learning data", limit=2)
+        ml_results = await client.search("machine learning algorithms", limit=2)
         assert len(ml_results) > 0
 
         # Verify first result is from the machine learning document (doc2)
