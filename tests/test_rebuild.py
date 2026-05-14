@@ -238,6 +238,21 @@ async def test_rebuild_resumes_phase2_from_staging_after_crash(
         assert "chunks_rebuild_marker" not in tables
 
 
+def test_staging_chunk_record_mirrors_chunk_record_schema():
+    """``_StagingChunkRecord`` must hold every ``ChunkRecordBase`` field except
+    those that are re-derived (``content_fts``) or replaced (``vector``).
+
+    If someone adds a column to ``ChunkRecordBase`` without updating
+    ``_StagingChunkRecord``, embed-only rebuilds will silently drop that
+    column on every crash-recovery cycle. This test fails loudly instead.
+    """
+    from haiku.rag.client.rebuild import _StagingChunkRecord
+    from haiku.rag.store.engine import ChunkRecordBase
+
+    expected = set(ChunkRecordBase.model_fields) - {"content_fts", "vector"}
+    assert set(_StagingChunkRecord.model_fields) == expected
+
+
 async def test_rebuild_drops_orphan_marker(temp_db_path):
     """Marker without staging is treated as corrupted and dropped.
 
