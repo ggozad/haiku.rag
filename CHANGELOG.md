@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.47.0] - 2026-05-14
+
 ### Added
 
 - **`cross-encoder` reranking provider.** Runs any HuggingFace cross-encoder reranker in-process via `sentence_transformers.CrossEncoder` — no separate server. Useful for BGE (`BAAI/bge-reranker-v2-m3`), Qwen3-Reranker, MS-MARCO MiniLM, and other CrossEncoder-compatible models when vLLM is not an option. New `[cross-encoder]` extra pulls `sentence-transformers`.
@@ -1521,7 +1523,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.46.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.47.0...HEAD
+[0.47.0]: https://github.com/ggozad/haiku.rag/compare/0.46.0...0.47.0
 [0.46.0]: https://github.com/ggozad/haiku.rag/compare/0.45.0...0.46.0
 [0.45.0]: https://github.com/ggozad/haiku.rag/compare/0.44.0...0.45.0
 [0.44.0]: https://github.com/ggozad/haiku.rag/compare/0.43.1...0.44.0
