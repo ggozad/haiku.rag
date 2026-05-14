@@ -4,7 +4,7 @@ try:
     from sentence_transformers import (
         CrossEncoder,  # pyright: ignore[reportMissingImports]
     )
-except ImportError as e:
+except ImportError as e:  # pragma: no cover
     raise ImportError(
         "sentence-transformers is not installed. Install it with "
         "`pip install sentence-transformers` or use the cross-encoder optional dependency."

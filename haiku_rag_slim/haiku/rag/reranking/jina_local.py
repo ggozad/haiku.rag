@@ -4,7 +4,7 @@ try:
     from transformers import (
         AutoModel,  # pyright: ignore[reportMissingImports]
     )
-except ImportError as e:
+except ImportError as e:  # pragma: no cover
     raise ImportError(
         "transformers is not installed. Please install it with `pip install transformers torch` "
         "or use the jina optional dependency."

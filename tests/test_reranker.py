@@ -63,6 +63,18 @@ async def test_mxbai_reranker():
 
 
 @pytest.mark.asyncio
+async def test_mxbai_reranker_empty_chunks():
+    try:
+        from haiku.rag.reranking.mxbai import MxBAIReranker
+
+        reranker = MxBAIReranker()
+        result = await reranker.rerank("query", [], top_n=2)
+        assert result == []
+    except ImportError:
+        pytest.skip("MxBAI package not installed")
+
+
+@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_cohere_reranker():
     try:
@@ -333,5 +345,17 @@ async def test_cross_encoder_reranker():
         assert all(isinstance(score, float) for chunk, score in reranked)
         top_ids = [chunk.document_id for chunk, score in reranked]
         assert "0" in top_ids or "2" in top_ids
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
+
+
+@pytest.mark.asyncio
+async def test_cross_encoder_reranker_empty_chunks():
+    try:
+        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        result = await reranker.rerank("query", [], top_n=2)
+        assert result == []
     except ImportError:
         pytest.skip("sentence-transformers not installed")
