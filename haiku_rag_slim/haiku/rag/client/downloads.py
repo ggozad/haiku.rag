@@ -58,6 +58,7 @@ async def download_models(
 
             model_name = config.embeddings.model.name
             yield DownloadProgress(model=model_name, status="start")
+            # Wrap in lambda: ty loses ParamSpec inference on third-party __init__.
             await asyncio.to_thread(lambda: SentenceTransformer(model_name))
             yield DownloadProgress(model=model_name, status="done")
         except ImportError:

@@ -126,6 +126,15 @@ class TestGetReranker:
         with pytest.raises(ValueError, match="vLLM reranker requires base_url"):
             get_reranker(config)
 
+    def test_cross_encoder_provider_without_name_raises_error(self):
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="cross-encoder", name="")
+            )
+        )
+        with pytest.raises(ValueError, match="cross-encoder reranker requires name"):
+            get_reranker(config)
+
     @pytest.mark.parametrize(
         "provider, model_name, class_module, class_name, extra_model_kwargs, expected_attrs, env_vars",
         [

@@ -1,3 +1,5 @@
+import asyncio
+
 try:
     from transformers import (
         AutoModel,  # pyright: ignore[reportMissingImports]
@@ -32,6 +34,8 @@ class JinaLocalReranker(RerankerBase):  # pragma: no cover
 
         documents = [chunk.content for chunk in chunks]
 
-        results = self._reranker.rerank(query, documents, top_n=top_n)
+        results = await asyncio.to_thread(
+            lambda: self._reranker.rerank(query, documents, top_n=top_n)
+        )
 
         return [(chunks[r["index"]], float(r["relevance_score"])) for r in results]

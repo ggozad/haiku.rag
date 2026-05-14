@@ -33,8 +33,7 @@ class CrossEncoderReranker(RerankerBase):
             return []
 
         documents = [chunk.content for chunk in chunks]
-        loop = asyncio.get_running_loop()
-        rankings = await loop.run_in_executor(
-            None, lambda: self._reranker.rank(query, documents, top_k=top_n)
+        rankings = await asyncio.to_thread(
+            lambda: self._reranker.rank(query, documents, top_k=top_n)
         )
         return [(chunks[r["corpus_id"]], float(r["score"])) for r in rankings]

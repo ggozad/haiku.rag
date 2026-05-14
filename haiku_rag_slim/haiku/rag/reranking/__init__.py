@@ -71,7 +71,12 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         try:
             from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
 
-            return CrossEncoderReranker(config.reranking.model.name)
+            name = config.reranking.model.name
+            if not name:
+                raise ValueError(
+                    "cross-encoder reranker requires name in reranking.model"
+                )
+            return CrossEncoderReranker(name)
         except ImportError:  # pragma: no cover
             return None
 
