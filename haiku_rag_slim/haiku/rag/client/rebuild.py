@@ -8,6 +8,7 @@ from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import check_source_accessible
 from haiku.rag.converters import get_converter
+from haiku.rag.store.engine import ChunkRecordBase
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 _REBUILD_BATCH_SIZE = 50
 _STAGING_TABLE_NAME = "chunks_rebuild_staging"
-_STAGING_COPY_PAGE_SIZE = 1000
+_STAGING_MARKER_TABLE_NAME = "chunks_rebuild_marker"
+_STAGING_COPY_BATCH_SIZE = 1000
 
 
 class _StagingChunkRecord(LanceModel):
@@ -39,6 +41,19 @@ class _StagingChunkRecord(LanceModel):
     order: int
 
 
+class _StagingMarkerRecord(LanceModel):
+    """Sentinel marking the staging table as complete.
+
+    The marker table is created only after ``_populate_staging_table`` writes
+    every chunk into staging. Its presence at the top of a rebuild means
+    phase 2 (the embed loop) was interrupted by an earlier crash, so staging
+    is the authoritative source for the original chunk identities and we
+    must resume from it instead of rerunning phase 1.
+    """
+
+    id: str
+
+
 async def rebuild_database(
     client: "HaikuRAG", mode: "RebuildMode | None" = None
 ) -> AsyncGenerator[str, None]:
@@ -51,9 +66,11 @@ async def rebuild_database(
     if mode is None:
         mode = RebuildMode.FULL
 
-    # If a previous embed-only rebuild was interrupted, a leftover staging
-    # table may remain. Drop it so the new rebuild starts from a clean slate.
-    await _drop_leftover_staging_table(client)
+    # Resolve any leftover staging/marker tables from a previously
+    # interrupted rebuild. Returns True only when phase 1 was already
+    # complete and the current mode is EMBED_ONLY, in which case we resume
+    # phase 2 from the existing staging table instead of recopying.
+    resume_from_staging = await _resolve_rebuild_recovery(client, mode)
 
     # Wait for any already-scheduled background vacuum before the destructive
     # table operations at the top of RECHUNK / FULL. Rebuild drops and
@@ -78,7 +95,9 @@ async def rebuild_database(
         async for doc_id in _rebuild_title_only(client, documents):
             yield doc_id
     elif mode == RebuildMode.EMBED_ONLY:
-        async for doc_id in _rebuild_embed_only(client, documents):
+        async for doc_id in _rebuild_embed_only(
+            client, documents, resume_from_staging=resume_from_staging
+        ):
             yield doc_id
     elif mode == RebuildMode.RECHUNK:
         await client.chunk_repository.delete_all()
@@ -145,29 +164,73 @@ async def _rebuild_title_only(
             yield doc.id
 
 
-async def _drop_leftover_staging_table(client: "HaikuRAG") -> None:
-    """Drop a stale staging table left over from an interrupted rebuild.
+async def _resolve_rebuild_recovery(client: "HaikuRAG", mode: "RebuildMode") -> bool:
+    """Resolve any partially-completed rebuild state from a previous crash.
 
-    Same crash-recovery semantics as the other rebuild modes (RECHUNK/FULL
-    also leave the database non-atomic if interrupted): the user is expected
-    to re-run rebuild from whatever state the database is in.
+    Returns ``True`` if ``_rebuild_embed_only`` should resume from the
+    existing staging table (phase 1 was already complete). In all other
+    cases stale recovery tables are dropped and the rebuild starts fresh.
+
+    State at entry           → action
+    --------------------------------
+    no staging, no marker    → return False (normal start)
+    staging only             → drop staging (phase 1 was interrupted; ``chunks`` is intact)
+    marker only              → drop marker (corrupted state)
+    staging + marker, embed  → return True (resume phase 2 from staging)
+    staging + marker, other  → drop both (staging is for embed-only; user picked a different mode)
     """
-    tables = (await client.store.db.list_tables()).tables
-    if _STAGING_TABLE_NAME not in tables:
-        return
+    from haiku.rag.client import RebuildMode
+
+    db = client.store.db
+    tables = (await db.list_tables()).tables
+    has_staging = _STAGING_TABLE_NAME in tables
+    has_marker = _STAGING_MARKER_TABLE_NAME in tables
+
+    if not has_staging and not has_marker:
+        return False
+
+    if has_marker and not has_staging:
+        logger.warning(
+            "Found '%s' without staging table; dropping orphaned marker.",
+            _STAGING_MARKER_TABLE_NAME,
+        )
+        await db.drop_table(_STAGING_MARKER_TABLE_NAME)
+        return False
+
+    if not has_marker:
+        logger.warning(
+            "Dropping incomplete '%s' from an interrupted phase 1.",
+            _STAGING_TABLE_NAME,
+        )
+        await db.drop_table(_STAGING_TABLE_NAME)
+        return False
+
+    # has_staging and has_marker
+    if mode == RebuildMode.EMBED_ONLY:
+        logger.warning(
+            "Resuming interrupted embed-only rebuild: phase 2 will run from "
+            "existing '%s'.",
+            _STAGING_TABLE_NAME,
+        )
+        return True
+
     logger.warning(
-        "Dropping leftover '%s' table from a previous interrupted rebuild.",
-        _STAGING_TABLE_NAME,
+        "Dropping staging tables from a prior embed-only rebuild — current "
+        "mode (%s) does not consume them.",
+        mode.name,
     )
-    await client.store.db.drop_table(_STAGING_TABLE_NAME)
+    await db.drop_table(_STAGING_MARKER_TABLE_NAME)
+    await db.drop_table(_STAGING_TABLE_NAME)
+    return False
 
 
 async def _populate_staging_table(client: "HaikuRAG") -> None:
-    """Stream-copy the non-vector columns of the chunks table into staging.
+    """Stream the non-vector columns of the chunks table into staging.
 
-    Reads ``_STAGING_COPY_PAGE_SIZE`` rows per page so peak memory stays
-    bounded regardless of corpus size. The vector column is omitted — the
-    point of embed-only rebuild is to regenerate it.
+    Uses ``to_batches`` for a single streaming read (no offset/limit
+    pagination drift), so peak memory stays bounded regardless of corpus
+    size. The vector column is omitted — the point of embed-only rebuild is
+    to regenerate it.
     """
     db = client.store.db
     tables = (await db.list_tables()).tables
@@ -178,17 +241,15 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
     if "chunks" not in tables:
         return
 
-    offset = 0
-    while True:
-        rows = (
-            await client.store.chunks_table.query()
-            .select(["id", "document_id", "content", "metadata", "order"])
-            .offset(offset)
-            .limit(_STAGING_COPY_PAGE_SIZE)
-            .to_arrow()
-        ).to_pylist()
+    stream = (
+        await client.store.chunks_table.query()
+        .select(["id", "document_id", "content", "metadata", "order"])
+        .to_batches(max_batch_length=_STAGING_COPY_BATCH_SIZE)
+    )
+    async for batch in stream:
+        rows = batch.to_pylist()
         if not rows:
-            break
+            continue
         records = [
             _StagingChunkRecord(
                 id=r["id"],
@@ -200,7 +261,37 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
             for r in rows
         ]
         await staging.add(records)
-        offset += _STAGING_COPY_PAGE_SIZE
+
+
+async def _mark_phase1_complete(client: "HaikuRAG") -> None:
+    """Create the marker table that designates staging as authoritative.
+
+    Called after ``_populate_staging_table`` finishes. On crash recovery the
+    marker's presence flips ``_rebuild_embed_only`` into resume mode.
+    """
+    db = client.store.db
+    if _STAGING_MARKER_TABLE_NAME in (await db.list_tables()).tables:
+        return
+    marker = await db.create_table(
+        _STAGING_MARKER_TABLE_NAME, schema=_StagingMarkerRecord
+    )
+    await marker.add([_StagingMarkerRecord(id="phase1_complete")])
+
+
+async def _drop_staging_tables(client: "HaikuRAG") -> None:
+    """Drop the marker first, then the staging table.
+
+    Ordering matters: if a crash interrupts cleanup between the two drops,
+    the next rebuild sees ``staging`` without ``marker`` and treats it as a
+    partial phase 1 → drops staging harmlessly. The reverse order would
+    leak a marker pointing at nothing.
+    """
+    db = client.store.db
+    tables = (await db.list_tables()).tables
+    if _STAGING_MARKER_TABLE_NAME in tables:
+        await db.drop_table(_STAGING_MARKER_TABLE_NAME)
+    if _STAGING_TABLE_NAME in tables:
+        await db.drop_table(_STAGING_TABLE_NAME)
 
 
 async def _read_chunks_from_staging(staging_table, document_id: str) -> list[Chunk]:
@@ -232,82 +323,101 @@ async def _read_chunks_from_staging(staging_table, document_id: str) -> list[Chu
 
 
 async def _rebuild_embed_only(
-    client: "HaikuRAG", documents: list[Document]
+    client: "HaikuRAG",
+    documents: list[Document],
+    *,
+    resume_from_staging: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Re-embed all chunks without changing chunk boundaries.
 
     Two-phase pattern that keeps peak memory bounded regardless of corpus
-    size:
+    size and is idempotent across crashes:
 
     1. Stream-copy the chunks table's non-vector columns into a staging
-       table. LanceDB OSS doesn't support ``rename_table``, so this is the
-       only safe way to preserve the original chunk identity while we drop
-       and recreate the live chunks table with a (potentially) new vector
-       dim.
-    2. Drop and recreate ``chunks`` with the current schema, then stream
+       table, then write a marker row that designates staging as complete.
+       LanceDB OSS does not support ``rename_table``, so the staging copy
+       is the only safe way to preserve chunk identity while the live
+       ``chunks`` table is dropped and recreated.
+    2. Drop-and-recreate ``chunks`` with the current schema, then stream
        from staging one document at a time, re-embed in batches of
        ``embeddings.batch_size``, and flush to the new chunks table every
        ``_REBUILD_BATCH_SIZE`` documents.
+
+    Cleanup runs only on success: a crash anywhere in phase 2 leaves both
+    staging and marker in place so the next rebuild can re-enter phase 2
+    via ``resume_from_staging=True``. The order of the success cleanup —
+    drop marker before staging — keeps an interruption between the two
+    drops recoverable: the next rebuild sees staging without marker and
+    treats it as a partial phase 1, which is harmless because phase 2 has
+    already finished writing the new chunks table.
     """
     from haiku.rag.embeddings import contextualize
 
     db = client.store.db
     batch_size = client._config.embeddings.batch_size
 
-    # Phase 1: copy chunks into staging. After this we can safely destroy
-    # the live chunks table without losing chunk identity / content.
-    await _populate_staging_table(client)
+    if not resume_from_staging:
+        # Phase 1: copy chunks into staging, then mark it complete. After the
+        # marker exists, a crash will resume phase 2 from staging.
+        await _populate_staging_table(client)
+        await _mark_phase1_complete(client)
 
-    # Recreate the chunks table fresh (handles vector-dim changes).
+    # Recreate the chunks table fresh (idempotent; handles vector-dim
+    # changes and discards any partial new chunks from a prior crashed
+    # phase 2).
     await client.store.recreate_embeddings_table()
 
     staging_table = await db.open_table(_STAGING_TABLE_NAME)
 
-    pending_records: list = []
+    pending_records: list[ChunkRecordBase] = []
     yielded_docs: set[str] = set()
 
-    try:
-        for doc in documents:
-            assert doc.id is not None
-            chunks = await _read_chunks_from_staging(staging_table, doc.id)
-            if not chunks:
-                continue
+    for doc in documents:
+        assert doc.id is not None
+        chunks = await _read_chunks_from_staging(staging_table, doc.id)
+        if not chunks:
+            continue
 
-            texts = contextualize(chunks)
-            embeddings: list[list[float]] = []
-            for i in range(0, len(texts), batch_size):
-                batch_embeddings = (
-                    await client.chunk_repository.embedder.embed_documents(
-                        texts[i : i + batch_size]
-                    )
+        texts = contextualize(chunks)
+        embeddings: list[list[float]] = []
+        for i in range(0, len(texts), batch_size):
+            batch_embeddings = await client.chunk_repository.embedder.embed_documents(
+                texts[i : i + batch_size]
+            )
+            embeddings.extend(batch_embeddings)
+
+        for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
+            pending_records.append(
+                client.store.ChunkRecord(
+                    id=chunk.id,
+                    document_id=chunk.document_id,
+                    content=chunk.content,
+                    content_fts=content_fts,
+                    metadata=json.dumps(chunk.metadata),
+                    order=chunk.order,
+                    vector=embedding,
                 )
-                embeddings.extend(batch_embeddings)
+            )
 
-            for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
-                pending_records.append(
-                    client.store.ChunkRecord(
-                        id=chunk.id,
-                        document_id=chunk.document_id,
-                        content=chunk.content,
-                        content_fts=content_fts,
-                        metadata=json.dumps(chunk.metadata),
-                        order=chunk.order,
-                        vector=embedding,
-                    )
-                )
+        yielded_docs.add(doc.id)
+        # Yield per-doc for progress reporting; the actual write batches up
+        # to _REBUILD_BATCH_SIZE docs. If the process is interrupted between
+        # yield and the next flush, the next rebuild resumes phase 2 from
+        # the staging table and redoes the batch (see _rebuild_rechunk for
+        # the original comment on the yield/flush gap).
+        yield doc.id
 
-            yielded_docs.add(doc.id)
-            yield doc.id
-
-            if len(yielded_docs) % _REBUILD_BATCH_SIZE == 0 and pending_records:
-                await client.store.chunks_table.add(pending_records)
-                pending_records = []
-
-        if pending_records:
+        if len(yielded_docs) % _REBUILD_BATCH_SIZE == 0 and pending_records:
             await client.store.chunks_table.add(pending_records)
-    finally:
-        if _STAGING_TABLE_NAME in (await db.list_tables()).tables:
-            await db.drop_table(_STAGING_TABLE_NAME)
+            pending_records = []
+
+    if pending_records:
+        await client.store.chunks_table.add(pending_records)
+
+    # Phase 2 finished. Drop the recovery state — marker first so a crash
+    # between the two drops leaves only staging behind, which the next
+    # rebuild discards harmlessly.
+    await _drop_staging_tables(client)
 
     # Yield docs with no chunks
     for doc in documents:
