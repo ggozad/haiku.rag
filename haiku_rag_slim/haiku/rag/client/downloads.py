@@ -52,13 +52,13 @@ async def download_models(
     # Sentence-transformers embedder
     if config.embeddings.model.provider == "sentence-transformers":  # pragma: no cover
         try:
-            from sentence_transformers import (  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+            from sentence_transformers import (  # type: ignore[import-not-found]
                 SentenceTransformer,
             )
 
             model_name = config.embeddings.model.name
             yield DownloadProgress(model=model_name, status="start")
-            await asyncio.to_thread(SentenceTransformer, model_name)
+            await asyncio.to_thread(lambda: SentenceTransformer(model_name))
             yield DownloadProgress(model=model_name, status="done")
         except ImportError:
             pass

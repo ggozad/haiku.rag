@@ -465,3 +465,24 @@ reranking:
 ```
 
 **Note:** The Jina Reranker v3 local model is licensed under CC BY-NC 4.0, which restricts commercial use. For commercial applications, use the API mode instead.
+
+### Cross-Encoder (sentence-transformers)
+
+Run any HuggingFace cross-encoder reranker in-process via `sentence-transformers` — no separate server required. Useful when you want a specific model (BGE, Qwen3-Reranker, MS-MARCO MiniLM, etc.) without running vLLM.
+
+Install the extra:
+
+```bash
+uv pip install haiku.rag-slim[cross-encoder]
+```
+
+Then configure with any HuggingFace model id:
+
+```yaml
+reranking:
+  model:
+    provider: cross-encoder
+    name: BAAI/bge-reranker-v2-m3
+```
+
+Other tested models: `Qwen/Qwen3-Reranker-0.6B`, `cross-encoder/ms-marco-MiniLM-L-6-v2`. Any model exposed as a `sentence_transformers.CrossEncoder` works.

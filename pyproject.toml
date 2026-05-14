@@ -39,6 +39,7 @@ haiku-rag = "haiku.rag.cli:cli"
 [project.optional-dependencies]
 tui = ["textual>=8.2.4"]
 s3 = ["haiku.rag-slim[s3]==0.46.0"]
+cross-encoder = ["haiku.rag-slim[cross-encoder]==0.46.0"]
 
 [build-system]
 requires = ["hatchling"]

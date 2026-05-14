@@ -195,6 +195,15 @@ class TestGetReranker:
                 {"_model": "jinaai/jina-reranker-v3"},
                 {},
             ),
+            (
+                "cross-encoder",
+                "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                "haiku.rag.reranking.cross_encoder",
+                "CrossEncoderReranker",
+                {},
+                {"_model": "cross-encoder/ms-marco-MiniLM-L-6-v2"},
+                {},
+            ),
         ],
         ids=[
             "mxbai",
@@ -204,6 +213,7 @@ class TestGetReranker:
             "zeroentropy-default",
             "jina",
             "jina-local",
+            "cross-encoder",
         ],
     )
     def test_provider(
@@ -298,3 +308,21 @@ async def test_jina_local_reranker():
         assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
     except ImportError:
         pytest.skip("Jina local dependencies not installed")
+
+
+@pytest.mark.asyncio
+async def test_cross_encoder_reranker():
+    try:
+        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
+        )
+        assert len(reranked) == 2
+        assert all(isinstance(score, float) for chunk, score in reranked)
+        top_ids = [chunk.document_id for chunk, score in reranked]
+        assert "0" in top_ids or "2" in top_ids
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
