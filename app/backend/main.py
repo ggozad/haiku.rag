@@ -6,8 +6,8 @@ from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 from pydantic_ai import Agent
-from pydantic_ai.ag_ui import AGUIAdapter
 from pydantic_ai.ui import SSE_CONTENT_TYPE
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware

@@ -59,7 +59,7 @@ analysis = create_analysis_skill(db_path=db_path)
 toolset = SkillToolset(skills=[rag, analysis])
 
 agent = Agent(
-    "openai:gpt-4o",
+    "openai-chat:gpt-4o",
     instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )

@@ -21,7 +21,7 @@ from ag_ui.core import (
 )
 from jsonpatch import JsonPatch
 from pydantic_ai import Agent
-from pydantic_ai.ag_ui import AGUIAdapter
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 from textual.app import App, SystemCommand
 from textual.binding import Binding
 from textual.widgets import Footer, Header, Input

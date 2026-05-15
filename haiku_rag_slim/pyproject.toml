@@ -30,7 +30,7 @@ dependencies = [
     "lancedb==0.30.2",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.81.0",
+    "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.96.0",
     "pydantic-monty>=0.0.9",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",

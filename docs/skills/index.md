@@ -31,7 +31,7 @@ skill = create_skill(db_path=db_path, config=config)
 toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
-    "openai:gpt-4o",
+    "openai-chat:gpt-4o",
     instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )
@@ -98,7 +98,7 @@ See the individual skill pages for state model details.
 For web applications, use pydantic-ai's `AGUIAdapter` to stream tool calls, text, and state deltas:
 
 ```python
-from pydantic_ai.ag_ui import AGUIAdapter
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 
 adapter = AGUIAdapter(agent=agent, run_input=run_input)
 event_stream = adapter.run_stream()

@@ -70,7 +70,8 @@ async def _iterative_plan_logic(
         model=model,
         output_type=IterativePlanResult,
         instructions=effective_prompt,
-        retries=3,
+        tool_retries=3,
+        output_retries=3,
         deps_type=ResearchDependencies,
     )
 
@@ -120,7 +121,8 @@ async def _search_one_step_logic(
             model=model,
             output_type=RawSearchAnswer,
             instructions=search_prompt,
-            retries=3,
+            tool_retries=3,
+            output_retries=3,
             deps_type=ResearchDependencies,
         )
 
@@ -222,7 +224,8 @@ def build_research_graph(
             model=model,
             output_type=ResearchReport,
             instructions=synthesis_prompt,
-            retries=3,
+            tool_retries=3,
+            output_retries=3,
             deps_type=ResearchDependencies,
         )
 

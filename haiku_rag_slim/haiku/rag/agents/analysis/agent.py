@@ -27,7 +27,8 @@ def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, RawAnalysisR
         deps_type=AnalysisDeps,
         output_type=RawAnalysisResult,
         instructions=ANALYSIS_SYSTEM_PROMPT,
-        retries=3,
+        tool_retries=3,
+        output_retries=3,
     )
 
     @agent.tool

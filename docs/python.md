@@ -490,7 +490,7 @@ skill = create_skill(db_path=db_path, config=config)
 toolset = SkillToolset(skills=[skill])
 
 agent = Agent(
-    "openai:gpt-4o",
+    "openai-chat:gpt-4o",
     instructions=build_system_prompt(toolset.skill_catalog),
     toolsets=[toolset],
 )

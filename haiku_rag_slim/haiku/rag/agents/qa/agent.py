@@ -69,7 +69,8 @@ class QuestionAnswerAgent:
             output_type=RawSearchAnswer,
             instructions=system_prompt,
             toolsets=[search_toolset],
-            retries=3,
+            tool_retries=3,
+            output_retries=3,
         )
 
         deps = _QARunDeps(client=self._client)
