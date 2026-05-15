@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Bump `docling>=2.93.0` and `docling-core>=2.75.0`.
+
 ## [0.47.0] - 2026-05-14
 
 ### Added
