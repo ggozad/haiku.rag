@@ -12,16 +12,28 @@ Inside execute_code, these functions are ALREADY available in the namespace. Do 
 ### await search(query, limit=10) -> list[dict]
 Search the knowledge base using hybrid search (vector + full-text).
 Results are automatically expanded with surrounding context (adjacent paragraphs, complete tables, section content).
-Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels
+Returns list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs.
+`picture_refs` is the subset of `doc_item_refs` whose label is `picture` — use it to spot results that contain figures you can surface to the model via `show_image`.
 
 ### await list_documents() -> list[dict]
 List all documents in the knowledge base.
 Returns list of dicts with keys: id, title, uri, created_at
 
-### await llm(prompt) -> str
-Call an LLM directly with the given prompt. Returns the response as a string.
-Use this for classification, summarization, extraction, or any task where you
-already have the content and just need LLM reasoning.
+### await show_image(document_id, self_ref) -> None
+Surface a document picture to the driving LLM as a vision input. The picture's
+bytes are attached to this `execute_code` tool's response as a `BinaryContent`
+part, so a vision-capable model sees the actual image alongside the printed
+output. Missing refs and unverifiable payloads are silent no-ops. Only useful
+when the configured analysis model is vision-capable; otherwise the model
+receives the bytes but ignores them.
+
+```python
+results = await search("revenue chart", limit=5)
+for r in results:
+    for ref in r["picture_refs"]:
+        await show_image(r["document_id"], ref)
+        print(f"showed {r['document_id']}:{ref}")
+```
 
 ## Document Filesystem
 
@@ -155,7 +167,7 @@ Not supported: most imports (only `json`, `re`, `math`, `pathlib` are available)
 3b. **Use toc.json for Section Navigation**: When a question is scoped to a section, open `toc.json`, find the matching node, and slice `items.jsonl` by its `item_range` instead of streaming `content.txt`. For PDFs where the tree is flat, the sibling list is still useful as a TOC.
 4. **Use content.txt for Full Text**: When you need the complete document text (e.g., for regex across the whole document).
 5. **Iterate**: Run code, examine results, refine your approach. Don't try to solve everything in one execution.
-6. **Use llm() for Reasoning**: When you have content and need classification, summarization, or extraction, use `llm()` rather than writing complex parsing logic.
+6. **Show pictures explicitly**: When a search result has `picture_refs` and the question is about figures/charts/diagrams, call `show_image(doc_id, ref)` so the driving model can see the picture. Don't dump bytes into stdout.
 
 ## Output Format
 

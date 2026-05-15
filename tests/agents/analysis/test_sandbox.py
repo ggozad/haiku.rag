@@ -446,22 +446,3 @@ class TestSandboxPreloadedDocuments:
             assert "2" in result.stdout
             assert "Doc A" in result.stdout
             assert "Doc B" in result.stdout
-
-
-class TestSandboxLLM:
-    """Test llm() external function."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.vcr()
-    async def test_llm_function(self, allow_model_requests, temp_db_path):
-        """Test llm() calls the model and returns a string."""
-        async with HaikuRAG(temp_db_path, create=True):
-            config = AppConfig()
-            context = AnalysisContext()
-            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
-            result = await sb.execute(
-                "answer = await llm('What is 2 + 2? Reply with just the number.')\n"
-                "print(answer)"
-            )
-            assert result.success
-            assert "4" in result.stdout

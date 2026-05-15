@@ -162,59 +162,6 @@ class TestClientAnalysisIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_analyze_semantic_analysis_with_llm(
-        self, allow_model_requests, temp_db_path
-    ):
-        """Test analysis agent can use llm() for semantic analysis combined with computation.
-
-        Agent program:
-            docs = list_documents(limit=100)
-            print(len(docs))
-            print([d['title'] for d in docs[:20]])
-
-            sentiments = {}
-            for title in ['Q1 Update', 'Q2 Update', 'Q3 Update']:
-                content = get_document(title)
-                if content:
-                    result = llm(f"Classify sentiment as positive/negative/mixed: {content}")
-                    sentiments[title] = result
-            print(sentiments)
-        """
-        from haiku.rag.client import HaikuRAG
-
-        config = AppConfig()
-
-        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-            await client.create_document(
-                "The new product launch exceeded expectations. Sales grew 40% "
-                "and customer feedback has been overwhelmingly positive. "
-                "Team morale is at an all-time high.",
-                title="Q1 Update",
-            )
-            await client.create_document(
-                "We faced significant challenges this quarter. Supply chain issues "
-                "caused delays, and we missed our revenue target by 15%. "
-                "Several key employees left the company.",
-                title="Q2 Update",
-            )
-            await client.create_document(
-                "Mixed results this quarter. While product quality improved, "
-                "marketing campaigns underperformed. Revenue was flat compared "
-                "to last year but customer retention increased.",
-                title="Q3 Update",
-            )
-
-            result = await client.analyze(
-                "Analyze the sentiment of each quarterly update. "
-                "How many quarters were positive, negative, and mixed?"
-            )
-
-            # Should identify: Q1=positive, Q2=negative, Q3=mixed
-            assert "positive" in result.answer.lower()
-            assert "negative" in result.answer.lower()
-
-    @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_analyze_search_and_extract(self, allow_model_requests, temp_db_path):
         """Test analysis agent can use search() to find content and extract information.
 

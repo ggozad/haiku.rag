@@ -18,9 +18,9 @@ You solve complex analytical questions by writing and executing Python code agai
 Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
 
 Inside the code, these functions are available (use `await`):
-- `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels
+- `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`)
 - `await list_documents()` → list of dicts with keys: id, title, uri, created_at
-- `await llm(prompt)` → string response from an LLM (for classification, summarization, extraction)
+- `await show_image(document_id, self_ref)` → attaches a document picture's bytes as a `BinaryContent` part on this tool's response so a vision-capable model sees it. Silent no-op for missing or unverifiable refs.
 
 Available modules: `json`, `re`, `math`, `pathlib`
 Not supported: class definitions, generators/yield, match statements, decorators, `with` statements
@@ -102,6 +102,6 @@ Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) tha
 - Variables persist between `execute_code` calls — you can search in one call and process results in the next
 - Use `print()` to output results — the output is your only feedback
 - Always execute code to answer questions — don't just describe what code would do
-- Use `await` for all async functions inside execute_code (search, list_documents, llm)
+- Use `await` for all async functions inside execute_code (search, list_documents, show_image)
 - Use `Path.read_text()` to read files — do NOT use `open()`, `with` statements, or `collections` module
 - Do NOT include chunk IDs or UUIDs in your answer text — use the `cite` tool separately
