@@ -13,6 +13,7 @@ from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.document_item import DocumentItem
 
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
@@ -36,6 +37,60 @@ def _run_async(coro: Any) -> Any:
     return _executor.submit(asyncio.run, coro).result()
 
 
+def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
+    """Build a nested section tree from items in position order.
+
+    Each ``section_header`` with ``heading_level > 0`` becomes a node. Nesting
+    follows the explicit levels: a header pops the stack until the top is at
+    a strictly shallower level, then becomes a child of that top (or a root).
+
+    ``item_range = [position, end_exclusive]`` where ``end_exclusive`` is the
+    position of the next header whose level is the same or shallower (i.e.
+    the next sibling or ancestor that ends this section), or the total item
+    count if no such header exists.
+
+    Items without a section_header label (or with ``heading_level == 0``) are
+    skipped. PDF-derived corpora where docling collapses every header to level
+    1 produce a flat list of sibling nodes.
+    """
+    headers: list[DocumentItem] = [
+        i for i in items if i.label == "section_header" and i.heading_level > 0
+    ]
+    if not headers:
+        return []
+
+    total = max((i.position for i in items), default=-1) + 1
+
+    # Pre-compute each header's end position: the next header in document order
+    # whose heading_level <= this header's level.
+    ends: list[int] = []
+    for idx, h in enumerate(headers):
+        end = total
+        for j in range(idx + 1, len(headers)):
+            if headers[j].heading_level <= h.heading_level:
+                end = headers[j].position
+                break
+        ends.append(end)
+
+    roots: list[dict[str, Any]] = []
+    stack: list[tuple[int, dict[str, Any]]] = []
+    for h, end in zip(headers, ends, strict=True):
+        node: dict[str, Any] = {
+            "self_ref": h.self_ref,
+            "level": h.heading_level,
+            "title": h.text,
+            "position": h.position,
+            "page_numbers": list(h.page_numbers),
+            "item_range": [h.position, end],
+            "children": [],
+        }
+        while stack and stack[-1][0] >= h.heading_level:
+            stack.pop()
+        (stack[-1][1]["children"] if stack else roots).append(node)
+        stack.append((h.heading_level, node))
+    return roots
+
+
 class Sandbox:
     """Execute code in a sandboxed Python interpreter.
 
@@ -57,6 +112,7 @@ class Sandbox:
     _context: AnalysisContext
     _search_results: "list[SearchResult]"
     _items_cache: dict[str, str] | None
+    _toc_cache: dict[str, str] | None
     _repl: MontyRepl | None
     _vfs: OSAccess | None
 
@@ -71,6 +127,7 @@ class Sandbox:
         self._context = context
         self._search_results = []
         self._items_cache = None
+        self._toc_cache = None
         self._repl = None
         self._vfs = None
 
@@ -155,49 +212,78 @@ class Sandbox:
             docs = await rag.list_documents(filter=self._context.filter)
 
         doc_ids = [doc.id for doc in docs if doc.id]
+        doc_titles = {doc.id: doc.title for doc in docs if doc.id}
 
-        def _load_items_cache() -> dict[str, str]:
-            """Bulk-fetch all document items in one query, serialize to JSONL."""
+        def _load_caches() -> tuple[dict[str, str], dict[str, str]]:
+            """Bulk-fetch document items once and build both items.jsonl and
+            toc.json views from the same result. Returns ``(items_cache, toc_cache)``.
+            """
 
-            async def _fetch() -> dict[str, str]:
+            async def _fetch() -> dict[str, list[DocumentItem]]:
                 from haiku.rag.client import HaikuRAG
 
                 async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                    grouped = await rag.document_item_repository.get_all_items_grouped(
+                    return await rag.document_item_repository.get_all_items_grouped(
                         doc_ids
                     )
-                result: dict[str, str] = {}
-                for did, items in grouped.items():
-                    lines = []
-                    for item in items:
-                        lines.append(
-                            json.dumps(
-                                {
-                                    "position": item.position,
-                                    "self_ref": item.self_ref,
-                                    "label": item.label,
-                                    "text": item.text,
-                                    "page_numbers": item.page_numbers,
-                                },
-                                ensure_ascii=False,
-                            )
-                        )
-                    result[did] = "\n".join(lines)
-                return result
 
-            return _run_async(_fetch())
+            grouped = _run_async(_fetch())
+
+            items_cache: dict[str, str] = {}
+            toc_cache: dict[str, str] = {}
+            for did, items in grouped.items():
+                items_cache[did] = "\n".join(
+                    json.dumps(
+                        {
+                            "position": item.position,
+                            "self_ref": item.self_ref,
+                            "label": item.label,
+                            "text": item.text,
+                            "page_numbers": item.page_numbers,
+                            "heading_level": item.heading_level,
+                            "tree_depth": item.tree_depth,
+                        },
+                        ensure_ascii=False,
+                    )
+                    for item in items
+                )
+                toc_cache[did] = json.dumps(
+                    {
+                        "doc_id": did,
+                        "title": doc_titles.get(did),
+                        "tree": _build_toc(items),
+                    },
+                    ensure_ascii=False,
+                )
+            return items_cache, toc_cache
 
         sandbox = self
+
+        def _ensure_caches() -> None:
+            if sandbox._items_cache is None or sandbox._toc_cache is None:
+                items_c, toc_c = _load_caches()
+                sandbox._items_cache = items_c
+                sandbox._toc_cache = toc_c
 
         def _make_items_reader(
             did: str,
         ) -> Callable[["PurePosixPath"], str]:
             def read_items(_path: "PurePosixPath") -> str:
-                if sandbox._items_cache is None:
-                    sandbox._items_cache = _load_items_cache()
+                _ensure_caches()
+                assert sandbox._items_cache is not None
                 return sandbox._items_cache.get(did, "")
 
             return read_items
+
+        def _make_toc_reader(
+            did: str,
+        ) -> Callable[["PurePosixPath"], str]:
+            def read_toc(_path: "PurePosixPath") -> str:
+                _ensure_caches()
+                assert sandbox._toc_cache is not None
+                return sandbox._toc_cache.get(did, "")
+
+            return read_toc
 
         for doc in docs:
             if not doc.id:
@@ -244,6 +330,13 @@ class Sandbox:
                 CallbackFile(
                     f"{doc_dir}/items.jsonl",
                     read=_make_items_reader(doc_id),
+                    write=_deny_write,
+                )
+            )
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/toc.json",
+                    read=_make_toc_reader(doc_id),
                     write=_deny_write,
                 )
             )

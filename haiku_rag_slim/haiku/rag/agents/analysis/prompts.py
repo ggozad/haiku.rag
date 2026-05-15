@@ -34,6 +34,7 @@ All documents in the knowledge base are available as files under `/documents/`. 
         metadata.json    # {"id", "title", "uri", "created_at"}
         content.txt      # Full document text
         items.jsonl      # Structured document items (one JSON object per line)
+        toc.json         # Section tree (nested or flat depending on source)
 ```
 
 ### metadata.json
@@ -59,6 +60,8 @@ Structured document items as JSONL. Each line is a JSON object with:
 - `label`: item type — "section_header", "text", "table", "list_item", "caption", "formula", "picture", "code", "footnote", etc.
 - `text`: rendered content (tables are markdown with `|` columns)
 - `page_numbers`: list of page numbers where the item appears
+- `heading_level`: H-level (1–6) on `section_header` items, `0` otherwise. Often `1` for everything when the source is a PDF (docling can't infer heading hierarchy from PDFs) — see `toc.json` for the derived tree.
+- `tree_depth`: DOM nesting depth from docling's structure. Useful for HTML where it varies meaningfully (sidebars, captions, nested lists); near-uniform on PDFs.
 
 Use items.jsonl to find tables, section headers, or specific structural elements:
 ```python
@@ -68,6 +71,47 @@ for line in items_text.strip().split(chr(10)):
     item = json.loads(line)
     if item['label'] == 'table':
         print(f"Table on page {item['page_numbers']}: {item['text'][:100]}")
+```
+
+### toc.json
+Per-document section tree derived from `heading_level`. Shape:
+```json
+{"doc_id": "...", "title": "...", "tree": [
+  {"self_ref": "#/texts/0", "level": 1, "title": "Intro",
+   "position": 0, "page_numbers": [1], "item_range": [0, 18],
+   "children": [
+     {"self_ref": "#/texts/8", "level": 2, "title": "Background",
+      "position": 8, "page_numbers": [2], "item_range": [8, 13],
+      "children": []}
+   ]}
+]}
+```
+- `item_range = [start, end_exclusive]` over the same `position` ints used in items.jsonl. Slice items.jsonl by this range to read a whole section.
+- PDF-derived docs typically produce a flat list of level-1 siblings (docling collapses heading levels). HTML/markdown produce a real nested tree.
+- `tree: []` when the doc has no section_headers at all.
+
+```python
+import json
+toc = json.loads(Path(f'/documents/{doc_id}/toc.json').read_text())
+items = [json.loads(line) for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split(chr(10))]
+
+# Read the contents of one section
+def items_in(node):
+    start, end = node['item_range']
+    return [it for it in items if start <= it['position'] < end]
+
+# From a search hit's doc_item_refs, find the deepest TOC node containing it
+def find_containing_section(tree, position):
+    best = None
+    def walk(nodes):
+        nonlocal best
+        for n in nodes:
+            s, e = n['item_range']
+            if s <= position < e:
+                best = n
+                walk(n['children'])
+    walk(tree)
+    return best
 ```
 
 ## Cross-referencing search results with items
@@ -108,6 +152,7 @@ Not supported: most imports (only `json`, `re`, `math`, `pathlib` are available)
 1. **Search First**: Start with `search()` to find relevant content. Results include expanded context and `doc_item_refs` for cross-referencing.
 2. **Discover Documents**: Use `list_documents()` to see what's in the knowledge base.
 3. **Use items.jsonl for Structure**: Find tables, section headers, or specific elements by label and page number. Tables are pre-rendered as markdown.
+3b. **Use toc.json for Section Navigation**: When a question is scoped to a section, open `toc.json`, find the matching node, and slice `items.jsonl` by its `item_range` instead of streaming `content.txt`. For PDFs where the tree is flat, the sibling list is still useful as a TOC.
 4. **Use content.txt for Full Text**: When you need the complete document text (e.g., for regex across the whole document).
 5. **Iterate**: Run code, examine results, refine your approach. Don't try to solve everything in one execution.
 6. **Use llm() for Reasoning**: When you have content and need classification, summarization, or extraction, use `llm()` rather than writing complex parsing logic.

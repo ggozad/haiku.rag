@@ -4,6 +4,7 @@
 ### Added
 
 - **`heading_level` and `tree_depth` on `DocumentItem`.** `extract_items` now captures docling's `SectionHeaderItem.level` (H1–H6 for headers, `0` elsewhere) and the traversal depth from `iterate_items()` for every item, persisting both in the `document_items` table. Foundations for tree-based document navigation in the analysis sandbox. The 0.48.0 migration adds the columns to existing DBs and backfills them from each doc's docling blob.
+- **`toc.json` in the analysis sandbox VFS.** Each document mounted under `/documents/{id}/` now exposes a `toc.json` view alongside `metadata.json`, `content.txt`, `items.jsonl`. Nodes carry `{self_ref, level, title, position, page_numbers, item_range, children}`; `item_range = [start, end_exclusive]` over the same `position` ints used in `items.jsonl`, so the agent can slice items by range to read a section. HTML/markdown ingests produce a real nested tree; PDF ingests produce a flat sibling list because docling collapses heading levels on PDFs. `tree: []` when the doc has no section headers. `items.jsonl` now surfaces `heading_level` and `tree_depth` on every row.
 
 ### Changed
 

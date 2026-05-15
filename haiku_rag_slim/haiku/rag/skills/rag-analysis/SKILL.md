@@ -43,6 +43,7 @@ All documents are mounted as a virtual filesystem at `/documents/`:
     metadata.json    # {"id", "title", "uri", "created_at"}
     content.txt      # Full document text
     items.jsonl      # Structured items (one JSON object per line)
+    toc.json         # Section tree derived from heading_level
 ```
 
 ### Reading files
@@ -80,9 +81,14 @@ Structured document items. Each line is a JSON object with:
 - `label`: item type — "section_header", "text", "table", "list_item", "caption", "formula", "picture", "code", "footnote"
 - `text`: rendered content (tables are markdown with `|` columns)
 - `page_numbers`: list of page numbers where the item appears
+- `heading_level`: H-level (1–6) for `section_header` items, `0` otherwise. PDFs often collapse to `1` for every header.
+- `tree_depth`: DOM nesting depth — varies meaningfully on HTML, near-uniform on PDFs.
+
+### toc.json
+Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, position, page_numbers, item_range: [start, end_exclusive], children}`. Slice `items.jsonl` by `item_range` to read a section's contents. PDFs typically produce a flat sibling list; HTML/markdown produce a real tree. `tree: []` for docs with no headers.
 
 ### Cross-referencing search results with items
-Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in items.jsonl.
+Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in items.jsonl. Resolve each ref to a `position`, then walk `toc.json` to find the deepest node whose `item_range` contains it — that's the section the hit lives in.
 
 ## Strategy
 
