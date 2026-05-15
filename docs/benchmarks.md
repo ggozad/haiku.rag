@@ -147,12 +147,15 @@ Two approaches are benchmarked separately:
 
 ##### QA Accuracy
 
-| Embedding Model              | QA Model                | Source bucket | Cases | Accuracy |
-|------------------------------|-------------------------|---------------|------:|---------:|
-| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision) | text only   |   682 |   96.9 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision) | with image  |   299 |   91.3 % |
-
-The text-vs-image gap on retrieval is small (0.81 pp) but on QA it widens to ~5.6 pp — most of the loss is downstream of retrieval, in the model reasoning over image-bearing chunks rather than in finding them.
+| Embedding Model              | QA Model                          | Reranker               | Source bucket | Cases | Accuracy |
+|------------------------------|-----------------------------------|------------------------|---------------|------:|---------:|
+| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision)         | none                   | text only        |   682 |   96.9 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision)         | none                   | with image       |   299 |   91.3 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text             |   894 |   88.5 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text+image       |   341 |   88.0 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text+table       |    72 |   88.9 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text+table+image |   102 |   93.1 % |
+| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | **all**          |  1409 | **88.7 %** |
 
 #### Text embedder + VLM picture descriptions
 
@@ -172,9 +175,7 @@ The text-vs-image gap on retrieval is small (0.81 pp) but on QA it widens to ~5.
 | `qwen3-embedding:4b` | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4`        | none                   |     0.81 |
 | `qwen3-embedding:4b` | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4`        | `mxbai-rerank-base-v2` |     0.92 |
 
-*Measured on haiku.rag v0.45.0, judged by `ollama:qwen3.6` (current default). T
-
-On Gemma-4 the reranker is worth +11 percentage points. Inspecting the no-reranker failures, the dominant patterns are RRF score compression (the right chunk in top-8 but not top-1), FTS keyword bleed from unrelated papers, and References-section chunks competing with body sections. `mxbai-rerank-base-v2` resolves all three on most cases.
+*Measured on haiku.rag v0.45.0, judged by `ollama:qwen3.6` (current default).*
 
 ##### Skill QA + citation retrieval
 
