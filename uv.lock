@@ -1441,7 +1441,7 @@ name = "haiku-rag"
 version = "0.47.0"
 source = { editable = "." }
 dependencies = [
-    { name = "haiku-rag-slim", extra = ["cohere", "docling", "mxbai", "tui", "voyageai", "zeroentropy"] },
+    { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "mxbai", "tui", "voyageai", "zeroentropy"] },
 ]
 
 [package.optional-dependencies]
@@ -1476,7 +1476,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "haiku-rag-slim", extras = ["cross-encoder"], marker = "extra == 'cross-encoder'", editable = "haiku_rag_slim" },
-    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "tui"], editable = "haiku_rag_slim" },
+    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "tui", "cross-encoder"], editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["s3"], marker = "extra == 's3'", editable = "haiku_rag_slim" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
 ]
