@@ -314,6 +314,12 @@ def search(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    search_type: str | None = typer.Option(
+        None,
+        "--search-type",
+        "-s",
+        help="Type of search: one of 'hybrid' (default) / 'fts' / 'vector' ",
+    ),
     image: Path | None = typer.Option(
         None,
         "--image",
@@ -326,7 +332,11 @@ def search(  # pragma: no cover
     ),
 ):
     app = create_app(db)
-    asyncio.run(app.search(query=query, limit=limit, filter=filter, image=image))
+    asyncio.run(
+        app.search(
+            query=query, limit=limit, filter=filter, search_type=search_type, image=image,
+        )
+    )
 
 
 @_cli.command("visualize", help="Show visual grounding for a chunk")

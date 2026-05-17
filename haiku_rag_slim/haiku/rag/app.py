@@ -361,6 +361,7 @@ class HaikuRAGApp:  # pragma: no cover
         query: str | None = None,
         limit: int | None = None,
         filter: str | None = None,
+        search_type: str = "hybrid",
         image: Path | None = None,
     ):
         if query is None and image is None:
@@ -385,7 +386,9 @@ class HaikuRAGApp:  # pragma: no cover
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            results = await self.client.search(search_input, limit=limit, filter=filter)
+            results = await self.client.search(
+                search_input, limit=limit, filter=filter, search_type=search_type,
+            )
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")
                 return
