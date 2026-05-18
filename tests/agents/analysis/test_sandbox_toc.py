@@ -167,7 +167,7 @@ class TestTocShape:
         assert toc["tree"] == []
 
     async def test_skip_header_with_zero_level(self, temp_db_path):
-        """A section_header with heading_level=0 (legacy pre-0.46.0 row) is skipped."""
+        """A section_header with ``heading_level == 0`` is skipped."""
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc_id = await _empty_doc(client, uri="test://zero", title="Zero Level")
             items = [
@@ -240,13 +240,11 @@ class TestItemsJsonlSurfacesNewFields:
         rows = await _read_items_jsonl(sandbox, doc_id)
 
         assert len(rows) == 3
-        # Field presence + values
         assert rows[0]["heading_level"] == 1
         assert rows[0]["tree_depth"] == 2
         assert rows[1]["heading_level"] == 0
         assert rows[1]["tree_depth"] == 3
         assert rows[2]["heading_level"] == 2
         assert rows[2]["tree_depth"] == 4
-        # Existing fields still present and unchanged
         for r in rows:
             assert {"position", "self_ref", "label", "text", "page_numbers"} <= set(r)

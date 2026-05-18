@@ -23,6 +23,11 @@ class Citation(BaseModel):
 
     Used by research graph and chat applications. The optional index field
     supports UI display ordering in chat contexts.
+
+    ``picture_refs`` lists the ``self_ref`` values of picture items in the
+    cited chunk. Empty for text-only citations. UIs can fetch the picture
+    bytes via ``DocumentItemRepository.get_picture_bytes(document_id, ref)``
+    and render them alongside the text content.
     """
 
     index: int | None = None
@@ -33,6 +38,7 @@ class Citation(BaseModel):
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
     content: str
+    picture_refs: list[str] = Field(default_factory=list)
 
 
 class RawSearchAnswer(BaseModel):
@@ -98,6 +104,7 @@ def resolve_citations(
         r = by_id.get(chunk_id)
         if not r:
             continue
+        picture_refs = [ref for ref in r.doc_item_refs if ref.startswith("#/pictures/")]
         citations.append(
             Citation(
                 document_id=r.document_id or "",
@@ -107,6 +114,7 @@ def resolve_citations(
                 page_numbers=r.page_numbers,
                 headings=r.headings,
                 content=r.content,
+                picture_refs=picture_refs,
             )
         )
     return citations

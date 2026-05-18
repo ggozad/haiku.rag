@@ -242,10 +242,10 @@ def create_skill_tools(
         async def execute_code(ctx: RunContext[AnalysisRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
 
-            The code has access to search(), list_documents(), show_image()
-            functions and a virtual filesystem at /documents/ with document
-            content and structure (metadata.json, content.txt, items.jsonl,
-            toc.json per document).
+            The code has access to search() and list_documents() functions
+            and a virtual filesystem at /documents/ with document content
+            and structure (metadata.json, content.txt, items.jsonl, toc.json
+            per document).
 
             Use print() to output results. Variables persist between calls
             within the same skill invocation.

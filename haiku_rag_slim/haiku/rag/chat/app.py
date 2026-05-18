@@ -339,8 +339,26 @@ class ChatApp(App):
             for cid in cited_ids:
                 if cid in citation_index:
                     citations.append(citation_index[cid])
-        if citations:
-            await chat_history.add_citations(citations)
+        if not citations:
+            return
+
+        picture_bytes: dict[str, list[bytes]] = {}
+        if self.client is not None:
+            for citation in citations:
+                refs = list(citation.picture_refs or [])
+                if not refs:
+                    continue
+                blobs: list[bytes] = []
+                for ref in refs:
+                    data = await self.client.document_item_repository.get_picture_bytes(
+                        citation.document_id, ref
+                    )
+                    if data:
+                        blobs.append(data)
+                if blobs:
+                    picture_bytes[citation.chunk_id] = blobs
+
+        await chat_history.add_citations(citations, picture_bytes=picture_bytes)
 
         analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
         if analysis_state:

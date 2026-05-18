@@ -3,12 +3,11 @@ import atexit
 import concurrent.futures
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
-from pydantic_ai import BinaryContent
 from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
 
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
@@ -27,7 +26,6 @@ class SandboxResult:
     stdout: str
     stderr: str
     success: bool
-    binary_attachments: list[BinaryContent] = field(default_factory=list)
 
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -63,8 +61,6 @@ def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
 
     total = max((i.position for i in items), default=-1) + 1
 
-    # Pre-compute each header's end position: the next header in document order
-    # whose heading_level <= this header's level.
     ends: list[int] = []
     for idx, h in enumerate(headers):
         end = total
@@ -97,9 +93,9 @@ class Sandbox:
     """Execute code in a sandboxed Python interpreter.
 
     Uses pydantic-monty, a minimal secure Python interpreter written in Rust.
-    External functions (search, list_documents, show_image) are called by
-    Monty code using ``await`` and resolved asynchronously on the host.
-    Documents are exposed via a virtual filesystem at ``/documents/{id}/``.
+    External functions (search, list_documents) are called by Monty code
+    using ``await`` and resolved asynchronously on the host. Documents are
+    exposed via a virtual filesystem at ``/documents/{id}/``.
 
     The interpreter uses a REPL session — variables persist across
     ``execute()`` calls within the same Sandbox instance.
@@ -115,7 +111,6 @@ class Sandbox:
     _search_results: "list[SearchResult]"
     _items_cache: dict[str, str] | None
     _toc_cache: dict[str, str] | None
-    _pending_binary: list[BinaryContent]
     _repl: MontyRepl | None
     _vfs: OSAccess | None
 
@@ -131,7 +126,6 @@ class Sandbox:
         self._search_results = []
         self._items_cache = None
         self._toc_cache = None
-        self._pending_binary = []
         self._repl = None
         self._vfs = None
 
@@ -151,9 +145,7 @@ class Sandbox:
             out: list[dict[str, Any]] = []
             for r in expanded:
                 picture_refs = [
-                    ref
-                    for ref, lbl in zip(r.doc_item_refs, r.labels, strict=False)
-                    if lbl == "picture"
+                    ref for ref in r.doc_item_refs if ref.startswith("#/pictures/")
                 ]
                 out.append(
                     {
@@ -187,41 +179,9 @@ class Sandbox:
                 for d in docs
             ]
 
-        sandbox = self
-
-        async def show_image(document_id: str, self_ref: str) -> None:
-            """Surface a document picture to the driving LLM as a vision input.
-
-            Looks up the picture's bytes by (document_id, self_ref), verifies the
-            payload via PIL, and queues a ``BinaryContent`` part on the next
-            ``execute_code`` tool return. The driving model sees the picture as
-            content alongside the textual stdout. Missing refs and unverifiable
-            payloads are silent no-ops.
-            """
-            from io import BytesIO
-
-            from PIL import Image
-
-            from haiku.rag.client import HaikuRAG
-
-            async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                data = await rag.document_item_repository.get_picture_bytes(
-                    document_id, self_ref
-                )
-            if not data:
-                return
-            try:
-                Image.open(BytesIO(data)).verify()
-            except Exception:
-                return
-            sandbox._pending_binary.append(
-                BinaryContent(data=data, media_type="image/png", identifier=self_ref)
-            )
-
         return {
             "search": search,
             "list_documents": list_documents,
-            "show_image": show_image,
         }
 
     async def _build_vfs(self) -> OSAccess:
@@ -230,7 +190,8 @@ class Sandbox:
         Mounts per-document directories with:
         - metadata.json: MemoryFile (eager, small)
         - content.txt: CallbackFile (lazy, can be large)
-        - items.jsonl: CallbackFile (lazy, can be large)
+        - items.jsonl: CallbackFile (lazy, bulk-cached)
+        - toc.json: CallbackFile (lazy, bulk-cached)
         """
         from haiku.rag.client import HaikuRAG
 
@@ -409,12 +370,9 @@ class Sandbox:
         """Execute Python code in the Monty REPL.
 
         Variables persist across calls within the same Sandbox instance.
-        Binary attachments queued by ``show_image`` during this call are
-        drained into the returned ``SandboxResult.binary_attachments``.
         """
         repl, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
-        self._pending_binary = []
 
         stdout_lines: list[str] = []
 
@@ -437,12 +395,7 @@ class Sandbox:
             stdout = "".join(stdout_lines)
             if len(stdout) > max_chars:
                 stdout = stdout[:max_chars] + "\n... (output truncated)"
-            return SandboxResult(
-                stdout=stdout,
-                stderr=str(e),
-                success=False,
-                binary_attachments=self._pending_binary,
-            )
+            return SandboxResult(stdout=stdout, stderr=str(e), success=False)
 
         stdout = "".join(stdout_lines)
         if output is not None:
@@ -455,9 +408,4 @@ class Sandbox:
                 stdout_with_output[:max_chars] + "\n... (output truncated)"
             )
 
-        return SandboxResult(
-            stdout=stdout_with_output,
-            stderr="",
-            success=True,
-            binary_attachments=self._pending_binary,
-        )
+        return SandboxResult(stdout=stdout_with_output, stderr="", success=True)

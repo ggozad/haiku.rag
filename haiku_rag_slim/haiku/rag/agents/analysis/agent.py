@@ -1,5 +1,4 @@
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.messages import ToolReturn
 
 from haiku.rag.agents.analysis.dependencies import AnalysisDeps
 from haiku.rag.agents.analysis.models import CodeExecution, RawAnalysisResult
@@ -33,40 +32,25 @@ def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, RawAnalysisR
     )
 
     @agent.tool
-    async def execute_code(
-        ctx: RunContext[AnalysisDeps], code: str
-    ) -> CodeExecution | ToolReturn:
+    async def execute_code(ctx: RunContext[AnalysisDeps], code: str) -> CodeExecution:
         """Execute Python code in a sandboxed interpreter.
 
-        The code has access to search(), list_documents(), and show_image()
-        external functions, and a virtual filesystem at /documents/ with
-        document content and structure. Use print() to output results.
-
-        When the code calls ``show_image(document_id, self_ref)``, the queued
-        picture bytes are attached to the tool response as ``BinaryContent``
-        so a vision-capable driving model can actually see the image.
+        The code has access to search() and list_documents() external
+        functions, plus a virtual filesystem at /documents/ with document
+        content and structure. Use print() to output results.
 
         Args:
             code: Python code to execute.
 
         Returns:
-            Structured result with success status, stdout, and stderr. Wrapped
-            in a ``ToolReturn`` carrying ``BinaryContent`` parts whenever the
-            code called ``show_image``.
+            Structured result with success status, stdout, and stderr.
         """
         result = await ctx.deps.sandbox.execute(code)
-
-        execution = CodeExecution(
+        return CodeExecution(
             code=code,
             stdout=result.stdout,
             stderr=result.stderr,
             success=result.success,
         )
-
-        if result.binary_attachments:
-            return ToolReturn(
-                return_value=execution, content=list(result.binary_attachments)
-            )
-        return execution
 
     return agent

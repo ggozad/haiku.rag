@@ -20,7 +20,6 @@ Execute Python code in a sandboxed interpreter. Variables persist between calls 
 Inside the code, these functions are available (use `await`):
 - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`)
 - `await list_documents()` → list of dicts with keys: id, title, uri, created_at
-- `await show_image(document_id, self_ref)` → attaches a document picture's bytes as a `BinaryContent` part on this tool's response so a vision-capable model sees it. Silent no-op for missing or unverifiable refs.
 
 Available modules: `json`, `re`, `math`, `pathlib`
 Not supported: class definitions, generators/yield, match statements, decorators, `with` statements
@@ -32,7 +31,7 @@ Search the knowledge base directly (outside code execution). Use for initial exp
 List available documents. Use to discover what's in the knowledge base.
 
 ### cite
-Register chunk IDs as citations. Call after your analysis with chunk_id values from search results that support your answer.
+Register the chunk IDs that ground your answer. Call this BEFORE writing your final answer, with the `chunk_id` values from search results (from either the `search` tool or `await search(...)` inside `execute_code`) that support each claim. Every answer that uses search results must be backed by `cite`.
 
 ## Document Filesystem (inside execute_code)
 
@@ -95,13 +94,16 @@ Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) tha
 1. Use `search` tool first to understand what's in the knowledge base
 2. Use `execute_code` to write analysis code
 3. Iterate: run code, examine output, refine approach
-4. Call `cite` with chunk IDs from search results you referenced
+4. Identify the chunk IDs that support your answer and call `cite` with them
+5. Then write a concise answer based strictly on the cited content
+
+You MUST call `cite` with at least one chunk ID before producing your final answer, **unless** you are refusing for lack of information. Answers without citations are considered ungrounded. In a refusal case do **not** call `cite` — there is nothing to cite.
 
 ## Important
 
 - Variables persist between `execute_code` calls — you can search in one call and process results in the next
 - Use `print()` to output results — the output is your only feedback
 - Always execute code to answer questions — don't just describe what code would do
-- Use `await` for all async functions inside execute_code (search, list_documents, show_image)
+- Use `await` for all async functions inside execute_code (search, list_documents)
 - Use `Path.read_text()` to read files — do NOT use `open()`, `with` statements, or `collections` module
-- Do NOT include chunk IDs or UUIDs in your answer text — use the `cite` tool separately
+- Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `cite` tool separately to register citations.

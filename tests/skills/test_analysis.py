@@ -175,6 +175,61 @@ class TestExecuteCodeTool:
         assert "_sandbox" in state.searches
         assert len(state.searches["_sandbox"]) > 0
 
+    async def test_cite_picture_chunk_records_picture_refs(self, rag_db):
+        """Citing a picture chunk populates ``Citation.picture_refs`` from the
+        docling ``#/pictures/...`` self_ref prefix.
+
+        ``labels`` is a deduplicated set after expand_context and is not
+        aligned with ``doc_item_refs``, so the prefix is the only reliable
+        signal.
+        """
+        from haiku.rag.skills.analysis import AnalysisState, create_skill
+        from haiku.rag.store.models.chunk import SearchResult
+
+        expanded_picture_hit = SearchResult(
+            chunk_id="picture-chunk-abc",
+            content="picture + surrounding prose",
+            document_id="doc-1",
+            document_uri="test://doc-1",
+            document_title="Doc 1",
+            score=1.0,
+            page_numbers=[1, 2],
+            headings=None,
+            doc_item_refs=[
+                "#/texts/3",
+                "#/pictures/0",
+                "#/texts/4",
+                "#/pictures/1",
+            ],
+            labels=["caption", "picture", "text"],
+        )
+        text_result = SearchResult(
+            chunk_id="text-chunk-xyz",
+            content="prose",
+            document_id="doc-1",
+            document_uri="test://doc-1",
+            document_title="Doc 1",
+            score=0.7,
+            page_numbers=[1],
+            headings=None,
+            doc_item_refs=["#/texts/4"],
+            labels=["text"],
+        )
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = AnalysisState()
+        state.searches["q1"] = [expanded_picture_hit, text_result]
+        ctx = _make_ctx(state)
+
+        await cite(ctx, chunk_ids=["picture-chunk-abc", "text-chunk-xyz"])
+
+        assert state.citations == ["picture-chunk-abc", "text-chunk-xyz"]
+        picture_citation = state.citation_index["picture-chunk-abc"]
+        assert picture_citation.picture_refs == ["#/pictures/0", "#/pictures/1"]
+        text_citation = state.citation_index["text-chunk-xyz"]
+        assert text_citation.picture_refs == []
+
     async def test_execute_code_vfs_write_denied(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
 

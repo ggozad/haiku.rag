@@ -169,7 +169,6 @@ class TestV0_48_0FreshSchema:
             assert "tree_depth" in names
 
 
-# Sanity: ensure module imports without side effects.
 def test_module_imports():
     from haiku.rag.store.upgrades import v0_48_0  # noqa: F401
 

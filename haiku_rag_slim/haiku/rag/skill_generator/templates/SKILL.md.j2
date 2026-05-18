@@ -26,7 +26,7 @@ Retrieve a document by ID, title, or URI. Partial matches work.
 {% if "execute_code" in tool_names %}
 
 ### execute_code
-Execute Python code in a sandboxed interpreter. Inside the code you have access to `await search()`, `await list_documents()`, `await show_image(document_id, self_ref)`, and a virtual filesystem at `/documents/` with document content and structure.
+Execute Python code in a sandboxed interpreter. Inside the code you have access to `await search()`, `await list_documents()`, and a virtual filesystem at `/documents/` with document content and structure.
 {% endif %}
 {% if "cite" in tool_names %}
 
