@@ -1,6 +1,7 @@
 import base64
 from typing import TYPE_CHECKING
 
+from haiku.rag.client.models import SearchType
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 
@@ -14,7 +15,7 @@ async def search(
     client: "HaikuRAG",
     query: "str | bytes | PILImage.Image",
     limit: int | None = None,
-    search_type: str = "hybrid",
+    search_type: SearchType = "hybrid",
     filter: str | None = None,
     include_images: bool = True,
 ) -> list[SearchResult]:

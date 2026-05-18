@@ -19,6 +19,7 @@ from rich.progress import (
 from rich.syntax import Syntax
 
 from haiku.rag.client import HaikuRAG, RebuildMode
+from haiku.rag.client.models import SearchType
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher, S3Watcher
@@ -361,7 +362,7 @@ class HaikuRAGApp:  # pragma: no cover
         query: str | None = None,
         limit: int | None = None,
         filter: str | None = None,
-        search_type: str = "hybrid",
+        search_type: SearchType | None = None,
         image: Path | None = None,
     ):
         if query is None and image is None:
@@ -371,6 +372,10 @@ class HaikuRAGApp:  # pragma: no cover
             return
         if query is not None and image is not None:
             self.console.print("[red]Pass either a query or --image, not both.[/red]")
+            return
+
+        if query is None and search_type is not None:
+            self.console.print("[red]Pass --search-type only for text queries[/red]")
             return
 
         search_input: str | bytes
@@ -387,7 +392,10 @@ class HaikuRAGApp:  # pragma: no cover
             before=self.before,
         ) as self.client:
             results = await self.client.search(
-                search_input, limit=limit, filter=filter, search_type=search_type,
+                search_input,
+                limit=limit,
+                filter=filter,
+                search_type=search_type,
             )
             if not results:
                 self.console.print("[yellow]No results found.[/yellow]")

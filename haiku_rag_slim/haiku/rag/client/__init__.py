@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from haiku.rag.client.models import SearchType
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
@@ -349,7 +350,7 @@ class HaikuRAG:
         self,
         query: "str | bytes | PILImage.Image",
         limit: int | None = None,
-        search_type: str = "hybrid",
+        search_type: SearchType | None = None,
         filter: str | None = None,
         include_images: bool = True,
     ) -> list[SearchResult]:

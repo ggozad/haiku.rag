@@ -15,6 +15,7 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 from haiku.rag.app import HaikuRAGApp  # noqa: E402
+from haiku.rag.client.models import SearchType  # noqa: E402
 from haiku.rag.config import (  # noqa: E402
     AppConfig,
     find_config_file,
@@ -314,11 +315,11 @@ def search(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
-    search_type: str | None = typer.Option(
-        None,
+    search_type: SearchType = typer.Option(
+        "hybrid",
         "--search-type",
         "-s",
-        help="Type of search: one of 'hybrid' (default) / 'fts' / 'vector' ",
+        help="Type of search to perform (text searches only)",
     ),
     image: Path | None = typer.Option(
         None,
@@ -334,7 +335,11 @@ def search(  # pragma: no cover
     app = create_app(db)
     asyncio.run(
         app.search(
-            query=query, limit=limit, filter=filter, search_type=search_type, image=image,
+            query=query,
+            limit=limit,
+            filter=filter,
+            search_type=search_type,
+            image=image,
         )
     )
 
