@@ -27,7 +27,7 @@ async def search(
             Image queries require a multimodal embedder and run vector-only.
         limit: Maximum number of results to return. Defaults to config.search.limit.
         search_type: "vector", "fts", or "hybrid".
-            Applicable onlly for text queries, where the default is "hybrid".
+            Applicable only for text queries, where the default is "hybrid".
         filter: Optional SQL WHERE clause to filter documents before searching chunks.
         include_images: When True, populate ``SearchResult.image_data`` with
             base64 picture bytes for picture-labeled chunks.
