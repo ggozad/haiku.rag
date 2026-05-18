@@ -38,7 +38,6 @@ async def search(
         limit = client._config.search.limit
 
     if isinstance(query, str):
-
         if search_type is None:
             search_type = "hybrid"
 
