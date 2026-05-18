@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -93,7 +94,9 @@ def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     seen: dict[tuple[str | None, str], int] = {}
     keep: list[bool] = [True] * len(results)
     for i, r in enumerate(results):
-        if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith("#/pictures/"):
+        if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith(
+            PICTURE_REF_PREFIX
+        ):
             key = (r.document_id, r.doc_item_refs[0])
             prior = seen.get(key)
             if prior is None:
@@ -111,13 +114,13 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
 
     Groups results by document_id and batches one picture-bytes lookup per
     document so a result set spanning N documents costs N reads, not one per
-    picture. Only refs starting with ``#/pictures/`` are queried.
+    picture. Only refs starting with ``PICTURE_REF_PREFIX`` are queried.
     """
     by_doc: dict[str, list[SearchResult]] = {}
     for r in results:
         if not r.document_id:
             continue
-        if not any(ref.startswith("#/pictures/") for ref in r.doc_item_refs):
+        if not any(ref.startswith(PICTURE_REF_PREFIX) for ref in r.doc_item_refs):
             continue
         by_doc.setdefault(r.document_id, []).append(r)
 
@@ -126,7 +129,7 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
         seen: set[str] = set()
         for r in doc_results:
             for ref in r.doc_item_refs:
-                if ref.startswith("#/pictures/") and ref not in seen:
+                if ref.startswith(PICTURE_REF_PREFIX) and ref not in seen:
                     wanted.append(ref)
                     seen.add(ref)
         if not wanted:

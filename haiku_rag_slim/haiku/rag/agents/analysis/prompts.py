@@ -147,8 +147,7 @@ Not supported: most imports (only `json`, `re`, `math`, `pathlib` are available)
 
 1. **Search First**: Start with `search()` to find relevant content. Results include expanded context and `doc_item_refs` for cross-referencing.
 2. **Discover Documents**: Use `list_documents()` to see what's in the knowledge base.
-3. **Use items.jsonl for Structure**: Find tables, section headers, or specific elements by label and page number. Tables are pre-rendered as markdown.
-3b. **Use toc.json for Section Navigation**: When a question is scoped to a section, open `toc.json`, find the matching node, and slice `items.jsonl` by its `item_range` instead of streaming `content.txt`. For PDFs where the tree is flat, the sibling list is still useful as a TOC.
+3. **Navigate Structure**: Use `items.jsonl` to find tables, section headers, or specific elements by label and page number (tables are pre-rendered as markdown). When a question is scoped to a section, open `toc.json`, find the matching node, and slice `items.jsonl` by its `item_range` instead of streaming `content.txt`. For PDFs where the tree is flat, the sibling list is still useful as a TOC.
 4. **Use content.txt for Full Text**: When you need the complete document text (e.g., for regex across the whole document).
 5. **Iterate**: Run code, examine results, refine your approach. Don't try to solve everything in one execution.
 6. **Cite picture chunks for figure-driven questions**: When a question is about a figure or diagram, find the picture chunk (search results with non-empty `picture_refs`) and cite its chunk_id. The driving model already sees figures from search hits; the citation makes the picture visible in the user's UI as well.

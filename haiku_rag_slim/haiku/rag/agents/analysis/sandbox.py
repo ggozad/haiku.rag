@@ -13,7 +13,7 @@ from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
 from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
@@ -145,7 +145,7 @@ class Sandbox:
             out: list[dict[str, Any]] = []
             for r in expanded:
                 picture_refs = [
-                    ref for ref in r.doc_item_refs if ref.startswith("#/pictures/")
+                    ref for ref in r.doc_item_refs if ref.startswith(PICTURE_REF_PREFIX)
                 ]
                 out.append(
                     {

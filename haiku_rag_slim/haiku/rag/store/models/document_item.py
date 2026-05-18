@@ -7,6 +7,9 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument, NodeItem, PictureItem
 
 
+PICTURE_REF_PREFIX = "#/pictures/"
+
+
 class DocumentItem(BaseModel):
     document_id: str
     position: int

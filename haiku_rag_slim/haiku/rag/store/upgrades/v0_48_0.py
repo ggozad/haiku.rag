@@ -72,7 +72,9 @@ async def _apply_backfill_heading_hierarchy(store: Store) -> None:
             docling_doc = DoclingDocument.model_validate_json(decompress_json(blob))
             fresh_items = extract_items(doc_id, docling_doc)
         except Exception:
-            logger.warning("Failed to re-extract items for %s; skipping", doc_id)
+            logger.warning(
+                "Failed to re-extract items for %s; skipping", doc_id, exc_info=True
+            )
             skipped += 1
             continue
 

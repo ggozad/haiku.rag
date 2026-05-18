@@ -2,6 +2,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
+
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
 
@@ -104,7 +106,9 @@ def resolve_citations(
         r = by_id.get(chunk_id)
         if not r:
             continue
-        picture_refs = [ref for ref in r.doc_item_refs if ref.startswith("#/pictures/")]
+        picture_refs = [
+            ref for ref in r.doc_item_refs if ref.startswith(PICTURE_REF_PREFIX)
+        ]
         citations.append(
             Citation(
                 document_id=r.document_id or "",

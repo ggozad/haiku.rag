@@ -3,14 +3,14 @@
 
 ### Added
 
-- **`heading_level` and `tree_depth` on `DocumentItem`.** `extract_items` now captures docling's `SectionHeaderItem.level` (H1–H6 for headers, `0` elsewhere) and the traversal depth from `iterate_items()` for every item, persisting both in the `document_items` table. Foundations for tree-based document navigation in the analysis sandbox. The 0.48.0 migration adds the columns to existing DBs and backfills them from each doc's docling blob.
-- **`toc.json` in the analysis sandbox VFS.** Each document mounted under `/documents/{id}/` now exposes a `toc.json` view alongside `metadata.json`, `content.txt`, `items.jsonl`. Nodes carry `{self_ref, level, title, position, page_numbers, item_range, children}`; `item_range = [start, end_exclusive]` over the same `position` ints used in `items.jsonl`, so the agent can slice items by range to read a section. HTML/markdown ingests produce a real nested tree; PDF ingests produce a flat sibling list because docling collapses heading levels on PDFs. `tree: []` when the doc has no section headers. `items.jsonl` now surfaces `heading_level` and `tree_depth` on every row.
-- **`picture_refs` in sandbox `search()` results.** Each search dict in the analysis sandbox now exposes a `picture_refs` key (subset of `doc_item_refs` whose label is `picture`) so the agent can spot picture chunks without zipping refs + labels manually.
-- **Citations carry `picture_refs` for inline picture rendering.** `Citation` gains a `picture_refs: list[str]` field; `resolve_citations` derives it from the originating `SearchResult.doc_item_refs` + `labels`. The chat TUI's `CitationWidget` mounts a `textual_image.widget.Image` per picture self_ref inside the existing collapsible — picture citations render the actual figure alongside their text content. The skill's search tool already auto-attaches `BinaryContent` for picture chunks under vision-capable models, so the driving model sees the figure during reasoning; the citation pipeline now also surfaces it in the user's UI. `visualize_chunk` continues to work uniformly because every cited chunk has a `chunk_id`.
+- `heading_level` and `tree_depth` on `DocumentItem`, populated by `extract_items` and persisted on `document_items`. 0.48.0 migration backfills existing rows from each doc's docling structure blob.
+- `toc.json` in the analysis sandbox VFS at `/documents/{id}/toc.json`. Nested tree on HTML/markdown sources, flat sibling list on PDFs. `items.jsonl` rows now include `heading_level` and `tree_depth`.
+- `picture_refs` on sandbox `search()` result dicts and on `Citation` (subset of `doc_item_refs` starting with `#/pictures/`).
+- Chat TUI renders picture citations inline via `textual_image.widget.Image` inside the existing `CitationWidget`.
 
-### Changed
+### Removed
 
-- **`llm()` removed from the analysis sandbox.** The function was a thin wrapper that spun up an ad-hoc pydantic-ai `Agent` per call. The driving agent already is the LLM — there's no need for a sandbox-internal one. Sandbox external functions are now `search` and `list_documents`.
+- `llm()` from the analysis sandbox. Sandbox externals are now `search` and `list_documents` only.
 
 ### Changed
 
