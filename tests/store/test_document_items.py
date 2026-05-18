@@ -502,13 +502,14 @@ class TestPictureDataStorage:
             # Empty refs returns empty dict
             assert await repo.get_pictures_for_chunk("doc-1", []) == {}
 
-    async def test_get_captions_for_chunk(self, temp_db_path):
-        """Captions are returned for refs whose text is non-empty.
+    async def test_get_text_for_refs(self, temp_db_path):
+        """Text is returned for any ref with non-empty ``text``, regardless of label.
 
         In practice pictures carry their caption in the ``text`` field
         (populated by the VLM picture-description pass during ingest); this
         method surfaces that text alongside the picture bytes so the model can
-        correlate a description with the binary it sees.
+        correlate a description with the binary it sees. The same method also
+        returns text for non-picture refs — callers filter by label.
         """
         async with HaikuRAG(temp_db_path, create=True) as rag:
             repo = DocumentItemRepository(rag.store)
@@ -541,7 +542,7 @@ class TestPictureDataStorage:
                 ],
             )
 
-            captions = await repo.get_captions_for_chunk(
+            captions = await repo.get_text_for_refs(
                 "doc-1",
                 ["#/pictures/0", "#/pictures/1", "#/texts/0", "#/pictures/999"],
             )
@@ -549,7 +550,7 @@ class TestPictureDataStorage:
                 "#/pictures/0": "Figure 1. CCS generation over time.",
                 "#/texts/0": "Inline prose.",
             }
-            assert await repo.get_captions_for_chunk("doc-1", []) == {}
+            assert await repo.get_text_for_refs("doc-1", []) == {}
 
     async def test_hot_paths_exclude_picture_data(self, temp_db_path):
         """Light read paths must NOT pull picture_data into memory."""

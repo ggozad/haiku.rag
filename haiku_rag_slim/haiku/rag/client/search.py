@@ -139,7 +139,7 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
         )
         if not bytes_by_ref:
             continue
-        captions_by_ref = await client.document_item_repository.get_captions_for_chunk(
+        captions_by_ref = await client.document_item_repository.get_text_for_refs(
             doc_id, list(bytes_by_ref.keys())
         )
         for r in doc_results:
