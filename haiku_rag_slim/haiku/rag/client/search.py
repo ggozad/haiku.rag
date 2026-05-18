@@ -139,14 +139,23 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
         )
         if not bytes_by_ref:
             continue
+        captions_by_ref = await client.document_item_repository.get_captions_for_chunk(
+            doc_id, list(bytes_by_ref.keys())
+        )
         for r in doc_results:
             attached: dict[str, str] = {}
+            captions: dict[str, str] = {}
             for ref in r.doc_item_refs:
                 blob = bytes_by_ref.get(ref)
                 if blob:
                     attached[ref] = base64.b64encode(blob).decode("ascii")
+                    caption = captions_by_ref.get(ref)
+                    if caption:
+                        captions[ref] = caption
             if attached:
                 r.image_data = attached
+            if captions:
+                r.picture_captions = captions
 
 
 async def expand_context(

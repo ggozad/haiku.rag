@@ -279,6 +279,50 @@ def test_search_result_format_for_agent_with_rank():
     assert "Content:\nThis is the chunk content about elections." in formatted
 
 
+def test_search_result_format_for_agent_picture_captions():
+    """Picture captions render as labelled lines so the model can correlate them
+    with binary parts (BinaryContent.identifier doesn't survive serialization
+    to the OpenAI vision API; insertion order is the only reliable signal)."""
+    result = SearchResult(
+        content="...surrounding text...",
+        score=0.5,
+        chunk_id="chunk-xyz",
+        labels=["picture", "text"],
+        picture_captions={
+            "#/pictures/0": "Figure 1. Results from each model.",
+            "#/pictures/1": "Figure 2. Projected annual emissions.",
+        },
+    )
+
+    formatted = result.format_for_agent(rank=1, total=2)
+
+    lines = formatted.splitlines()
+    cap0 = next(
+        i for i, line in enumerate(lines) if "Figure caption (#/pictures/0)" in line
+    )
+    cap1 = next(
+        i for i, line in enumerate(lines) if "Figure caption (#/pictures/1)" in line
+    )
+    content_line = next(
+        i for i, line in enumerate(lines) if line.startswith("Content:")
+    )
+    assert cap0 < cap1 < content_line
+    assert "Figure 1. Results from each model." in formatted
+    assert "Figure 2. Projected annual emissions." in formatted
+
+
+def test_search_result_format_for_agent_no_captions_no_line():
+    """Without picture_captions, no caption lines appear (zero-overhead for text chunks)."""
+    result = SearchResult(
+        content="prose",
+        score=0.5,
+        chunk_id="chunk-abc",
+        labels=["text"],
+    )
+    formatted = result.format_for_agent(rank=1, total=1)
+    assert "Figure caption" not in formatted
+
+
 def test_search_result_format_for_agent_rank_only():
     """Test format_for_agent with rank but no total."""
     result = SearchResult(

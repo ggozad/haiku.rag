@@ -138,6 +138,7 @@ class SearchResult(BaseModel):
     headings: list[str] | None = None
     labels: list[str] = []
     image_data: dict[str, str] | None = None
+    picture_captions: dict[str, str] = {}
 
     @classmethod
     def from_chunk(
@@ -197,6 +198,15 @@ class SearchResult(BaseModel):
             primary_label = self._get_primary_label()
             if primary_label:
                 parts.append(f"Type: {primary_label}")
+
+        # Surface picture captions when present. Order matches the binary
+        # attachments emitted by build_binary_parts_from_results, so the model
+        # can correlate caption ↔ attached image by position (BinaryContent
+        # identifiers don't survive serialization to the OpenAI vision API).
+        if self.picture_captions:
+            for self_ref, caption in self.picture_captions.items():
+                if caption:
+                    parts.append(f"Figure caption ({self_ref}): {caption}")
 
         # The actual content
         parts.append(f"Content:\n{self.content}")

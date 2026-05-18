@@ -206,3 +206,32 @@ class DocumentItemRepository:
             if data:
                 result[row["self_ref"]] = data
         return result
+
+    async def get_captions_for_chunk(
+        self, document_id: str, refs: list[str]
+    ) -> dict[str, str]:
+        """Fetch caption text for multiple self_refs within a single document.
+
+        Returns ``{self_ref: text}`` for refs that have non-empty text. Used
+        alongside ``get_pictures_for_chunk`` to label figures in agent-facing
+        search results — the OpenAI vision message format has no identifier
+        field for binary parts, so the caption is the only signal a model can
+        use to correlate a description with the picture it sees.
+        """
+        if not refs:
+            return {}
+
+        safe_id = escape_sql_string(document_id)
+        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["self_ref", "text"])
+            .where(f"document_id = '{safe_id}' AND self_ref IN ({refs_sql})")
+            .to_list()
+        )
+        result: dict[str, str] = {}
+        for row in rows:
+            text = row.get("text") or ""
+            if text:
+                result[row["self_ref"]] = text
+        return result
