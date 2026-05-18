@@ -27,9 +27,6 @@ Not supported: class definitions, generators/yield, match statements, decorators
 ### search
 Search the knowledge base directly (outside code execution). Use for initial exploration before writing code. Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
 
-### list_documents
-List available documents. Use to discover what's in the knowledge base.
-
 ### cite
 Register the chunk IDs that ground your answer. Call this BEFORE writing your final answer, with the `chunk_id` values from search results (from either the `search` tool or `await search(...)` inside `execute_code`) that support each claim. Every answer that uses search results must be backed by `cite`.
 

@@ -60,7 +60,7 @@ class TestAnalysisSkillCreation:
 
         skill = create_skill(config=test_app_config, db_path=temp_db_path)
         tool_names = {getattr(t, "__name__") for t in skill.tools if callable(t)}
-        assert tool_names == {"search", "list_documents", "execute_code", "cite"}
+        assert tool_names == {"search", "execute_code", "cite"}
 
     def test_create_skill_has_state(self, test_app_config, temp_db_path):
         from haiku.rag.skills.analysis import AnalysisState, create_skill

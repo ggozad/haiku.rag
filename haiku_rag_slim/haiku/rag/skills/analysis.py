@@ -77,7 +77,7 @@ def create_skill(
         db_path,
         config,
         AnalysisState,
-        ["search", "list_documents", "execute_code", "cite"],
+        ["search", "execute_code", "cite"],
     )
     extras = create_skill_extras(db_path, config)
 
