@@ -22,8 +22,8 @@ from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher, S3Watcher
-from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.chunk import SearchType
+from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
