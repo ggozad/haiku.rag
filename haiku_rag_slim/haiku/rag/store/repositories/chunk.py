@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 from lancedb.index import FTS
 from lancedb.rerankers import RRFReranker
 
+from haiku.rag.client.models import SearchType
 from haiku.rag.store.engine import Store, query_to_pydantic
 from haiku.rag.store.models.chunk import Chunk
 
@@ -220,7 +221,7 @@ class ChunkRepository:
         self,
         query: str = "",
         limit: int = 5,
-        search_type: str = "hybrid",
+        search_type: SearchType = "hybrid",
         filter: str | None = None,
         query_vector: list[float] | None = None,
     ) -> list[tuple[Chunk, float]]:
