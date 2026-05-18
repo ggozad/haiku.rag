@@ -315,8 +315,8 @@ def search(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
-    search_type: SearchType = typer.Option(
-        "hybrid",
+    search_type: SearchType | None = typer.Option(
+        None,
         "--search-type",
         "-s",
         help="Type of search to perform (text searches only)",
