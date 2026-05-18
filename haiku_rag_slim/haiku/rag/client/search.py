@@ -2,7 +2,7 @@ import base64
 from typing import TYPE_CHECKING
 
 from haiku.rag.reranking import get_reranker
-from haiku.rag.store.models.chunk import Chunk, SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -14,7 +14,7 @@ async def search(
     client: "HaikuRAG",
     query: "str | bytes | PILImage.Image",
     limit: int | None = None,
-    search_type: str = "hybrid",
+    search_type: SearchType | None = None,
     filter: str | None = None,
     include_images: bool = True,
 ) -> list[SearchResult]:
@@ -25,7 +25,8 @@ async def search(
         query: Text (``str``) or image (``bytes`` / ``PIL.Image.Image``).
             Image queries require a multimodal embedder and run vector-only.
         limit: Maximum number of results to return. Defaults to config.search.limit.
-        search_type: "vector", "fts", or "hybrid" (default). Text queries only.
+        search_type: "vector", "fts", or "hybrid".
+            Applicable only for text queries, where the default is "hybrid".
         filter: Optional SQL WHERE clause to filter documents before searching chunks.
         include_images: When True, populate ``SearchResult.image_data`` with
             base64 picture bytes for picture-labeled chunks.
@@ -37,6 +38,9 @@ async def search(
         limit = client._config.search.limit
 
     if isinstance(query, str):
+        if search_type is None:
+            search_type = "hybrid"
+
         reranker = get_reranker(config=client._config)
 
         if reranker is None:

@@ -133,6 +133,18 @@ With options:
 haiku-rag search "python programming" --limit 10  # or -l 10
 ```
 
+With search type:
+```bash
+# Hybrid search (the default)
+haiku-rag search "python programming" --search-type hybrid  # or -s hybrid
+
+# Full-text search only
+haiku-rag search "python programming" --search-type fts  # or -s fts
+
+# Vector search only
+haiku-rag search "python programming" --search-type vector  # or -s vector
+```
+
 With filters (filter by document properties, use `--filter` or `-f`):
 ```bash
 # Filter by URI pattern

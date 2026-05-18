@@ -27,6 +27,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
 )
+from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 _cli = typer.Typer(
@@ -314,6 +315,12 @@ def search(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    search_type: SearchType | None = typer.Option(
+        None,
+        "--search-type",
+        "-s",
+        help="Type of search to perform (text searches only)",
+    ),
     image: Path | None = typer.Option(
         None,
         "--image",
@@ -326,7 +333,15 @@ def search(  # pragma: no cover
     ),
 ):
     app = create_app(db)
-    asyncio.run(app.search(query=query, limit=limit, filter=filter, image=image))
+    asyncio.run(
+        app.search(
+            query=query,
+            limit=limit,
+            filter=filter,
+            search_type=search_type,
+            image=image,
+        )
+    )
 
 
 @_cli.command("visualize", help="Show visual grounding for a chunk")
