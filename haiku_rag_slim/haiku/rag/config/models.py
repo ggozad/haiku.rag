@@ -116,14 +116,14 @@ class ResearchConfig(BaseModel):
 
 
 class AnalysisConfig(BaseModel):
-    model: ModelConfig = Field(
-        default_factory=lambda: ModelConfig(
-            provider="ollama",
-            name="gpt-oss",
-            enable_thinking=False,
-            temperature=0.0,
-        )
-    )
+    """Driving model + sandbox limits for the analysis skill.
+
+    ``model`` defaults to ``None``, meaning "no override — use ``qa.model``."
+    Consumers resolve via ``config.analysis.model or config.qa.model``. Set
+    explicitly when the analysis workload wants a different model from QA
+    (e.g. a stronger model for computational tasks)."""
+
+    model: ModelConfig | None = None
     code_timeout: float = 60.0
     max_output_chars: int = 50_000
 

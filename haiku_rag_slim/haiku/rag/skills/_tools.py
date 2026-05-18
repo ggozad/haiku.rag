@@ -7,7 +7,7 @@ from pydantic_ai.messages import ToolReturn
 
 from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import AppConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.tools.search import build_binary_parts_from_results
@@ -155,12 +155,18 @@ def create_skill_tools(
     config: AppConfig,
     state_type: type[BaseModel],
     tool_names: list[str],
+    model: ModelConfig,
 ) -> dict[str, Any]:
     """Create tool closures for a skill.
 
     Returns a dict mapping tool name to async callable.
     Each tool extracts state from RunContext, calls the shared implementation,
-    and updates state.
+    and updates state. ``model`` is the driving model for the skill (e.g.
+    ``config.qa.model`` for the RAG skill, or
+    ``config.analysis.model or config.qa.model`` for the analysis skill,
+    which defaults to ``None`` and inherits QA's model when unconfigured);
+    its ``vision`` flag gates picture-bytes attachment on the ``search``
+    tool.
     """
     tools: dict[str, Any] = {}
 
@@ -173,10 +179,9 @@ def create_skill_tools(
             """Search the knowledge base using hybrid search (vector + full-text).
 
             Returns ranked results with content and metadata. When picture
-            content is in the result set and the configured QA model is
-            vision-capable (``qa.model.vision = true``), picture bytes are
-            attached as ``BinaryContent`` parts so the model sees figures
-            alongside text.
+            content is in the result set and the driving skill model is
+            vision-capable, picture bytes are attached as ``BinaryContent``
+            parts so the model sees figures alongside text.
 
             Args:
                 query: The search query.
@@ -199,7 +204,7 @@ def create_skill_tools(
             if state:
                 state.searches[query] = results
 
-            if not config.qa.model.vision:
+            if not model.vision:
                 return formatted
 
             binary_parts = build_binary_parts_from_results(results)

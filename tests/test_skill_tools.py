@@ -76,6 +76,7 @@ def _build_search_tool(config: AppConfig):
         config=config,
         state_type=RAGState,
         tool_names=["search"],
+        model=config.qa.model,
     )
     return tools["search"]
 

@@ -20,7 +20,7 @@ def create_analysis_agent(config: AppConfig) -> Agent[AnalysisDeps, RawAnalysisR
     Returns:
         A pydantic-ai Agent configured for analysis execution.
     """
-    model = get_model(config.analysis.model, config)
+    model = get_model(config.analysis.model or config.qa.model, config)
 
     agent: Agent[AnalysisDeps, RawAnalysisResult] = Agent(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         model,

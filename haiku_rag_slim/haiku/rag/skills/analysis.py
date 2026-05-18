@@ -78,6 +78,7 @@ def create_skill(
         config,
         AnalysisState,
         ["search", "execute_code", "cite"],
+        model=config.analysis.model or config.qa.model,
     )
     extras = create_skill_extras(db_path, config)
 

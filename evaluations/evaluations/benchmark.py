@@ -363,7 +363,14 @@ async def run_qa_benchmark(
     ]
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    skill_config = (skill_model or config.qa.model) if target != "qa" else None
+    if target == "qa":
+        skill_config = None
+    elif target == "analysis-skill":
+        # Mirror the skill-code resolver: explicit analysis.model wins,
+        # else fall back to qa.model.
+        skill_config = skill_model or config.analysis.model or config.qa.model
+    else:
+        skill_config = skill_model or config.qa.model
     db = spec.db_path(db_path)
 
     citation_evaluator: Evaluator | None = None

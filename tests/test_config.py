@@ -274,3 +274,80 @@ processing:
     data = load_yaml_config(config_file)
     cfg = AppConfig.model_validate(data)
     assert cfg.processing.conversion_options.fetch_remote_images is False
+
+
+def test_analysis_model_defaults_to_none():
+    """``AnalysisConfig.model`` is ``None`` by default; consumers resolve via
+    ``config.analysis.model or config.qa.model``. Keeps the field semantics
+    simple: ``None`` means "no override, inherit from QA"."""
+    cfg = AppConfig()
+    assert cfg.analysis.model is None
+
+
+def test_analysis_model_unset_resolves_to_qa(tmp_path):
+    """When YAML configures ``qa.model`` and omits ``analysis.model``, the
+    resolve idiom yields qa.model."""
+    cfg = AppConfig.model_validate(
+        load_yaml_config(
+            _write(
+                tmp_path,
+                """
+qa:
+  model:
+    provider: openai
+    name: my/qwen
+    base_url: http://example/v1
+    vision: true
+""",
+            )
+        )
+    )
+    assert cfg.qa.model.name == "my/qwen"
+    assert cfg.analysis.model is None
+    resolved = cfg.analysis.model or cfg.qa.model
+    assert resolved.name == "my/qwen"
+    assert resolved.vision is True
+
+
+def test_analysis_other_fields_keep_defaults_with_unset_model(tmp_path):
+    """``analysis`` may contain non-model overrides (e.g. ``code_timeout``)
+    without a ``model`` key; model stays None, other fields take user values."""
+    cfg = AppConfig.model_validate(
+        load_yaml_config(
+            _write(
+                tmp_path,
+                """
+analysis:
+  code_timeout: 120
+""",
+            )
+        )
+    )
+    assert cfg.analysis.model is None
+    assert cfg.analysis.code_timeout == 120.0
+
+
+def test_analysis_model_explicit_overrides_qa(tmp_path):
+    """An explicit ``analysis.model`` in YAML wins over the qa fallback."""
+    cfg = AppConfig.model_validate(
+        load_yaml_config(
+            _write(
+                tmp_path,
+                """
+qa:
+  model:
+    name: qa-model
+    provider: openai
+analysis:
+  model:
+    name: analysis-model
+    provider: ollama
+""",
+            )
+        )
+    )
+    assert cfg.qa.model.name == "qa-model"
+    assert cfg.analysis.model is not None
+    assert cfg.analysis.model.name == "analysis-model"
+    resolved = cfg.analysis.model or cfg.qa.model
+    assert resolved.name == "analysis-model"
