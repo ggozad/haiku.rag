@@ -11,6 +11,11 @@
 ### Removed
 
 - `llm()` from the analysis sandbox. Sandbox externals are now `search` and `list_documents` only.
+- `list_documents` top-level tool from the analysis skill (still available as `await list_documents()` inside `execute_code`).
+
+### Fixed
+
+- Chat TUI's state-edit screen now syntax-highlights JSON instead of falling back to plain text. Adds `tree-sitter` + `tree-sitter-json` to the `[tui]` extra.
 
 ### Changed
 
