@@ -51,7 +51,8 @@ class LLMJudge:
             model=model_obj,
             output_type=LLMJudgeResponseSchema,
             system_prompt=ANSWER_EQUIVALENCE_RUBRIC,
-            retries=3,
+            tool_retries=3,
+            output_retries=3,
         )
 
     async def judge_answers(

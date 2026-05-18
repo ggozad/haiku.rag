@@ -260,8 +260,7 @@ class Sandbox:
                 },
             )
             if self._context.documents:
-                await pydantic_monty.run_repl_async(
-                    self._repl,
+                await self._repl.feed_run_async(
                     "pass",
                     inputs={
                         "documents": [
@@ -296,8 +295,7 @@ class Sandbox:
         max_chars = self._config.analysis.max_output_chars
 
         try:
-            output = await pydantic_monty.run_repl_async(
-                repl,
+            output = await repl.feed_run_async(
                 code,
                 external_functions=external_fns,
                 print_callback=print_callback,

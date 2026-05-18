@@ -96,7 +96,7 @@ async def _apply_compress_docling_document(store: Store) -> None:  # pragma: no 
                     "Recovering %d documents from failed migration", len(staging_ids)
                 )
                 # Create new documents table and copy from staging
-                store.documents_table = None
+                del store.documents_table
                 if "documents" in (await store.db.list_tables()).tables:
                     await store.db.drop_table("documents")
                 store.documents_table = await store.db.create_table(
@@ -137,7 +137,7 @@ async def _apply_compress_docling_document(store: Store) -> None:  # pragma: no 
                 return
 
         # No documents and no staging to recover, just recreate table with new schema
-        store.documents_table = None
+        del store.documents_table
         if "documents" in (await store.db.list_tables()).tables:
             await store.db.drop_table("documents")
         store.documents_table = await store.db.create_table(
@@ -177,7 +177,7 @@ async def _apply_compress_docling_document(store: Store) -> None:  # pragma: no 
         )
 
     # Replace old table with staging table
-    store.documents_table = None
+    del store.documents_table
     if "documents" in (await store.db.list_tables()).tables:
         await store.db.drop_table("documents")
     store.documents_table = await store.db.create_table(
