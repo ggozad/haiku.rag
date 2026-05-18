@@ -16,14 +16,17 @@ from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.agents.analysis.sandbox import Sandbox
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem
 
 
 async def _empty_doc(client, *, uri: str, title: str) -> str:
-    """Create a Document row and drop the auto-extracted items so the test
-    controls the items table exactly. Returns the document id."""
-    doc = await client.create_document(content="x", uri=uri, title=title)
-    await client.document_item_repository.delete_by_document_id(doc.id)
+    """Create a Document row directly via the repository (no chunking, no
+    embedder) so these tests can run without a reachable embedding endpoint.
+    Returns the document id."""
+    doc = await client.document_repository.create(
+        Document(content="x", uri=uri, title=title)
+    )
     return doc.id
 
 
