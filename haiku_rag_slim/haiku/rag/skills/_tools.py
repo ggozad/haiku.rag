@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.messages import ToolReturn
 
 from haiku.rag.agents.research.models import Citation
@@ -314,7 +314,24 @@ def create_skill_tools(
             citations = resolve_citations(chunk_ids, all_results)
             if citations:
                 _register_citations(state, citations)
-            return f"Registered {len(citations)} citation(s)."
+                return f"Registered {len(citations)} citation(s)."
+
+            if not chunk_ids:
+                return "Registered 0 citations (empty chunk_ids)."
+
+            if not any(r.chunk_id for r in all_results):
+                raise ModelRetry(
+                    f"None of the supplied chunk_ids {list(chunk_ids)} can be "
+                    "resolved: no search results have been recorded in this "
+                    "session yet. Call `search` first, then cite chunk_ids "
+                    "from its response."
+                )
+            raise ModelRetry(
+                f"None of the supplied chunk_ids {list(chunk_ids)} match a "
+                "chunk_id from search results. Copy chunk_ids verbatim from "
+                "the search response — never reconstruct, abbreviate, or "
+                "paraphrase them."
+            )
 
         tools["cite"] = cite
 

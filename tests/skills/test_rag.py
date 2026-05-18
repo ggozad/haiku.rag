@@ -1,3 +1,5 @@
+import pytest
+
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rag import (
     STATE_NAMESPACE,
@@ -318,6 +320,58 @@ class TestCiteTool:
         ctx = _make_ctx(state=None)
         result = await cite(ctx, chunk_ids=["nonexistent"])
         assert "No state" in result
+
+    async def test_cite_raises_modelretry_when_chunk_ids_unresolved(
+        self, rag_db, rag_client
+    ):
+        """When supplied chunk_ids don't match any search result, cite raises
+        ModelRetry so pydantic-ai prompts the model to retry with valid ids
+        instead of silently registering zero citations."""
+        from pydantic_ai import ModelRetry
+
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state, rag=rag_client)
+
+        await search(ctx, query="artificial intelligence")
+        assert state.searches, "fixture should have produced some search results"
+
+        with pytest.raises(ModelRetry) as exc_info:
+            await cite(ctx, chunk_ids=["372c9ddf-not-a-real-id"])
+        message = str(exc_info.value)
+        assert "verbatim" in message
+        assert "372c9ddf-not-a-real-id" in message
+
+    async def test_cite_raises_modelretry_when_no_searches_recorded(self, rag_db):
+        """If cite is called before any search has populated state.searches,
+        the retry message tells the model to call search first."""
+        from pydantic_ai import ModelRetry
+
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state)
+
+        with pytest.raises(ModelRetry) as exc_info:
+            await cite(ctx, chunk_ids=["any-id"])
+        assert "search" in str(exc_info.value).lower()
+
+    async def test_cite_returns_message_when_chunk_ids_empty(self, rag_db):
+        """An empty chunk_ids list is a no-op, not a retry trigger."""
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        result = await cite(ctx, chunk_ids=[])
+        assert "0" in result
 
 
 class TestLifespan:

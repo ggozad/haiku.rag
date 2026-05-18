@@ -30,6 +30,8 @@ Search the knowledge base directly (outside code execution). Each result has a `
 ### cite
 Register the chunk IDs that ground your answer. Call this BEFORE writing your final answer, with the `chunk_id` values from search results (from either the `search` tool or `await search(...)` inside `execute_code`) that support each claim. Every answer that uses search results must be backed by `cite`.
 
+Use chunk_ids exactly as they appear in the search response — copy the full UUID verbatim. Do not abbreviate, paraphrase, or reconstruct chunk_ids from memory; the tool matches them as opaque strings.
+
 ## Document Filesystem (inside execute_code)
 
 All documents are mounted as a virtual filesystem at `/documents/`:
