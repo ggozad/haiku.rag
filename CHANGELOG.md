@@ -6,6 +6,7 @@
 - `heading_level` and `tree_depth` on `DocumentItem`, populated by `extract_items` and persisted on `document_items`. 0.48.0 migration backfills existing rows from each doc's docling structure blob.
 - `toc.json` in the analysis sandbox VFS at `/documents/{id}/toc.json`. Nested tree on HTML/markdown sources, flat sibling list on PDFs. `items.jsonl` rows now include `heading_level` and `tree_depth`.
 - `picture_refs` on sandbox `search()` result dicts and on `Citation` (subset of `doc_item_refs` starting with `#/pictures/`).
+- `picture_captions: dict[str, str]` on `SearchResult`, populated alongside `image_data` and rendered as a labelled line in `format_for_agent` for picture-bearing chunks.
 - Chat TUI renders picture citations inline via `textual_image.widget.Image` inside the existing `CitationWidget`.
 
 ### Removed
@@ -17,6 +18,7 @@
 
 - `search.limit` default lowered from `10` to `5`. Reduces text + binary noise in vision-tool returns (picture count tracks result count after expansion + dedup); the cite path still selects from all returned chunks.
 - Search result formatter surfaces picture captions on a labelled line when a chunk's expanded refs include pictures. The OpenAI vision API has no identifier field for binary parts, so the caption is the only signal a model can use to map a description to the figure it sees.
+- `AnalysisConfig.model` defaults to `None` (was `ollama:gpt-oss/no-thinking/temp=0`). Consumers resolve via `config.analysis.model or config.qa.model`, so the analysis skill inherits the QA driving model when no `analysis` block is in YAML. Set `analysis.model` explicitly to keep the analysis pipeline on a different model from QA. **Note**: the type is now `ModelConfig | None`; external code reading `cfg.analysis.model.X` directly will need to handle the `None` case.
 
 ### Fixed
 
