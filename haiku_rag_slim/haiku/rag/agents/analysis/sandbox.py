@@ -136,6 +136,11 @@ class Sandbox:
         context = self._context
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
+            # Picture bytes are deliberately not attached to in-code search
+            # results: the Monty interpreter has no PIL/base64/hashlib, so the
+            # agent's Python can't do anything with them. The driving model
+            # gets figures through the top-level `search` tool when the
+            # question is visual; in-code search is for structural work.
             from haiku.rag.client import HaikuRAG
 
             async with HaikuRAG(db_path, config=config, read_only=True) as rag:
