@@ -1,9 +1,8 @@
 import base64
 from typing import TYPE_CHECKING
 
-from haiku.rag.client.models import SearchType
 from haiku.rag.reranking import get_reranker
-from haiku.rag.store.models.chunk import Chunk, SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage

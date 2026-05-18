@@ -19,11 +19,11 @@ from rich.progress import (
 from rich.syntax import Syntax
 
 from haiku.rag.client import HaikuRAG, RebuildMode
-from haiku.rag.client.models import SearchType
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.monitor import FileWatcher, S3Watcher
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.models.chunk import SearchType
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult

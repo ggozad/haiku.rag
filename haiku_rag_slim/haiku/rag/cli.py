@@ -15,7 +15,6 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 from haiku.rag.app import HaikuRAGApp  # noqa: E402
-from haiku.rag.client.models import SearchType  # noqa: E402
 from haiku.rag.config import (  # noqa: E402
     AppConfig,
     find_config_file,
@@ -28,6 +27,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
 )
+from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 _cli = typer.Typer(

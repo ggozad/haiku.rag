@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -111,6 +111,9 @@ class Chunk(BaseModel):
     def get_chunk_metadata(self) -> ChunkMetadata:
         """Parse metadata dict into structured ChunkMetadata."""
         return ChunkMetadata.model_validate(self.metadata)
+
+
+SearchType = Literal["vector", "fts", "hybrid"]
 
 
 class SearchResult(BaseModel):
