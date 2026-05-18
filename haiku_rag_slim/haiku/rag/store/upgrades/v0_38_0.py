@@ -118,7 +118,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
                 logger.info(
                     "Recovering %d documents from failed migration", len(staging_ids)
                 )
-                store.documents_table = None
+                del store.documents_table
                 if "documents" in (await store.db.list_tables()).tables:
                     await store.db.drop_table("documents")
                 store.documents_table = await store.db.create_table(
@@ -144,7 +144,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
                 return
 
         # No documents and no staging — recreate table with new schema
-        store.documents_table = None
+        del store.documents_table
         if "documents" in (await store.db.list_tables()).tables:
             await store.db.drop_table("documents")
         store.documents_table = await store.db.create_table(
@@ -188,7 +188,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
         )
 
     # Replace old table with staging table
-    store.documents_table = None
+    del store.documents_table
     if "documents" in (await store.db.list_tables()).tables:
         await store.db.drop_table("documents")
     store.documents_table = await store.db.create_table(

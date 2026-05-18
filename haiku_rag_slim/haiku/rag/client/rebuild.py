@@ -393,6 +393,8 @@ async def _rebuild_embed_only(
             embeddings.extend(batch_embeddings)
 
         for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
+            assert chunk.id is not None
+            assert chunk.document_id is not None
             pending_records.append(
                 client.store.ChunkRecord(
                     id=chunk.id,

@@ -5,6 +5,9 @@
 
 - Bump `docling>=2.93.0` and `docling-core>=2.75.0`.
 - Bump `pydantic-ai-slim>=1.96.0`. Migrate off deprecated APIs: AG-UI imports use `pydantic_ai.ui.ag_ui`, docs/CLI examples use the explicit `openai-chat:` model prefix, and `Agent(retries=)` is split into `tool_retries=` + `output_retries=`.
+- Bump `pydantic-monty>=0.0.17`. Migrate off deprecated `pydantic_monty.run_repl_async(repl, ...)` to `repl.feed_run_async(...)`.
+- Cap `transformers<5.0.0` in the `mxbai` extra: `mxbai-rerank>=0.1.6` calls `tokenizer.prepare_for_model` which transformers 5 removed.
+- Refresh the rest of the lockfile to latest within current constraints (pydantic, pydantic-ai, rich, ruff, ty, pytest, torch, textual, textual-image, watchfiles, pre-commit, datasets, and transitives).
 
 ## [0.47.0] - 2026-05-14
 
