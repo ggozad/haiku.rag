@@ -386,3 +386,108 @@ class TestExpandWithItems:
             # Expansion produces "Steps\n\nClick\n\n+\n\nAdd a New Service" = 38 chars
             # which is less than the chunk's 46 chars — fallback preserves the chunk
             assert expanded[0].content == result.content
+
+
+@pytest.mark.asyncio
+class TestExpandWithItemsPictureBytes:
+    """Picture bytes only ride along for refs present in the pre-expansion
+    chunk. Pictures swept in by section expansion are still referenced in
+    ``doc_item_refs`` for cross-referencing but their image_data is not
+    re-fetched — keeps the multimodal payload bounded.
+    """
+
+    async def _populate(self, rag):
+        items = [
+            DocumentItem(
+                document_id="doc-1",
+                position=0,
+                self_ref="#/texts/0",
+                label="section_header",
+                text="Section 1",
+            ),
+            DocumentItem(
+                document_id="doc-1",
+                position=1,
+                self_ref="#/texts/1",
+                label="text",
+                text="Paragraph in section 1.",
+            ),
+            DocumentItem(
+                document_id="doc-1",
+                position=2,
+                self_ref="#/pictures/0",
+                label="picture",
+                text="Figure 1 caption.",
+            ),
+            DocumentItem(
+                document_id="doc-1",
+                position=3,
+                self_ref="#/texts/2",
+                label="text",
+                text="Another paragraph after the figure.",
+            ),
+        ]
+        await rag.document_item_repository.create_items("doc-1", items)
+
+    async def test_pre_expansion_picture_bytes_preserved(self, temp_db_path):
+        """A picture chunk's image_data survives expansion."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            await self._populate(rag)
+            result = SearchResult(
+                content="Figure 1 caption.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/0"],
+                image_data={"#/pictures/0": "BASE64BYTES"},
+                picture_captions={"#/pictures/0": "Figure 1 caption."},
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].image_data == {"#/pictures/0": "BASE64BYTES"}
+            assert expanded[0].picture_captions == {"#/pictures/0": "Figure 1 caption."}
+
+    async def test_merged_results_union_image_data(self, temp_db_path):
+        """When two results' ranges merge, their pre-expansion image_data
+        is unioned onto the merged output."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/pictures/{i}" if i in (1, 3) else f"#/texts/{i}",
+                    label="picture" if i in (1, 3) else "text",
+                    text=f"Item {i}.",
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content="Item 1.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/1"],
+                image_data={"#/pictures/1": "A"},
+            )
+            r2 = SearchResult(
+                content="Item 3.",
+                score=0.85,
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/3"],
+                image_data={"#/pictures/3": "B"},
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1, r2], 5000
+            )
+            # Ranges around positions 1 and 3 overlap → one merged result.
+            assert len(expanded) == 1
+            assert expanded[0].image_data == {
+                "#/pictures/1": "A",
+                "#/pictures/3": "B",
+            }

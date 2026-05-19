@@ -204,9 +204,10 @@ async def expand_context(
         expanded_results.extend(expanded)
 
     expanded_results.sort(key=lambda r: r.score, reverse=True)
-    # expand_with_items rebuilds SearchResult objects, so attach picture bytes
-    # to the fresh set — picture self_refs may have grown via section expansion.
-    await _populate_image_data(client, expanded_results)
+    # image_data and picture_captions are preserved through expansion by
+    # expand_with_items — we deliberately do not re-attach bytes for refs
+    # introduced by section expansion, so the multimodal payload stays
+    # bounded by what was originally retrieved.
     return expanded_results
 
 

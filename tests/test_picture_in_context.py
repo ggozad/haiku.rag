@@ -203,10 +203,12 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_expand_context_repopulates_image_data(temp_db_path):
-    """expand_context rebuilds SearchResult objects via expand_with_items, so
-    it must re-attach picture bytes — otherwise vision flows downstream see
-    empty image_data after expansion."""
+async def test_expand_context_does_not_attach_expansion_added_pictures(temp_db_path):
+    """expand_context preserves picture bytes from the pre-expansion result and
+    does NOT re-fetch bytes for picture self_refs swept in by section
+    expansion. The expansion-added picture ref still rides along in
+    doc_item_refs for cross-referencing, but image_data stays empty so the
+    multimodal payload is bounded by what search originally returned."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
         await rag.document_item_repository.create_items(
             "doc-1",
@@ -247,7 +249,7 @@ async def test_expand_context_repopulates_image_data(temp_db_path):
         assert len(expanded) == 1
         out = expanded[0]
         assert "#/pictures/0" in out.doc_item_refs
-        assert out.image_data == {"#/pictures/0": PICTURE_B64}
+        assert out.image_data is None
 
 
 @dataclass
