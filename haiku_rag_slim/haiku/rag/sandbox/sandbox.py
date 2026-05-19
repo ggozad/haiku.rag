@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic_monty
 from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
 
-from haiku.rag.agents.analysis.dependencies import AnalysisContext
 from haiku.rag.config.models import AppConfig
+from haiku.rag.sandbox.dependencies import AnalysisContext
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 
@@ -351,23 +351,6 @@ class Sandbox:
                     "max_duration_secs": self._config.analysis.code_timeout,
                 },
             )
-            if self._context.documents:
-                await self._repl.feed_run_async(
-                    "pass",
-                    inputs={
-                        "documents": [
-                            {
-                                "id": d.id,
-                                "title": d.title,
-                                "uri": d.uri,
-                                "content": d.content,
-                            }
-                            for d in self._context.documents
-                        ]
-                    },
-                    external_functions=self._build_external_functions(),
-                    os=self._vfs,
-                )
         assert self._repl is not None and self._vfs is not None
         return self._repl, self._vfs
 

@@ -6,7 +6,7 @@ For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` 
 
 ## Low-Level Toolsets
 
-For advanced use cases, individual toolset factories are available in `haiku.rag.tools`. These are used internally by the QA agent and can be composed into custom agents.
+For advanced use cases, individual toolset factories are available in `haiku.rag.tools`. These are the same primitives the rag and rag-analysis skills compose, and can be reused to build custom agents.
 
 ### RAGDeps Protocol
 

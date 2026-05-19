@@ -1,16 +1,8 @@
 import pytest
 
-from haiku.rag.agents.analysis.dependencies import AnalysisContext
-from haiku.rag.agents.analysis.sandbox import Sandbox
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-
-
-@pytest.fixture
-async def empty_client(temp_db_path):
-    """Create an empty HaikuRAG client without documents."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        yield client
+from haiku.rag.sandbox import AnalysisContext, Sandbox
 
 
 @pytest.fixture

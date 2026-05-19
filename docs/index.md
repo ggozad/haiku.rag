@@ -8,11 +8,11 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
-- **Question answering** — QA agents with citations (page numbers, section headings)
+- **Question answering** — RAG skill with citations (page numbers, section headings)
 - **Vision QA** — Vision-capable models receive figure bytes alongside chunk text via pydantic-ai `BinaryContent` when `qa.model.vision = true`
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
-- **Research agents** — Multi-agent workflows via pydantic-graph: plan, search, evaluate, synthesize
-- **Analysis agent** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
+- **Research workflow** — Multi-agent pydantic-graph: plan, search, evaluate, synthesize
+- **Analysis skill** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM (multimodal). QA/Research: any model supported by Pydantic AI

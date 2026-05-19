@@ -1,50 +1,29 @@
 # Agents
 
-Three agentic flows are provided by haiku.rag:
+haiku.rag provides:
 
-- **Simple QA Agent** — a focused question answering agent
-- **Research Graph** — a multi-step research workflow with question decomposition
-- **Analysis Agent** — complex analytical tasks via sandboxed Python code execution (see [Analysis Agent](analysis.md))
+- **Question Answering** via `client.ask` and the [RAG skill](../skills/index.md) — search + cite over the knowledge base.
+- **Analysis** via `client.analyze` and the [analysis skill](../skills/index.md) — sandboxed Python code execution (see [Analysis](analysis.md)).
+- **Research Graph** — a multi-step research workflow with question decomposition (this page).
 
-For multi-turn conversational RAG, haiku.rag provides [skills](../skills/index.md) built on [haiku.skills](https://github.com/ggozad/haiku.skills). The skills bundle search, Q&A, analysis, and research tools with session state management.
+`client.ask` and `client.analyze` are thin wrappers over the rag and rag-analysis skills built on [haiku.skills](https://github.com/ggozad/haiku.skills). For multi-turn conversational RAG with the same primitives, use the skills directly via `SkillToolset`.
 
 See [QA and Research Configuration](../configuration/qa-research.md) for configuring model, iterations, concurrency, and other settings.
 
-## Simple QA Agent
-
-The simple QA agent answers a single question using the knowledge base. It retrieves relevant chunks, optionally expands context around them, and asks the model to answer strictly based on that context.
-
-Key points:
-
-- Uses a single `search_documents` tool to fetch relevant chunks
-- Can be run with or without inline citations in the prompt
-- Returns a plain string answer
-
-**CLI usage:**
+## Question Answering
 
 ```bash
 haiku-rag ask "What is climate change?"
-
-# With citations
-haiku-rag ask "What is climate change?" --cite
 ```
-
-**Python usage:**
 
 ```python
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import ModelConfig
-from haiku.rag.agents.qa.agent import QuestionAnswerAgent
 
 async with HaikuRAG(path_to_db) as client:
-    agent = QuestionAnswerAgent(
-        client=client,
-        model_config=ModelConfig(provider="openai", name="gpt-4o-mini"),
-    )
-
-    answer, citations = await agent.answer("What is climate change?")
-    print(answer)
+    answer, citations = await client.ask("What is climate change?")
 ```
+
+Citations are always returned in the second element of the tuple and rendered after the answer on the CLI.
 
 ## Research Graph
 

@@ -17,27 +17,27 @@
 - `AnalysisResult.program`. The per-execution programs are still tracked on `AnalysisState.executions` (the analysis skill's `execute_code` tool populates it); consumers that need the executed code should pull it from the skill state instead of the function return value.
 - `--cite` flag on `haiku-rag ask`. Citations always render after the answer now.
 - `system_prompt` kwarg on `client.ask`. No production caller used it; `config.prompts.domain_preamble` already covers the preamble use case.
-- `evaluations optimize` subcommand and the GEPA prompt-optimization module. Drops the `gepa` dependency. Hand-tuning SKILL.md / `prompts.qa` against `evaluations run` is the loop we actually iterate; the auto-mutation surface was unused and conflicted with the project's no-prompt-string-tests rule.
-- `--target qa` from `evaluations run`. The skill path supersedes the standalone QA agent — use `--target rag-skill` (now the default) or `--target analysis-skill`.
+- Standalone QA agent (`haiku.rag.agents.qa.*`) and analysis agent module (`haiku.rag.agents.analysis.agent`, `haiku.rag.agents.analysis.prompts`). Also drops `RawAnalysisResult`, `CodeExecution`, `AnalysisDeps`, and the dead `documents=` preload path in `Sandbox`.
+- `prompts.qa` config field.
+- `evaluations optimize` subcommand and GEPA prompt-optimization. Drops `gepa` dep.
+- `--target qa` from `evaluations run`. Default is now `rag-skill`.
 
 ### Changed
 
-- `search.limit` default lowered from `10` to `5`. Reduces text + binary noise in vision-tool returns (picture count tracks result count after expansion + dedup); the cite path still selects from all returned chunks.
-- Search result formatter surfaces picture captions on a labelled line when a chunk's expanded refs include pictures. The OpenAI vision API has no identifier field for binary parts, so the caption is the only signal a model can use to map a description to the figure it sees.
-- `AnalysisConfig.model` defaults to `None` (was `ollama:gpt-oss/no-thinking/temp=0`). Consumers resolve via `config.analysis.model or config.qa.model`, so the analysis skill inherits the QA driving model when no `analysis` block is in YAML. Set `analysis.model` explicitly to keep the analysis pipeline on a different model from QA. **Note**: the type is now `ModelConfig | None`; external code reading `cfg.analysis.model.X` directly will need to handle the `None` case.
-- `client.ask` and `client.analyze` now route through the rag and rag-analysis skills internally (via `haiku.skills.run_skill`). Return shapes preserved: `client.ask` still returns `tuple[str, list[Citation]]`; `client.analyze` returns `AnalysisResult(answer, citations)`. The standalone QA and analysis agents under `agents/qa/` and `agents/analysis/agent.py` remain for now but are scheduled for removal once GEPA optimisation and the `--target qa` eval CLI move to the skill path.
-
-### Fixed
-
-- Chat TUI's state-edit screen now syntax-highlights JSON instead of falling back to plain text. Adds `tree-sitter` + `tree-sitter-json` to the `[tui]` extra.
-
-### Changed
-
+- `haiku.rag.agents.analysis` moved to `haiku.rag.sandbox`. Public surface: `from haiku.rag.sandbox import Sandbox, SandboxResult, AnalysisContext, AnalysisResult`.
+- `search.limit` default lowered from `10` to `5`.
+- Search result formatter surfaces picture captions on a labelled line when a chunk's expanded refs include pictures.
+- `AnalysisConfig.model` defaults to `None` (was `ollama:gpt-oss/no-thinking/temp=0`). Resolves via `config.analysis.model or config.qa.model`.
+- `client.ask` and `client.analyze` route through the rag and rag-analysis skills internally.
 - Bump `docling>=2.93.0` and `docling-core>=2.75.0`.
 - Bump `pydantic-ai-slim>=1.96.0`. Migrate off deprecated APIs: AG-UI imports use `pydantic_ai.ui.ag_ui`, docs/CLI examples use the explicit `openai-chat:` model prefix, and `Agent(retries=)` is split into `tool_retries=` + `output_retries=`.
 - Bump `pydantic-monty>=0.0.17`. Migrate off deprecated `pydantic_monty.run_repl_async(repl, ...)` to `repl.feed_run_async(...)`.
 - Cap `transformers<5.0.0` in the `mxbai` extra: `mxbai-rerank>=0.1.6` calls `tokenizer.prepare_for_model` which transformers 5 removed.
 - Refresh the rest of the lockfile to latest within current constraints (pydantic, pydantic-ai, rich, ruff, ty, pytest, torch, textual, textual-image, watchfiles, pre-commit, datasets, and transitives).
+
+### Fixed
+
+- Chat TUI's state-edit screen syntax-highlights JSON instead of falling back to plain text. Adds `tree-sitter` + `tree-sitter-json` to the `[tui]` extra.
 
 ## [0.47.0] - 2026-05-14
 

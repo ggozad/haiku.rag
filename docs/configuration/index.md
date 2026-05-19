@@ -106,8 +106,7 @@ search:
   vector_refine_factor: 30
 
 prompts:
-  domain_preamble: ""  # Prepended to all agent prompts
-  qa: null             # Custom QA agent prompt (null = use default)
+  domain_preamble: ""  # Prepended to skill instructions and research prompts
   synthesis: null      # Custom research synthesis prompt (null = use default)
 
 processing:

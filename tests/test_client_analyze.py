@@ -1,61 +1,22 @@
 from pathlib import Path
 
 import pytest
-from pydantic_ai import Agent
 
-from haiku.rag.agents.analysis.agent import create_analysis_agent
-from haiku.rag.agents.analysis.dependencies import AnalysisDeps
-from haiku.rag.agents.analysis.models import CodeExecution, RawAnalysisResult
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.client import HaikuRAG
+from haiku.rag.config import AppConfig
 
 
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_analysis")
-
-
-class TestCreateAnalysisAgent:
-    def test_creates_agent(self):
-        agent = create_analysis_agent(Config)
-        assert isinstance(agent, Agent)
-        assert agent.deps_type is AnalysisDeps
-        assert agent.output_type is RawAnalysisResult
-
-    def test_agent_has_execute_code_tool(self):
-        agent = create_analysis_agent(Config)
-        tool_names = list(agent._function_toolset.tools.keys())
-        assert "execute_code" in tool_names
-
-
-class TestCodeExecutionModel:
-    def test_code_execution_has_correct_fields(self):
-        """Test that CodeExecution has all expected fields."""
-        execution = CodeExecution(
-            code="print('hello')",
-            stdout="hello\n",
-            stderr="",
-            success=True,
-        )
-        assert execution.code == "print('hello')"
-        assert execution.stdout == "hello\n"
-        assert execution.stderr == ""
-        assert execution.success is True
+    return str(Path(__file__).parent / "cassettes" / "test_client_analyze")
 
 
 class TestClientAnalysisIntegration:
-    """Integration tests for client.analyze() method."""
+    """Integration tests for client.analyze() through the rag-analysis skill."""
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_analyze_count_documents(self, allow_model_requests, temp_db_path):
-        """Test analysis agent can count documents.
-
-        Agent program:
-            docs = list_documents(limit=1000)
-            print(len(docs))
-        """
-        from haiku.rag.client import HaikuRAG
-
         config = AppConfig()
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -70,26 +31,6 @@ class TestClientAnalysisIntegration:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_analyze_aggregation(self, allow_model_requests, temp_db_path):
-        """Test analysis agent can perform aggregation across documents.
-
-        Agent program:
-            import re
-            revs = {}
-            for d in ['Q1 Report', 'Q2 Report', 'Q3 Report']:
-                content = get_document(d)
-                if content:
-                    vals = re.findall(r'\\$([\\d,]+)', content)
-                    if vals:
-                        rev = sum(int(v.replace(',', '')) for v in vals)
-                    else:
-                        rev = None
-                else:
-                    rev = None
-                revs[d] = rev
-            print(revs)
-        """
-        from haiku.rag.client import HaikuRAG
-
         config = AppConfig()
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -112,17 +53,6 @@ class TestClientAnalysisIntegration:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_analyze_with_filter(self, allow_model_requests, temp_db_path):
-        """Test analysis agent respects filter parameter.
-
-        Agent program:
-            docs = list_documents(limit=1000)
-            print(len(docs))
-            print(docs[:5])
-
-        The filter is applied via context, so list_documents() only sees "Cats".
-        """
-        from haiku.rag.client import HaikuRAG
-
         config = AppConfig()
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -142,9 +72,6 @@ class TestClientAnalysisIntegration:
     async def test_analyze_search_and_identify_source(
         self, allow_model_requests, temp_db_path
     ):
-        """Test analysis agent can search and identify source documents."""
-        from haiku.rag.client import HaikuRAG
-
         config = AppConfig()
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -163,20 +90,6 @@ class TestClientAnalysisIntegration:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_analyze_search_and_extract(self, allow_model_requests, temp_db_path):
-        """Test analysis agent can use search() to find content and extract information.
-
-        Agent program:
-            results = search("document element types", limit=20)
-            print(len(results))
-            for r in results[:5]:
-                print(r['document_title'], r['chunk_id'], r['score'])
-                print(r['content'][:200])
-
-            results = search("DocBank element types", limit=10)
-            ...
-        """
-        from haiku.rag.client import HaikuRAG
-
         pdf_path = Path("tests/data/doclaynet.pdf")
         config = AppConfig()
         config.processing.conversion_options.do_ocr = False
@@ -190,9 +103,7 @@ class TestClientAnalysisIntegration:
                 "List them all."
             )
 
-            # The doclaynet.pdf defines exactly 11 class labels for document elements
-            # Normalize Unicode hyphens (U+2011 non-breaking hyphen) to regular hyphens
-            answer_lower = result.answer.lower().replace("\u2011", "-")
+            answer_lower = result.answer.lower().replace("‑", "-")
             expected_labels = [
                 "caption",
                 "footnote",
@@ -206,8 +117,6 @@ class TestClientAnalysisIntegration:
                 "text",
                 "title",
             ]
-            # Check that the agent found at least 6 of the 11 labels
-            # (LLM summaries may not always include all labels)
             found_labels = [
                 label
                 for label in expected_labels

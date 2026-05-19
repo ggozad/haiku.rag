@@ -185,7 +185,7 @@ Search uses hybrid (vector + full-text) search across all chunks.
 
 ### Context Expansion
 
-Press `c` while viewing a chunk to see the expanded context that would be provided to the QA agent:
+Press `c` while viewing a chunk to see the expanded context that would be provided to the rag skill:
 
 - Section-aware expansion: expands to fill the current document section
 - Noise filtering: footnotes, page headers/footers excluded from structured documents

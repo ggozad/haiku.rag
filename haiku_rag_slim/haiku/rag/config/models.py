@@ -241,7 +241,6 @@ class ProvidersConfig(BaseModel):
 
 class PromptsConfig(BaseModel):
     domain_preamble: str = ""
-    qa: str | None = None
     synthesis: str | None = None
     picture_description: str = (
         "Describe this image for a blind user. "

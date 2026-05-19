@@ -20,7 +20,7 @@ Context expansion is automatic and section-aware. For structured documents (with
 
 ## Question Answering Configuration
 
-Configure the QA workflow:
+Configure the rag skill (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
 
 ```yaml
 qa:
@@ -29,13 +29,13 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3          # Default: 0.3
-    vision: false             # Set true for vision-capable QA models
+    vision: false             # Set true for vision-capable models
   max_searches: 3       # Maximum search tool calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **model.vision**: Set to `true` for vision-capable QA models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The agent's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures--embedder--qa-model-how-the-pieces-compose) for the full matrix.
-- **max_searches**: Maximum number of search tool calls the QA agent can make per question (default: 3)
+- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures--embedder--qa-model-how-the-pieces-compose) for the full matrix.
+- **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
 
 ## Research Configuration
 
@@ -60,7 +60,7 @@ The research workflow uses an iterative feedback loop: the planner proposes one 
 
 ## Analysis Configuration
 
-Configure the analysis agent:
+Configure the analysis skill:
 
 ```yaml
 analysis:
@@ -72,8 +72,8 @@ analysis:
   max_output_chars: 50000 # Truncate output after this many chars
 ```
 
-- **model**: LLM configuration (see [Providers](providers.md#model-settings))
+- **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 
-See [Analysis Agent](../agents/analysis.md) for usage details.
+See [Analysis](../agents/analysis.md) for usage details.

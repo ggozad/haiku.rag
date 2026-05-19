@@ -2,16 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.agents.analysis.dependencies import AnalysisContext
-from haiku.rag.agents.analysis.sandbox import Sandbox, SandboxResult
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models import Document
+from haiku.rag.sandbox import AnalysisContext, Sandbox, SandboxResult
 
 
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
-    return str(Path(__file__).parent.parent.parent / "cassettes" / "test_sandbox")
+    return str(Path(__file__).parent.parent / "cassettes" / "test_sandbox")
 
 
 class TestSandboxBasics:
@@ -414,35 +412,3 @@ class TestSandboxVFS:
             assert "1" in result.stdout
             assert "Public Doc" in result.stdout
             assert "Private Doc" not in result.stdout
-
-
-class TestSandboxPreloadedDocuments:
-    """Test pre-loaded documents context variable."""
-
-    @pytest.mark.asyncio
-    async def test_documents_variable_not_available_without_preload(self, sandbox):
-        """documents variable is not available when context.documents is None."""
-        result = await sandbox.execute("print(documents)")
-        assert not result.success
-        assert "NameError" in result.stderr
-
-    @pytest.mark.asyncio
-    async def test_documents_variable_available_with_preload(self, temp_db_path):
-        """documents variable is available when context.documents is set."""
-        async with HaikuRAG(temp_db_path, create=True):
-            config = AppConfig()
-            docs = [
-                Document(id="1", content="Content A", title="Doc A", uri="a://1"),
-                Document(id="2", content="Content B", title="Doc B", uri="b://2"),
-            ]
-            context = AnalysisContext(documents=docs)
-            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
-            result = await sb.execute(
-                "print(len(documents))\n"
-                "print(documents[0]['title'])\n"
-                "print(documents[1]['title'])"
-            )
-            assert result.success
-            assert "2" in result.stdout
-            assert "Doc A" in result.stdout
-            assert "Doc B" in result.stdout

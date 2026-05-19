@@ -285,7 +285,7 @@ class TestExecuteCodeTool:
 
 class TestAnalysisLifespan:
     async def test_opens_client_and_sandbox_per_invocation(self, rag_db):
-        from haiku.rag.agents.analysis.sandbox import Sandbox
+        from haiku.rag.sandbox import Sandbox
         from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
 
         config = AppConfig()

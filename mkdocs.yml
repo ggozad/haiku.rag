@@ -72,7 +72,7 @@ nav:
       - Tuning: tuning.md
       - Agents:
           - agents/index.md
-          - Analysis Agent: agents/analysis.md
+          - Analysis: agents/analysis.md
       - Skills:
           - skills/index.md
           - RAG: skills/rag.md

@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from haiku.rag.agents.analysis.models import AnalysisResult
     from haiku.rag.agents.research.models import Citation, ResearchReport
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.sandbox import AnalysisResult
 
 
 async def ask(
@@ -89,7 +89,7 @@ async def analyze(
     Returns:
         AnalysisResult with the answer and resolved citations.
     """
-    from haiku.rag.agents.analysis.models import AnalysisResult
+    from haiku.rag.sandbox import AnalysisResult
     from haiku.rag.skills.analysis import AnalysisState, create_skill
     from haiku.rag.utils import get_model
     from haiku.skills import run_skill

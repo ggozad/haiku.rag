@@ -12,10 +12,9 @@ from pathlib import PurePosixPath
 
 import pytest
 
-from haiku.rag.agents.analysis.dependencies import AnalysisContext
-from haiku.rag.agents.analysis.sandbox import Sandbox
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
+from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem
 

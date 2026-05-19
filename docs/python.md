@@ -421,19 +421,6 @@ for cite in citations:
     print(f"  [{cite.chunk_id}] {cite.document_title or cite.document_uri}")
 ```
 
-Customize the QA agent's behavior with a custom system prompt:
-
-```python
-custom_prompt = """You are a technical support expert for WIX.
-Answer questions based on the knowledge base documents provided.
-Be concise and helpful."""
-
-answer, citations = await client.ask(
-    "How do I create a blog?",
-    system_prompt=custom_prompt
-)
-```
-
 Filter to specific documents:
 
 ```python
@@ -443,11 +430,11 @@ answer, citations = await client.ask(
 )
 ```
 
-The QA agent searches your documents for relevant information and uses the configured LLM to generate an answer. The method returns a tuple of `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
+`client.ask` runs the [rag skill](skills/index.md) under the hood and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
-See also: [Agents](agents/index.md) for details on the QA agent and the multi‑agent research workflow.
+See also: [Agents](agents/index.md) for details on question answering and the multi‑agent research workflow.
 
 ## Analysis
 
@@ -456,25 +443,20 @@ Answer complex analytical questions via code execution:
 ```python
 # Aggregation across documents
 result = await client.analyze("Which quarter had the highest revenue?")
-print(result.answer)    # The answer
-print(result.program)   # The final consolidated program
+print(result.answer)
+for citation in result.citations:
+    print(citation.uri, citation.title)
 
 # Computation within a document set
 result = await client.analyze(
     "What is the average deal size mentioned in these contracts?",
     filter="uri LIKE '%contracts%'"
 )
-
-# Multi-document comparison
-result = await client.analyze(
-    "What changed between these two versions of the policy?",
-    documents=["Policy v1.0", "Policy v2.0"]
-)
 ```
 
-The analysis agent writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
+`client.analyze` runs the [analysis skill](skills/index.md), which writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
 
-See [Analysis Agent](agents/analysis.md) for details on capabilities and configuration.
+See [Analysis](agents/analysis.md) for details on capabilities and configuration.
 
 ## Building Custom Agents
 

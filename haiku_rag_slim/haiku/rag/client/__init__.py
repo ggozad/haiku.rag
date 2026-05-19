@@ -30,11 +30,11 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
-    from haiku.rag.agents.analysis.models import AnalysisResult
     from haiku.rag.agents.research.models import (
         Citation,
         ResearchReport,
     )
+    from haiku.rag.sandbox import AnalysisResult
 
 logger = logging.getLogger(__name__)
 
