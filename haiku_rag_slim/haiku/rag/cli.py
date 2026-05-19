@@ -385,7 +385,7 @@ def ask(  # pragma: no cover
     )
 
 
-@_cli.command("analyze", help="Answer questions using code execution (analysis agent)")
+@_cli.command("analyze", help="Answer questions using the rag-analysis skill")
 def analyze(  # pragma: no cover
     question: str = typer.Argument(
         help="The question to answer",
@@ -394,12 +394,6 @@ def analyze(  # pragma: no cover
         None,
         "--db",
         help="Path to the LanceDB database file",
-    ),
-    document: str | None = typer.Option(
-        None,
-        "--document",
-        "-d",
-        help="Document ID or title to pre-load for analysis",
     ),
     filter: str | None = typer.Option(
         None,
@@ -412,7 +406,6 @@ def analyze(  # pragma: no cover
     asyncio.run(
         app.analyze(
             question=question,
-            document=document,
             filter=filter,
         )
     )

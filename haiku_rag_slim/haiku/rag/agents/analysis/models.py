@@ -20,8 +20,12 @@ class RawAnalysisResult(BaseModel):
 
 
 class AnalysisResult(BaseModel):
-    """Result from analysis execution with resolved citations."""
+    """Result from analysis execution with resolved citations.
+
+    The per-execution program(s) are tracked on ``AnalysisState.executions``
+    (populated by the analysis skill's ``execute_code`` tool), not on this
+    return value. Consumers that need the executed code should pull it from
+    the skill state."""
 
     answer: str
-    program: str
     citations: list[Citation] = Field(default_factory=list)

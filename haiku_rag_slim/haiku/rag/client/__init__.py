@@ -390,12 +390,11 @@ class HaikuRAG:
     async def analyze(
         self,
         question: str,
-        documents: list[str] | None = None,
         filter: str | None = None,
     ) -> "AnalysisResult":
         from haiku.rag.client.agents import analyze
 
-        return await analyze(self, question, documents, filter)
+        return await analyze(self, question, filter)
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         from haiku.rag.client.search import visualize_chunk

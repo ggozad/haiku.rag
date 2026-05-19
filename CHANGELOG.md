@@ -13,12 +13,17 @@
 
 - `llm()` from the analysis sandbox. Sandbox externals are now `search` and `list_documents` only.
 - `list_documents` top-level tool from the analysis skill (still available as `await list_documents()` inside `execute_code`).
+- `documents=` kwarg on `client.analyze` (and the `--document` flag on `haiku-rag analyze` / MCP `analyze` tool). The pre-loaded `documents` Python variable inside the sandbox is no longer populated. Use `filter=` (SQL WHERE clause) to scope analysis to specific documents.
+- `AnalysisResult.program`. The per-execution programs are still tracked on `AnalysisState.executions` (the analysis skill's `execute_code` tool populates it); consumers that need the executed code should pull it from the skill state instead of the function return value.
+- `--cite` flag on `haiku-rag ask`. Citations always render after the answer now.
+- `system_prompt` kwarg on `client.ask`. No production caller used it; `config.prompts.domain_preamble` already covers the preamble use case.
 
 ### Changed
 
 - `search.limit` default lowered from `10` to `5`. Reduces text + binary noise in vision-tool returns (picture count tracks result count after expansion + dedup); the cite path still selects from all returned chunks.
 - Search result formatter surfaces picture captions on a labelled line when a chunk's expanded refs include pictures. The OpenAI vision API has no identifier field for binary parts, so the caption is the only signal a model can use to map a description to the figure it sees.
 - `AnalysisConfig.model` defaults to `None` (was `ollama:gpt-oss/no-thinking/temp=0`). Consumers resolve via `config.analysis.model or config.qa.model`, so the analysis skill inherits the QA driving model when no `analysis` block is in YAML. Set `analysis.model` explicitly to keep the analysis pipeline on a different model from QA. **Note**: the type is now `ModelConfig | None`; external code reading `cfg.analysis.model.X` directly will need to handle the `None` case.
+- `client.ask` and `client.analyze` now route through the rag and rag-analysis skills internally (via `haiku.skills.run_skill`). Return shapes preserved: `client.ask` still returns `tuple[str, list[Citation]]`; `client.analyze` returns `AnalysisResult(answer, citations)`. The standalone QA and analysis agents under `agents/qa/` and `agents/analysis/agent.py` remain for now but are scheduled for removal once GEPA optimisation and the `--target qa` eval CLI move to the skill path.
 
 ### Fixed
 

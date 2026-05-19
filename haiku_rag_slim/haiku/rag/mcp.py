@@ -226,18 +226,16 @@ def create_mcp_server(
     @mcp.tool()
     async def analyze(
         question: str,
-        document: str | None = None,
         filter: str | None = None,
     ) -> str:
-        """Answer complex questions using code execution (analysis agent).
+        """Answer complex questions using the rag-analysis skill.
 
         Use this for questions requiring computation, aggregation, or
-        complex traversal across documents. The agent can write Python
-        code to search, analyze, and compute answers.
+        structural traversal across documents. The skill can write and
+        execute Python code in a sandboxed interpreter.
 
         Args:
             question: The question to answer.
-            document: Optional document ID or title to pre-load for analysis.
             filter: Optional SQL WHERE clause to filter documents.
 
         Returns:
@@ -245,10 +243,9 @@ def create_mcp_server(
         """
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                documents = [document] if document else None
-                result = await rag.analyze(question, documents=documents, filter=filter)
+                result = await rag.analyze(question, filter=filter)
                 return result.answer
         except Exception as e:
-            return f"Error running analysis agent: {e!s}"
+            return f"Error running analysis skill: {e!s}"
 
     return mcp

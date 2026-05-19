@@ -73,76 +73,36 @@ async def research(
 async def analyze(
     client: "HaikuRAG",
     question: str,
-    documents: list[str] | None = None,
     filter: str | None = None,
 ) -> "AnalysisResult":
-    """Answer a question using the analysis agent with code execution.
+    """Answer a question against the knowledge base via the rag-analysis skill.
 
-    The analysis agent can write and execute Python code in a sandboxed
-    environment to solve problems that require computation, aggregation, or
-    complex traversal across documents.
+    The analysis skill exposes ``search``, ``execute_code``, and ``cite`` tools.
+    The driving model decides when to reach for code (structural traversal,
+    computation, aggregation) versus a direct ``search → cite → answer``.
 
     Args:
         client: The HaikuRAG client.
         question: The question to answer.
-        documents: Optional list of document IDs or titles to pre-load.
         filter: SQL WHERE clause to filter documents during searches.
 
     Returns:
-        AnalysisResult with the answer and the final consolidated program.
+        AnalysisResult with the answer and resolved citations.
     """
-    from haiku.rag.agents.analysis import (
-        AnalysisContext,
-        AnalysisDeps,
-        Sandbox,
-        create_analysis_agent,
-    )
     from haiku.rag.agents.analysis.models import AnalysisResult
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.skills.analysis import AnalysisState, create_skill
+    from haiku.rag.utils import get_model
+    from haiku.skills import run_skill
 
-    context = AnalysisContext(filter=filter)
-
-    if documents:
-        loaded_docs = []
-        for doc_ref in documents:
-            doc = await client.resolve_document(doc_ref)
-            if doc:
-                loaded_docs.append(doc)
-        context.documents = loaded_docs if loaded_docs else None
-
-    sandbox = Sandbox(
-        db_path=client.store.db_path,
-        config=client._config,
-        context=context,
+    skill = create_skill(db_path=client.store.db_path, config=client._config)
+    state = AnalysisState(document_filter=filter)
+    model = get_model(
+        client._config.analysis.model or client._config.qa.model, client._config
     )
-    deps = AnalysisDeps(
-        sandbox=sandbox,
-        context=context,
-    )
-
-    agent = create_analysis_agent(client._config)
-    result = await agent.run(question, deps=deps)
-
-    output = result.output
-    seen: set[str] = set()
-    citations: list[Citation] = []
-    for sr in sandbox._search_results:
-        if sr.chunk_id and sr.chunk_id not in seen:
-            seen.add(sr.chunk_id)
-            citations.append(
-                Citation(
-                    index=len(seen),
-                    document_id=sr.document_id or "",
-                    chunk_id=sr.chunk_id,
-                    document_uri=sr.document_uri or "",
-                    document_title=sr.document_title,
-                    page_numbers=sr.page_numbers,
-                    headings=sr.headings,
-                    content=sr.content,
-                )
-            )
-    return AnalysisResult(
-        answer=output.answer,
-        program=output.program,
-        citations=citations,
-    )
+    answer, _, _ = await run_skill(model, skill, question, state=state)
+    citations = [
+        state.citation_index[cid]
+        for cid in state.citations
+        if cid in state.citation_index
+    ]
+    return AnalysisResult(answer=answer, citations=citations)
