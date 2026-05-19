@@ -369,11 +369,6 @@ def ask(  # pragma: no cover
         "--db",
         help="Path to the LanceDB database file",
     ),
-    cite: bool = typer.Option(
-        False,
-        "--cite",
-        help="Include citations in the response",
-    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
@@ -385,7 +380,6 @@ def ask(  # pragma: no cover
     asyncio.run(
         app.ask(
             question=question,
-            cite=cite,
             filter=filter,
         )
     )

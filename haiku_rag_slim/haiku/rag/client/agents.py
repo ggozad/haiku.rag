@@ -9,24 +9,32 @@ if TYPE_CHECKING:
 async def ask(
     client: "HaikuRAG",
     question: str,
-    system_prompt: str | None = None,
     filter: str | None = None,
 ) -> "tuple[str, list[Citation]]":
-    """Ask a question using the configured QA agent.
+    """Ask a question against the knowledge base via the rag skill.
 
     Args:
         client: The HaikuRAG client.
         question: The question to ask.
-        system_prompt: Optional custom system prompt for the QA agent.
         filter: SQL WHERE clause to filter documents.
 
     Returns:
         Tuple of (answer text, list of resolved citations).
     """
-    from haiku.rag.agents.qa import get_qa_agent
+    from haiku.rag.skills.rag import RAGState, create_skill
+    from haiku.rag.utils import get_model
+    from haiku.skills import run_skill
 
-    qa_agent = get_qa_agent(client, config=client._config, system_prompt=system_prompt)
-    return await qa_agent.answer(question, filter=filter)
+    skill = create_skill(db_path=client.store.db_path, config=client._config)
+    state = RAGState(document_filter=filter)
+    model = get_model(client._config.qa.model, client._config)
+    answer, _, _ = await run_skill(model, skill, question, state=state)
+    citations = [
+        state.citation_index[cid]
+        for cid in state.citations
+        if cid in state.citation_index
+    ]
+    return answer, citations
 
 
 async def research(

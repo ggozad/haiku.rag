@@ -443,14 +443,12 @@ class HaikuRAGApp:  # pragma: no cover
     async def ask(
         self,
         question: str,
-        cite: bool = False,
         filter: str | None = None,
     ):
         """Ask a question using the RAG system.
 
         Args:
             question: The question to ask
-            cite: Include citations in the answer
             filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(
@@ -465,9 +463,8 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print()
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(answer))
-            if cite and citations:
-                for renderable in format_citations_rich(citations):
-                    self.console.print(renderable)
+            for renderable in format_citations_rich(citations):
+                self.console.print(renderable)
 
     async def analyze(
         self,

@@ -368,12 +368,11 @@ class HaikuRAG:
     async def ask(
         self,
         question: str,
-        system_prompt: str | None = None,
         filter: str | None = None,
     ) -> "tuple[str, list[Citation]]":
         from haiku.rag.client.agents import ask
 
-        return await ask(self, question, system_prompt, filter)
+        return await ask(self, question, filter)
 
     async def research(
         self,
