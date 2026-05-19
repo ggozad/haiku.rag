@@ -17,6 +17,8 @@
 - `AnalysisResult.program`. The per-execution programs are still tracked on `AnalysisState.executions` (the analysis skill's `execute_code` tool populates it); consumers that need the executed code should pull it from the skill state instead of the function return value.
 - `--cite` flag on `haiku-rag ask`. Citations always render after the answer now.
 - `system_prompt` kwarg on `client.ask`. No production caller used it; `config.prompts.domain_preamble` already covers the preamble use case.
+- `evaluations optimize` subcommand and the GEPA prompt-optimization module. Drops the `gepa` dependency. Hand-tuning SKILL.md / `prompts.qa` against `evaluations run` is the loop we actually iterate; the auto-mutation surface was unused and conflicted with the project's no-prompt-string-tests rule.
+- `--target qa` from `evaluations run`. The skill path supersedes the standalone QA agent — use `--target rag-skill` (now the default) or `--target analysis-skill`.
 
 ### Changed
 

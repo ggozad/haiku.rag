@@ -296,7 +296,7 @@ class TestRunSkillQuestionEndToEnd:
             db_path=rag_db,
             config=app_config,
             question="What is machine learning?",
-            skill_model=TestModel(),
+            skill_model=TestModel(call_tools=["search"]),
         )
 
         assert isinstance(result, SkillRunResult)

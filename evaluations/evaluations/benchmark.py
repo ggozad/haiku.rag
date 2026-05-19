@@ -28,7 +28,6 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
-from haiku.rag.agents.qa import get_qa_agent
 from haiku.rag.utils import get_model, parse_model_option
 
 _CITATION_EVALUATORS: dict[type[Evaluator], type[Evaluator]] = {
@@ -36,8 +35,8 @@ _CITATION_EVALUATORS: dict[type[Evaluator], type[Evaluator]] = {
     MAPEvaluator: CitationMAPEvaluator,
 }
 
-Target = Literal["qa", "rag-skill", "analysis-skill"]
-TARGETS: tuple[Target, ...] = ("qa", "rag-skill", "analysis-skill")
+Target = Literal["rag-skill", "analysis-skill"]
+TARGETS: tuple[Target, ...] = ("rag-skill", "analysis-skill")
 
 # Pinned judge model. Decoupled from `config.qa.model` so a user changing
 # their QA model does not inadvertently change the judge — keeps cross-run
@@ -59,7 +58,7 @@ def build_experiment_metadata(
     test_cases: int,
     config: AppConfig,
     judge_config: ModelConfig | None = None,
-    target: Target = "qa",
+    target: Target = "rag-skill",
     skill_config: ModelConfig | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
@@ -350,7 +349,7 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    target: Target = "qa",
+    target: Target = "rag-skill",
     skill_model: ModelConfig | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
@@ -363,9 +362,7 @@ async def run_qa_benchmark(
     ]
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    if target == "qa":
-        skill_config = None
-    elif target == "analysis-skill":
+    if target == "analysis-skill":
         # Mirror the skill-code resolver: explicit analysis.model wins,
         # else fall back to qa.model.
         skill_config = skill_model or config.analysis.model or config.qa.model
@@ -373,10 +370,8 @@ async def run_qa_benchmark(
         skill_config = skill_model or config.qa.model
     db = spec.db_path(db_path)
 
-    citation_evaluator: Evaluator | None = None
-    if target != "qa":
-        _attach_relevant_uris(cases, spec, limit)
-        citation_evaluator = _citation_evaluator_for(spec.retrieval_evaluator)
+    _attach_relevant_uris(cases, spec, limit)
+    citation_evaluator = _citation_evaluator_for(spec.retrieval_evaluator)
 
     evaluators: list[Evaluator] = [
         LLMJudge(
@@ -416,32 +411,21 @@ async def run_qa_benchmark(
             metadata=experiment_metadata,
         )
 
-    if target == "qa":
-        async with HaikuRAG(db, config=config) as rag:
-            qa = get_qa_agent(rag, config)
+    skill_factory = _skill_factory_for_target(target)
+    resolved_skill_model = get_model(skill_config, config)
 
-            async def answer_question(question: str) -> str:
-                answer, _ = await qa.answer(question)
-                return answer
+    async def answer_question(question: str) -> str:
+        result = await run_skill_question(
+            skill_factory=skill_factory,
+            db_path=db,
+            config=config,
+            question=question,
+            skill_model=resolved_skill_model,
+        )
+        set_eval_attribute("cited_uris", result.cited_uris)
+        return result.answer
 
-            report = await _evaluate(answer_question)
-    else:
-        skill_factory = _skill_factory_for_target(target)
-        assert skill_config is not None
-        resolved_skill_model = get_model(skill_config, config)
-
-        async def answer_question(question: str) -> str:
-            result = await run_skill_question(
-                skill_factory=skill_factory,
-                db_path=db,
-                config=config,
-                question=question,
-                skill_model=resolved_skill_model,
-            )
-            set_eval_attribute("cited_uris", result.cited_uris)
-            return result.answer
-
-        report = await _evaluate(answer_question)
+    report = await _evaluate(answer_question)
 
     passing_cases = sum(
         1
@@ -505,7 +489,7 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
-    target: Target = "qa",
+    target: Target = "rag-skill",
     skill_model: ModelConfig | None = None,
 ) -> None:
     if not skip_db:
@@ -613,16 +597,16 @@ def run(
         help="Judge model as 'provider:name'. Defaults to ollama:qwen3.6.",
     ),
     target: str = typer.Option(
-        "qa",
+        "rag-skill",
         "--target",
-        help="What to benchmark: qa | rag-skill | analysis-skill.",
+        help="What to benchmark: rag-skill | analysis-skill.",
     ),
     skill_model: str | None = typer.Option(
         None,
         "--skill-model",
         help=(
-            "Skill model as 'provider:name'. Used when --target is rag-skill or "
-            "analysis-skill. Defaults to qa.model from the config."
+            "Skill model as 'provider:name'. Defaults to qa.model (or "
+            "analysis.model when --target is analysis-skill) from the config."
         ),
     ),
 ) -> None:
@@ -635,10 +619,6 @@ def run(
     target_value = cast(Target, target)
     judge_model_config = parse_model_option(judge_model) if judge_model else None
     skill_model_config = parse_model_option(skill_model) if skill_model else None
-    if target_value == "qa" and skill_model_config is not None:
-        raise typer.BadParameter(
-            "--skill-model is only valid when --target is rag-skill or analysis-skill."
-        )
 
     asyncio.run(
         evaluate_dataset(
@@ -656,63 +636,6 @@ def run(
             target=target_value,
             skill_model=skill_model_config,
         )
-    )
-
-
-@app.command()
-def optimize(
-    dataset: str = typer.Argument(..., help="Dataset key to optimize prompt for."),
-    config: Path | None = typer.Option(
-        None, "--config", help="Path to haiku.rag YAML config file."
-    ),
-    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
-    limit: int | None = typer.Option(
-        None, "--limit", help="Limit QA cases (split 50/50 into train/val)."
-    ),
-    num_candidates: int = typer.Option(
-        50, "--num-candidates", help="Number of candidate prompts to evaluate."
-    ),
-    output: Path | None = typer.Option(
-        None, "--output", help="Save optimized prompt to file."
-    ),
-    judge_model: str | None = typer.Option(
-        None,
-        "--judge-model",
-        help="Judge model as 'provider:name'. Defaults to ollama:qwen3.6.",
-    ),
-    reflect_model: str | None = typer.Option(
-        None,
-        "--reflect-model",
-        help="Reflect model as 'provider:name' (e.g. 'anthropic:claude-sonnet-4-20250514').",
-    ),
-) -> None:
-    """Optimize QA system prompt using GEPA evolutionary optimization."""
-    from evaluations.optimization import run_optimization
-
-    spec = _resolve_dataset(dataset)
-    app_config = _load_config(config)
-
-    corpus = spec.qa_loader()
-    if limit is not None:
-        corpus = corpus.select(range(min(limit, len(corpus))))
-
-    cases: list[Case[str, str, dict[str, str]]] = [
-        spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
-        for index, doc in enumerate(corpus, start=1)
-    ]
-
-    judge_model_config = parse_model_option(judge_model) if judge_model else None
-    reflect_model_config = parse_model_option(reflect_model) if reflect_model else None
-
-    run_optimization(
-        spec=spec,
-        config=app_config,
-        cases=cases,
-        num_candidates=num_candidates,
-        db_path=db,
-        output=output,
-        judge_model=judge_model_config,
-        reflect_model=reflect_model_config,
     )
 
 

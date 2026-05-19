@@ -131,8 +131,7 @@ class TestRunQaBenchmarkJudgeModel:
 
         with (
             patch("evaluations.benchmark.get_model") as mock_get_model,
-            patch("evaluations.benchmark.HaikuRAG"),
-            patch("evaluations.benchmark.get_qa_agent"),
+            patch("evaluations.benchmark.run_skill_question", new_callable=AsyncMock),
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -142,7 +141,7 @@ class TestRunQaBenchmarkJudgeModel:
                 judge_model=custom_judge,
             )
 
-        mock_get_model.assert_called_once_with(custom_judge, AppConfig())
+        mock_get_model.assert_any_call(custom_judge, AppConfig())
 
     @pytest.mark.asyncio
     async def test_defaults_to_pinned_judge_model(self, tmp_path: Path) -> None:
@@ -150,8 +149,7 @@ class TestRunQaBenchmarkJudgeModel:
 
         with (
             patch("evaluations.benchmark.get_model") as mock_get_model,
-            patch("evaluations.benchmark.HaikuRAG"),
-            patch("evaluations.benchmark.get_qa_agent"),
+            patch("evaluations.benchmark.run_skill_question", new_callable=AsyncMock),
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -160,7 +158,7 @@ class TestRunQaBenchmarkJudgeModel:
                 db_path=tmp_path / "test.lancedb",
             )
 
-        mock_get_model.assert_called_once_with(DEFAULT_JUDGE_MODEL, AppConfig())
+        mock_get_model.assert_any_call(DEFAULT_JUDGE_MODEL, AppConfig())
 
 
 class TestEvaluateDatasetJudgeModel:
@@ -197,11 +195,11 @@ class TestEvaluateDatasetJudgeModel:
 
 
 class TestExperimentMetadataTargets:
-    def test_default_target_is_qa(self) -> None:
+    def test_default_target_is_rag_skill(self) -> None:
         result = build_experiment_metadata(
             dataset_key="test", test_cases=1, config=AppConfig()
         )
-        assert result["target"] == "qa"
+        assert result["target"] == "rag-skill"
         assert "skill_provider" not in result
         assert "skill_model" not in result
 
@@ -255,7 +253,7 @@ class TestEvaluateDatasetTarget:
         assert mock_qa.call_args[1]["skill_model"] is skill
 
     @pytest.mark.asyncio
-    async def test_default_target_is_qa(self) -> None:
+    async def test_default_target_is_rag_skill(self) -> None:
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
         ) as mock_qa:
@@ -269,7 +267,7 @@ class TestEvaluateDatasetTarget:
                 name=None,
                 db_path=None,
             )
-        assert mock_qa.call_args[1]["target"] == "qa"
+        assert mock_qa.call_args[1]["target"] == "rag-skill"
         assert mock_qa.call_args[1]["skill_model"] is None
 
 
@@ -323,7 +321,7 @@ class TestRunQaBenchmarkSkillTarget:
         assert _skill_factory_for_target("rag-skill") is rag_factory
         assert _skill_factory_for_target("analysis-skill") is analysis_factory
         with pytest.raises(ValueError, match="not a skill target"):
-            _skill_factory_for_target("qa")  # type: ignore[arg-type]
+            _skill_factory_for_target("unknown")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 class TestCitationEvaluatorWiring:

@@ -6,7 +6,7 @@ This package is not published to PyPI and is only used for development and testi
 
 ## Overview
 
-Contains evaluation scripts for benchmarking RAG retrieval and QA performance, plus GEPA-based prompt optimization. Available datasets:
+Contains evaluation scripts for benchmarking RAG retrieval and QA performance. Available datasets:
 
 - RepliQA (`repliqa`)
 - WiX (`wix`)
@@ -41,10 +41,11 @@ evaluations run repliqa --skip-qa
 evaluations run repliqa --limit 100
 ```
 
-### Benchmarking the skills
+### Choosing the target
 
-By default `evaluations run` benchmarks the QA agent. Pass `--target` to
-benchmark the RAG or analysis skill instead, against the same datasets and judge:
+`evaluations run` benchmarks `--target rag-skill` by default. Use
+`--target analysis-skill` to benchmark the analysis skill against the same
+datasets and judge:
 
 ```bash
 evaluations run wix --target rag-skill
@@ -52,9 +53,10 @@ evaluations run wix --target analysis-skill --skill-model ollama:gpt-oss
 ```
 
 `--skill-model "provider:name"` overrides the skill model independently from
-the judge (defaults to `qa.model`). For skill targets, a citation retrieval
-metric (`cited_mrr` / `cited_map`) is computed alongside QA accuracy from the
-URIs the skill registered via the `cite` tool.
+the judge (defaults to `qa.model`, or `analysis.model` when set for the
+analysis-skill target). A citation retrieval metric (`cited_mrr` / `cited_map`)
+is computed alongside QA accuracy from the URIs the skill registered via the
+`cite` tool.
 
 ### Pre-built Databases
 
@@ -72,18 +74,6 @@ Upload databases (maintainer only):
 evaluations upload repliqa
 evaluations upload all
 ```
-
-### Prompt Optimization
-
-Optimize QA system prompts using GEPA (Generalized Evolutionary Prompt Algorithm):
-
-```bash
-evaluations optimize wix
-evaluations optimize repliqa --limit 40 --num-candidates 30
-evaluations optimize wix --output optimized_prompt.txt
-```
-
-See [Tuning docs](https://ggozad.github.io/haiku.rag/tuning/#prompt-optimization-gepa) for details on applying results.
 
 ## Database Storage
 

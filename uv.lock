@@ -1359,15 +1359,6 @@ wheels = [
 ]
 
 [[package]]
-name = "gepa"
-version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e4/62/10f5a8f24c075e3b64f952be73ba8e15f0055584bbcdf9ce48d754a36679/gepa-0.1.1.tar.gz", hash = "sha256:643fda01c23de4c9f01306e01305dd69facc29bcb34ad59e4cd07e6621d34aa1", size = 272251, upload-time = "2026-03-16T10:17:53.131Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/b7/8c72dedbb950d88a6f64588fcbc590d2a21e2b9f19b36aa6c5016c54ec75/gepa-0.1.1-py3-none-any.whl", hash = "sha256:71ead7c591eafcc727b83509cdc4182f20264800a6ddf8520d61419daeb47466", size = 244246, upload-time = "2026-03-16T10:17:51.922Z" },
-]
-
-[[package]]
 name = "ghp-import"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1538,7 +1529,6 @@ version = "0.47.0"
 source = { editable = "evaluations" }
 dependencies = [
     { name = "datasets" },
-    { name = "gepa" },
     { name = "haiku-rag-slim" },
     { name = "huggingface-hub" },
     { name = "pydantic-ai-slim", extra = ["evals", "logfire"] },
@@ -1549,7 +1539,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", specifier = ">=4.6.1" },
-    { name = "gepa", specifier = ">=0.1.0" },
     { name = "haiku-rag-slim", editable = "haiku_rag_slim" },
     { name = "huggingface-hub", specifier = ">=0.20.0" },
     { name = "pydantic-ai-slim", extras = ["evals", "logfire"], specifier = ">=1.81.0" },
