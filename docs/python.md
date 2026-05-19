@@ -80,45 +80,6 @@ doc = await client.create_document_from_source(
 )
 ```
 
-### Importing Pre-Processed Documents
-
-If you process documents externally or need custom processing, use `import_document()`:
-
-```python
-from haiku.rag.store.models.chunk import Chunk
-
-# Convert your source to a DoclingDocument
-docling_doc = await client.convert("path/to/document.pdf")
-
-# Create chunks (embeddings optional - will be generated if missing)
-chunks = [
-    Chunk(
-        content="This is the first chunk",
-        metadata={"section": "intro"},
-        order=0,
-    ),
-    Chunk(
-        content="This is the second chunk",
-        metadata={"section": "body"},
-        embedding=[0.1] * 1024,  # Optional: pre-computed embedding
-        order=1,
-    ),
-]
-
-# Import document with custom chunks
-doc = await client.import_document(
-    docling_document=docling_doc,
-    chunks=chunks,
-    uri="doc://custom",
-    title="Custom Document",
-    metadata={"source": "external-pipeline"},
-)
-```
-
-The `docling_document` provides rich metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
-
-See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
-
 ### Retrieving Documents
 
 By ID:
@@ -205,78 +166,6 @@ await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```python
 await client.delete_document(doc.id)
 ```
-
-### Rebuilding the Database
-
-```python
-from haiku.rag.client import RebuildMode
-
-# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
-async for doc_id in client.rebuild_database():
-    print(f"Processed document {doc_id}")
-
-# Re-chunk from stored content (no source file access)
-async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK):
-    print(f"Processed document {doc_id}")
-
-# Only regenerate embeddings (fastest, keeps existing chunks)
-async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
-    print(f"Processed document {doc_id}")
-
-# Add VLM picture descriptions to an existing database — runs the VLM
-# over already-stored picture bytes, patches descriptions into the
-# docling blob, then re-chunks + re-embeds. Requires
-# processing.pictures='description' in the config.
-async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
-    print(f"Described pictures in {doc_id}")
-```
-
-**Rebuild modes:**
-
-- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default)
-- `RebuildMode.RECHUNK` - Re-chunk from existing document content, re-embed
-- `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
-- `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
-- `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent — pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
-
-### Generating Titles
-
-Generate a title for an existing document on demand:
-
-```python
-title = await client.generate_title(doc)
-if title:
-    await client.update_document(document_id=doc.id, title=title)
-```
-
-Uses the same two-tier approach as automatic ingestion: structural extraction from DoclingDocument metadata first, with LLM fallback via `processing.title_model`. Unlike ingestion, this method does not catch exceptions — if the LLM call fails, the error propagates.
-
-To batch-generate titles for all untitled documents, use `RebuildMode.TITLE_ONLY`:
-
-```python
-async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
-    print(f"Generated title for {doc_id}")
-```
-
-See [Automatic Title Generation](configuration/processing.md#automatic-title-generation) for configuration details.
-
-## Maintenance
-
-Run maintenance to optimize storage and prune old table versions:
-
-```python
-await client.vacuum()
-```
-
-This compacts tables and removes historical versions to keep disk usage in check. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
-
-### Atomic Writes and Rollback
-
-Document create and update operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores both the `documents` and `chunks` tables to their pre‑operation state using LanceDB’s table versioning.
-
-- Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, and internal rebuild/update flows.
-- Scope: Both document rows and all associated chunks are rolled back together.
-- Vacuum: Running `vacuum()` later prunes old versions for disk efficiency; rollbacks occur immediately during the failing operation and are not impacted.
 
 ## Searching Documents
 
@@ -481,3 +370,114 @@ result = await agent.run("What are the main findings?")
 ```
 
 See [Toolsets](tools.md) for the full API reference.
+
+## Importing Pre-Processed Documents
+
+If you process documents externally or need custom processing, use `import_document()`:
+
+```python
+from haiku.rag.store.models.chunk import Chunk
+
+# Convert your source to a DoclingDocument
+docling_doc = await client.convert("path/to/document.pdf")
+
+# Create chunks (embeddings optional - will be generated if missing)
+chunks = [
+    Chunk(
+        content="This is the first chunk",
+        metadata={"section": "intro"},
+        order=0,
+    ),
+    Chunk(
+        content="This is the second chunk",
+        metadata={"section": "body"},
+        embedding=[0.1] * 1024,  # Optional: pre-computed embedding
+        order=1,
+    ),
+]
+
+# Import document with custom chunks
+doc = await client.import_document(
+    docling_document=docling_doc,
+    chunks=chunks,
+    uri="doc://custom",
+    title="Custom Document",
+    metadata={"source": "external-pipeline"},
+)
+```
+
+The `docling_document` provides rich metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
+
+See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
+
+## Maintenance
+
+Run maintenance to optimize storage and prune old table versions:
+
+```python
+await client.vacuum()
+```
+
+This compacts tables and removes historical versions to keep disk usage in check. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
+
+### Rebuilding the Database
+
+```python
+from haiku.rag.client import RebuildMode
+
+# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
+async for doc_id in client.rebuild_database():
+    print(f"Processed document {doc_id}")
+
+# Re-chunk from stored content (no source file access)
+async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK):
+    print(f"Processed document {doc_id}")
+
+# Only regenerate embeddings (fastest, keeps existing chunks)
+async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+    print(f"Processed document {doc_id}")
+
+# Add VLM picture descriptions to an existing database — runs the VLM
+# over already-stored picture bytes, patches descriptions into the
+# docling blob, then re-chunks + re-embeds. Requires
+# processing.pictures='description' in the config.
+async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
+    print(f"Described pictures in {doc_id}")
+```
+
+**Rebuild modes:**
+
+- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default)
+- `RebuildMode.RECHUNK` - Re-chunk from existing document content, re-embed
+- `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
+- `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
+- `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent — pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
+
+### Generating Titles
+
+Generate a title for an existing document on demand:
+
+```python
+title = await client.generate_title(doc)
+if title:
+    await client.update_document(document_id=doc.id, title=title)
+```
+
+Uses the same two-tier approach as automatic ingestion: structural extraction from DoclingDocument metadata first, with LLM fallback via `processing.title_model`. Unlike ingestion, this method does not catch exceptions — if the LLM call fails, the error propagates.
+
+To batch-generate titles for all untitled documents, use `RebuildMode.TITLE_ONLY`:
+
+```python
+async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+    print(f"Generated title for {doc_id}")
+```
+
+See [Automatic Title Generation](configuration/processing.md#automatic-title-generation) for configuration details.
+
+### Atomic Writes and Rollback
+
+Document create and update operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores both the `documents` and `chunks` tables to their pre‑operation state using LanceDB’s table versioning.
+
+- Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, and internal rebuild/update flows.
+- Scope: Both document rows and all associated chunks are rolled back together.
+- Vacuum: Running `vacuum()` later prunes old versions for disk efficiency; rollbacks occur immediately during the failing operation and are not impacted.

@@ -55,31 +55,35 @@ plugins:
   # Material for MkDocs
   search:
 nav:
-  - haiku.rag:
+  - Get started:
       - index.md
-      - Getting started: tutorial.md
+      - Quickstart: tutorial.md
       - Installation: installation.md
-      - Configuration:
-          - configuration/index.md
-          - Providers: configuration/providers.md
-          - Search and Question Answering: configuration/qa.md
-          - Document Processing: configuration/processing.md
-          - Storage: configuration/storage.md
-          - Prompts: configuration/prompts.md
+  - Use it:
       - CLI: cli.md
-      - Python: python.md
-      - Custom Pipelines: custom-pipelines.md
+      - Chat: chat.md
+  - Configure:
+      - configuration/index.md
+      - Providers: configuration/providers.md
+      - Search and question answering: configuration/qa.md
+      - Document processing: configuration/processing.md
+      - Storage: configuration/storage.md
+      - Prompts: configuration/prompts.md
       - Tuning: tuning.md
-      - Analysis: agents/analysis.md
+  - Production:
+      - Server: server.md
+      - MCP: mcp.md
+      - Remote processing: remote-processing.md
+  - Build with it:
+      - Python: python.md
+      - Custom pipelines: custom-pipelines.md
       - Skills:
           - skills/index.md
           - RAG: skills/rag.md
           - Analysis: skills/analysis.md
       - Toolsets: tools.md
-      - Applications: apps.md
-      - Server: server.md
-      - Remote processing: remote-processing.md
-      - MCP: mcp.md
+      - Web app: apps.md
+  - Reference:
       - Benchmarks: benchmarks.md
       - Development: development.md
       - Changelog: changelog.md

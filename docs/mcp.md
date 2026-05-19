@@ -2,6 +2,56 @@
 
 The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like Claude Desktop.
 
+## Starting MCP Server
+
+The MCP server supports Streamable HTTP and stdio transports:
+
+```bash
+# Default streamable HTTP transport on port 8001
+haiku-rag serve --mcp
+
+# Custom port
+haiku-rag serve --mcp --mcp-port 9000
+
+# stdio transport (for Claude Desktop)
+haiku-rag serve --mcp --stdio
+
+# Read-only mode (excludes write tools)
+haiku-rag --read-only serve --mcp --stdio
+```
+
+**Read-only mode:** When `--read-only` is specified, write tools (`add_document_from_file`, `add_document_from_url`, `add_document_from_text`, `delete_document`) are not registered. Only search and query tools remain available.
+
+## Claude Desktop Integration
+
+Add to your Claude Desktop configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "haiku-rag": {
+      "command": "haiku-rag",
+      "args": ["serve", "--mcp", "--stdio"]
+    }
+  }
+}
+```
+
+With a custom database path:
+
+```json
+{
+  "mcpServers": {
+    "haiku-rag": {
+      "command": "haiku-rag",
+      "args": ["serve", "--mcp", "--stdio", "--db", "/path/to/database.lancedb"]
+    }
+  }
+}
+```
+
+After restarting Claude Desktop, you can ask Claude to search your documents, add new content, or answer questions using your knowledge base.
+
 ## Available Tools
 
 ### Document Management
@@ -57,56 +107,6 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
   - `filter` (optional): SQL WHERE clause to restrict document access
   - `document` (optional): Document title/ID to pre-load (can repeat)
   - Best for aggregation, computation, and multi-document analysis
-
-## Starting MCP Server
-
-The MCP server supports Streamable HTTP and stdio transports:
-
-```bash
-# Default streamable HTTP transport on port 8001
-haiku-rag serve --mcp
-
-# Custom port
-haiku-rag serve --mcp --mcp-port 9000
-
-# stdio transport (for Claude Desktop)
-haiku-rag serve --mcp --stdio
-
-# Read-only mode (excludes write tools)
-haiku-rag --read-only serve --mcp --stdio
-```
-
-**Read-only mode:** When `--read-only` is specified, write tools (`add_document_from_file`, `add_document_from_url`, `add_document_from_text`, `delete_document`) are not registered. Only search and query tools remain available.
-
-## Claude Desktop Integration
-
-Add to your Claude Desktop configuration (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "haiku-rag": {
-      "command": "haiku-rag",
-      "args": ["serve", "--mcp", "--stdio"]
-    }
-  }
-}
-```
-
-With a custom database path:
-
-```json
-{
-  "mcpServers": {
-    "haiku-rag": {
-      "command": "haiku-rag",
-      "args": ["serve", "--mcp", "--stdio", "--db", "/path/to/database.lancedb"]
-    }
-  }
-}
-```
-
-After restarting Claude Desktop, you can ask Claude to search your documents, add new content, or answer questions using your knowledge base.
 
 ## Running with Other Services
 

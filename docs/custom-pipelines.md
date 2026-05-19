@@ -2,6 +2,22 @@
 
 haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding—for example, to preprocess content, use external services, or implement custom chunking logic.
 
+## When to Use Custom Pipelines
+
+Use the primitives when you need to:
+
+- Preprocess or clean content before chunking
+- Filter or modify chunks before embedding
+- Use external embedding services
+- Implement custom chunking strategies
+- Debug or inspect intermediate processing steps
+
+For standard use cases, prefer the convenience methods:
+
+- `create_document()` - Create from text content
+- `create_document_from_source()` - Create from file or URL
+- `import_document()` - Store pre-processed documents with custom chunks
+
 ## Processing Primitives
 
 The client exposes four primitives that can be composed into custom workflows:
@@ -233,19 +249,3 @@ async with HaikuRAG("database.lancedb", create=True) as client:
         chunks=embedded_chunks,
     )
 ```
-
-## When to Use Custom Pipelines
-
-Use the primitives when you need to:
-
-- Preprocess or clean content before chunking
-- Filter or modify chunks before embedding
-- Use external embedding services
-- Implement custom chunking strategies
-- Debug or inspect intermediate processing steps
-
-For standard use cases, prefer the convenience methods:
-
-- `create_document()` - Create from text content
-- `create_document_from_source()` - Create from file or URL
-- `import_document()` - Store pre-processed documents with custom chunks

@@ -42,13 +42,69 @@ Model and temperature selection affect answer quality directly — see [Provider
 | Embedding model | Yes — `haiku-rag rebuild` |
 | Search settings, reranking, prompts | No |
 
-## Measuring Changes
+## Inspector
 
-Use the inspector for ad-hoc exploration:
+The inspector is the fastest way to see what your model would actually receive for a given query. Run it against your database and step through the same hybrid search, context expansion, and chunk previews the rag skill uses at runtime. Press `c` on a chunk and you see the exact context the LLM would get back from a search hit.
 
 ```bash
 haiku-rag inspect
+haiku-rag inspect --db /path/to/database.lancedb
 ```
+
+!!! note
+    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in the full `haiku.rag` package).
+
+### Layout
+
+Three panels:
+
+- **Documents** (left): every document in the database.
+- **Chunks** (top right): chunks for the selected document.
+- **Detail view** (bottom right): full content and metadata.
+
+![Inspector search](img/inspector-search.svg)
+
+### Keys
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle panels |
+| `↑` / `↓` | Navigate lists |
+| `/` | Search modal |
+| `c` | Context expansion modal (the chunk plus what the agent would see around it) |
+| `v` | Visual grounding modal (chunk highlighted on the page) |
+| `q` | Quit |
+
+Mouse: click to select, scroll to view content.
+
+### Search
+
+Press `/` to open the search modal. Type a query and press `Enter`. The left panel lists results with relevance scores like `[0.95] content preview`. The right panel shows the full chunk and its metadata. `↑` / `↓` navigates results, `Enter` jumps to the document and chunk, `Esc` closes the modal. Search uses the same hybrid (vector + full-text) retrieval the rag skill uses.
+
+### Context expansion (`c`)
+
+Press `c` on a chunk to see the expanded context that would be fed to the rag skill. This is where you find out whether your `chunk_size`, `chunker_type`, and `max_context_chars` settings actually deliver the surrounding content the model needs. The modal shows:
+
+- The expanded text. Section-aware expansion stays within section boundaries on structured documents and fills `max_context_chars` outward on unstructured ones.
+- Source document, content type, and relevance score.
+- Filtered noise. Footnotes, page headers and footers are excluded from structured documents.
+
+If `qa.model.vision = true` is set, the modal also renders the picture bytes attached to that chunk, so you see exactly what the vision model would receive.
+
+### Visual grounding (`v`)
+
+Press `v` to highlight the chunk's bounding box on its page image. Useful for verifying chunk boundaries and seeing how Docling carved up the document.
+
+- `←` / `→` to navigate pages when a chunk spans multiple pages.
+- `Esc` closes the modal.
+
+![Visual grounding modal](img/tui-visual-grounding.png)
+
+Requirements: documents must have page images (default for PDFs), and the terminal must support inline images (iTerm2, WezTerm, Kitty). Plain-text documents added via `haiku-rag add` don't have visual grounding.
+
+You can also visualize a chunk from the CLI without launching the TUI: `haiku-rag visualize <chunk_id>`.
+
+## Measuring Changes
 
 For systematic measurement, use the `evaluations/` workspace which provides retrieval metrics (MRR, MAP) and LLM-judged QA accuracy via `pydantic-evals`:
 

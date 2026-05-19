@@ -167,6 +167,6 @@ Each entry in `monitor.s3` runs as its own polling task. On every sweep the watc
 
 `delete_orphans: true` is per-entry: a watcher only removes documents whose URI starts with that entry's `s3://bucket/prefix/`. Documents from other buckets, prefixes, or local-file sources are never touched.
 
-### One-off ingestion
+## One-off ingestion
 
 `s3://` URIs are also a first-class source for `haiku-rag add-src` and the MCP `add_document_from_url` tool — see [CLI → Add Documents](cli.md#add-documents).

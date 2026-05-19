@@ -26,24 +26,6 @@ The `haiku-rag` CLI provides complete document management functionality.
 
 ## Document Management
 
-### List Documents
-
-```bash
-haiku-rag list
-```
-
-Filter documents by properties:
-```bash
-# Filter by URI pattern (--filter or -f)
-haiku-rag list --filter "uri LIKE '%arxiv%'"
-
-# Filter by exact title
-haiku-rag list --filter "title = 'My Document'"
-
-# Combine multiple conditions
-haiku-rag list --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
-```
-
 ### Add Documents
 
 From text:
@@ -95,6 +77,24 @@ AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
     the database rolls back to the pre‑operation snapshot using LanceDB table versioning. You can optimize and
     compact the database by running the [vacuum](#vacuum-optimize-and-cleanup) command.
 
+### List Documents
+
+```bash
+haiku-rag list
+```
+
+Filter documents by properties:
+```bash
+# Filter by URI pattern (--filter or -f)
+haiku-rag list --filter "uri LIKE '%arxiv%'"
+
+# Filter by exact title
+haiku-rag list --filter "title = 'My Document'"
+
+# Combine multiple conditions
+haiku-rag list --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
+```
+
 ### Get Document
 
 ```bash
@@ -107,19 +107,6 @@ haiku-rag get 3f4a...   # document ID
 haiku-rag delete 3f4a...   # document ID
 haiku-rag rm 3f4a...       # alias
 ```
-
-## Visualize Chunk
-
-Display visual grounding for a chunk - shows page images with highlighted bounding boxes:
-
-```bash
-haiku-rag visualize <chunk_id>
-```
-
-This renders the source document pages with the chunk's location highlighted. Useful for verifying chunk boundaries and understanding document structure.
-
-!!! note
-    Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.
 
 ## Search
 
@@ -182,6 +169,26 @@ Flags:
 
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
 
+## Analyze
+
+Answer complex analytical questions via code execution:
+
+```bash
+haiku-rag analyze "How many documents mention security?"
+```
+
+Filter to specific documents:
+
+```bash
+haiku-rag analyze "What is the total revenue?" --filter "title LIKE '%Financial%'"
+```
+
+Flags:
+
+- `--filter` / `-f`: SQL WHERE clause to restrict document access
+
+See [Analysis skill](skills/analysis.md) for details on capabilities and configuration.
+
 ## Chat
 
 Launch an interactive chat session for multi-turn conversations:
@@ -208,7 +215,7 @@ The chat interface provides:
 - Session memory for context-aware follow-up questions
 - Visual grounding to inspect chunk source locations
 
-See [Applications](apps.md#chat-tui) for keyboard shortcuts and features.
+See [Chat](chat.md) for keyboard shortcuts and features.
 
 ## Inspect
 
@@ -229,27 +236,207 @@ The inspector provides:
 - Explore individual chunks
 - Search and filter results
 
-See [Applications](apps.md#inspector) for details.
+See [Tuning: Inspector](tuning.md#inspector) for the full keybindings and modal flows.
 
-## Analyze
+## Visualize Chunk
 
-Answer complex analytical questions via code execution:
-
-```bash
-haiku-rag analyze "How many documents mention security?"
-```
-
-Filter to specific documents:
+Display visual grounding for a chunk - shows page images with highlighted bounding boxes:
 
 ```bash
-haiku-rag analyze "What is the total revenue?" --filter "title LIKE '%Financial%'"
+haiku-rag visualize <chunk_id>
 ```
 
-Flags:
+This renders the source document pages with the chunk's location highlighted. Useful for verifying chunk boundaries and understanding document structure.
 
-- `--filter` / `-f`: SQL WHERE clause to restrict document access
+!!! note
+    Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.
 
-See [Analysis](agents/analysis.md) for details on capabilities and configuration.
+## Database lifecycle
+
+### Initialize Database
+
+Create a new database:
+
+```bash
+haiku-rag init [--db /path/to/your.lancedb]
+```
+
+This creates the database with the configured settings. **All other commands require an existing database** - they will fail with an informative error if the database doesn't exist.
+
+### Info
+
+Display database metadata:
+
+```bash
+haiku-rag info [--db /path/to/your.lancedb]
+```
+
+Shows:
+- path to the database
+- stored haiku.rag version (from settings)
+- embeddings provider/model and vector dimension
+- number of documents and chunks (with storage sizes)
+- vector index status (exists/not created, indexed/unindexed chunks)
+- table versions per table (documents, chunks)
+
+At the end, a separate "Versions" section lists runtime package versions:
+- haiku.rag
+- lancedb
+- docling
+
+### Migrate Database
+
+Apply pending database migrations:
+
+```bash
+haiku-rag migrate [--db /path/to/your.lancedb]
+```
+
+When you upgrade haiku.rag to a new version that includes schema changes, the database requires migration. Opening a database with pending migrations will display an error:
+
+```
+Error: Database requires migration from 0.19.0 to 0.26.5. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
+```
+
+Run `haiku-rag migrate` to apply the pending migrations. The command shows which migrations were applied:
+
+```
+Applied 4 migration(s):
+  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns
+  - 0.23.1: Add content_fts column for contextualized FTS search
+  - 0.25.0: Compress docling_document with gzip
+  - 0.38.0: Split docling_document pages into separate column and re-compress with zstd
+Migration completed successfully.
+```
+
+!!! tip
+    Back up your database before running migrations. While migrations are designed to be safe, having a backup provides peace of mind for production databases.
+
+### Download Models
+
+Download required runtime models:
+
+```bash
+haiku-rag download-models
+```
+
+This command downloads:
+
+- Docling OCR/conversion models
+- HuggingFace tokenizer (for chunking)
+- Ollama models referenced in your configuration (embeddings, QA, rerank)
+
+Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
+
+## Maintenance
+
+### Create Vector Index
+
+Create a vector index on the chunks table for fast approximate nearest neighbor search:
+
+```bash
+haiku-rag create-index [--db /path/to/your.lancedb]
+```
+
+**Requirements:**
+- Minimum 256 chunks required for index creation (LanceDB training data requirement)
+- Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2/dot)
+
+**When to use:**
+- After ingesting documents (indexes are not created automatically)
+- After adding significant new data to rebuild the index
+- Use `haiku-rag info` to check index status and see how many chunks are indexed/unindexed
+
+**Search behavior:**
+- Without index: Brute-force kNN search (exact nearest neighbors, slower for large datasets)
+- With index: Fast ANN (approximate nearest neighbors) using IVF_PQ
+- With stale index: LanceDB combines indexed results (fast ANN) + brute-force kNN on unindexed rows
+- Performance degrades as more unindexed data accumulates
+
+### Rebuild Database
+
+Rebuild the database by re-indexing documents. Useful when switching embeddings provider/model or changing chunking settings:
+
+```bash
+# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
+haiku-rag rebuild
+
+# Re-chunk from stored content (no source file access)
+haiku-rag rebuild --rechunk
+
+# Only regenerate embeddings (fastest, keeps existing chunks)
+haiku-rag rebuild --embed-only
+
+# Only generate titles for untitled documents
+haiku-rag rebuild --title-only
+
+# Run the VLM over already-stored picture bytes and patch descriptions
+# into the docling blob. Skips the docling parse entirely.
+haiku-rag rebuild --descriptions
+```
+
+**Rebuild modes:**
+
+| Mode | Flag | Use case |
+|------|------|----------|
+| Full | (default) | Changed converter, source files updated |
+| Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
+| Embed only | `--embed-only` | Changed embedding model or vector dimensions |
+| Title only | `--title-only` | Generate titles for documents without one |
+| Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
+
+**`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `processing.pictures: description` in the config. Idempotent — pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely; only the VLM time is paid.
+
+### Vacuum (Optimize and Cleanup)
+
+Reduce disk usage by optimizing and pruning old table versions across all tables:
+
+```bash
+haiku-rag vacuum
+```
+
+**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
+
+## Server
+
+Start services (requires at least one flag):
+```bash
+# MCP server only (HTTP transport)
+haiku-rag serve --mcp
+
+# MCP server (stdio transport)
+haiku-rag serve --mcp --stdio
+
+# File monitoring only
+haiku-rag serve --monitor
+
+# Both services
+haiku-rag serve --monitor --mcp
+
+# Custom MCP port
+haiku-rag serve --mcp --mcp-port 9000
+
+# Read-only mode (excludes write MCP tools, disables monitor)
+haiku-rag --read-only serve --mcp
+```
+
+See [Server Mode](server.md) for details on available services.
+
+## Settings
+
+View current configuration settings:
+```bash
+haiku-rag settings
+```
+
+### Generate Configuration File
+
+Generate a YAML configuration file with defaults:
+```bash
+haiku-rag init-config [output_path]
+```
+
+If no path is specified, creates `haiku.rag.yaml` in the current directory.
 
 ## Create Skill
 
@@ -308,191 +495,6 @@ haiku-skills chat --use-entrypoints --skill medic
         ├── {name}.lancedb/   # Embedded database
         └── haiku.rag.yaml    # Optional config
 ```
-
-## Server
-
-Start services (requires at least one flag):
-```bash
-# MCP server only (HTTP transport)
-haiku-rag serve --mcp
-
-# MCP server (stdio transport)
-haiku-rag serve --mcp --stdio
-
-# File monitoring only
-haiku-rag serve --monitor
-
-# Both services
-haiku-rag serve --monitor --mcp
-
-# Custom MCP port
-haiku-rag serve --mcp --mcp-port 9000
-
-# Read-only mode (excludes write MCP tools, disables monitor)
-haiku-rag --read-only serve --mcp
-```
-
-See [Server Mode](server.md) for details on available services.
-
-## Settings
-
-View current configuration settings:
-```bash
-haiku-rag settings
-```
-
-### Generate Configuration File
-
-Generate a YAML configuration file with defaults:
-```bash
-haiku-rag init-config [output_path]
-```
-
-If no path is specified, creates `haiku.rag.yaml` in the current directory.
-
-## Database Management
-
-### Initialize Database
-
-Create a new database:
-
-```bash
-haiku-rag init [--db /path/to/your.lancedb]
-```
-
-This creates the database with the configured settings. **All other commands require an existing database** - they will fail with an informative error if the database doesn't exist.
-
-### Migrate Database
-
-Apply pending database migrations:
-
-```bash
-haiku-rag migrate [--db /path/to/your.lancedb]
-```
-
-When you upgrade haiku.rag to a new version that includes schema changes, the database requires migration. Opening a database with pending migrations will display an error:
-
-```
-Error: Database requires migration from 0.19.0 to 0.26.5. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
-```
-
-Run `haiku-rag migrate` to apply the pending migrations. The command shows which migrations were applied:
-
-```
-Applied 4 migration(s):
-  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns
-  - 0.23.1: Add content_fts column for contextualized FTS search
-  - 0.25.0: Compress docling_document with gzip
-  - 0.38.0: Split docling_document pages into separate column and re-compress with zstd
-Migration completed successfully.
-```
-
-!!! tip
-    Back up your database before running migrations. While migrations are designed to be safe, having a backup provides peace of mind for production databases.
-
-### Info
-
-Display database metadata:
-
-```bash
-haiku-rag info [--db /path/to/your.lancedb]
-```
-
-Shows:
-- path to the database
-- stored haiku.rag version (from settings)
-- embeddings provider/model and vector dimension
-- number of documents and chunks (with storage sizes)
-- vector index status (exists/not created, indexed/unindexed chunks)
-- table versions per table (documents, chunks)
-
-At the end, a separate "Versions" section lists runtime package versions:
-- haiku.rag
-- lancedb
-- docling
-
-### Create Vector Index
-
-Create a vector index on the chunks table for fast approximate nearest neighbor search:
-
-```bash
-haiku-rag create-index [--db /path/to/your.lancedb]
-```
-
-**Requirements:**
-- Minimum 256 chunks required for index creation (LanceDB training data requirement)
-- Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2/dot)
-
-**When to use:**
-- After ingesting documents (indexes are not created automatically)
-- After adding significant new data to rebuild the index
-- Use `haiku-rag info` to check index status and see how many chunks are indexed/unindexed
-
-**Search behavior:**
-- Without index: Brute-force kNN search (exact nearest neighbors, slower for large datasets)
-- With index: Fast ANN (approximate nearest neighbors) using IVF_PQ
-- With stale index: LanceDB combines indexed results (fast ANN) + brute-force kNN on unindexed rows
-- Performance degrades as more unindexed data accumulates
-
-### Vacuum (Optimize and Cleanup)
-
-Reduce disk usage by optimizing and pruning old table versions across all tables:
-
-```bash
-haiku-rag vacuum
-```
-
-**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
-
-### Rebuild Database
-
-Rebuild the database by re-indexing documents. Useful when switching embeddings provider/model or changing chunking settings:
-
-```bash
-# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
-haiku-rag rebuild
-
-# Re-chunk from stored content (no source file access)
-haiku-rag rebuild --rechunk
-
-# Only regenerate embeddings (fastest, keeps existing chunks)
-haiku-rag rebuild --embed-only
-
-# Only generate titles for untitled documents
-haiku-rag rebuild --title-only
-
-# Run the VLM over already-stored picture bytes and patch descriptions
-# into the docling blob. Skips the docling parse entirely.
-haiku-rag rebuild --descriptions
-```
-
-**Rebuild modes:**
-
-| Mode | Flag | Use case |
-|------|------|----------|
-| Full | (default) | Changed converter, source files updated |
-| Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
-| Embed only | `--embed-only` | Changed embedding model or vector dimensions |
-| Title only | `--title-only` | Generate titles for documents without one |
-| Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
-
-**`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `processing.pictures: description` in the config. Idempotent — pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely; only the VLM time is paid.
-
-### Download Models
-
-Download required runtime models:
-
-```bash
-haiku-rag download-models
-```
-
-This command downloads:
-
-- Docling OCR/conversion models
-- HuggingFace tokenizer (for chunking)
-- Ollama models referenced in your configuration (embeddings, QA, rerank)
-
-Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
 
 ## Time Travel
 

@@ -9,16 +9,6 @@ haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggoz
 | [`rag`](rag.md) | Search, retrieve, and answer questions from the knowledge base |
 | [`rag-analysis`](analysis.md) | Computational analysis via code execution |
 
-## Discovery
-
-Skills are registered as Python entrypoints under `haiku.skills`. They are discovered automatically by `haiku.skills`:
-
-```bash
-haiku-skills list --use-entrypoints
-# rag — Search, retrieve and analyze documents using RAG.
-# rag-analysis — Analyze documents using code execution in a sandboxed interpreter.
-```
-
 ## Usage
 
 ```python
@@ -37,6 +27,49 @@ agent = Agent(
 )
 
 result = await agent.run("What documents do we have?")
+```
+
+## State Management
+
+Each skill manages its own state under a dedicated namespace. State is automatically synced via the AG-UI protocol when using `AGUIAdapter`.
+
+```python
+rag_state = toolset.get_namespace("rag")
+analysis_state = toolset.get_namespace("analysis")
+```
+
+See the individual skill pages for state model details.
+
+## Database Path Resolution
+
+Both skills resolve the database path in the same order:
+
+1. `db_path` argument passed to `create_skill()`
+2. `HAIKU_RAG_DB` environment variable
+3. Config default (`config.storage.data_dir / "haiku.rag.lancedb"`)
+
+## AG-UI Streaming
+
+For web applications, use pydantic-ai's `AGUIAdapter` to stream tool calls, text, and state deltas:
+
+```python
+from pydantic_ai.ui.ag_ui import AGUIAdapter
+
+adapter = AGUIAdapter(agent=agent, run_input=run_input)
+event_stream = adapter.run_stream()
+sse_event_stream = adapter.encode_stream(event_stream)
+```
+
+See the [Web application](../apps.md) reference implementation for an end-to-end example.
+
+## Discovery
+
+Skills are registered as Python entrypoints under `haiku.skills`. They are discovered automatically by `haiku.skills`:
+
+```bash
+haiku-skills list --use-entrypoints
+# rag — Search, retrieve and analyze documents using RAG.
+# rag-analysis — Analyze documents using code execution in a sandboxed interpreter.
 ```
 
 ## Generating Custom Skills
@@ -73,36 +106,3 @@ images = await visualize_chunk(chunk_id)
 ```
 
 See [CLI: Create Skill](../cli.md#create-skill) for all options.
-
-## Database Path Resolution
-
-Both skills resolve the database path in the same order:
-
-1. `db_path` argument passed to `create_skill()`
-2. `HAIKU_RAG_DB` environment variable
-3. Config default (`config.storage.data_dir / "haiku.rag.lancedb"`)
-
-## State Management
-
-Each skill manages its own state under a dedicated namespace. State is automatically synced via the AG-UI protocol when using `AGUIAdapter`.
-
-```python
-rag_state = toolset.get_namespace("rag")
-analysis_state = toolset.get_namespace("analysis")
-```
-
-See the individual skill pages for state model details.
-
-## AG-UI Streaming
-
-For web applications, use pydantic-ai's `AGUIAdapter` to stream tool calls, text, and state deltas:
-
-```python
-from pydantic_ai.ui.ag_ui import AGUIAdapter
-
-adapter = AGUIAdapter(agent=agent, run_input=run_input)
-event_stream = adapter.run_stream()
-sse_event_stream = adapter.encode_stream(event_stream)
-```
-
-See the [Web Application](../apps.md#web-application) for a complete implementation.

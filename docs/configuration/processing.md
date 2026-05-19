@@ -53,6 +53,37 @@ processing:
   pictures: image                            # none | description | image
 ```
 
+### Local vs Remote Processing
+
+**Local processing** (default):
+
+- Uses `docling` library locally
+- No external dependencies
+- Good for development and small workloads
+
+**Remote processing** (docling-serve):
+
+- Offloads processing to docling-serve API
+- Better for heavy workloads and production
+- Requires docling-serve instance (see [Remote processing setup](../remote-processing.md))
+
+To use remote processing:
+
+```yaml
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+
+providers:
+  docling_serve:
+    base_url: http://localhost:5001
+    api_key: "your-api-key"  # Optional
+```
+
+Conversion options work identically for both local and remote processing.
+
+**Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail—set `do_ocr: false` to disable OCR entirely.
+
 ### Conversion Options
 
 The `conversion_options` section allows fine-grained control over document conversion. These options work with both `docling-local` and `docling-serve` converters.
@@ -203,6 +234,39 @@ Three independent settings drive ingest, retrieval, and QA:
 | Cross-modal search + vision QA | `image` or `description` | multimodal | `true` |
 | Cross-modal search, text QA only | `description` | multimodal | `false` |
 
+### Chunking Strategies
+
+**Hybrid chunking** (default):
+- Structure-aware chunking
+- Respects document boundaries
+- Best for most use cases
+
+**Hierarchical chunking**:
+- Creates hierarchical chunk structure
+- Preserves document hierarchy
+- Useful for complex documents
+
+### Chunk Size
+
+```yaml
+processing:
+  chunk_size: 256  # Maximum tokens per chunk
+```
+
+Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa-research.md#search-settings).
+
+### Table Serialization
+
+Control how tables are represented in chunks:
+
+```yaml
+processing:
+  chunking_use_markdown_tables: false  # Default: narrative format
+```
+
+- `false`: Tables as narrative text ("Value A, Column 2 = Value B")
+- `true`: Tables as markdown (preserves table structure)
+
 ### Automatic Title Generation
 
 Enable automatic title generation during document ingestion:
@@ -226,70 +290,6 @@ Priority order: HTML `<title>` (furniture layer) → h1/PDF title (body layer) �
 Explicit titles passed via `title=` parameter always take precedence and are never overridden. When updating documents, existing titles are preserved — auto-generation only applies to untitled documents.
 
 To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild-database).
-
-### Local vs Remote Processing
-
-**Local processing** (default):
-
-- Uses `docling` library locally
-- No external dependencies
-- Good for development and small workloads
-
-**Remote processing** (docling-serve):
-
-- Offloads processing to docling-serve API
-- Better for heavy workloads and production
-- Requires docling-serve instance (see [Remote processing setup](../remote-processing.md))
-
-To use remote processing:
-
-```yaml
-processing:
-  converter: docling-serve
-  chunker: docling-serve
-
-providers:
-  docling_serve:
-    base_url: http://localhost:5001
-    api_key: "your-api-key"  # Optional
-```
-
-Conversion options work identically for both local and remote processing.
-
-**Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail—set `do_ocr: false` to disable OCR entirely.
-
-### Chunking Strategies
-
-**Hybrid chunking** (default):
-- Structure-aware chunking
-- Respects document boundaries
-- Best for most use cases
-
-**Hierarchical chunking**:
-- Creates hierarchical chunk structure
-- Preserves document hierarchy
-- Useful for complex documents
-
-### Table Serialization
-
-Control how tables are represented in chunks:
-
-```yaml
-processing:
-  chunking_use_markdown_tables: false  # Default: narrative format
-```
-
-- `false`: Tables as narrative text ("Value A, Column 2 = Value B")
-- `true`: Tables as markdown (preserves table structure)
-
-### Chunk Size
-
-```yaml
-processing:
-  chunk_size: 256  # Maximum tokens per chunk
-```
-
-Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa.md#search-settings).
 
 ## File Monitoring
 
