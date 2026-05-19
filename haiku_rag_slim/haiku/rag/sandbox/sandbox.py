@@ -50,8 +50,9 @@ def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
     count if no such header exists.
 
     Items without a section_header label (or with ``heading_level == 0``) are
-    skipped. PDF-derived corpora where docling collapses every header to level
-    1 produce a flat list of sibling nodes.
+    skipped. When all section_headers carry the same level the output is a
+    flat sibling list (see docling-project/docling#2121 for an upstream case
+    where every PDF section_header is emitted at level=1).
     """
     headers: list[DocumentItem] = [
         i for i in items if i.label == "section_header" and i.heading_level > 0
@@ -214,33 +215,44 @@ class Sandbox:
         doc_titles = {doc.id: doc.title for doc in docs if doc.id}
 
         def _load_caches() -> tuple[dict[str, str], dict[str, str]]:
-            """Bulk-fetch document items once and build both items.jsonl and
-            toc.json views from the same result. Returns ``(items_cache, toc_cache)``.
+            """Bulk-fetch document items + chunk index once and build both
+            items.jsonl and toc.json views. Returns ``(items_cache, toc_cache)``.
             """
 
-            async def _fetch() -> dict[str, list[DocumentItem]]:
+            async def _fetch() -> tuple[
+                dict[str, list[DocumentItem]], dict[str, dict[str, list[str]]]
+            ]:
                 from haiku.rag.client import HaikuRAG
 
                 async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                    return await rag.document_item_repository.get_all_items_grouped(
-                        doc_ids
+                    items_grouped = (
+                        await rag.document_item_repository.get_all_items_grouped(
+                            doc_ids
+                        )
                     )
+                    chunk_index = (
+                        await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
+                            doc_ids
+                        )
+                    )
+                return items_grouped, chunk_index
 
-            grouped = _run_async(_fetch())
+            grouped, chunk_index = _run_async(_fetch())
 
             items_cache: dict[str, str] = {}
             toc_cache: dict[str, str] = {}
             for did, items in grouped.items():
+                doc_chunk_index = chunk_index.get(did, {})
+
                 items_cache[did] = "\n".join(
                     json.dumps(
                         {
-                            "position": item.position,
                             "self_ref": item.self_ref,
                             "label": item.label,
                             "text": item.text,
                             "page_numbers": item.page_numbers,
                             "heading_level": item.heading_level,
-                            "tree_depth": item.tree_depth,
+                            "chunk_ids": doc_chunk_index.get(item.self_ref, []),
                         },
                         ensure_ascii=False,
                     )

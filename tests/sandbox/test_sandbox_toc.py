@@ -226,9 +226,11 @@ class TestTocCaching:
 
 @pytest.mark.asyncio
 class TestItemsJsonlSurfacesNewFields:
-    """items.jsonl rows expose heading_level and tree_depth."""
+    """items.jsonl row shape: heading_level is always present (0 on non-headers);
+    chunk_ids surfaces each item's containing chunks; position and tree_depth
+    are not exposed."""
 
-    async def test_jsonl_contains_heading_level_and_tree_depth(self, temp_db_path):
+    async def test_jsonl_row_shape(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc_id = await _empty_doc(client, uri="test://jsonl-fields", title="Fields")
             items = [
@@ -243,10 +245,17 @@ class TestItemsJsonlSurfacesNewFields:
 
         assert len(rows) == 3
         assert rows[0]["heading_level"] == 1
-        assert rows[0]["tree_depth"] == 2
         assert rows[1]["heading_level"] == 0
-        assert rows[1]["tree_depth"] == 3
         assert rows[2]["heading_level"] == 2
-        assert rows[2]["tree_depth"] == 4
         for r in rows:
-            assert {"position", "self_ref", "label", "text", "page_numbers"} <= set(r)
+            expected = {
+                "self_ref",
+                "label",
+                "text",
+                "page_numbers",
+                "heading_level",
+                "chunk_ids",
+            }
+            assert expected <= set(r)
+            assert "position" not in r
+            assert "tree_depth" not in r

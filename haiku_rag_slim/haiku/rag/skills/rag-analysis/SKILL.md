@@ -28,9 +28,15 @@ Not supported: class definitions, generators/yield, match statements, decorators
 Search the knowledge base directly (outside code execution). Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
 
 ### cite
-Register the chunk IDs that ground your answer. Call this BEFORE writing your final answer, with the `chunk_id` values from search results (from either the `search` tool or `await search(...)` inside `execute_code`) that support each claim. Every answer that uses search results must be backed by `cite`.
+Register the chunk IDs that ground your answer. Call this BEFORE writing your final answer.
 
-Use chunk_ids exactly as they appear in the search response — copy the full UUID verbatim. Do not abbreviate, paraphrase, or reconstruct chunk_ids from memory; the tool matches them as opaque strings.
+Chunk IDs come from two places:
+- The `chunk_id` field on `search` / `await search(...)` results
+- The `chunk_ids` field on `items.jsonl` rows (when you ground via direct file reads)
+
+Do NOT cite `self_ref` (`#/texts/N` style refs), `position`, or any other identifier-shaped field. They are not chunk IDs and the tool will reject them. Copy chunk IDs verbatim — they are opaque UUIDs.
+
+Every answer that uses search or file-read evidence must be backed by `cite`.
 
 ## Document Filesystem (inside execute_code)
 
@@ -44,7 +50,7 @@ All documents are mounted as a virtual filesystem at `/documents/`:
     toc.json         # Section tree derived from heading_level
 ```
 
-`{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids, or read `metadata.json` from each directory and match against `uri` / `title`.
+`{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids and match against `uri` / `title` — that's a single call to the host. Iterating `/documents/` and reading every `metadata.json` works too but is much slower on portal-scale corpora.
 
 ### Reading files
 Always use `Path.read_text()` — do NOT use `open()` or `with` statements (they are not supported).
@@ -75,20 +81,21 @@ Document metadata: `id`, `title`, `uri`, `created_at`.
 Full text content. Use for regex or keyword search across a whole document.
 
 ### items.jsonl
-Structured document items. Each line is a JSON object with:
-- `position`: sequential position in the document
-- `self_ref`: item reference (e.g. "#/texts/5", "#/tables/0")
-- `label`: item type — "section_header", "text", "table", "list_item", "caption", "formula", "picture", "code", "footnote"
+Structured document items. One JSON object per line. The row's **line index** is the item's position — `item_range` values in `toc.json` are line-slice bounds into this file.
+
+Each row carries:
+- `self_ref`: item reference (e.g. `"#/texts/5"`, `"#/tables/0"`) — used to cross-reference with `doc_item_refs` from search results
+- `label`: item type — one of `"section_header"`, `"text"`, `"table"`, `"list_item"`, `"caption"`, `"formula"`, `"picture"`, `"code"`, `"footnote"`
 - `text`: rendered content (tables are markdown with `|` columns)
 - `page_numbers`: list of page numbers where the item appears
-- `heading_level`: H-level (1–6) for `section_header` items, `0` otherwise. PDFs often collapse to `1` for every header.
-- `tree_depth`: DOM nesting depth — varies meaningfully on HTML, near-uniform on PDFs.
+- `chunk_ids`: chunks that contain this item — pass to `cite()` to ground an answer that read this item directly
+- `heading_level`: H-level for `section_header` rows; `0` on non-header rows
 
 ### toc.json
-Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, position, page_numbers, item_range: [start, end_exclusive], children}`. Slice `items.jsonl` by `item_range` to read a section's contents. PDFs typically produce a flat sibling list; HTML/markdown produce a real tree. `tree: []` for docs with no headers.
+Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, position, page_numbers, item_range: [start, end_exclusive], children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `tree: []` for docs with no headers.
 
 ### Cross-referencing search results with items
-Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in items.jsonl. Resolve each ref to a `position`, then walk `toc.json` to find the deepest node whose `item_range` contains it — that's the section the hit lives in.
+Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in `items.jsonl`. To find which section a hit lives in: locate the item by `self_ref`, take its line index, and walk `toc.json` to find the deepest node whose `item_range` contains that index.
 
 ## Strategy
 

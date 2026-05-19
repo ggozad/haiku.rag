@@ -372,11 +372,11 @@ class TestSandboxVFS:
                 "lines = text.strip().split('\\n')\n"
                 "print(len(lines) > 0)\n"
                 "item = json.loads(lines[0])\n"
-                "print('position' in item)\n"
                 "print('self_ref' in item)\n"
                 "print('label' in item)\n"
                 "print('text' in item)\n"
-                "print('page_numbers' in item)"
+                "print('page_numbers' in item)\n"
+                "print('chunk_ids' in item)"
             )
             assert result.success
             assert result.stdout.count("True") == 6
