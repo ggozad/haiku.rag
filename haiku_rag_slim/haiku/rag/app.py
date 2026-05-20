@@ -16,7 +16,6 @@ from rich.progress import (
     TextColumn,
     TransferSpeedColumn,
 )
-from rich.syntax import Syntax
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
@@ -443,14 +442,12 @@ class HaikuRAGApp:  # pragma: no cover
     async def ask(
         self,
         question: str,
-        cite: bool = False,
         filter: str | None = None,
     ):
         """Ask a question using the RAG system.
 
         Args:
             question: The question to ask
-            cite: Include citations in the answer
             filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(
@@ -465,21 +462,20 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print()
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(answer))
-            if cite and citations:
-                for renderable in format_citations_rich(citations):
-                    self.console.print(renderable)
+            for renderable in await format_citations_rich(
+                citations, client=self.client
+            ):
+                self.console.print(renderable)
 
     async def analyze(
         self,
         question: str,
-        document: str | None = None,
         filter: str | None = None,
     ):
-        """Answer a question using the analysis agent with code execution.
+        """Answer a question using the rag-analysis skill.
 
         Args:
             question: The question to answer
-            document: Optional document ID or title to pre-load
             filter: SQL WHERE clause to filter documents
         """
         async with HaikuRAG(
@@ -488,95 +484,21 @@ class HaikuRAGApp:  # pragma: no cover
             read_only=self.read_only,
             before=self.before,
         ) as self.client:
-            documents = [document] if document else None
-
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
             self.console.print(
-                "[dim]Running analysis agent with code execution...[/dim]"
+                "[dim]Running analysis skill with code execution...[/dim]"
             )
             self.console.print()
 
-            result = await self.client.analyze(
-                question, documents=documents, filter=filter
-            )
+            result = await self.client.analyze(question, filter=filter)
 
-            self.console.print("[bold yellow]Program:[/bold yellow]")
-            self.console.print(Syntax(result.program, "python"))
-            self.console.print()
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(result.answer))
-
-    async def research(
-        self,
-        question: str,
-        filter: str | None = None,
-    ):
-        """Run research via the pydantic-graph pipeline.
-
-        Args:
-            question: The research question
-            filter: SQL WHERE clause to filter documents
-        """
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=self.read_only,
-            before=self.before,
-        ) as client:
-            self.console.print("[bold cyan]Starting research[/bold cyan]")
-            self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-            self.console.print()
-
-            report = await client.research(question=question, filter=filter)
-
-            if report is None:
-                self.console.print("[red]Research did not produce a report.[/red]")
-                return
-
-            # Display the report
-            self.console.print("[bold green]Research Report[/bold green]")
-            self.console.rule()
-
-            # Title and Executive Summary
-            self.console.print(f"[bold]{report.title}[/bold]")
-            self.console.print()
-            self.console.print("[bold cyan]Executive Summary:[/bold cyan]")
-            self.console.print(report.executive_summary)
-            self.console.print()
-
-            # Main Findings
-            if report.main_findings:
-                self.console.print("[bold cyan]Main Findings:[/bold cyan]")
-                for finding in report.main_findings:
-                    self.console.print(f"• {finding}")
-                self.console.print()
-
-            # Conclusions
-            if report.conclusions:
-                self.console.print("[bold cyan]Conclusions:[/bold cyan]")
-                for conclusion in report.conclusions:
-                    self.console.print(f"• {conclusion}")
-                self.console.print()
-
-            # Recommendations
-            if report.recommendations:
-                self.console.print("[bold cyan]Recommendations:[/bold cyan]")
-                for rec in report.recommendations:
-                    self.console.print(f"• {rec}")
-                self.console.print()
-
-            # Limitations
-            if report.limitations:
-                self.console.print("[bold yellow]Limitations:[/bold yellow]")
-                for limitation in report.limitations:
-                    self.console.print(f"• {limitation}")
-                self.console.print()
-
-            # Sources Summary
-            if report.sources_summary:
-                self.console.print("[bold cyan]Sources:[/bold cyan]")
-                self.console.print(report.sources_summary)
+            for renderable in await format_citations_rich(
+                result.citations, client=self.client
+            ):
+                self.console.print(renderable)
 
     async def rebuild(self, mode: RebuildMode = RebuildMode.FULL):
         async with HaikuRAG(

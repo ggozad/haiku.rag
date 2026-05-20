@@ -102,28 +102,15 @@ class QAConfig(BaseModel):
     max_searches: int = 5
 
 
-class ResearchConfig(BaseModel):
-    model: ModelConfig = Field(
-        default_factory=lambda: ModelConfig(
-            provider="ollama",
-            name="gpt-oss",
-            enable_thinking=False,
-            temperature=0.3,
-        )
-    )
-    max_iterations: int = 3
-    max_concurrency: int = 1
-
-
 class AnalysisConfig(BaseModel):
-    model: ModelConfig = Field(
-        default_factory=lambda: ModelConfig(
-            provider="ollama",
-            name="gpt-oss",
-            enable_thinking=False,
-            temperature=0.0,
-        )
-    )
+    """Driving model + sandbox limits for the analysis skill.
+
+    ``model`` defaults to ``None``, meaning "no override — use ``qa.model``."
+    Consumers resolve via ``config.analysis.model or config.qa.model``. Set
+    explicitly when the analysis workload wants a different model from QA
+    (e.g. a stronger model for computational tasks)."""
+
+    model: ModelConfig | None = None
     code_timeout: float = 60.0
     max_output_chars: int = 50_000
 
@@ -215,7 +202,7 @@ class ProcessingConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    limit: int = 10
+    limit: int = 5
     max_context_chars: int = 10000
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
     vector_refine_factor: int = 30
@@ -241,13 +228,24 @@ class ProvidersConfig(BaseModel):
 
 class PromptsConfig(BaseModel):
     domain_preamble: str = ""
-    qa: str | None = None
-    synthesis: str | None = None
     picture_description: str = (
         "Describe this image for a blind user. "
         "State the image type (screenshot, chart, photo, etc.), "
         "what it depicts, any visible text, and key visual details. "
         "Be concise and accurate."
+    )
+
+
+class EvaluationsConfig(BaseModel):
+    """Settings consumed only by the `evaluations` package."""
+
+    judge: ModelConfig | None = Field(
+        default=None,
+        description=(
+            "Judge model for `evaluations run`'s LLM-as-judge step. "
+            "ModelConfig's base_url lets the judge point at any "
+            "OpenAI-compatible endpoint."
+        ),
     )
 
 
@@ -259,9 +257,11 @@ class AppConfig(BaseModel):
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
-    research: ResearchConfig = Field(default_factory=ResearchConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    evaluations: "EvaluationsConfig" = Field(
+        default_factory=lambda: EvaluationsConfig()
+    )

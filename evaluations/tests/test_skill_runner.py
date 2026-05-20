@@ -6,7 +6,7 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from evaluations.skill_runner import SkillRunResult, run_skill_question
-from haiku.rag.agents.research.models import Citation
+from haiku.rag.store.models.citation import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import EmbedderWrapper
@@ -296,7 +296,7 @@ class TestRunSkillQuestionEndToEnd:
             db_path=rag_db,
             config=app_config,
             question="What is machine learning?",
-            skill_model=TestModel(),
+            skill_model=TestModel(call_tools=["search"]),
         )
 
         assert isinstance(result, SkillRunResult)

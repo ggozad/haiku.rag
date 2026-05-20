@@ -351,6 +351,38 @@ class ChunkRepository:
         chunks.sort(key=lambda c: c.order)
         return chunks
 
+    async def get_chunk_ids_by_self_ref_grouped(
+        self, document_ids: list[str]
+    ) -> dict[str, dict[str, list[str]]]:
+        """For each document, build a self_ref → [chunk_id, ...] index.
+
+        One query across all requested documents. The map lets items.jsonl
+        rows expose which chunks contain them, so callers can bridge from an
+        item to a `cite`-acceptable chunk_id without a separate search.
+        """
+        from haiku.rag.utils import escape_sql_string
+
+        if not document_ids:
+            return {}
+
+        safe_ids = ", ".join(f"'{escape_sql_string(did)}'" for did in document_ids)
+        rows = await (
+            self.store.chunks_table.query()
+            .select(["id", "document_id", "metadata"])
+            .where(f"document_id IN ({safe_ids})")
+            .to_list()
+        )
+
+        index: dict[str, dict[str, list[str]]] = {}
+        for row in rows:
+            did = row["document_id"]
+            md = json.loads(row.get("metadata") or "{}")
+            refs = md.get("doc_item_refs") or []
+            doc_index = index.setdefault(did, {})
+            for ref in refs:
+                doc_index.setdefault(ref, []).append(row["id"])
+        return index
+
     async def count_by_document_id(self, document_id: str) -> int:
         """Count the number of chunks for a specific document."""
         df = await (

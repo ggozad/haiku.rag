@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -93,7 +94,9 @@ def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     seen: dict[tuple[str | None, str], int] = {}
     keep: list[bool] = [True] * len(results)
     for i, r in enumerate(results):
-        if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith("#/pictures/"):
+        if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith(
+            PICTURE_REF_PREFIX
+        ):
             key = (r.document_id, r.doc_item_refs[0])
             prior = seen.get(key)
             if prior is None:
@@ -111,13 +114,13 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
 
     Groups results by document_id and batches one picture-bytes lookup per
     document so a result set spanning N documents costs N reads, not one per
-    picture. Only refs starting with ``#/pictures/`` are queried.
+    picture. Only refs starting with ``PICTURE_REF_PREFIX`` are queried.
     """
     by_doc: dict[str, list[SearchResult]] = {}
     for r in results:
         if not r.document_id:
             continue
-        if not any(ref.startswith("#/pictures/") for ref in r.doc_item_refs):
+        if not any(ref.startswith(PICTURE_REF_PREFIX) for ref in r.doc_item_refs):
             continue
         by_doc.setdefault(r.document_id, []).append(r)
 
@@ -126,7 +129,7 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
         seen: set[str] = set()
         for r in doc_results:
             for ref in r.doc_item_refs:
-                if ref.startswith("#/pictures/") and ref not in seen:
+                if ref.startswith(PICTURE_REF_PREFIX) and ref not in seen:
                     wanted.append(ref)
                     seen.add(ref)
         if not wanted:
@@ -136,14 +139,23 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
         )
         if not bytes_by_ref:
             continue
+        captions_by_ref = await client.document_item_repository.get_text_for_refs(
+            doc_id, list(bytes_by_ref.keys())
+        )
         for r in doc_results:
             attached: dict[str, str] = {}
+            captions: dict[str, str] = {}
             for ref in r.doc_item_refs:
                 blob = bytes_by_ref.get(ref)
                 if blob:
                     attached[ref] = base64.b64encode(blob).decode("ascii")
+                    caption = captions_by_ref.get(ref)
+                    if caption:
+                        captions[ref] = caption
             if attached:
                 r.image_data = attached
+            if captions:
+                r.picture_captions = captions
 
 
 async def expand_context(
@@ -192,9 +204,10 @@ async def expand_context(
         expanded_results.extend(expanded)
 
     expanded_results.sort(key=lambda r: r.score, reverse=True)
-    # expand_with_items rebuilds SearchResult objects, so attach picture bytes
-    # to the fresh set — picture self_refs may have grown via section expansion.
-    await _populate_image_data(client, expanded_results)
+    # image_data and picture_captions are preserved through expansion by
+    # expand_with_items — we deliberately do not re-attach bytes for refs
+    # introduced by section expansion, so the multimodal payload stays
+    # bounded by what was originally retrieved.
     return expanded_results
 
 

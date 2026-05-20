@@ -14,6 +14,8 @@ _METADATA_COLUMNS = [
     "label",
     "text",
     "page_numbers",
+    "heading_level",
+    "tree_depth",
 ]
 
 
@@ -31,6 +33,8 @@ class DocumentItemRepository:
             label=row.get("label", ""),
             text=row.get("text", ""),
             page_numbers=json.loads(row.get("page_numbers", "[]")),
+            heading_level=row.get("heading_level", 0) or 0,
+            tree_depth=row.get("tree_depth", 0) or 0,
         )
 
     async def create_items(self, document_id: str, items: list[DocumentItem]) -> None:
@@ -48,6 +52,8 @@ class DocumentItemRepository:
                 text=item.text,
                 page_numbers=json.dumps(item.page_numbers),
                 picture_data=item.picture_data,
+                heading_level=item.heading_level,
+                tree_depth=item.tree_depth,
             )
             for item in items
         ]
@@ -199,4 +205,34 @@ class DocumentItemRepository:
             data = row.get("picture_data")
             if data:
                 result[row["self_ref"]] = data
+        return result
+
+    async def get_text_for_refs(
+        self, document_id: str, refs: list[str]
+    ) -> dict[str, str]:
+        """Fetch the ``text`` field for multiple self_refs within a single document.
+
+        Returns ``{self_ref: text}`` for refs whose text is non-empty. Used
+        alongside ``get_pictures_for_chunk`` to label figures in agent-facing
+        search results: picture items carry their VLM-generated caption in
+        the ``text`` field, and the OpenAI vision message format has no
+        identifier on binary parts, so the caption text is the only signal a
+        model can use to correlate a description with the picture it sees.
+        """
+        if not refs:
+            return {}
+
+        safe_id = escape_sql_string(document_id)
+        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["self_ref", "text"])
+            .where(f"document_id = '{safe_id}' AND self_ref IN ({refs_sql})")
+            .to_list()
+        )
+        result: dict[str, str] = {}
+        for row in rows:
+            text = row.get("text") or ""
+            if text:
+                result[row["self_ref"]] = text
         return result

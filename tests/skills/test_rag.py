@@ -1,3 +1,5 @@
+import pytest
+
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rag import (
     STATE_NAMESPACE,
@@ -319,6 +321,94 @@ class TestCiteTool:
         result = await cite(ctx, chunk_ids=["nonexistent"])
         assert "No state" in result
 
+    async def test_cite_raises_modelretry_when_chunk_ids_unresolved(
+        self, rag_db, rag_client
+    ):
+        """When supplied chunk_ids don't match any search result, cite raises
+        ModelRetry so pydantic-ai prompts the model to retry with valid ids
+        instead of silently registering zero citations."""
+        from pydantic_ai import ModelRetry
+
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state, rag=rag_client)
+
+        await search(ctx, query="artificial intelligence")
+        assert state.searches, "fixture should have produced some search results"
+
+        with pytest.raises(ModelRetry) as exc_info:
+            await cite(ctx, chunk_ids=["372c9ddf-not-a-real-id"])
+        message = str(exc_info.value)
+        assert "verbatim" in message
+        assert "372c9ddf-not-a-real-id" in message
+
+    async def test_cite_raises_modelretry_when_chunk_id_does_not_exist(
+        self, rag_db, rag_client
+    ):
+        """With no prior search() and a chunk_id that doesn't exist in the DB,
+        cite raises ModelRetry — the DB-fallback path tried and found nothing."""
+        from pydantic_ai import ModelRetry
+
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state, rag=rag_client)
+        assert not state.searches
+
+        with pytest.raises(ModelRetry) as exc_info:
+            await cite(ctx, chunk_ids=["nonexistent-chunk-id"])
+        message = str(exc_info.value)
+        assert "verbatim" in message
+        assert "nonexistent-chunk-id" in message
+
+    async def test_cite_returns_message_when_chunk_ids_empty(self, rag_db):
+        """An empty chunk_ids list is a no-op, not a retry trigger."""
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state)
+        result = await cite(ctx, chunk_ids=[])
+        assert "0" in result
+
+    async def test_cite_accepts_chunk_id_from_db_without_prior_search(
+        self, rag_db, rag_client
+    ):
+        """chunk_ids sourced from items.jsonl / toc.json are valid citations.
+
+        The skill calls cite directly with chunk_ids it read from the VFS;
+        no search() has been recorded in state.searches. cite must look the
+        chunk up in the DB and build a Citation with full document context.
+        """
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        docs = await rag_client.list_documents(limit=1)
+        assert docs, "fixture should have at least one document"
+        doc_id = docs[0].id
+        chunks = await rag_client.chunk_repository.get_by_document_id(doc_id)
+        assert chunks, "fixture document should have chunks"
+        chunk_id = chunks[0].id
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state, rag=rag_client)
+        assert not state.searches, "this test exercises the no-prior-search path"
+
+        result = await cite(ctx, chunk_ids=[chunk_id])
+        assert "Registered 1 citation(s)." == result
+        assert chunk_id in state.citations
+        registered = state.citation_index[chunk_id]
+        assert registered.document_id == doc_id
+        assert registered.document_uri  # uri must be populated from doc lookup
+
 
 class TestLifespan:
     async def test_opens_one_client_per_invocation(self, rag_db):
@@ -373,9 +463,9 @@ class TestLifespan:
         assert result
 
     async def test_lifespan_clears_citations_and_searches_but_keeps_index(self, rag_db):
-        from haiku.rag.agents.research.models import Citation
         from haiku.rag.skills._deps import RAGRunDeps, make_rag_lifespan
         from haiku.rag.skills.rag import RAGState
+        from haiku.rag.store.models.citation import Citation
 
         config = AppConfig()
         lifespan = make_rag_lifespan(rag_db, config)

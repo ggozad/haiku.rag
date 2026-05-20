@@ -8,8 +8,8 @@ from haiku.rag.config.models import AppConfig
 from haiku.skills.state import SkillRunDeps
 
 if TYPE_CHECKING:
-    from haiku.rag.agents.analysis.sandbox import Sandbox
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.sandbox import Sandbox
 
 
 @dataclass
@@ -60,9 +60,8 @@ def make_rag_lifespan(db_path: Path, config: AppConfig):
 def make_analysis_lifespan(db_path: Path, config: AppConfig):
     @asynccontextmanager
     async def lifespan(deps: AnalysisRunDeps) -> AsyncIterator[None]:
-        from haiku.rag.agents.analysis.dependencies import AnalysisContext
-        from haiku.rag.agents.analysis.sandbox import Sandbox
         from haiku.rag.client import HaikuRAG
+        from haiku.rag.sandbox import AnalysisContext, Sandbox
 
         doc_filter = getattr(deps.state, "document_filter", None)
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:

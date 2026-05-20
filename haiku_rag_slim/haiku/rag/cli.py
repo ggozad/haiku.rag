@@ -369,11 +369,6 @@ def ask(  # pragma: no cover
         "--db",
         help="Path to the LanceDB database file",
     ),
-    cite: bool = typer.Option(
-        False,
-        "--cite",
-        help="Include citations in the response",
-    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
@@ -385,13 +380,12 @@ def ask(  # pragma: no cover
     asyncio.run(
         app.ask(
             question=question,
-            cite=cite,
             filter=filter,
         )
     )
 
 
-@_cli.command("analyze", help="Answer questions using code execution (analysis agent)")
+@_cli.command("analyze", help="Answer questions using the rag-analysis skill")
 def analyze(  # pragma: no cover
     question: str = typer.Argument(
         help="The question to answer",
@@ -400,12 +394,6 @@ def analyze(  # pragma: no cover
         None,
         "--db",
         help="Path to the LanceDB database file",
-    ),
-    document: str | None = typer.Option(
-        None,
-        "--document",
-        "-d",
-        help="Document ID or title to pre-load for analysis",
     ),
     filter: str | None = typer.Option(
         None,
@@ -418,29 +406,9 @@ def analyze(  # pragma: no cover
     asyncio.run(
         app.analyze(
             question=question,
-            document=document,
             filter=filter,
         )
     )
-
-
-@_cli.command("research", help="Run multi-agent research and output a concise report")
-def research(  # pragma: no cover
-    question: str = typer.Argument(..., help="The research question to investigate"),
-    db: Path | None = typer.Option(
-        None,
-        "--db",
-        help="Path to the LanceDB database file",
-    ),
-    filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
-    ),
-):
-    app = create_app(db)
-    asyncio.run(app.research(question=question, filter=filter))
 
 
 @_cli.command("settings", help="Display current configuration settings")

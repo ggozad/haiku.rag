@@ -3,7 +3,6 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from haiku.rag.agents.research.models import ResearchReport
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.store.models import Document, SearchResult
@@ -203,41 +202,18 @@ def create_mcp_server(
             return f"Error answering question: {e!s}"
 
     @mcp.tool()
-    async def research_question(
-        question: str,
-    ) -> ResearchReport | None:
-        """Run multi-agent research to investigate a complex question.
-
-        The research process uses multiple agents to plan, search, evaluate, and synthesize
-        information iteratively until confidence threshold is met or max iterations reached.
-
-        Args:
-            question: The research question to investigate.
-
-        Returns:
-            A research report with findings, or None if an error occurred.
-        """
-        try:
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                return await rag.research(question=question)
-        except Exception:
-            return None
-
-    @mcp.tool()
     async def analyze(
         question: str,
-        document: str | None = None,
         filter: str | None = None,
     ) -> str:
-        """Answer complex questions using code execution (analysis agent).
+        """Answer complex questions using the rag-analysis skill.
 
         Use this for questions requiring computation, aggregation, or
-        complex traversal across documents. The agent can write Python
-        code to search, analyze, and compute answers.
+        structural traversal across documents. The skill can write and
+        execute Python code in a sandboxed interpreter.
 
         Args:
             question: The question to answer.
-            document: Optional document ID or title to pre-load for analysis.
             filter: Optional SQL WHERE clause to filter documents.
 
         Returns:
@@ -245,10 +221,9 @@ def create_mcp_server(
         """
         try:
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                documents = [document] if document else None
-                result = await rag.analyze(question, documents=documents, filter=filter)
+                result = await rag.analyze(question, filter=filter)
                 return result.answer
         except Exception as e:
-            return f"Error running analysis agent: {e!s}"
+            return f"Error running analysis skill: {e!s}"
 
     return mcp

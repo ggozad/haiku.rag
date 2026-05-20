@@ -4,9 +4,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.citation import Citation
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 
@@ -88,7 +88,9 @@ def create_skill(
         else:
             db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
-    tools = create_skill_tools(db_path, config, RAGState, _RAG_TOOLS)
+    tools = create_skill_tools(
+        db_path, config, RAGState, _RAG_TOOLS, model=config.qa.model
+    )
     extras = create_skill_extras(db_path, config)
 
     skill_instructions = instructions()

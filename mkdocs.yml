@@ -62,7 +62,7 @@ nav:
       - Configuration:
           - configuration/index.md
           - Providers: configuration/providers.md
-          - Search and Question Answering: configuration/qa-research.md
+          - Search and Question Answering: configuration/qa.md
           - Document Processing: configuration/processing.md
           - Storage: configuration/storage.md
           - Prompts: configuration/prompts.md
@@ -70,9 +70,7 @@ nav:
       - Python: python.md
       - Custom Pipelines: custom-pipelines.md
       - Tuning: tuning.md
-      - Agents:
-          - agents/index.md
-          - Analysis Agent: agents/analysis.md
+      - Analysis: agents/analysis.md
       - Skills:
           - skills/index.md
           - RAG: skills/rag.md

@@ -85,8 +85,7 @@ async def rag_client(rag_db):
 @pytest.fixture
 def sandbox_factory(rag_db, test_app_config):
     """Build Sandbox instances bound to the sample db, optionally with a doc filter."""
-    from haiku.rag.agents.analysis.dependencies import AnalysisContext
-    from haiku.rag.agents.analysis.sandbox import Sandbox
+    from haiku.rag.sandbox import AnalysisContext, Sandbox
 
     def _make(filter: str | None = None) -> Sandbox:
         return Sandbox(

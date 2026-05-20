@@ -251,6 +251,20 @@ async def expand_with_items(
             if r.headings:
                 all_headings.extend(h for h in r.headings if h not in all_headings)
 
+        # Carry image_data and picture_captions through expansion so that
+        # only pictures from the originally retrieved chunks get attached.
+        # Pictures swept in by section expansion are referenced in `refs`
+        # for cross-referencing but their bytes are not re-fetched —
+        # otherwise a single search can balloon the response with adjacent
+        # figures the model did not actually retrieve.
+        merged_image_data: dict[str, str] = {}
+        merged_captions: dict[str, str] = {}
+        for r in original_results:
+            if r.image_data:
+                merged_image_data.update(r.image_data)
+            if r.picture_captions:
+                merged_captions.update(r.picture_captions)
+
         first = original_results[0]
 
         # Expansion should never return less content than the original chunk.
@@ -272,6 +286,8 @@ async def expand_with_items(
                 page_numbers=sorted(pages) or first.page_numbers,
                 headings=all_headings or None,
                 labels=sorted(labels) or first.labels,
+                image_data=merged_image_data or None,
+                picture_captions=merged_captions,
             )
         )
 

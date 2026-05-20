@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 from pydantic_ai.models import Model
 
-from haiku.rag.agents.research.models import Citation
+from haiku.rag.store.models.citation import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.skills import run_skill

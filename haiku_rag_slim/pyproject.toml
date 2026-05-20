@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Minimal dependencies"
-version = "0.47.0"
+version = "0.48.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -54,7 +54,12 @@ zeroentropy = ["zeroentropy>=0.1.0a11"]
 jina = ["transformers>=4.40.0", "torch>=2.0.0"]
 cross-encoder = ["sentence-transformers>=3.0.0"]
 # TUI (chat and inspect commands)
-tui = ["textual>=8.2.4", "textual-image>=0.8.5"]
+tui = [
+    "textual>=8.2.4",
+    "textual-image>=0.8.5",
+    "tree-sitter>=0.25.2",
+    "tree-sitter-json>=0.24.8",
+]
 # Model providers (delegated to pydantic-ai-slim)
 anthropic = ["pydantic-ai-slim[anthropic]"]
 groq = ["pydantic-ai-slim[groq]"]

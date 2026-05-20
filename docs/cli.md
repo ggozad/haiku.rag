@@ -171,21 +171,15 @@ Ask questions about your documents:
 haiku-rag ask "Who is the author of haiku.rag?"
 ```
 
-Ask questions with citations showing source documents:
-```bash
-haiku-rag ask "Who is the author of haiku.rag?" --cite
-```
-
 Filter to specific documents:
 ```bash
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
 ```
 
-The QA agent searches your documents for relevant information and provides a comprehensive answer. When available, citations use the document title; otherwise they fall back to the URI.
+`ask` runs the [rag skill](skills/index.md) and always renders citations under the answer. When available, citations use the document title; otherwise they fall back to the URI.
 
 Flags:
 
-- `--cite`: Include citations showing which documents were used
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
 
 ## Chat
@@ -237,26 +231,6 @@ The inspector provides:
 
 See [Applications](apps.md#inspector) for details.
 
-## Research
-
-Run the multi-step research graph:
-
-```bash
-haiku-rag research "How does haiku.rag organize and query documents?"
-```
-
-Filter to specific documents:
-
-```bash
-haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
-```
-
-Flags:
-
-- `--filter` / `-f`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
-
-Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
-
 ## Analyze
 
 Answer complex analytical questions via code execution:
@@ -271,18 +245,11 @@ Filter to specific documents:
 haiku-rag analyze "What is the total revenue?" --filter "title LIKE '%Financial%'"
 ```
 
-Pre-load specific documents for comparison:
-
-```bash
-haiku-rag analyze "Compare the conclusions" --document "Report A" --document "Report B"
-```
-
 Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to restrict document access
-- `--document` / `-d`: Pre-load a document by title or ID (can repeat)
 
-See [Analysis Agent](agents/analysis.md) for details on capabilities and configuration.
+See [Analysis](agents/analysis.md) for details on capabilities and configuration.
 
 ## Create Skill
 
@@ -523,7 +490,7 @@ This command downloads:
 
 - Docling OCR/conversion models
 - HuggingFace tokenizer (for chunking)
-- Ollama models referenced in your configuration (embeddings, QA, research, rerank)
+- Ollama models referenced in your configuration (embeddings, QA, rerank)
 
 Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
 

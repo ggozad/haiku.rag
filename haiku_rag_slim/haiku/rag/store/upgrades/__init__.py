@@ -87,6 +87,9 @@ from haiku.rag.store.upgrades.v0_40_0 import (
 from haiku.rag.store.upgrades.v0_45_0 import (
     upgrade_extract_picture_bytes as upgrade_0_45_0_extract_picture_bytes,
 )
+from haiku.rag.store.upgrades.v0_48_0 import (
+    upgrade_backfill_heading_hierarchy as upgrade_0_48_0_heading_hierarchy,
+)
 
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
@@ -94,3 +97,4 @@ upgrades.append(upgrade_0_25_0_compress)
 upgrades.append(upgrade_0_38_0_split_pages)
 upgrades.append(upgrade_0_40_0_document_items)
 upgrades.append(upgrade_0_45_0_extract_picture_bytes)
+upgrades.append(upgrade_0_48_0_heading_hierarchy)

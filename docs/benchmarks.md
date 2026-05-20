@@ -61,9 +61,9 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--judge-model PROVIDER:NAME` - Override the LLM judge model. Defaults to `ollama:qwen3.6` so the judge stays stable when the QA / skill model changes.
-- `--target {qa,rag-skill,analysis-skill}` - Choose what to benchmark (default: `qa`). `rag-skill` and `analysis-skill` run the corresponding [skill](skills/index.md) end-to-end against the same datasets and judge as the QA agent.
-- `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`). Only valid with skill targets.
+- `--judge-model PROVIDER:NAME` - Override the LLM judge model. Defaults to `ollama:qwen3.6` so the judge stays stable when the answering model changes.
+- `--target {rag-skill,analysis-skill}` - Choose which [skill](skills/index.md) to benchmark end-to-end against the same datasets and judge (default: `rag-skill`).
+- `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-skill`).
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
@@ -88,7 +88,7 @@ If no config file is specified, the script searches standard locations: `./haiku
 
 ### QA Accuracy
 
-For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. The default judge is `ollama:qwen3.6` — pinned so changes to the QA or skill model don't change the judge underneath. Override per run with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
+For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. The default judge is `ollama:qwen3.6` — pinned so changes to the skill model don't change the judge underneath. Override per run with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
 
 We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 

@@ -1,13 +1,57 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `heading_level` and `tree_depth` on `DocumentItem`, populated by `extract_items` and persisted on `document_items`. 0.48.0 migration backfills existing rows from each doc's docling structure blob.
+- `toc.json` in the analysis sandbox VFS at `/documents/{id}/toc.json`. Nested tree on HTML/markdown sources, flat sibling list on PDFs. Each node carries `{self_ref, level, title, page_numbers, item_range, chunk_ids, children}`. `chunk_ids` aggregates the citable chunks across the section's `item_range`, so the analysis skill can `cite()` a section from one VFS read instead of falling back to a corpus-wide `search()` that risks cross-document hits.
+- `chunk_ids` on every `items.jsonl` row (the citable chunks that contain that item).
+- `picture_refs` on sandbox `search()` result dicts and on `Citation` (subset of `doc_item_refs` starting with `#/pictures/`).
+- `picture_captions: dict[str, str]` on `SearchResult`, populated alongside `image_data` and rendered as a labelled line in `format_for_agent` for picture-bearing chunks.
+- Chat TUI renders picture citations inline via `textual_image.widget.Image` inside the existing `CitationWidget`.
+- CLI citation panel renders `picture_refs` inline via `textual_image.renderable.Image` next to the text preview. `format_citations_rich` is async and takes an optional `HaikuRAG` client; without one, figures fall back to `[Figure: <ref>]` markers.
+- BTree scalar indexes on `document_items.{document_id, position, self_ref}`. The 0.48.0 migration creates them on existing DBs. Per-doc lookups go from full-table scans (~100–300 ms) to point queries (~3–21 ms) on small/medium corpora.
+- Per-doc lazy cache for `items.jsonl` and `toc.json` in the analysis sandbox. First read fetches; subsequent reads of either file in the same `execute_code` session hit a serialized cache. One DB fetch per doc per session.
+- `cite` tool now accepts chunk_ids that resolve via the chunks table, not only chunk_ids from a prior `search()` result. Lets the model cite directly from `items.jsonl` / `toc.json` rows. The hallucination guard (`ModelRetry` on chunk_ids that don't exist in the DB) is preserved.
+- `AppConfig.evaluations` (`EvaluationsConfig`) with an optional `judge: ModelConfig`. Lets the eval CLI pin the LLM-as-judge per-yaml — including a custom `base_url` for any OpenAI-compatible endpoint (vLLM, LM Studio) without env-var routing.
+
+### Removed
+
+- **Multi-agent research workflow.** Removes `agents/research/` (graph, state, deps, models, prompts), `client.research`, the CLI `research` command, the MCP `research_question` tool, `ResearchConfig`, `AppConfig.research`, `PromptsConfig.synthesis`, and the corresponding wiring in `chat/__init__.py` and `client/downloads.py`. The pydantic-graph workflow was a three-node loop whose differentiators vs the rag skill (planner step, structured `ResearchReport`, iteration bound) were either redundant with `qa.max_searches` or sat on pre-cite-tool legacy. Multi-step questions go through `client.ask` (rag skill).
+- `llm()` from the analysis sandbox. Sandbox externals are now `search` and `list_documents` only.
+- `list_documents` top-level tool from the analysis skill (still available as `await list_documents()` inside `execute_code`).
+- `documents=` kwarg on `client.analyze` (and the `--document` flag on `haiku-rag analyze` / MCP `analyze` tool). The pre-loaded `documents` Python variable inside the sandbox is no longer populated. Use `filter=` (SQL WHERE clause) to scope analysis to specific documents.
+- `AnalysisResult.program`. The per-execution programs are still tracked on `AnalysisState.executions` (the analysis skill's `execute_code` tool populates it); consumers that need the executed code should pull it from the skill state instead of the function return value.
+- `--cite` flag on `haiku-rag ask`. Citations always render after the answer now.
+- `system_prompt` kwarg on `client.ask`. No production caller used it; `config.prompts.domain_preamble` already covers the preamble use case.
+- Standalone QA agent (`haiku.rag.agents.qa.*`) and analysis agent module (`haiku.rag.agents.analysis.agent`, `haiku.rag.agents.analysis.prompts`). Also drops `RawAnalysisResult`, `CodeExecution`, `AnalysisDeps`, and the dead `documents=` preload path in `Sandbox`.
+- `prompts.qa` config field.
+- `evaluations optimize` subcommand and GEPA prompt-optimization. Drops `gepa` dep.
+- `--target qa` from `evaluations run`. Default is now `rag-skill`.
+- `--judge-model` flag from `evaluations run`. Set the judge in `config.evaluations.judge` instead.
+- `position` field on `toc.json` nodes (redundant with `item_range[0]`).
+- `position` and `tree_depth` from `items.jsonl` row serialization. Both fields are still persisted on `DocumentItem`; they are no longer surfaced to the sandbox.
+
 ### Changed
 
+- `haiku.rag.agents.analysis` moved to `haiku.rag.sandbox`. Public surface: `from haiku.rag.sandbox import Sandbox, SandboxResult, AnalysisContext, AnalysisResult`.
+- `Citation` and `resolve_citations` moved to `haiku.rag.store.models.citation` (was `haiku.rag.agents.research.models`), peer to the other output domain models.
+- `search.limit` default lowered from `10` to `5`.
+- Search result formatter surfaces picture captions on a labelled line when a chunk's expanded refs include pictures.
+- Picture bytes attached to `search()` results are bounded to the pre-expansion chunk's `doc_item_refs`. Section expansion that sweeps in adjacent picture-bearing items no longer pulls their bytes into the response. Observed ~16× reduction on tool-response payload sizes; eliminates a class of cross-figure contamination in the agent's view.
+- rag-analysis SKILL.md steers structural lookups ("which section X", "list sections of Y", "summarize section Z") to read `/documents/{id}/toc.json` first and cite the matching node's `chunk_ids` directly, instead of calling `search()`. Empirically validated on the ORB multimodal and Wix corpora: locator and orientation questions now cite the correct document instead of falling back to cross-document search hits.
+- CLI citation panel compacted: 300-char text preview (no full chunk dump), `[N] Title (URI) — pp. — §Section` header, dimmed `doc: <id>  chunk: <id>` footer. Green "Citations" label matches the green "Answer:" label.
+- `AnalysisConfig.model` defaults to `None` (was `ollama:gpt-oss/no-thinking/temp=0`). Resolves via `config.analysis.model or config.qa.model`.
+- `client.ask` and `client.analyze` route through the rag and rag-analysis skills internally.
 - Bump `docling>=2.93.0` and `docling-core>=2.75.0`.
 - Bump `pydantic-ai-slim>=1.96.0`. Migrate off deprecated APIs: AG-UI imports use `pydantic_ai.ui.ag_ui`, docs/CLI examples use the explicit `openai-chat:` model prefix, and `Agent(retries=)` is split into `tool_retries=` + `output_retries=`.
 - Bump `pydantic-monty>=0.0.17`. Migrate off deprecated `pydantic_monty.run_repl_async(repl, ...)` to `repl.feed_run_async(...)`.
 - Cap `transformers<5.0.0` in the `mxbai` extra: `mxbai-rerank>=0.1.6` calls `tokenizer.prepare_for_model` which transformers 5 removed.
 - Refresh the rest of the lockfile to latest within current constraints (pydantic, pydantic-ai, rich, ruff, ty, pytest, torch, textual, textual-image, watchfiles, pre-commit, datasets, and transitives).
+
+### Fixed
+
+- Chat TUI's state-edit screen syntax-highlights JSON instead of falling back to plain text. Adds `tree-sitter` + `tree-sitter-json` to the `[tui]` extra.
 
 ## [0.47.0] - 2026-05-14
 

@@ -30,11 +30,8 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
-    from haiku.rag.agents.analysis.models import AnalysisResult
-    from haiku.rag.agents.research.models import (
-        Citation,
-        ResearchReport,
-    )
+    from haiku.rag.sandbox import AnalysisResult
+    from haiku.rag.store.models.citation import Citation
 
 logger = logging.getLogger(__name__)
 
@@ -368,35 +365,20 @@ class HaikuRAG:
     async def ask(
         self,
         question: str,
-        system_prompt: str | None = None,
         filter: str | None = None,
     ) -> "tuple[str, list[Citation]]":
         from haiku.rag.client.agents import ask
 
-        return await ask(self, question, system_prompt, filter)
-
-    async def research(
-        self,
-        question: str,
-        *,
-        filter: str | None = None,
-        max_iterations: int | None = None,
-    ) -> "ResearchReport":
-        from haiku.rag.client.agents import research
-
-        return await research(
-            self, question, filter=filter, max_iterations=max_iterations
-        )
+        return await ask(self, question, filter)
 
     async def analyze(
         self,
         question: str,
-        documents: list[str] | None = None,
         filter: str | None = None,
     ) -> "AnalysisResult":
         from haiku.rag.client.agents import analyze
 
-        return await analyze(self, question, documents, filter)
+        return await analyze(self, question, filter)
 
     async def visualize_chunk(self, chunk: Chunk) -> list:
         from haiku.rag.client.search import visualize_chunk

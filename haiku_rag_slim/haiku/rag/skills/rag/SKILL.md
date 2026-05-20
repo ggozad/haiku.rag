@@ -30,6 +30,8 @@ Retrieve a document by ID, title, or URI. Partial matches work. Use when the use
 ### cite
 Register the chunk IDs that ground your answer. Call this BEFORE writing your final answer, with the `chunk_id` values from search results that support each claim. Every answer that uses search results must be backed by `cite`.
 
+Use chunk_ids exactly as they appear in the search response — copy the full UUID verbatim. Do not abbreviate, paraphrase, or reconstruct chunk_ids from memory; the tool matches them as opaque strings.
+
 ## How to answer questions
 
 1. Call `search` with relevant keywords from the question

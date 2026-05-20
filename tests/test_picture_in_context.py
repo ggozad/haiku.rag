@@ -203,10 +203,12 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_expand_context_repopulates_image_data(temp_db_path):
-    """expand_context rebuilds SearchResult objects via expand_with_items, so
-    it must re-attach picture bytes — otherwise vision flows downstream see
-    empty image_data after expansion."""
+async def test_expand_context_does_not_attach_expansion_added_pictures(temp_db_path):
+    """expand_context preserves picture bytes from the pre-expansion result and
+    does NOT re-fetch bytes for picture self_refs swept in by section
+    expansion. The expansion-added picture ref still rides along in
+    doc_item_refs for cross-referencing, but image_data stays empty so the
+    multimodal payload is bounded by what search originally returned."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
         await rag.document_item_repository.create_items(
             "doc-1",
@@ -247,7 +249,7 @@ async def test_expand_context_repopulates_image_data(temp_db_path):
         assert len(expanded) == 1
         out = expanded[0]
         assert "#/pictures/0" in out.doc_item_refs
-        assert out.image_data == {"#/pictures/0": PICTURE_B64}
+        assert out.image_data is None
 
 
 @dataclass
@@ -761,3 +763,80 @@ async def test_search_tool_returns_plain_string_when_no_pictures():
 
     assert isinstance(result, str)
     assert "rank 1" in result
+
+
+@pytest.mark.asyncio
+async def test_skill_search_tool_uses_skill_model_vision_flag(tmp_path):
+    """The skill-level ``search`` tool gates picture attachment on the model
+    passed to ``create_skill_tools`` (per-skill driving model), not on
+    ``config.qa.model.vision``. Verifies the per-skill plumbing by setting
+    qa.model.vision=False and analysis.model.vision=True simultaneously."""
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.skills._deps import RAGRunDeps
+    from haiku.rag.skills._tools import create_skill_tools
+    from haiku.rag.skills.rag import RAGState
+
+    picture_result = SearchResult(
+        content="A figure",
+        score=1.0,
+        chunk_id="chunk-1",
+        document_id="doc-1",
+        doc_item_refs=["#/pictures/0"],
+        labels=["picture"],
+        image_data={"#/pictures/0": PICTURE_B64},
+    )
+
+    from haiku.rag.config.models import ModelConfig
+
+    config = AppConfig()
+    config.qa.model.vision = False
+    # Explicitly set analysis.model (it defaults to None = inherit from qa).
+    config.analysis.model = ModelConfig(
+        provider="openai", name="vision-model", vision=True
+    )
+
+    async with HaikuRAG(tmp_path / "db.lancedb", create=True) as rag:
+        rag.search = AsyncMock(return_value=[picture_result])  # type: ignore[method-assign]
+        rag.expand_context = AsyncMock(return_value=[picture_result])  # type: ignore[method-assign]
+
+        # rag skill: should NOT attach binaries (qa.model.vision is False)
+        rag_tools = create_skill_tools(
+            tmp_path / "db.lancedb",
+            config,
+            RAGState,
+            ["search"],
+            model=config.qa.model,
+        )
+        deps = RAGRunDeps(state=RAGState(), rag=rag, emit=lambda _e: None)
+        ctx = RunContext(
+            deps=deps,
+            model=TestModel(),
+            usage=RunUsage(),
+            run_id="run-1",
+        )
+        result_rag = await rag_tools["search"](ctx, "anything")
+        assert isinstance(result_rag, str), (
+            "rag skill with qa.model.vision=False must return plain text"
+        )
+
+        # analysis skill: SHOULD attach binaries (analysis.model.vision is True)
+        analysis_tools = create_skill_tools(
+            tmp_path / "db.lancedb",
+            config,
+            RAGState,  # state shape doesn't matter for this assertion
+            ["search"],
+            model=config.analysis.model or config.qa.model,
+        )
+        deps2 = RAGRunDeps(state=RAGState(), rag=rag, emit=lambda _e: None)
+        ctx2 = RunContext(
+            deps=deps2,
+            model=TestModel(),
+            usage=RunUsage(),
+            run_id="run-2",
+        )
+        result_analysis = await analysis_tools["search"](ctx2, "anything")
+        assert isinstance(result_analysis, ToolReturn), (
+            "analysis skill with analysis.model.vision=True must wrap binaries"
+        )
+        assert result_analysis.content is not None
+        assert any(isinstance(p, BinaryContent) for p in result_analysis.content)

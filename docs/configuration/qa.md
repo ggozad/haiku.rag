@@ -1,0 +1,58 @@
+# Search and Question Answering
+
+## Search Settings
+
+Configure search behavior and context expansion:
+
+```yaml
+search:
+  limit: 10                    # Default number of results to return
+  max_context_chars: 10000     # Maximum characters in expanded context
+```
+
+- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and QA. Default: 10
+- **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
+
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+
+!!! note "Reranking behavior"
+    When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.
+
+## Question Answering Configuration
+
+Configure the rag skill (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
+
+```yaml
+qa:
+  model:
+    provider: ollama
+    name: gpt-oss
+    enable_thinking: true
+    temperature: 0.3          # Default: 0.3
+    vision: false             # Set true for vision-capable models
+  max_searches: 3       # Maximum search tool calls per question
+```
+
+- **model**: LLM configuration (see [Providers](providers.md#model-settings))
+- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures--embedder--qa-model-how-the-pieces-compose) for the full matrix.
+- **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
+
+## Analysis Configuration
+
+Configure the analysis skill:
+
+```yaml
+analysis:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.0        # Default: 0.0 (deterministic for code generation)
+  code_timeout: 60.0      # Max seconds for code execution
+  max_output_chars: 50000 # Truncate output after this many chars
+```
+
+- **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
+- **code_timeout**: Maximum seconds for each code execution (default: 60)
+- **max_output_chars**: Truncate code output after this many characters (default: 50000)
+
+See [Analysis](../agents/analysis.md) for usage details.

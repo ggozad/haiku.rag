@@ -52,10 +52,6 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
   - `cite` (optional): Include source citations (default: false)
   - `deep` (optional): Use multi-agent deep QA for complex questions (default: false)
 
-- **`research_question`** - Run multi-agent research on complex topics
-  - `question` (required): The research question
-  - Returns a structured research report with findings, conclusions, and sources
-
 - **`analyze`** - Answer complex analytical questions via code execution
   - `question` (required): The question to answer
   - `filter` (optional): SQL WHERE clause to restrict document access

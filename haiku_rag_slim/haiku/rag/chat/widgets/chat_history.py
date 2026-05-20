@@ -1,12 +1,15 @@
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
+from PIL import Image as PILImage
 from textual.containers import Horizontal, VerticalScroll
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import Collapsible, LoadingIndicator, Markdown, Static
 from textual.widgets.markdown import MarkdownStream
+from textual_image.widget import Image as TextualImage
 
-from haiku.rag.agents.research.models import Citation
+from haiku.rag.store.models.citation import Citation
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -119,7 +122,12 @@ class CitationWidget(Collapsible):
             super().__init__()
             self.widget = widget
 
-    def __init__(self, citation: Citation, **kwargs) -> None:
+    def __init__(
+        self,
+        citation: Citation,
+        picture_bytes: list[bytes] | None = None,
+        **kwargs,
+    ) -> None:
         title = f"[{citation.index}] {citation.document_title or citation.document_uri}"
         if citation.page_numbers:
             pages = ", ".join(map(str, citation.page_numbers[:3]))
@@ -131,7 +139,13 @@ class CitationWidget(Collapsible):
         if len(content) > 500:
             content = content[:500] + "..."
 
-        children: list[Markdown | Static] = [Markdown(content)]
+        children: list[Any] = [Markdown(content)]
+        for blob in picture_bytes or []:
+            try:
+                pil = PILImage.open(BytesIO(blob))
+            except Exception:
+                continue
+            children.append(TextualImage(pil, classes="citation-image"))
         if citation.headings:
             headings = " > ".join(citation.headings[:3])
             children.append(Static(f"Section: {headings}", classes="citation-metadata"))
@@ -333,6 +347,14 @@ class ChatHistory(VerticalScroll):
         text-style: italic;
     }
 
+    CitationWidget .citation-image {
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: 30;
+        margin: 1 0;
+    }
+
     /* Program */
     ProgramWidget {
         margin: 0 0 0 2;
@@ -414,13 +436,26 @@ class ChatHistory(VerticalScroll):
             widget.mark_completed()
             widget.add_class("complete")
 
-    async def add_citations(self, citations: list[Citation]) -> None:
-        """Add citations inline after a response."""
+    async def add_citations(
+        self,
+        citations: list[Citation],
+        picture_bytes: dict[str, list[bytes]] | None = None,
+    ) -> None:
+        """Add citations inline after a response.
+
+        ``picture_bytes`` maps citation ``chunk_id`` → list of raw PNG bytes,
+        one per entry in the citation's ``picture_refs``. Pre-fetched by the
+        caller (typically the chat app's post-response hook) so widget
+        construction stays synchronous.
+        """
         if not citations:
             return
         await self.mount(SourcesHeader(len(citations)))
+        picture_bytes = picture_bytes or {}
         for citation in citations:
-            widget = CitationWidget(citation)
+            widget = CitationWidget(
+                citation, picture_bytes=picture_bytes.get(citation.chunk_id)
+            )
             await self.mount(widget)
         self.scroll_end(animate=False)
 

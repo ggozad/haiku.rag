@@ -7,7 +7,7 @@ haiku.rag supports multiple AI providers for embeddings, question answering, and
 
 ## Model Settings
 
-Configure model behavior for `qa` and `research` workflows. These settings apply to any provider that supports them.
+Configure model behavior for the `qa` and `analysis` skills. These settings apply to any provider that supports them.
 
 ### Basic Settings
 
@@ -22,7 +22,7 @@ qa:
 
 **Available options:**
 
-- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA, research, and title generation; 0.0 for analysis and picture description.
+- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA and title generation; 0.0 for analysis and picture description.
   - Lower (0.0-0.3): Deterministic, focused responses
   - Medium (0.4-0.7): Balanced
   - Higher (0.8-1.0+): Creative, varied responses
@@ -39,10 +39,6 @@ The `enable_thinking` setting controls whether models use explicit reasoning ste
 qa:
   model:
     enable_thinking: true   # Better grounded answers
-
-research:
-  model:
-    enable_thinking: true   # Deeper reasoning
 ```
 
 **Values:**
@@ -64,7 +60,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
 **When to use:**
-- Enable for QA, research, complex reasoning, and mathematical problems
+- Enable for QA, complex reasoning, and mathematical problems
 - Disable for speed-critical applications, title generation, and simple tasks
 
 ### Raw Provider Pass-through

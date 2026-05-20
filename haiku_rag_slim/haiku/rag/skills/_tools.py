@@ -2,14 +2,14 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.messages import ToolReturn
 
-from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import AppConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.citation import Citation
 from haiku.rag.tools.search import build_binary_parts_from_results
 
 
@@ -155,12 +155,18 @@ def create_skill_tools(
     config: AppConfig,
     state_type: type[BaseModel],
     tool_names: list[str],
+    model: ModelConfig,
 ) -> dict[str, Any]:
     """Create tool closures for a skill.
 
     Returns a dict mapping tool name to async callable.
     Each tool extracts state from RunContext, calls the shared implementation,
-    and updates state.
+    and updates state. ``model`` is the driving model for the skill (e.g.
+    ``config.qa.model`` for the RAG skill, or
+    ``config.analysis.model or config.qa.model`` for the analysis skill,
+    which defaults to ``None`` and inherits QA's model when unconfigured);
+    its ``vision`` flag gates picture-bytes attachment on the ``search``
+    tool.
     """
     tools: dict[str, Any] = {}
 
@@ -173,10 +179,9 @@ def create_skill_tools(
             """Search the knowledge base using hybrid search (vector + full-text).
 
             Returns ranked results with content and metadata. When picture
-            content is in the result set and the configured QA model is
-            vision-capable (``qa.model.vision = true``), picture bytes are
-            attached as ``BinaryContent`` parts so the model sees figures
-            alongside text.
+            content is in the result set and the driving skill model is
+            vision-capable, picture bytes are attached as ``BinaryContent``
+            parts so the model sees figures alongside text.
 
             Args:
                 query: The search query.
@@ -199,7 +204,7 @@ def create_skill_tools(
             if state:
                 state.searches[query] = results
 
-            if not config.qa.model.vision:
+            if not model.vision:
                 return formatted
 
             binary_parts = build_binary_parts_from_results(results)
@@ -242,9 +247,10 @@ def create_skill_tools(
         async def execute_code(ctx: RunContext[AnalysisRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
 
-            The code has access to search(), list_documents(), llm() functions
-            and a virtual filesystem at /documents/ with document content and
-            structure (metadata.json, content.txt, items.jsonl per document).
+            The code has access to search() and list_documents() functions
+            and a virtual filesystem at /documents/ with document content
+            and structure (metadata.json, content.txt, items.jsonl, toc.json
+            per document).
 
             Use print() to output results. Variables persist between calls
             within the same skill invocation.
@@ -289,26 +295,65 @@ def create_skill_tools(
         async def cite(ctx: RunContext[RAGRunDeps], chunk_ids: list[str]) -> str:
             """Register chunk IDs as citations for your answer.
 
-            Call this after searching, with the chunk_id values from search
-            results that support your answer.
+            Accepts chunk_ids from search results AND from direct file reads
+            (items.jsonl, toc.json). Verbatim copies only — chunk_ids that
+            don't exist in the database trigger a retry.
 
             Args:
-                chunk_ids: List of chunk_id values from search results.
+                chunk_ids: List of chunk_id values from search results or VFS reads.
             """
-            from haiku.rag.agents.research.models import resolve_citations
+            from haiku.rag.store.models.chunk import SearchResult
+            from haiku.rag.store.models.citation import resolve_citations
 
             state = _get_state(ctx, state_type)
             if not state:
                 return "No state available."
 
-            all_results = []
+            if not chunk_ids:
+                return "Registered 0 citations (empty chunk_ids)."
+
+            all_results: list[SearchResult] = []
             for results_list in state.searches.values():
                 all_results.extend(results_list)
 
             citations = resolve_citations(chunk_ids, all_results)
+            resolved_ids = {c.chunk_id for c in citations}
+            missing = [
+                cid.strip("[]")
+                for cid in chunk_ids
+                if cid.strip("[]") not in resolved_ids
+            ]
+
+            if missing:
+                rag = _require_rag(ctx)
+                synthetic: list[SearchResult] = []
+                doc_cache: dict[str, Any] = {}
+                for cid in missing:
+                    chunk = await rag.get_chunk_by_id(cid)
+                    if chunk is None or not chunk.document_id:
+                        continue
+                    did = chunk.document_id
+                    if did in doc_cache:
+                        doc = doc_cache[did]
+                    else:
+                        doc = await rag.get_document_by_id(did)
+                        doc_cache[did] = doc
+                    chunk.document_uri = doc.uri if doc else None
+                    chunk.document_title = doc.title if doc else None
+                    synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
+                if synthetic:
+                    citations.extend(resolve_citations(missing, synthetic))
+
             if citations:
                 _register_citations(state, citations)
-            return f"Registered {len(citations)} citation(s)."
+                return f"Registered {len(citations)} citation(s)."
+
+            raise ModelRetry(
+                f"None of the supplied chunk_ids {list(chunk_ids)} could be "
+                "resolved. Copy chunk_ids verbatim from `search` results or "
+                "from the `chunk_ids` field on items.jsonl / toc.json rows — "
+                "never reconstruct, abbreviate, or paraphrase them."
+            )
 
         tools["cite"] = cite
 

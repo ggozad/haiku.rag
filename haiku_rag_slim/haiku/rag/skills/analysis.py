@@ -4,10 +4,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from haiku.rag.agents.research.models import Citation
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills._tools import CodeExecutionEntry
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.citation import Citation
 from haiku.skills.models import Skill, SkillMetadata, SkillSource, StateMetadata
 from haiku.skills.parser import parse_skill_md
 
@@ -77,7 +77,8 @@ def create_skill(
         db_path,
         config,
         AnalysisState,
-        ["search", "list_documents", "execute_code", "cite"],
+        ["search", "execute_code", "cite"],
+        model=config.analysis.model or config.qa.model,
     )
     extras = create_skill_extras(db_path, config)
 

@@ -17,7 +17,6 @@ from haiku.rag.config.models import (
     ProvidersConfig,
     QAConfig,
     RerankingConfig,
-    ResearchConfig,
     S3MonitorEntry,
     StorageConfig,
 )
@@ -37,7 +36,6 @@ __all__ = [
     "ProvidersConfig",
     "QAConfig",
     "RerankingConfig",
-    "ResearchConfig",
     "S3MonitorEntry",
     "StorageConfig",
     "find_config_file",
