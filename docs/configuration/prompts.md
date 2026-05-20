@@ -24,7 +24,7 @@ The `domain_preamble` field provides **domain context** prepended to the rag and
 - Clarify domain-specific terminology
 - Provide context that helps the model interpret ambiguous queries
 
-**Important:** `domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Behavioral guidance (tone, response style, formatting rules) lives in the skill's SKILL.md — fork the skill via `haiku-rag create-skill` to customize behavior.
+**Important:** `domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Behavioral guidance (tone, response style, formatting rules) lives in the skill's SKILL.md. Fork the skill via `haiku-rag create-skill` to customize behavior.
 
 **Example:**
 

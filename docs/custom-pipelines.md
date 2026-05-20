@@ -1,6 +1,22 @@
 # Custom Processing Pipelines
 
-haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding—for example, to preprocess content, use external services, or implement custom chunking logic.
+haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding (for example, to preprocess content, use external services, or implement custom chunking logic).
+
+## When to Use Custom Pipelines
+
+Use the primitives when you need to:
+
+- Preprocess or clean content before chunking
+- Filter or modify chunks before embedding
+- Use external embedding services
+- Implement custom chunking strategies
+- Debug or inspect intermediate processing steps
+
+For standard use cases, prefer the convenience methods:
+
+- `create_document()` - Create from text content
+- `create_document_from_source()` - Create from file or URL
+- `import_document()` - Store pre-processed documents with custom chunks
 
 ## Processing Primitives
 
@@ -120,7 +136,7 @@ assert embedded_chunks[0].embedding is not None
 
 ## Contextualize (for custom embedders)
 
-`contextualize()` is a lower-level utility that prepares chunk content for embedding by prepending section headings. You only need this when implementing custom embedding logic—`embed_chunks()` already calls it internally.
+`contextualize()` is a lower-level utility that prepares chunk content for embedding by prepending section headings. You only need this when implementing custom embedding logic. `embed_chunks()` already calls it internally.
 
 ```python
 from haiku.rag.embeddings import contextualize
@@ -233,19 +249,3 @@ async with HaikuRAG("database.lancedb", create=True) as client:
         chunks=embedded_chunks,
     )
 ```
-
-## When to Use Custom Pipelines
-
-Use the primitives when you need to:
-
-- Preprocess or clean content before chunking
-- Filter or modify chunks before embedding
-- Use external embedding services
-- Implement custom chunking strategies
-- Debug or inspect intermediate processing steps
-
-For standard use cases, prefer the convenience methods:
-
-- `create_document()` - Create from text content
-- `create_document_from_source()` - Create from file or URL
-- `import_document()` - Store pre-processed documents with custom chunks

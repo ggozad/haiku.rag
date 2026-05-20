@@ -53,6 +53,10 @@
 
 - Chat TUI's state-edit screen syntax-highlights JSON instead of falling back to plain text. Adds `tree-sitter` + `tree-sitter-json` to the `[tui]` extra.
 
+### Documentation
+
+- Rework documentation
+
 ## [0.47.0] - 2026-05-14
 
 ### Added

@@ -18,6 +18,34 @@ storage:
 !!! warning "Vacuum Retention Threshold"
     The `vacuum_retention_seconds` value should be larger than the typical time it takes to process and write a document. If a concurrent operation is in progress while vacuum runs, setting this value too low can cause race conditions where vacuum removes table versions that an in-flight operation still needs. The default of 86400 seconds (1 day) is conservative and safe for most use cases.
 
+## Database Creation
+
+Databases must be explicitly created before use:
+
+**CLI:**
+```bash
+# Create in default location (see Configuration File Locations below)
+haiku-rag init
+
+# Create at custom path
+haiku-rag init --db /path/to/database.lancedb
+```
+
+**Python:**
+```python
+# Create at custom path
+async with HaikuRAG("/path/to/database.lancedb", create=True) as client:
+    ...
+
+# Create in default location
+async with HaikuRAG(create=True) as client:
+    ...
+```
+
+The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
+
+Operations on non-existent databases raise `FileNotFoundError`. This prevents accidental database creation from typos or misconfigured paths.
+
 ## Remote Storage
 
 For remote storage, use the `lancedb` settings with various backends:
@@ -70,13 +98,13 @@ lancedb:
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
 
-The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend — see the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
+The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
 ### Deployment Pattern: One Writer, Many Readers
 
-LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state — this is a LanceDB property, not something `haiku.rag` enforces.
+LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state. This is a LanceDB property, not something `haiku.rag` enforces.
 
 The recommended layout for production is "different buckets, same account, separate IAM roles per process":
 
@@ -84,34 +112,6 @@ The recommended layout for production is "different buckets, same account, separ
 - **Consumer processes** (1..N) — IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag serve --read-only --mcp`, the chat TUI, etc. They never see the documents bucket.
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
-
-## Database Creation
-
-Databases must be explicitly created before use:
-
-**CLI:**
-```bash
-# Create in default location (see Configuration File Locations below)
-haiku-rag init
-
-# Create at custom path
-haiku-rag init --db /path/to/database.lancedb
-```
-
-**Python:**
-```python
-# Create at custom path
-async with HaikuRAG("/path/to/database.lancedb", create=True) as client:
-    ...
-
-# Create in default location
-async with HaikuRAG(create=True) as client:
-    ...
-```
-
-The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
-
-Operations on non-existent databases raise `FileNotFoundError`. This prevents accidental database creation from typos or misconfigured paths.
 
 ## Vector Indexing
 

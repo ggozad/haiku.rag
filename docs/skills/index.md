@@ -1,25 +1,19 @@
 # Skills
 
-haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggozad/haiku.skills) skills. Skills are self-contained units that bundle tools, instructions, and state — they can be composed into any pydantic-ai agent via `SkillToolset`.
+Skills put haiku.rag in front of a model. A skill bundles tools, an instruction prompt, and managed state into a unit that drops into any Pydantic AI agent via `SkillToolset`. haiku.rag ships two skills and supports custom skills.
 
-## Available Skills
+Built on [haiku.skills](https://github.com/ggozad/haiku.skills).
 
-| Skill | Description |
-|-------|-------------|
-| [`rag`](rag.md) | Search, retrieve, and answer questions from the knowledge base |
-| [`rag-analysis`](analysis.md) | Computational analysis via code execution |
+## Available skills
 
-## Discovery
+| Skill | What it does | Reach for it when |
+|-------|--------------|-------------------|
+| [`rag`](rag.md) | Search, retrieve, and cite content from a knowledge base. | The model needs to find and quote evidence from documents. |
+| [`rag-analysis`](analysis.md) | Same as `rag`, plus a sandboxed Python interpreter mounting every document as a virtual filesystem. | The question requires computation, aggregation, structural traversal, or section-scoped reading. |
 
-Skills are registered as Python entrypoints under `haiku.skills`. They are discovered automatically by `haiku.skills`:
+To ship your own skill (bundled with its own database), see [Custom skills](custom.md).
 
-```bash
-haiku-skills list --use-entrypoints
-# rag — Search, retrieve and analyze documents using RAG.
-# rag-analysis — Analyze documents using code execution in a sandboxed interpreter.
-```
-
-## Usage
+## Your first agent
 
 ```python
 from haiku.rag.skills.rag import create_skill
@@ -27,8 +21,8 @@ from haiku.skills.agent import SkillToolset
 from haiku.skills.prompts import build_system_prompt
 from pydantic_ai import Agent
 
-skill = create_skill(db_path=db_path, config=config)
-toolset = SkillToolset(skills=[skill])
+rag = create_skill(db_path="my.lancedb")
+toolset = SkillToolset(skills=[rag])
 
 agent = Agent(
     "openai-chat:gpt-4o",
@@ -36,45 +30,37 @@ agent = Agent(
     toolsets=[toolset],
 )
 
-result = await agent.run("What documents do we have?")
+result = await agent.run("What does the knowledge base say about X?")
+print(result.output)
 ```
 
-## Generating Custom Skills
+The skill searches, cites, and answers. You supply the model and the question.
 
-Use `create-skill` to generate a standalone skill package with an embedded database:
-
-```bash
-haiku-rag create-skill \
-  --name recipes \
-  --db /path/to/recipes.lancedb \
-  --tools search,cite \
-  --description "Recipe knowledge base" \
-  --preamble "You are a recipe expert."
-```
-
-This generates a pip-installable package (`recipes-skill/`) that bundles the database and registers as a `haiku.skills` entry point. After installing (`uv pip install -e ./recipes-skill`), the skill is automatically discovered:
-
-```bash
-haiku-skills list --use-entrypoints
-# recipes — Recipe knowledge base
-
-haiku-skills chat --use-entrypoints --skill recipes
-```
-
-Since each generated skill is self-contained with its own database and instructions, you can generate multiple skills for different domains and run them together. The agent sees each skill's description and routes questions to the appropriate knowledge base automatically.
-
-Generated skills also expose `visualize_chunk()` for rendering visual grounding. Use chunk IDs from citations or search results in state:
+To run analysis against the same database, swap in the `rag-analysis` skill or attach both:
 
 ```python
-from my_skill import visualize_chunk
+from haiku.rag.skills.rag import create_skill as create_rag_skill
+from haiku.rag.skills.analysis import create_skill as create_analysis_skill
 
-images = await visualize_chunk(chunk_id)
-# Returns list of PIL Images with highlighted bounding boxes
+rag = create_rag_skill(db_path="my.lancedb")
+analysis = create_analysis_skill(db_path="my.lancedb")
+toolset = SkillToolset(skills=[rag, analysis])
 ```
 
-See [CLI: Create Skill](../cli.md#create-skill) for all options.
+The agent reads each skill's description and routes questions itself. See the individual skill pages for the tool surface, state model, and worked examples.
 
-## Database Path Resolution
+## State
+
+Each skill manages its own state under a dedicated namespace. State is synced via the AG-UI protocol when using `AGUIAdapter`.
+
+```python
+rag_state = toolset.get_namespace("rag")
+analysis_state = toolset.get_namespace("analysis")
+```
+
+Both state models track citations, the current document filter, and per-turn searches. Analysis state also carries the sandbox execution log. See [RAG skill: state](rag.md#state) and [Analysis skill: state](analysis.md#state).
+
+## Database path resolution
 
 Both skills resolve the database path in the same order:
 
@@ -82,20 +68,9 @@ Both skills resolve the database path in the same order:
 2. `HAIKU_RAG_DB` environment variable
 3. Config default (`config.storage.data_dir / "haiku.rag.lancedb"`)
 
-## State Management
+## AG-UI streaming for web apps
 
-Each skill manages its own state under a dedicated namespace. State is automatically synced via the AG-UI protocol when using `AGUIAdapter`.
-
-```python
-rag_state = toolset.get_namespace("rag")
-analysis_state = toolset.get_namespace("analysis")
-```
-
-See the individual skill pages for state model details.
-
-## AG-UI Streaming
-
-For web applications, use pydantic-ai's `AGUIAdapter` to stream tool calls, text, and state deltas:
+For browser apps, use pydantic-ai's `AGUIAdapter` to stream tool calls, text, and state deltas:
 
 ```python
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -105,4 +80,26 @@ event_stream = adapter.run_stream()
 sse_event_stream = adapter.encode_stream(event_stream)
 ```
 
-See the [Web Application](../apps.md#web-application) for a complete implementation.
+See the [Web application](../apps.md) reference implementation.
+
+## Exposing via MCP
+
+To use a skill from Claude Desktop or another MCP-aware client, run the MCP server:
+
+```bash
+haiku-rag serve --mcp --stdio
+```
+
+The server exposes the skill tools (search, ask, analyze) over MCP. See [MCP](../mcp.md).
+
+## Discovery
+
+Skills are registered as Python entry points under `haiku.skills`. They are discovered automatically:
+
+```bash
+haiku-skills list --use-entrypoints
+# rag — Search, retrieve and analyze documents using RAG.
+# rag-analysis — Analyze documents using code execution in a sandboxed interpreter.
+```
+
+This is what makes custom skills installable as plain pip packages. See [Custom skills](custom.md).

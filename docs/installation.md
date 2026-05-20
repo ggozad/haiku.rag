@@ -15,8 +15,6 @@ The full package includes **all features and extras**:
 - **All embedding providers** - VoyageAI
 - **All rerankers** - MixedBread AI, Cohere, Zero Entropy
 
-This is the easiest way to get started with all features enabled.
-
 ### Slim Package (Minimal Dependencies)
 
 ```bash

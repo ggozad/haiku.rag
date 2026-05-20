@@ -151,7 +151,7 @@ monitor:
         allow_http: "true"
 ```
 
-Then start the server with `--monitor` — the same flag enables both local-directory and S3 watchers:
+Then start the server with `--monitor` (the same flag enables both local-directory and S3 watchers):
 
 ```bash
 haiku-rag serve --monitor
@@ -161,12 +161,12 @@ Each entry in `monitor.s3` runs as its own polling task. On every sweep the watc
 
 ### Credentials
 
-`storage_options` follows the same convention as `lancedb.storage_options` — the dict is passed straight to obstore (the same Rust `object_store` library LanceDB uses internally), so any keys you've configured there work here too. When `storage_options` is omitted, the watcher falls back to the AWS default credential chain (environment variables, IAM instance role, AWS profile).
+`storage_options` follows the same convention as `lancedb.storage_options`. The dict is passed straight to obstore (the same Rust `object_store` library LanceDB uses internally), so any keys you've configured there work here too. When `storage_options` is omitted, the watcher falls back to the AWS default credential chain (environment variables, IAM instance role, AWS profile).
 
 ### Orphan deletion scope
 
 `delete_orphans: true` is per-entry: a watcher only removes documents whose URI starts with that entry's `s3://bucket/prefix/`. Documents from other buckets, prefixes, or local-file sources are never touched.
 
-### One-off ingestion
+## One-off ingestion
 
-`s3://` URIs are also a first-class source for `haiku-rag add-src` and the MCP `add_document_from_url` tool — see [CLI → Add Documents](cli.md#add-documents).
+`s3://` URIs are also a first-class source for `haiku-rag add-src` and the MCP `add_document_from_url` tool. See [CLI → Add Documents](cli.md#add-documents).

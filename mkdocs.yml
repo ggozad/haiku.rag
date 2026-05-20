@@ -55,31 +55,36 @@ plugins:
   # Material for MkDocs
   search:
 nav:
-  - haiku.rag:
+  - Get started:
       - index.md
-      - Getting started: tutorial.md
+      - Quickstart: tutorial.md
       - Installation: installation.md
-      - Configuration:
-          - configuration/index.md
-          - Providers: configuration/providers.md
-          - Search and Question Answering: configuration/qa.md
-          - Document Processing: configuration/processing.md
-          - Storage: configuration/storage.md
-          - Prompts: configuration/prompts.md
+  - Use it:
       - CLI: cli.md
-      - Python: python.md
-      - Custom Pipelines: custom-pipelines.md
+      - Chat: chat.md
+  - Skills:
+      - skills/index.md
+      - RAG skill: skills/rag.md
+      - Analysis skill: skills/analysis.md
+      - Custom skills: skills/custom.md
+  - Configure:
+      - configuration/index.md
+      - Providers: configuration/providers.md
+      - Search and question answering: configuration/qa.md
+      - Document processing: configuration/processing.md
+      - Storage: configuration/storage.md
+      - Prompts: configuration/prompts.md
       - Tuning: tuning.md
-      - Analysis: agents/analysis.md
-      - Skills:
-          - skills/index.md
-          - RAG: skills/rag.md
-          - Analysis: skills/analysis.md
-      - Toolsets: tools.md
-      - Applications: apps.md
+  - Production:
       - Server: server.md
-      - Remote processing: remote-processing.md
       - MCP: mcp.md
+      - Remote processing: remote-processing.md
+  - Develop:
+      - Python: python.md
+      - Custom pipelines: custom-pipelines.md
+      - Toolsets: tools.md
+      - Web app: apps.md
+  - Reference:
       - Benchmarks: benchmarks.md
       - Development: development.md
       - Changelog: changelog.md
@@ -94,7 +99,7 @@ markdown_extensions:
       use_pygments: true
   - pymdownx.inlinehilite
   - pymdownx.snippets:
-      base_path: ['.']
+      base_path: ["."]
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
