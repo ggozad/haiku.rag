@@ -6,7 +6,7 @@ from haiku.rag.config.models import AppConfig
 from haiku.skills.models import Skill
 from haiku.skills.parser import parse_skill_md
 {% if "cite" in tool_names %}
-from haiku.rag.agents.research.models import Citation
+from haiku.rag.store.models.citation import Citation
 {% endif %}
 {% if "search" in tool_names %}
 from haiku.rag.store.models.chunk import SearchResult

@@ -158,8 +158,8 @@ async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_chat_history_can_add_citations(temp_db_path: Path):
     """Test that ChatHistory can display inline citations."""
-    from haiku.rag.agents.research.models import Citation
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+    from haiku.rag.store.models.citation import Citation
 
     app, mock_client = _make_app(temp_db_path)
 
@@ -241,8 +241,8 @@ async def test_clear_chat_resets_state(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
     """Test that pressing Enter on a focused citation toggles expand/collapse."""
-    from haiku.rag.agents.research.models import Citation
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+    from haiku.rag.store.models.citation import Citation
 
     app, mock_client = _make_app(temp_db_path)
 
@@ -279,9 +279,9 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
     """Citations in state (flat list[str]) render into the chat history."""
-    from haiku.rag.agents.research.models import Citation
     from haiku.rag.chat.app import RAG_STATE_NAMESPACE
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+    from haiku.rag.store.models.citation import Citation
 
     app, mock_client = _make_app_with_state(temp_db_path)
 

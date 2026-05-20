@@ -5,11 +5,11 @@ from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.messages import ToolReturn
 
-from haiku.rag.agents.research.models import Citation
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.citation import Citation
 from haiku.rag.tools.search import build_binary_parts_from_results
 
 
@@ -302,8 +302,8 @@ def create_skill_tools(
             Args:
                 chunk_ids: List of chunk_id values from search results or VFS reads.
             """
-            from haiku.rag.agents.research.models import resolve_citations
             from haiku.rag.store.models.chunk import SearchResult
+            from haiku.rag.store.models.citation import resolve_citations
 
             state = _get_state(ctx, state_type)
             if not state:

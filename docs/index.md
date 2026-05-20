@@ -11,11 +11,10 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Question answering** — RAG skill with citations (page numbers, section headings)
 - **Vision QA** — Vision-capable models receive figure bytes alongside chunk text via pydantic-ai `BinaryContent` when `qa.model.vision = true`
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
-- **Research workflow** — Multi-agent pydantic-graph: plan, search, evaluate, synthesize
 - **Analysis skill** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
-- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM (multimodal). QA/Research: any model supported by Pydantic AI
+- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM (multimodal). QA: any model supported by Pydantic AI
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
 - **CLI & Python API** — Full functionality from command line or code
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
@@ -67,8 +66,8 @@ haiku-rag chat  # Interactive conversation mode
 - [CLI](cli.md) - Command line interface usage
 - [Python](python.md) - Python API reference
 - [Custom Pipelines](custom-pipelines.md) - Build custom processing workflows
-- [Agents](agents/index.md) - QA, chat, and research agents
-- [Analysis Agent](agents/analysis.md) - Complex analytical tasks via code execution
+- [Skills](skills/index.md) - The RAG and analysis skills the client wraps
+- [Analysis](agents/analysis.md) - Complex analytical tasks via code execution
 - [Applications](apps.md) - Chat TUI, web app, and inspector
 - [Server](server.md) - File monitoring and server mode
 - [MCP](mcp.md) - Model Context Protocol integration

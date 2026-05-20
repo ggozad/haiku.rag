@@ -411,25 +411,6 @@ def analyze(  # pragma: no cover
     )
 
 
-@_cli.command("research", help="Run multi-agent research and output a concise report")
-def research(  # pragma: no cover
-    question: str = typer.Argument(..., help="The research question to investigate"),
-    db: Path | None = typer.Option(
-        None,
-        "--db",
-        help="Path to the LanceDB database file",
-    ),
-    filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
-    ),
-):
-    app = create_app(db)
-    asyncio.run(app.research(question=question, filter=filter))
-
-
 @_cli.command("settings", help="Display current configuration settings")
 def settings():  # pragma: no cover
     config = get_config()

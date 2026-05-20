@@ -101,8 +101,6 @@ async def download_models(
         required_models.add(config.embeddings.model.name)
     if config.qa.model.provider == "ollama":
         required_models.add(config.qa.model.name)
-    if config.research.model.provider == "ollama":
-        required_models.add(config.research.model.name)
     if config.reranking.model and config.reranking.model.provider == "ollama":
         required_models.add(config.reranking.model.name)
     pic_desc = config.processing.conversion_options.picture_description

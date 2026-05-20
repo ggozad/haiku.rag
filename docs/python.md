@@ -434,7 +434,7 @@ answer, citations = await client.ask(
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
-See also: [Agents](agents/index.md) for details on question answering and the multi‑agent research workflow.
+See also: [Skills](skills/index.md) for details on the skills the client wraps.
 
 ## Analysis
 

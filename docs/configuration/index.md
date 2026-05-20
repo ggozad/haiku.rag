@@ -90,15 +90,6 @@ qa:
     temperature: 0.3
   max_searches: 3
 
-research:
-  model:
-    provider: ""  # Empty to use qa settings
-    name: ""
-    enable_thinking: false
-    temperature: 0.3
-  max_iterations: 3
-  max_concurrency: 1
-
 search:
   limit: 10                    # Default number of results to return
   max_context_chars: 10000     # Maximum characters in expanded context
@@ -106,8 +97,7 @@ search:
   vector_refine_factor: 30
 
 prompts:
-  domain_preamble: ""  # Prepended to skill instructions and research prompts
-  synthesis: null      # Custom research synthesis prompt (null = use default)
+  domain_preamble: ""  # Prepended to skill instructions
 
 processing:
   converter: docling-local  # docling-local or docling-serve
@@ -189,7 +179,7 @@ This is useful for:
 For detailed configuration of specific topics, see:
 
 - **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, reranking)
-- **[Search and Question Answering](qa-research.md)** - Search settings, question answering, and research workflows
+- **[Search and Question Answering](qa.md)** - Search settings and question answering
 - **[Document Processing](processing.md)** - Document conversion, chunking, and file monitoring
 - **[Storage](storage.md)** - Database, remote storage, and vector indexing
 - **[Prompts](prompts.md)** - Customize agent prompts for your domain

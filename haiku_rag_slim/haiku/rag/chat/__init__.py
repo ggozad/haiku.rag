@@ -36,7 +36,6 @@ def run_chat(
     if model:
         model_config = parse_model_option(model)
         config.qa.model = model_config
-        config.research.model = model_config
         config.analysis.model = model_config
 
     enabled = skills or ["rag"]

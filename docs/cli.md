@@ -231,26 +231,6 @@ The inspector provides:
 
 See [Applications](apps.md#inspector) for details.
 
-## Research
-
-Run the multi-step research graph:
-
-```bash
-haiku-rag research "How does haiku.rag organize and query documents?"
-```
-
-Filter to specific documents:
-
-```bash
-haiku-rag research "What are the key findings?" --filter "uri LIKE '%paper%'"
-```
-
-Flags:
-
-- `--filter` / `-f`: SQL WHERE clause to filter documents (see [Filtering Search Results](python.md#filtering-search-results))
-
-Research parameters like `max_iterations` and `max_concurrency` are configured in your [configuration file](configuration/index.md) under the `research` section.
-
 ## Analyze
 
 Answer complex analytical questions via code execution:
@@ -510,7 +490,7 @@ This command downloads:
 
 - Docling OCR/conversion models
 - HuggingFace tokenizer (for chunking)
-- Ollama models referenced in your configuration (embeddings, QA, research, rerank)
+- Ollama models referenced in your configuration (embeddings, QA, rerank)
 
 Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
 

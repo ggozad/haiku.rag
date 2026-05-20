@@ -458,9 +458,9 @@ class TestLifespan:
         assert result
 
     async def test_lifespan_clears_citations_and_searches_but_keeps_index(self, rag_db):
-        from haiku.rag.agents.research.models import Citation
         from haiku.rag.skills._deps import RAGRunDeps, make_rag_lifespan
         from haiku.rag.skills.rag import RAGState
+        from haiku.rag.store.models.citation import Citation
 
         config = AppConfig()
         lifespan = make_rag_lifespan(rag_db, config)

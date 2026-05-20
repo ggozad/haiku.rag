@@ -102,19 +102,6 @@ class QAConfig(BaseModel):
     max_searches: int = 5
 
 
-class ResearchConfig(BaseModel):
-    model: ModelConfig = Field(
-        default_factory=lambda: ModelConfig(
-            provider="ollama",
-            name="gpt-oss",
-            enable_thinking=False,
-            temperature=0.3,
-        )
-    )
-    max_iterations: int = 3
-    max_concurrency: int = 1
-
-
 class AnalysisConfig(BaseModel):
     """Driving model + sandbox limits for the analysis skill.
 
@@ -241,7 +228,6 @@ class ProvidersConfig(BaseModel):
 
 class PromptsConfig(BaseModel):
     domain_preamble: str = ""
-    synthesis: str | None = None
     picture_description: str = (
         "Describe this image for a blind user. "
         "State the image type (screenshot, chart, photo, etc.), "
@@ -258,7 +244,6 @@ class AppConfig(BaseModel):
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
-    research: ResearchConfig = Field(default_factory=ResearchConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)

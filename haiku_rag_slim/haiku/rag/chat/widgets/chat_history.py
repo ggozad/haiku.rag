@@ -9,7 +9,7 @@ from textual.widgets import Collapsible, LoadingIndicator, Markdown, Static
 from textual.widgets.markdown import MarkdownStream
 from textual_image.widget import Image as TextualImage
 
-from haiku.rag.agents.research.models import Citation
+from haiku.rag.store.models.citation import Citation
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult

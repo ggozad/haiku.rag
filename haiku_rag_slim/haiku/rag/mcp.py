@@ -3,7 +3,6 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from haiku.rag.agents.research.models import ResearchReport
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.store.models import Document, SearchResult
@@ -201,27 +200,6 @@ def create_mcp_server(
                 return answer
         except Exception as e:
             return f"Error answering question: {e!s}"
-
-    @mcp.tool()
-    async def research_question(
-        question: str,
-    ) -> ResearchReport | None:
-        """Run multi-agent research to investigate a complex question.
-
-        The research process uses multiple agents to plan, search, evaluate, and synthesize
-        information iteratively until confidence threshold is met or max iterations reached.
-
-        Args:
-            question: The research question to investigate.
-
-        Returns:
-            A research report with findings, or None if an error occurred.
-        """
-        try:
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                return await rag.research(question=question)
-        except Exception:
-            return None
 
     @mcp.tool()
     async def analyze(

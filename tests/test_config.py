@@ -200,7 +200,6 @@ def test_generate_default_config_completeness():
     assert config.environment == "production"
     assert config.embeddings.model.provider == "ollama"
     assert config.qa.model.provider == "ollama"
-    assert config.research.model.provider == "ollama"
     assert config.reranking.model is None
 
 

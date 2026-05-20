@@ -1,19 +1,16 @@
 # Prompt Customization
 
-Customize the prompts used by haiku.rag's skills and research workflow to better match your domain and use case.
+Customize the prompts used by haiku.rag's skills to better match your domain and use case.
 
 ## Configuration
 
 ```yaml
 prompts:
-  # Domain context prepended to skill instructions and research prompts
+  # Domain context prepended to skill instructions
   domain_preamble: |
     This knowledge base contains technical documentation for the Helios solar panel
     system, including installation manuals, maintenance procedures, and safety guidelines.
     Questions about "the system" or unqualified specs refer to the Helios panel.
-
-  # Full replacement for research synthesis prompt (optional)
-  synthesis: null
 
   # VLM prompt for image description during conversion (optional)
   picture_description: null  # Uses default prompt
@@ -21,7 +18,7 @@ prompts:
 
 ## Domain Preamble
 
-The `domain_preamble` field provides **domain context** prepended to the rag and rag-analysis skill instructions and to the research planner/search/synthesis prompts. Use this to:
+The `domain_preamble` field provides **domain context** prepended to the rag and rag-analysis skill instructions. Use this to:
 
 - Describe what the knowledge base contains
 - Clarify domain-specific terminology
@@ -37,34 +34,6 @@ prompts:
     This knowledge base contains product documentation, API references,
     and troubleshooting guides for Acme Corp's cloud platform.
     "Deployment" refers to Acme's managed deployment service, not general CI/CD.
-```
-
-## Custom Synthesis Prompt
-
-Replace the research report synthesis prompt by setting `prompts.synthesis`. This controls how the multi-agent research workflow generates its final report.
-
-The prompt should produce a `ResearchReport` with: `title`, `executive_summary`, `main_findings`, `conclusions`, `recommendations`, `limitations`, and `sources_summary`.
-
-**Example:**
-
-```yaml
-prompts:
-  synthesis: |
-    Generate a research report based on the gathered evidence.
-
-    Output format:
-    - title: 5-12 word title
-    - executive_summary: 3-5 sentence overview
-    - main_findings: 4-8 bullet points of key findings
-    - conclusions: 2-4 bullet points
-    - recommendations: 2-5 actionable recommendations
-    - limitations: 1-3 limitations or gaps
-    - sources_summary: Brief description of sources used
-
-    Guidelines:
-    - Base all content strictly on collected evidence
-    - Be specific and objective
-    - Avoid meta-commentary like "This report covers..."
 ```
 
 ## Picture Description Prompt
@@ -99,7 +68,6 @@ from haiku.rag.config.models import PromptsConfig
 config = AppConfig(
     prompts=PromptsConfig(
         domain_preamble="This knowledge base contains Acme Corp product documentation and API references.",
-        synthesis=None,  # Use default synthesis prompt
         picture_description="Describe this image for search indexing.",
     )
 )

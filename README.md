@@ -14,11 +14,10 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Question answering** — RAG skill with citations (page numbers, section headings)
 - **Vision QA** — Vision-capable models receive figure bytes alongside chunk text
 - **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
-- **Research workflow** — Multi-agent pydantic-graph: plan, search, evaluate, synthesize
 - **Analysis skill** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
-- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM (multimodal). QA/Research: any model supported by Pydantic AI
+- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, LM Studio, vLLM (multimodal). QA: any model supported by Pydantic AI
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
 - **CLI & Python API** — Full functionality from command line or code
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
@@ -63,9 +62,6 @@ haiku-rag search "attention mechanism"
 # Ask questions with citations
 haiku-rag ask "What datasets were used for evaluation?" --cite
 
-# Research mode — iterative planning and search
-haiku-rag research "What are the limitations of the approach?"
-
 # Analyze — complex analytical tasks via code execution
 haiku-rag analyze "How many documents mention transformers?"
 
@@ -83,7 +79,7 @@ See [Configuration](https://ggozad.github.io/haiku.rag/configuration/) for custo
 ```python
 from haiku.rag.client import HaikuRAG
 
-async with HaikuRAG("research.lancedb", create=True) as rag:
+async with HaikuRAG("knowledge.lancedb", create=True) as rag:
     # Index documents
     await rag.create_document_from_source("paper.pdf")
     await rag.create_document_from_source("https://arxiv.org/pdf/1706.03762")
@@ -100,7 +96,7 @@ async with HaikuRAG("research.lancedb", create=True) as rag:
         print(f"  [{cite.chunk_id}] p.{cite.page_numbers}: {cite.content[:80]}")
 ```
 
-For research agents and chat, see the [Agents docs](https://ggozad.github.io/haiku.rag/agents/).
+For details on the skills the client wraps, see the [Skills docs](https://ggozad.github.io/haiku.rag/skills/).
 
 ## MCP Server
 
@@ -123,7 +119,7 @@ Add to your Claude Desktop configuration:
 }
 ```
 
-Provides tools for document management, search, QA, and research directly in your AI assistant.
+Provides tools for document management, search, QA, and analysis directly in your AI assistant.
 
 ## Examples
 
@@ -141,8 +137,8 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Agents](https://ggozad.github.io/haiku.rag/agents/) - QA and research agents
-- [Analysis Agent](https://ggozad.github.io/haiku.rag/agents/analysis/) - Complex analytical tasks via code execution
+- [Skills](https://ggozad.github.io/haiku.rag/skills/) - The RAG and analysis skills the client wraps
+- [Analysis](https://ggozad.github.io/haiku.rag/agents/analysis/) - Complex analytical tasks via code execution
 - [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
 - [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring and MCP
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration

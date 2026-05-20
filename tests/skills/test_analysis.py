@@ -335,10 +335,10 @@ class TestAnalysisLifespan:
         assert result
 
     async def test_lifespan_clears_executions_citations_searches(self, rag_db):
-        from haiku.rag.agents.research.models import Citation
         from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
         from haiku.rag.skills._tools import CodeExecutionEntry
         from haiku.rag.skills.analysis import AnalysisState
+        from haiku.rag.store.models.citation import Citation
 
         config = AppConfig()
         lifespan = make_analysis_lifespan(rag_db, config)

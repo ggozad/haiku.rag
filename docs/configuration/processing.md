@@ -289,7 +289,7 @@ processing:
   chunk_size: 256  # Maximum tokens per chunk
 ```
 
-Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa-research.md#search-settings).
+Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa.md#search-settings).
 
 ## File Monitoring
 

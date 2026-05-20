@@ -30,11 +30,8 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
-    from haiku.rag.agents.research.models import (
-        Citation,
-        ResearchReport,
-    )
     from haiku.rag.sandbox import AnalysisResult
+    from haiku.rag.store.models.citation import Citation
 
 logger = logging.getLogger(__name__)
 
@@ -373,19 +370,6 @@ class HaikuRAG:
         from haiku.rag.client.agents import ask
 
         return await ask(self, question, filter)
-
-    async def research(
-        self,
-        question: str,
-        *,
-        filter: str | None = None,
-        max_iterations: int | None = None,
-    ) -> "ResearchReport":
-        from haiku.rag.client.agents import research
-
-        return await research(
-            self, question, filter=filter, max_iterations=max_iterations
-        )
 
     async def analyze(
         self,

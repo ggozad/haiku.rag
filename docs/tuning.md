@@ -20,11 +20,11 @@ Larger embedding models produce better representations at the cost of slower ind
 
 ### Reranking
 
-When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision — on the Wix benchmark, adding `mxbai-rerank-base-v2` raised MAP from 0.34 to 0.39 on HTML content. See [Search Settings](configuration/qa-research.md#search-settings) for how reranking integrates with search.
+When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision — on the Wix benchmark, adding `mxbai-rerank-base-v2` raised MAP from 0.34 to 0.39 on HTML content. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
 
 ### Search Settings
 
-`limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa-research.md#search-settings).
+`limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa.md#search-settings).
 
 Context expansion is automatic and section-aware — search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (footnotes, page headers). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
 
@@ -32,7 +32,7 @@ Context expansion is automatic and section-aware — search results are expanded
 
 Model and temperature selection affect answer quality directly — see [Providers](configuration/providers.md#model-settings) for options.
 
-`domain_preamble` prepends domain context to all agent prompts — including the main agent, skill subagents, and internal agents (QA, research). Use it to describe what the knowledge base contains and clarify domain-specific terminology. For full prompt replacement, set `prompts.qa` directly. See [Prompt Customization](configuration/prompts.md).
+`domain_preamble` prepends domain context to the rag and rag-analysis skill instructions. Use it to describe what the knowledge base contains and clarify domain-specific terminology. See [Prompt Customization](configuration/prompts.md).
 
 ## What Requires a Rebuild
 

@@ -524,7 +524,7 @@ def test_format_citations_empty():
 
 
 def test_format_citations_with_citation():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations
 
     citation = Citation(
@@ -547,7 +547,7 @@ def test_format_citations_with_citation():
 
 
 def test_format_citations_multiple_pages():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations
 
     citation = Citation(
@@ -563,7 +563,7 @@ def test_format_citations_multiple_pages():
 
 
 def test_format_citations_no_title():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations
 
     citation = Citation(
@@ -578,7 +578,7 @@ def test_format_citations_no_title():
 
 
 def test_format_citations_with_index():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations
 
     citation = Citation(
@@ -594,7 +594,7 @@ def test_format_citations_with_index():
 
 
 def test_format_citations_sequential_indices():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations
 
     citations = [
@@ -622,7 +622,7 @@ def test_format_citations_sequential_indices():
 
 
 def test_format_citations_picture_refs_render_as_markers():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations
 
     citation = Citation(
@@ -657,7 +657,7 @@ async def test_format_citations_rich_empty():
 
 
 async def test_format_citations_rich_header_and_footer():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations_rich
 
     citation = Citation(
@@ -679,7 +679,7 @@ async def test_format_citations_rich_header_and_footer():
 
 
 async def test_format_citations_rich_truncates_long_content():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
 
     citation = Citation(
@@ -694,7 +694,7 @@ async def test_format_citations_rich_truncates_long_content():
 
 
 async def test_format_citations_rich_picture_marker_without_client():
-    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations_rich
 
     citation = Citation(

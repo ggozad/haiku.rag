@@ -11,9 +11,9 @@ from packaging.version import Version, parse
 if TYPE_CHECKING:
     from rich.console import RenderableType
 
-    from haiku.rag.agents.research.models import Citation
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config.models import AppConfig, ModelConfig
+    from haiku.rag.store.models.citation import Citation
 
 
 def parse_model_option(value: str) -> "ModelConfig":

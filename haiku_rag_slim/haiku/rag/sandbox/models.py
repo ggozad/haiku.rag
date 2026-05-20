@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from haiku.rag.agents.research.models import Citation
+from haiku.rag.store.models.citation import Citation
 
 
 class AnalysisResult(BaseModel):

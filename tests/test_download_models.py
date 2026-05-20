@@ -76,7 +76,7 @@ async def test_download_models_ollama_pulls_models(mock_to_thread):
         async for progress in download_models(Config):
             events.append(progress)
 
-    # Default config has embeddings=qwen3-embedding:4b, qa/research=gpt-oss
+    # Default config has embeddings=qwen3-embedding:4b, qa=gpt-oss
     ollama_models = {"gpt-oss", "qwen3-embedding:4b"}
     ollama_events = [e for e in events if e.model in ollama_models]
     pulling_events = [e for e in ollama_events if e.status == "pulling"]
@@ -100,7 +100,6 @@ async def test_download_models_no_ollama_models(mock_to_thread):
     config = AppConfig()
     config.embeddings.model.provider = "openai"
     config.qa.model.provider = "openai"
-    config.research.model.provider = "openai"
 
     events = []
     async for progress in download_models(config):

@@ -10,7 +10,7 @@ search:
   max_context_chars: 10000     # Maximum characters in expanded context
 ```
 
-- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, QA, and research workflows. Default: 10
+- **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and QA. Default: 10
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
 
 Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
@@ -36,27 +36,6 @@ qa:
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
 - **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures--embedder--qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
-
-## Research Configuration
-
-Configure the multi-agent research workflow:
-
-```yaml
-research:
-  model:
-    provider: ""            # Empty to use qa settings
-    name: ""               # Empty to use qa model
-    enable_thinking: false
-    temperature: 0.3        # Default: 0.3
-  max_iterations: 3
-  max_concurrency: 1
-```
-
-- **model**: LLM configuration. Leave provider/model empty to inherit from `qa` (see [Providers](providers.md#model-settings))
-- **max_iterations**: Maximum planning/search iterations (default: 3)
-- **max_concurrency**: Concurrent search operations (default: 1)
-
-The research workflow uses an iterative feedback loop: the planner proposes one question at a time, sees the answer, then decides whether to continue or synthesize. This continues until the planner marks research as complete or `max_iterations` is reached.
 
 ## Analysis Configuration
 
