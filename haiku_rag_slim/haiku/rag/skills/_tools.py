@@ -295,42 +295,64 @@ def create_skill_tools(
         async def cite(ctx: RunContext[RAGRunDeps], chunk_ids: list[str]) -> str:
             """Register chunk IDs as citations for your answer.
 
-            Call this after searching, with the chunk_id values from search
-            results that support your answer.
+            Accepts chunk_ids from search results AND from direct file reads
+            (items.jsonl, toc.json). Verbatim copies only — chunk_ids that
+            don't exist in the database trigger a retry.
 
             Args:
-                chunk_ids: List of chunk_id values from search results.
+                chunk_ids: List of chunk_id values from search results or VFS reads.
             """
             from haiku.rag.agents.research.models import resolve_citations
+            from haiku.rag.store.models.chunk import SearchResult
 
             state = _get_state(ctx, state_type)
             if not state:
                 return "No state available."
 
-            all_results = []
+            if not chunk_ids:
+                return "Registered 0 citations (empty chunk_ids)."
+
+            all_results: list[SearchResult] = []
             for results_list in state.searches.values():
                 all_results.extend(results_list)
 
             citations = resolve_citations(chunk_ids, all_results)
+            resolved_ids = {c.chunk_id for c in citations}
+            missing = [
+                cid.strip("[]")
+                for cid in chunk_ids
+                if cid.strip("[]") not in resolved_ids
+            ]
+
+            rag = ctx.deps.rag if ctx.deps else None
+            if missing and rag is not None:
+                synthetic: list[SearchResult] = []
+                doc_cache: dict[str, Any] = {}
+                for cid in missing:
+                    chunk = await rag.get_chunk_by_id(cid)
+                    if chunk is None or not chunk.document_id:
+                        continue
+                    did = chunk.document_id
+                    if did in doc_cache:
+                        doc = doc_cache[did]
+                    else:
+                        doc = await rag.get_document_by_id(did)
+                        doc_cache[did] = doc
+                    chunk.document_uri = doc.uri if doc else None
+                    chunk.document_title = doc.title if doc else None
+                    synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
+                if synthetic:
+                    citations.extend(resolve_citations(missing, synthetic))
+
             if citations:
                 _register_citations(state, citations)
                 return f"Registered {len(citations)} citation(s)."
 
-            if not chunk_ids:
-                return "Registered 0 citations (empty chunk_ids)."
-
-            if not any(r.chunk_id for r in all_results):
-                raise ModelRetry(
-                    f"None of the supplied chunk_ids {list(chunk_ids)} can be "
-                    "resolved: no search results have been recorded in this "
-                    "session yet. Call `search` first, then cite chunk_ids "
-                    "from its response."
-                )
             raise ModelRetry(
-                f"None of the supplied chunk_ids {list(chunk_ids)} match a "
-                "chunk_id from search results. Copy chunk_ids verbatim from "
-                "the search response — never reconstruct, abbreviate, or "
-                "paraphrase them."
+                f"None of the supplied chunk_ids {list(chunk_ids)} could be "
+                "resolved. Copy chunk_ids verbatim from `search` results or "
+                "from the `chunk_ids` field on items.jsonl / toc.json rows — "
+                "never reconstruct, abbreviate, or paraphrase them."
             )
 
         tools["cite"] = cite

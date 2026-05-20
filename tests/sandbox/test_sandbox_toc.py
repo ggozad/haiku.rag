@@ -186,12 +186,101 @@ class TestTocShape:
         assert titles == ["Real H1"]
         assert toc["tree"][0]["item_range"] == [0, 4]
 
+    async def test_node_shape_has_chunk_ids_not_position(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc_id = await _empty_doc(client, uri="test://shape", title="Shape")
+            await client.document_item_repository.create_items(
+                doc_id, [_header(doc_id, 0, 1, "Only"), _para(doc_id, 1)]
+            )
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+        toc = await _read_toc(sandbox, doc_id)
+        node = toc["tree"][0]
+        expected = {
+            "self_ref",
+            "level",
+            "title",
+            "page_numbers",
+            "item_range",
+            "chunk_ids",
+            "children",
+        }
+        assert expected <= set(node)
+        assert "position" not in node
+        assert node["chunk_ids"] == []
+
+
+@pytest.mark.asyncio
+class TestTocChunkIdsAggregation:
+    """toc.json nodes carry the union of chunk_ids covered by their item_range."""
+
+    async def test_chunk_ids_union_over_item_range(self, temp_db_path, monkeypatch):
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc_id = await _empty_doc(client, uri="test://chunks", title="Chunks")
+            await client.document_item_repository.create_items(
+                doc_id,
+                [
+                    _header(doc_id, 0, 1, "Intro"),
+                    _para(doc_id, 1),
+                    _para(doc_id, 2),
+                    _header(doc_id, 3, 2, "Background"),
+                    _para(doc_id, 4),
+                    _header(doc_id, 5, 1, "Methods"),
+                    _para(doc_id, 6),
+                ],
+            )
+
+        from haiku.rag.store.repositories.chunk import ChunkRepository
+
+        # self_ref → list[chunk_id]. Intro covers #/texts/0..2, Background
+        # covers #/texts/3..4, Methods covers #/texts/5..6. Item at #/texts/2
+        # belongs to two chunks (cA + cB) — verifying dedup-preserving-order.
+        fake_index = {
+            "#/texts/1": ["cA"],
+            "#/texts/2": ["cA", "cB"],
+            "#/texts/3": ["cB"],
+            "#/texts/4": ["cC"],
+            "#/texts/5": ["cD"],
+            "#/texts/6": ["cD"],
+        }
+
+        async def fake_grouped(self, document_ids):
+            return {doc_id: fake_index}
+
+        monkeypatch.setattr(
+            ChunkRepository,
+            "get_chunk_ids_by_self_ref_grouped",
+            fake_grouped,
+        )
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+        toc = await _read_toc(sandbox, doc_id)
+
+        intro = toc["tree"][0]
+        assert intro["title"] == "Intro"
+        # Intro spans positions 0..2 (header) plus its child Background's
+        # range — item_range is [0, 5].
+        assert intro["item_range"] == [0, 5]
+        assert intro["chunk_ids"] == ["cA", "cB", "cC"]
+
+        background = intro["children"][0]
+        assert background["title"] == "Background"
+        assert background["item_range"] == [3, 5]
+        assert background["chunk_ids"] == ["cB", "cC"]
+
+        methods = toc["tree"][1]
+        assert methods["title"] == "Methods"
+        assert methods["item_range"] == [5, 7]
+        assert methods["chunk_ids"] == ["cD"]
+
 
 @pytest.mark.asyncio
 class TestTocCaching:
-    """items + toc reads for a doc share one items fetch; repeat reads hit cache."""
+    """items + toc reads for a doc share one items fetch and one chunk-index fetch."""
 
-    async def test_items_fetched_once_per_doc(self, temp_db_path, monkeypatch):
+    async def test_items_and_chunk_index_fetched_once_per_doc(
+        self, temp_db_path, monkeypatch
+    ):
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc_id = await _empty_doc(client, uri="test://cache", title="Cache")
             await client.document_item_repository.create_items(
@@ -201,24 +290,36 @@ class TestTocCaching:
 
         sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
 
+        from haiku.rag.store.repositories.chunk import ChunkRepository
         from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
-        call_count = {"n": 0}
-        original = DocumentItemRepository.get_all_items
+        items_calls = {"n": 0}
+        chunk_calls = {"n": 0}
+        original_items = DocumentItemRepository.get_all_items
+        original_chunks = ChunkRepository.get_chunk_ids_by_self_ref_grouped
 
-        async def counting(self, document_id):
-            call_count["n"] += 1
-            return await original(self, document_id)
+        async def counting_items(self, document_id):
+            items_calls["n"] += 1
+            return await original_items(self, document_id)
 
-        monkeypatch.setattr(DocumentItemRepository, "get_all_items", counting)
+        async def counting_chunks(self, document_ids):
+            chunk_calls["n"] += 1
+            return await original_chunks(self, document_ids)
 
-        # Items + toc share `_doc_items`. Four reads → one items fetch.
+        monkeypatch.setattr(DocumentItemRepository, "get_all_items", counting_items)
+        monkeypatch.setattr(
+            ChunkRepository, "get_chunk_ids_by_self_ref_grouped", counting_chunks
+        )
+
+        # Items + toc share `_doc_items` and `_doc_chunk_index`. Four reads →
+        # one items fetch + one chunk-index fetch.
         _ = await _read_toc(sandbox, doc_id)
         _ = await _read_items_jsonl(sandbox, doc_id)
         _ = await _read_toc(sandbox, doc_id)
         _ = await _read_items_jsonl(sandbox, doc_id)
 
-        assert call_count["n"] == 1
+        assert items_calls["n"] == 1
+        assert chunk_calls["n"] == 1
 
 
 @pytest.mark.asyncio

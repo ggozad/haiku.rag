@@ -373,6 +373,37 @@ class TestCiteTool:
         result = await cite(ctx, chunk_ids=[])
         assert "0" in result
 
+    async def test_cite_accepts_chunk_id_from_db_without_prior_search(
+        self, rag_db, rag_client
+    ):
+        """chunk_ids sourced from items.jsonl / toc.json are valid citations.
+
+        The skill calls cite directly with chunk_ids it read from the VFS;
+        no search() has been recorded in state.searches. cite must look the
+        chunk up in the DB and build a Citation with full document context.
+        """
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        docs = await rag_client.list_documents(limit=1)
+        assert docs, "fixture should have at least one document"
+        doc_id = docs[0].id
+        chunks = await rag_client.chunk_repository.get_by_document_id(doc_id)
+        assert chunks, "fixture document should have chunks"
+        chunk_id = chunks[0].id
+
+        skill = create_skill(db_path=rag_db)
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state, rag=rag_client)
+        assert not state.searches, "this test exercises the no-prior-search path"
+
+        result = await cite(ctx, chunk_ids=[chunk_id])
+        assert "Registered 1 citation(s)." == result
+        assert chunk_id in state.citations
+        registered = state.citation_index[chunk_id]
+        assert registered.document_id == doc_id
+        assert registered.document_uri  # uri must be populated from doc lookup
+
 
 class TestLifespan:
     async def test_opens_one_client_per_invocation(self, rag_db):

@@ -2,6 +2,7 @@ import asyncio
 import atexit
 import concurrent.futures
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,7 +38,10 @@ def _run_async(coro: Any) -> Any:
     return _executor.submit(asyncio.run, coro).result()
 
 
-def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
+def _build_toc(
+    items: list["DocumentItem"],
+    chunk_index: dict[str, list[str]],
+) -> list[dict[str, Any]]:
     """Build a nested section tree from items in position order.
 
     Each ``section_header`` with ``heading_level > 0`` becomes a node. Nesting
@@ -48,6 +52,10 @@ def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
     position of the next header whose level is the same or shallower (i.e.
     the next sibling or ancestor that ends this section), or the total item
     count if no such header exists.
+
+    ``chunk_ids`` aggregates the chunks covered by all items in the section's
+    ``item_range`` (deduped, order preserved). Pass directly to ``cite()`` to
+    ground a section-scoped answer without a corpus-wide ``search()`` call.
 
     Items without a section_header label (or with ``heading_level == 0``) are
     skipped. When all section_headers carry the same level the output is a
@@ -61,6 +69,7 @@ def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
         return []
 
     total = max((i.position for i in items), default=-1) + 1
+    items_by_position: dict[int, DocumentItem] = {i.position: i for i in items}
 
     ends: list[int] = []
     for idx, h in enumerate(headers):
@@ -74,13 +83,23 @@ def _build_toc(items: list["DocumentItem"]) -> list[dict[str, Any]]:
     roots: list[dict[str, Any]] = []
     stack: list[tuple[int, dict[str, Any]]] = []
     for h, end in zip(headers, ends, strict=True):
+        seen: set[str] = set()
+        chunk_ids: list[str] = []
+        for pos in range(h.position, end):
+            item = items_by_position.get(pos)
+            if item is None:
+                continue
+            for cid in chunk_index.get(item.self_ref, []):
+                if cid not in seen:
+                    seen.add(cid)
+                    chunk_ids.append(cid)
         node: dict[str, Any] = {
             "self_ref": h.self_ref,
             "level": h.heading_level,
             "title": h.text,
-            "position": h.position,
             "page_numbers": list(h.page_numbers),
             "item_range": [h.position, end],
+            "chunk_ids": chunk_ids,
             "children": [],
         }
         while stack and stack[-1][0] >= h.heading_level:
@@ -111,6 +130,7 @@ class Sandbox:
     _context: AnalysisContext
     _search_results: "list[SearchResult]"
     _doc_items: dict[str, list["DocumentItem"]]
+    _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
     _toc_json_cache: dict[str, str]
     _repl: MontyRepl | None
@@ -127,6 +147,7 @@ class Sandbox:
         self._context = context
         self._search_results = []
         self._doc_items = {}
+        self._doc_chunk_index = {}
         self._items_jsonl_cache = {}
         self._toc_json_cache = {}
         self._repl = None
@@ -233,6 +254,27 @@ class Sandbox:
             sandbox._doc_items[did] = items
             return items
 
+        def _get_chunk_index(did: str) -> dict[str, list[str]]:
+            """Fetch the self_ref → chunk_ids index for one doc, cached."""
+            cached = sandbox._doc_chunk_index.get(did)
+            if cached is not None:
+                return cached
+
+            async def _fetch() -> dict[str, list[str]]:
+                from haiku.rag.client import HaikuRAG
+
+                async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+                    index = (
+                        await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
+                            [did]
+                        )
+                    )
+                return index.get(did, {})
+
+            chunk_index = _run_async(_fetch())
+            sandbox._doc_chunk_index[did] = chunk_index
+            return chunk_index
+
         def _make_items_reader(
             did: str,
         ) -> Callable[["PurePosixPath"], str]:
@@ -241,17 +283,7 @@ class Sandbox:
                 if cached is not None:
                     return cached
                 items = _get_items(did)
-
-                async def _fetch_chunks() -> dict[str, list[str]]:
-                    from haiku.rag.client import HaikuRAG
-
-                    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                        index = await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
-                            [did]
-                        )
-                    return index.get(did, {})
-
-                doc_chunk_index = _run_async(_fetch_chunks())
+                chunk_index = _get_chunk_index(did)
                 jsonl = "\n".join(
                     json.dumps(
                         {
@@ -260,7 +292,7 @@ class Sandbox:
                             "text": item.text,
                             "page_numbers": item.page_numbers,
                             "heading_level": item.heading_level,
-                            "chunk_ids": doc_chunk_index.get(item.self_ref, []),
+                            "chunk_ids": chunk_index.get(item.self_ref, []),
                         },
                         ensure_ascii=False,
                     )
@@ -279,11 +311,12 @@ class Sandbox:
                 if cached is not None:
                     return cached
                 items = _get_items(did)
+                chunk_index = _get_chunk_index(did)
                 toc = json.dumps(
                     {
                         "doc_id": did,
                         "title": doc_titles.get(did),
-                        "tree": _build_toc(items),
+                        "tree": _build_toc(items, chunk_index),
                     },
                     ensure_ascii=False,
                 )
@@ -340,13 +373,17 @@ class Sandbox:
                     write=_deny_write,
                 )
             )
-            files.append(
-                CallbackFile(
-                    f"{doc_dir}/toc.json",
-                    read=_make_toc_reader(doc_id),
-                    write=_deny_write,
+            # HAIKU_RAG_DISABLE_TOC is an evaluation-time toggle for measuring
+            # whether toc.json's outline view earns its place in the VFS.
+            # Production callers should leave it unset.
+            if not os.environ.get("HAIKU_RAG_DISABLE_TOC"):
+                files.append(
+                    CallbackFile(
+                        f"{doc_dir}/toc.json",
+                        read=_make_toc_reader(doc_id),
+                        write=_deny_write,
+                    )
                 )
-            )
 
         return OSAccess(files)
 

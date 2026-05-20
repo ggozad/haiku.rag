@@ -92,7 +92,7 @@ Each row carries:
 - `heading_level`: H-level for `section_header` rows; `0` on non-header rows
 
 ### toc.json
-Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, position, page_numbers, item_range: [start, end_exclusive], children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `tree: []` for docs with no headers.
+Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
 
 ### Cross-referencing search results with items
 Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in `items.jsonl`. To find which section a hit lives in: locate the item by `self_ref`, take its line index, and walk `toc.json` to find the deepest node whose `item_range` contains that index.
@@ -102,7 +102,8 @@ Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) tha
 1. Search first.
 2. If the top results contain the answer, call `cite` with the supporting chunk_ids and write a concise answer.
 3. Reach for `execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
-4. Call `cite` with the chunk_ids that ground your answer before writing the final response.
+4. For questions about a *known document's* structure ("which section contains X", "list the sections of doc Y", "summarise section Z"), read `/documents/{id}/toc.json` first. Each node carries `item_range` (a slice into `items.jsonl`) and `chunk_ids` (citable). Prefer this over `search()` for in-document navigation — `search()` ranks across the whole corpus and can return chunks from unrelated documents.
+5. Call `cite` with the chunk_ids that ground your answer before writing the final response.
 
 You MUST call `cite` with at least one chunk ID before producing your final answer, **unless** you are refusing for lack of information. Answers without citations are considered ungrounded. In a refusal case do **not** call `cite` — there is nothing to cite.
 
