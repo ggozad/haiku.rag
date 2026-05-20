@@ -34,7 +34,7 @@ qa:
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures--embedder--qa-model-how-the-pieces-compose) for the full matrix.
+- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
 
 ## Analysis Configuration
@@ -55,4 +55,4 @@ analysis:
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 
-See [Analysis](../agents/analysis.md) for usage details.
+See [Analysis skill](../skills/analysis.md) for usage details.

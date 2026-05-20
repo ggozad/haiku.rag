@@ -44,7 +44,7 @@ Model and temperature selection affect answer quality directly — see [Provider
 
 ## Inspector
 
-The inspector is the fastest way to see what your model would actually receive for a given query. Run it against your database and step through the same hybrid search, context expansion, and chunk previews the rag skill uses at runtime. Press `c` on a chunk and you see the exact context the LLM would get back from a search hit.
+The inspector shows what your model would actually receive for a given query. Run it against your database and step through the same hybrid search, context expansion, and chunk previews the rag skill uses at runtime. Press `c` on a chunk and you see the exact context the LLM would get back from a search hit.
 
 ```bash
 haiku-rag inspect

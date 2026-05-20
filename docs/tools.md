@@ -1,8 +1,8 @@
 # Toolsets
 
-haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggozad/haiku.skills) skills. See the [Skills](skills/index.md) section for the primary way to use haiku.rag tools.
+haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggozad/haiku.skills) skills. For most integrations, see [Skills](skills/index.md).
 
-For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` factories used internally by agents.
+For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` factories that the skills themselves compose.
 
 ## Low-Level Toolsets
 

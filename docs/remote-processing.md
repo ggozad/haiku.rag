@@ -32,7 +32,7 @@ docling-serve is a REST API service that provides:
 
 ### Docker Compose (Recommended)
 
-The easiest way to use haiku.rag with docling-serve is using the slim Docker image with docker-compose. See `examples/docker/docker-compose.yml` for a complete setup that includes both services.
+The slim Docker image with docker-compose is the recommended setup. See `examples/docker/docker-compose.yml` for a complete configuration that includes both services.
 
 ### Running docling-serve Manually
 

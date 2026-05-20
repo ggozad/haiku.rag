@@ -1,6 +1,6 @@
 # Quickstart
 
-Goal: install haiku.rag, index a document, and chat with it. Five minutes if you already have Ollama.
+Install haiku.rag, index a document, and chat with it.
 
 ## Install
 

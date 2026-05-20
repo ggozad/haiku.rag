@@ -319,7 +319,7 @@ answer, citations = await client.ask(
 )
 ```
 
-`client.ask` runs the [rag skill](skills/index.md) under the hood and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
+`client.ask` runs the [rag skill](skills/index.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
@@ -345,31 +345,13 @@ result = await client.analyze(
 
 `client.analyze` runs the [analysis skill](skills/index.md), which writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
 
-See [Analysis](agents/analysis.md) for details on capabilities and configuration.
+See [Analysis skill](skills/analysis.md) for details on capabilities and configuration.
 
-## Building Custom Agents
+## Building custom agents
 
-haiku.rag provides a RAG skill built on [haiku.skills](https://github.com/ggozad/haiku.skills) that bundles all capabilities into a composable agent:
+`client.ask` and `client.analyze` are the convenience wrappers. To build your own Pydantic AI agent against the same database, attach the rag and rag-analysis skills directly with `SkillToolset`. See [Skills](skills/index.md) for the full story and worked examples.
 
-```python
-from pydantic_ai import Agent
-from haiku.rag.skills.rag import create_skill
-from haiku.skills.agent import SkillToolset
-from haiku.skills.prompts import build_system_prompt
-
-skill = create_skill(db_path=db_path, config=config)
-toolset = SkillToolset(skills=[skill])
-
-agent = Agent(
-    "openai-chat:gpt-4o",
-    instructions=build_system_prompt(toolset.skill_catalog),
-    toolsets=[toolset],
-)
-
-result = await agent.run("What are the main findings?")
-```
-
-See [Toolsets](tools.md) for the full API reference.
+For the low-level toolset factories under `haiku.rag.tools` (one rung below the skill abstraction), see [Toolsets](tools.md).
 
 ## Importing Pre-Processed Documents
 

@@ -61,11 +61,20 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--judge-model PROVIDER:NAME` - Override the LLM judge model. Defaults to `ollama:qwen3.6` so the judge stays stable when the answering model changes.
 - `--target {rag-skill,analysis-skill}` - Choose which [skill](skills/index.md) to benchmark end-to-end against the same datasets and judge (default: `rag-skill`).
 - `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-skill`).
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
+
+To pin the LLM judge in YAML (rather than the default `ollama:qwen3.6`):
+
+```yaml
+evaluations:
+  judge:
+    provider: openai
+    name: gpt-4o-mini
+    base_url: http://localhost:8000/v1   # optional, for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+```
 
 ## Methodology
 
@@ -88,7 +97,7 @@ If no config file is specified, the script searches standard locations: `./haiku
 
 ### QA Accuracy
 
-For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. The default judge is `ollama:qwen3.6` — pinned so changes to the skill model don't change the judge underneath. Override per run with `--judge-model provider:name`. Accuracy is the fraction of correctly answered questions.
+For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. The default judge is `ollama:qwen3.6` — pinned so changes to the skill model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
 
 We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
@@ -131,7 +140,7 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 Two approaches are benchmarked separately:
 
 - **Multimodal embedder** (`Qwen/Qwen3-VL-Embedding-8B`, served via vLLM): picture bytes and text live in a shared vector space, no VLM is run at ingest.
-- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are woven into chunk text; retrieval runs over text only. See [Picture Description configuration](configuration/processing.md#picture-description-vlm).
+- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are woven into chunk text; retrieval runs over text only. See [Picture handling configuration](configuration/processing.md#picture-handling).
 
 #### Multimodal embedder
 

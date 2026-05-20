@@ -62,6 +62,11 @@ nav:
   - Use it:
       - CLI: cli.md
       - Chat: chat.md
+  - Skills:
+      - skills/index.md
+      - RAG skill: skills/rag.md
+      - Analysis skill: skills/analysis.md
+      - Custom skills: skills/custom.md
   - Configure:
       - configuration/index.md
       - Providers: configuration/providers.md
@@ -74,13 +79,9 @@ nav:
       - Server: server.md
       - MCP: mcp.md
       - Remote processing: remote-processing.md
-  - Build with it:
+  - Develop:
       - Python: python.md
       - Custom pipelines: custom-pipelines.md
-      - Skills:
-          - skills/index.md
-          - RAG: skills/rag.md
-          - Analysis: skills/analysis.md
       - Toolsets: tools.md
       - Web app: apps.md
   - Reference:

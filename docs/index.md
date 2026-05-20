@@ -19,7 +19,7 @@ haiku-rag add-src ~/Documents/some-paper.pdf
 haiku-rag chat
 ```
 
-The chat TUI is the fastest way to test retrieval and answer quality. `haiku-rag ask` and `haiku-rag search` cover one-shot CLI usage. Beyond that, the same database backs Python integrations, agents, skills, and the MCP server.
+The chat TUI is one way to interact with the database. `haiku-rag ask` and `haiku-rag search` cover one-shot CLI usage. Python integrations, skills, and the MCP server work against the same database.
 
 ## What it does
 
@@ -35,7 +35,7 @@ The chat TUI is the fastest way to test retrieval and answer quality. `haiku-rag
 
 ## Where to go next
 
-- [Quickstart](tutorial.md): install through first chat in five minutes.
+- [Quickstart](tutorial.md): install, index, chat.
 - [Skills](skills/index.md): the rag and rag-analysis skills you compose into Pydantic AI agents.
 - [Python API](python.md): use haiku.rag from code.
 - [MCP server](mcp.md): expose haiku.rag to Claude Desktop or other AI assistants.
