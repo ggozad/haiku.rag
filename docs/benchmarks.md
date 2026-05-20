@@ -1,14 +1,14 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on several datasets to measure both retrieval quality and question-answering accuracy.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. Wix and OpenRAG Bench (ORB) are the two we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the rag and rag-analysis skills.
 
 ## Running Evaluations
 
 You can run evaluations with the `evaluations` CLI:
 
 ```bash
-evaluations run repliqa
 evaluations run wix
+evaluations run orb_text
 ```
 
 The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we leverage for dataset management, scoring, and report generation.
@@ -19,29 +19,34 @@ Building evaluation databases from scratch can take a long time, especially for 
 
 ```bash
 # Download a specific dataset
-evaluations download repliqa
+evaluations download wix
 
 # Download all datasets
 evaluations download all
 
 # Force re-download (overwrite existing)
-evaluations download repliqa --force
+evaluations download wix --force
 ```
 
-Available datasets:
+Active datasets:
+
+| Dataset | Size |
+|---------|------|
+| `wix` | ~511MB |
+| `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
+| `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
+
+Inactive (kept downloadable, not currently maintained):
 
 | Dataset | Size |
 |---------|------|
 | `repliqa` | ~30MB |
 | `hotpotqa` | ~331MB |
-| `wix` | ~511MB |
-| `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
-| `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 
 After downloading, run benchmarks with `--skip-db` to use the pre-built database:
 
 ```bash
-evaluations run repliqa --skip-db
+evaluations run wix --skip-db
 ```
 
 ### Configuration
@@ -49,7 +54,7 @@ evaluations run repliqa --skip-db
 The benchmark script accepts several options:
 
 ```bash
-evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
+evaluations run wix --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
 ```
 
 **Options:**
@@ -61,7 +66,7 @@ evaluations run repliqa --config /path/to/haiku.rag.yaml --db /path/to/custom.la
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--target {rag-skill,analysis-skill}` - Choose which [skill](skills/index.md) to benchmark end-to-end against the same datasets and judge (default: `rag-skill`).
+- `--target {rag-skill,analysis-skill}` - Choose which [skill](skills/index.md) to benchmark end-to-end (default: `rag-skill`).
 - `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-skill`).
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
@@ -97,13 +102,13 @@ evaluations:
 
 ### QA Accuracy
 
-For question-answering evaluation, `pydantic-evals` coordinates an LLM judge to determine whether answers are correct. The default judge is `ollama:qwen3.6` — pinned so changes to the skill model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
+`pydantic-evals` coordinates an LLM judge to determine whether the skill's answer is correct. The default judge is `ollama:qwen3.6` — pinned so changes to the skill model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
 
 We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
 ### Citation Retrieval
 
-When benchmarking a skill (`--target rag-skill` or `--target analysis-skill`), a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MRR / MAP math as raw retrieval. The score key is `cited_mrr` for single-doc datasets and `cited_map` for multi-doc. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
+Alongside QA accuracy, a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MRR / MAP math as raw retrieval. The score key is `cited_mrr` for single-doc datasets and `cited_map` for multi-doc. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
 
 This is computed alongside QA accuracy from the same skill run — no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
 
@@ -115,23 +120,13 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 
 [WixQA](https://huggingface.co/datasets/Wix/WixQA) — real customer support questions paired with curated answers. 200 cases.
 
-#### QA Accuracy
+`evaluations run wix --target rag-skill` runs the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
 
-| Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                  |
-|----------------------|------------|-----------------------------|----------|------------------------|
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - thinking    | 0.88     | html, `chunk-radius=2` |
+| Skill model                  | Reranker               | QA accuracy | Mean `cited_map` |
+|------------------------------|------------------------|-------------|------------------|
+| `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` | 0.87        | 0.38             |
 
-*Measured on haiku.rag v0.43.1, judged by `ollama:qwen3.6` (current default), 175 / 200 = 87.5 %.*
-
-#### Skill QA + citation retrieval
-
-`evaluations run wix --target rag-skill` benchmarks the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
-
-| Skill model      | QA accuracy | Mean `cited_map` |
-|------------------|-------------|------------------|
-| `ollama:gpt-oss` | 0.85        | 0.40             |
-
-*Measured on haiku.rag v0.43.1, judged by `ollama:qwen3.6` (current default), on 199 of 200 completed cases.* 28 % of cases produce a perfect citation (`cited_map` = 1.0).
+*Measured on haiku.rag v0.48.0 with `qwen3-embedding:4b` (vLLM, dim 2560), `chunk_size=256`, `search.limit=5`. Judged by `vllm:Qwen3.6-35B-A3B-NVFP4` (qwen3.6 family, NVFP4 quant served via vLLM rather than the default Ollama). 172 / 198 completed cases (2 errored).*
 
 ### OpenRAG Bench (ORB)
 
@@ -156,7 +151,7 @@ Two approaches are benchmarked separately:
 
 ##### QA Accuracy
 
-| Embedding Model              | QA Model                          | Reranker               | Source bucket | Cases | Accuracy |
+| Embedding Model              | Skill model                       | Reranker               | Source bucket | Cases | Accuracy |
 |------------------------------|-----------------------------------|------------------------|---------------|------:|---------:|
 | `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision)         | none                   | text only        |   682 |   96.9 % |
 | `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision)         | none                   | with image       |   299 |   91.3 % |
@@ -176,17 +171,7 @@ Two approaches are benchmarked separately:
 
 *Measured on haiku.rag v0.45.0.*
 
-##### QA Accuracy
-
-| Embedding Model      | VLM                  | QA Model                            | Reranker               | Accuracy |
-|----------------------|----------------------|-------------------------------------|------------------------|---------:|
-| `qwen3-embedding:4b` | Ollama / ministral-3 | `ollama:qwen3.6`                    | none                   |     0.95 |
-| `qwen3-embedding:4b` | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4`        | none                   |     0.81 |
-| `qwen3-embedding:4b` | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4`        | `mxbai-rerank-base-v2` |     0.92 |
-
-*Measured on haiku.rag v0.45.0, judged by `ollama:qwen3.6` (current default).*
-
-##### Skill QA + citation retrieval
+##### QA accuracy + citation retrieval
 
 | Embedding Model        | VLM                  | Skill model                  | QA accuracy | Mean `cited_map` |
 |------------------------|----------------------|------------------------------|-------------|------------------|
@@ -197,11 +182,9 @@ Two approaches are benchmarked separately:
 *`vllm:Gemma-4-26B-A4B-NVFP4` row measured on haiku.rag v0.47.0, with `mxbai-rerank-base-v2`, stopped at 674 of 3045 cases (cumulative means stable from case ~200).*
 *Both judged by `ollama:qwen3.6` (current default).*
 
-## Past results
+## Inactive datasets
 
-These were measured under the prior pinned judge (`ollama:gpt-oss`). The pinned default has since switched to `ollama:qwen3.6` (see [Methodology — QA Accuracy](#qa-accuracy)) — under the new judge the QA accuracy numbers below typically shift up by ~5–10 pp.
-
-Retrieval tables don't depend on the judge but are kept here because they were measured on the same older `haiku.rag` versions as their accompanying QA tables.
+The benchmarks below are not currently maintained. Numbers were measured against earlier `haiku.rag` versions and an older pinned judge (`ollama:gpt-oss`), before the skill workflow became the only path. Retrieval tables don't depend on the judge, but the QA tables aren't reproducible against the current skill-only setup. We may revive them.
 
 ### RepliQA
 
@@ -229,9 +212,29 @@ Retrieval tables don't depend on the judge but are kept here because they were m
 
 Note the significant degradation when very small models are used such as `qwen3:0.6b`.
 
-### Wix
+### HotpotQA
 
-[WixQA](https://huggingface.co/datasets/Wix/WixQA) — see description above. We benchmark both the plain text version (HTML stripped, no structure) and HTML version. Since HTML chunks are small (typically a phrase), we use `chunk_radius=2` to expand context.
+[HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is a multi-hop question answering dataset requiring reasoning over multiple Wikipedia paragraphs. Each question requires evidence from 2+ documents, making it ideal for testing retrieval and reasoning capabilities. We use MAP for retrieval evaluation since queries have multiple relevant documents.
+
+#### Retrieval (MAP)
+
+| Embedding Model      | MAP  | Reranker |
+|----------------------|------|----------|
+| `qwen3-embedding:4b` | 0.69 | none     |
+
+*Measured on haiku.rag v0.20.2.*
+
+#### QA Accuracy
+
+| Embedding Model      | QA Model                 | Accuracy |
+|----------------------|--------------------------|----------|
+| `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
+
+*Measured on haiku.rag v0.20.2, judged by `ollama:gpt-oss`.*
+
+### Wix (historical, plain text and HTML)
+
+Earlier Wix runs measured under different chunk settings and reranker combinations, against the older `gpt-oss` judge.
 
 #### Retrieval (MAP)
 
@@ -252,23 +255,3 @@ Note the significant degradation when very small models are used such as `qwen3:
 | `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.83     | html, `chunk-radius=2`, `jinaai/jina-reranker-v3` |
 
 *Measured on haiku.rag v0.27.2, judged by `ollama:gpt-oss`.*
-
-### HotpotQA
-
-[HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is a multi-hop question answering dataset requiring reasoning over multiple Wikipedia paragraphs. Each question requires evidence from 2+ documents, making it ideal for testing retrieval and reasoning capabilities. We use MAP for retrieval evaluation since queries have multiple relevant documents.
-
-#### Retrieval (MAP)
-
-| Embedding Model      | MAP  | Reranker |
-|----------------------|------|----------|
-| `qwen3-embedding:4b` | 0.69 | none     |
-
-*Measured on haiku.rag v0.20.2.*
-
-#### QA Accuracy
-
-| Embedding Model      | QA Model                 | Accuracy |
-|----------------------|--------------------------|----------|
-| `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
-
-*Measured on haiku.rag v0.20.2, judged by `ollama:gpt-oss`.*
