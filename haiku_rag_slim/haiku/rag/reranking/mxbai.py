@@ -1,10 +1,19 @@
 import asyncio
+import threading
 
+import tqdm
 from mxbai_rerank import MxbaiRerankV2  # pyright: ignore[reportMissingImports]
 
 from haiku.rag.config import Config
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+
+# tqdm's default class lock is a multiprocessing.RLock; constructing it spawns
+# resource_tracker, which inherits sys.stderr's fileno. Inside Textual's chat
+# TUI, sys.stderr.fileno() returns -1, landing in fds_to_keep and failing the
+# fork_exec validation. A threading lock is sufficient since we never share
+# tqdm progress bars across processes.
+tqdm.tqdm.set_lock(threading.RLock())
 
 
 class MxBAIReranker(RerankerBase):
