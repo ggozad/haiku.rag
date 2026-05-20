@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.48.0] - 2026-05-20
+
 ### Added
 
 - `heading_level` and `tree_depth` on `DocumentItem`, populated by `extract_items` and persisted on `document_items`. 0.48.0 migration backfills existing rows from each doc's docling structure blob.
@@ -1579,7 +1581,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.47.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.48.0...HEAD
+[0.48.0]: https://github.com/ggozad/haiku.rag/compare/0.47.0...0.48.0
 [0.47.0]: https://github.com/ggozad/haiku.rag/compare/0.46.0...0.47.0
 [0.46.0]: https://github.com/ggozad/haiku.rag/compare/0.45.0...0.46.0
 [0.45.0]: https://github.com/ggozad/haiku.rag/compare/0.44.0...0.45.0
