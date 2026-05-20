@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Documentation generator swapped from `mkdocs-material` to `zensical`. Drops `mkdocs` / `mkdocs-material` dev deps, replaces `mkdocs.yml` with `zensical.toml`, adds `overrides/main.html` (OG/Twitter share meta) and `docs/stylesheets/extra.css`. `build-docs` workflow now runs `uv run zensical build` and publishes via the GitHub Pages artifact actions instead of `mkdocs gh-deploy`.
+
 ## [0.48.0] - 2026-05-20
 
 ### Added

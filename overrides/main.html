@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{% if page.title and page.title != config.site_name %}{{ page.title }} – {{ config.site_name }}{% else %}{{ config.site_name }}{% endif %}">
+<meta property="og:description" content="{{ config.site_description }}">
+<meta property="og:url" content="{{ page.canonical_url }}">
+<meta property="og:image" content="{{ config.site_url }}img/chat-qa.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{{ config.site_url }}img/chat-qa.png">
+{% endblock %}
+
+{% block hero %}
+{% if page.url == "" %}
+<section class="haiku-rag-hero">
+  <div class="md-typeset md-grid">
+    <div class="haiku-rag-hero__inner">
+      <div class="haiku-rag-hero__text">
+        <h1 class="haiku-rag-hero__title">haiku.rag</h1>
+        <p class="haiku-rag-hero__tagline">Opinionated agentic RAG powered by <a href="https://lancedb.com/">LanceDB</a>, <a href="https://ai.pydantic.dev/">Pydantic AI</a>, and <a href="https://docling-project.github.io/docling/">Docling</a>. Runs locally, scales to production.</p>
+        <div class="haiku-rag-hero__actions">
+          <a class="md-button md-button--primary" href="tutorial/">Get started</a>
+          <a class="md-button" href="overview/">Learn more</a>
+        </div>
+      </div>
+      <div class="haiku-rag-hero__media">
+        <video autoplay loop muted playsinline preload="auto" poster="img/chat-qa.png">
+          <source src="img/hero.mp4" type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

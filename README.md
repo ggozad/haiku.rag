@@ -133,12 +133,11 @@ See the [examples directory](examples/) for working examples:
 Full documentation at: https://ggozad.github.io/haiku.rag/
 
 - [Installation](https://ggozad.github.io/haiku.rag/installation/) - Provider setup
-- [Architecture](https://ggozad.github.io/haiku.rag/architecture/) - System overview
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Skills](https://ggozad.github.io/haiku.rag/skills/) - The RAG and analysis skills the client wraps
-- [Analysis](https://ggozad.github.io/haiku.rag/agents/analysis/) - Complex analytical tasks via code execution
+- [Analysis skill](https://ggozad.github.io/haiku.rag/skills/analysis/) - Complex analytical tasks via code execution
 - [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
 - [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring and MCP
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration

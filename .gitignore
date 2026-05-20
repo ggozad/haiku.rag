@@ -29,5 +29,5 @@ DEVNOTES.md
 .mcpregistry_github_token
 .mcpregistry_registry_token
 
-# MkDocs site directory when doing local docs builds
+# zensical site directory when doing local docs builds
 site/
