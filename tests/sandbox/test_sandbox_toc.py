@@ -189,9 +189,9 @@ class TestTocShape:
 
 @pytest.mark.asyncio
 class TestTocCaching:
-    """toc.json is cached across reads — the items query runs once per sandbox."""
+    """items + toc reads for a doc share one items fetch; repeat reads hit cache."""
 
-    async def test_cached_across_reads(self, temp_db_path, monkeypatch):
+    async def test_items_fetched_once_per_doc(self, temp_db_path, monkeypatch):
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc_id = await _empty_doc(client, uri="test://cache", title="Cache")
             await client.document_item_repository.create_items(
@@ -201,21 +201,18 @@ class TestTocCaching:
 
         sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
 
-        # Patch the repository call that backs both items.jsonl and toc.json so we
-        # can count how many bulk fetches happen. The sandbox opens its own
-        # HaikuRAG client(s) lazily; patch the class method.
         from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
         call_count = {"n": 0}
-        original = DocumentItemRepository.get_all_items_grouped
+        original = DocumentItemRepository.get_all_items
 
-        async def counting(self, document_ids=None):
+        async def counting(self, document_id):
             call_count["n"] += 1
-            return await original(self, document_ids)
+            return await original(self, document_id)
 
-        monkeypatch.setattr(DocumentItemRepository, "get_all_items_grouped", counting)
+        monkeypatch.setattr(DocumentItemRepository, "get_all_items", counting)
 
-        # First read of either file triggers ONE bulk fetch.
+        # Items + toc share `_doc_items`. Four reads → one items fetch.
         _ = await _read_toc(sandbox, doc_id)
         _ = await _read_items_jsonl(sandbox, doc_id)
         _ = await _read_toc(sandbox, doc_id)

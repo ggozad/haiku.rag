@@ -1,6 +1,7 @@
 import logging
 
 import pyarrow as pa
+from lancedb.index import BTree
 
 from haiku.rag.store.engine import DocumentItemRecord, Store
 from haiku.rag.store.upgrades import Upgrade
@@ -27,6 +28,21 @@ async def _ensure_columns(store: Store) -> None:
         )  # pragma: no cover
 
 
+async def _ensure_indexes(store: Store) -> None:
+    """Ensure BTree scalar indexes exist on the hot document_items lookup columns.
+
+    Fresh DBs created via ``_init_tables`` get these on first creation, but
+    DBs that predate that code (or were downloaded as pre-built artifacts) were
+    table-scanning every per-doc query — visible as ~100–300 ms even for small
+    docs. Built before the heading_level backfill so the per-doc WHERE clauses
+    in the backfill loop benefit from it.
+    """
+    for column in ("document_id", "position", "self_ref"):
+        await store.document_items_table.create_index(
+            column, config=BTree(), replace=True
+        )
+
+
 async def _apply_backfill_heading_hierarchy(store: Store) -> None:
     """Add heading_level + tree_depth columns and backfill from docling structure.
 
@@ -43,6 +59,7 @@ async def _apply_backfill_heading_hierarchy(store: Store) -> None:
     from haiku.rag.store.models.document_item import extract_items
 
     await _ensure_columns(store)
+    await _ensure_indexes(store)
 
     ids = (await store.documents_table.query().select(["id"]).to_arrow()).to_pylist()
     ids = [row["id"] for row in ids]
@@ -147,5 +164,8 @@ async def _apply_backfill_heading_hierarchy(store: Store) -> None:
 upgrade_backfill_heading_hierarchy = Upgrade(
     version="0.48.0",
     apply=_apply_backfill_heading_hierarchy,
-    description="Backfill heading_level + tree_depth on document_items",
+    description=(
+        "Backfill heading_level + tree_depth on document_items, "
+        "ensure BTree indexes on document_id / position / self_ref"
+    ),
 )

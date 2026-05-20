@@ -110,8 +110,9 @@ class Sandbox:
     _config: AppConfig
     _context: AnalysisContext
     _search_results: "list[SearchResult]"
-    _items_cache: dict[str, str] | None
-    _toc_cache: dict[str, str] | None
+    _doc_items: dict[str, list["DocumentItem"]]
+    _items_jsonl_cache: dict[str, str]
+    _toc_json_cache: dict[str, str]
     _repl: MontyRepl | None
     _vfs: OSAccess | None
 
@@ -125,8 +126,9 @@ class Sandbox:
         self._config = config
         self._context = context
         self._search_results = []
-        self._items_cache = None
-        self._toc_cache = None
+        self._doc_items = {}
+        self._items_jsonl_cache = {}
+        self._toc_json_cache = {}
         self._repl = None
         self._vfs = None
 
@@ -211,40 +213,46 @@ class Sandbox:
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
             docs = await rag.list_documents(filter=self._context.filter)
 
-        doc_ids = [doc.id for doc in docs if doc.id]
         doc_titles = {doc.id: doc.title for doc in docs if doc.id}
 
-        def _load_caches() -> tuple[dict[str, str], dict[str, str]]:
-            """Bulk-fetch document items + chunk index once and build both
-            items.jsonl and toc.json views. Returns ``(items_cache, toc_cache)``.
-            """
+        sandbox = self
 
-            async def _fetch() -> tuple[
-                dict[str, list[DocumentItem]], dict[str, dict[str, list[str]]]
-            ]:
+        def _get_items(did: str) -> list[DocumentItem]:
+            """Fetch items for one doc, cached on the sandbox."""
+            cached = sandbox._doc_items.get(did)
+            if cached is not None:
+                return cached
+
+            async def _fetch() -> list[DocumentItem]:
                 from haiku.rag.client import HaikuRAG
 
                 async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                    items_grouped = (
-                        await rag.document_item_repository.get_all_items_grouped(
-                            doc_ids
+                    return await rag.document_item_repository.get_all_items(did)
+
+            items = _run_async(_fetch())
+            sandbox._doc_items[did] = items
+            return items
+
+        def _make_items_reader(
+            did: str,
+        ) -> Callable[["PurePosixPath"], str]:
+            def read_items(_path: "PurePosixPath") -> str:
+                cached = sandbox._items_jsonl_cache.get(did)
+                if cached is not None:
+                    return cached
+                items = _get_items(did)
+
+                async def _fetch_chunks() -> dict[str, list[str]]:
+                    from haiku.rag.client import HaikuRAG
+
+                    async with HaikuRAG(db_path, config=config, read_only=True) as rag:
+                        index = await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
+                            [did]
                         )
-                    )
-                    chunk_index = (
-                        await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
-                            doc_ids
-                        )
-                    )
-                return items_grouped, chunk_index
+                    return index.get(did, {})
 
-            grouped, chunk_index = _run_async(_fetch())
-
-            items_cache: dict[str, str] = {}
-            toc_cache: dict[str, str] = {}
-            for did, items in grouped.items():
-                doc_chunk_index = chunk_index.get(did, {})
-
-                items_cache[did] = "\n".join(
+                doc_chunk_index = _run_async(_fetch_chunks())
+                jsonl = "\n".join(
                     json.dumps(
                         {
                             "self_ref": item.self_ref,
@@ -258,31 +266,8 @@ class Sandbox:
                     )
                     for item in items
                 )
-                toc_cache[did] = json.dumps(
-                    {
-                        "doc_id": did,
-                        "title": doc_titles.get(did),
-                        "tree": _build_toc(items),
-                    },
-                    ensure_ascii=False,
-                )
-            return items_cache, toc_cache
-
-        sandbox = self
-
-        def _ensure_caches() -> None:
-            if sandbox._items_cache is None or sandbox._toc_cache is None:
-                items_c, toc_c = _load_caches()
-                sandbox._items_cache = items_c
-                sandbox._toc_cache = toc_c
-
-        def _make_items_reader(
-            did: str,
-        ) -> Callable[["PurePosixPath"], str]:
-            def read_items(_path: "PurePosixPath") -> str:
-                _ensure_caches()
-                assert sandbox._items_cache is not None
-                return sandbox._items_cache.get(did, "")
+                sandbox._items_jsonl_cache[did] = jsonl
+                return jsonl
 
             return read_items
 
@@ -290,9 +275,20 @@ class Sandbox:
             did: str,
         ) -> Callable[["PurePosixPath"], str]:
             def read_toc(_path: "PurePosixPath") -> str:
-                _ensure_caches()
-                assert sandbox._toc_cache is not None
-                return sandbox._toc_cache.get(did, "")
+                cached = sandbox._toc_json_cache.get(did)
+                if cached is not None:
+                    return cached
+                items = _get_items(did)
+                toc = json.dumps(
+                    {
+                        "doc_id": did,
+                        "title": doc_titles.get(did),
+                        "tree": _build_toc(items),
+                    },
+                    ensure_ascii=False,
+                )
+                sandbox._toc_json_cache[did] = toc
+                return toc
 
             return read_toc
 
