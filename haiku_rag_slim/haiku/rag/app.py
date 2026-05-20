@@ -462,7 +462,9 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print()
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(answer))
-            for renderable in format_citations_rich(citations):
+            for renderable in await format_citations_rich(
+                citations, client=self.client
+            ):
                 self.console.print(renderable)
 
     async def analyze(
@@ -493,7 +495,9 @@ class HaikuRAGApp:  # pragma: no cover
 
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(result.answer))
-            for renderable in format_citations_rich(result.citations):
+            for renderable in await format_citations_rich(
+                result.citations, client=self.client
+            ):
                 self.console.print(renderable)
 
     async def research(

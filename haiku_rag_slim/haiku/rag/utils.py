@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
 
     from haiku.rag.agents.research.models import Citation
+    from haiku.rag.client import HaikuRAG
     from haiku.rag.config.models import AppConfig, ModelConfig
 
 
@@ -338,10 +339,34 @@ def format_bytes(num_bytes: int) -> str:
     return f"{size:.1f} PB"
 
 
+CITATION_PREVIEW_CHARS = 300
+
+
+def _citation_pages(c: "Citation") -> str | None:
+    if not c.page_numbers:
+        return None
+    if len(c.page_numbers) == 1:
+        return f"p. {c.page_numbers[0]}"
+    return f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}"
+
+
+def _citation_section(c: "Citation") -> str | None:
+    if c.headings:
+        return c.headings[-1]
+    return None
+
+
+def _citation_label(c: "Citation") -> str:
+    if c.document_title and c.document_uri:
+        return f"{c.document_title} ({c.document_uri})"
+    return c.document_title or c.document_uri
+
+
 def format_citations(citations: "list[Citation]") -> str:
     """Format citations as plain text with preserved formatting.
 
     Used by things like the MCP server where Rich renderables are not available.
+    Pictures referenced by the chunk are surfaced as ``[Figure: <ref>]`` markers.
     """
     if not citations:
         return ""
@@ -353,34 +378,42 @@ def format_citations(citations: "list[Citation]") -> str:
         title = c.document_title or c.document_uri
         header = f"[{idx}] {title}"
 
-        # Location info
         location_parts = []
-        if c.page_numbers:
-            if len(c.page_numbers) == 1:
-                location_parts.append(f"p. {c.page_numbers[0]}")
-            else:
-                location_parts.append(f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}")
-        if c.headings:
-            location_parts.append(f"Section: {c.headings[-1]}")
+        pages = _citation_pages(c)
+        if pages:
+            location_parts.append(pages)
+        section = _citation_section(c)
+        if section:
+            location_parts.append(f"Section: {section}")
 
         source = c.document_uri
         if location_parts:
             source += f" - {', '.join(location_parts)}"
 
         lines.append(f"{header} {source}")
+        for ref in c.picture_refs:
+            lines.append(f"[Figure: {ref}]")
         lines.append(c.content)
         lines.append("")
 
     return "\n".join(lines)
 
 
-def format_citations_rich(citations: "list[Citation]") -> "list[RenderableType]":
-    """Format citations as Rich renderables.
+async def format_citations_rich(
+    citations: "list[Citation]",
+    client: "HaikuRAG | None" = None,
+) -> "list[RenderableType]":
+    """Format citations as Rich renderables for terminal display.
 
-    Returns a list of Rich Panel objects for direct console printing,
-    with content rendered as markdown for syntax highlighting.
+    Each citation becomes a Panel with a compact header (``[N] Title (URI) — locator``),
+    a body holding any referenced figures followed by a truncated text preview, and
+    a dimmed footer that exposes the document and chunk IDs.
+
+    When ``client`` is supplied, picture bytes for ``picture_refs`` are fetched and
+    rendered inline via ``textual_image``. Without a client, picture refs appear as
+    ``[Figure: <ref>]`` text markers.
     """
-    from rich.markdown import Markdown
+    from rich.console import Group
     from rich.panel import Panel
     from rich.text import Text
 
@@ -388,41 +421,77 @@ def format_citations_rich(citations: "list[Citation]") -> "list[RenderableType]"
         return []
 
     renderables: list[RenderableType] = []
-    renderables.append(Text("Citations", style="bold"))
+    renderables.append(Text(""))
+    renderables.append(Text("Citations", style="bold green"))
+    renderables.append(Text(""))
 
-    for c in citations:
-        # Build header with IDs
-        header = Text()
-        header.append("doc: ", style="dim")
-        header.append(c.document_id, style="cyan")
-        header.append("  chunk: ", style="dim")
-        header.append(c.chunk_id, style="cyan")
+    for i, c in enumerate(citations):
+        if i > 0:
+            renderables.append(Text(""))
+        idx = c.index if c.index is not None else (i + 1)
 
-        # Location info for subtitle
-        location_parts = []
-        if c.page_numbers:
-            if len(c.page_numbers) == 1:
-                location_parts.append(f"p. {c.page_numbers[0]}")
-            else:
-                location_parts.append(f"pp. {c.page_numbers[0]}-{c.page_numbers[-1]}")
-        if c.headings:
-            location_parts.append(f"Section: {c.headings[-1]}")
+        header_parts: list[str] = [f"[{idx}] {_citation_label(c)}"]
+        pages = _citation_pages(c)
+        if pages:
+            header_parts.append(pages)
+        section = _citation_section(c)
+        if section:
+            header_parts.append(f"§{section}")
+        header = Text(" — ".join(header_parts), style="bold")
 
-        subtitle = c.document_uri
-        if c.document_title:
-            subtitle = f"{c.document_title} ({c.document_uri})"
-        if location_parts:
-            subtitle += f" - {', '.join(location_parts)}"
+        body: list[RenderableType] = []
+        for ref in c.picture_refs:
+            image_renderable = await _render_picture(client, c.document_id, ref)
+            body.append(
+                image_renderable
+                if image_renderable
+                else Text(f"[Figure: {ref}]", style="italic dim")
+            )
+
+        preview = c.content
+        if len(preview) > CITATION_PREVIEW_CHARS:
+            preview = preview[:CITATION_PREVIEW_CHARS].rstrip() + "…"
+        body.append(Text(preview))
+
+        footer = Text()
+        footer.append("doc: ", style="dim")
+        footer.append(c.document_id, style="dim cyan")
+        footer.append("  chunk: ", style="dim")
+        footer.append(c.chunk_id, style="dim cyan")
+
         panel = Panel(
-            Markdown(c.content),
+            Group(*body),
             title=header,
-            subtitle=subtitle,
+            title_align="left",
+            subtitle=footer,
             subtitle_align="left",
             border_style="dim",
         )
         renderables.append(panel)
 
     return renderables
+
+
+async def _render_picture(
+    client: "HaikuRAG | None", document_id: str, ref: str
+) -> "RenderableType | None":
+    """Fetch a picture and return a Rich renderable, or None on failure/no client."""
+    if client is None:
+        return None
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+    from textual_image.renderable import Image as RichImage
+
+    data = await client.document_item_repository.get_picture_bytes(document_id, ref)
+    if not data:
+        return None
+    try:
+        pil = PILImage.open(BytesIO(data))
+        pil.load()
+    except Exception:
+        return None
+    return RichImage(pil)
 
 
 def get_default_data_dir() -> Path:

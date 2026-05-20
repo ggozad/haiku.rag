@@ -618,19 +618,82 @@ def test_format_citations_sequential_indices():
     assert "[2] Second" in result
 
 
+# --- format_citations tests (pictures) ---
+
+
+def test_format_citations_picture_refs_render_as_markers():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="text body",
+        picture_refs=["#/pictures/0", "#/pictures/3"],
+    )
+    result = format_citations([citation])
+    assert "[Figure: #/pictures/0]" in result
+    assert "[Figure: #/pictures/3]" in result
+
+
 # --- format_citations_rich tests ---
 
 
-def test_format_citations_rich_empty():
+def _render_rich(renderables: list) -> str:
+    from rich.console import Console
+
+    console = Console(record=True, width=200)
+    for r in renderables:
+        console.print(r)
+    return console.export_text()
+
+
+async def test_format_citations_rich_empty():
     from haiku.rag.utils import format_citations_rich
 
-    assert format_citations_rich([]) == []
+    assert await format_citations_rich([]) == []
 
 
-def test_format_citations_rich_with_citation():
-    from rich.panel import Panel
-    from rich.text import Text
+async def test_format_citations_rich_header_and_footer():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import format_citations_rich
 
+    citation = Citation(
+        document_id="doc-uuid-1",
+        chunk_id="chunk-uuid-1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Body",
+        page_numbers=[1, 2, 3],
+        headings=["Intro", "Background"],
+    )
+    output = _render_rich(await format_citations_rich([citation]))
+    assert "Citations" in output
+    assert "[1] Test Doc (test://doc)" in output
+    assert "pp. 1-3" in output
+    assert "§Background" in output
+    assert "doc: doc-uuid-1" in output
+    assert "chunk: chunk-uuid-1" in output
+
+
+async def test_format_citations_rich_truncates_long_content():
+    from haiku.rag.agents.research.models import Citation
+    from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        content="A" * (CITATION_PREVIEW_CHARS + 200),
+    )
+    output = _render_rich(await format_citations_rich([citation]))
+    assert "…" in output
+    assert "A" * (CITATION_PREVIEW_CHARS + 1) not in output
+
+
+async def test_format_citations_rich_picture_marker_without_client():
     from haiku.rag.agents.research.models import Citation
     from haiku.rag.utils import format_citations_rich
 
@@ -638,15 +701,11 @@ def test_format_citations_rich_with_citation():
         document_id="doc1",
         chunk_id="chunk1",
         document_uri="test://doc",
-        document_title="Test Doc",
-        content="Some content",
-        page_numbers=[1, 2],
-        headings=["Intro"],
+        content="body",
+        picture_refs=["#/pictures/0"],
     )
-    result = format_citations_rich([citation])
-    assert len(result) == 2
-    assert isinstance(result[0], Text)
-    assert isinstance(result[1], Panel)
+    output = _render_rich(await format_citations_rich([citation]))
+    assert "[Figure: #/pictures/0]" in output
 
 
 # --- get_default_data_dir tests ---
