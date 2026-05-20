@@ -57,7 +57,7 @@ From directory (recursively adds all supported files):
 haiku-rag add-src /path/to/documents/
 ```
 
-From an S3 bucket (requires the `[s3]` extra — see [Server Mode → S3 / Object Storage Monitoring](server.md#s3-object-storage-monitoring)):
+From an S3 bucket (requires the `[s3]` extra, see [Server Mode → S3 / Object Storage Monitoring](server.md#s3-object-storage-monitoring)):
 ```bash
 # AWS S3 with credentials in the default chain (env vars, IAM role, AWS profile)
 haiku-rag add-src s3://my-bucket/path/to/document.pdf
@@ -163,7 +163,7 @@ Filter to specific documents:
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
 ```
 
-`ask` runs the [rag skill](skills/index.md) and always renders citations under the answer. When available, citations use the document title; otherwise they fall back to the URI.
+`ask` runs the [rag skill](skills/index.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
 
 Flags:
 
@@ -206,7 +206,7 @@ haiku-rag chat -s rag -s analysis
 
 Flags:
 
-- `--skill` / `-s`: Skills to enable — `rag` (default), `analysis`. Can be repeated for multiple skills.
+- `--skill` / `-s`: Skills to enable. `rag` (default), `analysis`. Can be repeated for multiple skills.
 
 The chat interface provides:
 
@@ -385,7 +385,7 @@ haiku-rag rebuild --descriptions
 | Title only | `--title-only` | Generate titles for documents without one |
 | Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
 
-**`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `processing.pictures: description` in the config. Idempotent — pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely; only the VLM time is paid.
+**`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `processing.pictures: description` in the config. Idempotent: pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely. Only the VLM time is paid.
 
 ### Vacuum (Optimize and Cleanup)
 

@@ -25,8 +25,8 @@ docling-serve is a REST API service that provides:
 - Processing large volumes of documents
 - Working with complex PDFs requiring OCR
 - Running in production environments
-- Want to separate compute-intensive tasks
-- Need to scale document processing independently
+- Separating compute-intensive tasks
+- Scaling document processing independently
 
 ## Setup
 
@@ -136,7 +136,7 @@ processing:
 
 ## HTML Image Fetching
 
-docling-serve does **not** fetch external `<img src="https://...">` URLs in HTML inputs. The `ConvertDocumentsOptions` API exposes no equivalent of docling-local's `HTMLBackendOptions.fetch_images` / `enable_remote_fetch`, and the server-side `DoclingConverterManager` registers `format_options` only for PDF and IMAGE — HTML falls through to docling's defaults (`fetch_images=False`).
+docling-serve does **not** fetch external `<img src="https://...">` URLs in HTML inputs. The `ConvertDocumentsOptions` API exposes no equivalent of docling-local's `HTMLBackendOptions.fetch_images` / `enable_remote_fetch`, and the server-side `DoclingConverterManager` registers `format_options` only for PDF and IMAGE. HTML falls through to docling's defaults (`fetch_images=False`).
 
 Consequence: ingesting HTML with external image references through docling-serve produces picture items with `picture_data=NULL`. The same input through docling-local fetches the bytes (subject to the SSRF / size / timeout guards documented in [Configuration → External image fetching](configuration/processing.md#external-image-fetching)).
 

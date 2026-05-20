@@ -4,13 +4,13 @@ How to adjust haiku.rag's pipeline for better retrieval and answer quality. For 
 
 ## Pipeline Overview
 
-Documents flow through: **chunking → embedding → hybrid search (vector + FTS) → reranking → context expansion → LLM generation**. Retrieval tuning (chunking through reranking) is highest-leverage — if the LLM never sees the right chunks, no prompt or model change will help.
+Documents flow through: **chunking → embedding → hybrid search (vector + FTS) → reranking → context expansion → LLM generation**. Retrieval tuning (chunking through reranking) is the highest-leverage stage. If the LLM never sees the right chunks, no prompt or model change will help.
 
 ## Tuning Retrieval
 
 ### Chunking
 
-`chunk_size` controls the granularity of retrieval. Smaller chunks match queries more precisely but carry less context each; larger chunks provide more surrounding information but dilute relevance signals. On the Wix benchmark, increasing from 256 to 512 tokens raised MAP from 0.43 to 0.45 on plain text — a modest gain that also increases token cost per result. See [Processing](configuration/processing.md#chunk-size) for configuration.
+`chunk_size` controls the granularity of retrieval. Smaller chunks match queries more precisely but carry less context each. Larger chunks provide more surrounding information but dilute relevance signals. On the Wix benchmark, increasing from 256 to 512 tokens raised MAP from 0.43 to 0.45 on plain text, a modest gain that also increases token cost per result. See [Processing](configuration/processing.md#chunk-size) for configuration.
 
 `chunker_type` selects between `hybrid` (default) and `hierarchical` chunking. Hierarchical chunking preserves the document's heading structure and works better for deeply nested or structured content. See [Chunking Strategies](configuration/processing.md#chunking-strategies).
 
@@ -20,17 +20,17 @@ Larger embedding models produce better representations at the cost of slower ind
 
 ### Reranking
 
-When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision — on the Wix benchmark, adding `mxbai-rerank-base-v2` raised MAP from 0.34 to 0.39 on HTML content. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
+When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision. On the Wix benchmark, adding `mxbai-rerank-base-v2` raised MAP from 0.34 to 0.39 on HTML content. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
 
 ### Search Settings
 
 `limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa.md#search-settings).
 
-Context expansion is automatic and section-aware — search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (footnotes, page headers). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
+Context expansion is automatic and section-aware. Search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (footnotes, page headers). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
 
 ## Tuning Generation
 
-Model and temperature selection affect answer quality directly — see [Providers](configuration/providers.md#model-settings) for options.
+Model and temperature selection affect answer quality directly. See [Providers](configuration/providers.md#model-settings) for options.
 
 `domain_preamble` prepends domain context to the rag and rag-analysis skill instructions. Use it to describe what the knowledge base contains and clarify domain-specific terminology. See [Prompt Customization](configuration/prompts.md).
 
@@ -38,8 +38,8 @@ Model and temperature selection affect answer quality directly — see [Provider
 
 | Change | Rebuild required? |
 |--------|:-:|
-| `chunk_size`, `chunker_type`, `chunking_merge_peers` | Yes — `haiku-rag rebuild` |
-| Embedding model | Yes — `haiku-rag rebuild` |
+| `chunk_size`, `chunker_type`, `chunking_merge_peers` | Yes (run `haiku-rag rebuild`) |
+| Embedding model | Yes (run `haiku-rag rebuild`) |
 | Search settings, reranking, prompts | No |
 
 ## Inspector

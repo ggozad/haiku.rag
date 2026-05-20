@@ -98,13 +98,13 @@ lancedb:
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
 
-The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend — see the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
+The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
 ### Deployment Pattern: One Writer, Many Readers
 
-LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state — this is a LanceDB property, not something `haiku.rag` enforces.
+LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state. This is a LanceDB property, not something `haiku.rag` enforces.
 
 The recommended layout for production is "different buckets, same account, separate IAM roles per process":
 

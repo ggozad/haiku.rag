@@ -159,7 +159,7 @@ await client.update_document(document_id=doc.id, chunks=custom_chunks)
 
 - Updates to only `metadata` or `title` skip re-chunking
 - Updates to `content` trigger re-chunking and re-embedding
-- Custom `chunks` with embeddings are stored as-is; missing embeddings are generated automatically
+- Custom `chunks` with embeddings are stored as-is. Missing embeddings are generated automatically
 
 ### Deleting Documents
 
@@ -256,7 +256,7 @@ results = await client.search(
 
 ### Image queries
 
-`client.search()` accepts an image instead of a text query when the configured embedder is multimodal (e.g. `provider: vllm` against a vision-language embedding model). The image is embedded once and the chunks table is searched vector-only — full-text search and reranking don't apply without a text query.
+`client.search()` accepts an image instead of a text query when the configured embedder is multimodal (e.g. `provider: vllm` against a vision-language embedding model). The image is embedded once and the chunks table is searched vector-only. Full-text search and reranking don't apply without a text query.
 
 ```python
 from PIL import Image
@@ -291,7 +291,7 @@ for result in expanded_results:
     print(f"Expanded content: {result.content}")
 ```
 
-Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers). This naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
 
 Configuration:
 
@@ -419,7 +419,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK):
 async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
     print(f"Processed document {doc_id}")
 
-# Add VLM picture descriptions to an existing database — runs the VLM
+# Add VLM picture descriptions to an existing database. Runs the VLM
 # over already-stored picture bytes, patches descriptions into the
 # docling blob, then re-chunks + re-embeds. Requires
 # processing.pictures='description' in the config.
@@ -433,7 +433,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 - `RebuildMode.RECHUNK` - Re-chunk from existing document content, re-embed
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
-- `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent — pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
+- `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
 ### Generating Titles
 
@@ -445,7 +445,7 @@ if title:
     await client.update_document(document_id=doc.id, title=title)
 ```
 
-Uses the same two-tier approach as automatic ingestion: structural extraction from DoclingDocument metadata first, with LLM fallback via `processing.title_model`. Unlike ingestion, this method does not catch exceptions — if the LLM call fails, the error propagates.
+Uses the same two-tier approach as automatic ingestion: structural extraction from DoclingDocument metadata first, with LLM fallback via `processing.title_model`. Unlike ingestion, this method does not catch exceptions. If the LLM call fails, the error propagates.
 
 To batch-generate titles for all untitled documents, use `RebuildMode.TITLE_ONLY`:
 
@@ -462,4 +462,4 @@ Document create and update operations take a snapshot of table versions before a
 
 - Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, and internal rebuild/update flows.
 - Scope: Both document rows and all associated chunks are rolled back together.
-- Vacuum: Running `vacuum()` later prunes old versions for disk efficiency; rollbacks occur immediately during the failing operation and are not impacted.
+- Vacuum: Running `vacuum()` later prunes old versions for disk efficiency. Rollbacks occur immediately during the failing operation and are not impacted.

@@ -22,7 +22,7 @@ qa:
 
 **Available options:**
 
-- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA and title generation; 0.0 for analysis and picture description.
+- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA and title generation, 0.0 for analysis and picture description.
   - Lower (0.0-0.3): Deterministic, focused responses
   - Medium (0.4-0.7): Balanced
   - Higher (0.8-1.0+): Creative, varied responses
@@ -67,7 +67,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 
 The `extra_body` setting takes a dict that haiku.rag forwards verbatim to the underlying model SDK as `ModelSettings.extra_body`. Use it to reach provider-specific keys that haiku.rag does not model with a dedicated field.
 
-**Example — disable Qwen3 thinking on vLLM:**
+**Example: disable Qwen3 thinking on vLLM:**
 
 ```yaml
 qa:
@@ -225,7 +225,7 @@ embeddings:
     base_url: http://localhost:8000/v1
 ```
 
-Tested with `Qwen/Qwen3-VL-Embedding-8B` (4096-dim) and `jinaai/jina-embeddings-v4` (2048-dim). Run vLLM separately; haiku.rag adds no Python ML dependencies for this path. Text inputs use the standard OpenAI `input` field; image inputs use vLLM's `messages`-with-`image_url` superset, transparently to the caller.
+Tested with `Qwen/Qwen3-VL-Embedding-8B` (4096-dim) and `jinaai/jina-embeddings-v4` (2048-dim). Run vLLM separately. haiku.rag adds no Python ML dependencies for this path. Text inputs use the standard OpenAI `input` field. Image inputs use vLLM's `messages`-with-`image_url` superset, transparently to the caller.
 
 Picture chunks for retrieval are emitted at ingest under any embedder reporting `supports_images=True`. See [Picture Handling](processing.md#picture-handling).
 
@@ -464,7 +464,7 @@ reranking:
 
 ### Cross-Encoder (sentence-transformers)
 
-Run any HuggingFace cross-encoder reranker in-process via `sentence-transformers` — no separate server required. Useful when you want a specific model (BGE, Qwen3-Reranker, MS-MARCO MiniLM, etc.) without running vLLM.
+Run any HuggingFace cross-encoder reranker in-process via `sentence-transformers`. No separate server required. Useful when you want a specific model (BGE, Qwen3-Reranker, MS-MARCO MiniLM, etc.) without running vLLM.
 
 Install the extra:
 

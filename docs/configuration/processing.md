@@ -82,7 +82,7 @@ providers:
 
 Conversion options work identically for both local and remote processing.
 
-**Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail—set `do_ocr: false` to disable OCR entirely.
+**Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail. Set `do_ocr: false` to disable OCR entirely.
 
 ### Conversion Options
 
@@ -135,7 +135,7 @@ conversion_options:
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to docling-local; see [Remote processing](../remote-processing.md#html-image-fetching) for the docling-serve limitation.
+- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to docling-local. See [Remote processing](../remote-processing.md#html-image-fetching) for the docling-serve limitation.
 
 #### External image fetching
 
@@ -146,9 +146,9 @@ For HTML and Markdown inputs, docling fetches images referenced by URL when `fet
 - **Timeouts**: 5 s connect, 30 s read.
 - **SVGs are skipped** (PIL cannot rasterize them).
 - **`data:` URIs** are decoded inline (no network).
-- **`file://` URIs** are *not* fetched — `enable_local_fetch` stays off to keep the SSRF surface narrow for arbitrary HTML/MD content.
+- **`file://` URIs** are *not* fetched. `enable_local_fetch` stays off to keep the SSRF surface narrow for arbitrary HTML/MD content.
 
-Per-image failures (404, timeout, oversized, unreadable) leave that picture as a placeholder with `picture_data=NULL` — the rest of the document still ingests.
+Per-image failures (404, timeout, oversized, unreadable) leave that picture as a placeholder with `picture_data=NULL`. The rest of the document still ingests.
 
 **Scope of conversion options across formats:**
 
@@ -171,7 +171,7 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `description` | on | yes | yes |
 | `image` (default) | on | yes | no |
 
-Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight); use `description` to weave VLM-generated text into chunk content and keep bytes for later; use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description` — see [Prompts](prompts.md).
+Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight). Use `description` to weave VLM-generated text into chunk content and keep bytes for later. Use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description`. See [Prompts](prompts.md).
 
 ```yaml
 processing:
@@ -186,7 +186,7 @@ processing:
 ```
 
 !!! warning "Breaking change"
-    `processing.conversion_options.picture_description.enabled` is replaced by `processing.pictures`. Map `enabled: true` → `pictures: description`, `enabled: false` → `pictures: image`. The pre-April-30 `generate_picture_images` flag also no longer exists; use `pictures: none` for the old opt-out.
+    `processing.conversion_options.picture_description.enabled` is replaced by `processing.pictures`. Map `enabled: true` → `pictures: description`, `enabled: false` → `pictures: image`. The pre-April-30 `generate_picture_images` flag also no longer exists. Use `pictures: none` for the old opt-out.
 
 **Switching modes on an existing database** doesn't require reingesting when the bytes are already stored:
 
@@ -194,7 +194,7 @@ processing:
 - `description` → `image`: `haiku-rag rebuild --rechunk` recomposes chunk text from the stripped docling blob without descriptions.
 - Switching to/from `none`: a full reingest is needed since the bytes either weren't stored or need to be discarded.
 
-When using `converter: docling-serve`, the VLM is invoked from docling-serve rather than haiku.rag — see [Remote processing](../remote-processing.md#vlm-picture-description-with-docling-serve).
+When using `converter: docling-serve`, the VLM is invoked from docling-serve rather than haiku.rag. See [Remote processing](../remote-processing.md#vlm-picture-description-with-docling-serve).
 
 #### Pictures × embedder × QA model: how the pieces compose
 
@@ -219,9 +219,9 @@ Three independent settings drive ingest, retrieval, and QA:
 **What QA receives** at search time:
 
 - `qa.model.vision: false` — text chunks only (descriptions, when present, answer figure questions in prose).
-- `qa.model.vision: true` — text chunks + raw picture bytes via `BinaryContent`; the model reads figures directly. Requires `pictures != none` so the bytes exist.
+- `qa.model.vision: true` — text chunks + raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
 
-`qa.model.vision` is independent of ingestion — flipping it never requires reingesting. Setting `vision: true` against a text-only model causes silent acceptance and confabulation on Ollama and a 400 on OpenAI; default `false` is the safe choice.
+`qa.model.vision` is independent of ingestion. Flipping it never requires reingesting. Setting `vision: true` against a text-only model causes silent acceptance and confabulation on Ollama and a 400 on OpenAI. Default `false` is the safe choice.
 
 **Recommended combinations:**
 
@@ -282,12 +282,12 @@ processing:
 
 When `auto_title` is enabled, haiku.rag attempts to extract a title for each document during ingestion using a two-tier approach:
 
-1. **Structural extraction** (free, no model calls): Scans the DoclingDocument for semantic labels — HTML `<title>` tags, `<h1>` headings, PDF title blocks, and section headers
+1. **Structural extraction** (free, no model calls): Scans the DoclingDocument for semantic labels (HTML `<title>` tags, `<h1>` headings, PDF title blocks, and section headers)
 2. **LLM fallback**: When no structural title is found (e.g., plain text), generates a title using the configured `title_model`
 
 Priority order: HTML `<title>` (furniture layer) → h1/PDF title (body layer) → first section header → LLM generation.
 
-Explicit titles passed via `title=` parameter always take precedence and are never overridden. When updating documents, existing titles are preserved — auto-generation only applies to untitled documents.
+Explicit titles passed via `title=` parameter always take precedence and are never overridden. When updating documents, existing titles are preserved. Auto-generation only applies to untitled documents.
 
 To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild-database).
 
@@ -379,8 +379,8 @@ monitor:
         allow_http: "true"
 ```
 
-Each entry is independent — own poll interval, own include/ignore patterns, own `delete_orphans` setting, own credentials. Omit `storage_options` to fall back to the AWS default credential chain (env vars, IAM role, AWS profile).
+Each entry is independent: own poll interval, own include/ignore patterns, own `delete_orphans` setting, own credentials. Omit `storage_options` to fall back to the AWS default credential chain (env vars, IAM role, AWS profile).
 
-The dict shape matches `lancedb.storage_options` — the same Rust `object_store` library is used by both, so credentials configured for the LanceDB backend can be copy-pasted here.
+The dict shape matches `lancedb.storage_options`. The same Rust `object_store` library is used by both, so credentials configured for the LanceDB backend can be copy-pasted here.
 
 See [Server Mode → S3 / Object Storage Monitoring](../server.md#s3-object-storage-monitoring) for behaviour details (ETag-based change detection, orphan-deletion scope, CLI `add-src s3://…`).

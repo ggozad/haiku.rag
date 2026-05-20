@@ -1,6 +1,6 @@
 # Custom Processing Pipelines
 
-haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding—for example, to preprocess content, use external services, or implement custom chunking logic.
+haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding (for example, to preprocess content, use external services, or implement custom chunking logic).
 
 ## When to Use Custom Pipelines
 
@@ -136,7 +136,7 @@ assert embedded_chunks[0].embedding is not None
 
 ## Contextualize (for custom embedders)
 
-`contextualize()` is a lower-level utility that prepares chunk content for embedding by prepending section headings. You only need this when implementing custom embedding logic—`embed_chunks()` already calls it internally.
+`contextualize()` is a lower-level utility that prepares chunk content for embedding by prepending section headings. You only need this when implementing custom embedding logic. `embed_chunks()` already calls it internally.
 
 ```python
 from haiku.rag.embeddings import contextualize

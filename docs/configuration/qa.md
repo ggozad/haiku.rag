@@ -13,7 +13,7 @@ search:
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and QA. Default: 10
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 10000.
 
-Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers) — this naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (footnotes, page headers). This naturally crosses into adjacent sections until the budget is filled. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
 
 !!! note "Reranking behavior"
     When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.
@@ -34,7 +34,7 @@ qa:
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`; otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
+- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
 
 ## Analysis Configuration

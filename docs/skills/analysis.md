@@ -2,7 +2,7 @@
 
 Plain RAG (search → cite → answer) works for questions whose answer sits in a chunk or two: "Who wrote this?", "What does X say about Y?". It struggles when the answer requires touching the whole corpus, reading a specific section in full, or doing arithmetic on the data.
 
-The analysis skill (`rag-analysis`) gives the agent a second tool — `execute_code` — that runs Python in a sandboxed interpreter against a structured view of your documents. The agent can search, read, count, slice, and compare without leaving the tool call. Citations work the same way as the rag skill.
+The analysis skill (`rag-analysis`) gives the agent a second tool (`execute_code`) that runs Python in a sandboxed interpreter against a structured view of your documents. The agent can search, read, count, slice, and compare without leaving the tool call. Citations work the same way as the rag skill.
 
 `client.analyze`, `haiku-rag analyze`, the MCP `analyze` tool, and the chat TUI (when `-s analysis` is enabled) all run through this skill.
 
@@ -14,7 +14,7 @@ Reach for the analysis skill when the question needs more than a search:
 - **Section-scoped reading.** "Summarize Section 5 of paper Y."
 - **Structural comparison.** "Do both papers have an Experimental Results section?"
 - **Computation on retrieved data.** "What's the average revenue across these quarterly reports?"
-- **Multi-step chains.** Search, filter the results in Python, search again, aggregate — all in one tool call.
+- **Multi-step chains.** Search, filter the results in Python, search again, aggregate, all in one tool call.
 
 For everyday Q&A, the [RAG skill](rag.md) is faster and cheaper. Attach both and the agent routes.
 
@@ -22,9 +22,9 @@ For everyday Q&A, the [RAG skill](rag.md) is faster and cheaper. Attach both and
 
 Two things make the agent's programs short and the resulting analyses tractable:
 
-1. **Search and document listing are awaitable inside the code.** `await search(query)` returns the same hits the rag skill sees — chunk IDs, text, source metadata, picture refs. The agent can immediately filter, sort, count, or follow up with another search without exiting the tool call.
+1. **Search and document listing are awaitable inside the code.** `await search(query)` returns the same hits the rag skill sees: chunk IDs, text, source metadata, picture refs. The agent can immediately filter, sort, count, or follow up with another search without exiting the tool call.
 
-2. **Every document is mounted as a virtual filesystem at `/documents/{id}/`.** The agent reads four files per document: identifiers and metadata, full text, a list of structured items (paragraphs, tables, figures, headings), and a section tree built from the document's headings. The structure exposes what search alone hides — the agent can navigate from a search hit to the section it lives in, slice a single section instead of pulling the whole document, or scan a document's text directly when keyword precision matters.
+2. **Every document is mounted as a virtual filesystem at `/documents/{id}/`.** The agent reads four files per document: identifiers and metadata, full text, a list of structured items (paragraphs, tables, figures, headings), and a section tree built from the document's headings. The structure exposes what search alone hides. The agent can navigate from a search hit to the section it lives in, slice a single section instead of pulling the whole document, or scan a document's text directly when keyword precision matters.
 
 A search hit is always a starting point. The agent reads structure around it, drills into the right section, and cites the chunks it actually used. Chunk IDs from search results and chunk IDs surfaced through the VFS are both accepted by `cite`.
 
@@ -114,7 +114,7 @@ The agent routes Q&A to the rag skill and computational questions to rag-analysi
 
 ## What the agent actually writes
 
-You don't write these programs yourself — the agent does, inside `execute_code`. Seeing the shape helps when you tune prompts, debug a run via `AnalysisState.executions`, or design a custom skill.
+You don't write these programs yourself. The agent does, inside `execute_code`. Seeing the shape helps when you tune prompts, debug a run via `AnalysisState.executions`, or design a custom skill.
 
 **Aggregate across the corpus.** *"How many documents mention security vulnerabilities?"*
 

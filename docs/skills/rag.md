@@ -8,7 +8,7 @@ The `rag` skill answers questions over a knowledge base with hybrid search, stru
 - You want citations under every answer.
 - You're building a Q&A agent, a documentation chatbot, or any RAG-style integration.
 
-If the question requires *computation* over the corpus (counts, aggregates, comparisons, section-scoped reading), reach for the [Analysis skill](analysis.md) instead — or attach both.
+If the question requires *computation* over the corpus (counts, aggregates, comparisons, section-scoped reading), reach for the [Analysis skill](analysis.md) instead, or attach both.
 
 ## Tools
 
@@ -32,7 +32,7 @@ class RAGState(BaseModel):
 ```
 
 - **citation_index** — All citations indexed by chunk ID. Accumulates across invocations so historical chunk IDs stay resolvable in UI scrollback.
-- **citations** — Chunk IDs registered via `cite` during the current invocation. Deduplicated; cleared at the start of each invocation.
+- **citations** — Chunk IDs registered via `cite` during the current invocation. Deduplicated, cleared at the start of each invocation.
 - **document_filter** — SQL WHERE clause applied to `search` and `list_documents`. Persists across invocations.
 - **searches** — Search results keyed by query string. Cleared at the start of each invocation.
 
@@ -51,7 +51,7 @@ skill = create_skill(db_path="my.lancedb")
 
 ## Examples
 
-### Minimal QA agent
+### Minimal agent
 
 ```python
 from haiku.rag.skills.rag import create_skill

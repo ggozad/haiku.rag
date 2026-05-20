@@ -98,11 +98,11 @@ evaluations:
 - For each relevant document at position k, calculate precision@k = (relevant docs in top k) / k
 - Average Precision (AP) = mean of these precision values / total relevant documents
 - MAP is the mean of AP scores across all queries
-- Range: 0 to 1; rewards ranking relevant documents higher
+- Range: 0 to 1. Rewards ranking relevant documents higher
 
 ### QA Accuracy
 
-`pydantic-evals` coordinates an LLM judge to determine whether the skill's answer is correct. The default judge is `ollama:qwen3.6` — pinned so changes to the skill model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
+`pydantic-evals` coordinates an LLM judge to determine whether the skill's answer is correct. The default judge is `ollama:qwen3.6`, pinned so changes to the skill model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
 
 We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
@@ -110,7 +110,7 @@ We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibrat
 
 Alongside QA accuracy, a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MRR / MAP math as raw retrieval. The score key is `cited_mrr` for single-doc datasets and `cited_map` for multi-doc. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
 
-This is computed alongside QA accuracy from the same skill run — no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
+This is computed alongside QA accuracy from the same skill run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
 
 ## Current results
 
@@ -118,7 +118,7 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 
 ### Wix
 
-[WixQA](https://huggingface.co/datasets/Wix/WixQA) — real customer support questions paired with curated answers. 200 cases.
+[WixQA](https://huggingface.co/datasets/Wix/WixQA) is real customer support questions paired with curated answers. 200 cases.
 
 `evaluations run wix --target rag-skill` runs the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
 
@@ -135,7 +135,7 @@ Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `
 Two approaches are benchmarked separately:
 
 - **Multimodal embedder** (`Qwen/Qwen3-VL-Embedding-8B`, served via vLLM): picture bytes and text live in a shared vector space, no VLM is run at ingest.
-- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are woven into chunk text; retrieval runs over text only. See [Picture handling configuration](configuration/processing.md#picture-handling).
+- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are woven into chunk text. Retrieval runs over text only. See [Picture handling configuration](configuration/processing.md#picture-handling).
 
 #### Multimodal embedder
 
