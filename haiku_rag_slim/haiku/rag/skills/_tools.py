@@ -324,8 +324,8 @@ def create_skill_tools(
                 if cid.strip("[]") not in resolved_ids
             ]
 
-            rag = ctx.deps.rag if ctx.deps else None
-            if missing and rag is not None:
+            if missing:
+                rag = _require_rag(ctx)
                 synthetic: list[SearchResult] = []
                 doc_cache: dict[str, Any] = {}
                 for cid in missing:

@@ -346,9 +346,11 @@ class TestCiteTool:
         assert "verbatim" in message
         assert "372c9ddf-not-a-real-id" in message
 
-    async def test_cite_raises_modelretry_when_no_searches_recorded(self, rag_db):
-        """If cite is called before any search has populated state.searches,
-        the retry message tells the model to call search first."""
+    async def test_cite_raises_modelretry_when_chunk_id_does_not_exist(
+        self, rag_db, rag_client
+    ):
+        """With no prior search() and a chunk_id that doesn't exist in the DB,
+        cite raises ModelRetry — the DB-fallback path tried and found nothing."""
         from pydantic_ai import ModelRetry
 
         from haiku.rag.skills.rag import RAGState, create_skill
@@ -356,11 +358,14 @@ class TestCiteTool:
         skill = create_skill(db_path=rag_db)
         cite = _get_tool(skill, "cite")
         state = RAGState()
-        ctx = _make_ctx(state)
+        ctx = _make_ctx(state, rag=rag_client)
+        assert not state.searches
 
         with pytest.raises(ModelRetry) as exc_info:
-            await cite(ctx, chunk_ids=["any-id"])
-        assert "search" in str(exc_info.value).lower()
+            await cite(ctx, chunk_ids=["nonexistent-chunk-id"])
+        message = str(exc_info.value)
+        assert "verbatim" in message
+        assert "nonexistent-chunk-id" in message
 
     async def test_cite_returns_message_when_chunk_ids_empty(self, rag_db):
         """An empty chunk_ids list is a no-op, not a retry trigger."""

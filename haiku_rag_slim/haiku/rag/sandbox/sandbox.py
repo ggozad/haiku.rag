@@ -62,6 +62,10 @@ def _build_toc(
     flat sibling list (see docling-project/docling#2121 for an upstream case
     where every PDF section_header is emitted at level=1).
     """
+    # Defensive: every consumer is supposed to pass items in position order,
+    # but the end_exclusive lookahead below silently miscomputes section
+    # boundaries if it's not — better to sort once than trust the caller.
+    items = sorted(items, key=lambda i: i.position)
     headers: list[DocumentItem] = [
         i for i in items if i.label == "section_header" and i.heading_level > 0
     ]
