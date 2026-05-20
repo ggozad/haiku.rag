@@ -5,6 +5,10 @@
 
 - Documentation generator swapped from `mkdocs-material` to `zensical`. Drops `mkdocs` / `mkdocs-material` dev deps, replaces `mkdocs.yml` with `zensical.toml`, adds `overrides/main.html` (OG/Twitter share meta) and `docs/stylesheets/extra.css`. `build-docs` workflow now runs `uv run zensical build` and publishes via the GitHub Pages artifact actions instead of `mkdocs gh-deploy`.
 
+### Fixed
+
+- mxbai reranker crashing inside the chat TUI with `ValueError: bad value(s) in fds_to_keep`. tqdm constructs a `multiprocessing.RLock` on first use, whose `resource_tracker` spawn picks up `sys.stderr.fileno()`; Textual's redirected stderr returns `-1`, failing the `fork_exec` validation. The reranker now pins tqdm's class lock to a `threading.RLock`.
+
 ## [0.48.0] - 2026-05-20
 
 ### Added
