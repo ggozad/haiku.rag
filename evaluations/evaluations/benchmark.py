@@ -591,11 +591,6 @@ def run(
         "--multimodal-only",
         help="Only evaluate queries requiring image understanding.",
     ),
-    judge_model: str | None = typer.Option(
-        None,
-        "--judge-model",
-        help="Judge model as 'provider:name'. Defaults to ollama:qwen3.6.",
-    ),
     target: str = typer.Option(
         "rag-skill",
         "--target",
@@ -617,7 +612,7 @@ def run(
             f"Unknown target {target!r}. Choose from: {', '.join(TARGETS)}"
         )
     target_value = cast(Target, target)
-    judge_model_config = parse_model_option(judge_model) if judge_model else None
+    judge_model_config = app_config.evaluations.judge
     skill_model_config = parse_model_option(skill_model) if skill_model else None
 
     asyncio.run(

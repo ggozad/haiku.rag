@@ -13,6 +13,7 @@
 - BTree scalar indexes on `document_items.{document_id, position, self_ref}`. The 0.48.0 migration creates them on existing DBs. Per-doc lookups go from full-table scans (~100–300 ms) to point queries (~3–21 ms) on small/medium corpora.
 - Per-doc lazy cache for `items.jsonl` and `toc.json` in the analysis sandbox. First read fetches; subsequent reads of either file in the same `execute_code` session hit a serialized cache. One DB fetch per doc per session.
 - `cite` tool now accepts chunk_ids that resolve via the chunks table, not only chunk_ids from a prior `search()` result. Lets the model cite directly from `items.jsonl` / `toc.json` rows. The hallucination guard (`ModelRetry` on chunk_ids that don't exist in the DB) is preserved.
+- `AppConfig.evaluations` (`EvaluationsConfig`) with an optional `judge: ModelConfig`. Lets the eval CLI pin the LLM-as-judge per-yaml — including a custom `base_url` for any OpenAI-compatible endpoint (vLLM, LM Studio) without env-var routing.
 
 ### Removed
 
@@ -27,6 +28,7 @@
 - `prompts.qa` config field.
 - `evaluations optimize` subcommand and GEPA prompt-optimization. Drops `gepa` dep.
 - `--target qa` from `evaluations run`. Default is now `rag-skill`.
+- `--judge-model` flag from `evaluations run`. Set the judge in `config.evaluations.judge` instead.
 - `position` field on `toc.json` nodes (redundant with `item_range[0]`).
 - `position` and `tree_depth` from `items.jsonl` row serialization. Both fields are still persisted on `DocumentItem`; they are no longer surfaced to the sandbox.
 

@@ -236,6 +236,19 @@ class PromptsConfig(BaseModel):
     )
 
 
+class EvaluationsConfig(BaseModel):
+    """Settings consumed only by the `evaluations` package."""
+
+    judge: ModelConfig | None = Field(
+        default=None,
+        description=(
+            "Judge model for `evaluations run`'s LLM-as-judge step. "
+            "ModelConfig's base_url lets the judge point at any "
+            "OpenAI-compatible endpoint."
+        ),
+    )
+
+
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -249,3 +262,6 @@ class AppConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    evaluations: "EvaluationsConfig" = Field(
+        default_factory=lambda: EvaluationsConfig()
+    )
