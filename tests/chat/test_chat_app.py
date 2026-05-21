@@ -219,7 +219,7 @@ async def test_chat_history_thinking_indicator(temp_db_path: Path):
 
 @pytest.mark.asyncio
 async def test_clear_chat_resets_state(temp_db_path: Path):
-    """Test that clearing chat resets state and messages."""
+    """Test that clearing chat resets state, messages, and conversation id."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory
 
     app, mock_client = _make_app(temp_db_path)
@@ -232,10 +232,12 @@ async def test_clear_chat_resets_state(temp_db_path: Path):
             await chat_history.add_message("assistant", "Hi there")
             assert len(chat_history.messages) == 2
 
+            previous_conversation_id = app._conversation_id
             await app.action_clear_chat()
             await pilot.pause()
 
             assert len(chat_history.messages) == 0
+            assert app._conversation_id != previous_conversation_id
 
 
 @pytest.mark.asyncio
