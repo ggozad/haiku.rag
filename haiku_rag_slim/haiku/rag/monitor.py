@@ -1,78 +1,19 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import pathspec
-from watchfiles import Change, DefaultFilter, awatch
+from watchfiles import Change, awatch
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, Config, S3MonitorEntry
+from haiku.rag.ingester.sources.filter import FileFilter
 from haiku.rag.store.models.document import Document
 from haiku.rag.utils import escape_sql_string
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
-
-class FileFilter(DefaultFilter):
-    def __init__(
-        self,
-        *,
-        ignore_patterns: list[str] | None = None,
-        include_patterns: list[str] | None = None,
-        supported_extensions: list[str] | None = None,
-    ) -> None:
-        if supported_extensions is None:
-            # Default to docling-local extensions if not provided
-            from haiku.rag.converters.docling_local import DoclingLocalConverter
-            from haiku.rag.converters.text_utils import TextFileHandler
-
-            supported_extensions = (
-                DoclingLocalConverter.docling_extensions
-                + TextFileHandler.text_extensions
-            )
-
-        self.extensions = tuple(supported_extensions)
-        self.ignore_spec = (
-            pathspec.PathSpec.from_lines("gitwildmatch", ignore_patterns)
-            if ignore_patterns
-            else None
-        )
-        self.include_spec = (
-            pathspec.PathSpec.from_lines("gitwildmatch", include_patterns)
-            if include_patterns
-            else None
-        )
-        super().__init__()
-
-    def __call__(self, change: Change, path: str) -> bool:
-        if not self.include_file(path):
-            return False
-
-        # Apply default watchfiles filter
-        return super().__call__(change, path)
-
-    def include_file(self, path: str) -> bool:
-        """Check if a file should be included based on filters."""
-        # Check extension filter
-        if not path.endswith(self.extensions):
-            return False
-
-        # Apply include patterns if specified (whitelist mode)
-        if self.include_spec:
-            if not self.include_spec.match_file(path):
-                return False
-
-        # Apply ignore patterns (blacklist mode)
-        if self.ignore_spec:
-            if self.ignore_spec.match_file(path):
-                return False
-
-        return True
+__all__ = ["FileFilter", "FileWatcher", "S3Watcher"]
 
 
 class FileWatcher:
