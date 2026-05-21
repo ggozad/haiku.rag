@@ -25,7 +25,8 @@ class CitationMRREvaluator(Evaluator):
     Use for single-document datasets, mirroring :class:`MRREvaluator`.
     """
 
-    evaluation_name: str = "cited_mrr"
+    def get_default_evaluation_name(self) -> str:
+        return "cited_mrr"
 
     def evaluate(self, ctx: EvaluatorContext) -> float:
         relevant = _relevant_uris(ctx)
@@ -43,7 +44,8 @@ class CitationMAPEvaluator(Evaluator):
     datasets, mirroring :class:`MAPEvaluator`.
     """
 
-    evaluation_name: str = "cited_map"
+    def get_default_evaluation_name(self) -> str:
+        return "cited_map"
 
     def evaluate(self, ctx: EvaluatorContext) -> float:
         relevant = _relevant_uris(ctx)

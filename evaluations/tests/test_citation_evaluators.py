@@ -45,7 +45,7 @@ class TestCitationMRREvaluator:
         assert self.evaluator.evaluate(ctx) == 0.0
 
     def test_evaluation_name(self) -> None:
-        assert self.evaluator.evaluation_name == "cited_mrr"
+        assert self.evaluator.get_default_evaluation_name() == "cited_mrr"
 
 
 class TestCitationMAPEvaluator:
@@ -79,4 +79,4 @@ class TestCitationMAPEvaluator:
         assert self.evaluator.evaluate(ctx) == 0.0
 
     def test_evaluation_name(self) -> None:
-        assert self.evaluator.evaluation_name == "cited_map"
+        assert self.evaluator.get_default_evaluation_name() == "cited_map"
