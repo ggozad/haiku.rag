@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.48.1] - 2026-05-21
+
 ### Changed
 
 - Bump `haiku.skills>=0.17.1` and `pydantic-ai-slim>=1.100.0` (the last pre-2.0 release). Migrate off two APIs slated for removal in pydantic-ai 2.0: `Agent(tool_retries=, output_retries=)` → `Agent(retries={"tools": …, "output": …})` in the LLM-as-judge evaluator, and `Evaluator.evaluation_name` class attribute → overriding `get_default_evaluation_name()` on `CitationMRREvaluator` / `CitationMAPEvaluator`.
@@ -1593,7 +1595,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.48.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.48.1...HEAD
+[0.48.1]: https://github.com/ggozad/haiku.rag/compare/0.48.0...0.48.1
 [0.48.0]: https://github.com/ggozad/haiku.rag/compare/0.47.0...0.48.0
 [0.47.0]: https://github.com/ggozad/haiku.rag/compare/0.46.0...0.47.0
 [0.46.0]: https://github.com/ggozad/haiku.rag/compare/0.45.0...0.46.0
