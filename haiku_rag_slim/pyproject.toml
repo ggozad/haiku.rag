@@ -53,6 +53,13 @@ cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]
 jina = ["transformers>=4.40.0", "torch>=2.0.0"]
 cross-encoder = ["sentence-transformers>=3.0.0"]
+# Production ingester (queue, workers, API)
+ingester = [
+    "fastapi>=0.125",
+    "uvicorn[standard]>=0.32",
+    "aiosqlite>=0.20",
+    "haiku.rag-slim[s3]",
+]
 # TUI (chat and inspect commands)
 tui = [
     "textual>=8.2.4",
@@ -74,6 +81,7 @@ rag-analysis = "haiku.rag.skills.analysis:create_skill"
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
+haiku-ingester = "haiku.rag.ingester.cli:cli"
 
 [build-system]
 requires = ["hatchling"]

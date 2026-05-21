@@ -249,6 +249,21 @@ class EvaluationsConfig(BaseModel):
     )
 
 
+class QueueConfig(BaseModel):
+    """SQLite queue for the production ingester."""
+
+    path: Path = Field(
+        default_factory=lambda: get_default_data_dir() / "ingester.db",
+        description="Location of the ingester's SQLite queue file.",
+    )
+
+
+class IngesterConfig(BaseModel):
+    """Production ingester settings. Expanded across chunks 4-7."""
+
+    queue: QueueConfig = Field(default_factory=QueueConfig)
+
+
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -262,6 +277,7 @@ class AppConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    ingester: IngesterConfig = Field(default_factory=IngesterConfig)
     evaluations: "EvaluationsConfig" = Field(
         default_factory=lambda: EvaluationsConfig()
     )
