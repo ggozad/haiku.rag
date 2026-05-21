@@ -5,13 +5,28 @@ import logging
 
 import pyarrow as pa
 
-from haiku.rag.store.engine import DocumentItemRecord, Store
+from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 from haiku.rag.utils import escape_sql_string
 
 logger = logging.getLogger(__name__)
 
 PROGRESS_INTERVAL = 5
+
+# Schema for the merge_insert input. Pinned to the columns that exist at
+# v0.45.0 time so the migration stays independent of future model changes
+# (e.g. heading_level / tree_depth added in v0.48.0).
+_V0_45_0_ITEMS_SCHEMA = pa.schema(
+    [
+        pa.field("document_id", pa.string()),
+        pa.field("position", pa.int64()),
+        pa.field("self_ref", pa.string()),
+        pa.field("label", pa.string()),
+        pa.field("text", pa.string()),
+        pa.field("page_numbers", pa.string()),
+        pa.field("picture_data", pa.large_binary()),
+    ]
+)
 
 
 async def _ensure_picture_data_column(store: Store) -> None:
@@ -125,18 +140,22 @@ async def _apply_extract_picture_bytes(store: Store) -> None:
                 )
                 existing_by_ref = {r["self_ref"]: r for r in existing_items}
 
-                new_records = [
-                    DocumentItemRecord(
-                        document_id=doc_id,
-                        position=existing_by_ref[ref]["position"],
-                        self_ref=ref,
-                        label=existing_by_ref[ref].get("label", ""),
-                        text=existing_by_ref[ref].get("text", ""),
-                        page_numbers=existing_by_ref[ref].get("page_numbers", "[]"),
-                        picture_data=img_bytes,
-                    )
-                    for ref, img_bytes in updates
-                ]
+                new_records = pa.Table.from_pylist(
+                    [
+                        {
+                            "document_id": doc_id,
+                            "position": existing_by_ref[ref]["position"],
+                            "self_ref": ref,
+                            "label": existing_by_ref[ref].get("label") or "",
+                            "text": existing_by_ref[ref].get("text") or "",
+                            "page_numbers": existing_by_ref[ref].get("page_numbers")
+                            or "[]",
+                            "picture_data": img_bytes,
+                        }
+                        for ref, img_bytes in updates
+                    ],
+                    schema=_V0_45_0_ITEMS_SCHEMA,
+                )
 
                 await (
                     store.document_items_table.merge_insert(["document_id", "self_ref"])

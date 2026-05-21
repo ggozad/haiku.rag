@@ -8,6 +8,7 @@
 ### Fixed
 
 - mxbai reranker crashing inside the chat TUI with `ValueError: bad value(s) in fds_to_keep`. tqdm constructs a `multiprocessing.RLock` on first use, whose `resource_tracker` spawn picks up `sys.stderr.fileno()`; Textual's redirected stderr returns `-1`, failing the `fork_exec` validation. The reranker now pins tqdm's class lock to a `threading.RLock`.
+- `migrate` failing on DBs upgrading through v0.45.0 with `Field 'heading_level' not found in target schema`. The v0.45.0 picture-data backfill was building rows from the current `DocumentItemRecord` Pydantic model — which now carries `heading_level` / `tree_depth` added in v0.48.0 — and feeding them to `merge_insert` against a pre-v0.48.0 schema. Both v0.40.0 and v0.45.0 now build their PyArrow inputs from explicit per-migration column sets so future model additions can't retroactively break them.
 
 ## [0.48.0] - 2026-05-20
 
