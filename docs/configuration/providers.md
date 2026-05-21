@@ -56,12 +56,15 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **Groq**: Models with reasoning capabilities
 - **Bedrock**: Claude, OpenAI, and Qwen models
 - **Ollama**: Models supporting reasoning (gpt-oss, etc.)
-- **vLLM**: Models supporting reasoning (gpt-oss, etc.)
+- **vLLM**: Models with a pydantic-ai reasoning profile (gpt-oss). Qwen3, Gemma, and similar templates ignore the OpenAI `reasoning_effort` that `enable_thinking` translates to — use [`extra_body`](#raw-provider-pass-through) to drive them.
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
 **When to use:**
 - Enable for QA, complex reasoning, and mathematical problems
 - Disable for speed-critical applications, title generation, and simple tasks
+
+!!! note "vLLM-served models without a reasoning profile"
+    On `provider: openai` with a custom `base_url`, `enable_thinking` only takes effect for models whose pydantic-ai profile advertises reasoning support (o-series, gpt-5, gpt-oss). For other vLLM-served models (Qwen3, Gemma family, …) the field is a silent no-op. Reach the chat template's thinking switch directly via [`extra_body`](#raw-provider-pass-through).
 
 ### Raw Provider Pass-through
 
@@ -81,6 +84,21 @@ qa:
 ```
 
 vLLM serves Qwen3 chat templates that read their thinking switch from `chat_template_kwargs.enable_thinking`. The high-level `enable_thinking` setting on the openai provider maps to vLLM's `reasoning_effort` parameter, which Qwen3 templates ignore, so the field is a no-op for this combination. `extra_body` reaches the chat template directly and disables thinking. With it off, Qwen3 returns the answer in `content` immediately instead of emitting a hidden reasoning trace first.
+
+**Example: enable Gemma-family thinking on vLLM:**
+
+```yaml
+qa:
+  model:
+    provider: openai
+    name: nvidia/Gemma-4-26B-A4B-NVFP4
+    base_url: http://localhost:11432/v1
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: true
+```
+
+Same mechanism, opposite direction. Without `extra_body` the Gemma-4 chat template defaults to non-thinking and dumps a verbose answer straight into `content`. With it on, vLLM (started with `--reasoning-parser`) populates the parsed `reasoning` field and leaves `content` as the concise final answer.
 
 **Provider support:** honored by openai, ollama, anthropic, and groq via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by gemini and bedrock.
 

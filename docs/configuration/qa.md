@@ -37,6 +37,9 @@ qa:
 - **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
 
+!!! note "Thinking on vLLM"
+    `enable_thinking` only applies to models with a pydantic-ai reasoning profile (o-series, gpt-5, gpt-oss). For other vLLM-served models such as Qwen3 or the Gemma family, the field is a silent no-op — set the chat template switch via [`extra_body`](providers.md#raw-provider-pass-through) instead.
+
 ## Analysis Configuration
 
 Configure the analysis skill:
