@@ -829,19 +829,14 @@ class TestDoclingLocalConverter:
         # The document should have pictures with descriptions
         assert doc.pictures, "Document should have pictures"
 
-        # Check that at least one picture has a description annotation
-        from docling_core.types.doc.document import PictureDescriptionData
-
+        # Check that at least one picture carries a VLM description.
         pictures_with_descriptions = []
         for pic in doc.pictures:
-            for ann in pic.annotations:
-                if isinstance(ann, PictureDescriptionData):
-                    pictures_with_descriptions.append(pic)
-                    # Description should appear in markdown output
-                    assert ann.text in markdown, (
-                        f"Picture description '{ann.text[:50]}...' should be in markdown"
-                    )
-                    break
+            if pic.meta and pic.meta.description and pic.meta.description.text:
+                pictures_with_descriptions.append(pic)
+                assert pic.meta.description.text in markdown, (
+                    f"Picture description '{pic.meta.description.text[:50]}...' should be in markdown"
+                )
 
         assert pictures_with_descriptions, (
             "At least one picture should have a VLM description"
@@ -1349,18 +1344,14 @@ class TestDoclingServeConverterIntegration:
 
         assert doc.pictures, "Document should have pictures"
 
-        from docling_core.types.doc.document import PictureDescriptionData
-
         pictures_with_descriptions = []
         markdown = doc.export_to_markdown()
         for pic in doc.pictures:
-            for ann in pic.annotations:
-                if isinstance(ann, PictureDescriptionData):
-                    pictures_with_descriptions.append(pic)
-                    assert ann.text in markdown, (
-                        f"Picture description '{ann.text[:50]}...' should be in markdown"
-                    )
-                    break
+            if pic.meta and pic.meta.description and pic.meta.description.text:
+                pictures_with_descriptions.append(pic)
+                assert pic.meta.description.text in markdown, (
+                    f"Picture description '{pic.meta.description.text[:50]}...' should be in markdown"
+                )
 
         assert pictures_with_descriptions, (
             "At least one picture should have a VLM description"

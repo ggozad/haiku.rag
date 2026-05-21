@@ -23,7 +23,7 @@ classifiers = [
 
 dependencies = [
     "docling-core>=2.75.0",
-    "haiku.skills>=0.17.0",
+    "haiku.skills>=0.17.1",
     "httpx>=0.28.1",
     "jinja2>=3.1.0",
     "jsonpatch>=1.33",

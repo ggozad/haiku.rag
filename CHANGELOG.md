@@ -3,7 +3,8 @@
 
 ### Changed
 
-- Bump `haiku.skills>=0.17.0` and `pydantic-ai-slim>=1.100.0` (the last pre-2.0 release). Migrate off two APIs slated for removal in pydantic-ai 2.0: `Agent(tool_retries=, output_retries=)` → `Agent(retries={"tools": …, "output": …})` in the LLM-as-judge evaluator, and `Evaluator.evaluation_name` class attribute → overriding `get_default_evaluation_name()` on `CitationMRREvaluator` / `CitationMAPEvaluator`.
+- Bump `haiku.skills>=0.17.1` and `pydantic-ai-slim>=1.100.0` (the last pre-2.0 release). Migrate off two APIs slated for removal in pydantic-ai 2.0: `Agent(tool_retries=, output_retries=)` → `Agent(retries={"tools": …, "output": …})` in the LLM-as-judge evaluator, and `Evaluator.evaluation_name` class attribute → overriding `get_default_evaluation_name()` on `CitationMRREvaluator` / `CitationMAPEvaluator`.
+- Drop the `item.annotations` fallback in `_picture_description_text`. Docling's `PictureItem` runs a `@model_validator(mode="after")` on load that migrates the deprecated `annotations` field into `meta.description`, so reading `meta.description.text` covers both legacy and current blobs. Tests in `test_converters.py` switched to `meta.description.text` for the same reason.
 - Documentation generator swapped from `mkdocs-material` to `zensical`. Drops `mkdocs` / `mkdocs-material` dev deps, replaces `mkdocs.yml` with `zensical.toml`, adds `overrides/main.html` (OG/Twitter share meta) and `docs/stylesheets/extra.css`. `build-docs` workflow now runs `uv run zensical build` and publishes via the GitHub Pages artifact actions instead of `mkdocs gh-deploy`.
 
 ### Fixed
