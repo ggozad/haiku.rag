@@ -175,12 +175,9 @@ Two approaches are benchmarked separately:
 
 | Embedding Model        | VLM                  | Skill model                  | QA accuracy | Mean `cited_map` |
 |------------------------|----------------------|------------------------------|-------------|------------------|
-| `qwen3-embedding:4b`   | Ollama / ministral-3 | `ollama:gpt-oss`             | 0.94        | 0.86             |
-| `qwen3-embedding:4b`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` | 0.90        | 0.89             |
+| `qwen3-embedding:4b`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` | 0.88        | 0.89             |
 
-*`ollama:gpt-oss` row measured on haiku.rag v0.44.0, on 2992 of 3044 completed cases.*
-*`vllm:Gemma-4-26B-A4B-NVFP4` row measured on haiku.rag v0.47.0, with `mxbai-rerank-base-v2`, stopped at 674 of 3045 cases (cumulative means stable from case ~200).*
-*Both judged by `ollama:qwen3.6` (current default).*
+*Measured on haiku.rag v0.48.0, with `mxbai-rerank-base-v2`, on all 3045 cases. Judged by `vllm:Qwen3.6-35B-A3B-NVFP4`.*
 
 ## Inactive datasets
 

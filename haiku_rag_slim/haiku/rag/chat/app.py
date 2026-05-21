@@ -108,6 +108,10 @@ class ChatApp(App):
         self._is_processing = False
         self._current_worker: Worker[None] | None = None
         self._document_filter: list[str] = []
+        # Stable per-launch id so multi-turn chats land in one Logfire
+        # conversation. AGUIAdapter reads run_input.thread_id and exports it
+        # as the `gen_ai.conversation.id` OTel attribute on every agent run.
+        self._conversation_id = str(uuid.uuid4())
 
     def compose(self) -> "ComposeResult":
         """Compose the UI layout."""
@@ -207,7 +211,7 @@ class ChatApp(App):
         await chat_history.show_thinking()
 
         run_input = RunAgentInput(
-            thread_id="tui",
+            thread_id=self._conversation_id,
             run_id=str(uuid.uuid4()),
             messages=self._messages,
             state=self._state,
@@ -375,6 +379,8 @@ class ChatApp(App):
         # Reset state
         if self._toolset:
             self._state = self._toolset.build_state_snapshot()
+        # Cleared chat starts a fresh Logfire conversation.
+        self._conversation_id = str(uuid.uuid4())
 
     def action_focus_input(self) -> None:
         """Focus the input field, or cancel if processing."""

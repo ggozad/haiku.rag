@@ -25,18 +25,14 @@ class DocumentItem(BaseModel):
 def _picture_description_text(item: "PictureItem") -> str | None:
     """Return the VLM-generated description text for a PictureItem, if any.
 
-    Tries the modern ``meta.description`` location first (docling 2.91+) and
-    falls back to ``annotations`` entries that carry a ``text`` field
-    (PictureDescriptionData and similar).
+    Reads ``meta.description.text``. Pre-2.91 blobs that stored the
+    description under the deprecated ``annotations`` field are migrated to
+    ``meta`` by ``PictureItem``'s own ``@model_validator(mode="after")`` at
+    load time, so this single check covers both formats.
     """
     if item.meta and item.meta.description:
         text = item.meta.description.text
         if text and text.strip():
-            return text
-    # Annotations is a tagged union; only some variants carry `text`.
-    for ann in item.annotations:
-        text = getattr(ann, "text", None)
-        if isinstance(text, str) and text.strip():
             return text
     return None
 
