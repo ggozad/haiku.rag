@@ -47,6 +47,20 @@ async def test_fs_source_fetch_returns_bytes_and_md5(fs_root: Path):
     )
     assert result.content_type == "text/markdown"
     assert result.revision == str(target.stat().st_mtime_ns)
+    assert result.disk_path == target
+
+
+@pytest.mark.asyncio
+async def test_fs_source_head_returns_mtime(fs_root: Path):
+    src = FSSource(root=fs_root)
+    target = fs_root / "a.md"
+    assert await src.head(target.as_uri()) == str(target.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+async def test_fs_source_head_returns_none_for_missing_file(fs_root: Path):
+    src = FSSource(root=fs_root)
+    assert await src.head((fs_root / "missing.md").as_uri()) is None
 
 
 @pytest.mark.asyncio

@@ -60,8 +60,17 @@ class FSSource:
             return False
         return True
 
+    async def head(self, uri: str) -> str | None:
+        path = _uri_to_path(uri).absolute()
+        if not path.exists():
+            return None
+        return str(path.stat().st_mtime_ns)
+
     async def fetch(self, uri: str) -> FetchResult:
-        path = _uri_to_path(uri)
+        # Absolute path is needed for as_uri() and matches the old
+        # _create_document_from_file behavior (which keyed docs on the
+        # absolute file:// URI).
+        path = _uri_to_path(uri).absolute()
         body = path.read_bytes()
         content_type, _ = mimetypes.guess_type(path.name)
         if content_type is None:
@@ -75,6 +84,7 @@ class FSSource:
             content_type=content_type,
             content_hash=hashlib.md5(body, usedforsecurity=False).hexdigest(),
             revision=revision,
+            disk_path=path,
         )
 
     async def discover(

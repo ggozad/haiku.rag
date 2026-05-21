@@ -30,6 +30,13 @@ def test_source_id_is_user_provided():
 
 
 @pytest.mark.asyncio
+async def test_head_returns_none():
+    # HTTP has no cheap revision lookup in v1 — the pipeline always GETs.
+    src = HTTPSource(source_id="default")
+    assert await src.head("https://example.com/a.md") is None
+
+
+@pytest.mark.asyncio
 async def test_fetch_returns_bytes_and_md5_and_etag():
     body = b"hello world"
     transport = _transport(

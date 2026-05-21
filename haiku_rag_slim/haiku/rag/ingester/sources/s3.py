@@ -23,6 +23,14 @@ def _parse_s3_uri(uri: str) -> tuple[str, str]:
     return parsed.netloc, parsed.path.lstrip("/")
 
 
+def _parse_s3_object_uri(uri: str) -> tuple[str, str]:
+    """Like _parse_s3_uri but rejects bucket-only URIs (no key)."""
+    bucket, key = _parse_s3_uri(uri)
+    if not key:
+        raise ValueError(f"Invalid S3 URI: {uri}")
+    return bucket, key
+
+
 class S3Source:
     def __init__(
         self,
@@ -54,12 +62,22 @@ class S3Source:
     def supports(self, uri: str) -> bool:
         return uri.startswith(self.uri_prefix)
 
+    async def head(self, uri: str) -> str | None:
+        import obstore  # type: ignore[import-not-found]
+
+        from haiku.rag.s3 import make_s3_store
+
+        bucket, key = _parse_s3_object_uri(uri)
+        store = make_s3_store(bucket, self.storage_options)
+        head = await obstore.head_async(store, key)
+        return (head.get("e_tag") or "").strip('"').strip() or None
+
     async def fetch(self, uri: str) -> FetchResult:
         import obstore  # type: ignore[import-not-found]
 
         from haiku.rag.s3 import make_s3_store
 
-        bucket, key = _parse_s3_uri(uri)
+        bucket, key = _parse_s3_object_uri(uri)
         store = make_s3_store(bucket, self.storage_options)
 
         head = await obstore.head_async(store, key)

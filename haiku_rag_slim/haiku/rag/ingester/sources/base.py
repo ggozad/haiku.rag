@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Mapping
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -39,6 +40,11 @@ class FetchResult(BaseModel):
     content_hash: str
     revision: str | None = None
     extra_metadata: dict[str, str] = Field(default_factory=dict)
+    # When the body is already on disk (FSSource), points at the original
+    # file so the pipeline can hand it to docling without copying through a
+    # tempfile. Remote sources (HTTP/S3) leave this None — their bytes only
+    # exist in memory.
+    disk_path: Path | None = None
 
 
 @runtime_checkable
@@ -46,6 +52,14 @@ class Source(Protocol):
     source_id: str
 
     def supports(self, uri: str) -> bool: ...
+
+    async def head(self, uri: str) -> str | None:
+        """Return the current revision for `uri` cheaply, if the backend
+        supports it. Returning None means "I have no cheap revision lookup —
+        you'll have to fetch()". The pipeline uses this to short-circuit
+        re-ingest when the stored revision is unchanged.
+        """
+        ...
 
     async def fetch(self, uri: str) -> FetchResult: ...
 

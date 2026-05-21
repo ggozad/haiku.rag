@@ -76,6 +76,23 @@ def test_invalid_uri_raises():
 
 
 @pytest.mark.asyncio
+async def test_head_returns_etag(fake_obstore_io):
+    head_async, _ = fake_obstore_io
+    head_async.return_value = {"e_tag": '"abc123"'}
+    src = S3Source(uri="s3://bucket/")
+    assert await src.head("s3://bucket/file.txt") == "abc123"
+    head_async.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_head_returns_none_when_no_etag(fake_obstore_io):
+    head_async, _ = fake_obstore_io
+    head_async.return_value = {}
+    src = S3Source(uri="s3://bucket/")
+    assert await src.head("s3://bucket/file.txt") is None
+
+
+@pytest.mark.asyncio
 async def test_fetch_returns_bytes_md5_etag(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     body = b"S3 hosted content"

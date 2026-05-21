@@ -48,6 +48,13 @@ class HTTPSource:
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(headers=self.headers, transport=self._transport)
 
+    async def head(self, uri: str) -> str | None:
+        # HTTP doesn't get a cheap revision lookup in v1: the existing
+        # ingestion flow always GETs and the dedup uses MD5. A HEAD-first
+        # optimization could land later without changing this contract —
+        # callers just need to tolerate the extra HEAD.
+        return None
+
     async def fetch(self, uri: str) -> FetchResult:
         async with self._client() as http:
             response = await http.get(uri)
