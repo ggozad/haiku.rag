@@ -9,6 +9,7 @@ documents table).
 import base64
 import json
 
+import pyarrow as pa
 import pytest
 
 from haiku.rag.store import Store
@@ -91,6 +92,84 @@ async def test_migration_backfills_picture_bytes_and_strips_blob(temp_db_path):
         assert rows[0]["picture_data"] == PNG_BYTES
 
         # The docling blob no longer carries the data URI on the picture.
+        doc_rows = await (
+            store.documents_table.query()
+            .where(f"id = '{doc_id}'")
+            .select(["docling_document"])
+            .to_list()
+        )
+        blob = json.loads(decompress_json(doc_rows[0]["docling_document"]))
+        assert blob["pictures"][0]["image"] is None
+
+
+@pytest.mark.asyncio
+async def test_migration_runs_against_pre_v0_48_0_schema(temp_db_path):
+    """Regression: v0.45.0 must not depend on columns introduced later.
+
+    Reproduces the client report where a DB on which v0.40.0 had already
+    run (and thus had a ``document_items`` table without ``picture_data``,
+    ``heading_level`` or ``tree_depth``) failed v0.45.0 with
+    ``Field 'heading_level' not found in target schema`` because the
+    migration was building rows from the current ``DocumentItemRecord``
+    Pydantic model — which now carries fields added in v0.48.0.
+    """
+    legacy_items_schema = pa.schema(
+        [
+            pa.field("document_id", pa.string()),
+            pa.field("position", pa.int64()),
+            pa.field("self_ref", pa.string()),
+            pa.field("label", pa.string()),
+            pa.field("text", pa.string()),
+            pa.field("page_numbers", pa.string()),
+        ]
+    )
+
+    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        # Replace the freshly-created (latest-schema) document_items table
+        # with one that only carries the v0.40.0 columns.
+        await store.db.drop_table("document_items")
+        legacy_items = await store.db.create_table(
+            "document_items", schema=legacy_items_schema
+        )
+
+        doc_id = "doc-1"
+        await store.documents_table.add(
+            [
+                DocumentRecord(
+                    id=doc_id,
+                    content="x",
+                    docling_document=_docling_blob_with_picture(),
+                    docling_version="1.10.0",
+                )
+            ]
+        )
+        await legacy_items.add(
+            [
+                {
+                    "document_id": doc_id,
+                    "position": 0,
+                    "self_ref": "#/pictures/0",
+                    "label": "picture",
+                    "text": "",
+                    "page_numbers": "[1]",
+                }
+            ]
+        )
+        await store.set_haiku_version("0.40.0")
+
+    # Re-open and reach for the table fresh so we use the legacy-schema handle.
+    async with Store(temp_db_path, skip_migration_check=True) as store:
+        await _apply_extract_picture_bytes(store)
+
+        rows = await (
+            store.document_items_table.query()
+            .where(f"document_id = '{doc_id}' AND self_ref = '#/pictures/0'")
+            .to_list()
+        )
+        assert len(rows) == 1
+        assert rows[0]["picture_data"] == PNG_BYTES
+
+        # And the blob is stripped.
         doc_rows = await (
             store.documents_table.query()
             .where(f"id = '{doc_id}'")
