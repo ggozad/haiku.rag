@@ -70,8 +70,8 @@ members = ["haiku_rag_slim", "evaluations"]
 [dependency-groups]
 dev = [
     "haiku.rag-evals",
+    "haiku.rag-slim[ingester]",
     "datasets>=4.8.4",
-    "obstore>=0.9,<0.10",
     "zensical",
     "pre-commit>=4.5.1",
     "pydantic-ai-slim[anthropic]",

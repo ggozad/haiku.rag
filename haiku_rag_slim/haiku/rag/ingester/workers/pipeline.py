@@ -2,6 +2,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 import httpx
+import logfire
 from pydantic import BaseModel
 
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
@@ -67,28 +68,6 @@ def _classify(exc: BaseException) -> Exception:
     return TransientError(f"unexpected: {exc!r}")
 
 
-def _logfire_span_or_null(name: str, **attrs):
-    """logfire is available via pydantic-ai but may be disabled; use the
-    no-op API surface so tests don't need it configured."""
-    try:
-        import logfire
-
-        return logfire.span(name, **attrs)
-    except ImportError:  # pragma: no cover - logfire ships with pydantic-ai
-
-        class _Null:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_):
-                return False
-
-            def set_attribute(self, *_args, **_kwargs):
-                pass
-
-        return _Null()
-
-
 async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
     """Execute the work described by `job`. Raises PermanentError or
     TransientError; the worker uses that to decide dead vs retry."""
@@ -96,7 +75,7 @@ async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
     storage_options = extra.get("storage_options")
     user_metadata = extra.get("metadata", {})
 
-    with _logfire_span_or_null(
+    with logfire.span(
         "ingester.job",
         job_id=job.id,
         source_id=job.source_id,

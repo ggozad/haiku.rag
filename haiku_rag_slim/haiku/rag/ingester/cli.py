@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,20 +22,51 @@ from haiku.rag.ingester.exceptions import PermanentError, TransientError  # noqa
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus  # noqa: E402
 from haiku.rag.ingester.workers.pipeline import run_job  # noqa: E402
+from haiku.rag.store.exceptions import (  # noqa: E402
+    MigrationRequiredError,
+    ReadOnlyError,
+)
 
-cli = typer.Typer(
+_cli = typer.Typer(
     name="haiku-ingester",
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
     help="Production ingester for haiku.rag.",
 )
 
+
+def _configure_logfire() -> None:
+    """Logfire emits spans only when LOGFIRE_TOKEN is set; otherwise it
+    stays silent (no warning either way). Matches the haiku-rag CLI."""
+    try:
+        import logfire
+
+        is_production = get_config().environment != "development"
+        logfire.configure(
+            send_to_logfire="if-token-present",
+            console=False if is_production else None,
+        )
+        logfire.instrument_pydantic_ai()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def cli() -> None:
+    """Entry point that translates store-state errors into a clean exit."""
+    _configure_logfire()
+    try:
+        _cli()
+    except (MigrationRequiredError, ReadOnlyError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 queue_cli = typer.Typer(
     name="queue",
     no_args_is_help=True,
     help="Operate the ingester's SQLite job queue.",
 )
-cli.add_typer(queue_cli)
+_cli.add_typer(queue_cli)
 
 
 def _load_config_with_override(config_path: Path | None) -> AppConfig:
@@ -102,7 +134,7 @@ def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:
     return override or (config.storage.data_dir / "haiku.rag.lancedb")
 
 
-@cli.command("serve")
+@_cli.command("serve")
 def serve(
     config: Path | None = typer.Option(
         None, "--config", "-c", help="Path to haiku.rag.yaml."
@@ -126,7 +158,7 @@ def serve(
     asyncio.run(app.serve(api=not no_api))
 
 
-@cli.command("run-once")
+@_cli.command("run-once")
 def run_once(
     uri: str = typer.Argument(..., help="URI to ingest (file://, http(s)://, s3://)."),
     config: Path | None = typer.Option(

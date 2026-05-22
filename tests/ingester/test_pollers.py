@@ -326,13 +326,13 @@ async def test_fs_poller_enqueues_initial_files(tmp_path, jobs, sync):
     try:
         # Wait for the initial sweep to land jobs.
         for _ in range(40):
-            queued = await jobs.list_jobs(source_id=f"fs:{tmp_path.resolve()}")
+            queued = await jobs.list_jobs(source_id="local")
             if len(queued) == 2:
                 break
             await asyncio.sleep(0.05)
     finally:
         await manager.stop()
 
-    queued = await jobs.list_jobs(source_id=f"fs:{tmp_path.resolve()}")
+    queued = await jobs.list_jobs(source_id="local")
     assert {Path(j.uri).name for j in queued} == {"a.md", "b.md"}
     assert all(j.status is JobStatus.QUEUED for j in queued)

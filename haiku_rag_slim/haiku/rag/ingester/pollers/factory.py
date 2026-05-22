@@ -24,6 +24,7 @@ def build_source(
             ignore_patterns=cfg.ignore_patterns or None,
             include_patterns=cfg.include_patterns or None,
             supported_extensions=supported_extensions,
+            source_id=cfg.id,
         )
     if isinstance(cfg, HTTPSourceConfig):
         if cfg.id is None:

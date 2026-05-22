@@ -33,12 +33,13 @@ class FSSource:
         ignore_patterns: list[str] | None = None,
         include_patterns: list[str] | None = None,
         supported_extensions: list[str] | None = None,
+        source_id: str | None = None,
     ) -> None:
         # Resolve so symlinks and relative paths collapse to one canonical
-        # source_id. The queue uses source_id as a foreign key — two paths
-        # for the same root would mean duplicate sync_state rows.
+        # root. The queue uses source_id as a foreign key — two paths for
+        # the same root would mean duplicate sync_state rows.
         self.root = Path(root).resolve()
-        self.source_id = f"fs:{self.root}"
+        self.source_id = source_id or f"fs:{self.root}"
         self.supported_extensions = (
             list(supported_extensions)
             if supported_extensions is not None

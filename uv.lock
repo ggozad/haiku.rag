@@ -1481,7 +1481,7 @@ tui = [
 dev = [
     { name = "datasets" },
     { name = "haiku-rag-evals" },
-    { name = "obstore" },
+    { name = "haiku-rag-slim", extra = ["ingester"] },
     { name = "pre-commit" },
     { name = "pydantic-ai-slim", extra = ["anthropic", "bedrock", "google", "groq"] },
     { name = "pytest" },
@@ -1508,7 +1508,7 @@ provides-extras = ["tui", "s3", "cross-encoder", "ingester"]
 dev = [
     { name = "datasets", specifier = ">=4.8.4" },
     { name = "haiku-rag-evals", editable = "evaluations" },
-    { name = "obstore", specifier = ">=0.9,<0.10" },
+    { name = "haiku-rag-slim", extras = ["ingester"], editable = "haiku_rag_slim" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pydantic-ai-slim", extras = ["anthropic"] },
     { name = "pydantic-ai-slim", extras = ["bedrock"] },

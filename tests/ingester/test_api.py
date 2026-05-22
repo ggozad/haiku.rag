@@ -1,0 +1,340 @@
+from datetime import UTC, datetime
+
+import aiosqlite
+import httpx
+import pytest
+from httpx import ASGITransport
+
+from haiku.rag.config import AppConfig
+from haiku.rag.ingester.api.server import APIState, build_app
+from haiku.rag.ingester.queue.migrations import apply_migrations
+from haiku.rag.ingester.queue.models import JobOp, JobStatus
+from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
+from haiku.rag.ingester.sources.base import (
+    FetchResult,
+    SourceEvent,
+    SourceEventKind,
+)
+
+
+@pytest.fixture
+async def conn(tmp_path):
+    path = tmp_path / "queue.db"
+    connection = await aiosqlite.connect(str(path))
+    connection.row_factory = aiosqlite.Row
+    await apply_migrations(connection)
+    yield connection
+    await connection.close()
+
+
+@pytest.fixture
+def jobs(conn):
+    return JobRepo(conn)
+
+
+@pytest.fixture
+def sync(conn):
+    return SyncStateRepo(conn)
+
+
+@pytest.fixture
+def state(jobs, sync):
+    return APIState(
+        config=AppConfig(),
+        job_repo=jobs,
+        sync_repo=sync,
+    )
+
+
+def _client(state, *, auth_token: str | None = None) -> httpx.AsyncClient:
+    app = build_app(state, auth_token=auth_token)
+    return httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    )
+
+
+# --- /health ---
+
+
+@pytest.mark.asyncio
+async def test_health_ok_with_counts(state, jobs):
+    await jobs.enqueue("src", "u1", JobOp.UPSERT)
+    j2 = await jobs.enqueue("src", "u2", JobOp.UPSERT)
+    assert j2 is not None
+    await jobs.mark_dead(j2.id, "boom")
+
+    async with _client(state) as client:
+        resp = await client.get("/health")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["queue_counts"] == {"queued": 1, "dead": 1}
+    assert body["worker_count"] == 0  # pool not attached in the test state
+    assert body["poller_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_health_skips_auth(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/health")
+    assert resp.status_code == 200
+
+
+# --- auth ---
+
+
+@pytest.mark.asyncio
+async def test_protected_endpoint_rejects_without_token(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/jobs")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_protected_endpoint_rejects_wrong_token(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/jobs", headers={"Authorization": "Bearer nope"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_protected_endpoint_accepts_correct_token(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/jobs", headers={"Authorization": "Bearer secret"})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_no_auth_token_allows_everything(state, jobs):
+    async with _client(state, auth_token=None) as client:
+        assert (await client.get("/jobs")).status_code == 200
+        assert (await client.get("/health")).status_code == 200
+
+
+# --- /jobs ---
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_returns_recent_first(state, jobs):
+    j1 = await jobs.enqueue("a", "u1", JobOp.UPSERT)
+    j2 = await jobs.enqueue("b", "u2", JobOp.UPSERT)
+    assert j1 is not None and j2 is not None
+
+    async with _client(state) as client:
+        resp = await client.get("/jobs")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert [j["id"] for j in payload] == [j2.id, j1.id]
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_filters_by_source_and_status(state, jobs):
+    await jobs.enqueue("a", "u", JobOp.UPSERT)
+    j = await jobs.enqueue("b", "u", JobOp.UPSERT)
+    assert j is not None
+    await jobs.mark_dead(j.id, "err")
+
+    async with _client(state) as client:
+        resp = await client.get("/jobs?source_id=b&status=dead")
+    payload = resp.json()
+    assert len(payload) == 1
+    assert payload[0]["id"] == j.id
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_record(state, jobs):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    async with _client(state) as client:
+        resp = await client.get(f"/jobs/{job.id}")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == job.id
+
+
+@pytest.mark.asyncio
+async def test_get_job_404(state):
+    async with _client(state) as client:
+        resp = await client.get("/jobs/nope")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_retry_revives_dead_job(state, jobs):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    await jobs.mark_dead(job.id, "err")
+
+    async with _client(state) as client:
+        resp = await client.post(f"/jobs/{job.id}/retry")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == JobStatus.QUEUED.value
+    assert body["attempts"] == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_404(state):
+    async with _client(state) as client:
+        resp = await client.post("/jobs/missing/retry")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cancel_queued_job(state, jobs):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    async with _client(state) as client:
+        resp = await client.delete(f"/jobs/{job.id}")
+    assert resp.status_code == 200
+    assert resp.json() == {"job_id": job.id, "cancelled": True}
+    assert await jobs.get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_succeeded_returns_404(state, jobs):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_succeeded(claimed.id)
+
+    async with _client(state) as client:
+        resp = await client.delete(f"/jobs/{job.id}")
+    assert resp.status_code == 404
+
+
+# --- /dlq ---
+
+
+@pytest.mark.asyncio
+async def test_dlq_lists_dead_jobs_only(state, jobs):
+    j1 = await jobs.enqueue("src", "u1", JobOp.UPSERT)
+    j2 = await jobs.enqueue("src", "u2", JobOp.UPSERT)
+    assert j1 is not None and j2 is not None
+    await jobs.mark_dead(j2.id, "err")
+
+    async with _client(state) as client:
+        resp = await client.get("/dlq")
+    payload = resp.json()
+    assert len(payload) == 1
+    assert payload[0]["id"] == j2.id
+
+
+@pytest.mark.asyncio
+async def test_dlq_retry_resurrects(state, jobs):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    await jobs.mark_dead(job.id, "err")
+
+    async with _client(state) as client:
+        resp = await client.post(f"/dlq/{job.id}/retry")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == JobStatus.QUEUED.value
+
+
+# --- /sources ---
+
+
+class _StubSource:
+    def __init__(self, source_id, sweeps=()):
+        self.source_id = source_id
+        self._sweeps = list(sweeps)
+
+    def supports(self, uri):  # pragma: no cover
+        return True
+
+    async def head(self, uri):  # pragma: no cover
+        return None
+
+    async def fetch(self, uri) -> FetchResult:  # pragma: no cover
+        raise NotImplementedError
+
+    async def discover(self, since=None):
+        events = self._sweeps.pop(0) if self._sweeps else []
+        for event in events:
+            yield event
+
+
+def _build_pollers_state(tmp_path, jobs, sync, source_id: str = "local"):
+    """Build an APIState with a real PollerManager containing one FS poller."""
+    from haiku.rag.config import FSSourceConfig
+    from haiku.rag.ingester.pollers.manager import PollerManager
+
+    cfg = FSSourceConfig(type="fs", id=source_id, root=tmp_path)
+    manager = PollerManager(configs=[cfg], job_repo=jobs, sync_repo=sync)
+    # Build pollers without starting tasks — we want to inspect/refresh directly.
+    manager._pollers = manager.build_pollers()
+    state = APIState(
+        config=AppConfig(),
+        job_repo=jobs,
+        sync_repo=sync,
+        pollers=manager,
+    )
+    return state, manager
+
+
+@pytest.mark.asyncio
+async def test_sources_empty_when_no_pollers(state):
+    async with _client(state) as client:
+        resp = await client.get("/sources")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_sources_lists_configured(tmp_path, jobs, sync):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    async with _client(state) as client:
+        resp = await client.get("/sources")
+    payload = resp.json()
+    assert len(payload) == 1
+    assert payload[0]["source_id"] == "local"
+    assert payload[0]["type"] == "FSSourceConfig"
+    assert payload[0]["circuit_breaker_open"] is False
+
+
+@pytest.mark.asyncio
+async def test_source_refresh_triggers_sweep(tmp_path, jobs, sync):
+    state, manager = _build_pollers_state(tmp_path, jobs, sync)
+    # Replace the real source with a stub that records the sweep + emits an event.
+    poller = manager.pollers[0]
+    poller.source = _StubSource(
+        poller.source_id,
+        [
+            [
+                SourceEvent(
+                    source_id=poller.source_id,
+                    uri="file:///x.md",
+                    kind=SourceEventKind.UPSERT,
+                    revision="v1",
+                    discovered_at=datetime.now(UTC),
+                )
+            ]
+        ],
+    )
+
+    async with _client(state) as client:
+        resp = await client.post(f"/sources/{poller.source_id}/refresh")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["refreshed"] is True
+    assert body["source_id"] == poller.source_id
+
+    queued = await jobs.list_jobs(source_id=poller.source_id)
+    assert len(queued) == 1
+
+
+@pytest.mark.asyncio
+async def test_source_refresh_unknown_id_404(tmp_path, jobs, sync):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    async with _client(state) as client:
+        resp = await client.post("/sources/missing/refresh")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_source_refresh_503_when_pollers_absent(state):
+    async with _client(state) as client:
+        resp = await client.post("/sources/anything/refresh")
+    assert resp.status_code == 503
