@@ -2,6 +2,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+import logfire
+
 from haiku.rag.config import SourceConfig
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.queue.models import JobOp
@@ -17,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 def _enqueue_extra(cfg: SourceConfig) -> dict | None:
     """Per-source state worth carrying into the job (so the worker can rebuild
-    the same fetch context when it processes)."""
+    the same fetch context when it processes), plus the current logfire trace
+    context so the worker's `ingester.job` span nests under the
+    `ingester.poller.sweep` that enqueued it."""
     extra: dict = {}
     storage_options = getattr(cfg, "storage_options", None)
     if storage_options:
@@ -25,6 +29,9 @@ def _enqueue_extra(cfg: SourceConfig) -> dict | None:
     headers = getattr(cfg, "headers", None)
     if headers:
         extra["headers"] = dict(headers)
+    carrier = logfire.get_context()
+    if carrier:
+        extra["_otel"] = dict(carrier)
     return extra or None
 
 
@@ -82,36 +89,44 @@ class BasePoller:
                 "Skipping discover() — circuit breaker open for %s", self.source_id
             )
             return False
-        try:
-            snapshot = await self._sync.get_snapshot(self.source_id)
-            counts = {
-                SourceEventKind.UPSERT: 0,
-                SourceEventKind.DELETE: 0,
-                SourceEventKind.UNCHANGED: 0,
-            }
-            async for event in self.source.discover(since=snapshot):
-                counts[event.kind] += 1
-                await self._handle_event(event)
-            self._breaker.record_success()
-            self._last_polled_at = datetime.now(UTC)
-            if counts[SourceEventKind.UPSERT] or counts[SourceEventKind.DELETE]:
-                logger.info(
-                    "Swept %s: %d upsert, %d delete, %d unchanged",
-                    self.source_id,
-                    counts[SourceEventKind.UPSERT],
-                    counts[SourceEventKind.DELETE],
-                    counts[SourceEventKind.UNCHANGED],
+        with logfire.span("ingester.poller.sweep", source_id=self.source_id) as span:
+            try:
+                snapshot = await self._sync.get_snapshot(self.source_id)
+                counts = {
+                    SourceEventKind.UPSERT: 0,
+                    SourceEventKind.DELETE: 0,
+                    SourceEventKind.UNCHANGED: 0,
+                }
+                async for event in self.source.discover(since=snapshot):
+                    counts[event.kind] += 1
+                    await self._handle_event(event)
+                self._breaker.record_success()
+                self._last_polled_at = datetime.now(UTC)
+                span.set_attribute("upsert", counts[SourceEventKind.UPSERT])
+                span.set_attribute("delete", counts[SourceEventKind.DELETE])
+                span.set_attribute("unchanged", counts[SourceEventKind.UNCHANGED])
+                if counts[SourceEventKind.UPSERT] or counts[SourceEventKind.DELETE]:
+                    logger.info(
+                        "Swept %s: %d upsert, %d delete, %d unchanged",
+                        self.source_id,
+                        counts[SourceEventKind.UPSERT],
+                        counts[SourceEventKind.DELETE],
+                        counts[SourceEventKind.UNCHANGED],
+                    )
+                return True
+            except Exception as exc:
+                self._breaker.record_failure()
+                span.set_attribute(
+                    "consecutive_failures", self._breaker.consecutive_failures
                 )
-            return True
-        except Exception as exc:
-            self._breaker.record_failure()
-            logger.exception(
-                "discover() failed for %s (consecutive=%d): %s",
-                self.source_id,
-                self._breaker.consecutive_failures,
-                exc,
-            )
-            return False
+                span.record_exception(exc)
+                logger.exception(
+                    "discover() failed for %s (consecutive=%d): %s",
+                    self.source_id,
+                    self._breaker.consecutive_failures,
+                    exc,
+                )
+                return False
 
     async def _handle_event(self, event: SourceEvent) -> None:
         if event.kind is SourceEventKind.UPSERT:

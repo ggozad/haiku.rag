@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
+import logfire
+
 from haiku.rag.client.processing import (
     ensure_chunks_embedded,
     get_extension_from_content_type_or_url,
@@ -247,9 +249,13 @@ async def _ingest_fetch_result(
             cleanup_path = target_path
 
     try:
-        docling_document = await client.convert(target_path, source_uri=result.uri)
-        chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(chunks, client._config)
+        with logfire.span("document.convert", uri=result.uri):
+            docling_document = await client.convert(target_path, source_uri=result.uri)
+        with logfire.span("document.chunk", uri=result.uri) as chunk_span:
+            chunks = await client.chunk(docling_document)
+            chunk_span.set_attribute("chunks_created", len(chunks))
+        with logfire.span("document.embed", uri=result.uri):
+            embedded_chunks = await embed_chunks(chunks, client._config)
     finally:
         if cleanup_path is not None:
             cleanup_path.unlink(missing_ok=True)
@@ -267,9 +273,12 @@ async def _ingest_fetch_result(
             existing_doc.title = await resolve_title(
                 client._config, docling_document, stored_content
             )
-        return await _update_document_with_chunks(
-            client, existing_doc, embedded_chunks, docling_document
-        )
+        with logfire.span("document.store", uri=result.uri, op="update") as store_span:
+            updated = await _update_document_with_chunks(
+                client, existing_doc, embedded_chunks, docling_document
+            )
+            store_span.set_attribute("document_id", updated.id)
+        return updated
 
     if title is None:
         title = await resolve_title(client._config, docling_document, stored_content)
@@ -280,9 +289,12 @@ async def _ingest_fetch_result(
         metadata=final_metadata,
     )
     document.set_docling(docling_document)
-    return await _store_document_with_chunks(
-        client, document, embedded_chunks, docling_document
-    )
+    with logfire.span("document.store", uri=result.uri, op="create") as store_span:
+        created = await _store_document_with_chunks(
+            client, document, embedded_chunks, docling_document
+        )
+        store_span.set_attribute("document_id", created.id)
+    return created
 
 
 async def create_document_from_source(
@@ -388,7 +400,10 @@ async def create_document_from_source(
                 source_metadata=None,
             )
 
-    result = await fetcher.fetch(source_str)
+    with logfire.span("document.fetch", uri=source_str) as fetch_span:
+        result = await fetcher.fetch(source_str)
+        fetch_span.set_attribute("bytes", len(result.body))
+        fetch_span.set_attribute("content_hash", result.content_hash)
 
     # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
     # Refresh the source-derived metadata (etag may have rolled) but skip

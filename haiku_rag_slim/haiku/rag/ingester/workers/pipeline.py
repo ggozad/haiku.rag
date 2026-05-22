@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
 import httpx
@@ -74,14 +75,21 @@ async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
     extra = job.extra or {}
     storage_options = extra.get("storage_options")
     user_metadata = extra.get("metadata", {})
+    # Restore the poller's trace context (if any) so the job span nests
+    # under the `ingester.poller.sweep` that enqueued it.
+    parent_ctx = extra.get("_otel")
+    attach = logfire.attach_context(parent_ctx) if parent_ctx else nullcontext()
 
-    with logfire.span(
-        "ingester.job",
-        job_id=job.id,
-        source_id=job.source_id,
-        uri=job.uri,
-        op=job.op.value,
-        attempt=job.attempts,
+    with (
+        attach,
+        logfire.span(
+            "ingester.job",
+            job_id=job.id,
+            source_id=job.source_id,
+            uri=job.uri,
+            op=job.op.value,
+            attempt=job.attempts,
+        ),
     ):
         try:
             if job.op is JobOp.DELETE:

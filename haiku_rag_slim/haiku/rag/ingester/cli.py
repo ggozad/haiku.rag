@@ -45,6 +45,7 @@ def _configure_logfire() -> None:
         import logfire
 
         logfire.configure(
+            service_name="haiku-ingester",
             send_to_logfire="if-token-present",
             console=False,
         )

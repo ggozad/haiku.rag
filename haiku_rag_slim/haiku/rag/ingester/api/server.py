@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import logfire
 from fastapi import Depends, FastAPI, Request
 
 from haiku.rag.ingester.api.auth import require_auth
@@ -49,4 +50,7 @@ def build_app(
     app.include_router(jobs.router, dependencies=auth_dep)
     app.include_router(sources.router, dependencies=auth_dep)
     app.include_router(dlq.router, dependencies=auth_dep)
+
+    # Every request becomes a span when logfire is configured; no-op otherwise.
+    logfire.instrument_fastapi(app)
     return app
