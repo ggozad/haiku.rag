@@ -3,8 +3,15 @@ from haiku.rag.config import (
     HTTPSourceConfig,
     S3SourceConfig,
     SourceConfig,
+    WebDAVSourceConfig,
 )
-from haiku.rag.ingester.sources import FSSource, HTTPSource, S3Source, Source
+from haiku.rag.ingester.sources import (
+    FSSource,
+    HTTPSource,
+    S3Source,
+    Source,
+    WebDAVSource,
+)
 
 
 def build_source(
@@ -16,7 +23,7 @@ def build_source(
 
     Source IDs auto-derive from the target when the config didn't supply one,
     matching the conventions in the adapters themselves (fs:<root>,
-    s3:<bucket>/<prefix>, http:<id>).
+    s3:<bucket>/<prefix>, http:<id>, webdav:<id>).
     """
     if isinstance(cfg, FSSourceConfig):
         return FSSource(
@@ -38,5 +45,18 @@ def build_source(
             include_patterns=cfg.include_patterns or None,
             supported_extensions=supported_extensions,
             source_id=cfg.id,
+        )
+    if isinstance(cfg, WebDAVSourceConfig):
+        if cfg.id is None:
+            raise ValueError("WebDAVSourceConfig.id is required")
+        return WebDAVSource(
+            source_id=cfg.id,
+            base_url=cfg.base_url,
+            username=cfg.username,
+            password=cfg.password,
+            headers=cfg.headers,
+            ignore_patterns=cfg.ignore_patterns or None,
+            include_patterns=cfg.include_patterns or None,
+            supported_extensions=supported_extensions,
         )
     raise TypeError(f"Unsupported source config: {type(cfg).__name__}")

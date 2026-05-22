@@ -48,6 +48,27 @@ def test_discriminator_picks_s3_source():
     assert cfg.sources[0].uri == "s3://bucket/prefix/"
 
 
+def test_discriminator_picks_webdav_source():
+    cfg = IngesterConfig.model_validate(
+        {
+            "sources": [
+                {
+                    "type": "webdav",
+                    "id": "nc",
+                    "base_url": "https://nc.example.com/dav/",
+                    "username": "alice",
+                    "password": "hunter2",
+                }
+            ]
+        }
+    )
+    from haiku.rag.config import WebDAVSourceConfig
+
+    assert isinstance(cfg.sources[0], WebDAVSourceConfig)
+    assert cfg.sources[0].base_url == "https://nc.example.com/dav/"
+    assert cfg.sources[0].username == "alice"
+
+
 def test_discriminator_rejects_unknown_type():
     with pytest.raises(ValidationError):
         IngesterConfig.model_validate({"sources": [{"type": "ftp", "uri": "x"}]})

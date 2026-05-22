@@ -10,6 +10,7 @@ from haiku.rag.config import (
     FSSourceConfig,
     HTTPSourceConfig,
     S3SourceConfig,
+    WebDAVSourceConfig,
 )
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.pollers.manager import PollerManager
@@ -278,6 +279,9 @@ async def test_manager_builds_pollers_per_source(tmp_path, jobs, sync):
         FSSourceConfig(type="fs", root=tmp_path),
         S3SourceConfig(type="s3", uri="s3://bucket/"),
         HTTPSourceConfig(type="http", id="urls", urls=[]),
+        WebDAVSourceConfig(
+            type="webdav", id="nc", base_url="https://nc.example.com/dav/"
+        ),
     ]
     manager = PollerManager(
         configs=configs,
@@ -285,11 +289,12 @@ async def test_manager_builds_pollers_per_source(tmp_path, jobs, sync):
         sync_repo=sync,
     )
     built = manager.build_pollers()
-    assert len(built) == 3
+    assert len(built) == 4
     assert {p.source_id for p in built} == {
         f"fs:{tmp_path.resolve()}",
         "s3:bucket/",
         "urls",
+        "nc",
     }
 
 

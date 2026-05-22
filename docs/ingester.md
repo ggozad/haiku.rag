@@ -109,6 +109,39 @@ response from a configured URL triggers a delete event; other failure
 statuses fall through to UPSERT-with-no-revision so the worker can
 GET and decide.
 
+### WebDAV
+
+```yaml
+ingester:
+  sources:
+    - type: webdav
+      id: nextcloud
+      base_url: https://nextcloud.example.com/remote.php/dav/files/alice/Documents/
+      username: alice
+      password: ${NEXTCLOUD_APP_PASSWORD}
+      ignore_patterns: ["**/Trash/**"]
+      poll_interval_s: 600
+```
+
+Each sweep issues one `PROPFIND` with `Depth: infinity` against
+`base_url` and parses the multistatus response. Files (non-collection
+resources) are emitted as UPSERT / UNCHANGED based on the `getetag`
+property (falling back to `getlastmodified` if the server omits it);
+URIs that were in the previous snapshot but no longer appear under the
+collection are emitted as DELETE.
+
+Fetches are plain HTTP GETs — any WebDAV server already supports them.
+
+Bearer-token auth can replace HTTP Basic via the standard `headers` map:
+
+```yaml
+    - type: webdav
+      id: kdrive
+      base_url: https://kdrive.infomaniak.com/app/drive/123/
+      headers:
+        Authorization: Bearer ${KDRIVE_TOKEN}
+```
+
 ## Workers and retry
 
 ```yaml

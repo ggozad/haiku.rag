@@ -26,6 +26,7 @@ from haiku.rag.config.models import (
     S3SourceConfig,
     SourceConfig,
     StorageConfig,
+    WebDAVSourceConfig,
     WorkerConfig,
 )
 
@@ -53,6 +54,7 @@ __all__ = [
     "S3SourceConfig",
     "SourceConfig",
     "StorageConfig",
+    "WebDAVSourceConfig",
     "WorkerConfig",
     "find_config_file",
     "generate_default_config",

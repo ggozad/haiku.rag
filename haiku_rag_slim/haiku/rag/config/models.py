@@ -323,8 +323,21 @@ class S3SourceConfig(_SourceBase):
     include_patterns: list[str] = []
 
 
+class WebDAVSourceConfig(_SourceBase):
+    """A WebDAV collection (Nextcloud, ownCloud, Apache mod_dav, etc.). Files
+    are discovered via PROPFIND on `base_url`; fetch is plain HTTP GET."""
+
+    type: Literal["webdav"]
+    base_url: str
+    username: str | None = None
+    password: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
+
+
 SourceConfig = Annotated[
-    FSSourceConfig | HTTPSourceConfig | S3SourceConfig,
+    FSSourceConfig | HTTPSourceConfig | S3SourceConfig | WebDAVSourceConfig,
     Field(discriminator="type"),
 ]
 
