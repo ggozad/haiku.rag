@@ -107,7 +107,7 @@ async def test_fetch_returns_bytes_md5_etag(fake_obstore_io):
     assert result.content_hash == hashlib.md5(body, usedforsecurity=False).hexdigest()
     assert result.content_type == "text/plain"
     assert result.revision == "abc123"
-    assert result.extra_metadata["etag"] == "abc123"
+    assert result.extra_metadata == {}
     head_async.assert_awaited_once()
     get_async.assert_awaited_once()
 
@@ -121,7 +121,7 @@ async def test_fetch_handles_missing_etag(fake_obstore_io):
     src = S3Source(uri="s3://bucket/")
     result = await src.fetch("s3://bucket/file.txt")
     assert result.revision is None
-    assert "etag" not in result.extra_metadata
+    assert result.extra_metadata == {}
 
 
 @pytest.mark.asyncio

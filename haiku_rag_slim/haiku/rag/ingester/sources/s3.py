@@ -93,17 +93,12 @@ class S3Source:
         if not content_type:
             content_type = "application/octet-stream"
 
-        extra: dict[str, str] = {}
-        if etag is not None:
-            extra["etag"] = etag
-
         return FetchResult(
             uri=uri,
             body=body,
             content_type=content_type,
             content_hash=hashlib.md5(body, usedforsecurity=False).hexdigest(),
             revision=etag,
-            extra_metadata=extra,
         )
 
     async def discover(

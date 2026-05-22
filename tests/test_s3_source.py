@@ -77,7 +77,7 @@ async def test_create_document_from_s3_new(fake_obstore_io, temp_db_path):
         doc = await client.create_document_from_source("s3://my-bucket/folder/file.txt")
 
     assert doc.uri == "s3://my-bucket/folder/file.txt"
-    assert doc.metadata["etag"] == "abc123"  # quotes stripped
+    assert doc.metadata["source_revision"] == "abc123"  # quotes stripped
     assert doc.metadata["md5"]  # real content MD5
     assert doc.metadata["md5"] != "abc123"
     head_async.assert_awaited_once()
@@ -114,7 +114,7 @@ async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
 ):
     """Multipart re-upload of same content: etag changes, MD5 doesn't.
 
-    Expected: GET runs to verify, but no re-chunk; only metadata.etag updates.
+    Expected: GET runs to verify, but no re-chunk; only metadata.source_revision updates.
     """
     head_async, get_async = fake_obstore_io
     text = b"S3 hosted content"
@@ -134,7 +134,7 @@ async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
 
     assert second.id == first.id
     assert second.metadata["md5"] == original_md5
-    assert second.metadata["etag"] == "def456-2"
+    assert second.metadata["source_revision"] == "def456-2"
     assert second.updated_at >= original_updated_at
     assert get_async.await_count == 2  # initial create + etag-changed compare
 
@@ -158,7 +158,7 @@ async def test_create_document_from_s3_etag_changed_md5_changed_rechunks(
 
     assert second.id == first.id
     assert second.metadata["md5"] != first.metadata["md5"]
-    assert second.metadata["etag"] == "new999"
+    assert second.metadata["source_revision"] == "new999"
     assert "different text now" in second.content
 
 

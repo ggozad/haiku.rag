@@ -44,7 +44,11 @@ async def test_upsert_calls_create_document_from_source_and_returns_metadata():
         id="doc-42",
         content="x",
         uri="https://example.com/a.pdf",
-        metadata={"md5": "abcd", "etag": "xyz", "contentType": "application/pdf"},
+        metadata={
+            "md5": "abcd",
+            "source_revision": "xyz",
+            "content_type": "application/pdf",
+        },
     )
 
     result = await run_job(

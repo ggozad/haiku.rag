@@ -231,10 +231,12 @@ async def _ingest_fetch_result(
         )
 
     source_metadata: dict = {
-        "contentType": result.content_type,
+        "content_type": result.content_type,
         "md5": result.content_hash,
         **result.extra_metadata,
     }
+    if result.revision is not None:
+        source_metadata["source_revision"] = result.revision
 
     if result.disk_path is not None:
         target_path = result.disk_path
@@ -384,10 +386,11 @@ async def create_document_from_source(
     existing_doc = await client.get_document_by_uri(stored_uri)
 
     # Cheap revision-based short-circuit: only worth a HEAD when we have a
-    # stored revision to compare against. S3 doc metadata persists "etag";
-    # FS/HTTP currently don't, so this branch is effectively S3-only today.
+    # stored revision to compare against. All sources persist their native
+    # revision (mtime_ns for FS, ETag for S3, ETag/Last-Modified for HTTP)
+    # under the canonical "source_revision" metadata key.
     stored_revision = (
-        (existing_doc.metadata or {}).get("etag") if existing_doc else None
+        (existing_doc.metadata or {}).get("source_revision") if existing_doc else None
     )
     if existing_doc and stored_revision:
         current_revision = await fetcher.head(source_str)
@@ -406,14 +409,16 @@ async def create_document_from_source(
         fetch_span.set_attribute("content_hash", result.content_hash)
 
     # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
-    # Refresh the source-derived metadata (etag may have rolled) but skip
+    # Refresh the source-derived metadata (revision may have rolled) but skip
     # convert/embed/store entirely.
     if existing_doc and existing_doc.metadata.get("md5") == result.content_hash:
         source_meta: dict = {
-            "contentType": result.content_type,
+            "content_type": result.content_type,
             "md5": result.content_hash,
             **result.extra_metadata,
         }
+        if result.revision is not None:
+            source_meta["source_revision"] = result.revision
         return await _refresh_doc_metadata(
             client,
             existing_doc,

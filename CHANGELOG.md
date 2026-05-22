@@ -12,6 +12,7 @@
 ### Changed
 
 - `haiku-rag serve` renamed to `haiku-rag mcp` (only MCP is left). `--mcp-port` renamed to `--port`. Update any `claude_desktop_config.json` from `["serve", "--mcp", "--stdio"]` to `["mcp", "--stdio"]`.
+- `document.metadata` now uses source-agnostic keys: `source_revision` (was `etag` — S3-only and never populated for FS, so periodic sweeps re-ingested every file) and `content_type` (was `contentType`, snake_case for consistency). The v0.50.0 startup migration rewrites existing documents. All four source adapters (FS, HTTP, S3, future WebDAV) now write their native revision (mtime_ns, ETag, etc.) under the same key, fixing the regression where FS sources never short-circuited on unchanged files.
 - Drop `list_documents` and `get_document` from the default RAG skill's tool set; the skill now exposes only `search` and `cite`. Both tools dumped unbounded content into the agent's context (full document lists, full document bodies) and `get_document` returned no chunk_ids so its output was structurally uncitable. The analysis skill already covers these uses programmatically — `await list_documents()` and `Path('/documents/{id}/content.txt').read_text()` inside `execute_code`. The tool branches remain in `create_skill_tools` and the `skill_generator` `AVAILABLE_TOOLS` set so users can still opt in when building custom skills.
 
 ## [0.48.1] - 2026-05-21

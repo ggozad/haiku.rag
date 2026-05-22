@@ -114,7 +114,7 @@ async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
             metadata = result.metadata or {}
             return JobResult(
                 document_id=result.id,
-                revision=metadata.get("etag"),
+                revision=metadata.get("source_revision"),
                 content_hash=metadata.get("md5"),
             )
         except BaseException as exc:

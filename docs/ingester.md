@@ -80,10 +80,10 @@ ingester:
 ```
 
 ETags are the cheap-skip key. Each sweep lists the prefix, compares
-the listed ETag against the document's stored `metadata["etag"]`, and
-only fetches keys whose ETag has changed. If the bytes turn out to
+the listed ETag against the document's stored `metadata["source_revision"]`,
+and only fetches keys whose ETag has changed. If the bytes turn out to
 match the stored MD5 (multipart re-upload landing a new ETag on the
-same content), only the etag is refreshed — no re-chunk.
+same content), only the revision is refreshed — no re-chunk.
 
 `storage_options` follows the same convention as `lancedb.storage_options` —
 the dict is passed straight to obstore (the Rust `object_store` library

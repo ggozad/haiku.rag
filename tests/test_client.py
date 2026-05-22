@@ -209,9 +209,9 @@ async def test_client_create_document_from_source(temp_db_path):
             assert doc.id is not None
             assert doc.content == test_content
             assert doc.uri == temp_path.as_uri()
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "text/plain"
+            assert doc.metadata["content_type"] == "text/plain"
 
             # Test create_document_from_source with string path
             doc2 = await client.create_document_from_source(source=str(temp_path))
@@ -220,7 +220,7 @@ async def test_client_create_document_from_source(temp_db_path):
             assert doc2.id is not None
             assert doc2.content == test_content
             assert doc2.uri == temp_path.as_uri()
-            assert "contentType" in doc2.metadata
+            assert "content_type" in doc2.metadata
             assert "md5" in doc2.metadata
 
 
@@ -374,7 +374,7 @@ async def test_client_create_document_from_directory(temp_db_path):
                 assert doc.id is not None
                 assert doc.uri is not None
                 assert "md5" in doc.metadata
-                assert "contentType" in doc.metadata
+                assert "content_type" in doc.metadata
 
             uris = [doc.uri for doc in result if doc.uri]
             assert any("doc1.txt" in uri for uri in uris)
@@ -404,9 +404,9 @@ async def test_client_create_document_from_url(temp_db_path):
             assert "test content" in doc.content
             assert doc.uri == "https://example.com/test.html"
             assert doc.metadata["source_type"] == "web"
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "text/html"
+            assert doc.metadata["content_type"] == "text/html"
 
 
 @pytest.mark.vcr()
@@ -432,9 +432,9 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.id is not None
             assert "Test JSON" in doc.content
             assert doc.uri == "https://api.example.com/data.json"
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "application/json"
+            assert doc.metadata["content_type"] == "application/json"
 
         # Test plain text content
         mock_text_response = AsyncMock()
@@ -451,9 +451,9 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.id is not None
             assert doc.content == "This is plain text content from a URL."
             assert doc.uri == "https://example.com/readme.txt"
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "text/plain"
+            assert doc.metadata["content_type"] == "text/plain"
 
 
 @pytest.mark.vcr()
@@ -523,7 +523,7 @@ def test_get_extension_from_content_type_or_url():
 
 @pytest.mark.vcr()
 async def test_client_metadata_content_type_and_md5(temp_db_path):
-    """Test that contentType and md5 metadata are correctly set."""
+    """Test that content_type and md5 metadata are correctly set."""
     import hashlib
 
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -538,7 +538,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
             doc = await client.create_document_from_source(temp_path)
             assert isinstance(doc, Document)
 
-            assert doc.metadata["contentType"] == "text/plain"
+            assert doc.metadata["content_type"] == "text/plain"
             assert doc.metadata["md5"] == expected_md5
 
             mock_response = AsyncMock()
@@ -552,7 +552,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
                 )
                 assert isinstance(url_doc, Document)
 
-                assert url_doc.metadata["contentType"] == "text/plain"
+                assert url_doc.metadata["content_type"] == "text/plain"
                 assert url_doc.metadata["md5"] == expected_md5
 
 

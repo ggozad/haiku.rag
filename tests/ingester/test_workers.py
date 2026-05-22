@@ -59,7 +59,10 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
 @pytest.mark.asyncio
 async def test_drain_marks_job_succeeded_and_writes_sync_state(client, jobs, sync):
     client.create_document_from_source.return_value = Document(
-        id="doc-1", content="x", uri="s3://b/k.md", metadata={"md5": "m1", "etag": "e1"}
+        id="doc-1",
+        content="x",
+        uri="s3://b/k.md",
+        metadata={"md5": "m1", "source_revision": "e1"},
     )
     job = await jobs.enqueue("src", "s3://b/k.md", JobOp.UPSERT, revision="e0")
     assert job is not None
@@ -179,7 +182,7 @@ async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
 @pytest.mark.asyncio
 async def test_workers_drain_queue_after_start(client, jobs, sync):
     client.create_document_from_source.return_value = Document(
-        id="doc", content="x", uri="u", metadata={"md5": "m", "etag": "e"}
+        id="doc", content="x", uri="u", metadata={"md5": "m", "source_revision": "e"}
     )
     for i in range(5):
         await jobs.enqueue("src", f"u{i}", JobOp.UPSERT)

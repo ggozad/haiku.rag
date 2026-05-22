@@ -60,7 +60,7 @@ async def test_fetch_returns_bytes_and_md5_and_etag():
     assert result.content_type == "text/markdown"
     # etag preferred over last-modified, surrounding quotes stripped
     assert result.revision == "abc123"
-    assert result.extra_metadata["etag"] == "abc123"
+    assert "etag" not in result.extra_metadata
     assert result.extra_metadata["last_modified"] == "Wed, 21 Oct 2025 07:28:00 GMT"
 
 

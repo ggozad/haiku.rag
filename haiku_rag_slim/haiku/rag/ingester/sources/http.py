@@ -14,14 +14,15 @@ from haiku.rag.ingester.sources.base import (
 
 
 def _extract_revision(headers: httpx.Headers) -> tuple[str | None, dict[str, str]]:
+    """Return (canonical_revision, extras). ETag is the stronger validator
+    and is the canonical revision when present; Last-Modified backs it up.
+    Last-Modified always goes into extras as separate per-source provenance
+    (some pipelines want both signals)."""
     extra: dict[str, str] = {}
     etag = (headers.get("etag") or "").strip('"').strip()
     last_modified = (headers.get("last-modified") or "").strip()
-    if etag:
-        extra["etag"] = etag
     if last_modified:
         extra["last_modified"] = last_modified
-    # Prefer ETag — it's a stronger validator. Fall back to Last-Modified.
     revision = etag or last_modified or None
     return revision, extra
 

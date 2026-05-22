@@ -52,7 +52,7 @@ async def _wait_for(predicate, *, timeout: float = 5.0, interval: float = 0.05):
 
 def _mock_client(docs_root) -> AsyncMock:
     """A HaikuRAG mock that returns a fresh Document for each URI it's asked
-    to ingest, mirroring real metadata shape (contentType + md5)."""
+    to ingest, mirroring real metadata shape (content_type + md5)."""
     client = AsyncMock(spec=HaikuRAG)
 
     counter = {"n": 0}
@@ -63,7 +63,7 @@ def _mock_client(docs_root) -> AsyncMock:
             id=f"doc-{counter['n']}",
             content="x",
             uri=uri,
-            metadata={"contentType": "text/markdown", "md5": f"md5-{counter['n']}"},
+            metadata={"content_type": "text/markdown", "md5": f"md5-{counter['n']}"},
         )
 
     client.create_document_from_source.side_effect = _fake_create
