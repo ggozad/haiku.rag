@@ -159,21 +159,40 @@ async def test_transient_error_at_max_attempts_marks_dead(client, jobs, sync, co
 
 @pytest.mark.asyncio
 async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
-    # Pipeline classifies BaseException → TransientError, but if something
-    # slips past the pool catches with a final defensive net.
-    client.create_document_from_source.side_effect = KeyboardInterrupt("nope")
+    """An Exception subclass the pipeline classifier didn't recognise still
+    gets marked dead by the pool's defensive `except Exception` net."""
+
+    class _Weird(Exception):
+        pass
+
+    client.create_document_from_source.side_effect = _Weird("surprise")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, max_attempts=1)
     assert job is not None
 
     pool = _pool(
         client, jobs, sync, retry_policy=RetryPolicy(base_delay_s=0.0, jitter=0.0)
     )
-    # KeyboardInterrupt is a BaseException — pipeline wraps it to TransientError.
-    # With max_attempts=1, the worker marks dead.
     await pool.drain_once()
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.DEAD
+
+
+@pytest.mark.asyncio
+async def test_keyboard_interrupt_propagates_not_classified(client, jobs, sync):
+    """KeyboardInterrupt / SystemExit / CancelledError signal runtime shutdown.
+    The pipeline must not wrap them — the job stays 'claimed' for the reaper."""
+    client.create_document_from_source.side_effect = KeyboardInterrupt("ctrl-c")
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(client, jobs, sync)
+    with pytest.raises(KeyboardInterrupt):
+        await pool.drain_once()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
 
 
 # --- start / stop lifecycle ---
@@ -201,6 +220,67 @@ async def test_workers_drain_queue_after_start(client, jobs, sync):
 
     counts = await jobs.counts_by_status()
     assert counts.get("succeeded", 0) == 5
+
+
+@pytest.mark.asyncio
+async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
+    """A short-running job in flight when stop() is called must finish before
+    the pool returns. Cancellation is the timeout path, not the default."""
+    finished = asyncio.Event()
+
+    async def _slow_then_finish(*args, **kwargs):
+        await asyncio.sleep(0.1)
+        finished.set()
+        return Document(
+            id="doc",
+            content="x",
+            uri="u",
+            metadata={"md5": "m", "source_revision": "e"},
+        )
+
+    client.create_document_from_source.side_effect = _slow_then_finish
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+
+    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    await pool.start()
+    # Yield long enough for the worker to claim and enter _process.
+    await asyncio.sleep(0.02)
+    await asyncio.wait_for(pool.stop(), timeout=5.0)
+
+    assert finished.is_set()
+    counts = await jobs.counts_by_status()
+    assert counts.get("succeeded", 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_shutdown_grace_timeout_cancels_long_job(client, jobs, sync):
+    """When grace elapses, wait_for raises TimeoutError and the job stays
+    'claimed' for the reaper to reset later."""
+    cancelled = asyncio.Event()
+
+    async def _hangs_forever(*args, **kwargs):
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return Document(id="doc", content="x", uri="u")
+
+    client.create_document_from_source.side_effect = _hangs_forever
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+
+    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    await pool.start()
+    await asyncio.sleep(0.05)
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(pool.stop(), timeout=0.2)
+
+    assert cancelled.is_set()
+    counts = await jobs.counts_by_status()
+    # Job was cancelled mid-_process before mark_succeeded/dead could fire,
+    # so it stays in 'claimed' for the reaper to pick up later.
+    assert counts.get("claimed", 0) == 1
 
 
 @pytest.mark.asyncio

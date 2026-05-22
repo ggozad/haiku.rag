@@ -152,6 +152,7 @@ ingester:
     poll_idle_interval_s: 1.0
     claim_timeout_s: 1800
     reaper_interval_s: 60
+    shutdown_grace_s: 60            # SIGTERM drains in-flight up to this long
     retry:
       max_attempts: 5
       base_delay_s: 2.0
@@ -167,6 +168,18 @@ extension, 4xx HTTP except 408/429, etc.) skips retry entirely.
 
 A reaper task resets jobs whose `claimed_at` is older than
 `claim_timeout_s` so a crashed worker doesn't strand its job.
+
+**Backpressure.** Each poller skips its periodic sweep when its source
+already has queued or claimed jobs in the queue. The unique-index dedup
+would coalesce a re-sweep anyway; the skip saves the listing round-trip
+(`PROPFIND` / `S3 LIST` / FS walk). FS push events from `watchfiles`
+still flow during a skipped sweep, so new files aren't lost.
+
+**Graceful shutdown.** On `SIGINT` / `SIGTERM`, pollers stop immediately
+and workers are given `shutdown_grace_s` to finish in-flight jobs. Jobs
+still running after the grace window are cancelled — they stay
+`claimed` in the queue and are reset by the reaper on the next start
+once `claim_timeout_s` elapses.
 
 **Per-source override.** A source can opt out of the global retry
 policy:

@@ -167,16 +167,33 @@ async def test_delete_event_skipped_when_delete_orphans_false(fs_config, jobs, s
 
 
 @pytest.mark.asyncio
-async def test_repeated_sweep_does_not_duplicate_jobs(fs_config, jobs, sync):
-    """Live-uniqueness: enqueueing the same (source_id, uri, op) when a job
-    is already queued/claimed is a no-op."""
+async def test_repeated_sweep_skipped_when_queue_has_pending(fs_config, jobs, sync):
+    """Backpressure: once a job is queued/claimed, the next sweep skips
+    discover() entirely instead of churning the listing operation."""
     event = _event("file:///a.md", revision="r1")
     source = _StubSource("src", [[event], [event]])
     poller = _periodic(source, fs_config, jobs, sync)
+    assert await poller._sweep_once() is True
+    assert source.discover_calls == 1
+    # Second sweep: queue still has the live job → skip without calling discover.
+    assert await poller._sweep_once() is False
+    assert source.discover_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_sweep_resumes_after_queue_drains(fs_config, jobs, sync):
+    """Once the queue clears (success, dead, or cancel), sweeps resume."""
+    event = _event("file:///a.md", revision="r1")
+    source = _StubSource("src", [[event], []])
+    poller = _periodic(source, fs_config, jobs, sync)
     await poller._sweep_once()
-    await poller._sweep_once()
-    queued = await jobs.list_jobs(source_id="src")
-    assert len(queued) == 1
+
+    claimed = await jobs.claim_next("worker")
+    assert claimed is not None
+    await jobs.mark_succeeded(claimed.id)
+
+    assert await poller._sweep_once() is True
+    assert source.discover_calls == 2
 
 
 @pytest.mark.asyncio

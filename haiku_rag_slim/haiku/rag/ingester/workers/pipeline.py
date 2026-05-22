@@ -117,5 +117,8 @@ async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
                 revision=metadata.get("source_revision"),
                 content_hash=metadata.get("md5"),
             )
-        except BaseException as exc:
+        except Exception as exc:
+            # CancelledError, KeyboardInterrupt, SystemExit are BaseException
+            # subclasses; they signal the runtime is shutting us down, not a
+            # job-level failure, so we let them propagate untouched.
             raise _classify(exc) from exc

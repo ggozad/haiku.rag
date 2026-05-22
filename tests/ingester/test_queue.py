@@ -125,6 +125,47 @@ async def test_enqueue_after_succeeded_succeeds(jobs):
 
 
 @pytest.mark.asyncio
+async def test_has_pending_returns_false_on_empty_queue(jobs):
+    assert await jobs.has_pending("src") is False
+
+
+@pytest.mark.asyncio
+async def test_has_pending_true_for_queued_job(jobs):
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert await jobs.has_pending("src") is True
+
+
+@pytest.mark.asyncio
+async def test_has_pending_true_for_claimed_job(jobs):
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    await jobs.claim_next("w")
+    assert await jobs.has_pending("src") is True
+
+
+@pytest.mark.asyncio
+async def test_has_pending_false_for_terminal_states(jobs):
+    await jobs.enqueue("src", "u-ok", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_succeeded(claimed.id)
+
+    await jobs.enqueue("src", "u-bad", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "permanent")
+
+    assert await jobs.has_pending("src") is False
+
+
+@pytest.mark.asyncio
+async def test_has_pending_is_per_source(jobs):
+    """A backed-up source must not block an idle one."""
+    await jobs.enqueue("busy", "u", JobOp.UPSERT)
+    assert await jobs.has_pending("busy") is True
+    assert await jobs.has_pending("idle") is False
+
+
+@pytest.mark.asyncio
 async def test_enqueue_different_ops_coexist(jobs):
     upsert = await jobs.enqueue("s", "u", JobOp.UPSERT)
     delete = await jobs.enqueue("s", "u", JobOp.DELETE)

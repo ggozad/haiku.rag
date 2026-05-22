@@ -83,13 +83,25 @@ class BasePoller:
 
     async def _sweep_once(self) -> bool:
         """One discover() sweep. Returns True on success, False if the
-        breaker is open or the sweep failed (and was recorded)."""
+        breaker is open, the source has pending work already queued, or the
+        sweep failed (and was recorded)."""
         if self._breaker.is_open:
             logger.debug(
                 "Skipping discover() — circuit breaker open for %s", self.source_id
             )
             return False
         with logfire.span("ingester.poller.sweep", source_id=self.source_id) as span:
+            if await self._jobs.has_pending(self.source_id):
+                # The unique index would dedupe a re-sweep into a saturated
+                # queue anyway; skipping saves the listing round-trip
+                # (PROPFIND / S3 LIST / FS walk) and keeps Logfire readable.
+                span.set_attribute("skipped", True)
+                span.set_attribute("skip_reason", "pending_work")
+                logger.debug(
+                    "Skipping discover() — %s has pending work in the queue",
+                    self.source_id,
+                )
+                return False
             try:
                 snapshot = await self._sync.get_snapshot(self.source_id)
                 counts = {

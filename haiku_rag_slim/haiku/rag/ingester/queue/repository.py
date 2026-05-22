@@ -243,6 +243,21 @@ class JobRepo:
                 rows = await cursor.fetchall()
         return [_row_to_job(r) for r in rows]
 
+    async def has_pending(self, source_id: str) -> bool:
+        """True iff at least one queued/claimed job exists for the source.
+
+        Cheap probe used by pollers to skip sweeps when there's already
+        outstanding work — the queue's unique index would dedupe new enqueues
+        anyway, so a sweep into a saturated queue is pure wasted listing work.
+        """
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT 1 FROM jobs WHERE source_id=? AND status IN ('queued','claimed') LIMIT 1",
+                (source_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return row is not None
+
     async def counts_by_status(self) -> dict[str, int]:
         async with self._lock:
             async with self._conn.execute(

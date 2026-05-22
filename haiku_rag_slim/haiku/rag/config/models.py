@@ -271,6 +271,12 @@ class WorkerConfig(BaseModel):
     claim_timeout_s: int = 1800
     reaper_interval_s: int = 60
     retry: RetryPolicyConfig = Field(default_factory=RetryPolicyConfig)
+    shutdown_grace_s: float = Field(
+        default=60.0,
+        description="On SIGINT/SIGTERM, how long to wait for in-flight jobs to "
+        "finish before forcing cancellation. Cancelled jobs stay 'claimed' in "
+        "the queue; the reaper resets them after claim_timeout_s.",
+    )
 
 
 class APIConfig(BaseModel):

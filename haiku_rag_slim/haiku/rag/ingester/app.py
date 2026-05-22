@@ -103,7 +103,18 @@ class IngesterApp:
                     if api_task is not None:
                         await asyncio.gather(api_task, return_exceptions=True)
                     await self._pollers.stop()
-                    await self._pool.stop()
+                    grace_s = ingester_cfg.workers.shutdown_grace_s
+                    try:
+                        await asyncio.wait_for(self._pool.stop(), timeout=grace_s)
+                    except TimeoutError:
+                        # In-flight jobs stay 'claimed'; the reaper resets
+                        # them after claim_timeout_s on the next start.
+                        logger.warning(
+                            "Shutdown grace of %.1fs elapsed with jobs still "
+                            "in flight; cancelling — they'll be reclaimed after "
+                            "claim_timeout_s on next start",
+                            grace_s,
+                        )
         finally:
             # Close the queue connection unconditionally. aiosqlite runs the
             # underlying sqlite3 in a background thread; leaving it open holds
