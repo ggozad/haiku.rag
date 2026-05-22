@@ -136,6 +136,62 @@ async def test_e2e_initial_sweep_lands_succeeded_jobs(tmp_path, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_e2e_handles_url_encoded_special_chars_in_path(tmp_path, jobs, sync):
+    """File names containing characters that path.as_uri() URL-encodes (e.g.
+    Next.js dynamic-route brackets like `[chunk_id]`) must survive the
+    round-trip through the job queue without tripping the existence check
+    inside create_document_from_source."""
+    bracketed_dir = tmp_path / "[chunk_id]"
+    bracketed_dir.mkdir()
+    target = bracketed_dir / "route.ts"
+    target.write_text("export default {};")
+
+    client = _mock_client(tmp_path)
+    cfg = FSSourceConfig(
+        type="fs",
+        id="local",
+        root=tmp_path,
+        poll_interval_s=60.0,
+    )
+
+    manager = PollerManager(
+        configs=[cfg],
+        job_repo=jobs,
+        sync_repo=sync,
+        supported_extensions=[".ts"],
+    )
+    pool = WorkerPool(
+        client=client,
+        job_repo=jobs,
+        sync_repo=sync,
+        worker_count=1,
+        max_concurrent=1,
+        poll_idle_interval_s=0.05,
+    )
+
+    await pool.start()
+    await manager.start()
+    try:
+
+        async def _one_succeeded() -> bool:
+            counts = await jobs.counts_by_status()
+            return counts.get("succeeded", 0) == 1
+
+        await _wait_for(_one_succeeded, timeout=5.0)
+    finally:
+        await manager.stop()
+        await pool.stop()
+
+    counts = await jobs.counts_by_status()
+    assert counts.get("succeeded", 0) == 1
+    assert counts.get("dead", 0) == 0  # no PermanentError("File does not exist")
+
+    # The URI in the queue is URL-encoded; the worker still finds the file.
+    [call] = client.create_document_from_source.await_args_list
+    assert "%5Bchunk_id%5D" in call.args[0]
+
+
+@pytest.mark.asyncio
 async def test_e2e_watchfiles_push_event_lands_as_job(tmp_path, jobs, sync):
     """FSPoller's watchfiles loop: a file *added* after startup should land
     as a queued job without waiting for the periodic sweep. No worker pool

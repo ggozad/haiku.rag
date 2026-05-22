@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from haiku.rag.client.processing import (
     ensure_chunks_embedded,
@@ -315,8 +315,10 @@ async def create_document_from_source(
     # Directory case: recurse with the existing FS filter and produce one
     # document per file. Remote schemes (http/s3) never hit this branch.
     if parsed_url.scheme in ("", "file"):
+        # file:// URIs URL-encode special characters ([, ], spaces, etc.);
+        # unquote to get the real filesystem path before any stat/rglob.
         local_path = (
-            Path(parsed_url.path)
+            Path(unquote(parsed_url.path))
             if parsed_url.scheme == "file"
             else (Path(source) if isinstance(source, str) else source)
         )
@@ -355,16 +357,15 @@ async def create_document_from_source(
     fetcher = resolve_fetcher(source_str, storage_options=storage_options)
 
     # The stored URI is what we look up + persist by. For an explicit uri
-    # override, use it as-is. Otherwise canonicalize local paths to file://
-    # and leave remote URIs alone.
+    # override, use it as-is. For a file:// input the source string is
+    # already canonical (URL-encoded); round-tripping via Path.as_uri()
+    # would double-encode any escapes like %5B. For bare paths, canonicalize.
     if uri is not None:
         stored_uri = uri
-    elif parsed_url.scheme in ("", "file"):
-        stored_uri = (
-            (Path(parsed_url.path) if parsed_url.scheme == "file" else Path(source_str))
-            .absolute()
-            .as_uri()
-        )
+    elif parsed_url.scheme == "file":
+        stored_uri = source_str
+    elif parsed_url.scheme == "":
+        stored_uri = Path(source_str).absolute().as_uri()
     else:
         stored_uri = source_str
 
