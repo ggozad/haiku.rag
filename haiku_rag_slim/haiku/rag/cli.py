@@ -671,59 +671,33 @@ def chat(  # pragma: no cover
 
 
 @_cli.command(
-    "serve",
-    help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",
+    "mcp",
+    help="Run the MCP server. For continuous ingestion, use haiku-ingester serve.",
 )
-def serve(
+def mcp(
     db: Path | None = typer.Option(
         None,
         "--db",
         help="Path to the LanceDB database file",
     ),
-    monitor: bool = typer.Option(
-        False,
-        "--monitor",
-        help="Enable file monitoring",
-    ),
-    mcp: bool = typer.Option(
-        False,
-        "--mcp",
-        help="Enable MCP server",
-    ),
     stdio: bool = typer.Option(
         False,
         "--stdio",
-        help="Run MCP server on stdio Transport (requires --mcp)",
+        help="Run MCP server on stdio Transport",
     ),
-    mcp_port: int = typer.Option(
+    port: int = typer.Option(
         8001,
-        "--mcp-port",
+        "--port",
         help="Port to bind MCP server to (ignored with --stdio)",
     ),
 ) -> None:
-    """Start the server with selected services."""
-    # Require at least one service flag
-    if not (monitor or mcp):
-        typer.echo(
-            "Error: At least one service flag (--monitor or --mcp) must be specified"
-        )
-        raise typer.Exit(1)
-
-    if stdio and not mcp:
-        typer.echo("Error: --stdio requires --mcp")
-        raise typer.Exit(1)
-
+    """Run the MCP server."""
     app = create_app(db)  # pragma: no cover
 
     transport = "stdio" if stdio else None  # pragma: no cover
 
     asyncio.run(  # pragma: no cover
-        app.serve(
-            enable_monitor=monitor,
-            enable_mcp=mcp,
-            mcp_transport=transport,
-            mcp_port=mcp_port,
-        )
+        app.run_mcp(transport=transport, port=port)
     )
 
 

@@ -328,11 +328,11 @@ async def create_document_from_source(
                 )
             from haiku.rag.ingester.sources.filter import FileFilter
 
+            # One-shot CLI directory ingest uses the converter's supported
+            # extensions but no include/ignore patterns. For pattern-based
+            # filtering use `haiku-ingester serve` with an FS source.
             documents: list[Document] = []
-            filter = FileFilter(
-                ignore_patterns=client._config.monitor.ignore_patterns or None,
-                include_patterns=client._config.monitor.include_patterns or None,
-            )
+            filter = FileFilter()
             for child in local_path.rglob("*"):
                 if child.is_file() and filter.include_file(str(child)):
                     doc = await create_document_from_source(

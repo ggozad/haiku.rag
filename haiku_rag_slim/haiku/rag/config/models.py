@@ -57,23 +57,6 @@ class StorageConfig(BaseModel):
     vacuum_retention_seconds: int = 86400
 
 
-class S3MonitorEntry(BaseModel):
-    uri: str
-    storage_options: dict[str, str] = Field(default_factory=dict)
-    poll_interval: int = 300
-    ignore_patterns: list[str] = []
-    include_patterns: list[str] = []
-    delete_orphans: bool = False
-
-
-class MonitorConfig(BaseModel):
-    directories: list[Path] = []
-    ignore_patterns: list[str] = []
-    include_patterns: list[str] = []
-    delete_orphans: bool = False
-    s3: list[S3MonitorEntry] = []
-
-
 class LanceDBConfig(BaseModel):
     uri: str = ""
     api_key: str = ""
@@ -358,7 +341,6 @@ class IngesterConfig(BaseModel):
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
-    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)

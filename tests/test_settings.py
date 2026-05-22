@@ -44,16 +44,6 @@ async def test_settings_save_and_retrieve(temp_db_path):
         Config.processing.chunk_size = original_chunk_size
 
 
-def test_monitor_filter_patterns_config():
-    """Test that monitor filter patterns are available in config."""
-    assert hasattr(Config.monitor, "ignore_patterns")
-    assert hasattr(Config.monitor, "include_patterns")
-    assert hasattr(Config.monitor, "directories")
-    assert isinstance(Config.monitor.ignore_patterns, list)
-    assert isinstance(Config.monitor.include_patterns, list)
-    assert isinstance(Config.monitor.directories, list)
-
-
 class TestValidateConfigCompatibility:
     """Tests for validate_config_compatibility method."""
 

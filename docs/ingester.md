@@ -1,0 +1,275 @@
+# Ingester
+
+The ingester is a long-running service that watches sources for
+changes and feeds documents into haiku.rag's LanceDB. It runs as a
+separate process (`haiku-ingester serve`), owns its own SQLite job
+queue, and exposes a small HTTP control plane for operations.
+
+Use the ingester when:
+
+- you have a corpus you want to keep in sync continuously
+- documents arrive over time from filesystem, S3, or HTTP sources
+- you want retry + dead-letter behavior, not "fire and forget"
+
+For one-off ingestion, the `haiku-rag add-src` CLI is enough — see
+[CLI → Add Documents](cli.md).
+
+## Install
+
+The ingester ships behind an optional extra:
+
+```bash
+pip install 'haiku.rag-slim[ingester]'
+# or, for the full package:
+pip install 'haiku.rag[ingester]'
+```
+
+That pulls `fastapi`, `uvicorn`, `aiosqlite`, and the `[s3]` extra.
+The production binary is `haiku-ingester`.
+
+## Configure sources
+
+Add an `ingester:` block to your `haiku.rag.yaml`. The minimum is a
+single source:
+
+```yaml
+ingester:
+  sources:
+    - type: fs
+      id: local-docs
+      root: /Users/you/docs
+      delete_orphans: true
+```
+
+### Filesystem
+
+```yaml
+ingester:
+  sources:
+    - type: fs
+      id: local-docs                          # optional; auto-derives from root
+      root: /Users/you/docs
+      poll_interval_s: 300
+      delete_orphans: true
+      ignore_patterns: ["**/.git/**", "**/node_modules/**"]
+      include_patterns: ["*.md", "*.pdf"]    # optional whitelist
+```
+
+Uses `watchfiles` for push events plus a periodic sweep that catches
+anything the OS dropped between starts. Patterns follow
+[gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+
+### S3 / object storage
+
+```yaml
+ingester:
+  sources:
+    - type: s3
+      id: corp-docs
+      uri: s3://my-bucket/incoming/
+      poll_interval_s: 300
+      delete_orphans: true
+      ignore_patterns: ["draft*"]
+      include_patterns: ["*.pdf", "*.md"]
+      storage_options:
+        endpoint: http://seaweed:8333         # omit for AWS default chain
+        aws_access_key_id: ${AWS_KEY}
+        aws_secret_access_key: ${AWS_SECRET}
+        region: us-east-1
+        allow_http: "true"
+```
+
+ETags are the cheap-skip key. Each sweep lists the prefix, compares
+the listed ETag against the document's stored `metadata["etag"]`, and
+only fetches keys whose ETag has changed. If the bytes turn out to
+match the stored MD5 (multipart re-upload landing a new ETag on the
+same content), only the etag is refreshed — no re-chunk.
+
+`storage_options` follows the same convention as `lancedb.storage_options` —
+the dict is passed straight to obstore (the Rust `object_store` library
+LanceDB uses internally), so credentials configured for the LanceDB
+backend can be copy-pasted here.
+
+### HTTP
+
+```yaml
+ingester:
+  sources:
+    - type: http
+      id: arxiv
+      urls:
+        - https://arxiv.org/pdf/2301.12345.pdf
+      headers:
+        Authorization: Bearer ${SOME_TOKEN}
+      poll_interval_s: 86400
+```
+
+HTTP is pull-based with HEAD-driven change detection. A `410 Gone`
+response from a configured URL triggers a delete event; other failure
+statuses fall through to UPSERT-with-no-revision so the worker can
+GET and decide.
+
+## Workers and retry
+
+```yaml
+ingester:
+  workers:
+    worker_count: 4
+    max_concurrent: 4
+    poll_idle_interval_s: 1.0
+    claim_timeout_s: 1800
+    reaper_interval_s: 60
+    retry:
+      max_attempts: 5
+      base_delay_s: 2.0
+      max_delay_s: 300.0
+      jitter: 0.25                  # ±25%
+```
+
+The worker pool runs `worker_count` async workers behind a shared
+`max_concurrent` semaphore. Jobs that hit a `TransientError` are
+rescheduled with exponential backoff plus jitter, up to `max_attempts`,
+then land in the dead-letter queue. `PermanentError` (unsupported
+extension, 4xx HTTP except 408/429, etc.) skips retry entirely.
+
+A reaper task resets jobs whose `claimed_at` is older than
+`claim_timeout_s` so a crashed worker doesn't strand its job.
+
+**Per-source override.** A source can opt out of the global retry
+policy:
+
+```yaml
+ingester:
+  sources:
+    - type: http
+      id: flaky-api
+      urls: [...]
+      retry:
+        max_attempts: 10
+        base_delay_s: 10
+```
+
+## Circuit breaker
+
+After N consecutive `discover()` failures, a source's circuit breaker
+opens and polling pauses for a cooldown. Other sources keep running.
+
+```yaml
+ingester:
+  sources:
+    - type: http
+      id: rate-limited
+      urls: [...]
+      circuit_breaker:
+        failure_threshold: 5
+        cooldown_s: 600
+```
+
+## Run it
+
+```bash
+haiku-ingester serve                          # workers + pollers + API
+haiku-ingester serve --no-api                 # workers + pollers only
+haiku-ingester serve --db /path.lancedb       # explicit DB
+```
+
+The service blocks until SIGINT or SIGTERM. Shutdown drains the API
+server, then pollers, then in-flight workers.
+
+### Single-writer constraint
+
+LanceDB supports exactly one writer + N readers per database URI. Run
+exactly one `haiku-ingester serve` against a given LanceDB. Multiple
+MCP servers or read-only consumers against the same DB are fine.
+
+## HTTP control plane
+
+By default the ingester exposes a FastAPI control plane on
+`127.0.0.1:8765`. Set `ingester.api.auth_token` to require a Bearer
+token; without one the API stays open and the service logs a warning.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | liveness + queue counts |
+| `GET` | `/sources` | configured pollers + last-poll time + breaker state |
+| `POST` | `/sources/{id}/refresh` | force an out-of-band sweep |
+| `GET` | `/jobs` | filtered list (`status`, `source_id`, `uri`, `limit`, `offset`) |
+| `GET` | `/jobs/{id}` | one job |
+| `POST` | `/jobs/{id}/retry` | reset attempts to 0, status to queued |
+| `DELETE` | `/jobs/{id}` | cancel a queued/claimed job |
+| `GET` | `/dlq` | dead jobs |
+| `POST` | `/dlq/{id}/retry` | resurrect from DLQ |
+
+OpenAPI docs at `http://localhost:8765/docs`.
+
+```yaml
+ingester:
+  api:
+    enabled: true
+    host: 127.0.0.1
+    port: 8765
+    auth_token: ${INGESTER_TOKEN}             # null → unauthenticated
+```
+
+## Operating
+
+### Smoke-test a single URI
+
+`run-once` bypasses the queue and runs a single Job through the
+pipeline. Useful for sanity-checking a source before starting the
+service.
+
+```bash
+haiku-ingester run-once /path/to/test.pdf
+haiku-ingester run-once https://example.com/spec.pdf
+haiku-ingester run-once s3://my-bucket/key.pdf
+```
+
+Exit codes: `0` success, `1` transient error, `2` permanent error.
+
+### The queue
+
+The ingester's SQLite queue lives at
+`~/Library/Application Support/haiku.rag/ingester.db` on macOS
+(platform user data dir; configurable via `ingester.queue.path`). It's
+created automatically by `serve`.
+
+For ops setup you can pre-create it:
+
+```bash
+haiku-ingester queue init             # create the DB and schema
+haiku-ingester queue migrate          # apply pending schema changes
+```
+
+### Logs
+
+The service logs via Python `logging` to stderr through a Rich handler.
+A typical run looks like:
+
+```
+INFO     Ingester running: 4 worker(s), 1 source(s)
+INFO     API listening on 127.0.0.1:8765
+INFO     Swept local-docs: 142 upsert, 0 delete, 8 unchanged
+INFO     Processing upsert file:///.../a.md (job 5d9a...)
+INFO     Job 5d9a... succeeded in 0.34s: file:///.../a.md
+```
+
+When `LOGFIRE_TOKEN` is set, spans are also shipped to Logfire.
+
+### Operating against the API
+
+```bash
+TOKEN=$INGESTER_TOKEN   # omit -H entirely if no token configured
+
+curl http://localhost:8765/health
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8765/sources
+curl -H "Authorization: Bearer $TOKEN" 'http://localhost:8765/jobs?status=dead'
+
+# Force a poll now
+curl -H "Authorization: Bearer $TOKEN" -X POST \
+    http://localhost:8765/sources/local-docs/refresh
+
+# Resurrect a dead job
+curl -H "Authorization: Bearer $TOKEN" -X POST \
+    http://localhost:8765/jobs/<id>/retry
+```

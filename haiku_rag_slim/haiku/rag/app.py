@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from datetime import datetime
@@ -20,7 +19,6 @@ from rich.progress import (
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.mcp import create_mcp_server
-from haiku.rag.monitor import FileWatcher, S3Watcher
 from haiku.rag.store.models.chunk import SearchType
 from haiku.rag.store.models.document import Document
 
@@ -727,77 +725,26 @@ class HaikuRAGApp:  # pragma: no cover
         self.console.print(content)
         self.console.rule()
 
-    async def serve(
+    async def run_mcp(
         self,
-        enable_monitor: bool = True,
-        enable_mcp: bool = True,
-        mcp_transport: str | None = None,
-        mcp_port: int = 8001,
+        transport: str | None = None,
+        port: int = 8001,
     ):
-        """Start the server with selected services."""
+        """Run the MCP server until interrupted."""
         async with HaikuRAG(
             self.db_path,
             config=self.config,
             read_only=self.read_only,
             before=self.before,
-        ) as client:
-            tasks = []
-
-            # Start file monitor if enabled (not available in read-only mode)
-            if enable_monitor:
-                if self.read_only:
-                    logger.warning(
-                        "File monitor disabled: cannot monitor files in read-only mode"
-                    )
-                else:
-                    monitor = FileWatcher(client=client, config=self.config)
-                    monitor_task = asyncio.create_task(monitor.observe())
-                    tasks.append(monitor_task)
-
-                    if self.config.monitor.s3:
-                        from haiku.rag.converters import get_converter
-
-                        supported_extensions = get_converter(
-                            self.config
-                        ).supported_extensions
-                        for entry in self.config.monitor.s3:
-                            s3_watcher = S3Watcher(
-                                client=client,
-                                entry=entry,
-                                supported_extensions=supported_extensions,
-                            )
-                            tasks.append(asyncio.create_task(s3_watcher.observe()))
-
-            # Start MCP server if enabled
-            if enable_mcp:
-                server = create_mcp_server(
-                    self.db_path, config=self.config, read_only=self.read_only
-                )
-
-                async def run_mcp():
-                    if mcp_transport == "stdio":
-                        await server.run_stdio_async()
-                    else:
-                        logger.info(f"Starting MCP server on port {mcp_port}")
-                        await server.run_http_async(
-                            transport="streamable-http", port=mcp_port
-                        )
-
-                mcp_task = asyncio.create_task(run_mcp())
-                tasks.append(mcp_task)
-
-            if not tasks:
-                logger.warning("No services enabled")
-                return
-
+        ):
+            server = create_mcp_server(
+                self.db_path, config=self.config, read_only=self.read_only
+            )
             try:
-                # Wait for any task to complete (or KeyboardInterrupt)
-                await asyncio.gather(*tasks)
+                if transport == "stdio":
+                    await server.run_stdio_async()
+                else:
+                    logger.info(f"Starting MCP server on port {port}")
+                    await server.run_http_async(transport="streamable-http", port=port)
             except KeyboardInterrupt:
                 pass
-            finally:
-                # Cancel all tasks
-                for task in tasks:
-                    task.cancel()
-                # Wait for cancellation
-                await asyncio.gather(*tasks, return_exceptions=True)

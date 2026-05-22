@@ -42,7 +42,7 @@ The docker-compose.yml mounts three volumes:
 cp haiku.rag.yaml.example haiku.rag.yaml
 ```
 
-The example config sets `monitor.directories: [/docs]` - this is the **container path**, not your host path. Documents placed in `./docs` on your host will appear at `/docs` inside the container.
+The example config sets `ingester.sources[0].root: /docs` - this is the **container path**, not your host path. Documents placed in `./docs` on your host will appear at `/docs` inside the container.
 
 ## Usage
 

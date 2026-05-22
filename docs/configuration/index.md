@@ -59,12 +59,14 @@ storage:
   data_dir: ""  # Empty = use default platform location
   vacuum_retention_seconds: 86400
 
-monitor:
-  directories:
-    - /path/to/documents
-    - /another/path
-  ignore_patterns: []  # Gitignore-style patterns to exclude
-  include_patterns: []  # Gitignore-style patterns to include
+ingester:
+  sources:
+    - type: fs
+      id: local-docs
+      root: /path/to/documents
+      ignore_patterns: []  # Gitignore-style patterns to exclude
+      include_patterns: []  # Gitignore-style patterns to include
+      delete_orphans: true
 
 lancedb:
   uri: ""  # Empty for local, or db://, s3://, az://, gs://

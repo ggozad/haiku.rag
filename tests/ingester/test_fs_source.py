@@ -152,10 +152,3 @@ async def test_fs_source_discover_respects_include_patterns(fs_root: Path):
     uris = {e.uri async for e in src.discover(since=None)}
     assert (fs_root / "b.txt").as_uri() not in uris
     assert (fs_root / "a.md").as_uri() in uris
-
-
-def test_filefilter_backward_compatible_reexport():
-    from haiku.rag.ingester.sources.filter import FileFilter as IngesterFileFilter
-    from haiku.rag.monitor import FileFilter as MonitorFileFilter
-
-    assert MonitorFileFilter is IngesterFileFilter

@@ -65,18 +65,6 @@ class TestParseMetaOptions:
         assert result == {"equation": "a=b+c"}
 
 
-class TestServeValidation:
-    def test_no_flags_fails(self):
-        result = runner.invoke(cli, ["serve"])
-        assert result.exit_code == 1
-        assert "At least one service flag" in result.output
-
-    def test_stdio_without_mcp_fails(self):
-        result = runner.invoke(cli, ["serve", "--stdio", "--monitor"])
-        assert result.exit_code == 1
-        assert "--stdio requires --mcp" in result.output
-
-
 class TestRebuildValidation:
     def test_embed_only_and_rechunk_mutually_exclusive(self):
         result = runner.invoke(

@@ -1,8 +1,17 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- New `haiku-ingester` service for continuous document ingestion: persistent SQLite job queue, async worker pool with retries and a dead-letter queue, FS/HTTP/S3 source adapters with per-source circuit breakers, and a FastAPI control plane (`/health`, `/jobs`, `/sources`, `/dlq`). Configured under `ingester:` in `haiku.rag.yaml`. Shipped behind the `[ingester]` extra. See [docs/ingester.md](docs/ingester.md).
+
+### Removed
+
+- File monitor (`haiku.rag.monitor` module, `MonitorConfig`, `S3MonitorEntry`, `AppConfig.monitor`). The `--monitor` flag on `haiku-rag serve` is gone — continuous ingestion now lives in `haiku-ingester serve`. Migrate `monitor.directories` to `ingester.sources[type=fs]` and `monitor.s3` to `ingester.sources[type=s3]`; the `delete_orphans` / `ignore_patterns` / `include_patterns` keys keep their meaning on the per-source entry.
+
 ### Changed
 
+- `haiku-rag serve` renamed to `haiku-rag mcp` (only MCP is left). `--mcp-port` renamed to `--port`. Update any `claude_desktop_config.json` from `["serve", "--mcp", "--stdio"]` to `["mcp", "--stdio"]`.
 - Drop `list_documents` and `get_document` from the default RAG skill's tool set; the skill now exposes only `search` and `cite`. Both tools dumped unbounded content into the agent's context (full document lists, full document bodies) and `get_document` returned no chunk_ids so its output was structurally uncitable. The analysis skill already covers these uses programmatically — `await list_documents()` and `Path('/documents/{id}/content.txt').read_text()` inside `execute_code`. The tool branches remain in `create_skill_tools` and the `skill_generator` `AVAILABLE_TOOLS` set so users can still opt in when building custom skills.
 
 ## [0.48.1] - 2026-05-21

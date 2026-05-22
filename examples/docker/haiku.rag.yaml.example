@@ -6,9 +6,12 @@ environment: production
 storage:
   data_dir: /data
 
-monitor:
-  directories:
-    - /docs
+ingester:
+  sources:
+    - type: fs
+      id: docs
+      root: /docs
+      delete_orphans: true
 
 # Remote document processing with docling-serve
 processing:

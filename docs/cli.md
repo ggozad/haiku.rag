@@ -397,30 +397,25 @@ haiku-rag vacuum
 
 **Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
 
-## Server
+## MCP Server
 
-Start services (requires at least one flag):
 ```bash
-# MCP server only (HTTP transport)
-haiku-rag serve --mcp
+# HTTP transport on port 8001
+haiku-rag mcp
 
-# MCP server (stdio transport)
-haiku-rag serve --mcp --stdio
+# stdio transport (for Claude Desktop)
+haiku-rag mcp --stdio
 
-# File monitoring only
-haiku-rag serve --monitor
+# Custom port
+haiku-rag mcp --port 9000
 
-# Both services
-haiku-rag serve --monitor --mcp
-
-# Custom MCP port
-haiku-rag serve --mcp --mcp-port 9000
-
-# Read-only mode (excludes write MCP tools, disables monitor)
-haiku-rag --read-only serve --mcp
+# Read-only mode (no write tools)
+haiku-rag --read-only mcp
 ```
 
-See [Server Mode](server.md) for details on available services.
+See [MCP Server](server.md) for details. For continuous document
+ingestion (filesystem watch, S3 polling, HTTP sources), use
+`haiku-ingester serve`.
 
 ## Settings
 
