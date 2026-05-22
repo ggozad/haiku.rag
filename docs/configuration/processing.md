@@ -80,6 +80,35 @@ providers:
     api_key: "your-api-key"  # Optional
 ```
 
+`base_url` also accepts a list — jobs round-robin across the entries, with
+each job's submit / poll / result pinned to one instance (task IDs are
+instance-local):
+
+```yaml
+providers:
+  docling_serve:
+    base_url:
+      - http://gpu-1:5001
+      - http://cpu-1:5001
+      - http://cpu-2:5001
+```
+
+The round-robin counter is per-process — multiple concurrent ingester or
+client processes pick independently, so the distribution evens out over many
+jobs without coordination. For tight load balancing, failover, or health
+checks, run a real load balancer (nginx `least_conn`, etc.) in front and
+configure a single URL here.
+
+**Tuning `ingester.workers.worker_count` for docling-serve users**: convert
+is usually the throughput ceiling — a default docling-serve instance
+processes one task at a time (configurable via `DOCLING_SERVE_ENG_LOC_NUM_WORKERS`
+if you've set it). A reasonable starting point for `worker_count` is **1–2 ×
+the number of `docling_serve.base_url` entries**: enough to overlap fetch /
+embed / store of one job with the convert of another, without piling jobs
+into docling-serve's internal queue beyond what its workers can chew through.
+The ingester logs the worker / source / docling-serve counts on startup so
+you can eyeball the ratio.
+
 Conversion options work identically for both local and remote processing.
 
 **Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail. Set `do_ocr: false` to disable OCR entirely.

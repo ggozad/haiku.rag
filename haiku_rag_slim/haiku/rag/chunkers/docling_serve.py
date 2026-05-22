@@ -56,7 +56,7 @@ class DoclingServeChunker(DocumentChunker):
     def __init__(self, config: AppConfig = Config):
         self.config = config
         self.client = DoclingServeClient(
-            base_url=config.providers.docling_serve.base_url,
+            base_urls=config.providers.docling_serve.base_urls,
             api_key=config.providers.docling_serve.api_key,
         )
         self.chunker_type = config.processing.chunker_type

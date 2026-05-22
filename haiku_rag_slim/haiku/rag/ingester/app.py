@@ -86,11 +86,27 @@ class IngesterApp:
 
                 await self._pool.start()
                 await self._pollers.start()
-                logger.info(
-                    "Ingester running: %d worker(s), %d source(s)",
-                    ingester_cfg.workers.worker_count,
-                    len(ingester_cfg.sources),
+                # Log the docling-serve fleet size when relevant so the
+                # operator can eyeball the worker/instance ratio. The convert
+                # phase is usually the throughput ceiling.
+                proc = self._config.processing
+                uses_docling_serve = (
+                    proc.converter == "docling-serve" or proc.chunker == "docling-serve"
                 )
+                if uses_docling_serve:
+                    logger.info(
+                        "Ingester running: %d worker(s), %d source(s), "
+                        "%d docling-serve instance(s)",
+                        ingester_cfg.workers.worker_count,
+                        len(ingester_cfg.sources),
+                        len(self._config.providers.docling_serve.base_urls),
+                    )
+                else:
+                    logger.info(
+                        "Ingester running: %d worker(s), %d source(s)",
+                        ingester_cfg.workers.worker_count,
+                        len(ingester_cfg.sources),
+                    )
 
                 api_task, api_server = await self._maybe_start_api(api)
 

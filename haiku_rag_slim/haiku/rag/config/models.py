@@ -200,8 +200,21 @@ class OllamaConfig(BaseModel):
 
 
 class DoclingServeConfig(BaseModel):
-    base_url: str = "http://localhost:5001"
+    """docling-serve endpoints. Accepts a single URL or a list — when a list
+    is given, the client round-robins jobs across the URLs. Each job's
+    submit/poll/result trio stays on the same instance (task IDs are
+    instance-local). The round-robin counter is per-process; for true load
+    balancing or failover, put an LB in front."""
+
+    base_url: str | list[str] = "http://localhost:5001"
     api_key: str = ""
+
+    @property
+    def base_urls(self) -> list[str]:
+        """Always-a-list view of base_url. Empty input falls back to localhost."""
+        if isinstance(self.base_url, str):
+            return [self.base_url]
+        return list(self.base_url) or ["http://localhost:5001"]
 
 
 class ProvidersConfig(BaseModel):
