@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -53,6 +54,12 @@ class JobRepo:
         # Row access by name in helpers below.
         conn.row_factory = aiosqlite.Row
         self._conn = conn
+        # Serialize repo calls on the shared connection so cursors from one
+        # coroutine don't sit "in progress" when another tries to commit.
+        # aiosqlite executes statements on a single worker thread, but
+        # individual cursors don't finalize until closed or GC'd — SQLite
+        # then refuses commit() with "SQL statements in progress".
+        self._lock = asyncio.Lock()
 
     async def enqueue(
         self,
@@ -71,126 +78,139 @@ class JobRepo:
         job_id = str(uuid.uuid4())
         now = _utcnow_iso()
         extra_json = json.dumps(extra) if extra is not None else None
-        cursor = await self._conn.execute(
-            """
-            INSERT INTO jobs (
-                id, source_id, uri, op, content_hash, revision, status,
-                attempts, max_attempts, last_error, extra,
-                enqueued_at, scheduled_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, NULL, ?, ?, ?)
-            ON CONFLICT DO NOTHING
-            RETURNING *
-            """,
-            (
-                job_id,
-                source_id,
-                uri,
-                op.value,
-                content_hash,
-                revision,
-                max_attempts,
-                extra_json,
-                now,
-                now,
-            ),
-        )
-        row = await cursor.fetchone()
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                """
+                INSERT INTO jobs (
+                    id, source_id, uri, op, content_hash, revision, status,
+                    attempts, max_attempts, last_error, extra,
+                    enqueued_at, scheduled_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, NULL, ?, ?, ?)
+                ON CONFLICT DO NOTHING
+                RETURNING *
+                """,
+                (
+                    job_id,
+                    source_id,
+                    uri,
+                    op.value,
+                    content_hash,
+                    revision,
+                    max_attempts,
+                    extra_json,
+                    now,
+                    now,
+                ),
+            ) as cursor:
+                row = await cursor.fetchone()
+            await self._conn.commit()
         return _row_to_job(row) if row else None
 
     async def claim_next(self, worker_id: str) -> Job | None:
         """Atomically claim the oldest queued job whose scheduled_at <= now.
         Implemented as a single UPDATE ... RETURNING — no SELECT/UPDATE race."""
         now = _utcnow_iso()
-        cursor = await self._conn.execute(
-            """
-            UPDATE jobs
-            SET status = 'claimed',
-                claimed_at = ?,
-                claimed_by = ?,
-                attempts = attempts + 1
-            WHERE id = (
-                SELECT id FROM jobs
-                WHERE status = 'queued' AND scheduled_at <= ?
-                ORDER BY scheduled_at
-                LIMIT 1
-            )
-            RETURNING *
-            """,
-            (now, worker_id, now),
-        )
-        row = await cursor.fetchone()
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'claimed',
+                    claimed_at = ?,
+                    claimed_by = ?,
+                    attempts = attempts + 1
+                WHERE id = (
+                    SELECT id FROM jobs
+                    WHERE status = 'queued' AND scheduled_at <= ?
+                    ORDER BY scheduled_at
+                    LIMIT 1
+                )
+                RETURNING *
+                """,
+                (now, worker_id, now),
+            ) as cursor:
+                row = await cursor.fetchone()
+            await self._conn.commit()
         return _row_to_job(row) if row else None
 
     async def get_job(self, job_id: str) -> Job | None:
-        cursor = await self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        row = await cursor.fetchone()
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
         return _row_to_job(row) if row else None
 
     async def mark_succeeded(self, job_id: str) -> None:
-        await self._conn.execute(
-            "UPDATE jobs SET status='succeeded', completed_at=? WHERE id=?",
-            (_utcnow_iso(), job_id),
-        )
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                "UPDATE jobs SET status='succeeded', completed_at=? WHERE id=?",
+                (_utcnow_iso(), job_id),
+            ):
+                pass
+            await self._conn.commit()
 
     async def mark_dead(self, job_id: str, error: str) -> None:
-        await self._conn.execute(
-            "UPDATE jobs SET status='dead', completed_at=?, last_error=? WHERE id=?",
-            (_utcnow_iso(), error, job_id),
-        )
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                "UPDATE jobs SET status='dead', completed_at=?, last_error=? WHERE id=?",
+                (_utcnow_iso(), error, job_id),
+            ):
+                pass
+            await self._conn.commit()
 
     async def reschedule(self, job_id: str, delay_seconds: float, error: str) -> None:
         scheduled = (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat()
-        await self._conn.execute(
-            """
-            UPDATE jobs
-            SET status='queued',
-                scheduled_at=?,
-                claimed_at=NULL,
-                claimed_by=NULL,
-                last_error=?
-            WHERE id=?
-            """,
-            (scheduled, error, job_id),
-        )
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                """
+                UPDATE jobs
+                SET status='queued',
+                    scheduled_at=?,
+                    claimed_at=NULL,
+                    claimed_by=NULL,
+                    last_error=?
+                WHERE id=?
+                """,
+                (scheduled, error, job_id),
+            ):
+                pass
+            await self._conn.commit()
 
     async def retry(self, job_id: str) -> Job:
         """Rescue a dead job: status='queued', attempts=0, error cleared.
         Raises KeyError if the job doesn't exist."""
         now = _utcnow_iso()
-        cursor = await self._conn.execute(
-            """
-            UPDATE jobs
-            SET status='queued',
-                attempts=0,
-                last_error=NULL,
-                claimed_at=NULL,
-                claimed_by=NULL,
-                completed_at=NULL,
-                scheduled_at=?
-            WHERE id=?
-            RETURNING *
-            """,
-            (now, job_id),
-        )
-        row = await cursor.fetchone()
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                """
+                UPDATE jobs
+                SET status='queued',
+                    attempts=0,
+                    last_error=NULL,
+                    claimed_at=NULL,
+                    claimed_by=NULL,
+                    completed_at=NULL,
+                    scheduled_at=?
+                WHERE id=?
+                RETURNING *
+                """,
+                (now, job_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            await self._conn.commit()
         if not row:
             raise KeyError(f"Job {job_id!r} not found")
         return _row_to_job(row)
 
     async def cancel(self, job_id: str) -> bool:
         """Delete a queued or claimed job. Returns True if a row was removed."""
-        cursor = await self._conn.execute(
-            "DELETE FROM jobs WHERE id=? AND status IN ('queued', 'claimed') RETURNING id",
-            (job_id,),
-        )
-        row = await cursor.fetchone()
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                "DELETE FROM jobs WHERE id=? AND status IN ('queued', 'claimed') RETURNING id",
+                (job_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            await self._conn.commit()
         return row is not None
 
     async def list_jobs(
@@ -215,18 +235,20 @@ class JobRepo:
             params.append(uri)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.extend([limit, offset])
-        cursor = await self._conn.execute(
-            f"SELECT * FROM jobs {where} ORDER BY enqueued_at DESC LIMIT ? OFFSET ?",
-            params,
-        )
-        rows = await cursor.fetchall()
+        async with self._lock:
+            async with self._conn.execute(
+                f"SELECT * FROM jobs {where} ORDER BY enqueued_at DESC LIMIT ? OFFSET ?",
+                params,
+            ) as cursor:
+                rows = await cursor.fetchall()
         return [_row_to_job(r) for r in rows]
 
     async def counts_by_status(self) -> dict[str, int]:
-        cursor = await self._conn.execute(
-            "SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"
-        )
-        rows = await cursor.fetchall()
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"
+            ) as cursor:
+                rows = await cursor.fetchall()
         return {row["status"]: row["n"] for row in rows}
 
     async def reap_stale(self, claim_timeout_seconds: int) -> int:
@@ -235,39 +257,46 @@ class JobRepo:
         threshold = (
             datetime.now(UTC) - timedelta(seconds=claim_timeout_seconds)
         ).isoformat()
-        cursor = await self._conn.execute(
-            """
-            UPDATE jobs
-            SET status='queued', claimed_at=NULL, claimed_by=NULL
-            WHERE status='claimed' AND claimed_at < ?
-            """,
-            (threshold,),
-        )
-        await self._conn.commit()
-        return cursor.rowcount or 0
+        async with self._lock:
+            cursor = await self._conn.execute(
+                """
+                UPDATE jobs
+                SET status='queued', claimed_at=NULL, claimed_by=NULL
+                WHERE status='claimed' AND claimed_at < ?
+                """,
+                (threshold,),
+            )
+            rowcount = cursor.rowcount or 0
+            await cursor.close()
+            await self._conn.commit()
+        return rowcount
 
 
 class SyncStateRepo:
     def __init__(self, conn: aiosqlite.Connection):
         conn.row_factory = aiosqlite.Row
         self._conn = conn
+        # See JobRepo for why we serialize on the shared connection.
+        self._lock = asyncio.Lock()
 
     async def get_snapshot(self, source_id: str) -> dict[str, str]:
         """uri -> revision map for the source. Drops rows where revision is
         NULL (the poller can't compare against an absent revision)."""
-        cursor = await self._conn.execute(
-            "SELECT uri, revision FROM sync_state WHERE source_id=? AND revision IS NOT NULL",
-            (source_id,),
-        )
-        rows = await cursor.fetchall()
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT uri, revision FROM sync_state WHERE source_id=? AND revision IS NOT NULL",
+                (source_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
         return {row["uri"]: row["revision"] for row in rows}
 
     async def get_row(self, source_id: str, uri: str) -> SyncStateRow | None:
-        cursor = await self._conn.execute(
-            "SELECT * FROM sync_state WHERE source_id=? AND uri=?",
-            (source_id, uri),
-        )
-        row = await cursor.fetchone()
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT * FROM sync_state WHERE source_id=? AND uri=?",
+                (source_id, uri),
+            ) as cursor:
+                row = await cursor.fetchone()
         return _row_to_sync_state(row) if row else None
 
     async def upsert(
@@ -283,25 +312,29 @@ class SyncStateRepo:
         last_ingested_at; otherwise only last_seen_at is bumped."""
         now = _utcnow_iso()
         ingested_at = now if ingested else None
-        await self._conn.execute(
-            """
-            INSERT INTO sync_state (
-                source_id, uri, revision, content_hash, last_seen_at, last_ingested_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(source_id, uri) DO UPDATE SET
-                revision = excluded.revision,
-                content_hash = excluded.content_hash,
-                last_seen_at = excluded.last_seen_at,
-                last_ingested_at = COALESCE(excluded.last_ingested_at, last_ingested_at)
-            """,
-            (source_id, uri, revision, content_hash, now, ingested_at),
-        )
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                """
+                INSERT INTO sync_state (
+                    source_id, uri, revision, content_hash, last_seen_at, last_ingested_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_id, uri) DO UPDATE SET
+                    revision = excluded.revision,
+                    content_hash = excluded.content_hash,
+                    last_seen_at = excluded.last_seen_at,
+                    last_ingested_at = COALESCE(excluded.last_ingested_at, last_ingested_at)
+                """,
+                (source_id, uri, revision, content_hash, now, ingested_at),
+            ):
+                pass
+            await self._conn.commit()
 
     async def delete(self, source_id: str, uri: str) -> None:
-        await self._conn.execute(
-            "DELETE FROM sync_state WHERE source_id=? AND uri=?",
-            (source_id, uri),
-        )
-        await self._conn.commit()
+        async with self._lock:
+            async with self._conn.execute(
+                "DELETE FROM sync_state WHERE source_id=? AND uri=?",
+                (source_id, uri),
+            ):
+                pass
+            await self._conn.commit()

@@ -84,10 +84,24 @@ class BasePoller:
             return False
         try:
             snapshot = await self._sync.get_snapshot(self.source_id)
+            counts = {
+                SourceEventKind.UPSERT: 0,
+                SourceEventKind.DELETE: 0,
+                SourceEventKind.UNCHANGED: 0,
+            }
             async for event in self.source.discover(since=snapshot):
+                counts[event.kind] += 1
                 await self._handle_event(event)
             self._breaker.record_success()
             self._last_polled_at = datetime.now(UTC)
+            if counts[SourceEventKind.UPSERT] or counts[SourceEventKind.DELETE]:
+                logger.info(
+                    "Swept %s: %d upsert, %d delete, %d unchanged",
+                    self.source_id,
+                    counts[SourceEventKind.UPSERT],
+                    counts[SourceEventKind.DELETE],
+                    counts[SourceEventKind.UNCHANGED],
+                )
             return True
         except Exception as exc:
             self._breaker.record_failure()

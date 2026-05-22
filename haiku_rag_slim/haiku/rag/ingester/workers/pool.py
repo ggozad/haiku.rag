@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
@@ -113,6 +114,8 @@ class WorkerPool:
             pass
 
     async def _process(self, job: Job) -> None:
+        started = time.monotonic()
+        logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:
             result = await run_job(self._client, job)
         except PermanentError as e:
@@ -154,3 +157,6 @@ class WorkerPool:
                 content_hash=result.content_hash,
                 ingested=True,
             )
+        logger.info(
+            "Job %s succeeded in %.2fs: %s", job.id, time.monotonic() - started, job.uri
+        )

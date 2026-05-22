@@ -22,6 +22,7 @@ from haiku.rag.ingester.exceptions import PermanentError, TransientError  # noqa
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus  # noqa: E402
 from haiku.rag.ingester.workers.pipeline import run_job  # noqa: E402
+from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
@@ -37,14 +38,15 @@ _cli = typer.Typer(
 
 def _configure_logfire() -> None:
     """Logfire emits spans only when LOGFIRE_TOKEN is set; otherwise it
-    stays silent (no warning either way). Matches the haiku-rag CLI."""
+    stays silent. Console output is disabled in either case so span lines
+    don't interleave with the ingester's own RichHandler logs — telemetry
+    lives in the Logfire UI."""
     try:
         import logfire
 
-        is_production = get_config().environment != "development"
         logfire.configure(
             send_to_logfire="if-token-present",
-            console=False if is_production else None,
+            console=False,
         )
         logfire.instrument_pydantic_ai()
     except Exception:  # pragma: no cover
@@ -53,6 +55,7 @@ def _configure_logfire() -> None:
 
 def cli() -> None:
     """Entry point that translates store-state errors into a clean exit."""
+    configure_cli_logging()
     _configure_logfire()
     try:
         _cli()
