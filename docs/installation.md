@@ -98,4 +98,4 @@ docker run -p 8001:8001 \
   haiku-rag
 ```
 
-See `docker/README.md` for complete build and configuration instructions, including how to enable file monitoring.
+See `docker/README.md` for complete build and configuration instructions, including how to run the [ingester](ingester.md) service for continuous document ingestion.

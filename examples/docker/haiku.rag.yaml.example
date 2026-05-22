@@ -7,6 +7,9 @@ storage:
   data_dir: /data
 
 ingester:
+  # Queue lives next to the LanceDB so both persist in the data volume.
+  queue:
+    path: /data/ingester.db
   sources:
     - type: fs
       id: docs

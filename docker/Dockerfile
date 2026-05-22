@@ -13,13 +13,13 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 COPY haiku_rag_slim/pyproject.toml haiku_rag_slim/README.md haiku_rag_slim/LICENSE haiku_rag_slim/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+    uv sync --frozen --no-install-project --no-dev --extra ingester
 
-# Install the project itself
+# Install the project itself (with the ingester extra so haiku-ingester is on PATH)
 COPY haiku_rag_slim haiku_rag_slim/
 COPY README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --no-dev
+    uv sync --frozen --no-editable --no-dev --extra ingester
 
 # Final layer
 FROM python:3.13-slim
@@ -33,8 +33,11 @@ ENV DEFAULT_DATA_DIR=/data
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Expose port for MCP server
-EXPOSE 8001
+# Expose MCP server (8001) and ingester control plane (8765) ports.
+# docker-compose overrides this image's default command to run either the
+# MCP server (read-only) or the ingester service.
+EXPOSE 8001 8765
 
-# Run all services (monitoring, MCP)
-CMD ["python", "-m", "haiku.rag.cli", "--config", "/app/haiku.rag.yaml", "serve", "--monitor", "--mcp", "--mcp-port", "8001", "--db", "/data/haiku.rag.lancedb"]
+# Default command: read-only MCP server. The companion ingester service is
+# launched via docker-compose against the same image.
+CMD ["haiku-rag", "--config", "/app/haiku.rag.yaml", "--read-only", "mcp", "--port", "8001"]

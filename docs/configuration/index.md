@@ -182,6 +182,7 @@ For detailed configuration of specific topics, see:
 
 - **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, reranking)
 - **[Search and Question Answering](qa.md)** - Search settings and question answering
-- **[Document Processing](processing.md)** - Document conversion, chunking, and file monitoring
+- **[Document Processing](processing.md)** - Document conversion and chunking
+- **[Ingester](../ingester.md)** - Continuous ingestion from filesystem, HTTP, S3, and WebDAV sources
 - **[Storage](storage.md)** - Database, remote storage, and vector indexing
 - **[Prompts](prompts.md)** - Customize agent prompts for your domain

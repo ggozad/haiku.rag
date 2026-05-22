@@ -15,19 +15,28 @@ services:
       start_period: 40s
       start_interval: 5s
 
-  haiku-rag:
+  # LanceDB allows one writer + N readers per database URI; the ingester is
+  # the writer, MCP runs read-only.
+  haiku-ingester:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.slim
-    container_name: haiku-rag
+    image: haiku-rag-slim:local
+    container_name: haiku-ingester
+    command:
+      [
+        "haiku-ingester",
+        "--config",
+        "/app/haiku.rag.yaml",
+        "serve",
+      ]
     ports:
-      - "8001:8001"  # MCP server
+      - "8765:8765"  # ingester control plane (/health, /jobs, /sources, /dlq)
     volumes:
-      - ./data:/data  # Persist database
-      - ./docs:/docs  # Mount documents directory for monitoring
-      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro  # Mount config file
+      - ./data:/data
+      - ./docs:/docs  # Documents directory ingested by the FS source
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     environment:
-      # API keys (set as needed)
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
@@ -35,4 +44,31 @@ services:
     depends_on:
       docling-serve:
         condition: service_healthy
+    restart: unless-stopped
+
+  haiku-rag:
+    image: haiku-rag-slim:local
+    container_name: haiku-rag
+    command:
+      [
+        "haiku-rag",
+        "--config",
+        "/app/haiku.rag.yaml",
+        "--read-only",
+        "mcp",
+        "--port",
+        "8001",
+      ]
+    ports:
+      - "8001:8001"  # MCP server (read-only against the same LanceDB)
+    volumes:
+      - ./data:/data  # Shared with the ingester (read-only at this process)
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - CO_API_KEY=${CO_API_KEY}
+    depends_on:
+      - haiku-ingester
     restart: unless-stopped
