@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -258,10 +258,101 @@ class QueueConfig(BaseModel):
     )
 
 
-class IngesterConfig(BaseModel):
-    """Production ingester settings. Expanded across chunks 4-7."""
+class RetryPolicyConfig(BaseModel):
+    """Per-job retry policy. Per-source override is allowed under
+    SourceConfig.retry so a flaky source doesn't drag the rest of the queue."""
 
+    max_attempts: int = 5
+    base_delay_s: float = 2.0
+    max_delay_s: float = 300.0
+    jitter: float = Field(default=0.25, ge=0.0, le=1.0)
+
+
+class CircuitBreakerConfig(BaseModel):
+    """Per-source breaker over discover() failures. Stops the ingester from
+    hammering a source that's persistently failing."""
+
+    failure_threshold: int = Field(
+        default=5, description="Consecutive failures before the breaker opens."
+    )
+    cooldown_s: float = Field(
+        default=600.0,
+        description="How long the breaker stays open before allowing a probe.",
+    )
+
+
+class WorkerConfig(BaseModel):
+    worker_count: int = 4
+    max_concurrent: int = 4
+    poll_idle_interval_s: float = 1.0
+    claim_timeout_s: int = 1800
+    reaper_interval_s: int = 60
+    retry: RetryPolicyConfig = Field(default_factory=RetryPolicyConfig)
+
+
+class APIConfig(BaseModel):
+    """HTTP control plane settings for the ingester."""
+
+    enabled: bool = True
+    host: str = "127.0.0.1"
+    port: int = 8765
+    auth_token: str | None = None
+
+
+class _SourceBase(BaseModel):
+    """Fields common to every source. `id` is optional; if omitted the source
+    derives a deterministic id from its target (root path / bucket+prefix /
+    user-supplied tag)."""
+
+    id: str | None = None
+    delete_orphans: bool = True
+    poll_interval_s: float = Field(
+        default=300.0,
+        description="How often discover() runs. FS additionally uses watchfiles "
+        "for push events between sweeps.",
+    )
+    retry: RetryPolicyConfig | None = Field(
+        default=None,
+        description="Override the worker's default retry policy for jobs from "
+        "this source. None = inherit from WorkerConfig.retry.",
+    )
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+
+
+class FSSourceConfig(_SourceBase):
+    type: Literal["fs"]
+    root: Path
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
+
+
+class HTTPSourceConfig(_SourceBase):
+    type: Literal["http"]
+    urls: list[str] = []
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class S3SourceConfig(_SourceBase):
+    type: Literal["s3"]
+    uri: str
+    storage_options: dict[str, str] = Field(default_factory=dict)
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
+
+
+SourceConfig = Annotated[
+    FSSourceConfig | HTTPSourceConfig | S3SourceConfig,
+    Field(discriminator="type"),
+]
+
+
+class IngesterConfig(BaseModel):
+    """Production ingester settings."""
+
+    sources: list[SourceConfig] = []
     queue: QueueConfig = Field(default_factory=QueueConfig)
+    workers: WorkerConfig = Field(default_factory=WorkerConfig)
+    api: APIConfig = Field(default_factory=APIConfig)
 
 
 class AppConfig(BaseModel):

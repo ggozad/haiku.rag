@@ -140,8 +140,8 @@ class S3Source:
                     discovered_at=now,
                 )
 
-        # URIs we previously synced but that no longer appear under the
-        # prefix have been deleted upstream.
+        # URIs in the snapshot that no longer appear under the prefix have
+        # been deleted upstream — emit DELETE so the poller cleans up.
         for uri in snapshot:
             if uri in seen:
                 continue

@@ -16,6 +16,7 @@ from haiku.rag.config import (  # noqa: E402
     load_yaml_config,
     set_config,
 )
+from haiku.rag.ingester.app import IngesterApp  # noqa: E402
 from haiku.rag.ingester.exceptions import PermanentError, TransientError  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus  # noqa: E402
@@ -37,7 +38,8 @@ cli.add_typer(queue_cli)
 
 
 def _load_config_with_override(config_path: Path | None) -> AppConfig:
-    """Mirror the haiku-rag CLI's config-loading pattern."""
+    """Load AppConfig from `config_path`, the discovered project YAML, or the
+    process default — in that order."""
     if config_path:
         config = AppConfig.model_validate(load_yaml_config(config_path))
         set_config(config)
@@ -96,6 +98,34 @@ def queue_migrate(
     typer.echo(f"Queue at {path} is up to date")
 
 
+def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:
+    return override or (config.storage.data_dir / "haiku.rag.lancedb")
+
+
+@cli.command("serve")
+def serve(
+    config: Path | None = typer.Option(
+        None, "--config", "-c", help="Path to haiku.rag.yaml."
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="LanceDB path (overrides config.storage.data_dir).",
+    ),
+    no_api: bool = typer.Option(
+        False,
+        "--no-api",
+        help="Run pollers + workers without the HTTP control plane.",
+    ),
+) -> None:
+    """Run the production ingester: pollers + workers (and the HTTP API
+    unless --no-api is set). Blocks until SIGINT/SIGTERM."""
+    app_config = _load_config_with_override(config)
+    db_path = _resolve_db_path(app_config, db)
+    app = IngesterApp(config=app_config, db_path=db_path)
+    asyncio.run(app.serve(api=not no_api))
+
+
 @cli.command("run-once")
 def run_once(
     uri: str = typer.Argument(..., help="URI to ingest (file://, http(s)://, s3://)."),
@@ -123,7 +153,7 @@ def run_once(
 async def _run_once(
     app_config: AppConfig, uri: str, db_path: Path | None, delete: bool
 ) -> None:
-    db = db_path or (app_config.storage.data_dir / "haiku.rag.lancedb")
+    db = _resolve_db_path(app_config, db_path)
     now = datetime.now(UTC)
     job = Job(
         id=f"adhoc-{uuid.uuid4()}",
