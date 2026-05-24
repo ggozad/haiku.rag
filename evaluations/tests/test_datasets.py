@@ -1,5 +1,11 @@
 from pathlib import Path
 
+from evaluations.datasets.mmlongbench import (
+    build_mmlb_case,
+    load_qa_records,
+    map_mmlb_document,
+    map_mmlb_retrieval,
+)
 from evaluations.datasets.open_rag_bench import (
     build_orb_case,
     download_pdf,
@@ -158,3 +164,119 @@ class TestOpenRAGBench:
         assert is_multimodal_query("image") is True
         assert is_multimodal_query("image_table") is True
         assert is_multimodal_query("text") is False
+
+
+class TestMMLongBenchDoc:
+    def test_map_document(self, tmp_path: Path) -> None:
+        pdf_dir = tmp_path / "documents"
+        pdf_dir.mkdir()
+        pdf_path = pdf_dir / "report.pdf"
+        pdf_path.write_bytes(b"%PDF-fake")
+
+        from unittest.mock import patch
+
+        with patch(
+            "evaluations.datasets.mmlongbench.get_cache_dir",
+            return_value=tmp_path,
+        ):
+            payload = map_mmlb_document(
+                {"doc_id": "report.pdf", "doc_type": "Financial report"}
+            )
+
+        assert payload is not None
+        assert payload.uri == "report.pdf"
+        assert payload.title == "report.pdf"
+        assert payload.source_path == pdf_path
+        assert payload.metadata == {"doc_type": "Financial report"}
+
+    def test_map_document_missing_pdf(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        with patch(
+            "evaluations.datasets.mmlongbench.get_cache_dir",
+            return_value=tmp_path,
+        ):
+            payload = map_mmlb_document(
+                {"doc_id": "missing.pdf", "doc_type": "Brochure"}
+            )
+
+        assert payload is None
+
+    def test_map_retrieval(self) -> None:
+        doc = {
+            "question": "What is the revenue?",
+            "doc_id": "NIKE_2021_10K.pdf",
+            "evidence_pages": [3, 5],
+            "evidence_sources": ["Table", "Pure-text"],
+        }
+        sample = map_mmlb_retrieval(doc)
+        assert sample is not None
+        assert sample.question == "What is the revenue?"
+        assert sample.expected_uris == ("NIKE_2021_10K.pdf",)
+        assert sample.source_type == "Table,Pure-text"
+
+    def test_map_retrieval_skips_unanswerable(self) -> None:
+        doc = {
+            "question": "What does the document say about Mars?",
+            "doc_id": "NIKE_2021_10K.pdf",
+            "evidence_pages": [],
+            "evidence_sources": [],
+        }
+        assert map_mmlb_retrieval(doc) is None
+
+    def test_build_case(self) -> None:
+        doc = {
+            "doc_id": "report.pdf",
+            "doc_type": "Financial report",
+            "question": "What is the net income?",
+            "answer": "42",
+            "evidence_pages": [5],
+            "evidence_sources": ["Table"],
+            "answer_format": "Int",
+        }
+        case = build_mmlb_case(7, doc)
+        assert case.name == "7_report.pdf"
+        assert case.inputs == "What is the net income?"
+        assert case.expected_output == "42"
+        assert case.metadata is not None
+        assert case.metadata["doc_id"] == "report.pdf"
+        assert case.metadata["doc_type"] == "Financial report"
+        assert case.metadata["answer_format"] == "Int"
+        assert case.metadata["evidence_pages"] == "[5]"
+        assert case.metadata["evidence_sources"] == "Table"
+        assert case.metadata["case_index"] == "7"
+
+    def test_load_qa_records_parses_list_fields(self) -> None:
+        from unittest.mock import patch
+
+        raw_rows = [
+            {
+                "doc_id": "a.pdf",
+                "doc_type": "Brochure",
+                "question": "Q1?",
+                "answer": "A1",
+                "evidence_pages": "[3, 5]",
+                "evidence_sources": "['Table', 'Pure-text']",
+                "answer_format": "Str",
+            },
+            {
+                "doc_id": "b.pdf",
+                "doc_type": "Academic paper",
+                "question": "Q2?",
+                "answer": "Not answerable",
+                "evidence_pages": "[]",
+                "evidence_sources": "[]",
+                "answer_format": "None",
+            },
+        ]
+
+        with patch(
+            "evaluations.datasets.mmlongbench._load_hf_qa_split",
+            return_value=raw_rows,
+        ):
+            records = load_qa_records()
+
+        assert records[0]["evidence_pages"] == [3, 5]
+        assert records[0]["evidence_sources"] == ["Table", "Pure-text"]
+        assert records[1]["evidence_pages"] == []
+        assert records[1]["evidence_sources"] == []
