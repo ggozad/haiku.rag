@@ -1127,13 +1127,13 @@ This is paragraph four about topic C.
 
 
 @pytest.mark.vcr()
-async def test_client_visualize_chunk_with_pdf(temp_db_path):
+async def test_client_visualize_chunk_with_pdf(temp_db_path, doclaynet_first_page_pdf):
     """Test visualize_chunk returns images with bounding boxes for PDF documents."""
     from PIL.Image import Image as PILImage
 
     from haiku.rag.config import AppConfig
 
-    pdf_path = Path("tests/data/doclaynet.pdf")
+    pdf_path = doclaynet_first_page_pdf
     config = AppConfig()
     config.processing.conversion_options.do_ocr = False
 

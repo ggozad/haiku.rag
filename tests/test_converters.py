@@ -627,10 +627,12 @@ class TestDoclingLocalConverter:
         )
 
     @pytest.mark.asyncio
-    async def test_convert_pdf_with_picture_images(self, config):
+    async def test_convert_pdf_with_picture_images(
+        self, config, doclaynet_first_page_pdf
+    ):
         """Picture bytes are produced by the local converter for PDFs that
         contain figures."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         converter = DoclingLocalConverter(config)
 
         doc = await converter.convert_file(pdf_path)
@@ -643,9 +645,59 @@ class TestDoclingLocalConverter:
             )
 
     @pytest.mark.asyncio
-    async def test_convert_pdf_without_page_images(self, config):
-        """Test PDF conversion excludes page images when disabled."""
+    async def test_split_and_merge_matches_single_pass(self, config):
+        """Real-PDF integration test for split_pages: convert the full
+        9-page DocLayNet arXiv paper single-pass, then again via
+        ``convert_pdf_with_splitting`` with slice_size=1 (one slice per
+        page), and assert the merged result is equivalent to single-pass
+        on totals + per-page-number coverage + self_ref uniqueness +
+        markdown export.
+
+        Slow — runs docling-local 10 times against a multi-page PDF. The
+        contract this pins is the highest-risk one: that splitting at the
+        byte level and merging via DoclingDocument.concatenate produces a
+        document semantically indistinguishable from a single-pass convert.
+        """
+        from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
+
         pdf_path = Path("tests/data/doclaynet.pdf")
+        config.processing.conversion_options.do_ocr = False
+        converter = DoclingLocalConverter(config)
+
+        baseline = await converter.convert_file(pdf_path)
+        merged = await convert_pdf_with_splitting(
+            converter, pdf_path, source_uri=None, slice_size=1
+        )
+
+        # Same totals across every list the consumer cares about.
+        assert len(merged.texts) == len(baseline.texts)
+        assert len(merged.pictures) == len(baseline.pictures)
+        assert len(merged.tables) == len(baseline.tables)
+        assert sorted(merged.pages.keys()) == sorted(baseline.pages.keys())
+
+        # Page numbers cover the same range — this is the key thing
+        # concatenate handles via its internal page_delta.
+        def _page_nos(doc):
+            return {p.page_no for t in doc.texts for p in t.prov}
+
+        assert _page_nos(merged) == _page_nos(baseline)
+
+        # self_refs unique across the merged doc — concatenate re-indexes
+        # them per-slice, so a duplicate here is a real merger bug.
+        merged_refs = [t.self_ref for t in merged.texts]
+        assert len(set(merged_refs)) == len(merged_refs)
+
+        # Strongest assertion: rendered markdown matches byte-for-byte.
+        # If this fails, the split/merge introduced ordering or content
+        # drift the count-based asserts above didn't catch.
+        assert merged.export_to_markdown() == baseline.export_to_markdown()
+
+    @pytest.mark.asyncio
+    async def test_convert_pdf_without_page_images(
+        self, config, doclaynet_first_page_pdf
+    ):
+        """Test PDF conversion excludes page images when disabled."""
+        pdf_path = doclaynet_first_page_pdf
         config.processing.conversion_options.generate_page_images = False
         converter = DoclingLocalConverter(config)
 
@@ -659,9 +711,9 @@ class TestDoclingLocalConverter:
             )
 
     @pytest.mark.asyncio
-    async def test_convert_pdf_with_page_images(self, config):
+    async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion includes page images when enabled."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         config.processing.conversion_options.generate_page_images = True
         converter = DoclingLocalConverter(config)
 
@@ -805,9 +857,11 @@ class TestDoclingLocalConverter:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_picture_description_end_to_end(self, config):
+    async def test_picture_description_end_to_end(
+        self, config, doclaynet_first_page_pdf
+    ):
         """End-to-end test: convert PDF with VLM picture descriptions."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
 
         # Disable OCR (not needed for native PDF, avoids model downloads)
         config.processing.conversion_options.do_ocr = False
@@ -1321,12 +1375,14 @@ class TestDoclingServeConverterIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_picture_description_end_to_end(self, config):
+    async def test_picture_description_end_to_end(
+        self, config, doclaynet_first_page_pdf
+    ):
         """End-to-end test: convert PDF with VLM picture descriptions via docling-serve.
 
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
@@ -1359,9 +1415,11 @@ class TestDoclingServeConverterIntegration:
 
     @pytest.mark.vcr()
     @pytest.mark.asyncio
-    async def test_convert_pdf_without_page_images(self, config):
+    async def test_convert_pdf_without_page_images(
+        self, config, doclaynet_first_page_pdf
+    ):
         """Test PDF conversion excludes page images when disabled."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         config.processing.conversion_options.generate_page_images = False
         converter = DoclingServeConverter(config)
 
@@ -1376,9 +1434,9 @@ class TestDoclingServeConverterIntegration:
 
     @pytest.mark.vcr()
     @pytest.mark.asyncio
-    async def test_convert_pdf_with_page_images(self, config):
+    async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion includes page images when enabled."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         config.processing.conversion_options.generate_page_images = True
         converter = DoclingServeConverter(config)
 
@@ -1393,9 +1451,9 @@ class TestDoclingServeConverterIntegration:
 
     @pytest.mark.vcr()
     @pytest.mark.asyncio
-    async def test_convert_pdf_with_ocr_engine(self, config):
+    async def test_convert_pdf_with_ocr_engine(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion with explicit OCR engine selection."""
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         config.processing.conversion_options.ocr_engine = "easyocr"
         converter = DoclingServeConverter(config)
 
@@ -1406,7 +1464,9 @@ class TestDoclingServeConverterIntegration:
 
     @pytest.mark.vcr()
     @pytest.mark.asyncio
-    async def test_convert_pdf_with_picture_images(self, config):
+    async def test_convert_pdf_with_picture_images(
+        self, config, doclaynet_first_page_pdf
+    ):
         """Picture bytes are produced for PDFs that contain figures.
 
         docling-serve only emits picture image bytes via the
@@ -1416,7 +1476,7 @@ class TestDoclingServeConverterIntegration:
         into ``data:`` URIs so the result is shape-equivalent to the local
         converter.
         """
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = doclaynet_first_page_pdf
         converter = DoclingServeConverter(config)
 
         doc = await converter.convert_file(pdf_path)
