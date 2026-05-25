@@ -111,6 +111,52 @@ you can eyeball the ratio.
 
 Conversion options work identically for both local and remote processing.
 
+### Large PDFs and docling memory
+
+Docling's parser is memory-hungry and has confirmed leaks in current versions
+([docling #2209](https://github.com/docling-project/docling/issues/2209),
+[#1343](https://github.com/docling-project/docling/issues/1343),
+[#2954](https://github.com/docling-project/docling/issues/2954);
+[docling-serve #366](https://github.com/docling-project/docling-serve/issues/366),
+[#474](https://github.com/docling-project/docling-serve/issues/474)).
+Single-pass conversion of 400-page PDFs can OOM a workstation in local mode,
+and long-running docling-serve containers see RSS grow monotonically.
+
+Mitigation in haiku.rag — set `processing.split_pages`:
+
+```yaml
+processing:
+  split_pages: 10                  # 0 disables (default)
+```
+
+When `split_pages > 0`, PDFs are split at the byte level into N-page slices
+(using pypdfium2, already bundled), each slice converted independently, then
+merged back via `DoclingDocument.concatenate` — preserving page numbers and
+re-indexing `self_ref` values across slices. Peak memory per conversion is
+bounded by one slice's working set rather than the whole document; in
+docling-serve mode each slice is also an independent task that lets the
+server release task-local state between requests.
+
+Recommendation: `10` is a sensible starting point for any consistently-large
+PDF workload. Smaller slices reduce peak memory but multiply task overhead
+(per-slice docling startup + HTTP round-trips for docling-serve). Cross-page
+references (named destinations, multi-page link annotations) are dropped at
+the split — accepted loss; haiku.rag doesn't surface them downstream.
+
+**Operational note for long-running ingest**: even with `split_pages`,
+docling's per-process leak rate is non-zero. For deployments running
+continuously:
+
+- *docling-serve mode*: set `mem_limit` on the container in Compose
+  (or `resources.limits.memory` in Kubernetes) plus `restart: unless-stopped`
+  so the kernel OOM-kills and the runtime restarts. Run multiple
+  docling-serve replicas behind the round-robin `base_url` list above so a
+  restart of one doesn't stop ingest.
+- *docling-local mode*: the leak is inside the `haiku-ingester` process
+  itself. Apply the same `mem_limit` + restart policy to the ingester
+  container. Restarts are graceful — in-flight jobs land in the queue's
+  reaper window and resume on next start.
+
 **Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail. Set `do_ocr: false` to disable OCR entirely.
 
 ### Conversion Options

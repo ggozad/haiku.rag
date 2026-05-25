@@ -157,6 +157,16 @@ class ProcessingConfig(BaseModel):
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
+    split_pages: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "If >0, PDFs are split into N-page slices, each converted "
+            "independently, and merged via DoclingDocument.concatenate. 0 "
+            "disables splitting (single-pass conversion). Recommended: 10 "
+            "for memory-bound or large (>100 page) PDFs."
+        ),
+    )
     pictures: PicturesMode = "image"
     """How embedded pictures are handled at ingest.
 

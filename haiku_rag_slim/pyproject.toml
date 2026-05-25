@@ -32,6 +32,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-ai-slim[openai,fastmcp,logfire,ag-ui]>=1.100.0",
     "pydantic-monty>=0.0.17",
+    "pypdfium2>=5.0",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",

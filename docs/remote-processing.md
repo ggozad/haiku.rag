@@ -215,6 +215,30 @@ providers:
 haiku-rag add-src document.pdf
 ```
 
+## Operational notes
+
+Long-running docling-serve containers see CPU memory grow monotonically
+([docling-serve #366](https://github.com/docling-project/docling-serve/issues/366),
+[#474](https://github.com/docling-project/docling-serve/issues/474)). The
+underlying parser leaks are in core docling
+([#2209](https://github.com/docling-project/docling/issues/2209),
+[#1343](https://github.com/docling-project/docling/issues/1343)) and affect
+docling-local too.
+
+Recommended deployment shape:
+
+- Set `mem_limit` on the docling-serve container (or `resources.limits.memory`
+  in Kubernetes) at a value comfortably above your largest expected job.
+- Combine with `restart: unless-stopped` so the runtime restarts when the
+  kernel OOM-kills.
+- Run multiple docling-serve replicas behind haiku.rag's round-robin
+  `providers.docling_serve.base_url` list (see
+  [Document Processing](configuration/processing.md)). A restart of one
+  replica doesn't stop ingest.
+- In haiku.rag, set `processing.split_pages` for large-PDF workloads so each
+  slice is an independent docling-serve task and the per-task working set
+  stays bounded.
+
 ## Resources
 
 - [docling-serve GitHub](https://github.com/docling-project/docling-serve)

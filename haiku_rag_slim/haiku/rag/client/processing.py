@@ -84,6 +84,19 @@ async def convert(
     """
     converter = get_converter(config)
 
+    async def _convert_file(
+        file_path: Path, effective_uri: str | None
+    ) -> "DoclingDocument":
+        """Dispatch through split-and-merge for large PDFs when configured,
+        otherwise call the converter directly."""
+        if file_path.suffix.lower() == ".pdf" and config.processing.split_pages > 0:
+            from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
+
+            return await convert_pdf_with_splitting(
+                converter, file_path, effective_uri, config.processing.split_pages
+            )
+        return await converter.convert_file(file_path, source_uri=effective_uri)
+
     # Path object - convert file directly
     if isinstance(source, Path):
         if not source.exists():
@@ -91,7 +104,7 @@ async def convert(
         if source.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {source.suffix}")
         effective_uri = source_uri or source.absolute().as_uri()
-        doc = await converter.convert_file(source, source_uri=effective_uri)
+        doc = await _convert_file(source, effective_uri)
         _warn_if_descriptions_missing(config, doc, str(source))
         return doc
 
@@ -123,7 +136,7 @@ async def convert(
 
             try:
                 effective_uri = source_uri or source
-                doc = await converter.convert_file(temp_path, source_uri=effective_uri)
+                doc = await _convert_file(temp_path, effective_uri)
                 _warn_if_descriptions_missing(config, doc, source)
                 return doc
             finally:
@@ -137,7 +150,7 @@ async def convert(
         if file_path.suffix.lower() not in converter.supported_extensions:
             raise ValueError(f"Unsupported file extension: {file_path.suffix}")
         effective_uri = source_uri or file_path.absolute().as_uri()
-        doc = await converter.convert_file(file_path, source_uri=effective_uri)
+        doc = await _convert_file(file_path, effective_uri)
         _warn_if_descriptions_missing(config, doc, str(file_path))
         return doc
 
