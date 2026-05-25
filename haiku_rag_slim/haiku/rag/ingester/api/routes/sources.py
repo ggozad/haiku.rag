@@ -19,7 +19,7 @@ async def list_sources(
                 source_id=poller.source_id,
                 type=type(poller.config).__name__,
                 last_polled_at=poller.last_polled_at,
-                circuit_breaker_open=poller._breaker.is_open,
+                circuit_breaker_open=poller.is_circuit_open,
             )
         )
     return summaries

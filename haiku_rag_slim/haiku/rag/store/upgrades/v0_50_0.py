@@ -35,11 +35,24 @@ def _normalize_metadata(meta: dict) -> tuple[dict, bool]:
 async def _apply_canonical_metadata_keys(store: Store) -> None:
     """Rewrite document.metadata so revision lives under the source-agnostic
     `source_revision` key and `contentType` becomes `content_type`. Documents
-    whose metadata already uses the canonical keys are untouched."""
+    whose metadata already uses the canonical keys are untouched.
+
+    Scoped via LIKE on the JSON-encoded metadata string so already-migrated
+    DBs return an empty set and skip the materialisation pass on subsequent
+    boots. `metadata` is stored as JSON text, so the quoted key form
+    (`"etag"`, `"contentType"`) is unambiguous against substrings inside
+    values.
+    """
     rows = (
-        await store.documents_table.query().select(["id", "metadata"]).to_arrow()
+        await store.documents_table.query()
+        .where("metadata LIKE '%\"etag\"%' OR metadata LIKE '%\"contentType\"%'")
+        .select(["id", "metadata"])
+        .to_arrow()
     ).to_pylist()
     total = len(rows)
+    if total == 0:
+        logger.info("No legacy metadata keys found; nothing to migrate")
+        return
     logger.info("Normalising document metadata keys across %d documents", total)
     rewritten = 0
     skipped = 0

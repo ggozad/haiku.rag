@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -14,7 +16,7 @@ async def require_auth(
     expected = getattr(request.app.state, "auth_token", None)
     if expected is None:
         return
-    if creds is None or creds.credentials != expected:
+    if creds is None or not secrets.compare_digest(creds.credentials, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",

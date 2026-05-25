@@ -72,6 +72,10 @@ class BasePoller:
     def last_polled_at(self) -> datetime | None:
         return self._last_polled_at
 
+    @property
+    def is_circuit_open(self) -> bool:
+        return self._breaker.is_open
+
     async def run(self) -> None:  # pragma: no cover - subclasses override
         raise NotImplementedError
 

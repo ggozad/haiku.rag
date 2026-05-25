@@ -86,6 +86,59 @@ class TestV0_50_0Migration:
                 "md5": "m",
             }
 
+    async def test_like_filter_ignores_non_key_occurrences(self, temp_db_path):
+        """The WHERE short-circuit on `metadata LIKE '%"etag"%'` looks for the
+        quoted-key form. Values that happen to contain the substring `etag` and
+        composite key names like `my_etag_key` must not get rewritten."""
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await store.set_haiku_version("0.48.1")
+            await store.documents_table.add(
+                [
+                    # `etag` only appears as a VALUE — no `etag` key. Either
+                    # the LIKE excludes it (no work), or it pulls it in and
+                    # _normalize_metadata leaves it alone. Either way the row
+                    # must end up unchanged.
+                    DocumentRecord(
+                        id="value-only",
+                        content="x",
+                        uri="u1",
+                        metadata=json.dumps(
+                            {
+                                "description": "the etag of the file",
+                                "source_revision": "v1",
+                            }
+                        ),
+                    ),
+                    # A composite key containing `etag` but not equal to it.
+                    # Must not be rewritten.
+                    DocumentRecord(
+                        id="composite-key",
+                        content="x",
+                        uri="u2",
+                        metadata=json.dumps(
+                            {
+                                "my_etag_key": "v",
+                                "source_revision": "v2",
+                            }
+                        ),
+                    ),
+                ]
+            )
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            await store.migrate()
+            rows = await store.documents_table.query().to_list()
+            by_id = {r["id"]: json.loads(r["metadata"]) for r in rows}
+
+            assert by_id["value-only"] == {
+                "description": "the etag of the file",
+                "source_revision": "v1",
+            }
+            assert by_id["composite-key"] == {
+                "my_etag_key": "v",
+                "source_revision": "v2",
+            }
+
     async def test_preserves_existing_canonical_keys_on_collision(self, temp_db_path):
         """If both legacy and canonical keys are present, the canonical wins
         and the legacy is dropped — defends against partial-migration states."""
