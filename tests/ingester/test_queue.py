@@ -372,6 +372,56 @@ async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     assert refreshed.status is JobStatus.CLAIMED
 
 
+# --- release_if_claimed ---
+
+
+@pytest.mark.asyncio
+async def test_release_if_claimed_resets_claimed_job_and_decrements_attempts(jobs):
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    assert claimed.attempts == 1
+
+    released = await jobs.release_if_claimed(job.id)
+    assert released is True
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.QUEUED
+    assert refreshed.claimed_at is None
+    assert refreshed.claimed_by is None
+    assert refreshed.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_release_if_claimed_noop_on_already_queued(jobs):
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert job is not None
+
+    released = await jobs.release_if_claimed(job.id)
+    assert released is False
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.QUEUED
+    assert refreshed.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_release_if_claimed_noop_on_succeeded(jobs):
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_succeeded(job.id)
+
+    released = await jobs.release_if_claimed(job.id)
+    assert released is False
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.SUCCEEDED
+
+
 # --- list / counts ---
 
 

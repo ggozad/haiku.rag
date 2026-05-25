@@ -118,6 +118,13 @@ class WorkerPool:
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:
             result = await run_job(self._client, job)
+        except asyncio.CancelledError:
+            # Graceful shutdown cancelled us mid-flight. Release the claim so
+            # the next process can pick the job up immediately instead of
+            # waiting on the reaper's claim_timeout_s.
+            await self._jobs.release_if_claimed(job.id)
+            logger.info("Job %s released back to queue on cancel", job.id)
+            raise
         except PermanentError as e:
             await self._jobs.mark_dead(job.id, str(e))
             logger.info("Job %s dead (permanent): %s", job.id, e)

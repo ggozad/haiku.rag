@@ -266,6 +266,31 @@ class JobRepo:
                 rows = await cursor.fetchall()
         return {row["status"]: row["n"] for row in rows}
 
+    async def release_if_claimed(self, job_id: str) -> bool:
+        """Reset a still-claimed job back to queued, immediately reclaimable.
+        Idempotent — a no-op if the job already transitioned to
+        succeeded/dead/rescheduled. Decrements attempts to undo the increment
+        from `claim_next`, since a cancellation isn't a failed attempt.
+        Returns True if the row was released."""
+        now = _utcnow_iso()
+        async with self._lock:
+            async with self._conn.execute(
+                """
+                UPDATE jobs
+                SET status='queued',
+                    claimed_at=NULL,
+                    claimed_by=NULL,
+                    scheduled_at=?,
+                    attempts=MAX(0, attempts - 1)
+                WHERE id=? AND status='claimed'
+                RETURNING id
+                """,
+                (now, job_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            await self._conn.commit()
+        return row is not None
+
     async def reap_stale(self, claim_timeout_seconds: int) -> int:
         """Return claimed jobs whose claimed_at is older than the timeout to
         the queue. Used by the reaper to recover from crashed workers."""

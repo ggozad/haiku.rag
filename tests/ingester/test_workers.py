@@ -253,9 +253,10 @@ async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
 
 
 @pytest.mark.asyncio
-async def test_shutdown_grace_timeout_cancels_long_job(client, jobs, sync):
-    """When grace elapses, wait_for raises TimeoutError and the job stays
-    'claimed' for the reaper to reset later."""
+async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
+    """When grace elapses and the worker is cancelled mid-job, the claim is
+    released back to 'queued' so the next process can pick it up immediately
+    — no waiting on the reaper's claim_timeout_s."""
     cancelled = asyncio.Event()
 
     async def _hangs_forever(*args, **kwargs):
@@ -267,7 +268,8 @@ async def test_shutdown_grace_timeout_cancels_long_job(client, jobs, sync):
         return Document(id="doc", content="x", uri="u")
 
     client.create_document_from_source.side_effect = _hangs_forever
-    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
 
     pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
     await pool.start()
@@ -277,10 +279,13 @@ async def test_shutdown_grace_timeout_cancels_long_job(client, jobs, sync):
         await asyncio.wait_for(pool.stop(), timeout=0.2)
 
     assert cancelled.is_set()
-    counts = await jobs.counts_by_status()
-    # Job was cancelled mid-_process before mark_succeeded/dead could fire,
-    # so it stays in 'claimed' for the reaper to pick up later.
-    assert counts.get("claimed", 0) == 1
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.QUEUED
+    assert refreshed.claimed_by is None
+    # claim_next incremented attempts to 1; release_if_claimed decremented it
+    # back to 0 because a cancellation isn't a failed attempt.
+    assert refreshed.attempts == 0
 
 
 @pytest.mark.asyncio
