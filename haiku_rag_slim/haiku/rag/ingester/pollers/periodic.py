@@ -33,9 +33,10 @@ class PeriodicPoller(BasePoller):
             default_max_attempts=default_max_attempts,
         )
 
-    async def run(self) -> None:
+    async def run(self) -> None:  # pragma: no cover - event-loop glue
         # Initial sweep on startup so newly-configured sources are scanned
-        # immediately instead of waiting one full interval.
+        # immediately instead of waiting one full interval. The sweep
+        # behaviour itself is exercised via `_sweep_once()` unit tests.
         await self._sweep_once()
         while not self._stop.is_set():
             try:

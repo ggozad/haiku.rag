@@ -83,7 +83,7 @@ class WorkerPool:
         while not self._stop.is_set():
             try:
                 job = await self._jobs.claim_next(worker_id)
-            except Exception:
+            except Exception:  # pragma: no cover - defensive against DB hiccups
                 logger.exception("claim_next failed in %s", worker_id)
                 await self._sleep_or_stop(self._poll_idle_s)
                 continue
@@ -104,7 +104,7 @@ class WorkerPool:
                 reset = await self._jobs.reap_stale(self._claim_timeout_s)
                 if reset:
                     logger.info("Reaper reset %d stale claim(s)", reset)
-            except Exception:
+            except Exception:  # pragma: no cover - defensive against DB hiccups
                 logger.exception("reaper failed")
 
     async def _sleep_or_stop(self, seconds: float) -> None:
@@ -140,7 +140,7 @@ class WorkerPool:
                 e,
             )
             return
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - pipeline classifier net
             # Defensive: pipeline classifier should have caught everything.
             await self._jobs.mark_dead(job.id, f"unclassified: {e!r}")
             logger.exception("Unclassified error in job %s", job.id)

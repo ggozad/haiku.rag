@@ -59,9 +59,10 @@ class FSPoller(BasePoller):
             sweep_task.cancel()
             await asyncio.gather(watch_task, sweep_task, return_exceptions=True)
 
-    async def _sweep_loop(self) -> None:
+    async def _sweep_loop(self) -> None:  # pragma: no cover - event-loop glue
         """Periodic full sweep. Catches files modified while the watcher
-        wasn't running (gaps between starts, races, FS events the OS dropped)."""
+        wasn't running (gaps between starts, races, FS events the OS dropped).
+        Sweep behaviour is unit-tested via `_sweep_once()` directly."""
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(
@@ -72,9 +73,15 @@ class FSPoller(BasePoller):
                 pass
             await self._sweep_once()
 
-    async def _watch_loop(self) -> None:
+    async def _watch_loop(self) -> None:  # pragma: no cover - watchfiles glue
         """Push-event loop on top of watchfiles. Each change is translated
-        into one queue job — no need to re-stat or re-snapshot."""
+        into one queue job — no need to re-stat or re-snapshot.
+
+        Per-event handling is unit-tested through `_handle_watch_change`;
+        this method is the asyncio + watchfiles iterator scaffolding around
+        it, plus the defensive exception path that records a breaker
+        failure if the watcher itself goes sideways.
+        """
         try:
             async for changes in awatch(
                 self._fs_source.root,

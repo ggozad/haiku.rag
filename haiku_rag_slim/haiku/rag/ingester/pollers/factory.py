@@ -34,7 +34,7 @@ def build_source(
             source_id=cfg.id,
         )
     if isinstance(cfg, HTTPSourceConfig):
-        if cfg.id is None:
+        if cfg.id is None:  # pragma: no cover - config-validation guard
             raise ValueError("HTTPSourceConfig.id is required")
         return HTTPSource(source_id=cfg.id, urls=cfg.urls, headers=cfg.headers)
     if isinstance(cfg, S3SourceConfig):
@@ -47,7 +47,7 @@ def build_source(
             source_id=cfg.id,
         )
     if isinstance(cfg, WebDAVSourceConfig):
-        if cfg.id is None:
+        if cfg.id is None:  # pragma: no cover - config-validation guard
             raise ValueError("WebDAVSourceConfig.id is required")
         return WebDAVSource(
             source_id=cfg.id,
@@ -59,4 +59,6 @@ def build_source(
             include_patterns=cfg.include_patterns or None,
             supported_extensions=supported_extensions,
         )
-    raise TypeError(f"Unsupported source config: {type(cfg).__name__}")
+    raise TypeError(  # pragma: no cover - discriminator union exhausts all cases
+        f"Unsupported source config: {type(cfg).__name__}"
+    )
