@@ -30,10 +30,45 @@ def test_source_id_is_user_provided():
 
 
 @pytest.mark.asyncio
-async def test_head_returns_none():
-    # HTTP has no cheap revision lookup in v1 — the pipeline always GETs.
-    src = HTTPSource(source_id="default")
-    assert await src.head("https://example.com/a.md") is None
+async def test_head_returns_etag():
+    transport = _transport(
+        {
+            ("HEAD", "https://example.com/a.md"): httpx.Response(
+                200, headers={"etag": '"rev-7"'}
+            ),
+        }
+    )
+    src = HTTPSource(source_id="default", transport=transport)
+    assert await src.head("https://example.com/a.md") == "rev-7"
+
+
+@pytest.mark.asyncio
+async def test_head_falls_back_to_last_modified():
+    transport = _transport(
+        {
+            ("HEAD", "https://example.com/a.md"): httpx.Response(
+                200, headers={"last-modified": "Wed, 21 Oct 2025 07:28:00 GMT"}
+            ),
+        }
+    )
+    src = HTTPSource(source_id="default", transport=transport)
+    assert await src.head("https://example.com/a.md") == "Wed, 21 Oct 2025 07:28:00 GMT"
+
+
+@pytest.mark.asyncio
+async def test_head_returns_none_on_error_status():
+    transport = _transport(
+        {("HEAD", "https://example.com/missing"): httpx.Response(404)}
+    )
+    src = HTTPSource(source_id="default", transport=transport)
+    assert await src.head("https://example.com/missing") is None
+
+
+@pytest.mark.asyncio
+async def test_head_returns_none_when_no_revision_headers():
+    transport = _transport({("HEAD", "https://example.com/a"): httpx.Response(200)})
+    src = HTTPSource(source_id="default", transport=transport)
+    assert await src.head("https://example.com/a") is None
 
 
 @pytest.mark.asyncio

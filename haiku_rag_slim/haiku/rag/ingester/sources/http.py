@@ -50,11 +50,16 @@ class HTTPSource:
         return httpx.AsyncClient(headers=self.headers, transport=self._transport)
 
     async def head(self, uri: str) -> str | None:
-        # HTTP doesn't get a cheap revision lookup in v1: the existing
-        # ingestion flow always GETs and the dedup uses MD5. A HEAD-first
-        # optimization could land later without changing this contract —
-        # callers just need to tolerate the extra HEAD.
-        return None
+        """HEAD probe for the cheap revision short-circuit. Returns the
+        ETag (or Last-Modified) so an unchanged remote URL can skip the
+        full GET. None on HTTP error so the caller falls back to fetch();
+        network errors propagate and the worker's classifier handles them."""
+        async with self._client() as http:
+            response = await http.head(uri)
+            if response.is_error:
+                return None
+        revision, _ = _extract_revision(response.headers)
+        return revision
 
     async def fetch(self, uri: str) -> FetchResult:
         async with self._client() as http:
