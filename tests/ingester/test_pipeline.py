@@ -104,8 +104,10 @@ async def test_delete_is_noop_when_document_missing():
 
 @pytest.mark.asyncio
 async def test_unsupported_extension_classified_permanent():
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
     client = _mock_client()
-    client.create_document_from_source.side_effect = ValueError(
+    client.create_document_from_source.side_effect = UnsupportedSourceError(
         "Unsupported file extension: .xyz"
     )
 
@@ -115,8 +117,10 @@ async def test_unsupported_extension_classified_permanent():
 
 @pytest.mark.asyncio
 async def test_unsupported_content_type_classified_permanent():
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
     client = _mock_client()
-    client.create_document_from_source.side_effect = ValueError(
+    client.create_document_from_source.side_effect = UnsupportedSourceError(
         "Unsupported content type/extension: application/octet-stream/.bin"
     )
     with pytest.raises(PermanentError):
@@ -125,8 +129,10 @@ async def test_unsupported_content_type_classified_permanent():
 
 @pytest.mark.asyncio
 async def test_invalid_s3_uri_classified_permanent():
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
     client = _mock_client()
-    client.create_document_from_source.side_effect = ValueError(
+    client.create_document_from_source.side_effect = UnsupportedSourceError(
         "Invalid S3 URI: s3:///bad"
     )
     with pytest.raises(PermanentError):
@@ -135,8 +141,10 @@ async def test_invalid_s3_uri_classified_permanent():
 
 @pytest.mark.asyncio
 async def test_missing_file_classified_permanent():
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
     client = _mock_client()
-    client.create_document_from_source.side_effect = ValueError(
+    client.create_document_from_source.side_effect = UnsupportedSourceError(
         "File does not exist: /nope"
     )
     with pytest.raises(PermanentError):

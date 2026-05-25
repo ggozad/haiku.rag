@@ -6,21 +6,12 @@ import httpx
 import logfire
 from pydantic import BaseModel
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
-
-# ValueError messages from create_document_from_source that mean "this job
-# will never succeed". Anything else from ValueError defaults to transient.
-_PERMANENT_VALUE_MARKERS = (
-    "Unsupported file extension",
-    "Unsupported content type",
-    "Invalid S3 URI",
-    "File does not exist",
-    "uri override is not supported",
-)
 
 
 class JobResult(BaseModel):
@@ -39,11 +30,17 @@ def _classify(exc: BaseException) -> Exception:
     if isinstance(exc, PermanentError | TransientError):
         return exc
 
+    # UnsupportedSourceError is the typed signal from client/* that the
+    # source will never ingest successfully on a retry (bad URI scheme,
+    # missing file, unsupported extension, etc.).
+    if isinstance(exc, UnsupportedSourceError):
+        return PermanentError(str(exc))
+
     if isinstance(exc, ValueError):
-        message = str(exc)
-        if any(marker in message for marker in _PERMANENT_VALUE_MARKERS):
-            return PermanentError(message)
-        return TransientError(message)
+        # Some downstream libraries (e.g. docling) raise plain ValueError
+        # for "couldn't parse this file"; default to transient so the queue
+        # retries up to max_attempts in case the issue is intermittent.
+        return TransientError(str(exc))
 
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code

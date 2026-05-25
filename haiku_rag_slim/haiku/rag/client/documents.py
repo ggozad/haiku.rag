@@ -5,6 +5,7 @@ from urllib.parse import unquote, urlparse
 
 import logfire
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
     ensure_chunks_embedded,
     get_extension_from_content_type_or_url,
@@ -226,7 +227,7 @@ async def _ingest_fetch_result(
         result.uri, result.content_type
     )
     if file_extension not in converter.supported_extensions:
-        raise ValueError(
+        raise UnsupportedSourceError(
             f"Unsupported content type/extension: {result.content_type}/{file_extension}"
         )
 
@@ -338,7 +339,7 @@ async def create_document_from_source(
         )
         if local_path.is_dir():
             if uri is not None:
-                raise ValueError(
+                raise UnsupportedSourceError(
                     "uri override is not supported for directory sources; each file "
                     "produces its own document with its own auto-derived URI."
                 )
@@ -359,13 +360,15 @@ async def create_document_from_source(
             return documents
 
         if not local_path.exists():
-            raise ValueError(f"File does not exist: {local_path}")
+            raise UnsupportedSourceError(f"File does not exist: {local_path}")
 
         # Match the old _create_document_from_file behaviour: fail fast on
         # unsupported extension before reading any bytes.
         converter = get_converter(client._config)
         if local_path.suffix.lower() not in converter.supported_extensions:
-            raise ValueError(f"Unsupported file extension: {local_path.suffix}")
+            raise UnsupportedSourceError(
+                f"Unsupported file extension: {local_path.suffix}"
+            )
 
     # Single resource — resolve the right Source adapter for this URI.
     fetcher = resolve_fetcher(source_str, storage_options=storage_options)

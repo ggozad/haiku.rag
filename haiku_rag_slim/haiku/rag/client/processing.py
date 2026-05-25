@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
@@ -100,9 +101,9 @@ async def convert(
     # Path object - convert file directly
     if isinstance(source, Path):
         if not source.exists():
-            raise ValueError(f"File does not exist: {source}")
+            raise UnsupportedSourceError(f"File does not exist: {source}")
         if source.suffix.lower() not in converter.supported_extensions:
-            raise ValueError(f"Unsupported file extension: {source.suffix}")
+            raise UnsupportedSourceError(f"Unsupported file extension: {source.suffix}")
         effective_uri = source_uri or source.absolute().as_uri()
         doc = await _convert_file(source, effective_uri)
         _warn_if_descriptions_missing(config, doc, str(source))
@@ -123,7 +124,7 @@ async def convert(
             )
 
             if file_extension not in converter.supported_extensions:
-                raise ValueError(
+                raise UnsupportedSourceError(
                     f"Unsupported content type/extension: {content_type}/{file_extension}"
                 )
 
@@ -146,9 +147,11 @@ async def convert(
         # file:// URI
         file_path = Path(parsed.path)
         if not file_path.exists():
-            raise ValueError(f"File does not exist: {file_path}")
+            raise UnsupportedSourceError(f"File does not exist: {file_path}")
         if file_path.suffix.lower() not in converter.supported_extensions:
-            raise ValueError(f"Unsupported file extension: {file_path.suffix}")
+            raise UnsupportedSourceError(
+                f"Unsupported file extension: {file_path.suffix}"
+            )
         effective_uri = source_uri or file_path.absolute().as_uri()
         doc = await _convert_file(file_path, effective_uri)
         _warn_if_descriptions_missing(config, doc, str(file_path))

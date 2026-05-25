@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import urlparse
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.sources.base import Source
 from haiku.rag.ingester.sources.fs import FSSource
 from haiku.rag.ingester.sources.http import HTTPSource
@@ -36,7 +37,7 @@ def resolve_fetcher(
     if scheme == "s3":
         bucket = urlparse(uri).netloc
         if not bucket:
-            raise ValueError(f"Invalid S3 URI: {uri}")
+            raise UnsupportedSourceError(f"Invalid S3 URI: {uri}")
         return S3Source(uri=f"s3://{bucket}/", storage_options=storage_options)
 
-    raise ValueError(f"No source adapter for URI scheme {scheme!r}: {uri}")
+    raise UnsupportedSourceError(f"No source adapter for URI scheme {scheme!r}: {uri}")

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.sources.base import (
     FetchResult,
     RevisionSnapshot,
@@ -19,7 +20,7 @@ from haiku.rag.ingester.sources.filter import (
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
     parsed = urlparse(uri)
     if parsed.scheme != "s3" or not parsed.netloc:
-        raise ValueError(f"Invalid S3 URI: {uri}")
+        raise UnsupportedSourceError(f"Invalid S3 URI: {uri}")
     return parsed.netloc, parsed.path.lstrip("/")
 
 
@@ -27,7 +28,7 @@ def _parse_s3_object_uri(uri: str) -> tuple[str, str]:
     """Like _parse_s3_uri but rejects bucket-only URIs (no key)."""
     bucket, key = _parse_s3_uri(uri)
     if not key:
-        raise ValueError(f"Invalid S3 URI: {uri}")
+        raise UnsupportedSourceError(f"Invalid S3 URI: {uri}")
     return bucket, key
 
 
