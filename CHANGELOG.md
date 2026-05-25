@@ -3,7 +3,8 @@
 
 ### Added
 
-- New `haiku-ingester` service for continuous document ingestion: persistent SQLite job queue, async worker pool with retries and a dead-letter queue, FS/HTTP/S3/WebDAV source adapters with per-source circuit breakers, and a FastAPI control plane (`/health`, `/jobs`, `/sources`, `/dlq`). Configured under `ingester:` in `haiku.rag.yaml`. Shipped behind the `[ingester]` extra, with Logfire spans (`ingester.poller.sweep` → `ingester.job` → `document.{fetch,convert,chunk,embed,store}`) for traceable ingestion. See [docs/ingester.md](docs/ingester.md).
+- New `haiku-ingester` service for continuous document ingestion: persistent SQLite job queue, async worker pool with retries and a dead-letter queue, FS/HTTP/S3/WebDAV source adapters with per-source circuit breakers, and a FastAPI control plane (`/health`, `/jobs`, `/sources`, `/dlq`). Configured under `ingester:` in `haiku.rag.yaml`. Shipped behind the `[ingester]` extra, with Logfire spans (`ingester.poller.sweep` → `ingester.job` → `document.{fetch,convert,chunk,embed,store}`, plus `document.convert_slice` per slice when splitting) for traceable ingestion. See [docs/ingester.md](docs/ingester.md).
+- `processing.split_pages` (default `0`): split large PDFs into N-page slices, convert each independently through docling-local or docling-serve, and merge with `DoclingDocument.concatenate()`. Bounds peak working set on memory-hungry docs and lets multiple docling-serve replicas parallelize per-document. `0` disables (single-pass conversion).
 
 ### Removed
 

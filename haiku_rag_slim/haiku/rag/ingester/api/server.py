@@ -52,5 +52,7 @@ def build_app(
     app.include_router(dlq.router, dependencies=auth_dep)
 
     # Every request becomes a span when logfire is configured; no-op otherwise.
-    logfire.instrument_fastapi(app)
+    # /health is the docker healthcheck endpoint — polled every few seconds
+    # by Compose, would otherwise drown the trace stream in idle GETs.
+    logfire.instrument_fastapi(app, excluded_urls=r"^.*/health$")
     return app
