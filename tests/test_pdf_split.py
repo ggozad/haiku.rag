@@ -12,7 +12,10 @@ from pathlib import Path
 import pypdfium2 as pdfium
 import pytest
 
-from haiku.rag.converters.pdf_split import iter_pdf_slices
+from haiku.rag.converters.pdf_split import (
+    convert_pdf_with_splitting,
+    iter_pdf_slices,
+)
 
 
 def _make_pdf(page_count: int, tmp_path: Path) -> Path:
@@ -64,6 +67,47 @@ def test_iter_pdf_slices_rejects_zero_slice_size(tmp_path):
     src = _make_pdf(2, tmp_path)
     with pytest.raises(ValueError, match="slice_size must be >= 1"):
         list(iter_pdf_slices(src, slice_size=0))
+
+
+@pytest.mark.asyncio
+async def test_convert_aborts_and_cleans_up_on_mid_stream_slice_failure(
+    tmp_path, monkeypatch
+):
+    """When converting slice 2 of 3 fails, the whole call must raise
+    ValueError naming the failed slice's page range, every tempfile created
+    along the way must be deleted, and the source PDF handle must be closed.
+    """
+    src = _make_pdf(7, tmp_path)
+
+    # Pin tempfiles to a per-test dir so we can list leaks deterministically.
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    calls: list[Path] = []
+
+    class _FlakyConverter:
+        async def convert_file(self, path: Path, *, source_uri):
+            calls.append(path)
+            if len(calls) == 2:
+                raise RuntimeError("docling exploded")
+            from docling_core.types.doc.document import DoclingDocument
+
+            return DoclingDocument(name="slice")
+
+    with pytest.raises(ValueError, match="pages 4-6"):
+        await convert_pdf_with_splitting(
+            _FlakyConverter(),  # ty: ignore[invalid-argument-type]
+            src,
+            source_uri=None,
+            slice_size=3,
+        )
+
+    # All converter inputs were under tmp_path (the pinned tempdir)…
+    assert all(str(p).startswith(str(tmp_path)) for p in calls)
+    # …and none of them are still on disk.
+    leftover = [p for p in calls if p.exists()]
+    assert leftover == [], f"tempfiles leaked: {leftover}"
+    # We aborted after slice 2; slice 3 was never attempted.
+    assert len(calls) == 2
 
 
 def test_concatenate_shifts_page_nos_and_unique_self_refs():
