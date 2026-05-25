@@ -338,6 +338,11 @@
         $("stat-breakdown").innerHTML = parts.join("<br>");
       }
 
+      const SKIP_REASON_LABELS = {
+        pending_work: "queue busy",
+        circuit_open: "breaker open",
+      };
+
       function renderSources(sources) {
         $("sources-count").textContent = "(" + sources.length + ")";
         if (!sources.length) {
@@ -351,17 +356,30 @@
             if (s.circuit_breaker_open) {
               circuitBadge = '<span class="badge bad">OPEN</span>';
             }
-            let skipBadge = "";
-            if (s.last_skip_reason) {
-              skipBadge =
-                ' <span class="badge warn" title="Most recent sweep attempt was skipped.">' +
-                escapeHtml(s.last_skip_reason) +
-                "</span>";
-            }
+            // Combine last_polled with skip_reason in one cell. Three cases:
+            // (a) polled OK         → "5m ago"
+            // (b) polled + skipped  → "5m ago [queue busy]" (sweep ran then
+            //                          backpressure kicked in)
+            // (c) never polled but  → "[queue busy]" alone — em-dash would
+            //     skipped              read as broken; the badge tells the
+            //                          real story (restart with work still
+            //                          in queue).
+            const reason = s.last_skip_reason;
+            const label = reason
+              ? SKIP_REASON_LABELS[reason] || reason
+              : null;
+            const skipBadge = reason
+              ? ` <span class="badge warn" title="Most recent sweep attempt was skipped (${escapeHtml(reason)}).">${escapeHtml(label)}</span>`
+              : "";
+            const polledCell = s.last_polled_at
+              ? relTime(s.last_polled_at) + skipBadge
+              : reason
+                ? skipBadge.trim()
+                : "—";
             return `<tr>
               <td>${escapeHtml(s.source_id)}</td>
               <td>${escapeHtml(s.type)}</td>
-              <td>${relTime(s.last_polled_at)}${skipBadge}</td>
+              <td>${polledCell}</td>
               <td>${circuitBadge}</td>
               <td class="actions">
                 <button onclick="refreshSource('${escapeHtml(s.source_id)}')">Refresh</button>
