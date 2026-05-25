@@ -1,4 +1,5 @@
 import hashlib
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import unquote, urljoin, urlparse
@@ -65,10 +66,20 @@ class _PropfindEntry:
         self.content_type = content_type
 
 
+# Matches an ETag value with optional leading whitespace, optional weak
+# marker ``W/``, optional surrounding double quotes, and optional trailing
+# whitespace. The non-greedy capture pulls out just the opaque inner value.
+_ETAG_RE = re.compile(r'^\s*(?:W/)?"?(.*?)"?\s*$')
+
+
 def _strip_etag(value: str | None) -> str | None:
+    """Return the opaque part of an ETag header value (or ``getetag`` element):
+    strip surrounding whitespace, the optional ``W/`` weak marker, and
+    optional surrounding double quotes. Returns ``None`` for empty input."""
     if value is None:
         return None
-    cleaned = value.strip().strip('"').strip("W/").strip().strip('"')
+    match = _ETAG_RE.match(value)
+    cleaned = match.group(1) if match else value.strip()
     return cleaned or None
 
 

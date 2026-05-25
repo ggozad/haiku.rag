@@ -4,7 +4,29 @@ import httpx
 import pytest
 
 from haiku.rag.ingester.sources.base import SourceEventKind
-from haiku.rag.ingester.sources.webdav import WebDAVSource
+from haiku.rag.ingester.sources.webdav import WebDAVSource, _strip_etag
+
+
+def test_strip_etag_strong_quoted():
+    assert _strip_etag('"abc123"') == "abc123"
+
+
+def test_strip_etag_weak_marker():
+    assert _strip_etag('W/"abc123"') == "abc123"
+
+
+def test_strip_etag_unquoted():
+    assert _strip_etag("abc123") == "abc123"
+
+
+def test_strip_etag_whitespace():
+    assert _strip_etag('  W/"abc"  ') == "abc"
+
+
+def test_strip_etag_empty_returns_none():
+    assert _strip_etag("") is None
+    assert _strip_etag('""') is None
+    assert _strip_etag(None) is None
 
 
 def _transport(handler) -> httpx.MockTransport:
