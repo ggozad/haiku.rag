@@ -3,12 +3,12 @@ from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
 import httpx
-import logfire
 from pydantic import BaseModel
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
+from haiku.rag.telemetry import attach_context, logfire
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -75,7 +75,7 @@ async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
     # Restore the poller's trace context (if any) so the job span nests
     # under the `ingester.poller.sweep` that enqueued it.
     parent_ctx = extra.get("_otel")
-    attach = logfire.attach_context(parent_ctx) if parent_ctx else nullcontext()
+    attach = attach_context(parent_ctx) if parent_ctx else nullcontext()
 
     with (
         attach,

@@ -32,6 +32,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.skills.analysis import AnalysisState
 from haiku.rag.skills.rag import RAGState, get_agent_preamble
+from haiku.rag.telemetry import configure as configure_telemetry
 from haiku.skills.agent import (
     SkillToolset,
     run_agui_stream,
@@ -39,13 +40,7 @@ from haiku.skills.agent import (
 from haiku.skills.models import Skill
 from haiku.skills.prompts import build_system_prompt
 
-try:
-    import logfire
-
-    logfire.configure(send_to_logfire="if-token-present", console=False)
-    logfire.instrument_pydantic_ai()
-except ImportError:
-    pass
+configure_telemetry()
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult

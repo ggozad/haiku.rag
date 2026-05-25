@@ -134,18 +134,10 @@ def main(
     # Configure logging for CLI context
     configure_cli_logging()
 
-    # Configure logfire (only sends data if token is present)
-    try:
-        import logfire
+    from haiku.rag.telemetry import configure as configure_telemetry
 
-        is_production = get_config().environment != "development"
-        logfire.configure(
-            send_to_logfire="if-token-present",
-            console=False if is_production else None,
-        )
-        logfire.instrument_pydantic_ai()
-    except Exception:  # pragma: no cover
-        pass
+    is_production = get_config().environment != "development"
+    configure_telemetry(console=False if is_production else None)
 
     if get_config().environment != "development":
         # Suppress warnings in production

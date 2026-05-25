@@ -6,10 +6,10 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import logfire
 import pypdfium2 as pdfium
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.telemetry import logfire
 
 # pypdfium2 wraps libpdfium, which has global C state and is not thread-safe.
 # Multiple workers calling iter_pdf_slices concurrently race on that state

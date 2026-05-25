@@ -50,28 +50,12 @@ def main(
     _load_config_with_override(config)
 
 
-def _configure_logfire() -> None:
-    """Logfire emits spans only when LOGFIRE_TOKEN is set; otherwise it
-    stays silent. Console output is disabled in either case so span lines
-    don't interleave with the ingester's own RichHandler logs — telemetry
-    lives in the Logfire UI."""
-    try:
-        import logfire
-
-        logfire.configure(
-            service_name="haiku-ingester",
-            send_to_logfire="if-token-present",
-            console=False,
-        )
-        logfire.instrument_pydantic_ai()
-    except Exception:  # pragma: no cover
-        pass
-
-
 def cli() -> None:
     """Entry point that translates store-state errors into a clean exit."""
+    from haiku.rag.telemetry import configure as configure_telemetry
+
     configure_cli_logging()
-    _configure_logfire()
+    configure_telemetry(service_name="haiku-ingester")
     try:
         _cli()
     except (MigrationRequiredError, ReadOnlyError) as e:

@@ -3,12 +3,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import logfire
 from watchfiles import Change, awatch
 
 from haiku.rag.ingester.pollers.base import BasePoller, _enqueue_extra
 from haiku.rag.ingester.queue.models import JobOp
 from haiku.rag.ingester.sources.filter import FileFilter
+from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from haiku.rag.config import FSSourceConfig

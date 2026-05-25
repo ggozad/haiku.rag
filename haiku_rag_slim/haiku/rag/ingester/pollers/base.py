@@ -2,8 +2,6 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-import logfire
-
 from haiku.rag.config import SourceConfig
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.queue.models import JobOp
@@ -13,6 +11,7 @@ from haiku.rag.ingester.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
+from haiku.rag.telemetry import get_context, logfire
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ def _enqueue_extra(cfg: SourceConfig) -> dict | None:
     headers = getattr(cfg, "headers", None)
     if headers:
         extra["headers"] = dict(headers)
-    carrier = logfire.get_context()
+    carrier = get_context()
     if carrier:
         extra["_otel"] = dict(carrier)
     return extra or None

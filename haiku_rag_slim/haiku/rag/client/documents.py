@@ -3,8 +3,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
-import logfire
-
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
     ensure_chunks_embedded,
@@ -16,6 +14,7 @@ from haiku.rag.ingester.sources import FetchResult, resolve_fetcher
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
+from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
