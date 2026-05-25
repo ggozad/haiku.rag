@@ -265,7 +265,11 @@ async def test_storage_options_thread_through_to_job_extra(jobs, sync):
     poller = _periodic(source, cfg, jobs, sync)
     await poller._sweep_once()
     queued = await jobs.list_jobs(source_id="bucket")
-    assert queued[0].extra == {"storage_options": {"endpoint": "http://seaweed:8333"}}
+    # _otel is also threaded into extra so the worker's `ingester.job` span
+    # can nest under the sweep that enqueued it; assert the source-specific
+    # keys we care about and ignore the trace context payload.
+    assert queued[0].extra is not None
+    assert queued[0].extra["storage_options"] == {"endpoint": "http://seaweed:8333"}
 
 
 @pytest.mark.asyncio
@@ -282,7 +286,8 @@ async def test_http_headers_thread_through_to_job_extra(jobs, sync):
     poller = _periodic(source, cfg, jobs, sync)
     await poller._sweep_once()
     queued = await jobs.list_jobs(source_id="auth")
-    assert queued[0].extra == {"headers": {"Authorization": "Bearer abc"}}
+    assert queued[0].extra is not None
+    assert queued[0].extra["headers"] == {"Authorization": "Bearer abc"}
 
 
 # --- PollerManager lifecycle ---

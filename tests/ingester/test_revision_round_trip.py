@@ -4,6 +4,8 @@ as unchanged. Catches the FS-specific bug where revision was lost in the
 pipeline and every periodic sweep re-enqueued every file forever.
 """
 
+from pathlib import Path
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -11,7 +13,13 @@ from haiku.rag.ingester.sources.base import SourceEventKind
 from haiku.rag.ingester.sources.fs import FSSource
 
 
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent / "cassettes" / "test_revision_round_trip")
+
+
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_fs_ingest_writes_source_revision_to_metadata(temp_db_path, tmp_path):
     file_path = tmp_path / "doc.md"
     file_path.write_text("hello")
@@ -24,6 +32,7 @@ async def test_fs_ingest_writes_source_revision_to_metadata(temp_db_path, tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_path):
     """The full round-trip: ingest a file, build a sync_state-shaped snapshot
     from document.metadata, hand it to FSSource.discover() — must see
@@ -46,6 +55,7 @@ async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_path):
     """Counterpart to the unchanged test: a file modified after ingest still
     triggers UPSERT. Ensures the round-trip doesn't accidentally over-skip."""
@@ -72,6 +82,7 @@ async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_fs_head_short_circuit_skips_fetch_for_unchanged_revision(
     temp_db_path, tmp_path, monkeypatch
 ):

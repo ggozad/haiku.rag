@@ -522,20 +522,20 @@ async def test_expand_context_no_base64_images(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_expand_context_no_base64_images_docling_local(temp_db_path):
+async def test_expand_context_no_base64_images_docling_local(
+    temp_db_path, doclaynet_first_page_pdf
+):
     """Ensure expanded context from real PDF does not contain base64 image data.
 
-    Tests end-to-end with doclaynet.pdf using docling-local converter.
+    Tests end-to-end with a single page of doclaynet.pdf using docling-local converter.
     """
-    from pathlib import Path
-
     config = AppConfig()
     config.processing.converter = "docling-local"
     config.processing.chunker = "docling-local"
     config.processing.conversion_options.do_ocr = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+        pdf_path = doclaynet_first_page_pdf
         result = await client.create_document_from_source(pdf_path)
         doc = result if not isinstance(result, list) else result[0]
         assert doc.id is not None
