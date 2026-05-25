@@ -87,3 +87,9 @@ class PollerManager:
     @property
     def pollers(self) -> list[BasePoller]:
         return list(self._pollers)
+
+    @property
+    def live_pollers(self) -> int:
+        """Poller tasks that are still running. Equal to len(pollers) under
+        normal operation; less when a poller has crashed."""
+        return sum(1 for t in self._tasks if not t.done())

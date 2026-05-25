@@ -50,6 +50,12 @@ class WorkerPool:
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
 
+    @property
+    def live_workers(self) -> int:
+        """Worker tasks that are still running. Equal to worker_count under
+        normal operation; less when a worker has crashed."""
+        return sum(1 for t in self._workers if not t.done())
+
     async def start(self) -> None:
         if self._workers:
             raise RuntimeError("WorkerPool already started")

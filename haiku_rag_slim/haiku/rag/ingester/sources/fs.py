@@ -1,10 +1,12 @@
 import hashlib
 import mimetypes
+import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.sources.base import (
     FetchResult,
     RevisionSnapshot,
@@ -51,27 +53,38 @@ class FSSource:
             supported_extensions=self.supported_extensions,
         )
 
+    def _resolve_within_root(self, uri: str) -> Path | None:
+        """Resolve a URI to a real path guaranteed to live under ``self.root``.
+
+        Returns ``None`` if the URI parses but resolves outside the root
+        (path-traversal via ``..``, symlinks pointing elsewhere). Callers
+        treat this as "not ours" — `supports()` returns False, `head()`
+        returns None, `fetch()` raises ``UnsupportedSourceError``.
+        """
+        try:
+            path = _uri_to_path(uri).resolve(strict=False)
+        except (ValueError, OSError):
+            return None
+        if not path.is_relative_to(self.root):
+            return None
+        return path
+
     def supports(self, uri: str) -> bool:
         scheme = urlparse(uri).scheme
         if scheme not in ("", "file"):
             return False
-        try:
-            _uri_to_path(uri)
-        except ValueError:
-            return False
-        return True
+        return self._resolve_within_root(uri) is not None
 
     async def head(self, uri: str) -> str | None:
-        path = _uri_to_path(uri).absolute()
-        if not path.exists():
+        path = self._resolve_within_root(uri)
+        if path is None or not path.exists():
             return None
         return str(path.stat().st_mtime_ns)
 
     async def fetch(self, uri: str) -> FetchResult:
-        # Absolute path is needed for as_uri() and matches the old
-        # _create_document_from_file behavior (which keyed docs on the
-        # absolute file:// URI).
-        path = _uri_to_path(uri).absolute()
+        path = self._resolve_within_root(uri)
+        if path is None:
+            raise UnsupportedSourceError(f"Path escapes FS root ({self.root}): {uri}")
         body = path.read_bytes()
         content_type, _ = mimetypes.guess_type(path.name)
         if content_type is None:
@@ -95,7 +108,21 @@ class FSSource:
         now = datetime.now(UTC)
         seen: set[str] = set()
 
-        for path in sorted(self.root.rglob("*")):
+        # os.walk with followlinks=False so symlinked directories aren't
+        # traversed. Then per-file: skip individual file-symlinks too, since
+        # they could point outside root and reading them would leak data.
+        # Operators wanting to ingest content from outside root should
+        # bind-mount it in or configure a second source.
+        candidates: list[Path] = []
+        for dirpath, _dirnames, filenames in os.walk(self.root, followlinks=False):
+            for filename in filenames:
+                path = Path(dirpath) / filename
+                if path.is_symlink():
+                    continue
+                candidates.append(path)
+        candidates.sort()
+
+        for path in candidates:
             if not path.is_file():
                 continue
             if not self.filter.include_file(str(path)):

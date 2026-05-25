@@ -8,6 +8,11 @@ class HealthResponse(BaseModel):
     queue_counts: dict[str, int]
     worker_count: int
     poller_count: int
+    # Live counters — non-zero shortfalls vs the configured count signal a
+    # crashed task. status="degraded" when either shortfall is non-zero so
+    # uptime monitors can alert without needing to do the math themselves.
+    workers_alive: int
+    pollers_alive: int
 
 
 class SourceSummary(BaseModel):

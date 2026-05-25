@@ -63,8 +63,13 @@ async def _apply_canonical_metadata_keys(store: Store) -> None:
         try:
             meta = json.loads(raw)
         except Exception:
+            # exc_info=True so the actual JSONDecodeError reaches the logs;
+            # otherwise a permanently malformed row stays malformed forever
+            # and the operator has nothing to grep for.
             logger.warning(
-                "Could not parse metadata JSON for document %s; skipping", doc_id
+                "Could not parse metadata JSON for document %s; skipping",
+                doc_id,
+                exc_info=True,
             )
             skipped += 1
             continue

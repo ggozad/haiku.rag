@@ -71,6 +71,31 @@ async def test_health_ok_with_counts(state, jobs):
     assert body["queue_counts"] == {"queued": 1, "dead": 1}
     assert body["worker_count"] == 0  # pool not attached in the test state
     assert body["poller_count"] == 0
+    assert body["workers_alive"] == 0
+    assert body["pollers_alive"] == 0
+
+
+@pytest.mark.asyncio
+async def test_health_degraded_when_worker_died(jobs, sync):
+    """If a worker task crashed (live_workers < worker_count), /health must
+    flip to status='degraded' so uptime monitors notice."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.ingester.workers.worker_count = 4
+
+    pool = MagicMock()
+    pool.live_workers = 3  # one dead
+
+    state = APIState(config=config, job_repo=jobs, sync_repo=sync, pool=pool)
+    async with _client(state) as client:
+        resp = await client.get("/health")
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert body["worker_count"] == 4
+    assert body["workers_alive"] == 3
 
 
 @pytest.mark.asyncio
@@ -109,6 +134,37 @@ async def test_no_auth_token_allows_everything(state, jobs):
     async with _client(state, auth_token=None) as client:
         assert (await client.get("/jobs")).status_code == 200
         assert (await client.get("/health")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_mutation_endpoints_require_auth(state, jobs):
+    """Existing tests prove auth gates GETs; this pins that the *mutation*
+    endpoints (retry, cancel, DLQ requeue, source refresh) also require the
+    bearer. A missing-auth regression on these would silently let anyone
+    cancel jobs or reset the DLQ."""
+    j = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert j is not None
+    await jobs.mark_dead(j.id, "boom")
+
+    async with _client(state, auth_token="secret") as client:
+        # Cancel: blocked without token
+        resp = await client.delete(f"/jobs/{j.id}")
+        assert resp.status_code == 401
+        # Retry: blocked without token
+        resp = await client.post(f"/jobs/{j.id}/retry")
+        assert resp.status_code == 401
+        # DLQ retry: blocked without token
+        resp = await client.post(f"/dlq/{j.id}/retry")
+        assert resp.status_code == 401
+        # Source refresh: blocked without token
+        resp = await client.post("/sources/anything/refresh")
+        assert resp.status_code == 401
+
+        # With correct token: 200 for retry (job is dead, gets resurrected).
+        ok = await client.post(
+            f"/jobs/{j.id}/retry", headers={"Authorization": "Bearer secret"}
+        )
+        assert ok.status_code == 200
 
 
 # --- /jobs ---
