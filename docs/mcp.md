@@ -7,11 +7,14 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
 The MCP server supports Streamable HTTP and stdio transports:
 
 ```bash
-# Default streamable HTTP transport on port 8001
+# Default streamable HTTP transport on 127.0.0.1:8001
 haiku-rag mcp
 
 # Custom port
 haiku-rag mcp --port 9000
+
+# Bind to all interfaces (e.g. inside a container)
+haiku-rag mcp --host 0.0.0.0 --port 8001
 
 # stdio transport (for Claude Desktop)
 haiku-rag mcp --stdio
@@ -19,6 +22,10 @@ haiku-rag mcp --stdio
 # Read-only mode (excludes write tools)
 haiku-rag --read-only mcp --stdio
 ```
+
+`--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
+when you want the MCP server reachable from outside the local machine —
+e.g. inside a Docker container with port mapping, or on a trusted LAN.
 
 **Read-only mode:** When `--read-only` is specified, write tools (`add_document_from_file`, `add_document_from_url`, `add_document_from_text`, `delete_document`) are not registered. Only search and query tools remain available.
 

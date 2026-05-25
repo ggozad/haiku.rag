@@ -16,7 +16,9 @@ services:
       start_interval: 5s
 
   # LanceDB allows one writer + N readers per database URI; the ingester is
-  # the writer, MCP runs read-only.
+  # the writer, MCP runs read-only. The ingester opens LanceDB on startup
+  # (creating it if missing), so its /health endpoint is a valid signal
+  # that the DB exists — MCP waits on it via condition: service_healthy.
   haiku-ingester:
     build:
       context: ../..
@@ -44,6 +46,19 @@ services:
     depends_on:
       docling-serve:
         condition: service_healthy
+    healthcheck:
+      # No curl in the slim image; use Python's stdlib instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/health', timeout=2).status == 200 else 1)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   haiku-rag:
@@ -56,6 +71,8 @@ services:
         "/app/haiku.rag.yaml",
         "--read-only",
         "mcp",
+        "--host",
+        "0.0.0.0",
         "--port",
         "8001",
       ]
@@ -70,5 +87,6 @@ services:
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - CO_API_KEY=${CO_API_KEY}
     depends_on:
-      - haiku-ingester
+      haiku-ingester:
+        condition: service_healthy
     restart: unless-stopped

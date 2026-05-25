@@ -409,6 +409,9 @@ haiku-rag mcp --stdio
 # Custom port
 haiku-rag mcp --port 9000
 
+# Bind to all interfaces (containers, trusted LAN)
+haiku-rag mcp --host 0.0.0.0
+
 # Read-only mode (no write tools)
 haiku-rag --read-only mcp
 ```

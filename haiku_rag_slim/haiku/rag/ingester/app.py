@@ -54,7 +54,12 @@ class IngesterApp:
                 jitter=ingester_cfg.workers.retry.jitter,
             )
 
-            async with HaikuRAG(self._db_path, config=self._config) as client:
+            # The ingester is the sole writer for its LanceDB target;
+            # create on first start so docker-compose / fresh deployments
+            # don't require a manual `haiku-rag init`.
+            async with HaikuRAG(
+                self._db_path, config=self._config, create=True
+            ) as client:
                 self._client = client
                 self._pool = WorkerPool(
                     client=client,

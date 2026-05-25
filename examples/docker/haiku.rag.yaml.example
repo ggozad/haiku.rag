@@ -10,6 +10,9 @@ ingester:
   # Queue lives next to the LanceDB so both persist in the data volume.
   queue:
     path: /data/ingester.db
+  api:
+    # Bind to all interfaces inside the container so docker port-mapping works.
+    host: 0.0.0.0
   sources:
     - type: fs
       id: docs

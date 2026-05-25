@@ -217,7 +217,13 @@ ingester:
 haiku-ingester serve                          # workers + pollers + API
 haiku-ingester serve --no-api                 # workers + pollers only
 haiku-ingester serve --db /path.lancedb       # explicit DB
+haiku-ingester serve --host 0.0.0.0           # bind API on all interfaces
+haiku-ingester serve --port 9000              # override API port
 ```
+
+`--host` and `--port` are CLI overrides for `ingester.api.host` and
+`ingester.api.port` in `haiku.rag.yaml`. Both default to the YAML value
+(which itself defaults to `127.0.0.1:8765` — loopback only).
 
 The service blocks until SIGINT or SIGTERM. Shutdown drains the API
 server, then pollers, then in-flight workers.

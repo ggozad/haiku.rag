@@ -685,6 +685,11 @@ def mcp(
         "--stdio",
         help="Run MCP server on stdio Transport",
     ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Host to bind MCP server to (use 0.0.0.0 in containers; ignored with --stdio)",
+    ),
     port: int = typer.Option(
         8001,
         "--port",
@@ -697,7 +702,7 @@ def mcp(
     transport = "stdio" if stdio else None  # pragma: no cover
 
     asyncio.run(  # pragma: no cover
-        app.run_mcp(transport=transport, port=port)
+        app.run_mcp(transport=transport, host=host, port=port)
     )
 
 

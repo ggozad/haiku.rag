@@ -36,6 +36,20 @@ _cli = typer.Typer(
 )
 
 
+@_cli.callback()
+def main(
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to haiku.rag.yaml. Falls back to a discovered project YAML, then the process default.",
+    ),
+) -> None:
+    """Top-level callback so every subcommand inherits --config without
+    each one redeclaring it. Mirrors haiku-rag's CLI shape."""
+    _load_config_with_override(config)
+
+
 def _configure_logfire() -> None:
     """Logfire emits spans only when LOGFIRE_TOKEN is set; otherwise it
     stays silent. Console output is disabled in either case so span lines
@@ -98,9 +112,6 @@ async def _ensure_schema(path: Path) -> None:
 
 @queue_cli.command("init")
 def queue_init(
-    config: Path | None = typer.Option(
-        None, "--config", "-c", help="Path to haiku.rag.yaml."
-    ),
     queue: Path | None = typer.Option(
         None,
         "--queue",
@@ -109,17 +120,13 @@ def queue_init(
     ),
 ) -> None:
     """Create the queue DB and apply the current schema. Idempotent."""
-    app_config = _load_config_with_override(config)
-    path = _resolve_queue_path(app_config, queue)
+    path = _resolve_queue_path(get_config(), queue)
     asyncio.run(_ensure_schema(path))
     typer.echo(f"Queue initialized at {path}")
 
 
 @queue_cli.command("migrate")
 def queue_migrate(
-    config: Path | None = typer.Option(
-        None, "--config", "-c", help="Path to haiku.rag.yaml."
-    ),
     queue: Path | None = typer.Option(
         None,
         "--queue",
@@ -128,8 +135,7 @@ def queue_migrate(
     ),
 ) -> None:
     """Apply any pending schema migrations to an existing queue DB. Idempotent."""
-    app_config = _load_config_with_override(config)
-    path = _resolve_queue_path(app_config, queue)
+    path = _resolve_queue_path(get_config(), queue)
     asyncio.run(_ensure_schema(path))
     typer.echo(f"Queue at {path} is up to date")
 
@@ -140,13 +146,20 @@ def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:
 
 @_cli.command("serve")
 def serve(
-    config: Path | None = typer.Option(
-        None, "--config", "-c", help="Path to haiku.rag.yaml."
-    ),
     db: Path | None = typer.Option(
         None,
         "--db",
         help="LanceDB path (overrides config.storage.data_dir).",
+    ),
+    host: str | None = typer.Option(
+        None,
+        "--host",
+        help="Bind the HTTP control plane to HOST (overrides ingester.api.host; use 0.0.0.0 in containers).",
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        help="Bind the HTTP control plane to PORT (overrides ingester.api.port).",
     ),
     no_api: bool = typer.Option(
         False,
@@ -156,7 +169,11 @@ def serve(
 ) -> None:
     """Run the production ingester: pollers + workers (and the HTTP API
     unless --no-api is set). Blocks until SIGINT/SIGTERM."""
-    app_config = _load_config_with_override(config)
+    app_config = get_config()
+    if host is not None:
+        app_config.ingester.api.host = host
+    if port is not None:
+        app_config.ingester.api.port = port
     db_path = _resolve_db_path(app_config, db)
     app = IngesterApp(config=app_config, db_path=db_path)
     asyncio.run(app.serve(api=not no_api))
@@ -165,9 +182,6 @@ def serve(
 @_cli.command("run-once")
 def run_once(
     uri: str = typer.Argument(..., help="URI to ingest (file://, http(s)://, s3://)."),
-    config: Path | None = typer.Option(
-        None, "--config", "-c", help="Path to haiku.rag.yaml."
-    ),
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -182,8 +196,7 @@ def run_once(
     Bypasses the queue — does NOT enqueue. Useful for smoke-testing the
     Source adapter + pipeline path without spinning up the full pool.
     """
-    app_config = _load_config_with_override(config)
-    asyncio.run(_run_once(app_config, uri, db, delete))
+    asyncio.run(_run_once(get_config(), uri, db, delete))
 
 
 async def _run_once(

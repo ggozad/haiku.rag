@@ -728,6 +728,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def run_mcp(
         self,
         transport: str | None = None,
+        host: str = "127.0.0.1",
         port: int = 8001,
     ):
         """Run the MCP server until interrupted."""
@@ -744,7 +745,9 @@ class HaikuRAGApp:  # pragma: no cover
                 if transport == "stdio":
                     await server.run_stdio_async()
                 else:
-                    logger.info(f"Starting MCP server on port {port}")
-                    await server.run_http_async(transport="streamable-http", port=port)
+                    logger.info(f"Starting MCP server on {host}:{port}")
+                    await server.run_http_async(
+                        transport="streamable-http", host=host, port=port
+                    )
             except KeyboardInterrupt:
                 pass
