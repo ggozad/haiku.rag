@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>haiku-ingester · status</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --panel: #1a2027;
+        --border: #2a323d;
+        --text: #d9e1ea;
+        --muted: #7e8a99;
+        --accent: #6db4ff;
+        --queued: #4f86c6;
+        --claimed: #d4a247;
+        --succeeded: #4caf7c;
+        --dead: #cc5454;
+        --warn: #d4a247;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+          Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+
+      .topbar {
+        display: flex; align-items: center; gap: 16px;
+        padding: 12px 16px; background: var(--panel);
+        border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px;
+      }
+      .topbar h1 {
+        margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.02em;
+      }
+      .topbar .dot {
+        width: 8px; height: 8px; border-radius: 50%; background: var(--succeeded);
+      }
+      .topbar .dot.stale { background: var(--dead); }
+      .topbar .spacer { flex: 1; }
+      .topbar .meta { color: var(--muted); font-size: 12px; }
+      .topbar button {
+        background: var(--bg); color: var(--text); border: 1px solid var(--border);
+        padding: 6px 12px; border-radius: 4px; font: inherit; cursor: pointer;
+      }
+      .topbar button:hover { background: var(--border); }
+
+      .chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+      .chip {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 8px; padding: 12px 16px;
+      }
+      .chip .label {
+        text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .chip .value { font-size: 28px; font-weight: 600; margin-top: 4px; }
+      .chip.queued .value { color: var(--queued); }
+      .chip.claimed .value { color: var(--claimed); }
+      .chip.succeeded .value { color: var(--succeeded); }
+      .chip.dead .value { color: var(--dead); }
+
+      .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .panel {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 8px; padding: 16px;
+      }
+      .panel.full { grid-column: 1 / -1; }
+      .panel h2 {
+        margin: 0 0 12px 0; font-size: 13px; font-weight: 600;
+        letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+      }
+      .panel h2 .count { color: var(--text); margin-left: 8px; }
+      .empty { color: var(--muted); font-style: italic; padding: 12px 4px; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td {
+        text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+      }
+      th { font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+      tr:last-child td { border-bottom: none; }
+      tr:hover td { background: rgba(255, 255, 255, 0.02); }
+      td.id, td.worker { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+      td.uri {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        font-size: 12px;
+      }
+      td.err {
+        color: var(--dead); font-size: 12px; max-width: 0;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      td.actions { width: 1%; white-space: nowrap; }
+      td.actions button {
+        background: var(--bg); color: var(--text); border: 1px solid var(--border);
+        padding: 3px 8px; border-radius: 3px; cursor: pointer; font: inherit;
+        font-size: 11px; margin-left: 4px;
+      }
+      td.actions button:hover { background: var(--border); }
+
+      .badge {
+        display: inline-block; padding: 2px 6px; border-radius: 3px;
+        font-size: 11px; font-weight: 500;
+      }
+      .badge.ok { background: rgba(76, 175, 124, 0.15); color: var(--succeeded); }
+      .badge.warn { background: rgba(212, 162, 71, 0.15); color: var(--warn); }
+      .badge.bad { background: rgba(204, 84, 84, 0.15); color: var(--dead); }
+      .badge.upsert { background: rgba(79, 134, 198, 0.15); color: var(--queued); }
+      .badge.delete { background: rgba(204, 84, 84, 0.15); color: var(--dead); }
+
+      .stats-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
+      }
+      .stat {
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: 6px; padding: 10px 12px;
+      }
+      .stat .label {
+        font-size: 11px; color: var(--muted); text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .stat .value { font-size: 20px; font-weight: 600; margin-top: 2px; }
+
+      .breakdown {
+        margin-top: 6px; font-size: 12px; color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .breakdown span { margin-right: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <span class="dot" id="health-dot"></span>
+        <h1>haiku-ingester · status</h1>
+        <span class="meta" id="health-detail"></span>
+        <span class="spacer"></span>
+        <span class="meta" id="last-refresh">never</span>
+        <button id="pause-btn">Pause</button>
+        <button id="refresh-btn">Refresh now</button>
+      </div>
+
+      <div class="chips">
+        <div class="chip queued">
+          <div class="label">Queued</div>
+          <div class="value" id="chip-queued">—</div>
+        </div>
+        <div class="chip claimed">
+          <div class="label">Claimed</div>
+          <div class="value" id="chip-claimed">—</div>
+        </div>
+        <div class="chip succeeded">
+          <div class="label">Succeeded</div>
+          <div class="value" id="chip-succeeded">—</div>
+        </div>
+        <div class="chip dead">
+          <div class="label">Dead</div>
+          <div class="value" id="chip-dead">—</div>
+        </div>
+      </div>
+
+      <div class="panels">
+        <div class="panel full">
+          <h2>Stats</h2>
+          <div class="stats-grid">
+            <div class="stat">
+              <div class="label">Succeeded · 5m</div>
+              <div class="value" id="stat-5m">—</div>
+            </div>
+            <div class="stat">
+              <div class="label">Succeeded · 30m</div>
+              <div class="value" id="stat-30m">—</div>
+            </div>
+            <div class="stat">
+              <div class="label">Succeeded · 1h</div>
+              <div class="value" id="stat-1h">—</div>
+            </div>
+            <div class="stat">
+              <div class="label">Workers busy</div>
+              <div class="value" id="stat-workers">—</div>
+            </div>
+            <div class="stat">
+              <div class="label">Oldest queued</div>
+              <div class="value" id="stat-oldest">—</div>
+            </div>
+          </div>
+          <div class="breakdown" id="stat-breakdown"></div>
+        </div>
+
+        <div class="panel full">
+          <h2>Sources <span class="count" id="sources-count"></span></h2>
+          <div id="sources-body">
+            <div class="empty">loading…</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Active jobs <span class="count" id="active-count"></span></h2>
+          <div id="active-body">
+            <div class="empty">loading…</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Recent failures <span class="count" id="dead-count"></span></h2>
+          <div id="dead-body">
+            <div class="empty">loading…</div>
+          </div>
+        </div>
+
+        <div class="panel full">
+          <h2>Recently completed <span class="count" id="recent-count"></span></h2>
+          <div id="recent-body">
+            <div class="empty">loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      "use strict";
+      const TOKEN_KEY = "haiku-ingester-token";
+      const POLL_MS = 3000;
+
+      let token = localStorage.getItem(TOKEN_KEY) || "";
+      let paused = false;
+      let timer = null;
+      let lastRefreshAt = null;
+
+      const $ = (id) => document.getElementById(id);
+
+      async function fetchJson(path) {
+        const headers = token ? { Authorization: "Bearer " + token } : {};
+        const res = await fetch(path, { headers });
+        if (res.status === 401) {
+          const entered = prompt(
+            "API requires a bearer token. Paste it here:",
+            token,
+          );
+          if (entered) {
+            token = entered.trim();
+            localStorage.setItem(TOKEN_KEY, token);
+            return fetchJson(path);
+          }
+          throw new Error("unauthorized");
+        }
+        if (!res.ok) throw new Error(path + " → " + res.status);
+        return res.json();
+      }
+
+      async function postJson(path) {
+        const headers = token ? { Authorization: "Bearer " + token } : {};
+        const res = await fetch(path, { method: "POST", headers });
+        if (!res.ok) throw new Error(path + " → " + res.status);
+        return res.json();
+      }
+
+      async function deleteJson(path) {
+        const headers = token ? { Authorization: "Bearer " + token } : {};
+        const res = await fetch(path, { method: "DELETE", headers });
+        if (!res.ok) throw new Error(path + " → " + res.status);
+        return res.json();
+      }
+
+      function relTime(iso) {
+        if (!iso) return "—";
+        const ms = Date.now() - Date.parse(iso);
+        if (ms < 0) return "in the future";
+        return formatDuration(ms / 1000) + " ago";
+      }
+
+      function formatDuration(s) {
+        if (s == null || isNaN(s)) return "—";
+        if (s < 1) return "<1s";
+        if (s < 60) return Math.floor(s) + "s";
+        if (s < 3600) return Math.floor(s / 60) + "m " + Math.floor(s % 60) + "s";
+        if (s < 86400) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+        return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
+      }
+
+      function shortId(id) {
+        return id ? id.slice(0, 8) : "—";
+      }
+
+      function escapeHtml(s) {
+        if (s == null) return "";
+        return String(s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      }
+
+      function setHealthDot(stale) {
+        $("health-dot").classList.toggle("stale", !!stale);
+      }
+
+      function renderChips(counts) {
+        $("chip-queued").textContent = counts.queued ?? 0;
+        $("chip-claimed").textContent = counts.claimed ?? 0;
+        $("chip-succeeded").textContent = counts.succeeded ?? 0;
+        $("chip-dead").textContent = counts.dead ?? 0;
+      }
+
+      function renderStats(stats) {
+        $("stat-5m").textContent = stats.throughput.succeeded_5m;
+        $("stat-30m").textContent = stats.throughput.succeeded_30m;
+        $("stat-1h").textContent = stats.throughput.succeeded_1h;
+        $("stat-workers").textContent =
+          stats.workers.busy + " / " + stats.workers.total;
+        $("stat-oldest").textContent =
+          stats.oldest_queued_age_s == null
+            ? "—"
+            : formatDuration(stats.oldest_queued_age_s);
+
+        const parts = [];
+        const dlq = stats.dlq_by_source || {};
+        const depth = stats.queue_depth_by_source || {};
+        const dlqEntries = Object.entries(dlq);
+        if (dlqEntries.length) {
+          parts.push(
+            "DLQ by source: " +
+              dlqEntries.map(([k, v]) => `<span>${escapeHtml(k)}: ${v}</span>`).join(""),
+          );
+        }
+        const depthEntries = Object.entries(depth);
+        if (depthEntries.length) {
+          parts.push(
+            "Backlog by source: " +
+              depthEntries
+                .map(([k, v]) => `<span>${escapeHtml(k)}: ${v}</span>`)
+                .join(""),
+          );
+        }
+        $("stat-breakdown").innerHTML = parts.join("<br>");
+      }
+
+      function renderSources(sources) {
+        $("sources-count").textContent = "(" + sources.length + ")";
+        if (!sources.length) {
+          $("sources-body").innerHTML =
+            '<div class="empty">no sources configured</div>';
+          return;
+        }
+        const rows = sources
+          .map((s) => {
+            let circuitBadge = '<span class="badge ok">OK</span>';
+            if (s.circuit_breaker_open) {
+              circuitBadge = '<span class="badge bad">OPEN</span>';
+            }
+            let skipBadge = "";
+            if (s.last_skip_reason) {
+              skipBadge =
+                ' <span class="badge warn" title="Most recent sweep attempt was skipped.">' +
+                escapeHtml(s.last_skip_reason) +
+                "</span>";
+            }
+            return `<tr>
+              <td>${escapeHtml(s.source_id)}</td>
+              <td>${escapeHtml(s.type)}</td>
+              <td>${relTime(s.last_polled_at)}${skipBadge}</td>
+              <td>${circuitBadge}</td>
+              <td class="actions">
+                <button onclick="refreshSource('${escapeHtml(s.source_id)}')">Refresh</button>
+              </td>
+            </tr>`;
+          })
+          .join("");
+        $("sources-body").innerHTML = `<table>
+          <thead><tr>
+            <th>ID</th><th>Type</th><th>Last polled</th><th>Circuit</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
+      function truncateMiddle(s, n) {
+        if (!s || s.length <= n) return s;
+        const head = Math.ceil((n - 1) / 2);
+        const tail = Math.floor((n - 1) / 2);
+        return s.slice(0, head) + "…" + s.slice(-tail);
+      }
+
+      function opBadge(op) {
+        const cls = op === "delete" ? "delete" : "upsert";
+        const label = op === "delete" ? "DEL" : "UP";
+        return `<span class="badge ${cls}">${label}</span>`;
+      }
+
+      function renderActive(jobs) {
+        $("active-count").textContent = "(" + jobs.length + ")";
+        if (!jobs.length) {
+          $("active-body").innerHTML = '<div class="empty">nothing running</div>';
+          return;
+        }
+        const rows = jobs
+          .map(
+            (j) => `<tr>
+              <td class="id" title="${escapeHtml(j.id)}">${shortId(j.id)}</td>
+              <td>${opBadge(j.op)}</td>
+              <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              <td class="worker">${escapeHtml(j.claimed_by ?? "—")}</td>
+              <td>${j.attempts}/${j.max_attempts}</td>
+              <td>${relTime(j.claimed_at)}</td>
+              <td class="actions">
+                <button onclick="cancelJob('${escapeHtml(j.id)}')">Cancel</button>
+              </td>
+            </tr>`,
+          )
+          .join("");
+        $("active-body").innerHTML = `<table>
+          <thead><tr>
+            <th>ID</th><th>Op</th><th>URI</th><th>Worker</th><th>Try</th><th>Started</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
+      function renderDead(jobs) {
+        $("dead-count").textContent = "(" + jobs.length + ")";
+        if (!jobs.length) {
+          $("dead-body").innerHTML = '<div class="empty">no recent failures</div>';
+          return;
+        }
+        const rows = jobs
+          .map(
+            (j) => `<tr>
+              <td class="id" title="${escapeHtml(j.id)}">${shortId(j.id)}</td>
+              <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              <td class="err" title="${escapeHtml(j.last_error ?? "")}">${escapeHtml(j.last_error ?? "")}</td>
+              <td>${relTime(j.completed_at)}</td>
+              <td class="actions">
+                <button onclick="retryJob('${escapeHtml(j.id)}')">Retry</button>
+              </td>
+            </tr>`,
+          )
+          .join("");
+        $("dead-body").innerHTML = `<table>
+          <thead><tr>
+            <th>ID</th><th>URI</th><th>Error</th><th>Failed</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
+      function renderRecent(jobs) {
+        $("recent-count").textContent = "(" + jobs.length + ")";
+        if (!jobs.length) {
+          $("recent-body").innerHTML = '<div class="empty">nothing completed yet</div>';
+          return;
+        }
+        const rows = jobs
+          .map((j) => {
+            let duration = "—";
+            if (j.completed_at && j.enqueued_at) {
+              const ms = Date.parse(j.completed_at) - Date.parse(j.enqueued_at);
+              if (ms >= 0) duration = formatDuration(ms / 1000);
+            }
+            return `<tr>
+              <td>${opBadge(j.op)}</td>
+              <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              <td>${escapeHtml(j.source_id)}</td>
+              <td>${duration}</td>
+              <td>${relTime(j.completed_at)}</td>
+            </tr>`;
+          })
+          .join("");
+        $("recent-body").innerHTML = `<table>
+          <thead><tr>
+            <th>Op</th><th>URI</th><th>Source</th><th>Duration</th><th>Finished</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
+      async function refresh() {
+        try {
+          const [health, sources, stats, active, dead, recent] = await Promise.all([
+            fetchJson("/health"),
+            fetchJson("/sources"),
+            fetchJson("/stats"),
+            fetchJson("/jobs?status=claimed&limit=20"),
+            fetchJson("/jobs?status=dead&limit=10"),
+            fetchJson("/jobs?status=succeeded&limit=10"),
+          ]);
+          setHealthDot(false);
+          $("health-detail").textContent =
+            health.worker_count + " workers · " + health.poller_count + " pollers";
+          renderChips(health.queue_counts);
+          renderStats(stats);
+          renderSources(sources);
+          renderActive(active);
+          renderDead(dead);
+          renderRecent(recent);
+          lastRefreshAt = new Date();
+          updateLastRefresh();
+        } catch (e) {
+          setHealthDot(true);
+          $("health-detail").textContent = "error: " + e.message;
+        }
+      }
+
+      function updateLastRefresh() {
+        if (!lastRefreshAt) {
+          $("last-refresh").textContent = "never";
+          return;
+        }
+        const ms = Date.now() - lastRefreshAt.getTime();
+        $("last-refresh").textContent = formatDuration(ms / 1000) + " ago";
+      }
+
+      function setPolling(on) {
+        paused = !on;
+        $("pause-btn").textContent = on ? "Pause" : "Resume";
+        if (on) {
+          if (!timer) timer = setInterval(refresh, POLL_MS);
+        } else {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        }
+      }
+
+      // Action handlers (called from inline onclick — kept on window).
+      window.cancelJob = async (id) => {
+        if (!confirm("Cancel job " + id.slice(0, 8) + "…?")) return;
+        try { await deleteJson("/jobs/" + encodeURIComponent(id)); } catch (e) {}
+        refresh();
+      };
+      window.retryJob = async (id) => {
+        try { await postJson("/jobs/" + encodeURIComponent(id) + "/retry"); } catch (e) {}
+        refresh();
+      };
+      window.refreshSource = async (sid) => {
+        try {
+          await postJson("/sources/" + encodeURIComponent(sid) + "/refresh");
+        } catch (e) {}
+        refresh();
+      };
+
+      $("pause-btn").onclick = () => setPolling(paused);
+      $("refresh-btn").onclick = () => refresh();
+      setInterval(updateLastRefresh, 1000);
+
+      refresh();
+      setPolling(true);
+    </script>
+  </body>
+</html>

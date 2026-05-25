@@ -3,9 +3,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import logfire
 from watchfiles import Change, awatch
 
-from haiku.rag.ingester.pollers.base import BasePoller
+from haiku.rag.ingester.pollers.base import BasePoller, _enqueue_extra
 from haiku.rag.ingester.queue.models import JobOp
 from haiku.rag.ingester.sources.filter import FileFilter
 
@@ -98,29 +99,42 @@ class FSPoller(BasePoller):
 
     async def _handle_watch_change(self, change: Change, path: Path) -> None:
         uri = path.as_uri()
-        if change is Change.deleted:
-            if not self._fs_config.delete_orphans:
+        # Wrap in a span so the worker's `ingester.job` (and everything it
+        # nests) hangs off a watch-event parent. Without this the watchfiles
+        # callback runs with no active context, the `_otel` carrier is empty,
+        # and the job span surfaces at the trace root — disconnected from
+        # the FS event that caused it.
+        with logfire.span(
+            "ingester.poller.watch_event",
+            source_id=self.source_id,
+            change=change.name,
+            uri=uri,
+        ):
+            if change is Change.deleted:
+                if not self._fs_config.delete_orphans:
+                    return
+                await self._jobs.enqueue(
+                    self.source_id,
+                    uri,
+                    op=JobOp.DELETE,
+                    max_attempts=self._max_attempts(),
+                    extra=_enqueue_extra(self._fs_config),
+                )
                 return
-            await self._jobs.enqueue(
-                self.source_id,
-                uri,
-                op=JobOp.DELETE,
-                max_attempts=self._max_attempts(),
-            )
-            return
 
-        if change in (Change.added, Change.modified):
-            revision = str(path.stat().st_mtime_ns) if path.exists() else None
-            await self._jobs.enqueue(
-                self.source_id,
-                uri,
-                op=JobOp.UPSERT,
-                revision=revision,
-                max_attempts=self._max_attempts(),
-            )
-            await self._sync.upsert(
-                self.source_id, uri, revision=None, content_hash=None
-            )
+            if change in (Change.added, Change.modified):
+                revision = str(path.stat().st_mtime_ns) if path.exists() else None
+                await self._jobs.enqueue(
+                    self.source_id,
+                    uri,
+                    op=JobOp.UPSERT,
+                    revision=revision,
+                    max_attempts=self._max_attempts(),
+                    extra=_enqueue_extra(self._fs_config),
+                )
+                await self._sync.upsert(
+                    self.source_id, uri, revision=None, content_hash=None
+                )
 
     def _max_attempts(self) -> int:
         cfg = self._fs_config

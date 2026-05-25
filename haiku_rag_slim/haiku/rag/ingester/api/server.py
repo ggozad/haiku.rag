@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import logfire
 from fastapi import Depends, FastAPI, Request
 
 from haiku.rag.ingester.api.auth import require_auth
@@ -35,7 +34,14 @@ def build_app(
     auth_token: str | None = None,
 ) -> FastAPI:
     """Construct the ingester's FastAPI control plane."""
-    from haiku.rag.ingester.api.routes import dlq, health, jobs, sources
+    from haiku.rag.ingester.api.routes import (
+        dashboard,
+        dlq,
+        health,
+        jobs,
+        sources,
+        stats,
+    )
 
     app = FastAPI(
         title="haiku-ingester",
@@ -47,12 +53,13 @@ def build_app(
 
     auth_dep = [Depends(require_auth)]
     app.include_router(health.router)  # /health is unauthenticated by design
+    # Dashboard route is markup-only; the JS it serves attaches the bearer
+    # token to its own fetches. Keeping the route unauthenticated lets an
+    # operator open it in a browser and paste the token on demand.
+    app.include_router(dashboard.router)
     app.include_router(jobs.router, dependencies=auth_dep)
     app.include_router(sources.router, dependencies=auth_dep)
     app.include_router(dlq.router, dependencies=auth_dep)
+    app.include_router(stats.router, dependencies=auth_dep)
 
-    # Every request becomes a span when logfire is configured; no-op otherwise.
-    # /health is the docker healthcheck endpoint — polled every few seconds
-    # by Compose, would otherwise drown the trace stream in idle GETs.
-    logfire.instrument_fastapi(app, excluded_urls=r"^.*/health$")
     return app

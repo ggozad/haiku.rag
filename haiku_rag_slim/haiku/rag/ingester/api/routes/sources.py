@@ -20,6 +20,7 @@ async def list_sources(
                 type=type(poller.config).__name__,
                 last_polled_at=poller.last_polled_at,
                 circuit_breaker_open=poller.is_circuit_open,
+                last_skip_reason=poller.last_skip_reason,
             )
         )
     return summaries

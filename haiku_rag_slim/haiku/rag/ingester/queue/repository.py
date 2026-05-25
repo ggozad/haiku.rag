@@ -266,6 +266,49 @@ class JobRepo:
                 rows = await cursor.fetchall()
         return {row["status"]: row["n"] for row in rows}
 
+    async def count_succeeded_since(self, seconds: int) -> int:
+        """How many jobs reached `succeeded` in the last `seconds` seconds.
+        Drives the dashboard's rolling-throughput chips."""
+        threshold = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT COUNT(*) AS n FROM jobs WHERE status='succeeded' AND completed_at >= ?",
+                (threshold,),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return int(row["n"]) if row else 0
+
+    async def oldest_queued_age_seconds(self) -> float | None:
+        """Age (in seconds) of the oldest job sitting in `queued` whose
+        scheduled_at is in the past. Returns None when nothing is waiting.
+        Tells operators whether work is backing up."""
+        now = datetime.now(UTC)
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT MIN(scheduled_at) AS oldest FROM jobs "
+                "WHERE status='queued' AND scheduled_at <= ?",
+                (now.isoformat(),),
+            ) as cursor:
+                row = await cursor.fetchone()
+        if not row or row["oldest"] is None:
+            return None
+        return (now - datetime.fromisoformat(row["oldest"])).total_seconds()
+
+    async def counts_by_source(self, *statuses: str) -> dict[str, int]:
+        """source_id → count of jobs in any of the given statuses. Drives the
+        dashboard's per-source DLQ and backlog summaries."""
+        if not statuses:
+            return {}
+        placeholders = ",".join("?" * len(statuses))
+        async with self._lock:
+            async with self._conn.execute(
+                f"SELECT source_id, COUNT(*) AS n FROM jobs "
+                f"WHERE status IN ({placeholders}) GROUP BY source_id",
+                statuses,
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return {row["source_id"]: row["n"] for row in rows}
+
     async def release_if_claimed(self, job_id: str) -> bool:
         """Reset a still-claimed job back to queued, immediately reclaimable.
         Idempotent — a no-op if the job already transitioned to

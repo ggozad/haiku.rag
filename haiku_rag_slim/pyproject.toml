@@ -59,7 +59,6 @@ ingester = [
     "fastapi>=0.125",
     "uvicorn[standard]>=0.32",
     "aiosqlite>=0.20",
-    "logfire[fastapi]>=4.30",
     "haiku.rag-slim[s3]",
 ]
 # TUI (chat and inspect commands)

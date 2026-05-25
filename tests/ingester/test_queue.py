@@ -460,6 +460,83 @@ async def test_counts_by_status(jobs):
     assert j3.id  # silence unused
 
 
+# --- stats ---
+
+
+@pytest.mark.asyncio
+async def test_count_succeeded_since_only_includes_recent(jobs, conn):
+    await jobs.enqueue("s", "old", JobOp.UPSERT)
+    await jobs.enqueue("s", "new", JobOp.UPSERT)
+
+    old_claim = await jobs.claim_next("w")
+    assert old_claim is not None
+    await jobs.mark_succeeded(old_claim.id)
+    long_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET completed_at = ? WHERE id = ?", (long_ago, old_claim.id)
+    )
+    await conn.commit()
+
+    new_claim = await jobs.claim_next("w")
+    assert new_claim is not None
+    await jobs.mark_succeeded(new_claim.id)
+
+    assert await jobs.count_succeeded_since(60) == 1
+    assert await jobs.count_succeeded_since(86400) == 2
+
+
+@pytest.mark.asyncio
+async def test_oldest_queued_age_seconds_none_when_empty(jobs):
+    assert await jobs.oldest_queued_age_seconds() is None
+
+
+@pytest.mark.asyncio
+async def test_oldest_queued_age_seconds_returns_oldest(jobs, conn):
+    old = await jobs.enqueue("s", "old", JobOp.UPSERT)
+    await jobs.enqueue("s", "new", JobOp.UPSERT)
+    backdate = (datetime.now(UTC) - timedelta(seconds=120)).isoformat()
+    assert old is not None
+    await conn.execute(
+        "UPDATE jobs SET scheduled_at = ? WHERE id = ?", (backdate, old.id)
+    )
+    await conn.commit()
+
+    age = await jobs.oldest_queued_age_seconds()
+    assert age is not None
+    assert 119 <= age <= 125
+
+
+@pytest.mark.asyncio
+async def test_oldest_queued_age_seconds_ignores_future_scheduled(jobs, conn):
+    """A job whose scheduled_at is in the future (e.g. after a backoff
+    reschedule) isn't ready to run, so it shouldn't count toward backlog age."""
+    j = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert j is not None
+    future = (datetime.now(UTC) + timedelta(seconds=600)).isoformat()
+    await conn.execute("UPDATE jobs SET scheduled_at = ? WHERE id = ?", (future, j.id))
+    await conn.commit()
+    assert await jobs.oldest_queued_age_seconds() is None
+
+
+@pytest.mark.asyncio
+async def test_counts_by_source_groups_correctly(jobs):
+    await jobs.enqueue("s1", "u1", JobOp.UPSERT)
+    await jobs.enqueue("s1", "u2", JobOp.UPSERT)
+    j3 = await jobs.enqueue("s2", "u3", JobOp.UPSERT)
+    assert j3 is not None
+    await jobs.mark_dead(j3.id, "boom")
+
+    assert await jobs.counts_by_source("queued") == {"s1": 2}
+    assert await jobs.counts_by_source("dead") == {"s2": 1}
+    assert await jobs.counts_by_source("queued", "claimed") == {"s1": 2}
+
+
+@pytest.mark.asyncio
+async def test_counts_by_source_no_statuses_returns_empty(jobs):
+    await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert await jobs.counts_by_source() == {}
+
+
 # --- sync state ---
 
 

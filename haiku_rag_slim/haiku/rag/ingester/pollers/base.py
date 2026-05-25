@@ -62,6 +62,7 @@ class BasePoller:
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._last_polled_at: datetime | None = None
+        self._last_skip_reason: str | None = None
         self._default_max_attempts = default_max_attempts
 
     @property
@@ -75,6 +76,13 @@ class BasePoller:
     @property
     def is_circuit_open(self) -> bool:
         return self._breaker.is_open
+
+    @property
+    def last_skip_reason(self) -> str | None:
+        """Reason the most recent sweep attempt skipped (e.g. "pending_work",
+        "circuit_open"), or None when the most recent attempt actually polled.
+        Cleared on the next successful sweep."""
+        return self._last_skip_reason
 
     async def run(self) -> None:  # pragma: no cover - subclasses override
         raise NotImplementedError
@@ -90,6 +98,7 @@ class BasePoller:
         breaker is open, the source has pending work already queued, or the
         sweep failed (and was recorded)."""
         if self._breaker.is_open:
+            self._last_skip_reason = "circuit_open"
             logger.debug(
                 "Skipping discover() — circuit breaker open for %s", self.source_id
             )
@@ -99,6 +108,7 @@ class BasePoller:
                 # The unique index would dedupe a re-sweep into a saturated
                 # queue anyway; skipping saves the listing round-trip
                 # (PROPFIND / S3 LIST / FS walk) and keeps Logfire readable.
+                self._last_skip_reason = "pending_work"
                 span.set_attribute("skipped", True)
                 span.set_attribute("skip_reason", "pending_work")
                 logger.debug(
@@ -118,6 +128,7 @@ class BasePoller:
                     await self._handle_event(event)
                 self._breaker.record_success()
                 self._last_polled_at = datetime.now(UTC)
+                self._last_skip_reason = None
                 span.set_attribute("upsert", counts[SourceEventKind.UPSERT])
                 span.set_attribute("delete", counts[SourceEventKind.DELETE])
                 span.set_attribute("unchanged", counts[SourceEventKind.UNCHANGED])

@@ -181,6 +181,28 @@ async def test_repeated_sweep_skipped_when_queue_has_pending(fs_config, jobs, sy
 
 
 @pytest.mark.asyncio
+async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
+    """last_skip_reason surfaces 'pending_work' while the queue is saturated
+    and clears once the next sweep actually polls."""
+    event = _event("file:///a.md", revision="r1")
+    source = _StubSource("src", [[event], [event], []])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    await poller._sweep_once()  # first sweep enqueues, succeeds
+    assert poller.last_skip_reason is None
+
+    await poller._sweep_once()  # backpressure skips
+    assert poller.last_skip_reason == "pending_work"
+
+    # Drain the queue, sweep again, reason clears.
+    claimed = await jobs.claim_next("worker")
+    assert claimed is not None
+    await jobs.mark_succeeded(claimed.id)
+    await poller._sweep_once()
+    assert poller.last_skip_reason is None
+
+
+@pytest.mark.asyncio
 async def test_sweep_resumes_after_queue_drains(fs_config, jobs, sync):
     """Once the queue clears (success, dead, or cancel), sweeps resume."""
     event = _event("file:///a.md", revision="r1")

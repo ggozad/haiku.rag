@@ -338,3 +338,79 @@ async def test_source_refresh_503_when_pollers_absent(state):
     async with _client(state) as client:
         resp = await client.post("/sources/anything/refresh")
     assert resp.status_code == 503
+
+
+# --- /stats ---
+
+
+@pytest.mark.asyncio
+async def test_stats_returns_shape_on_empty_queue(state):
+    async with _client(state) as client:
+        resp = await client.get("/stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["throughput"] == {
+        "succeeded_5m": 0,
+        "succeeded_30m": 0,
+        "succeeded_1h": 0,
+    }
+    assert body["workers"] == {"busy": 0, "total": 0}
+    assert body["oldest_queued_age_s"] is None
+    assert body["dlq_by_source"] == {}
+    assert body["queue_depth_by_source"] == {}
+
+
+@pytest.mark.asyncio
+async def test_stats_aggregates_real_queue(state, jobs):
+    j1 = await jobs.enqueue("s1", "u1", JobOp.UPSERT)
+    j2 = await jobs.enqueue("s1", "u2", JobOp.UPSERT)
+    j3 = await jobs.enqueue("s2", "u3", JobOp.UPSERT)
+    assert j1 and j2 and j3
+
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_succeeded(claimed.id)
+    dead = await jobs.claim_next("w")
+    assert dead is not None
+    await jobs.mark_dead(dead.id, "boom")
+
+    async with _client(state) as client:
+        resp = await client.get("/stats")
+    body = resp.json()
+    # One succeeded in the last 5m, 30m, 1h (we just marked it).
+    assert body["throughput"]["succeeded_5m"] == 1
+    assert body["throughput"]["succeeded_30m"] == 1
+    assert body["throughput"]["succeeded_1h"] == 1
+    # Last enqueued (s2/u3) remains queued.
+    assert body["queue_depth_by_source"] == {"s2": 1}
+    # The dead job was claim_next-ed from s1.
+    assert body["dlq_by_source"] == {"s1": 1}
+
+
+@pytest.mark.asyncio
+async def test_stats_requires_auth(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/stats")
+    assert resp.status_code == 401
+
+
+# --- dashboard ---
+
+
+@pytest.mark.asyncio
+async def test_dashboard_served_unauthenticated(state):
+    """The dashboard is markup-only. The JS it serves attaches the bearer
+    token to its own JSON fetches, so the page itself must load without one
+    even when auth is enabled."""
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert "haiku-ingester · status" in body
+    # The JS calls the JSON endpoints; sanity-check it's wired up.
+    assert "/stats" in body
+    assert "/sources" in body
+    assert "/jobs?status=claimed" in body
+    # Op badge helper is present so DELETE rows render distinctly.
+    assert "opBadge" in body
