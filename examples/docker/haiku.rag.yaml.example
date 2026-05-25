@@ -31,7 +31,11 @@ processing:
 
 providers:
   docling_serve:
-    base_url: http://docling-serve:5001
+    # Two replicas; ingester round-robins jobs across them, each call's
+    # submit / poll / result pinned to one instance.
+    base_url:
+      - http://docling-serve-1:5001
+      - http://docling-serve-2:5001
     api_key: ""
   ollama:
     base_url: http://host.docker.internal:11434

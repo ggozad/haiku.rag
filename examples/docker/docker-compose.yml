@@ -1,9 +1,30 @@
 services:
-  docling-serve:
+  # Two docling-serve replicas — the ingester round-robins jobs across them
+  # via the `providers.docling_serve.base_url` list in haiku.rag.yaml. Each
+  # serves the same image with the same env; running more than one is the
+  # supported scaling pattern for docling-serve since the upstream image
+  # processes one task at a time per instance by default.
+  docling-serve-1:
     image: quay.io/docling-project/docling-serve:latest
-    container_name: docling-serve
+    container_name: docling-serve-1
     ports:
-      - "5001:5001"
+      - "5001:5001"  # exposed on the host for ad-hoc debugging (5001)
+    environment:
+      - DOCLING_SERVE_ENABLE_UI=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      start_interval: 5s
+
+  docling-serve-2:
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: docling-serve-2
+    ports:
+      - "5002:5001"  # host 5002 → container 5001 (debug only)
     environment:
       - DOCLING_SERVE_ENABLE_UI=1
     restart: unless-stopped
@@ -43,8 +64,13 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - CO_API_KEY=${CO_API_KEY}
+      # Logfire emits spans when this is set; stays silent (no telemetry) when unset.
+      # Set LOGFIRE_TOKEN in examples/docker/.env (gitignored) to enable.
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
     depends_on:
-      docling-serve:
+      docling-serve-1:
+        condition: service_healthy
+      docling-serve-2:
         condition: service_healthy
     healthcheck:
       # No curl in the slim image; use Python's stdlib instead.

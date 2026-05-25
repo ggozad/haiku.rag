@@ -8,7 +8,12 @@ LanceDB allows exactly one writer + N readers per database URI, so the
 example runs the ingester and the MCP server as **two separate containers**
 sharing the same data volume:
 
-- **docling-serve** - Document conversion and chunking service
+- **docling-serve-1** / **docling-serve-2** - Two replicas of the
+  document conversion + chunking service. The ingester round-robins
+  jobs across them; running two means convert work overlaps and one
+  container restarting (e.g. for memory recycling) doesn't stall
+  ingest. Bumping to N replicas is the same pattern — duplicate the
+  service block and add the URL to `providers.docling_serve.base_url`.
 - **haiku-ingester** - Long-lived writer. Watches `/docs`, ingests new and
   changed files, queues retries, exposes the control plane on port 8765.
 - **haiku-rag** - Read-only MCP server on port 8001 for AI assistant
@@ -79,7 +84,8 @@ curl http://localhost:8765/dlq
 
 ## Ports
 
-- `5001` - docling-serve API (with UI enabled)
+- `5001` - docling-serve replica 1 API (with UI enabled, debug only)
+- `5002` - docling-serve replica 2 API (host port; container still listens on 5001)
 - `8001` - MCP server (read-only)
 - `8765` - ingester control plane (`/health`, `/jobs`, `/sources`, `/dlq`)
 
