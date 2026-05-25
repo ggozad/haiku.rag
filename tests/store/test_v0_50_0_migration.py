@@ -139,6 +139,42 @@ class TestV0_50_0Migration:
                 "source_revision": "v2",
             }
 
+    async def test_unparseable_metadata_skipped_without_crashing(self, temp_db_path):
+        """A row with malformed JSON in `metadata` must not abort the whole
+        migration: it's logged and skipped, and well-formed rows alongside it
+        still get rewritten. The bad row's metadata is left exactly as-is."""
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await store.set_haiku_version("0.48.1")
+            await store.documents_table.add(
+                [
+                    # Contains the substring `"etag"` so the WHERE LIKE pulls
+                    # it in, but it's not valid JSON — json.loads fails.
+                    DocumentRecord(
+                        id="bad",
+                        content="x",
+                        uri="u1",
+                        metadata='{"etag": broken',
+                    ),
+                    DocumentRecord(
+                        id="good",
+                        content="x",
+                        uri="u2",
+                        metadata=json.dumps({"etag": "abc"}),
+                    ),
+                ]
+            )
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            # Must not raise.
+            applied = await store.migrate()
+            assert any("0.50.0" in d for d in applied)
+
+            rows = await store.documents_table.query().to_list()
+            by_id = {r["id"]: r["metadata"] for r in rows}
+
+            assert by_id["bad"] == '{"etag": broken'
+            assert json.loads(by_id["good"]) == {"source_revision": "abc"}
+
     async def test_preserves_existing_canonical_keys_on_collision(self, temp_db_path):
         """If both legacy and canonical keys are present, the canonical wins
         and the legacy is dropped — defends against partial-migration states."""

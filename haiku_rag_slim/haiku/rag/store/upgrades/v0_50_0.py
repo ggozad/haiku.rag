@@ -62,7 +62,7 @@ async def _apply_canonical_metadata_keys(store: Store) -> None:
         raw = row.get("metadata") or "{}"
         try:
             meta = json.loads(raw)
-        except Exception:  # pragma: no cover
+        except Exception:
             logger.warning(
                 "Could not parse metadata JSON for document %s; skipping", doc_id
             )
