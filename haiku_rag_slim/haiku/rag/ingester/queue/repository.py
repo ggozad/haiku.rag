@@ -146,23 +146,33 @@ class JobRepo:
                 row = await cursor.fetchone()
         return _row_to_job(row) if row else None
 
-    async def mark_succeeded(self, job_id: str) -> None:
+    async def mark_succeeded(self, job_id: str, claimed_by: str) -> bool:
+        """Transition a still-claimed job to `succeeded`. Guarded on
+        `status='claimed' AND claimed_by=?` so a reaper-resurrected job
+        picked up by a different worker isn't clobbered by the original
+        slow worker. Returns True when the row was updated."""
         async with self._lock:
             async with self._conn.execute(
-                "UPDATE jobs SET status='succeeded', completed_at=? WHERE id=?",
-                (_utcnow_iso(), job_id),
-            ):
-                pass
+                "UPDATE jobs SET status='succeeded', completed_at=? "
+                "WHERE id=? AND status='claimed' AND claimed_by=? RETURNING id",
+                (_utcnow_iso(), job_id, claimed_by),
+            ) as cursor:
+                row = await cursor.fetchone()
             await self._conn.commit()
+        return row is not None
 
-    async def mark_dead(self, job_id: str, error: str) -> None:
+    async def mark_dead(self, job_id: str, error: str, claimed_by: str) -> bool:
+        """Transition a still-claimed job to `dead`. See `mark_succeeded`
+        for the guard semantics."""
         async with self._lock:
             async with self._conn.execute(
-                "UPDATE jobs SET status='dead', completed_at=?, last_error=? WHERE id=?",
-                (_utcnow_iso(), error, job_id),
-            ):
-                pass
+                "UPDATE jobs SET status='dead', completed_at=?, last_error=? "
+                "WHERE id=? AND status='claimed' AND claimed_by=? RETURNING id",
+                (_utcnow_iso(), error, job_id, claimed_by),
+            ) as cursor:
+                row = await cursor.fetchone()
             await self._conn.commit()
+        return row is not None
 
     async def reschedule(self, job_id: str, delay_seconds: float, error: str) -> None:
         scheduled = (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat()

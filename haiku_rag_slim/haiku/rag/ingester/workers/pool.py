@@ -123,6 +123,8 @@ class WorkerPool:
             pass
 
     async def _process(self, job: Job) -> None:
+        assert job.claimed_by is not None, "_process only runs on claimed jobs"
+        worker_id = job.claimed_by
         started = time.monotonic()
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:
@@ -144,12 +146,12 @@ class WorkerPool:
                 logger.info("Job %s released back to queue on cancel", job.id)
             raise
         except PermanentError as e:
-            await self._jobs.mark_dead(job.id, str(e))
+            await self._jobs.mark_dead(job.id, str(e), worker_id)
             logger.info("Job %s dead (permanent): %s", job.id, e)
             return
         except TransientError as e:
             if job.attempts >= job.max_attempts:
-                await self._jobs.mark_dead(job.id, str(e))
+                await self._jobs.mark_dead(job.id, str(e), worker_id)
                 logger.info(
                     "Job %s dead (max attempts %d): %s", job.id, job.max_attempts, e
                 )
@@ -167,11 +169,21 @@ class WorkerPool:
             return
         except Exception as e:  # pragma: no cover - pipeline classifier net
             # Defensive: pipeline classifier should have caught everything.
-            await self._jobs.mark_dead(job.id, f"unclassified: {e!r}")
+            await self._jobs.mark_dead(job.id, f"unclassified: {e!r}", worker_id)
             logger.exception("Unclassified error in job %s", job.id)
             return
 
-        await self._jobs.mark_succeeded(job.id)
+        # Guard against the reaper race: if our claim was reset and another
+        # worker re-claimed the job, mark_succeeded is a no-op. Don't write
+        # sync_state in that case — the new worker will write it when it
+        # finishes.
+        if not await self._jobs.mark_succeeded(job.id, worker_id):
+            logger.warning(
+                "Job %s lost claim before mark_succeeded (likely reaper race); "
+                "skipping sync_state write",
+                job.id,
+            )
+            return
         if job.op is JobOp.DELETE:
             await self._sync.delete(job.source_id, job.uri)
         else:

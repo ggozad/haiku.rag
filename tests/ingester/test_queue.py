@@ -70,7 +70,9 @@ async def test_open_queue_creates_file_and_schema(tmp_path):
 @pytest.mark.asyncio
 async def test_dlq_view_exposes_dead_jobs(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
-    await jobs.mark_dead(job.id, "permanent")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(job.id, "permanent", "w")
 
     cursor = await conn.execute("SELECT id FROM dlq")
     rows = await cursor.fetchall()
@@ -113,7 +115,9 @@ async def test_enqueue_returns_none_on_live_conflict(jobs):
 @pytest.mark.asyncio
 async def test_enqueue_after_dead_succeeds(jobs):
     first = await jobs.enqueue("s", "u", JobOp.UPSERT)
-    await jobs.mark_dead(first.id, "error")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(first.id, "error", "w")
     second = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert second is not None
     assert second.id != first.id
@@ -124,7 +128,7 @@ async def test_enqueue_after_succeeded_succeeds(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
     second = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert second is not None
 
@@ -152,12 +156,12 @@ async def test_has_pending_false_for_terminal_states(jobs):
     await jobs.enqueue("src", "u-ok", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
 
     await jobs.enqueue("src", "u-bad", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "permanent")
+    await jobs.mark_dead(claimed.id, "permanent", "w")
 
     assert await jobs.has_pending("src") is False
 
@@ -246,7 +250,7 @@ async def test_mark_succeeded(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.SUCCEEDED
@@ -258,11 +262,49 @@ async def test_mark_dead_records_error(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "permanent failure")
+    await jobs.mark_dead(claimed.id, "permanent failure", "w")
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.DEAD
     assert refreshed.last_error == "permanent failure"
+
+
+@pytest.mark.asyncio
+async def test_mark_succeeded_with_claimed_by_guard_skips_when_resurrected(jobs):
+    """Reaper race: A claims, reaper resets, B re-claims, A finishes. A's
+    mark_succeeded must be a no-op so B's in-flight work isn't clobbered."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    a = await jobs.claim_next("worker-A")
+    assert a is not None
+    # Reaper resets A's stale claim.
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    # B picks the job up.
+    b = await jobs.claim_next("worker-B")
+    assert b is not None and b.id == job.id and b.claimed_by == "worker-B"
+    # A finally finishes and tries to mark succeeded — guarded, no-op.
+    assert await jobs.mark_succeeded(job.id, "worker-A") is False
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.claimed_by == "worker-B"
+    # B's own mark_succeeded does land.
+    assert await jobs.mark_succeeded(job.id, "worker-B") is True
+
+
+@pytest.mark.asyncio
+async def test_mark_dead_with_claimed_by_guard_skips_when_resurrected(jobs):
+    """Same guard semantics as mark_succeeded for the dead transition."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    a = await jobs.claim_next("worker-A")
+    assert a is not None
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    b = await jobs.claim_next("worker-B")
+    assert b is not None and b.claimed_by == "worker-B"
+    assert await jobs.mark_dead(job.id, "boom", "worker-A") is False
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.last_error is None
 
 
 # --- reschedule + retry ---
@@ -303,7 +345,7 @@ async def test_retry_revives_dead_job(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "boom")
+    await jobs.mark_dead(claimed.id, "boom", "w")
 
     revived = await jobs.retry(job.id)
     assert revived.status is JobStatus.QUEUED
@@ -347,7 +389,7 @@ async def test_retry_refuses_succeeded_job(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
 
     with pytest.raises(KeyError):
         await jobs.retry(job.id)
@@ -372,7 +414,7 @@ async def test_cancel_succeeded_returns_false(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
     assert await jobs.cancel(job.id) is False
 
 
@@ -459,7 +501,7 @@ async def test_release_if_claimed_noop_on_succeeded(jobs):
     assert job is not None
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(job.id)
+    await jobs.mark_succeeded(job.id, "w")
 
     released = await jobs.release_if_claimed(job.id)
     assert released is False
@@ -478,7 +520,7 @@ async def test_list_jobs_with_filters(jobs):
     j3 = await jobs.enqueue("s1", "u3", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
 
     all_jobs = await jobs.list_jobs()
     assert len(all_jobs) == 3
@@ -498,8 +540,10 @@ async def test_counts_by_status(jobs):
 
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
-    await jobs.mark_dead(j2.id, "err")
+    await jobs.mark_succeeded(claimed.id, "w")
+    claimed_j2 = await jobs.claim_next("w")
+    assert claimed_j2 is not None and claimed_j2.id == j2.id
+    await jobs.mark_dead(j2.id, "err", "w")
 
     counts = await jobs.counts_by_status()
     assert counts == {"queued": 1, "succeeded": 1, "dead": 1}
@@ -516,7 +560,7 @@ async def test_count_succeeded_since_only_includes_recent(jobs, conn):
 
     old_claim = await jobs.claim_next("w")
     assert old_claim is not None
-    await jobs.mark_succeeded(old_claim.id)
+    await jobs.mark_succeeded(old_claim.id, "w")
     long_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
     await conn.execute(
         "UPDATE jobs SET completed_at = ? WHERE id = ?", (long_ago, old_claim.id)
@@ -525,7 +569,7 @@ async def test_count_succeeded_since_only_includes_recent(jobs, conn):
 
     new_claim = await jobs.claim_next("w")
     assert new_claim is not None
-    await jobs.mark_succeeded(new_claim.id)
+    await jobs.mark_succeeded(new_claim.id, "w")
 
     assert await jobs.count_succeeded_since(60) == 1
     assert await jobs.count_succeeded_since(86400) == 2
@@ -566,11 +610,15 @@ async def test_oldest_queued_age_seconds_ignores_future_scheduled(jobs, conn):
 
 @pytest.mark.asyncio
 async def test_counts_by_source_groups_correctly(jobs):
-    await jobs.enqueue("s1", "u1", JobOp.UPSERT)
-    await jobs.enqueue("s1", "u2", JobOp.UPSERT)
+    # Enqueue s2 first so claim_next picks it up before the s1 rows; then
+    # mark_dead routes through the production claim→terminal transition.
     j3 = await jobs.enqueue("s2", "u3", JobOp.UPSERT)
     assert j3 is not None
-    await jobs.mark_dead(j3.id, "boom")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == j3.id
+    await jobs.mark_dead(j3.id, "boom", "w")
+    await jobs.enqueue("s1", "u1", JobOp.UPSERT)
+    await jobs.enqueue("s1", "u2", JobOp.UPSERT)
 
     assert await jobs.counts_by_source("queued") == {"s1": 2}
     assert await jobs.counts_by_source("dead") == {"s2": 1}

@@ -64,10 +64,14 @@ def _client(state, *, auth_token: str | None = None) -> httpx.AsyncClient:
 
 @pytest.mark.asyncio
 async def test_health_ok_with_counts(state, jobs):
-    await jobs.enqueue("src", "u1", JobOp.UPSERT)
+    # Enqueue j2 first so claim_next reaches it before u1; then transition
+    # via claim → mark_dead matches the production path.
     j2 = await jobs.enqueue("src", "u2", JobOp.UPSERT)
     assert j2 is not None
-    await jobs.mark_dead(j2.id, "boom")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == j2.id
+    await jobs.mark_dead(j2.id, "boom", "w")
+    await jobs.enqueue("src", "u1", JobOp.UPSERT)
 
     async with _client(state) as client:
         resp = await client.get("/health")
@@ -150,7 +154,9 @@ async def test_mutation_endpoints_require_auth(state, jobs):
     cancel jobs or reset the DLQ."""
     j = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert j is not None
-    await jobs.mark_dead(j.id, "boom")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(j.id, "boom", "w")
 
     async with _client(state, auth_token="secret") as client:
         # Cancel: blocked without token
@@ -191,10 +197,13 @@ async def test_list_jobs_returns_recent_first(state, jobs):
 
 @pytest.mark.asyncio
 async def test_list_jobs_filters_by_source_and_status(state, jobs):
-    await jobs.enqueue("a", "u", JobOp.UPSERT)
+    # Enqueue b first so claim_next reaches it before the a row.
     j = await jobs.enqueue("b", "u", JobOp.UPSERT)
     assert j is not None
-    await jobs.mark_dead(j.id, "err")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == j.id
+    await jobs.mark_dead(j.id, "err", "w")
+    await jobs.enqueue("a", "u", JobOp.UPSERT)
 
     async with _client(state) as client:
         resp = await client.get("/jobs?source_id=b&status=dead")
@@ -224,7 +233,9 @@ async def test_get_job_404(state):
 async def test_retry_revives_dead_job(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
-    await jobs.mark_dead(job.id, "err")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(job.id, "err", "w")
 
     async with _client(state) as client:
         resp = await client.post(f"/jobs/{job.id}/retry")
@@ -259,7 +270,7 @@ async def test_cancel_succeeded_returns_404(state, jobs):
     assert job is not None
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
 
     async with _client(state) as client:
         resp = await client.delete(f"/jobs/{job.id}")
@@ -271,10 +282,14 @@ async def test_cancel_succeeded_returns_404(state, jobs):
 
 @pytest.mark.asyncio
 async def test_dlq_lists_dead_jobs_only(state, jobs):
-    j1 = await jobs.enqueue("src", "u1", JobOp.UPSERT)
+    # Enqueue j2 first so claim_next picks it before j1.
     j2 = await jobs.enqueue("src", "u2", JobOp.UPSERT)
-    assert j1 is not None and j2 is not None
-    await jobs.mark_dead(j2.id, "err")
+    assert j2 is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == j2.id
+    await jobs.mark_dead(j2.id, "err", "w")
+    j1 = await jobs.enqueue("src", "u1", JobOp.UPSERT)
+    assert j1 is not None
 
     async with _client(state) as client:
         resp = await client.get("/dlq")
@@ -287,7 +302,9 @@ async def test_dlq_lists_dead_jobs_only(state, jobs):
 async def test_dlq_retry_resurrects(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
-    await jobs.mark_dead(job.id, "err")
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(job.id, "err", "w")
 
     async with _client(state) as client:
         resp = await client.post(f"/dlq/{job.id}/retry")
@@ -429,10 +446,10 @@ async def test_stats_aggregates_real_queue(state, jobs):
 
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "w")
     dead = await jobs.claim_next("w")
     assert dead is not None
-    await jobs.mark_dead(dead.id, "boom")
+    await jobs.mark_dead(dead.id, "boom", "w")
 
     async with _client(state) as client:
         resp = await client.get("/stats")

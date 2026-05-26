@@ -202,7 +202,7 @@ async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
     # Drain the queue, sweep again, reason clears.
     claimed = await jobs.claim_next("worker")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "worker")
     await poller._sweep_once()
     assert poller.last_skip_reason is None
 
@@ -224,7 +224,7 @@ async def test_dead_job_does_not_clear_sync_state_revision(fs_config, jobs, sync
 
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "transient blew up")
+    await jobs.mark_dead(claimed.id, "transient blew up", "w")
 
     row = await sync.get_row("src", "file:///a.md")
     assert row is not None
@@ -244,7 +244,7 @@ async def test_sweep_resumes_after_queue_drains(fs_config, jobs, sync):
 
     claimed = await jobs.claim_next("worker")
     assert claimed is not None
-    await jobs.mark_succeeded(claimed.id)
+    await jobs.mark_succeeded(claimed.id, "worker")
 
     assert await poller._sweep_once() is True
     assert source.discover_calls == 2

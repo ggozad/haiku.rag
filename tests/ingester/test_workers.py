@@ -315,6 +315,38 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
+    client, jobs, sync
+):
+    """If the reaper resets a slow worker's claim and another worker re-claims
+    the job, the original worker's mark_succeeded must be a no-op and its
+    sync_state.upsert must not run — otherwise we'd overwrite freshly-written
+    state from the re-claiming worker."""
+    client.create_document_from_source.return_value = Document(
+        id="doc-A", content="x", uri="u", metadata={"md5": "A", "source_revision": "A"}
+    )
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed_by_a = await jobs.claim_next("worker-A")
+    assert claimed_by_a is not None
+    # Reaper resets A's claim, worker-B re-claims.
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.claim_next("worker-B")
+
+    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    # Drive A's _process directly with A's (now stale) Job snapshot.
+    await pool._process(claimed_by_a)
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    # B still owns the claim — A's mark_succeeded was a no-op.
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.claimed_by == "worker-B"
+    # And sync_state must be untouched.
+    assert await sync.get_snapshot("src") == {}
+
+
+@pytest.mark.asyncio
 async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeypatch):
     """A second cancel arriving while the cancel-handler is awaiting
     release_if_claimed must not strand the claim. The shielded await may
