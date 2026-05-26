@@ -392,7 +392,9 @@ class SyncStateRepo:
         ingested: bool = False,
     ) -> None:
         """Insert-or-update the sync_state row. `ingested=True` stamps
-        last_ingested_at; otherwise only last_seen_at is bumped."""
+        last_ingested_at; otherwise only last_seen_at is bumped.
+        `revision=None` and `content_hash=None` leave any existing values
+        untouched."""
         now = _utcnow_iso()
         ingested_at = now if ingested else None
         async with self._lock:
@@ -403,8 +405,8 @@ class SyncStateRepo:
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_id, uri) DO UPDATE SET
-                    revision = excluded.revision,
-                    content_hash = excluded.content_hash,
+                    revision = COALESCE(excluded.revision, revision),
+                    content_hash = COALESCE(excluded.content_hash, content_hash),
                     last_seen_at = excluded.last_seen_at,
                     last_ingested_at = COALESCE(excluded.last_ingested_at, last_ingested_at)
                 """,

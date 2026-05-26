@@ -572,3 +572,27 @@ async def test_sync_state_snapshot_scoped_per_source(sync):
     await sync.upsert("s2", "u", revision="def", content_hash="m")
     assert await sync.get_snapshot("s1") == {"u": "abc"}
     assert await sync.get_snapshot("s2") == {"u": "def"}
+
+
+@pytest.mark.asyncio
+async def test_sync_state_upsert_preserves_revision_when_none(sync):
+    """upsert(revision=None) leaves an existing revision in place."""
+    await sync.upsert("s", "u", revision="v1", content_hash="hash-v1")
+    await sync.upsert("s", "u", revision=None, content_hash=None)
+    row = await sync.get_row("s", "u")
+    assert row is not None
+    assert row.revision == "v1"
+    assert row.content_hash == "hash-v1"
+    assert await sync.get_snapshot("s") == {"u": "v1"}
+
+
+@pytest.mark.asyncio
+async def test_sync_state_upsert_replaces_revision_when_provided(sync):
+    """upsert with a non-None revision overwrites the existing one."""
+    await sync.upsert("s", "u", revision="v1", content_hash="hash-v1")
+    await sync.upsert("s", "u", revision="v2", content_hash="hash-v2", ingested=True)
+    row = await sync.get_row("s", "u")
+    assert row is not None
+    assert row.revision == "v2"
+    assert row.content_hash == "hash-v2"
+    assert row.last_ingested_at is not None

@@ -203,6 +203,33 @@ async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_dead_job_does_not_clear_sync_state_revision(fs_config, jobs, sync):
+    """When a job dies, the URI's previously-ingested revision must remain
+    in sync_state so subsequent sweeps still see the URI as known."""
+    await sync.upsert("src", "file:///a.md", revision="r1", content_hash="h1")
+
+    changed = _event("file:///a.md", revision="r2")
+    source = _StubSource("src", [[changed], [changed]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    await poller._sweep_once()
+    queued = await jobs.list_jobs()
+    assert len(queued) == 1
+    assert queued[0].revision == "r2"
+
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "transient blew up")
+
+    row = await sync.get_row("src", "file:///a.md")
+    assert row is not None
+    assert row.revision == "r1"
+
+    await poller._sweep_once()
+    assert await sync.get_snapshot("src") == {"file:///a.md": "r1"}
+
+
+@pytest.mark.asyncio
 async def test_sweep_resumes_after_queue_drains(fs_config, jobs, sync):
     """Once the queue clears (success, dead, or cancel), sweeps resume."""
     event = _event("file:///a.md", revision="r1")
