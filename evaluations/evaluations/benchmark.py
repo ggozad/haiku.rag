@@ -406,6 +406,16 @@ async def run_qa_benchmark(
     skill_factory = _skill_factory_for_target(target)
     resolved_skill_model = get_model(skill_config, config)
 
+    from haiku.rag.tools.filters import build_multi_document_filter
+
+    question_to_filter: dict[str, str | None] = {}
+    for case in cases:
+        meta = case.metadata or {}
+        target_uri = meta.get("target_doc_uri")
+        question_to_filter[case.inputs] = (
+            build_multi_document_filter([target_uri]) if target_uri else None
+        )
+
     async def answer_question(question: str) -> str:
         result = await run_skill_question(
             skill_factory=skill_factory,
@@ -413,6 +423,7 @@ async def run_qa_benchmark(
             config=config,
             question=question,
             skill_model=resolved_skill_model,
+            document_filter=question_to_filter.get(question),
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         return result.answer

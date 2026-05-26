@@ -105,6 +105,7 @@ def build_mmlb_case(
     metadata: dict[str, str] = {
         "case_index": str(index),
         "doc_id": doc["doc_id"],
+        "target_doc_uri": doc["doc_id"],
         "doc_type": doc.get("doc_type", ""),
         "answer_format": doc.get("answer_format", ""),
         "evidence_pages": str(evidence_pages),

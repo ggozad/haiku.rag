@@ -240,6 +240,7 @@ class TestMMLongBenchDoc:
         assert case.expected_output == "42"
         assert case.metadata is not None
         assert case.metadata["doc_id"] == "report.pdf"
+        assert case.metadata["target_doc_uri"] == "report.pdf"
         assert case.metadata["doc_type"] == "Financial report"
         assert case.metadata["answer_format"] == "Int"
         assert case.metadata["evidence_pages"] == "[5]"
