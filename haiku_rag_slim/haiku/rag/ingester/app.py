@@ -43,8 +43,12 @@ class IngesterApp:
         ingester_cfg = self._config.ingester
         self._queue_conn = await open_queue(ingester_cfg.queue.path)
         try:
-            self._jobs = JobRepo(self._queue_conn)
-            self._sync = SyncStateRepo(self._queue_conn)
+            # Single lock shared by both repos so cross-repo calls on the
+            # same connection (e.g. worker's mark_succeeded then sync.upsert)
+            # serialize at the cursor/commit boundary.
+            queue_lock = asyncio.Lock()
+            self._jobs = JobRepo(self._queue_conn, lock=queue_lock)
+            self._sync = SyncStateRepo(self._queue_conn, lock=queue_lock)
 
             supported_extensions = get_converter(self._config).supported_extensions
             retry = RetryPolicy(

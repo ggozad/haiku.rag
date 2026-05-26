@@ -20,13 +20,18 @@ async def conn(tmp_path):
 
 
 @pytest.fixture
-def jobs(conn):
-    return JobRepo(conn)
+def queue_lock():
+    return asyncio.Lock()
 
 
 @pytest.fixture
-def sync(conn):
-    return SyncStateRepo(conn)
+def jobs(conn, queue_lock):
+    return JobRepo(conn, lock=queue_lock)
+
+
+@pytest.fixture
+def sync(conn, queue_lock):
+    return SyncStateRepo(conn, lock=queue_lock)
 
 
 # --- migrations / schema ---
@@ -576,6 +581,29 @@ async def test_counts_by_source_groups_correctly(jobs):
 async def test_counts_by_source_no_statuses_returns_empty(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert await jobs.counts_by_source() == {}
+
+
+# --- cross-repo lock sharing ---
+
+
+def test_repos_share_lock_when_constructed_with_one(conn):
+    """JobRepo and SyncStateRepo wrap one shared aiosqlite.Connection in
+    production. They must accept and share a single asyncio.Lock so cross-
+    repo calls serialize at the cursor/commit boundary — otherwise a
+    SyncStateRepo.upsert cursor open while JobRepo.mark_succeeded tries
+    to commit would trip SQLite's 'SQL statements in progress' error."""
+    shared = asyncio.Lock()
+    j = JobRepo(conn, lock=shared)
+    s = SyncStateRepo(conn, lock=shared)
+    assert j._lock is s._lock is shared
+
+
+def test_repos_default_to_independent_locks_when_used_alone(conn):
+    """Backward-compat: a single-repo caller can still construct without
+    passing a lock and each repo creates its own."""
+    j = JobRepo(conn)
+    s = SyncStateRepo(conn)
+    assert j._lock is not s._lock
 
 
 # --- sync state ---

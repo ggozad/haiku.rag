@@ -50,7 +50,11 @@ def _row_to_sync_state(row: aiosqlite.Row) -> SyncStateRow:
 
 
 class JobRepo:
-    def __init__(self, conn: aiosqlite.Connection):
+    def __init__(
+        self,
+        conn: aiosqlite.Connection,
+        lock: asyncio.Lock | None = None,
+    ):
         # Row access by name in helpers below.
         conn.row_factory = aiosqlite.Row
         self._conn = conn
@@ -58,8 +62,10 @@ class JobRepo:
         # coroutine don't sit "in progress" when another tries to commit.
         # aiosqlite executes statements on a single worker thread, but
         # individual cursors don't finalize until closed or GC'd — SQLite
-        # then refuses commit() with "SQL statements in progress".
-        self._lock = asyncio.Lock()
+        # then refuses commit() with "SQL statements in progress". When
+        # JobRepo and SyncStateRepo share the same connection, callers must
+        # pass the same lock instance so cross-repo calls also serialize.
+        self._lock = lock or asyncio.Lock()
 
     async def enqueue(
         self,
@@ -363,11 +369,16 @@ class JobRepo:
 
 
 class SyncStateRepo:
-    def __init__(self, conn: aiosqlite.Connection):
+    def __init__(
+        self,
+        conn: aiosqlite.Connection,
+        lock: asyncio.Lock | None = None,
+    ):
         conn.row_factory = aiosqlite.Row
         self._conn = conn
-        # See JobRepo for why we serialize on the shared connection.
-        self._lock = asyncio.Lock()
+        # Pass the same lock instance JobRepo uses when both wrap one
+        # connection. See JobRepo for the SQLite cursor + commit constraint.
+        self._lock = lock or asyncio.Lock()
 
     async def get_snapshot(self, source_id: str) -> dict[str, str]:
         """uri -> revision map for the source. Drops rows where revision is

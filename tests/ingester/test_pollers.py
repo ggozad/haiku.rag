@@ -36,13 +36,18 @@ async def conn(tmp_path):
 
 
 @pytest.fixture
-def jobs(conn):
-    return JobRepo(conn)
+def queue_lock():
+    return asyncio.Lock()
 
 
 @pytest.fixture
-def sync(conn):
-    return SyncStateRepo(conn)
+def jobs(conn, queue_lock):
+    return JobRepo(conn, lock=queue_lock)
+
+
+@pytest.fixture
+def sync(conn, queue_lock):
+    return SyncStateRepo(conn, lock=queue_lock)
 
 
 class _StubSource:
