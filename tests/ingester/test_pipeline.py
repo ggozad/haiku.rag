@@ -196,6 +196,27 @@ async def test_connect_error_classified_transient():
         await run_job(client, _job())
 
 
+@pytest.mark.parametrize(
+    "exc_factory",
+    [
+        lambda: httpx.ConnectTimeout("slow connect"),
+        lambda: httpx.ReadTimeout("slow read"),
+        lambda: httpx.WriteTimeout("slow write"),
+        lambda: httpx.PoolTimeout("pool"),
+        lambda: httpx.ProxyError("proxy"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_transport_subclasses_classified_transient(exc_factory):
+    """The classifier umbrellas on httpx.TransportError so every transport-
+    layer subclass routes to TransientError, not the generic 'unexpected'
+    fallback."""
+    client = _mock_client()
+    client.create_document_from_source.side_effect = exc_factory()
+    with pytest.raises(TransientError, match="network"):
+        await run_job(client, _job())
+
+
 @pytest.mark.asyncio
 async def test_unknown_exception_classified_transient():
     client = _mock_client()

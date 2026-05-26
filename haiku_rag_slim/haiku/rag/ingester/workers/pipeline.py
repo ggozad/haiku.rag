@@ -52,10 +52,9 @@ def _classify(exc: BaseException) -> Exception:
             return TransientError(f"HTTP {status}: {exc}")
         return PermanentError(f"HTTP {status}: {exc}")
 
-    if isinstance(
-        exc,
-        httpx.ConnectError | httpx.ReadTimeout | httpx.WriteTimeout | httpx.PoolTimeout,
-    ):
+    if isinstance(exc, httpx.TransportError):
+        # Umbrella for ConnectError, NetworkError, TimeoutException, ProtocolError,
+        # ProxyError — every transport-layer failure that's worth retrying.
         return TransientError(f"network: {exc}")
 
     if isinstance(exc, asyncio.TimeoutError | TimeoutError | OSError):

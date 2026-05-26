@@ -1130,7 +1130,7 @@ class TestDoclingServeConverter:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            with pytest.raises(ValueError, match="Could not connect to docling-serve"):
+            with pytest.raises(httpx.ConnectError):
                 await converter.convert_text("# Test")
 
     @pytest.mark.asyncio
@@ -1143,12 +1143,14 @@ class TestDoclingServeConverter:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            with pytest.raises(ValueError, match="timed out"):
+            with pytest.raises(httpx.TimeoutException):
                 await converter.convert_text("# Test")
 
     @pytest.mark.asyncio
     async def test_convert_text_auth_error(self, converter):
-        """Test handling of authentication errors."""
+        """Auth failures surface as httpx.HTTPStatusError(401) so the
+        ingester's pipeline classifier can route them to PermanentError —
+        retrying a bad token is wasted work."""
         mock_response = Mock()
         mock_response.status_code = 401
 
@@ -1163,8 +1165,9 @@ class TestDoclingServeConverter:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            with pytest.raises(ValueError, match="Authentication failed"):
+            with pytest.raises(httpx.HTTPStatusError) as exc_info:
                 await converter.convert_text("# Test")
+            assert exc_info.value.response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_convert_file_pdf(self, converter):

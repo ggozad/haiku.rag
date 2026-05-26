@@ -443,7 +443,7 @@ class TestDoclingServeChunker:
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
 
-        with pytest.raises(ValueError, match="Could not connect to docling-serve"):
+        with pytest.raises(httpx.ConnectError):
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
@@ -459,13 +459,15 @@ class TestDoclingServeChunker:
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
 
-        with pytest.raises(ValueError, match="timed out"):
+        with pytest.raises(httpx.TimeoutException):
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_auth_error(self, mock_client_class, chunker):
-        """Test handling of authentication errors."""
+        """Auth failures surface as httpx.HTTPStatusError(401) so the
+        ingester's pipeline classifier can route them to PermanentError —
+        retrying a bad token is wasted work."""
         import httpx
 
         mock_request = Mock()
@@ -482,8 +484,9 @@ class TestDoclingServeChunker:
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
 
-        with pytest.raises(ValueError, match="Authentication failed"):
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await chunker.chunk(doc)
+        assert exc_info.value.response.status_code == 401
 
     @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
