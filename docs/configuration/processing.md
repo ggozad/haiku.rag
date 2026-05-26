@@ -1,6 +1,8 @@
-# Document Processing & Monitoring
+# Document Processing
 
-This guide covers how haiku.rag converts, chunks, and monitors documents.
+This guide covers how haiku.rag converts and chunks documents. Continuous
+ingestion (watching directories, polling HTTP / S3 / WebDAV sources) lives
+in the [ingester](../ingester.md) service.
 
 ## Document Processing
 

@@ -242,8 +242,9 @@ token; without one the API stays open and the service logs a warning.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | liveness + queue counts |
-| `GET` | `/sources` | configured pollers + last-poll time + breaker state |
+| `GET` | `/` | browser dashboard (HTML; unauthenticated, the JS attaches the bearer on its own JSON fetches) |
+| `GET` | `/health` | liveness + queue counts + live worker/poller counts; `status` is `"ok"` or `"degraded"` |
+| `GET` | `/sources` | configured pollers + last-poll time + breaker state + last skip reason |
 | `POST` | `/sources/{id}/refresh` | force an out-of-band sweep |
 | `GET` | `/jobs` | filtered list (`status`, `source_id`, `uri`, `limit`, `offset`) |
 | `GET` | `/jobs/{id}` | one job |
@@ -251,8 +252,14 @@ token; without one the API stays open and the service logs a warning.
 | `DELETE` | `/jobs/{id}` | cancel a queued/claimed job |
 | `GET` | `/dlq` | dead jobs |
 | `POST` | `/dlq/{id}/retry` | resurrect from DLQ |
+| `GET` | `/stats` | rolling throughput (5m / 30m / 1h succeeded), worker occupancy, oldest queued age, per-source DLQ + backlog |
 
-OpenAPI docs at `http://localhost:8765/docs`.
+OpenAPI docs at `http://localhost:8765/docs`. The dashboard at `/` polls
+the JSON endpoints above every few seconds and surfaces the same data
+visually — queue depth chips, per-source health with a `queue busy` badge
+when sweeps are skipped, throughput counters, active jobs with a Cancel
+button, recent failures with a Retry button, and the last-completed
+feed.
 
 ```yaml
 ingester:
