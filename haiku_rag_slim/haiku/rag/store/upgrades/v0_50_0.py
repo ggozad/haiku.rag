@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import timedelta
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
@@ -94,6 +95,11 @@ async def _apply_canonical_metadata_keys(store: Store) -> None:
         skipped,
         total,
     )
+
+    if rewritten:
+        # Compact the documents table to reclaim space from the rewritten rows.
+        logger.info("Compacting documents table to reclaim %d row rewrites", rewritten)
+        await store.documents_table.optimize(cleanup_older_than=timedelta(seconds=0))
 
 
 upgrade_canonical_metadata_keys = Upgrade(
