@@ -174,7 +174,13 @@ class JobRepo:
             await self._conn.commit()
         return row is not None
 
-    async def reschedule(self, job_id: str, delay_seconds: float, error: str) -> None:
+    async def reschedule(
+        self, job_id: str, delay_seconds: float, error: str, claimed_by: str
+    ) -> bool:
+        """Reset a still-claimed job back to `queued` with a future
+        scheduled_at. Guarded on `status='claimed' AND claimed_by=?` so a
+        slow worker can't clobber a re-claim that happened after the reaper
+        reset its claim. Returns True when the row was updated."""
         scheduled = (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat()
         async with self._lock:
             async with self._conn.execute(
@@ -185,12 +191,14 @@ class JobRepo:
                     claimed_at=NULL,
                     claimed_by=NULL,
                     last_error=?
-                WHERE id=?
+                WHERE id=? AND status='claimed' AND claimed_by=?
+                RETURNING id
                 """,
-                (scheduled, error, job_id),
-            ):
-                pass
+                (scheduled, error, job_id, claimed_by),
+            ) as cursor:
+                row = await cursor.fetchone()
             await self._conn.commit()
+        return row is not None
 
     async def retry(self, job_id: str) -> Job:
         """Reset a `dead` or `queued` job: status='queued', attempts=0,
@@ -328,12 +336,13 @@ class JobRepo:
                 rows = await cursor.fetchall()
         return {row["source_id"]: row["n"] for row in rows}
 
-    async def release_if_claimed(self, job_id: str) -> bool:
+    async def release_if_claimed(self, job_id: str, claimed_by: str) -> bool:
         """Reset a still-claimed job back to queued, immediately reclaimable.
-        Idempotent — a no-op if the job already transitioned to
-        succeeded/dead/rescheduled. Decrements attempts to undo the increment
-        from `claim_next`, since a cancellation isn't a failed attempt.
-        Returns True if the row was released."""
+        Guarded on `status='claimed' AND claimed_by=?` so the cancel-cleanup
+        of a slow worker doesn't strip the claim of a different worker that
+        re-claimed after a reaper reset. Decrements attempts to undo the
+        increment from `claim_next`, since a cancellation isn't a failed
+        attempt. Returns True if the row was released."""
         now = _utcnow_iso()
         async with self._lock:
             async with self._conn.execute(
@@ -344,10 +353,10 @@ class JobRepo:
                     claimed_by=NULL,
                     scheduled_at=?,
                     attempts=MAX(0, attempts - 1)
-                WHERE id=? AND status='claimed'
+                WHERE id=? AND status='claimed' AND claimed_by=?
                 RETURNING id
                 """,
-                (now, job_id),
+                (now, job_id, claimed_by),
             ) as cursor:
                 row = await cursor.fetchone()
             await self._conn.commit()

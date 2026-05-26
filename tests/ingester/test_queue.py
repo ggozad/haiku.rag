@@ -307,6 +307,42 @@ async def test_mark_dead_with_claimed_by_guard_skips_when_resurrected(jobs):
     assert refreshed.last_error is None
 
 
+@pytest.mark.asyncio
+async def test_reschedule_with_claimed_by_guard_skips_when_resurrected(jobs):
+    """Worker A times out → reaper resets → worker B re-claims → A surfaces
+    with a TransientError and calls reschedule. The guard turns A's call
+    into a no-op so B's claim isn't stripped back to `queued`."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    a = await jobs.claim_next("worker-A")
+    assert a is not None
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    b = await jobs.claim_next("worker-B")
+    assert b is not None and b.claimed_by == "worker-B"
+    assert await jobs.reschedule(job.id, 30.0, "transient", "worker-A") is False
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.claimed_by == "worker-B"
+    assert refreshed.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_release_if_claimed_with_claimed_by_guard_skips_when_resurrected(jobs):
+    """Cancel-cleanup path: worker A is cancelled while reaper-resurrected.
+    release_if_claimed must not strip worker B's fresh claim."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    a = await jobs.claim_next("worker-A")
+    assert a is not None
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    b = await jobs.claim_next("worker-B")
+    assert b is not None and b.claimed_by == "worker-B"
+    assert await jobs.release_if_claimed(job.id, "worker-A") is False
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.claimed_by == "worker-B"
+
+
 # --- reschedule + retry ---
 
 
@@ -315,7 +351,7 @@ async def test_reschedule_pushes_scheduled_at_into_future(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.reschedule(claimed.id, delay_seconds=30.0, error="transient")
+    await jobs.reschedule(claimed.id, 30.0, "transient", "w")
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.QUEUED
@@ -330,7 +366,7 @@ async def test_reschedule_then_claim_skips_until_due(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
-    await jobs.reschedule(claimed.id, delay_seconds=60.0, error="transient")
+    await jobs.reschedule(claimed.id, 60.0, "transient", "w")
     assert await jobs.claim_next("w") is None
 
     # Backdate scheduled_at to simulate the delay elapsing.
@@ -471,7 +507,7 @@ async def test_release_if_claimed_resets_claimed_job_and_decrements_attempts(job
     assert claimed is not None
     assert claimed.attempts == 1
 
-    released = await jobs.release_if_claimed(job.id)
+    released = await jobs.release_if_claimed(job.id, "w")
     assert released is True
 
     refreshed = await jobs.get_job(job.id)
@@ -487,7 +523,7 @@ async def test_release_if_claimed_noop_on_already_queued(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
 
-    released = await jobs.release_if_claimed(job.id)
+    released = await jobs.release_if_claimed(job.id, "w")
     assert released is False
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
@@ -503,7 +539,7 @@ async def test_release_if_claimed_noop_on_succeeded(jobs):
     assert claimed is not None
     await jobs.mark_succeeded(job.id, "w")
 
-    released = await jobs.release_if_claimed(job.id)
+    released = await jobs.release_if_claimed(job.id, "w")
     assert released is False
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None

@@ -357,11 +357,11 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
 
     real_release = jobs.release_if_claimed
 
-    async def _slow_release(job_id):
+    async def _slow_release(job_id, claimed_by):
         release_entered.set()
         # Long enough for the second cancel to arrive mid-update.
         await asyncio.sleep(0.2)
-        result = await real_release(job_id)
+        result = await real_release(job_id, claimed_by)
         release_done.set()
         return result
 

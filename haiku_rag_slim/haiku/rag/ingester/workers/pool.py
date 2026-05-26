@@ -137,7 +137,7 @@ class WorkerPool:
             # runs. The reaper is still the backstop, but releasing eagerly
             # lets a restart re-pick the job immediately.
             try:
-                await asyncio.shield(self._jobs.release_if_claimed(job.id))
+                await asyncio.shield(self._jobs.release_if_claimed(job.id, worker_id))
             except asyncio.CancelledError:
                 logger.info(
                     "Job %s cancel-cleanup interrupted; reaper will reclaim", job.id
@@ -157,7 +157,13 @@ class WorkerPool:
                 )
                 return
             delay = compute_backoff(job.attempts, self._retry)
-            await self._jobs.reschedule(job.id, delay, str(e))
+            if not await self._jobs.reschedule(job.id, delay, str(e), worker_id):
+                logger.warning(
+                    "Job %s lost claim before reschedule (likely reaper race); "
+                    "letting the re-claiming worker drive retry instead",
+                    job.id,
+                )
+                return
             logger.info(
                 "Job %s rescheduled in %.1fs (attempt %d/%d): %s",
                 job.id,
