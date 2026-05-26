@@ -399,6 +399,65 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_drain_pending_releases_waits_for_orphan_releases(
+    client, jobs, sync, monkeypatch
+):
+    """When the worker is cancelled twice (shutdown_grace_s timeout path) it
+    exits before its release_if_claimed Task completes, leaving an orphan.
+    drain_pending_releases waits for that orphan so the SQL update lands
+    before the lifecycle owner closes the queue connection."""
+    real_release = jobs.release_if_claimed
+    release_entered = asyncio.Event()
+
+    async def _slow_release(job_id, claimed_by):
+        release_entered.set()
+        await asyncio.sleep(0.15)
+        return await real_release(job_id, claimed_by)
+
+    monkeypatch.setattr(jobs, "release_if_claimed", _slow_release)
+
+    async def _hangs_forever(*args, **kwargs):
+        await asyncio.sleep(60)
+        return Document(id="doc", content="x", uri="u")
+
+    client.create_document_from_source.side_effect = _hangs_forever
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    await pool.start()
+    try:
+        await asyncio.sleep(0.05)
+        worker_task = pool._workers[0]
+        worker_task.cancel()
+        await asyncio.wait_for(release_entered.wait(), timeout=1.0)
+        worker_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await worker_task
+
+        # At this point the orphan release is still running. drain returns
+        # the count that landed within the timeout.
+        assert len(pool._pending_releases) == 1
+        landed = await pool.drain_pending_releases(timeout=1.0)
+        assert landed == 1
+        assert pool._pending_releases == set()
+    finally:
+        await pool.stop()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_drain_pending_releases_with_no_orphans_is_noop(client, jobs, sync):
+    """Common case: nothing to drain — drain returns 0 immediately, no
+    asyncio.wait against an empty set."""
+    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    assert await pool.drain_pending_releases() == 0
+
+
+@pytest.mark.asyncio
 async def test_double_start_raises(client, jobs, sync):
     pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()

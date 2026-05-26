@@ -52,6 +52,12 @@ class WorkerPool:
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
+        # Tracks release_if_claimed Tasks spawned by the cancel-cleanup path.
+        # The worker task may exit (a second cancel during shutdown_grace
+        # timeout) before its release Task finishes; the lifecycle owner
+        # drains these via drain_pending_releases() so the SQL update lands
+        # before the queue connection closes.
+        self._pending_releases: set[asyncio.Task] = set()
 
     @property
     def live_workers(self) -> int:
@@ -76,6 +82,18 @@ class WorkerPool:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._workers.clear()
         self._reaper = None
+
+    async def drain_pending_releases(self, timeout: float = 2.0) -> int:
+        """Wait for any in-flight cancel-cleanup release Tasks to finish.
+        Returns how many completed. Called by the lifecycle owner after
+        stop() (success or timeout) so orphans land their SQL update before
+        the queue connection closes. Tasks left running after `timeout`
+        will be reclaimed by the reaper on the next start instead."""
+        pending = list(self._pending_releases)
+        if not pending:
+            return 0
+        done, _ = await asyncio.wait(pending, timeout=timeout)
+        return len(done)
 
     async def drain_once(self, worker_id: str = "drain") -> int:
         """Drain every currently-claimable job to completion on the calling
@@ -130,17 +148,24 @@ class WorkerPool:
         try:
             result = await run_job(self._client, job, sources=self._sources)
         except asyncio.CancelledError:
-            # Graceful shutdown cancelled us mid-flight. Release the claim
-            # under shield so a second cancel (e.g. shutdown_grace_s elapses
-            # and IngesterApp's wait_for cancels the gather again) can't
-            # interrupt the SQL update and strand the claim until the reaper
-            # runs. The reaper is still the backstop, but releasing eagerly
-            # lets a restart re-pick the job immediately.
+            # Graceful shutdown cancelled us mid-flight. Spawn the release
+            # as an independent Task tracked in _pending_releases — that
+            # way a second cancel (e.g. shutdown_grace_s elapses and
+            # wait_for cancels stop() again) can interrupt our await
+            # without interrupting the SQL update, and the lifecycle owner
+            # can drain the orphans before closing the queue connection.
+            release_task = asyncio.create_task(
+                self._jobs.release_if_claimed(job.id, worker_id)
+            )
+            self._pending_releases.add(release_task)
+            release_task.add_done_callback(self._pending_releases.discard)
             try:
-                await asyncio.shield(self._jobs.release_if_claimed(job.id, worker_id))
+                await asyncio.shield(release_task)
             except asyncio.CancelledError:
                 logger.info(
-                    "Job %s cancel-cleanup interrupted; reaper will reclaim", job.id
+                    "Job %s cancel-cleanup interrupted; orphan release Task "
+                    "will be drained by the lifecycle owner",
+                    job.id,
                 )
             else:
                 logger.info("Job %s released back to queue on cancel", job.id)

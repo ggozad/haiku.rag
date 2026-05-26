@@ -144,6 +144,16 @@ class IngesterApp:
                             "claim_timeout_s on next start",
                             grace_s,
                         )
+                    # Drain any cancel-cleanup release Tasks the worker pool
+                    # spawned but didn't get to await (timeout path). They
+                    # need the queue connection that the outer finally is
+                    # about to close.
+                    landed = await self._pool.drain_pending_releases(timeout=2.0)
+                    if landed:
+                        logger.info(
+                            "Drained %d cancel-cleanup release(s) before close",
+                            landed,
+                        )
         finally:
             # Close the queue connection unconditionally. aiosqlite runs the
             # underlying sqlite3 in a background thread; leaving it open holds
