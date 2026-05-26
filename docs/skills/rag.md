@@ -15,9 +15,9 @@ If the question requires *computation* over the corpus (counts, aggregates, comp
 | Tool | Purpose |
 |------|---------|
 | `search(query, limit?)` | Hybrid search (vector + full-text) with section-aware context expansion. Returns `chunk_id`, content, `doc_item_refs`, `picture_refs`, `picture_captions`, source metadata. |
-| `list_documents()` | List all documents in the knowledge base. |
-| `get_document(query)` | Fetch a document by ID, title, or URI. Partial matches work. |
 | `cite(chunk_ids)` | Register chunk IDs as citations for the current answer. The agent calls this before writing the final response. |
+
+For corpus enumeration or full-document reads, reach for the [Analysis skill](analysis.md), which exposes `await list_documents()` and a `/documents/{id}/content.txt` virtual filesystem inside `execute_code`. Both are also available as opt-in tools when building a [custom skill](custom.md).
 
 ## State
 
@@ -33,7 +33,7 @@ class RAGState(BaseModel):
 
 - **citation_index** — All citations indexed by chunk ID. Accumulates across invocations so historical chunk IDs stay resolvable in UI scrollback.
 - **citations** — Chunk IDs registered via `cite` during the current invocation. Deduplicated, cleared at the start of each invocation.
-- **document_filter** — SQL WHERE clause applied to `search` and `list_documents`. Persists across invocations.
+- **document_filter** — SQL WHERE clause applied to `search`. Persists across invocations.
 - **searches** — Search results keyed by query string. Cleared at the start of each invocation.
 
 ## `create_skill(db_path?, config?)`
@@ -99,7 +99,7 @@ state.document_filter = "uri LIKE '%helios/v4/%'"
 result = await agent.run("What's the maintenance interval for the inverters?")
 ```
 
-The filter applies to every `search` and `list_documents` call for the rest of the session, including the model can't bypass it from inside.
+The filter applies to every `search` call for the rest of the session, and the model can't bypass it from inside.
 
 ### Combining with the analysis skill
 

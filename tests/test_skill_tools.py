@@ -24,6 +24,7 @@ from haiku.rag.skills._deps import RAGRunDeps
 from haiku.rag.skills._tools import create_skill_tools
 from haiku.rag.skills.rag import RAGState
 from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.document import Document
 
 
 def _make_png(color: str = "red") -> bytes:
@@ -239,3 +240,80 @@ async def test_skill_search_keeps_same_self_ref_from_different_documents():
     payloads = {part.data for part in result.content}  # type: ignore[attr-defined]
     assert PICTURE_BYTES in payloads
     assert other_bytes in payloads
+
+
+def _build_tool(config: AppConfig, name: str):
+    tools = create_skill_tools(
+        db_path=Path("/tmp/unused.lancedb"),
+        config=config,
+        state_type=RAGState,
+        tool_names=[name],
+        model=config.qa.model,
+    )
+    return tools[name]
+
+
+@pytest.mark.asyncio
+async def test_list_documents_tool_returns_shaped_dicts():
+    config = AppConfig()
+    list_documents = _build_tool(config, "list_documents")
+    rag = AsyncMock()
+    rag.list_documents = AsyncMock(
+        return_value=[
+            Document(id="d1", content="x", title="AI", uri="test://ai"),
+            Document(id="d2", content="y", title="ML", uri="test://ml"),
+        ]
+    )
+    ctx = _make_ctx(rag, RAGState())
+
+    results = await list_documents(ctx)
+
+    assert [r["title"] for r in results] == ["AI", "ML"]
+    assert all(
+        set(r.keys()) == {"id", "title", "uri", "metadata", "created_at", "updated_at"}
+        for r in results
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_documents_tool_forwards_document_filter_from_state():
+    config = AppConfig()
+    list_documents = _build_tool(config, "list_documents")
+    rag = AsyncMock()
+    rag.list_documents = AsyncMock(return_value=[])
+    state = RAGState(document_filter="title = 'AI Overview'")
+    ctx = _make_ctx(rag, state)
+
+    await list_documents(ctx)
+
+    rag.list_documents.assert_awaited_once_with(filter="title = 'AI Overview'")
+
+
+@pytest.mark.asyncio
+async def test_get_document_tool_returns_shaped_dict():
+    config = AppConfig()
+    get_document = _build_tool(config, "get_document")
+    rag = AsyncMock()
+    rag.resolve_document = AsyncMock(
+        return_value=Document(id="d1", content="full text", title="AI", uri="test://ai")
+    )
+    ctx = _make_ctx(rag, RAGState())
+
+    result = await get_document(ctx, "AI")
+
+    assert result is not None
+    assert result["content"] == "full text"
+    assert result["title"] == "AI"
+
+
+@pytest.mark.asyncio
+async def test_get_document_tool_returns_none_when_missing():
+    config = AppConfig()
+    get_document = _build_tool(config, "get_document")
+    rag = AsyncMock()
+    rag.resolve_document = AsyncMock(return_value=None)
+    ctx = _make_ctx(rag, RAGState())
+
+    result = await get_document(ctx, "nonexistent")
+
+    assert result is None

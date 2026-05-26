@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Drop `list_documents` and `get_document` from the default RAG skill's tool set; the skill now exposes only `search` and `cite`. Both tools dumped unbounded content into the agent's context (full document lists, full document bodies) and `get_document` returned no chunk_ids so its output was structurally uncitable. The analysis skill already covers these uses programmatically — `await list_documents()` and `Path('/documents/{id}/content.txt').read_text()` inside `execute_code`. The tool branches remain in `create_skill_tools` and the `skill_generator` `AVAILABLE_TOOLS` set so users can still opt in when building custom skills.
+
 ## [0.48.1] - 2026-05-21
 
 ### Changed
