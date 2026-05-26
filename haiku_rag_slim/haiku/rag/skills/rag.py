@@ -18,7 +18,7 @@ CRITICAL RULES:
 3. When a skill returns citations, always include them in your response
 """
 
-_RAG_TOOLS = ["search", "list_documents", "get_document", "cite"]
+_RAG_TOOLS = ["search", "cite"]
 
 
 def get_agent_preamble(config: AppConfig) -> str:
