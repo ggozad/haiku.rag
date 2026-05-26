@@ -7,11 +7,12 @@ import aiosqlite
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import FSSourceConfig
+from haiku.rag.config import FSSourceConfig, HTTPSourceConfig
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import apply_migrations
 from haiku.rag.ingester.queue.models import JobOp
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
+from haiku.rag.ingester.sources.http import HTTPSource
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
 
@@ -237,3 +238,51 @@ async def test_e2e_watchfiles_push_event_lands_as_job(tmp_path, jobs, sync):
     assert len(queued) == 1
     assert queued[0].op is JobOp.UPSERT
     assert queued[0].uri == (tmp_path / "new.md").as_uri()
+
+
+@pytest.mark.asyncio
+async def test_pre_existing_job_resolves_through_configured_source(
+    tmp_path, jobs, sync
+):
+    """A job already in the queue at startup is processed through the
+    configured Source adapter (with its headers / auth), not an adhoc
+    HTTPSource. The Source list is built at PollerManager construction so
+    the worker holds it before any start() call — no ordering required."""
+    await jobs.enqueue("auth", "https://example.com/a.md", JobOp.UPSERT)
+
+    client = _mock_client(tmp_path)
+    cfg = HTTPSourceConfig(
+        type="http",
+        id="auth",
+        urls=["https://example.com/a.md"],
+        headers={"Authorization": "Bearer secret"},
+    )
+    manager = PollerManager(configs=[cfg], job_repo=jobs, sync_repo=sync)
+    pool = WorkerPool(
+        client=client,
+        job_repo=jobs,
+        sync_repo=sync,
+        worker_count=1,
+        max_concurrent=1,
+        poll_idle_interval_s=0.05,
+        sources=manager.sources,
+    )
+
+    await manager.start()
+    await pool.start()
+    try:
+
+        async def _one_succeeded() -> bool:
+            counts = await jobs.counts_by_status()
+            return counts.get("succeeded", 0) == 1
+
+        await _wait_for(_one_succeeded, timeout=5.0)
+    finally:
+        await pool.stop()
+        await manager.stop()
+
+    kwargs = client.create_document_from_source.await_args.kwargs
+    sources = kwargs.get("sources")
+    assert sources is not None and len(sources) == 1
+    assert isinstance(sources[0], HTTPSource)
+    assert sources[0].headers == {"Authorization": "Bearer secret"}

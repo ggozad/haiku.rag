@@ -118,7 +118,7 @@ class FSPoller(BasePoller):
                     uri,
                     op=JobOp.DELETE,
                     max_attempts=self._max_attempts(),
-                    extra=_enqueue_extra(self._fs_config),
+                    extra=_enqueue_extra(),
                 )
                 return
 
@@ -130,7 +130,7 @@ class FSPoller(BasePoller):
                     op=JobOp.UPSERT,
                     revision=revision,
                     max_attempts=self._max_attempts(),
-                    extra=_enqueue_extra(self._fs_config),
+                    extra=_enqueue_extra(),
                 )
                 await self._sync.upsert(
                     self.source_id, uri, revision=None, content_hash=None

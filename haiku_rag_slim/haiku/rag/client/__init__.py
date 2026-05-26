@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
+    from haiku.rag.ingester.sources.base import Source
     from haiku.rag.sandbox import AnalysisResult
     from haiku.rag.store.models.citation import Citation
 
@@ -214,6 +215,7 @@ class HaikuRAG:
         metadata: dict | None = None,
         uri: str | None = None,
         storage_options: dict[str, str] | None = None,
+        sources: "list[Source] | None" = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
@@ -224,6 +226,7 @@ class HaikuRAG:
             metadata,
             uri=uri,
             storage_options=storage_options,
+            sources=sources,
         )
 
     async def update_document(

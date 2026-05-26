@@ -300,45 +300,6 @@ async def test_per_source_retry_policy_overrides_default(jobs, sync, tmp_path):
     assert queued[0].max_attempts == 9
 
 
-@pytest.mark.asyncio
-async def test_storage_options_thread_through_to_job_extra(jobs, sync):
-    cfg = S3SourceConfig(
-        type="s3",
-        id="bucket",
-        uri="s3://bucket/",
-        storage_options={"endpoint": "http://seaweed:8333"},
-    )
-    source = _StubSource(
-        "bucket", [[_event("s3://bucket/file.md", source_id="bucket")]]
-    )
-    poller = _periodic(source, cfg, jobs, sync)
-    await poller._sweep_once()
-    queued = await jobs.list_jobs(source_id="bucket")
-    # _otel is also threaded into extra so the worker's `ingester.job` span
-    # can nest under the sweep that enqueued it; assert the source-specific
-    # keys we care about and ignore the trace context payload.
-    assert queued[0].extra is not None
-    assert queued[0].extra["storage_options"] == {"endpoint": "http://seaweed:8333"}
-
-
-@pytest.mark.asyncio
-async def test_http_headers_thread_through_to_job_extra(jobs, sync):
-    cfg = HTTPSourceConfig(
-        type="http",
-        id="auth",
-        urls=["https://example.com/a.md"],
-        headers={"Authorization": "Bearer abc"},
-    )
-    source = _StubSource(
-        "auth", [[_event("https://example.com/a.md", source_id="auth")]]
-    )
-    poller = _periodic(source, cfg, jobs, sync)
-    await poller._sweep_once()
-    queued = await jobs.list_jobs(source_id="auth")
-    assert queued[0].extra is not None
-    assert queued[0].extra["headers"] == {"Authorization": "Bearer abc"}
-
-
 # --- PollerManager lifecycle ---
 
 
@@ -359,7 +320,7 @@ async def test_manager_builds_pollers_per_source(tmp_path, jobs, sync):
         job_repo=jobs,
         sync_repo=sync,
     )
-    built = manager.build_pollers()
+    built = manager.pollers
     assert len(built) == 4
     assert {p.source_id for p in built} == {
         f"fs:{tmp_path.resolve()}",
@@ -367,6 +328,31 @@ async def test_manager_builds_pollers_per_source(tmp_path, jobs, sync):
         "urls",
         "nc",
     }
+
+
+@pytest.mark.asyncio
+async def test_manager_sources_available_at_construction(tmp_path, jobs, sync):
+    """PollerManager builds Sources eagerly so callers (WorkerPool) can
+    receive them by plain construction order."""
+    from haiku.rag.config import SourceConfig
+    from haiku.rag.ingester.sources.http import HTTPSource
+
+    configs: list[SourceConfig] = [
+        FSSourceConfig(type="fs", id="docs", root=tmp_path),
+        HTTPSourceConfig(
+            type="http",
+            id="urls",
+            urls=[],
+            headers={"Authorization": "Bearer abc"},
+        ),
+    ]
+    manager = PollerManager(configs=configs, job_repo=jobs, sync_repo=sync)
+    sources = manager.sources
+    assert len(sources) == 2
+    assert {s.source_id for s in sources} == {"docs", "urls"}
+    http = next(s for s in sources if s.source_id == "urls")
+    assert isinstance(http, HTTPSource)
+    assert http.headers == {"Authorization": "Bearer abc"}
 
 
 @pytest.mark.asyncio
@@ -382,6 +368,37 @@ async def test_manager_double_start_raises(tmp_path, jobs, sync):
     try:
         with pytest.raises(RuntimeError, match="already started"):
             await manager.start()
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.asyncio
+async def test_manager_restart_resumes_polling(tmp_path, jobs, sync):
+    """stop() then start() produces a working poller that stays alive after
+    its initial sweep — the second cycle's stop event is fresh, not the
+    set state left over from the previous stop()."""
+    (tmp_path / "a.md").write_text("hello")
+    cfg = FSSourceConfig(
+        type="fs",
+        id="local",
+        root=tmp_path,
+        poll_interval_s=60.0,
+    )
+    manager = PollerManager(
+        configs=[cfg], job_repo=jobs, sync_repo=sync, supported_extensions=[".md"]
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.1)
+    await manager.stop()
+
+    await manager.start()
+    try:
+        # The poller task must STAY alive after its initial sweep so the
+        # watchfiles + periodic-sweep loops keep running. live_pollers
+        # drops to 0 immediately if run() exited because _stop was set.
+        await asyncio.sleep(0.1)
+        assert manager.live_pollers == 1
     finally:
         await manager.stop()
 

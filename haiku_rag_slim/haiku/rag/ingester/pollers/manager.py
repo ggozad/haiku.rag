@@ -11,6 +11,7 @@ from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 
 if TYPE_CHECKING:
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
+    from haiku.rag.ingester.sources.base import Source
 
 logger = logging.getLogger(__name__)
 
@@ -29,51 +30,51 @@ class PollerManager:
         supported_extensions: list[str] | None = None,
         default_max_attempts: int = 5,
     ):
-        self._configs = configs
         self._jobs = job_repo
         self._sync = sync_repo
         self._supported_extensions = supported_extensions
         self._default_max_attempts = default_max_attempts
-        self._pollers: list[BasePoller] = []
+        # Build eagerly so `sources` is available before `start()` — any
+        # downstream component that holds the configured Source list (e.g.
+        # WorkerPool) can do so via plain construction order.
+        self._pollers: list[BasePoller] = [self._build_poller(cfg) for cfg in configs]
         self._tasks: list[asyncio.Task] = []
+        self._started = False
 
-    def build_pollers(self) -> list[BasePoller]:
-        pollers: list[BasePoller] = []
-        for cfg in self._configs:
-            source = build_source(cfg, supported_extensions=self._supported_extensions)
-            breaker = CircuitBreaker(cfg.circuit_breaker)
-            if isinstance(cfg, FSSourceConfig):
-                from haiku.rag.ingester.sources.fs import FSSource
+    def _build_poller(self, cfg: SourceConfig) -> BasePoller:
+        source = build_source(cfg, supported_extensions=self._supported_extensions)
+        breaker = CircuitBreaker(cfg.circuit_breaker)
+        if isinstance(cfg, FSSourceConfig):
+            from haiku.rag.ingester.sources.fs import FSSource
 
-                assert isinstance(source, FSSource)
-                pollers.append(
-                    FSPoller(
-                        source=source,
-                        config=cfg,
-                        job_repo=self._jobs,
-                        sync_repo=self._sync,
-                        breaker=breaker,
-                        default_max_attempts=self._default_max_attempts,
-                    )
-                )
-            else:
-                pollers.append(
-                    PeriodicPoller(
-                        source=source,
-                        config=cfg,
-                        job_repo=self._jobs,
-                        sync_repo=self._sync,
-                        breaker=breaker,
-                        default_max_attempts=self._default_max_attempts,
-                    )
-                )
-        return pollers
+            assert isinstance(source, FSSource)
+            return FSPoller(
+                source=source,
+                config=cfg,
+                job_repo=self._jobs,
+                sync_repo=self._sync,
+                breaker=breaker,
+                default_max_attempts=self._default_max_attempts,
+            )
+        return PeriodicPoller(
+            source=source,
+            config=cfg,
+            job_repo=self._jobs,
+            sync_repo=self._sync,
+            breaker=breaker,
+            default_max_attempts=self._default_max_attempts,
+        )
 
     async def start(self) -> None:
-        if self._pollers:
+        if self._started:
             raise RuntimeError("PollerManager already started")
-        self._pollers = self.build_pollers()
+        self._started = True
         for poller in self._pollers:
+            # Reset the stop signal synchronously *before* scheduling the
+            # task. If a poller is being restarted (stop() set the event
+            # on the previous cycle) clearing inside run() would race with
+            # any concurrent stop() and could deadlock.
+            poller._stop.clear()
             self._tasks.append(asyncio.create_task(poller.run()))
 
     async def stop(self) -> None:
@@ -82,11 +83,16 @@ class PollerManager:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
-        self._pollers.clear()
+        self._started = False
 
     @property
     def pollers(self) -> list[BasePoller]:
         return list(self._pollers)
+
+    @property
+    def sources(self) -> list["Source"]:
+        """Configured Source adapters, one per poller, in config order."""
+        return [p.source for p in self._pollers]
 
     @property
     def live_pollers(self) -> int:

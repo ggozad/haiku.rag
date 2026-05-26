@@ -11,6 +11,7 @@ from haiku.rag.ingester.workers.retry import RetryPolicy, compute_backoff
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.sources.base import Source
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class WorkerPool:
         poll_idle_interval_s: float = 1.0,
         claim_timeout_s: int = 1800,
         reaper_interval_s: int = 60,
+        sources: "list[Source] | None" = None,
     ):
         self._client = client
         self._jobs = job_repo
@@ -46,6 +48,7 @@ class WorkerPool:
         self._poll_idle_s = poll_idle_interval_s
         self._claim_timeout_s = claim_timeout_s
         self._reaper_interval_s = reaper_interval_s
+        self._sources: list[Source] = list(sources) if sources else []
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
@@ -123,7 +126,7 @@ class WorkerPool:
         started = time.monotonic()
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:
-            result = await run_job(self._client, job)
+            result = await run_job(self._client, job, sources=self._sources)
         except asyncio.CancelledError:
             # Graceful shutdown cancelled us mid-flight. Release the claim so
             # the next process can pick the job up immediately instead of

@@ -12,6 +12,7 @@ from haiku.rag.telemetry import attach_context, logfire
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.sources.base import Source
 
 
 class JobResult(BaseModel):
@@ -66,14 +67,19 @@ def _classify(exc: BaseException) -> Exception:
     return TransientError(f"unexpected: {exc!r}")
 
 
-async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
-    """Execute the work described by `job`. Raises PermanentError or
-    TransientError; the worker uses that to decide dead vs retry."""
+async def run_job(
+    client: "HaikuRAG",
+    job: Job,
+    *,
+    sources: list["Source"] | None = None,
+) -> JobResult:
+    """Execute the work described by `job`. `sources` is the list of
+    configured Source adapters — `resolve_fetcher` prefers them over
+    URI-scheme adhoc adapters so workers reuse the same authenticated /
+    pre-configured fetch context the pollers used at discovery. Raises
+    PermanentError or TransientError; the worker uses that to decide
+    dead vs retry."""
     extra = job.extra or {}
-    storage_options = extra.get("storage_options")
-    user_metadata = extra.get("metadata", {})
-    # Restore the poller's trace context (if any) so the job span nests
-    # under the `ingester.poller.sweep` that enqueued it.
     parent_ctx = extra.get("_otel")
     attach = attach_context(parent_ctx) if parent_ctx else nullcontext()
 
@@ -97,8 +103,7 @@ async def run_job(client: "HaikuRAG", job: Job) -> JobResult:
 
             result = await client.create_document_from_source(
                 job.uri,
-                metadata=user_metadata,
-                storage_options=storage_options,
+                sources=sources,
             )
             # Directory ingestion returns list[Document] — workers ingest single
             # resources, so a list here is a programming error in the caller.

@@ -50,6 +50,7 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
         reaper_interval_s=kwargs.pop("reaper_interval_s", 60),
         claim_timeout_s=kwargs.pop("claim_timeout_s", 60),
         retry_policy=kwargs.pop("retry_policy", RetryPolicy()),
+        sources=kwargs.pop("sources", None),
     )
 
 
@@ -193,6 +194,26 @@ async def test_keyboard_interrupt_propagates_not_classified(client, jobs, sync):
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.CLAIMED
+
+
+@pytest.mark.asyncio
+async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
+    """The pool's `sources` list flows through run_job to
+    client.create_document_from_source so resolve_fetcher can pick the
+    configured authenticated source over an adhoc adapter."""
+    from haiku.rag.ingester.sources.http import HTTPSource
+
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    configured = HTTPSource(source_id="urls", headers={"Authorization": "Bearer abc"})
+    await jobs.enqueue("src", "https://example.com/x", JobOp.UPSERT)
+
+    pool = _pool(client, jobs, sync, sources=[configured])
+    await pool.drain_once()
+
+    kwargs = client.create_document_from_source.await_args.kwargs
+    assert kwargs["sources"] == [configured]
 
 
 # --- start / stop lifecycle ---

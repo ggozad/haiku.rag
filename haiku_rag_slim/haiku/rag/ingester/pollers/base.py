@@ -16,22 +16,14 @@ from haiku.rag.telemetry import get_context, logfire
 logger = logging.getLogger(__name__)
 
 
-def _enqueue_extra(cfg: SourceConfig) -> dict | None:
-    """Per-source state worth carrying into the job (so the worker can rebuild
-    the same fetch context when it processes), plus the current logfire trace
-    context so the worker's `ingester.job` span nests under the
-    `ingester.poller.sweep` that enqueued it."""
-    extra: dict = {}
-    storage_options = getattr(cfg, "storage_options", None)
-    if storage_options:
-        extra["storage_options"] = dict(storage_options)
-    headers = getattr(cfg, "headers", None)
-    if headers:
-        extra["headers"] = dict(headers)
+def _enqueue_extra() -> dict | None:
+    """Per-job context the worker can't reconstruct from config alone.
+    Currently only the active logfire trace carrier so `ingester.job`
+    nests under the sweep/watch span that enqueued it. Connection details
+    (headers, auth, storage_options) come from the configured Source
+    instance the worker resolves at run time."""
     carrier = get_context()
-    if carrier:
-        extra["_otel"] = dict(carrier)
-    return extra or None
+    return {"_otel": dict(carrier)} if carrier else None
 
 
 def _max_attempts(cfg: SourceConfig, default: int) -> int:
@@ -162,7 +154,7 @@ class BasePoller:
                 op=JobOp.UPSERT,
                 revision=event.revision,
                 max_attempts=_max_attempts(self.config, self._default_max_attempts),
-                extra=_enqueue_extra(self.config),
+                extra=_enqueue_extra(),
             )
             # Don't write revision to sync_state here — the worker writes it
             # after a successful ingestion. last_seen_at gets bumped to keep
@@ -189,5 +181,5 @@ class BasePoller:
                 event.uri,
                 op=JobOp.DELETE,
                 max_attempts=_max_attempts(self.config, self._default_max_attempts),
-                extra=_enqueue_extra(self.config),
+                extra=_enqueue_extra(),
             )

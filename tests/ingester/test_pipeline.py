@@ -51,31 +51,32 @@ async def test_upsert_calls_create_document_from_source_and_returns_metadata():
         },
     )
 
-    result = await run_job(
-        client, _job(extra={"metadata": {"k": "v"}, "storage_options": {"o": "1"}})
-    )
+    result = await run_job(client, _job())
 
     assert result.document_id == "doc-42"
     assert result.revision == "xyz"
     assert result.content_hash == "abcd"
     assert result.deleted is False
     client.create_document_from_source.assert_awaited_once_with(
-        "https://example.com/a.pdf",
-        metadata={"k": "v"},
-        storage_options={"o": "1"},
+        "https://example.com/a.pdf", sources=None
     )
 
 
 @pytest.mark.asyncio
-async def test_upsert_without_extra_passes_empty_metadata():
+async def test_upsert_threads_configured_sources_to_client():
+    """The list of configured Source adapters reaches the client so
+    resolve_fetcher can pick the authenticated one over an adhoc adapter."""
+    from haiku.rag.ingester.sources.http import HTTPSource
+
     client = _mock_client()
     client.create_document_from_source.return_value = Document(
         id="d", content="x", uri="u", metadata={}
     )
+    configured = HTTPSource(source_id="urls", headers={"Authorization": "Bearer abc"})
 
-    await run_job(client, _job())
+    await run_job(client, _job(), sources=[configured])
     client.create_document_from_source.assert_awaited_once_with(
-        "https://example.com/a.pdf", metadata={}, storage_options=None
+        "https://example.com/a.pdf", sources=[configured]
     )
 
 

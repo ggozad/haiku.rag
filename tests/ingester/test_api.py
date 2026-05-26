@@ -319,8 +319,6 @@ def _build_pollers_state(tmp_path, jobs, sync, source_id: str = "local"):
 
     cfg = FSSourceConfig(type="fs", id=source_id, root=tmp_path)
     manager = PollerManager(configs=[cfg], job_repo=jobs, sync_repo=sync)
-    # Build pollers without starting tasks — we want to inspect/refresh directly.
-    manager._pollers = manager.build_pollers()
     state = APIState(
         config=AppConfig(),
         job_repo=jobs,

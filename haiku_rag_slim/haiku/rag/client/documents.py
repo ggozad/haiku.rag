@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.sources.base import Source
 
 
 async def _store_document_with_chunks(
@@ -306,6 +307,7 @@ async def create_document_from_source(
     metadata: dict | None = None,
     uri: str | None = None,
     storage_options: dict[str, str] | None = None,
+    sources: "list[Source] | None" = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -370,7 +372,11 @@ async def create_document_from_source(
             )
 
     # Single resource — resolve the right Source adapter for this URI.
-    fetcher = resolve_fetcher(source_str, storage_options=storage_options)
+    # `sources` (configured, in-order) wins over scheme-based adhoc adapters
+    # so worker fetches reuse the authenticated source the poller used.
+    fetcher = resolve_fetcher(
+        source_str, sources=sources, storage_options=storage_options
+    )
 
     # The stored URI is what we look up + persist by. For an explicit uri
     # override, use it as-is. For a file:// input the source string is

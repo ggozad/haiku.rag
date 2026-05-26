@@ -61,6 +61,13 @@ class IngesterApp:
                 self._db_path, config=self._config, create=True
             ) as client:
                 self._client = client
+                self._pollers = PollerManager(
+                    configs=ingester_cfg.sources,
+                    job_repo=self._jobs,
+                    sync_repo=self._sync,
+                    supported_extensions=supported_extensions,
+                    default_max_attempts=ingester_cfg.workers.retry.max_attempts,
+                )
                 self._pool = WorkerPool(
                     client=client,
                     job_repo=self._jobs,
@@ -71,13 +78,10 @@ class IngesterApp:
                     poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
                     claim_timeout_s=ingester_cfg.workers.claim_timeout_s,
                     reaper_interval_s=ingester_cfg.workers.reaper_interval_s,
-                )
-                self._pollers = PollerManager(
-                    configs=ingester_cfg.sources,
-                    job_repo=self._jobs,
-                    sync_repo=self._sync,
-                    supported_extensions=supported_extensions,
-                    default_max_attempts=ingester_cfg.workers.retry.max_attempts,
+                    # Same Source instances the pollers discover with —
+                    # workers resolve URIs through them so authenticated
+                    # HTTP / WebDAV / S3 fetches reuse credentials.
+                    sources=self._pollers.sources,
                 )
 
                 stop_event = asyncio.Event()
@@ -89,8 +93,8 @@ class IngesterApp:
                         # Windows; signal handlers unavailable in asyncio.
                         pass
 
-                await self._pool.start()
                 await self._pollers.start()
+                await self._pool.start()
                 # Log the docling-serve fleet size when relevant so the
                 # operator can eyeball the worker/instance ratio. The convert
                 # phase is usually the throughput ceiling.
