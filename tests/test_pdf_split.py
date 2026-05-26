@@ -70,6 +70,53 @@ def test_iter_pdf_slices_rejects_zero_slice_size(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_convert_unlinks_slice_tempfile_on_write_failure(tmp_path, monkeypatch):
+    """If writing the slice bytes to the tempfile raises (e.g. ENOSPC), the
+    tempfile is created on disk but never reaches the converter. The original
+    error must surface and the orphaned file must be removed."""
+    src = _make_pdf(2, tmp_path)
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    import tempfile as _tempfile
+
+    real_factory = _tempfile.NamedTemporaryFile
+    created: list[Path] = []
+
+    def _make_failing_tempfile(*args, **kwargs):
+        handle = real_factory(*args, **kwargs)
+        created.append(Path(handle.name))
+        original_write = handle.write
+
+        def _raising_write(_data):
+            # Touch the underlying file once so we know the path exists on
+            # disk and the cleanup actually has something to remove.
+            original_write(b"\0")
+            raise OSError("No space left on device")
+
+        handle.write = _raising_write
+        return handle
+
+    monkeypatch.setattr(_tempfile, "NamedTemporaryFile", _make_failing_tempfile)
+
+    class _UnusedConverter:
+        async def convert_file(self, path: Path, *, source_uri):
+            raise AssertionError("converter must not be reached on write failure")
+
+    with pytest.raises(OSError, match="No space left on device"):
+        await convert_pdf_with_splitting(
+            _UnusedConverter(),  # ty: ignore[invalid-argument-type]
+            src,
+            source_uri=None,
+            slice_size=1,
+        )
+
+    assert created, "expected NamedTemporaryFile to be called at least once"
+    leftover = [p for p in created if p.exists()]
+    assert leftover == [], f"tempfiles leaked after write failure: {leftover}"
+
+
+@pytest.mark.asyncio
 async def test_convert_aborts_and_cleans_up_on_mid_stream_slice_failure(
     tmp_path, monkeypatch
 ):

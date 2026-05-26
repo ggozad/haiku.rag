@@ -99,13 +99,14 @@ async def convert_pdf_with_splitting(
             if slice_item is _SENTINEL:
                 break
             start, end, pdf_bytes = slice_item
-            with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=".pdf", delete=False
-            ) as tmp:
-                tmp.write(pdf_bytes)
-                tmp.flush()
-                tmp_path = Path(tmp.name)
+            tmp_path: Path | None = None
             try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", suffix=".pdf", delete=False
+                ) as tmp:
+                    tmp_path = Path(tmp.name)
+                    tmp.write(pdf_bytes)
+                    tmp.flush()
                 with logfire.span(
                     "document.convert_slice",
                     uri=source_uri,
@@ -122,7 +123,12 @@ async def convert_pdf_with_splitting(
                         ) from exc
                 converted.append(slice_doc)
             finally:
-                tmp_path.unlink(missing_ok=True)
+                # `delete=False` is required so the converter (which opens
+                # tmp_path itself) sees a fully written, closed file. Unlink
+                # in finally so a mid-write disk-full / mid-convert failure
+                # doesn't leak the slice on disk.
+                if tmp_path is not None:
+                    tmp_path.unlink(missing_ok=True)
     finally:
         # Close the generator under the pdfium lock so src.close() runs
         # even when we abort mid-stream (slice failure, cancellation).
