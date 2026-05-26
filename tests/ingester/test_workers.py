@@ -315,6 +315,58 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeypatch):
+    """A second cancel arriving while the cancel-handler is awaiting
+    release_if_claimed must not strand the claim. The shielded await may
+    raise CancelledError, but the underlying SQL update keeps running and
+    completes the release as an orphan task."""
+    release_entered = asyncio.Event()
+    release_done = asyncio.Event()
+
+    real_release = jobs.release_if_claimed
+
+    async def _slow_release(job_id):
+        release_entered.set()
+        # Long enough for the second cancel to arrive mid-update.
+        await asyncio.sleep(0.2)
+        result = await real_release(job_id)
+        release_done.set()
+        return result
+
+    monkeypatch.setattr(jobs, "release_if_claimed", _slow_release)
+
+    async def _hangs_forever(*args, **kwargs):
+        await asyncio.sleep(60)
+        return Document(id="doc", content="x", uri="u")
+
+    client.create_document_from_source.side_effect = _hangs_forever
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    await pool.start()
+    try:
+        await asyncio.sleep(0.05)
+        worker_task = pool._workers[0]
+        worker_task.cancel()
+        # Wait until the worker is inside the shielded release call.
+        await asyncio.wait_for(release_entered.wait(), timeout=1.0)
+        # Second cancel mid-cleanup. Shield holds the SQL update upright.
+        worker_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await worker_task
+        # Background release Task still alive; let it finish.
+        await asyncio.wait_for(release_done.wait(), timeout=1.0)
+    finally:
+        await pool.stop()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.QUEUED
+    assert refreshed.claimed_by is None
+
+
+@pytest.mark.asyncio
 async def test_double_start_raises(client, jobs, sync):
     pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()

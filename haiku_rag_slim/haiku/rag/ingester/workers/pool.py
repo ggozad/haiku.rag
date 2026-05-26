@@ -128,11 +128,20 @@ class WorkerPool:
         try:
             result = await run_job(self._client, job, sources=self._sources)
         except asyncio.CancelledError:
-            # Graceful shutdown cancelled us mid-flight. Release the claim so
-            # the next process can pick the job up immediately instead of
-            # waiting on the reaper's claim_timeout_s.
-            await self._jobs.release_if_claimed(job.id)
-            logger.info("Job %s released back to queue on cancel", job.id)
+            # Graceful shutdown cancelled us mid-flight. Release the claim
+            # under shield so a second cancel (e.g. shutdown_grace_s elapses
+            # and IngesterApp's wait_for cancels the gather again) can't
+            # interrupt the SQL update and strand the claim until the reaper
+            # runs. The reaper is still the backstop, but releasing eagerly
+            # lets a restart re-pick the job immediately.
+            try:
+                await asyncio.shield(self._jobs.release_if_claimed(job.id))
+            except asyncio.CancelledError:
+                logger.info(
+                    "Job %s cancel-cleanup interrupted; reaper will reclaim", job.id
+                )
+            else:
+                logger.info("Job %s released back to queue on cancel", job.id)
             raise
         except PermanentError as e:
             await self._jobs.mark_dead(job.id, str(e))
