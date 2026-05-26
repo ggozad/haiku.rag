@@ -112,7 +112,7 @@ class TestRAGSkillCreation:
 
         skill = create_skill(config=test_app_config, db_path=temp_db_path)
         tool_names = {getattr(t, "__name__") for t in skill.tools if callable(t)}
-        assert tool_names == {"search", "list_documents", "get_document", "cite"}
+        assert tool_names == {"search", "cite"}
 
     def test_create_skill_has_state(self, test_app_config, temp_db_path):
         from haiku.rag.skills.rag import RAGState, create_skill
@@ -218,52 +218,6 @@ class TestSearchTool:
         assert "Search limit reached" in result
         assert ctx.deps.search_count == 3
         assert len(state.searches) == 2
-
-
-class TestListDocumentsTool:
-    async def test_list_documents_returns_results(self, rag_db, rag_client):
-        from haiku.rag.skills.rag import create_skill
-
-        skill = create_skill(db_path=rag_db)
-        list_docs = _get_tool(skill, "list_documents")
-        ctx = _make_ctx(rag=rag_client)
-        results = await list_docs(ctx)
-        assert isinstance(results, list)
-        assert len(results) == 2
-
-    async def test_list_documents_applies_document_filter_from_state(
-        self, rag_db, rag_client
-    ):
-        from haiku.rag.skills.rag import RAGState, create_skill
-
-        skill = create_skill(db_path=rag_db)
-        list_docs = _get_tool(skill, "list_documents")
-        state = RAGState(document_filter="title = 'AI Overview'")
-        ctx = _make_ctx(state, rag=rag_client)
-        results = await list_docs(ctx)
-        assert len(results) == 1
-        assert results[0]["title"] == "AI Overview"
-
-
-class TestGetDocumentTool:
-    async def test_get_document_by_title(self, rag_db, rag_client):
-        from haiku.rag.skills.rag import create_skill
-
-        skill = create_skill(db_path=rag_db)
-        get_doc = _get_tool(skill, "get_document")
-        ctx = _make_ctx(rag=rag_client)
-        result = await get_doc(ctx, query="AI Overview")
-        assert result is not None
-        assert result["title"] == "AI Overview"
-
-    async def test_get_document_not_found(self, rag_db, rag_client):
-        from haiku.rag.skills.rag import create_skill
-
-        skill = create_skill(db_path=rag_db)
-        get_doc = _get_tool(skill, "get_document")
-        ctx = _make_ctx(rag=rag_client)
-        result = await get_doc(ctx, query="nonexistent document xyz")
-        assert result is None
 
 
 class TestCiteTool:
