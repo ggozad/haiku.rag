@@ -135,10 +135,6 @@ class FSSource:
             if not self.filter.include_file(str(path)):
                 continue
             uri = path.as_uri()
-            if uri in seen:
-                # A symlink and its target (or two symlinks to the same file)
-                # both walked through; the first wins so the queue sees one job.
-                continue
             revision = str(path.stat().st_mtime_ns)
             seen.add(uri)
             previous = snapshot.get(uri)

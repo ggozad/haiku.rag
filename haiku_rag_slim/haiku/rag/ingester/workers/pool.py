@@ -108,13 +108,7 @@ class WorkerPool:
 
     async def _worker_loop(self, worker_id: str) -> None:
         while not self._stop.is_set():
-            try:
-                job = await self._jobs.claim_next(worker_id)
-            except Exception:  # pragma: no cover - defensive against DB hiccups
-                logger.exception("claim_next failed in %s", worker_id)
-                await self._sleep_or_stop(self._poll_idle_s)
-                continue
-
+            job = await self._jobs.claim_next(worker_id)
             if job is None:
                 await self._sleep_or_stop(self._poll_idle_s)
                 continue
@@ -127,12 +121,9 @@ class WorkerPool:
             await self._sleep_or_stop(self._reaper_interval_s)
             if self._stop.is_set():
                 return
-            try:
-                reset = await self._jobs.reap_stale(self._claim_timeout_s)
-                if reset:
-                    logger.info("Reaper reset %d stale claim(s)", reset)
-            except Exception:  # pragma: no cover - defensive against DB hiccups
-                logger.exception("reaper failed")
+            reset = await self._jobs.reap_stale(self._claim_timeout_s)
+            if reset:
+                logger.info("Reaper reset %d stale claim(s)", reset)
 
     async def _sleep_or_stop(self, seconds: float) -> None:
         try:
@@ -198,12 +189,6 @@ class WorkerPool:
                 e,
             )
             return
-        except Exception as e:  # pragma: no cover - pipeline classifier net
-            # Defensive: pipeline classifier should have caught everything.
-            await self._jobs.mark_dead(job.id, f"unclassified: {e!r}", worker_id)
-            logger.exception("Unclassified error in job %s", job.id)
-            return
-
         # Guard against the reaper race: if our claim was reset and another
         # worker re-claimed the job, mark_succeeded is a no-op. Don't write
         # sync_state in that case — the new worker will write it when it

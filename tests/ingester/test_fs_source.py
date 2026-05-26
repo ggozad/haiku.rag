@@ -219,17 +219,16 @@ async def test_fs_source_discover_follows_within_root_symlinks(fs_root: Path):
     """A symlink whose target lives inside root is legitimate — supports/
     head/fetch all accept it (resolve-then-check), so discover() must too,
     otherwise an ad-hoc add-src on a link works but the poller never picks
-    it up. The emitted URI is the resolved target's, and the seen-set
-    dedupes when both the link and its target are walked."""
+    it up. We emit the resolved target's URI, never the alias's; redundant
+    yields from walking both alias and target are absorbed by the queue's
+    unique index on (source_id, uri, op)."""
     target = fs_root / "real.md"
     target.write_text("real content")
     (fs_root / "alias.md").symlink_to(target)
     src = FSSource(root=fs_root, supported_extensions=[".md"])
     events = [e async for e in src.discover(since=None)]
     uris = [e.uri for e in events]
-    # The resolved target appears exactly once even though both `alias.md`
-    # and `real.md` are encountered during the walk.
-    assert uris.count(target.as_uri()) == 1
+    assert target.as_uri() in uris
     # The alias's own URI is not emitted — we normalise to the target.
     assert (fs_root / "alias.md").as_uri() not in uris
 

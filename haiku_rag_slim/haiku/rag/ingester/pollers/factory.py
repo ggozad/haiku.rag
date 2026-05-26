@@ -34,8 +34,6 @@ def build_source(
             source_id=cfg.id,
         )
     if isinstance(cfg, HTTPSourceConfig):
-        if cfg.id is None:  # pragma: no cover - config-validation guard
-            raise ValueError("HTTPSourceConfig.id is required")
         return HTTPSource(source_id=cfg.id, urls=cfg.urls, headers=cfg.headers)
     if isinstance(cfg, S3SourceConfig):
         return S3Source(
@@ -47,8 +45,6 @@ def build_source(
             source_id=cfg.id,
         )
     if isinstance(cfg, WebDAVSourceConfig):
-        if cfg.id is None:  # pragma: no cover - config-validation guard
-            raise ValueError("WebDAVSourceConfig.id is required")
         return WebDAVSource(
             source_id=cfg.id,
             base_url=cfg.base_url,

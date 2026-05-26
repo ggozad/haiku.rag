@@ -367,6 +367,9 @@ class FSSourceConfig(_SourceBase):
 
 class HTTPSourceConfig(_SourceBase):
     type: Literal["http"]
+    # HTTP sources have no natural key to derive an id from (a list of urls
+    # has no canonical representation), so require one.
+    id: str
     urls: list[str] = []
     headers: dict[str, str] = Field(default_factory=dict)
 
@@ -384,6 +387,9 @@ class WebDAVSourceConfig(_SourceBase):
     are discovered via PROPFIND on `base_url`; fetch is plain HTTP GET."""
 
     type: Literal["webdav"]
+    # base_url can be deep + opaque (long URL paths, credentials embedded);
+    # require an explicit short id for the queue and logs.
+    id: str
     base_url: str
     username: str | None = None
     password: str | None = None
