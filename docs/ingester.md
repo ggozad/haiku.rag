@@ -249,6 +249,13 @@ By default the ingester exposes a FastAPI control plane on
 `127.0.0.1:8765`. Set `ingester.api.auth_token` to require a Bearer
 token; without one the API stays open and the service logs a warning.
 
+!!! warning "Non-loopback binds need a token"
+    Loopback (`127.0.0.1`) is local-only and safe to leave open. If
+    you bind to any other interface (`0.0.0.0`, a LAN IP, behind a
+    reverse proxy) **set `auth_token`** — the control plane can
+    cancel jobs, retry from the DLQ, and trigger source refreshes.
+    The startup warning is your only signal that you forgot.
+
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/` | browser dashboard (HTML; unauthenticated, the JS attaches the bearer on its own JSON fetches) |
@@ -276,7 +283,7 @@ ingester:
     enabled: true
     host: 127.0.0.1
     port: 8765
-    auth_token: ${INGESTER_TOKEN}             # null → unauthenticated
+    auth_token: secret                        # null → unauthenticated
 ```
 
 ## Operating

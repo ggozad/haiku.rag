@@ -67,6 +67,9 @@ services:
       # Logfire emits spans when this is set; stays silent (no telemetry) when unset.
       # Set LOGFIRE_TOKEN in examples/docker/.env (gitignored) to enable.
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      # Bearer token the control plane requires when host isn't loopback.
+      # Set INGESTER_TOKEN in examples/docker/.env (gitignored).
+      - INGESTER_TOKEN=${INGESTER_TOKEN:-}
     depends_on:
       docling-serve-1:
         condition: service_healthy

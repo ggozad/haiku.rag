@@ -13,6 +13,9 @@ ingester:
   api:
     # Bind to all interfaces inside the container so docker port-mapping works.
     host: 0.0.0.0
+    # Non-loopback bind: set a bearer token. Source from an env var so the
+    # token doesn't sit in this file checked into ops repos.
+    auth_token: ${INGESTER_TOKEN}
   sources:
     - type: fs
       id: docs

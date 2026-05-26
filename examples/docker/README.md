@@ -113,6 +113,15 @@ export ANTHROPIC_API_KEY=your-key-here
 docker compose up -d
 ```
 
+The ingester container binds the control plane to `0.0.0.0` so the host
+port-mapping works. The example config requires a bearer token via
+`INGESTER_TOKEN`; set it in `.env` (gitignored) alongside the API keys
+before bringing the stack up:
+
+```bash
+echo "INGESTER_TOKEN=$(openssl rand -hex 32)" >> .env
+```
+
 ## Documentation
 
 - [Remote Processing](https://ggozad.github.io/haiku.rag/remote-processing/)
