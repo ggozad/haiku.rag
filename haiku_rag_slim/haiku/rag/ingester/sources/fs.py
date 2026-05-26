@@ -109,16 +109,23 @@ class FSSource:
         seen: set[str] = set()
 
         # os.walk with followlinks=False so symlinked directories aren't
-        # traversed. Then per-file: skip individual file-symlinks too, since
-        # they could point outside root and reading them would leak data.
-        # Operators wanting to ingest content from outside root should
-        # bind-mount it in or configure a second source.
+        # traversed (avoids cycles and unbounded recursion). File symlinks
+        # are followed iff their target resolves inside root, matching
+        # supports/head/fetch's resolve-then-check behaviour. Out-of-root
+        # targets stay skipped so a stray link can't exfiltrate data the
+        # operator didn't intend to expose.
         candidates: list[Path] = []
         for dirpath, _dirnames, filenames in os.walk(self.root, followlinks=False):
             for filename in filenames:
                 path = Path(dirpath) / filename
                 if path.is_symlink():
-                    continue
+                    try:
+                        resolved = path.resolve(strict=False)
+                    except OSError:
+                        continue
+                    if not resolved.is_relative_to(self.root):
+                        continue
+                    path = resolved
                 candidates.append(path)
         candidates.sort()
 
@@ -128,6 +135,10 @@ class FSSource:
             if not self.filter.include_file(str(path)):
                 continue
             uri = path.as_uri()
+            if uri in seen:
+                # A symlink and its target (or two symlinks to the same file)
+                # both walked through; the first wins so the queue sees one job.
+                continue
             revision = str(path.stat().st_mtime_ns)
             seen.add(uri)
             previous = snapshot.get(uri)

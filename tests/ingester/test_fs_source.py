@@ -195,11 +195,13 @@ async def test_fs_source_fetch_rejects_symlink_to_outside_file(
 
 
 @pytest.mark.asyncio
-async def test_fs_source_discover_skips_symlinks(fs_root: Path, tmp_path: Path):
-    """rglob (and os.walk by default) follows symlinks. We use
-    followlinks=False AND an explicit per-file is_symlink() filter so a
-    malicious symlink under root can't be discovered, can't be queued, and
-    can't be fetched even if its URI ends up enqueued some other way."""
+async def test_fs_source_discover_skips_symlinks_pointing_outside_root(
+    fs_root: Path, tmp_path: Path
+):
+    """A symlink under root whose target resolves outside root must not be
+    discovered — otherwise a stray link could exfiltrate files the operator
+    didn't intend to expose. Mirrors the resolve-then-check guard that
+    supports/head/fetch use."""
     secret = tmp_path.parent / "secret.md"
     secret.write_text("sensitive")
     link = fs_root / "evil.md"
@@ -207,8 +209,29 @@ async def test_fs_source_discover_skips_symlinks(fs_root: Path, tmp_path: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md"])
     uris = {e.uri async for e in src.discover(since=None)}
     assert link.as_uri() not in uris
+    assert secret.as_uri() not in uris
     # And the legitimate files in fs_root still come through.
     assert (fs_root / "a.md").as_uri() in uris
+
+
+@pytest.mark.asyncio
+async def test_fs_source_discover_follows_within_root_symlinks(fs_root: Path):
+    """A symlink whose target lives inside root is legitimate — supports/
+    head/fetch all accept it (resolve-then-check), so discover() must too,
+    otherwise an ad-hoc add-src on a link works but the poller never picks
+    it up. The emitted URI is the resolved target's, and the seen-set
+    dedupes when both the link and its target are walked."""
+    target = fs_root / "real.md"
+    target.write_text("real content")
+    (fs_root / "alias.md").symlink_to(target)
+    src = FSSource(root=fs_root, supported_extensions=[".md"])
+    events = [e async for e in src.discover(since=None)]
+    uris = [e.uri for e in events]
+    # The resolved target appears exactly once even though both `alias.md`
+    # and `real.md` are encountered during the walk.
+    assert uris.count(target.as_uri()) == 1
+    # The alias's own URI is not emitted — we normalise to the target.
+    assert (fs_root / "alias.md").as_uri() not in uris
 
 
 @pytest.mark.asyncio
