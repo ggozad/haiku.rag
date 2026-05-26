@@ -18,6 +18,11 @@ Context expansion is automatic and section-aware. For structured documents (with
 !!! note "Reranking behavior"
     When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.
 
+!!! warning "Reranker compatibility with multimodal content"
+    Text-only rerankers (mxbai, cohere, jina, vllm, cross-encoder) score documents by their text content. Picture chunks emitted by docling have empty content, so the reranker scores them near zero and drops them from the top results.
+
+    If retrieval relies on visual content (charts, figures, screenshots with text rendered as pixels), disable reranking by leaving `reranking.model` empty so the multimodal embedder's ranking survives.
+
 ## Question Answering Configuration
 
 Configure the rag skill (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
