@@ -177,8 +177,11 @@ class JobRepo:
             await self._conn.commit()
 
     async def retry(self, job_id: str) -> Job:
-        """Rescue a dead job: status='queued', attempts=0, error cleared.
-        Raises KeyError if the job doesn't exist."""
+        """Reset a `dead` or `queued` job: status='queued', attempts=0,
+        error cleared, scheduled for immediate re-claim. Refuses `claimed`
+        rows (would race with the worker still processing) and `succeeded`
+        rows (re-ingest via UPSERT instead). Raises KeyError when the row
+        is missing or in a non-retryable state."""
         now = _utcnow_iso()
         async with self._lock:
             async with self._conn.execute(
@@ -191,7 +194,7 @@ class JobRepo:
                     claimed_by=NULL,
                     completed_at=NULL,
                     scheduled_at=?
-                WHERE id=?
+                WHERE id=? AND status IN ('dead', 'queued')
                 RETURNING *
                 """,
                 (now, job_id),
@@ -199,7 +202,7 @@ class JobRepo:
                 row = await cursor.fetchone()
             await self._conn.commit()
         if not row:
-            raise KeyError(f"Job {job_id!r} not found")
+            raise KeyError(f"Job {job_id!r} not found or not retryable")
         return _row_to_job(row)
 
     async def cancel(self, job_id: str) -> bool:
@@ -335,8 +338,9 @@ class JobRepo:
         return row is not None
 
     async def reap_stale(self, claim_timeout_seconds: int) -> int:
-        """Return claimed jobs whose claimed_at is older than the timeout to
-        the queue. Used by the reaper to recover from crashed workers."""
+        """Reset claimed jobs whose claimed_at is older than the timeout
+        back to `queued`. Decrements `attempts` to undo the increment from
+        `claim_next` — a crashed worker isn't a consumed attempt."""
         threshold = (
             datetime.now(UTC) - timedelta(seconds=claim_timeout_seconds)
         ).isoformat()
@@ -344,7 +348,10 @@ class JobRepo:
             cursor = await self._conn.execute(
                 """
                 UPDATE jobs
-                SET status='queued', claimed_at=NULL, claimed_by=NULL
+                SET status='queued',
+                    claimed_at=NULL,
+                    claimed_by=NULL,
+                    attempts=MAX(0, attempts - 1)
                 WHERE status='claimed' AND claimed_at < ?
                 """,
                 (threshold,),

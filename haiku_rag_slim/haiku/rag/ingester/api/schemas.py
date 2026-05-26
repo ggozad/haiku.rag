@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -17,7 +18,7 @@ class HealthResponse(BaseModel):
 
 class SourceSummary(BaseModel):
     source_id: str
-    type: str
+    type: Literal["fs", "http", "s3", "webdav"]
     last_polled_at: datetime | None
     circuit_breaker_open: bool
     # Reason the most recent sweep attempt was skipped (e.g. "pending_work"),

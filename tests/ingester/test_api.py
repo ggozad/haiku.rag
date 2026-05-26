@@ -344,7 +344,7 @@ async def test_sources_lists_configured(tmp_path, jobs, sync):
     payload = resp.json()
     assert len(payload) == 1
     assert payload[0]["source_id"] == "local"
-    assert payload[0]["type"] == "FSSourceConfig"
+    assert payload[0]["type"] == "fs"
     assert payload[0]["circuit_breaker_open"] is False
 
 

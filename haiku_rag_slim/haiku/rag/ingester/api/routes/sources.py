@@ -17,7 +17,7 @@ async def list_sources(
         summaries.append(
             SourceSummary(
                 source_id=poller.source_id,
-                type=type(poller.config).__name__,
+                type=poller.config.type,
                 last_polled_at=poller.last_polled_at,
                 circuit_breaker_open=poller.is_circuit_open,
                 last_skip_reason=poller.last_skip_reason,

@@ -315,6 +315,43 @@ async def test_retry_unknown_raises(jobs):
         await jobs.retry("not-a-real-id")
 
 
+@pytest.mark.asyncio
+async def test_retry_refuses_claimed_job(jobs):
+    """Resetting a `claimed` row would race with the worker still
+    processing it: claim_next would re-claim and a second worker would
+    process the same URI."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    assert claimed.status is JobStatus.CLAIMED
+
+    with pytest.raises(KeyError):
+        await jobs.retry(job.id)
+
+    # Row is untouched.
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_refuses_succeeded_job(jobs):
+    """Succeeded rows should be re-ingested through the UPSERT path, not
+    re-run from the queue."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_succeeded(claimed.id)
+
+    with pytest.raises(KeyError):
+        await jobs.retry(job.id)
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.SUCCEEDED
+
+
 # --- cancel ---
 
 
@@ -342,6 +379,7 @@ async def test_reap_stale_resets_old_claims(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
     assert claimed is not None
+    assert claimed.attempts == 1
 
     # Backdate claimed_at to simulate a crashed worker.
     long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
@@ -357,6 +395,9 @@ async def test_reap_stale_resets_old_claims(conn, jobs):
     assert refreshed.status is JobStatus.QUEUED
     assert refreshed.claimed_at is None
     assert refreshed.claimed_by is None
+    # claim_next incremented to 1; reap undoes that since a crashed worker
+    # isn't a consumed attempt — matches release_if_claimed semantics.
+    assert refreshed.attempts == 0
 
 
 @pytest.mark.asyncio
