@@ -196,6 +196,20 @@ async def test_list_jobs_returns_recent_first(state, jobs):
 
 
 @pytest.mark.asyncio
+async def test_list_jobs_rejects_out_of_range_limit_and_offset(state):
+    """Limit is capped at 500 and >=1; offset is >=0. Without bounds a
+    malicious or careless ?limit=10000000 would block the event loop on
+    serialization."""
+    async with _client(state) as client:
+        for q in ("/jobs?limit=0", "/jobs?limit=501", "/jobs?offset=-1"):
+            resp = await client.get(q)
+            assert resp.status_code == 422, q
+        for q in ("/dlq?limit=0", "/dlq?limit=501", "/dlq?offset=-1"):
+            resp = await client.get(q)
+            assert resp.status_code == 422, q
+
+
+@pytest.mark.asyncio
 async def test_list_jobs_filters_by_source_and_status(state, jobs):
     # Enqueue b first so claim_next reaches it before the a row.
     j = await jobs.enqueue("b", "u", JobOp.UPSERT)

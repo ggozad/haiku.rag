@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from haiku.rag.ingester.api.server import APIState, get_state
 from haiku.rag.ingester.queue.models import Job, JobStatus
@@ -9,8 +9,8 @@ router = APIRouter(prefix="/dlq", tags=["dlq"])
 @router.get("", response_model=list[Job])
 async def list_dlq(
     source_id: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     state: APIState = Depends(get_state),
 ) -> list[Job]:
     """Jobs that exhausted retries or hit a permanent error."""

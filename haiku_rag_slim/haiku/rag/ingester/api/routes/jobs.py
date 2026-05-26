@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from haiku.rag.ingester.api.schemas import CancelResponse
 from haiku.rag.ingester.api.server import APIState, get_state
@@ -12,8 +12,8 @@ async def list_jobs(
     status: JobStatus | None = None,
     source_id: str | None = None,
     uri: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     state: APIState = Depends(get_state),
 ) -> list[Job]:
     return await state.job_repo.list_jobs(
