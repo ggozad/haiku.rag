@@ -1,21 +1,28 @@
 """Shared client for docling-serve async API."""
 
 import asyncio
+import itertools
 from typing import Any
 
 import httpx
+
+# Process-global registry of round-robin rotators over docling-serve
+# instances, keyed by the sorted tuple of base URLs. Clients are constructed
+# per-job by `get_converter` / `get_chunker`, so the rotation cursor has to
+# live OUTSIDE the instance to actually advance across jobs. Two clients
+# pointing at the same instance set share one rotator; clients with
+# different sets get independent rotators.
+_instance_rotators: dict[tuple[str, ...], "itertools.cycle[str]"] = {}
 
 
 class DoclingServeClient:
     """Client for docling-serve async workflow.
 
-    Handles the submit → poll → fetch pattern used by both conversion and chunking.
-
-    Accepts a list of base URLs and round-robins jobs across them. Each job's
+    Handles the submit → poll → fetch pattern used by both conversion and
+    chunking. Accepts a list of base URLs and round-robins jobs across
+    them via a process-wide rotator keyed by the URL set. Each job's
     submit/poll/result trio stays on the same instance — task IDs are
-    instance-local, so picking a different URL mid-job would 404. The counter
-    is per-process; concurrent processes pick independently, so over many
-    jobs the distribution is even but not coordinated.
+    instance-local, so picking a different URL mid-job would 404.
     """
 
     def __init__(
@@ -33,7 +40,12 @@ class DoclingServeClient:
         self.timeout = timeout
         # transport is for testing — production callers leave it None.
         self._transport = transport
-        self._counter = 0
+        # setdefault is atomic under the GIL — concurrent constructors with
+        # the same instance set will end up sharing one rotator.
+        key = tuple(sorted(self.base_urls))
+        self._instance_rotator = _instance_rotators.setdefault(
+            key, itertools.cycle(self.base_urls)
+        )
 
     def _httpx_client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(timeout=self.timeout, transport=self._transport)
@@ -45,9 +57,7 @@ class DoclingServeClient:
         return self.base_urls[0]
 
     def _pick_url(self) -> str:
-        url = self.base_urls[self._counter % len(self.base_urls)]
-        self._counter += 1
-        return url
+        return next(self._instance_rotator)
 
     def _get_headers(self) -> dict[str, str]:
         """Get headers for API requests."""

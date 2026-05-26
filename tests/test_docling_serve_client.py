@@ -1,4 +1,10 @@
-"""DoclingServeClient round-robin distribution tests."""
+"""DoclingServeClient round-robin distribution tests.
+
+Each test here uses a unique base-URL set so the process-global cycle
+map gives it a fresh itertools.cycle. Don't reuse URL strings across
+tests — cycles persist for the lifetime of the process and would
+resume mid-rotation, breaking specific-order assertions.
+"""
 
 import httpx
 import pytest
@@ -88,6 +94,20 @@ async def test_task_lifecycle_pinned_to_same_url():
 
     # All three requests must be on the same host.
     assert len(set(seen)) == 1
+
+
+def test_round_robin_shared_across_fresh_clients():
+    """get_converter / get_chunker build a NEW DoclingServeClient per job.
+    The cycle has to live outside the instance so successive jobs (each
+    with its own freshly-constructed client) actually rotate."""
+    urls = ["http://x:5001", "http://y:5001", "http://z:5001"]
+    c1 = DoclingServeClient(base_urls=urls)
+    c2 = DoclingServeClient(base_urls=urls)
+    c3 = DoclingServeClient(base_urls=urls)
+    c4 = DoclingServeClient(base_urls=urls)
+
+    picks = [c1._pick_url(), c2._pick_url(), c3._pick_url(), c4._pick_url()]
+    assert picks == [urls[0], urls[1], urls[2], urls[0]]
 
 
 @pytest.mark.asyncio
