@@ -181,6 +181,15 @@ still running after the grace window are cancelled — they stay
 `claimed` in the queue and are reset by the reaper on the next start
 once `claim_timeout_s` elapses.
 
+**Tuning.**
+
+- `claim_timeout_s` must exceed the longest legitimate job duration; a
+  shorter value lets the reaper resurrect in-flight jobs.
+- `worker_count <= max_concurrent`; extras stall in the semaphore.
+- `poll_idle_interval_s`: lower = faster pickup, more SQLite churn.
+- `reaper_interval_s`: worst-case post-crash reclaim is
+  `claim_timeout_s + reaper_interval_s`.
+
 **Per-source override.** A source can opt out of the global retry
 policy:
 

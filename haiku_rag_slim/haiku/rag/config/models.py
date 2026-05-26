@@ -288,11 +288,38 @@ class CircuitBreakerConfig(BaseModel):
 
 
 class WorkerConfig(BaseModel):
-    worker_count: int = 4
-    max_concurrent: int = 4
-    poll_idle_interval_s: float = 1.0
-    claim_timeout_s: int = 1800
-    reaper_interval_s: int = 60
+    worker_count: int = Field(
+        default=4,
+        description="Number of async worker tasks pulling from the queue. "
+        "Each worker holds at most one job at a time. Should be <= "
+        "max_concurrent; extra workers stall in the semaphore queue.",
+    )
+    max_concurrent: int = Field(
+        default=4,
+        description="Upper bound on jobs running concurrently across all "
+        "workers. Sized to the slowest shared downstream — typically the "
+        "docling-serve fleet or the embedding endpoint's request budget.",
+    )
+    poll_idle_interval_s: float = Field(
+        default=1.0,
+        description="How long an idle worker waits between empty claim_next "
+        "polls. Lower = lower latency picking up new jobs, higher = less "
+        "queue churn when the queue is usually empty.",
+    )
+    claim_timeout_s: int = Field(
+        default=1800,
+        description="A `claimed` job whose claimed_at is older than this is "
+        "presumed dead and reset to `queued` by the reaper. MUST exceed your "
+        "longest legitimate job duration — set it too short and the reaper "
+        "resurrects jobs still being processed, causing two workers to run "
+        "the same URI. Default (30min) covers typical docling conversions; "
+        "raise it if you ingest very large PDFs through docling-local.",
+    )
+    reaper_interval_s: int = Field(
+        default=60,
+        description="How often the reaper scans for stale claims. Shorter "
+        "lowers the worst-case recovery time after a worker crash.",
+    )
     retry: RetryPolicyConfig = Field(default_factory=RetryPolicyConfig)
     shutdown_grace_s: float = Field(
         default=60.0,
