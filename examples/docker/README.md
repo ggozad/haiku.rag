@@ -34,11 +34,38 @@ mkdir -p data docs
 # Create config file from example (required)
 cp haiku.rag.yaml.example haiku.rag.yaml
 
-# Start services
+# Start services (pulls ghcr.io/ggozad/haiku.rag-slim:latest)
 docker compose up -d
 ```
 
 Place documents in `docs/` for automatic indexing.
+
+### Building locally for development
+
+The example pulls the published image. To run a local build of
+`haiku.rag-slim` instead — typical when iterating on the codebase — drop
+a `docker-compose.override.yml` next to `docker-compose.yml` (the file
+is auto-loaded by Compose and not checked in):
+
+```yaml
+services:
+  haiku-ingester:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.slim
+  haiku-rag:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.slim
+```
+
+Then:
+
+```bash
+docker compose build         # builds & tags as ghcr.io/ggozad/haiku.rag-slim:latest
+docker compose up -d         # uses the local image
+docker compose pull          # back to the published image when done
+```
 
 ## Volume Mounts
 

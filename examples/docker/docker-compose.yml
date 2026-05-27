@@ -41,10 +41,7 @@ services:
   # (creating it if missing), so its /health endpoint is a valid signal
   # that the DB exists — MCP waits on it via condition: service_healthy.
   haiku-ingester:
-    build:
-      context: ../..
-      dockerfile: docker/Dockerfile.slim
-    image: haiku-rag-slim:local
+    image: ghcr.io/ggozad/haiku.rag-slim:latest
     container_name: haiku-ingester
     command:
       [
@@ -95,7 +92,7 @@ services:
     restart: unless-stopped
 
   haiku-rag:
-    image: haiku-rag-slim:local
+    image: ghcr.io/ggozad/haiku.rag-slim:latest
     container_name: haiku-rag
     command:
       [
