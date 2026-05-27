@@ -567,6 +567,31 @@ async def test_breaker_ignores_permanent_errors(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_boot_reap_resets_pre_existing_claims(client, jobs, sync):
+    """A SIGKILL'd previous process leaves rows in `claimed` state. The new
+    WorkerPool.start() must reset them immediately so fresh workers can
+    claim them, instead of waiting on the periodic reaper's claim_timeout_s
+    window (default 1800s)."""
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    pre_claimed = await jobs.claim_next("ghost-worker")
+    assert pre_claimed is not None
+    assert pre_claimed.status is JobStatus.CLAIMED
+
+    pool = _pool(client, jobs, sync, worker_count=0)
+    await pool.start()
+    try:
+        refreshed = await jobs.get_job(pre_claimed.id)
+        assert refreshed is not None
+        assert refreshed.status is JobStatus.QUEUED
+        assert refreshed.claimed_by is None
+        # attempts was incremented by claim_next; reap decrements it so the
+        # next claim doesn't see a consumed retry it never actually used.
+        assert refreshed.attempts == 0
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
 async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     from datetime import UTC, datetime, timedelta
 
