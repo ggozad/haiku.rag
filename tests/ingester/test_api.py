@@ -352,6 +352,13 @@ async def test_dlq_retry_resurrects(state, jobs):
     assert resp.json()["status"] == JobStatus.QUEUED.value
 
 
+@pytest.mark.asyncio
+async def test_dlq_retry_404_on_missing_job(state):
+    async with _client(state) as client:
+        resp = await client.post("/dlq/missing/retry")
+    assert resp.status_code == 404
+
+
 # --- /sources ---
 
 
@@ -547,6 +554,40 @@ async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
     assert body["docling_serve"][0]["status_code"] == 200
     assert body["docling_serve"][1]["reachable"] is False
     assert "Name or service not known" in body["docling_serve"][1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_providers_probe_with_real_httpx_transport():
+    """End-to-end through the actual _probe — MockTransport drives the
+    branches: 200, non-2xx, and a transport error all map to the right
+    ProviderEndpoint shape."""
+    import httpx
+
+    from haiku.rag.ingester.api.routes.providers import _probe
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        path = str(request.url)
+        if "ok" in path:
+            return httpx.Response(200, json={"status": "ok"})
+        if "bad" in path:
+            return httpx.Response(503)
+        raise httpx.ConnectError("boom")
+
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        good = await _probe(client, "http://ok:5001")
+        assert good.reachable is True
+        assert good.status_code == 200
+        assert good.error is None
+
+        unhealthy = await _probe(client, "http://bad:5001")
+        assert unhealthy.reachable is False
+        assert unhealthy.status_code == 503
+
+        dead = await _probe(client, "http://dead:5001")
+        assert dead.reachable is False
+        assert dead.status_code is None
+        assert dead.error is not None and "boom" in dead.error
 
 
 @pytest.mark.asyncio

@@ -458,6 +458,22 @@ async def test_drain_pending_releases_with_no_orphans_is_noop(client, jobs, sync
 
 
 @pytest.mark.asyncio
+async def test_live_workers_drops_when_a_worker_finishes(client, jobs, sync):
+    """live_workers powers /health's degraded signal. When a worker task
+    has completed (crashed or exited), it must no longer count."""
+    pool = _pool(client, jobs, sync, worker_count=2)
+    await pool.start()
+    try:
+        assert pool.live_workers == 2
+        # Cancel one worker directly to simulate a crash.
+        pool._workers[0].cancel()
+        await asyncio.gather(pool._workers[0], return_exceptions=True)
+        assert pool.live_workers == 1
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
 async def test_double_start_raises(client, jobs, sync):
     pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()

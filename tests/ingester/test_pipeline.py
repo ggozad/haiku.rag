@@ -199,6 +199,23 @@ async def test_connect_error_classified_transient():
 @pytest.mark.parametrize(
     "exc_factory",
     [
+        lambda: TimeoutError("slow"),
+        lambda: OSError("io"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_timeout_and_io_errors_classified_transient(exc_factory):
+    """TimeoutError / OSError both classify as transient. Without this
+    branch they'd fall through to the generic "unexpected" wrapper."""
+    client = _mock_client()
+    client.create_document_from_source.side_effect = exc_factory()
+    with pytest.raises(TransientError, match="timeout/io"):
+        await run_job(client, _job())
+
+
+@pytest.mark.parametrize(
+    "exc_factory",
+    [
         lambda: httpx.ConnectTimeout("slow connect"),
         lambda: httpx.ReadTimeout("slow read"),
         lambda: httpx.WriteTimeout("slow write"),

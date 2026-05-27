@@ -590,6 +590,9 @@ async def test_list_jobs_with_filters(jobs):
     by_status = await jobs.list_jobs(status=JobStatus.QUEUED)
     assert {j.id for j in by_status} == {j2.id, j3.id}
 
+    by_uri = await jobs.list_jobs(uri="u3")
+    assert {j.id for j in by_uri} == {j3.id}
+
 
 @pytest.mark.asyncio
 async def test_counts_by_status(jobs):

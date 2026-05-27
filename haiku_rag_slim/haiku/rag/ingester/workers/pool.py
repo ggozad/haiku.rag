@@ -202,7 +202,9 @@ class WorkerPool:
                 )
                 return
             delay = compute_backoff(job.attempts, self._retry)
-            if not await self._jobs.reschedule(job.id, delay, str(e), worker_id):
+            if not await self._jobs.reschedule(  # pragma: no cover - reaper race
+                job.id, delay, str(e), worker_id
+            ):
                 logger.warning(
                     "Job %s lost claim before reschedule (likely reaper race); "
                     "letting the re-claiming worker drive retry instead",

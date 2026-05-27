@@ -24,8 +24,6 @@ def compute_backoff(
 
     `rng` is injectable for deterministic tests.
     """
-    if attempt < 1:
-        attempt = 1
     raw = min(policy.base_delay_s * (2 ** (attempt - 1)), policy.max_delay_s)
     r = rng if rng is not None else random
     j = 1.0 + (r.random() * 2 - 1) * policy.jitter
