@@ -294,6 +294,8 @@ when sweeps are skipped, throughput counters, active jobs with a Cancel
 button, recent failures with a Retry button, and the last-completed
 feed.
 
+![Ingester dashboard mid-ingest: queue depth, per-source health, active and recent jobs](img/ingester-dashboard.png)
+
 ```yaml
 ingester:
   api:
