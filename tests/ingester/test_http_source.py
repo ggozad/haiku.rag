@@ -274,9 +274,11 @@ async def test_discover_treats_network_errors_as_upsert():
 
 
 @pytest.mark.asyncio
-async def test_discover_does_not_emit_delete_for_unconfigured_uri():
-    """Config drift is the poller's job, not HTTPSource's. A URI that was in
-    the snapshot but is no longer configured must not appear as a DELETE."""
+async def test_discover_emits_delete_for_removed_url():
+    """A URI that was previously in config (and therefore in the snapshot)
+    but is no longer configured emits DELETE so the poller can clean up
+    when delete_orphans=True. Mirrors what FS/S3/WebDAV already do for
+    items missing from a listing."""
     transport = _transport(
         {
             ("HEAD", "https://example.com/a.md"): httpx.Response(
@@ -290,5 +292,7 @@ async def test_discover_does_not_emit_delete_for_unconfigured_uri():
     events = [
         e async for e in src.discover(since={"https://example.com/gone.md": "old"})
     ]
-    assert {e.uri for e in events} == {"https://example.com/a.md"}
-    assert all(e.kind is not SourceEventKind.DELETE for e in events)
+    by_uri = {e.uri: e for e in events}
+    assert by_uri["https://example.com/a.md"].kind is not SourceEventKind.DELETE
+    assert by_uri["https://example.com/gone.md"].kind is SourceEventKind.DELETE
+    assert by_uri["https://example.com/gone.md"].revision is None

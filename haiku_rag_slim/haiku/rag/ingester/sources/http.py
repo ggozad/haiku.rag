@@ -86,9 +86,9 @@ class HTTPSource:
         self, since: RevisionSnapshot | None = None
     ) -> AsyncIterator[SourceEvent]:
         # HTTP has no listing concept — discover() only reports on what is
-        # currently configured in self.urls. Config drift (URIs that were
-        # configured before but aren't now) is not visible here; the poller
-        # layer detects that by diffing self.urls across sweeps.
+        # currently configured in self.urls. URLs that were previously in
+        # config but aren't now emit DELETE so the poller can clean up
+        # alongside the in-source 410 signal.
         #
         # 410 Gone is the one real source-side deletion signal: the origin
         # explicitly says "permanently gone". 404 and other failures are
@@ -97,6 +97,7 @@ class HTTPSource:
         # via GET.
         snapshot: dict[str, str] = dict(since) if since else {}
         now = datetime.now(UTC)
+        configured = set(self.urls)
 
         async with self._client() as http:
             for url in self.urls:
@@ -145,3 +146,18 @@ class HTTPSource:
                     revision=revision,
                     discovered_at=now,
                 )
+
+        # Anything previously ingested by this source that's no longer in
+        # config (URL removed from `urls`) emits DELETE so delete_orphans
+        # can clean up. Without this, removing a URL from config leaves the
+        # document and sync_state indefinitely.
+        for url in snapshot:
+            if url in configured:
+                continue
+            yield SourceEvent(
+                source_id=self.source_id,
+                uri=url,
+                kind=SourceEventKind.DELETE,
+                revision=None,
+                discovered_at=now,
+            )
