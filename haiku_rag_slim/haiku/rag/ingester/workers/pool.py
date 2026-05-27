@@ -132,12 +132,13 @@ class WorkerPool:
             if self._breaker.is_open:
                 await self._sleep_or_stop(self._poll_idle_s)
                 continue
-            job = await self._jobs.claim_next(worker_id)
-            if job is None:
-                await self._sleep_or_stop(self._poll_idle_s)
-                continue
-
+            # Semaphore wraps claim + process: at most max_concurrent workers
+            # hold a claimed job at any one time.
             async with self._semaphore:
+                job = await self._jobs.claim_next(worker_id)
+                if job is None:
+                    await self._sleep_or_stop(self._poll_idle_s)
+                    continue
                 await self._process(job)
 
     async def _reaper_loop(self) -> None:

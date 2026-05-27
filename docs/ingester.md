@@ -186,6 +186,11 @@ once `claim_timeout_s` elapses.
 - `claim_timeout_s` must exceed the longest legitimate job duration; a
   shorter value lets the reaper resurrect in-flight jobs.
 - `worker_count <= max_concurrent`; extras stall in the semaphore.
+- `max_concurrent` should match downstream capacity. docling-serve
+  processes one task per instance, so `max_concurrent` above the number
+  of `providers.docling_serve.base_url` entries over-subscribes the
+  fleet — extra submissions queue inside docling-serve and inflate
+  `claimed_at` duration toward `claim_timeout_s`.
 - `poll_idle_interval_s`: lower = faster pickup, more SQLite churn.
 - `reaper_interval_s`: worst-case post-crash reclaim is
   `claim_timeout_s + reaper_interval_s`.
