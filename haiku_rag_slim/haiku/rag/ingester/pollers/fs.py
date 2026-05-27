@@ -113,6 +113,14 @@ class FSPoller(BasePoller):
             if change is Change.deleted:
                 if not self._fs_config.delete_orphans:
                     return
+                # `git checkout`, atomic-rename saves, and similar atomic
+                # restores fire (deleted, added) back-to-back. By the time we
+                # handle the delete, the file is already back. Enqueuing
+                # DELETE here would block the follow-up Change.added's UPSERT
+                # via the live-row unique index, then run and remove the
+                # document — blackholing it until the next periodic sweep.
+                if path.exists():
+                    return
                 await self._jobs.enqueue(
                     self.source_id,
                     uri,

@@ -410,6 +410,80 @@ async def test_manager_restart_resumes_polling(tmp_path, jobs, sync):
         await manager.stop()
 
 
+# --- FSPoller._handle_watch_change ---
+
+
+def _fs_poller(tmp_path, jobs, sync):
+    """Construct an FSPoller for unit-testing the watch-change handler.
+    Doesn't start the watch loop — tests call `_handle_watch_change` directly."""
+    from haiku.rag.ingester.pollers.fs import FSPoller
+    from haiku.rag.ingester.sources.fs import FSSource
+
+    cfg = FSSourceConfig(
+        type="fs",
+        id="local",
+        root=tmp_path,
+        delete_orphans=True,
+        poll_interval_s=60.0,
+    )
+    source = FSSource(root=tmp_path, supported_extensions=[".md"], source_id="local")
+    return FSPoller(
+        source=source,
+        config=cfg,
+        job_repo=jobs,
+        sync_repo=sync,
+    )
+
+
+@pytest.mark.asyncio
+async def test_watch_deleted_enqueues_when_file_truly_gone(tmp_path, jobs, sync):
+    from watchfiles import Change
+
+    poller = _fs_poller(tmp_path, jobs, sync)
+    missing = tmp_path / "gone.md"
+    # file doesn't exist; deleted event should enqueue DELETE
+    await poller._handle_watch_change(Change.deleted, missing)
+
+    queued = await jobs.list_jobs(source_id="local")
+    assert len(queued) == 1
+    assert queued[0].op is JobOp.DELETE
+
+
+@pytest.mark.asyncio
+async def test_watch_deleted_skipped_when_file_already_back(tmp_path, jobs, sync):
+    """`git checkout` and atomic-rename saves fire (deleted, added) in quick
+    succession; by the time the deleted event reaches us the file is back.
+    Skipping the DELETE keeps the follow-up Change.added's UPSERT from being
+    blocked by the live-row index."""
+    from watchfiles import Change
+
+    poller = _fs_poller(tmp_path, jobs, sync)
+    present = tmp_path / "restored.md"
+    present.write_text("restored")
+
+    await poller._handle_watch_change(Change.deleted, present)
+
+    assert await jobs.list_jobs(source_id="local") == []
+
+
+@pytest.mark.asyncio
+async def test_watch_deleted_then_added_enqueues_upsert(tmp_path, jobs, sync):
+    """End-to-end of the git-checkout scenario: (deleted, added) for an
+    existing file leaves a single UPSERT job, not a DELETE."""
+    from watchfiles import Change
+
+    poller = _fs_poller(tmp_path, jobs, sync)
+    path = tmp_path / "doc.md"
+    path.write_text("contents")
+
+    await poller._handle_watch_change(Change.deleted, path)
+    await poller._handle_watch_change(Change.added, path)
+
+    queued = await jobs.list_jobs(source_id="local")
+    assert len(queued) == 1
+    assert queued[0].op is JobOp.UPSERT
+
+
 # --- FSPoller end-to-end smoke ---
 
 
