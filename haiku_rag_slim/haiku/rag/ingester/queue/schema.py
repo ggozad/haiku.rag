@@ -22,12 +22,15 @@ CREATE TABLE IF NOT EXISTS jobs (
 )
 """
 
-# Partial unique index: a (source_id, uri, op) triple can only have one live
-# job (queued or claimed) at a time. Once succeeded or dead, the row no
-# longer satisfies the WHERE clause and a re-enqueue is allowed.
+# Partial unique index: a (source_id, uri) pair can only have one live job
+# (queued or claimed) at a time, regardless of op. Live UPSERT and DELETE
+# for the same URI can't both exist — preventing a DELETE worker from
+# removing a document a sibling UPSERT just ingested. Once succeeded or
+# dead, the row no longer satisfies the WHERE clause and a re-enqueue is
+# allowed.
 JOBS_LIVE_INDEX = """
 CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_live
-ON jobs(source_id, uri, op)
+ON jobs(source_id, uri)
 WHERE status IN ('queued', 'claimed')
 """
 

@@ -175,11 +175,34 @@ async def test_has_pending_is_per_source(jobs):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_different_ops_coexist(jobs):
+async def test_enqueue_drops_delete_when_upsert_is_live(jobs):
+    """Stops a DELETE worker from removing a document a sibling UPSERT
+    just ingested."""
     upsert = await jobs.enqueue("s", "u", JobOp.UPSERT)
     delete = await jobs.enqueue("s", "u", JobOp.DELETE)
     assert upsert is not None
+    assert delete is None
+
+
+@pytest.mark.asyncio
+async def test_enqueue_drops_upsert_when_delete_is_live(jobs):
+    """Symmetric: live DELETE for a URI blocks a fresh UPSERT for the
+    same URI. The next sweep after DELETE completes will re-emit the
+    UPSERT if the file is back."""
+    delete = await jobs.enqueue("s", "u", JobOp.DELETE)
+    upsert = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert delete is not None
+    assert upsert is None
+
+
+@pytest.mark.asyncio
+async def test_enqueue_different_uris_independent_of_op(jobs):
+    """Uniqueness is per-(source_id, uri), not per-(source_id, uri, op).
+    Different URIs can be queued regardless of which op each one is."""
+    a = await jobs.enqueue("s", "u-a", JobOp.UPSERT)
+    b = await jobs.enqueue("s", "u-b", JobOp.DELETE)
+    assert a is not None
+    assert b is not None
 
 
 # --- claim_next ---
